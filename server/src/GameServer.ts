@@ -9,6 +9,7 @@
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
+import { nextHandGap } from './engine/nextHandGapRecorder.js';
 import { EngineTelemetry } from './engine/EngineTelemetry.js';
 import {
   supabase,
@@ -1399,6 +1400,10 @@ export class GameServer {
       // 2026-09-04: is horse Monte Carlo being throttled to protect the loop?
       // scale < 1 means the core is saturated; see EquityLoadGovernor.ts.
       equityGovernor: equityGovernor.snapshot(),
+      // THE REST, MEASURED (Dan 2026-09-07): completion -> next deal, fleet-wide,
+      // last ten minutes. `over` is the number that means the bookkeeping did
+      // not fit inside the rest. See engine/NextHandGap.ts.
+      nextHandGap: nextHandGap.snapshot(),
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people
       // are seated. Horses are excluded — they do not care.
@@ -2007,8 +2012,7 @@ export class GameServer {
         return;
       }
       const row = (Array.isArray(data) ? data[0] : data) as
-        | { table_leases_deleted?: number; tournament_leases_deleted?: number }
-        | undefined;
+        { table_leases_deleted?: number; tournament_leases_deleted?: number } | undefined;
       const tables = row?.table_leases_deleted ?? 0;
       const tourneys = row?.tournament_leases_deleted ?? 0;
       if (tables > 0 || tourneys > 0) {
@@ -2124,8 +2128,7 @@ export class GameServer {
           return;
         }
         const row = (Array.isArray(data) ? data[0] : data) as
-          | { hands_written?: number; units_written?: number; hands_skipped?: number }
-          | undefined;
+          { hands_written?: number; units_written?: number; hands_skipped?: number } | undefined;
         const hands = Number(row?.hands_written ?? 0);
         if (hands > 0) {
           console.log(

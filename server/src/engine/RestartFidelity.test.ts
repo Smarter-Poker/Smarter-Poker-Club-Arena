@@ -197,20 +197,33 @@ describe('chips survive the write, or somebody is told', () => {
   it('a failed hand write is retried, and named if it still fails', () => {
     const at = TABLES.indexOf('export async function syncStacks');
     const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/attempt <= STACK_WRITE_ATTEMPTS/);
+    expect(body).toMatch(/attempt <= STACK_WRITE_RETRY_DELAYS_MS\.length/);
     // Named, not counted: the table, the hand, and the whole payload, so the
     // idempotent RPC can be re-driven by hand.
     expect(body).toMatch(/\$\{tableId\} hand \$\{handNumber\}/);
     expect(body).toMatch(/JSON\.stringify\(payload\)/);
-    expect(body).toMatch(/'DB\.settle_hand_stacks_unreachable'/);
+    expect(body).toMatch(/'DB\.settle_hand_stacks_unconfirmed'/);
   });
 
-  it('the retry is bounded, because settlement cannot wait forever', () => {
+  it('the immutable retry schedule is bounded by the five-minute settlement barrier', () => {
     const at = TABLES.indexOf('export async function syncStacks');
     const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/attempt < STACK_WRITE_ATTEMPTS/);
-    expect(body).toMatch(/setTimeout/);
-    expect(TABLES).toMatch(/const STACK_WRITE_ATTEMPTS = 5;/);
+    const declaration = TABLES.match(
+      /export const STACK_WRITE_RETRY_DELAYS_MS: readonly number\[\] = Object\.freeze\(\[([\s\S]*?)\]\);/
+    );
+    expect(declaration, 'the retry schedule must be both readonly and frozen').not.toBeNull();
+    const delays = (declaration?.[1].match(/[\d_]+/g) ?? []).map((value) =>
+      Number(value.replaceAll('_', ''))
+    );
+    expect(delays).toEqual([200, 400, 800, 1600, 3000, 5000, 5000, 5000, 5000, 5000, 5000, 5000]);
+    expect(body).toMatch(/attempt <= STACK_WRITE_RETRY_DELAYS_MS\.length/);
+    expect(body).toMatch(/const delayMs = STACK_WRITE_RETRY_DELAYS_MS\[attempt\]/);
+    expect(body).toMatch(
+      /await new Promise<void>\(\(resolve\) => setTimeout\(resolve, delayMs\)\)/
+    );
+    const attempts = delays.length + 1;
+    const worstCaseMs = attempts * 15_000 + delays.reduce((sum, delay) => sum + delay, 0);
+    expect(worstCaseMs).toBeLessThan(5 * 60_000);
   });
 
   it('there is no per-seat absolute fallback left to erase a credit', () => {

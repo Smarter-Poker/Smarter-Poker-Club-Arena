@@ -57,6 +57,9 @@ function rpcCallSites(source: string, names: readonly string[]): number[] {
 
 describe('one terminal authority owns each tournament finish', () => {
   const files = tsFiles(SERVER_SRC);
+  const terminalRpc = stripComments(
+    readFileSync(join(__dirname, 'terminalSettlementRpc.ts'), 'utf8')
+  );
 
   it('scans the real runtime tree', () => {
     expect(files.length).toBeGreaterThan(50);
@@ -86,14 +89,15 @@ describe('one terminal authority owns each tournament finish', () => {
     );
 
     for (const source of [liveFinish, recoveryFinish]) {
-      expect(source).toMatch(/rpc\(\s*'fn_complete_tournament_terminal'/);
-      expect(source).toMatch(/verifyTournamentCompletionReceipt\s*\(/);
+      expect(source).toMatch(/requestTournamentTerminalReceipt\s*\(/);
       expect(source).not.toMatch(/rpc\(\s*'fn_settle_tournament_(?:places|final_table_deal|rake)'/);
       expect(source).not.toMatch(/rpc\(\s*'fn_(?:mystery_bounty_settle|finalize_bounty_pool)'/);
       expect(source).not.toMatch(
         /\.from\(\s*'tournaments'\s*\)[\s\S]*?\.update\(\s*\{[\s\S]*?status:\s*'COMPLETED'/
       );
     }
+    expect(terminalRpc).toMatch(/rpc\(\s*'fn_complete_tournament_terminal'/);
+    expect(terminalRpc).toMatch(/verifyTournamentCompletionReceipt\s*\(/);
   });
 
   it('the final-table deal uses the same terminal transaction', () => {
@@ -104,9 +108,9 @@ describe('one terminal authority owns each tournament finish', () => {
       source.indexOf('protected async checkFinalTableDeal'),
       source.indexOf('private async settleFinalTableDeal')
     );
-    expect(deal).toMatch(/rpc\(\s*'fn_complete_tournament_terminal'/);
-    expect(deal).toMatch(/p_settlement_mode:\s*'final_table_deal'/);
-    expect(deal).toMatch(/verifyTournamentCompletionReceipt\s*\(/);
+    expect(deal).toMatch(
+      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null\s*\)/
+    );
   });
 
   it('the scanner catches literal and indirect regressions', () => {

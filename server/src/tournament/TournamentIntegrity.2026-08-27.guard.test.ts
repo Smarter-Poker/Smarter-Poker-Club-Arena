@@ -235,7 +235,7 @@ describe('A6: a headcount is not a final table', () => {
   it('the deal poll requires it too, before terminal settlement can run', () => {
     const fn = ELIM.slice(ELIM.indexOf('protected async checkFinalTableDeal('));
     const gate = fn.indexOf('countLiveTablesWithPlayers()');
-    const deal = fn.indexOf('fn_complete_tournament_terminal');
+    const deal = fn.indexOf('requestTournamentTerminalReceipt(');
     expect(gate).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(deal);

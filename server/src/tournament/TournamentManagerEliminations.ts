@@ -1487,6 +1487,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           const bubble = bubbleSettlementReceipt(bubbleData);
           const bubbleAmount = Number(bubble.amount);
           const bubblePosition = Number(bubble.position);
+          const expectedBubbleAmount = Number((tournament as any).buy_in_amount);
           const exactReceipt =
             !bubbleError &&
             bubble.ok === true &&
@@ -1494,8 +1495,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             bubble.user_id === userId &&
             Number.isInteger(bubblePosition) &&
             bubblePosition === position &&
+            Number.isFinite(expectedBubbleAmount) &&
+            expectedBubbleAmount > 0 &&
+            Number.isSafeInteger(Math.round(expectedBubbleAmount * 100)) &&
+            Math.abs(expectedBubbleAmount * 100 - Math.round(expectedBubbleAmount * 100)) < 1e-7 &&
             Number.isFinite(bubbleAmount) &&
-            bubbleAmount > 0;
+            bubbleAmount > 0 &&
+            Number.isSafeInteger(Math.round(bubbleAmount * 100)) &&
+            Math.abs(bubbleAmount * 100 - Math.round(bubbleAmount * 100)) < 1e-7 &&
+            Math.round(bubbleAmount * 100) === Math.round(expectedBubbleAmount * 100);
           if (!exactReceipt) {
             reportError(
               new Error(
@@ -1504,12 +1512,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               'Tournament.bubble_protection_settlement_failed'
             );
           } else {
-            this.bubbleProtectionPaid = true;
             await this.broadcast('bubble_protection_paid', {
               userId,
               position: bubblePosition,
               amount: bubbleAmount,
             });
+            // Mark the presentation only after the channel accepts it. If the
+            // announcement fails, terminal closeout can replay the same
+            // stored bubble receipt instead of suppressing the final chance
+            // to tell the player what the prize pool paid.
+            this.bubbleProtectionPaid = true;
             console.log(
               `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE PROTECTION: ${userId.slice(0, 8)} received ${bubbleAmount} from the prize pool at position ${bubblePosition}`
             );
@@ -2940,7 +2952,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
   protected async finishTournament(winnerId: string): Promise<void> {
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE! Winner: ${winnerId.slice(0, 8)}`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Finishing tournament. Winner: ${winnerId.slice(0, 8)}`
     );
 
     if (this.tournamentFinished) return;

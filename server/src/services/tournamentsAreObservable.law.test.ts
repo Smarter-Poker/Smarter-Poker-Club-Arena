@@ -178,7 +178,9 @@ describe('a failed tournament payout escalates as money, not just as an error', 
 
     // Awaited, so the alert is on disk before the process can be recycled.
     expect(src).toMatch(
-      /await raiseFinancialAlert\(\s*'critical',\s*'Tournament\.atomic_terminal_settlement_failed'/
+      /await raiseFinancialAlert\(\s*'critical',\s*outcomeUnknown\s*\?\s*'Tournament\.atomic_terminal_settlement_outcome_unknown'\s*:\s*'Tournament\.atomic_terminal_settlement_failed'/
     );
+    expect(src).toMatch(/if \(!outcomeUnknown\) releaseFinishGuard\(\);/);
+    expect(src).toMatch(/if \(outcomeUnknown\) await this\.stopAndWait\(\);/);
   });
 });

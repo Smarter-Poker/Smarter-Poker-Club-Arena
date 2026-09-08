@@ -29,7 +29,7 @@ describe('a recovery may not invent a podium', () => {
     const src = read('./tournamentRecovery.ts');
 
     const guardAt = src.indexOf('const durableChampions');
-    const payAt = src.indexOf('fn_complete_tournament_terminal');
+    const payAt = src.indexOf('requestTournamentTerminalReceipt(t.id, settlementMode, winnerId)');
     expect(guardAt).toBeGreaterThan(-1);
     expect(payAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(payAt);

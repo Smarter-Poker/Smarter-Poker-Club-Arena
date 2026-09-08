@@ -19,6 +19,9 @@
  *   - Android hardware back: history.back() inside the app, minimise at root.
  *   - deep links: appUrlOpen and the launch URL go to src/lib/native/deepLinks.
  *   - the session mirror (src/lib/native/sessionMirror) is started after boot.
+ *   - push: the plugin listeners are attached at boot (src/lib/native/push)
+ *     so a tap on a notification that cold-started the app is routed, and the
+ *     cached permission state pushClient.ts reads synchronously is primed.
  *   - foreground resumes are wired here in phase 5.
  *
  * CHANGELOG: docs/changelog/2026-09-07-capacitor-shell.md
@@ -41,6 +44,7 @@ export async function initNativeShell(): Promise<void> {
     wireBackButton(),
     wireDeepLinks(),
     mirrorSession(),
+    wirePush(),
   ]);
 }
 
@@ -79,6 +83,15 @@ async function wireDeepLinks(): Promise<void> {
   // existed, so ask for the launch URL as well. handleAppUrl de-duplicates.
   const launch = await App.getLaunchUrl();
   if (launch?.url) void handleAppUrl(launch.url);
+}
+
+async function wirePush(): Promise<void> {
+  const [{ initNativePush }, { primeNativePushState }] = await Promise.all([
+    import('./native/push'),
+    import('./pushClient'),
+  ]);
+  await initNativePush();
+  await primeNativePushState();
 }
 
 async function mirrorSession(): Promise<void> {

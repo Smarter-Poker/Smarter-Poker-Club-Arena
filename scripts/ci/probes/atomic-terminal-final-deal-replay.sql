@@ -18,6 +18,10 @@ $fixture_guard$;
 
 SET LOCAL session_replication_role=replica;
 
+INSERT INTO auth.users(id)
+VALUES ('2d1cd6c3-5700-4af9-a271-d4863fdab20d')
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO auth.users(id,email,is_sso_user,is_anonymous,created_at,updated_at)
 SELECT md5('atomic-deal-user:'||g.i::text)::uuid,
        'atomic-deal-'||g.i||'@example.invalid',false,false,now(),now()

@@ -26,7 +26,7 @@ const SERVER = readFileSync(join(here, '..', 'GameServer.ts'), 'utf8');
 const TERMINAL = readFileSync(
   join(
     here,
-    '../../../supabase/migrations/20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+    '../../../supabase/migrations/20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );

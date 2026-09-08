@@ -301,6 +301,9 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
+      - name: Chip journal transactions survive failures and replays
+        run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
+
       - name: TypeScript Check
         run: npx tsc --noEmit
 

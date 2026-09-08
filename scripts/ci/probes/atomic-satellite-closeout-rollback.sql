@@ -9,7 +9,9 @@ DO $prepare$
 DECLARE
   v_source text;
 BEGIN
-  IF to_regprocedure('public.fn_settle_satellite_tournament(uuid,uuid)') IS NULL THEN
+  IF to_regprocedure('public.fn_settle_satellite_tournament(uuid,uuid)') IS NULL
+     OR to_regprocedure(
+          'public.fn_resolve_satellite_settlement_outcome(uuid,uuid)') IS NULL THEN
     RAISE EXCEPTION 'FAIL atomic satellite authority is not installed';
   END IF;
   SELECT pg_get_functiondef(
@@ -191,6 +193,7 @@ DO $copy_authority$
 DECLARE
   v_source text;
   v_receipt text;
+  v_outcome text;
 BEGIN
   SELECT pg_get_functiondef(
            'public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure)
@@ -203,6 +206,12 @@ BEGIN
     INTO v_source;
   v_source := replace(v_source,'public.','pg_temp.');
   EXECUTE v_source;
+
+  SELECT pg_get_functiondef(
+           'public.fn_resolve_satellite_settlement_outcome(uuid,uuid)'::regprocedure)
+    INTO v_outcome;
+  v_outcome := replace(v_outcome,'public.','pg_temp.');
+  EXECUTE v_outcome;
 END;
 $copy_authority$;
 
@@ -287,9 +296,25 @@ CREATE TRIGGER refuse_satellite_table_close
 DO $probe$
 DECLARE
   v_caught boolean := false;
+  v_before_outcome jsonb;
+  v_after_outcome jsonb;
   v_first jsonb;
   v_replay jsonb;
 BEGIN
+  SELECT pg_temp.fn_resolve_satellite_settlement_outcome(
+           '91000000-0000-4000-8000-000000000001',
+           '91000000-0000-4000-8000-000000000201')
+    INTO v_before_outcome;
+  IF v_before_outcome->>'ok' IS DISTINCT FROM 'true'
+     OR v_before_outcome->>'satellite_committed' IS DISTINCT FROM 'false'
+     OR v_before_outcome->>'definitively_not_committed' IS DISTINCT FROM 'true'
+     OR v_before_outcome->>'status' IS DISTINCT FROM 'RUNNING'
+     OR v_before_outcome->'receipt' IS DISTINCT FROM 'null'::jsonb THEN
+    RAISE EXCEPTION
+      'FAIL serialized satellite outcome did not prove the pre-commit RUNNING miss: %',
+      v_before_outcome;
+  END IF;
+
   BEGIN
     PERFORM pg_temp.fn_settle_satellite_tournament(
       '91000000-0000-4000-8000-000000000001',
@@ -357,8 +382,17 @@ BEGIN
            '91000000-0000-4000-8000-000000000001',
            '91000000-0000-4000-8000-000000000201')
     INTO v_replay;
+  SELECT pg_temp.fn_resolve_satellite_settlement_outcome(
+           '91000000-0000-4000-8000-000000000001',
+           '91000000-0000-4000-8000-000000000201')
+    INTO v_after_outcome;
 
   IF v_replay IS DISTINCT FROM v_first
+     OR v_after_outcome->>'ok' IS DISTINCT FROM 'true'
+     OR v_after_outcome->>'satellite_committed' IS DISTINCT FROM 'true'
+     OR v_after_outcome->>'definitively_not_committed' IS DISTINCT FROM 'false'
+     OR v_after_outcome->>'status' IS DISTINCT FROM 'COMPLETED'
+     OR v_after_outcome->'receipt' IS DISTINCT FROM v_first
      OR v_first->>'ok' IS DISTINCT FROM 'true'
      OR v_first->>'fully_settled' IS DISTINCT FROM 'true'
      OR v_first->>'status' IS DISTINCT FROM 'COMPLETED'
@@ -421,6 +455,6 @@ BEGIN
   END IF;
 
   RAISE EXCEPTION
-    'AUDIT_TEST_PASS: injected source-table close refusal rolled back the actual satellite authority ticket, Bubble cash, rake, escrow, lifecycle, receipt, source-table, source-seat and standings writes; removing the refusal produced one exact closeout and byte-identical replay';
+    'AUDIT_TEST_PASS: injected source-table close refusal rolled back the actual satellite authority ticket, Bubble cash, rake, escrow, lifecycle, receipt, source-table, source-seat and standings writes; the serialized resolver proved the RUNNING miss and exact committed receipt; removing the refusal produced one exact closeout and byte-identical replay';
 END;
 $probe$;

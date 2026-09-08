@@ -39,7 +39,7 @@ const PAYOUT_MATH = read('src/tournament/payoutMath.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
 const TERMINAL_AUTHORITY = read(
-  '../supabase/migrations/20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+  '../supabase/migrations/20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 );
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
@@ -58,6 +58,32 @@ describe('a failed query must never read as "nobody is left"', () => {
 
   it('positions are not derived from a count we could not read', () => {
     expect(code(ELIM)).toMatch(/playing_count_unavailable/);
+  });
+
+  it('an unreadable hand boundary never authorizes a table move', () => {
+    const wait = sliceMethod(code(MANAGER), 'protected async waitForHandComplete');
+    expect(wait).toMatch(/snapshotError/);
+    expect(wait).toMatch(/Tournament\.hand_boundary_unreadable/);
+    expect(wait).toMatch(/if \(initiallyIdle === null\) return false/);
+    expect(wait).toMatch(/if \(idle === null\) return false/);
+  });
+
+  it('an unreadable final-table headcount never becomes zero', () => {
+    const balance = sliceMethod(code(MANAGER), 'protected async checkTableBalance');
+    expect(balance).toMatch(/remainingPlayersError/);
+    expect(balance).toMatch(/Tournament\.final_table_headcount_unreadable/);
+    expect(balance).toMatch(/typeof remainingPlayers === 'number'/);
+    expect(balance).not.toMatch(/remainingPlayers\s*\|\|\s*0/);
+  });
+
+  it('an unreadable table or seat board never becomes an empty balance plan', () => {
+    const balance = sliceMethod(code(MANAGER), 'protected async checkTableBalance');
+    expect(balance).toMatch(
+      /seatsError \|\| !Array\.isArray\(seats\) \|\| tableError \|\| !tableRow/
+    );
+    expect(balance).toMatch(/Tournament\.balance_table_state_unreadable/);
+    expect(balance).toMatch(/Tournament\.rebalance_table_state_unreadable/);
+    expect(balance).not.toMatch(/\(seats \|\| \[\]\)\.length/);
   });
 });
 
@@ -141,16 +167,18 @@ describe('one rounding rule, shared by every payout site', () => {
     // receipt, but it may not parse a structure or price a place itself.
     expect(code(RECOVERY)).not.toMatch(/computePlacePrize\(/);
     expect(code(RECOVERY)).not.toMatch(/resolvePayoutStructure\(/);
-    expect(code(RECOVERY)).toMatch(/fn_complete_tournament_terminal/);
+    expect(code(RECOVERY)).toMatch(
+      /requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/
+    );
   });
 });
 
 describe('every tournament settles against its own prize pool', () => {
   it('cash finishes use one database-derived atomic settlement receipt', () => {
     const finish = sliceMethod(code(ELIM), 'protected async finishTournament');
-    expect(finish).toMatch(/fn_complete_tournament_terminal/);
-    expect(finish).toMatch(/p_observed_winner_id:\s*winnerId/);
-    expect(finish).toMatch(/verifyTournamentCompletionReceipt\(/);
+    expect(finish).toMatch(
+      /requestTournamentTerminalReceipt\(this\.tournamentId, 'places', winnerId\)/
+    );
     expect(finish).not.toMatch(/fn_tournament_payout_reconcile/);
   });
 

@@ -255,8 +255,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     // thing that failed. Measured over 2026-08-20..22, 938 of 988 of these
     // alerts said `supabase_timeout` — the exact condition the net exists to
     // survive. The insert is idempotent by index, so repeating it is free.
-    let lastError = '';
-    for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+    const insertOnce = async (): Promise<{ done: boolean; error: string }> => {
       const { error } = await supabase.from('pending_fee_distributions').insert({
         table_id: fee.tableId,
         club_id: fee.clubId,
@@ -274,12 +273,18 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
         kind,
         last_error: fee.lastError,
       });
-      if (!error) return;
+      if (!error) return { done: true, error: '' };
       // Already queued by an earlier attempt (possibly one that committed and
       // then timed out on us). Nothing is lost; the drain loop owns it now.
-      if (/duplicate|unique/i.test(error.message || '')) return;
+      if (/duplicate|unique/i.test(error.message || '')) return { done: true, error: '' };
+      return { done: false, error: error.message || String(error) };
+    };
 
-      lastError = error.message || String(error);
+    let lastError = '';
+    for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+      const res = await insertOnce();
+      if (res.done) return;
+      lastError = res.error;
       if (!TRANSIENT_DB_ERROR.test(lastError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
       await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
     }
@@ -296,7 +301,27 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     // not harmless: 988 unresolved criticals is how the nine real ones stay
     // invisible. Check whether the fee actually landed before declaring the
     // chips unrecoverable.
-    if (await feeIsAccountedFor(kind, fee)) {
+    await alarmUnqueueableFee(kind, fee, lastError);
+  } catch (err) {
+    reportError(err, 'FeeReconciler.queue_threw');
+  }
+}
+
+/**
+ * The last word on a fee that could not be queued: ask whether the chips are
+ * really missing, and alarm only if the answer is a definite no.
+ *
+ * Split out of queueUnbankedFee so the final evidence check has one tri-state
+ * implementation and cannot mistake an unreadable database for proof.
+ */
+async function alarmUnqueueableFee(
+  kind: PendingFeeKind,
+  fee: UnbankedFee,
+  lastError: string
+): Promise<void> {
+  try {
+    const verdict = await feeIsAccountedFor(kind, fee);
+    if (verdict === 'yes') {
       console.warn(
         `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} reported ` +
           `"${lastError}", but the fee is already queued or banked - no chips at risk, ` +
@@ -304,11 +329,22 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       );
       return;
     }
+    /* STILL FAILS CLOSED (and this is deliberate, 2026-09-08).
+       `unknown` means the check itself could not run - so it is NOT evidence
+       that the fee is banked, and it does not suppress the alarm. That rule
+       predates this change and stays: chips have already left the pot, and
+       silence about them is the one outcome worse than a false alarm.
 
+       The alarm no longer overstates itself. `verifiedUnbanked: true` used to
+       be written whether or not the verification had run. */
+    const verified = verdict === 'no';
     const detail =
       `[A5] Could not queue unbanked ${kind} for hand ${fee.handId ?? fee.handNumber} ` +
       `(rake ${fee.rake}, bbj ${fee.bbj}): ${lastError}. These chips left the pot and ` +
-      `are now recoverable only by hand.`;
+      `are now recoverable only by hand.` +
+      (verified
+        ? ''
+        : ` The database could not be asked whether the fee is already banked, so this is unverified.`);
     reportError(new Error(detail), 'FeeReconciler.queue_failed');
     // Sentry alone is not enough for a money alarm: financial_alerts is the
     // durable, queryable channel an operator actually reads, and this is the
@@ -342,10 +378,11 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       tournamentId: fee.tournamentId ?? null,
       bigBlind: fee.bigBlind ?? null,
       dbError: lastError,
-      verifiedUnbanked: true,
+      verifiedUnbanked: verified,
+      verificationUnavailable: !verified,
     });
   } catch (err) {
-    reportError(err, 'FeeReconciler.queue_threw');
+    reportError(err, 'FeeReconciler.alarm_threw');
   }
 }
 
@@ -368,58 +405,112 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
  * returns false, so the alarm is raised. Suppressing a money alert on a guess
  * would be worse than the noise it removes.
  */
-async function feeIsAccountedFor(kind: PendingFeeKind, fee: UnbankedFee): Promise<boolean> {
-  try {
-    // Cheapest check, and the one that is true most often.
-    if (Number(fee.handNumber) > 0) {
-      const { data: queued } = await supabase
-        .from('pending_fee_distributions')
-        .select('id')
-        .eq('table_id', fee.tableId)
-        .eq('hand_number', fee.handNumber)
-        .eq('kind', kind)
-        .limit(1)
-        .maybeSingle();
-      if (queued) return true;
-    }
+/**
+ * "Yes it landed", "no it did not", or "I could not ask".
+ *
+ * THE THIRD ANSWER IS THE POINT (2026-09-08). This used to return a boolean and
+ * discard every error - `const { data } = await ...` never looked at `error`,
+ * and the catch returned false. So while PostgREST was reloading its schema
+ * cache, the check that decides whether chips are really missing could not run
+ * either, answered "no" for every hand, and turned a survivable window into 23
+ * critical money alarms. All 23 were false: every one of those fees was banked,
+ * 58.27 rake and 7.90 BBJ, none of it ever at risk.
+ *
+ * Dan, binding: "HAVE THE PUSH NOTIFICATIONS STOP UPDATING ME FOR 0.00 OR
+ * FIXES, ONLY CRITICAL ERRORS THAT NEED MY ATTENTION." A critical raised because
+ * we could not reach the database is exactly a 0.00. Only a definite `no` may
+ * alarm now; `unknown` keeps retrying instead.
+ */
+type AccountedVerdict = 'yes' | 'no' | 'unknown';
 
-    if (kind === 'rake') {
-      if (fee.handId) {
-        const { data } = await supabase
-          .from('rake_records')
-          .select('id')
-          .eq('hand_id', fee.handId)
-          .limit(1)
-          .maybeSingle();
-        if (data) return true;
+async function feeIsAccountedFor(
+  kind: PendingFeeKind,
+  fee: UnbankedFee
+): Promise<AccountedVerdict> {
+  /** A read that errored proves nothing - least of all that chips are gone. */
+  let couldNotAsk = false;
+  // PostgrestBuilder is thenable, not a Promise, so PromiseLike is the type.
+  const asked = async (
+    run: () => PromiseLike<{ data: unknown; error: unknown }>
+  ): Promise<boolean> => {
+    try {
+      const { data, error } = await run();
+      if (error) {
+        couldNotAsk = true;
+        return false;
       }
-      if (Number(fee.handNumber) > 0) {
-        // global_hand_id carries the hand number; scoped by table so it cannot
-        // match another table's hand.
-        const { data } = await supabase
-          .from('rake_records')
-          .select('id')
-          .eq('table_id', fee.tableId)
-          .eq('global_hand_id', fee.handNumber)
-          .limit(1)
-          .maybeSingle();
-        return !!data;
-      }
+      return !!data;
+    } catch {
+      couldNotAsk = true;
       return false;
     }
+  };
 
-    if (!(Number(fee.handNumber) > 0)) return false;
-    const { data } = await supabase
-      .from('bbj_contributions')
-      .select('id')
-      .eq('table_id', fee.tableId)
-      .eq('hand_number', fee.handNumber)
-      .limit(1)
-      .maybeSingle();
-    return !!data;
-  } catch {
-    return false;
+  // Cheapest check, and the one that is true most often.
+  if (Number(fee.handNumber) > 0) {
+    if (
+      await asked(() =>
+        supabase
+          .from('pending_fee_distributions')
+          .select('id')
+          .eq('table_id', fee.tableId)
+          .eq('hand_number', fee.handNumber)
+          .eq('kind', kind)
+          .limit(1)
+          .maybeSingle()
+      )
+    )
+      return 'yes';
   }
+
+  if (kind === 'rake') {
+    if (fee.handId) {
+      if (
+        await asked(() =>
+          supabase
+            .from('rake_records')
+            .select('id')
+            .eq('hand_id', fee.handId)
+            .limit(1)
+            .maybeSingle()
+        )
+      )
+        return 'yes';
+    }
+    if (Number(fee.handNumber) > 0) {
+      // global_hand_id carries the hand number; scoped by table so it cannot
+      // match another table's hand.
+      if (
+        await asked(() =>
+          supabase
+            .from('rake_records')
+            .select('id')
+            .eq('table_id', fee.tableId)
+            .eq('global_hand_id', fee.handNumber)
+            .limit(1)
+            .maybeSingle()
+        )
+      )
+        return 'yes';
+    }
+    return couldNotAsk ? 'unknown' : 'no';
+  }
+
+  if (Number(fee.handNumber) > 0) {
+    if (
+      await asked(() =>
+        supabase
+          .from('bbj_contributions')
+          .select('id')
+          .eq('table_id', fee.tableId)
+          .eq('hand_number', fee.handNumber)
+          .limit(1)
+          .maybeSingle()
+      )
+    )
+      return 'yes';
+  }
+  return couldNotAsk ? 'unknown' : 'no';
 }
 
 /**
@@ -461,7 +552,12 @@ export async function reconcilePendingFees(): Promise<{
     /* A jackpot that landed from the QUEUE rather than live. The table is told
        when it does, so the celebration still happens - late, but it happens
        (phase 2.2). */
-    let paidLate: { tableId: string; handNumber: number; totalPayout?: number } | null = null;
+    let paidLate: {
+      tableId: string;
+      handNumber: number;
+      totalPayout?: number;
+      kind?: 'main' | 'mini';
+    } | null = null;
 
     // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
     //
@@ -528,7 +624,9 @@ export async function reconcilePendingFees(): Promise<{
           !p.loserUserId ||
           !p.winnerUserId ||
           !Array.isArray(p.dealtInPlayerIds) ||
-          typeof p.payoutTotalPercent !== 'number'
+          typeof p.payoutTotalPercent !== 'number' ||
+          (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
+          (p.kind === 'mini' && !p.tierId)
         ) {
           ok = false;
           failureMessage = 'bbj_payout row is missing its parameters';
@@ -551,6 +649,9 @@ export async function reconcilePendingFees(): Promise<{
               dealtInPlayerIds: p.dealtInPlayerIds,
               seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
               payoutTotalPercent: p.payoutTotalPercent,
+              kind: p.kind,
+              tierId: p.tierId,
+              metadata: p.metadata,
             },
             { fromQueue: true }
           );
@@ -567,6 +668,7 @@ export async function reconcilePendingFees(): Promise<{
             paidLate = {
               tableId: p.tableId,
               handNumber: Number(p.handNumber ?? row.hand_number),
+              kind: p.kind,
               totalPayout: outcome.status === 'paid' ? outcome.result.totalPayout : undefined,
             };
           }
@@ -632,6 +734,7 @@ export async function reconcilePendingFees(): Promise<{
         const { tableStateHub } = await import('../transport/TableStateHub.js');
         tableStateHub.emitEvent(paidLate.tableId, {
           type: 'bbj_payout_paid',
+          kind: paidLate.kind ?? 'main',
           table_id: paidLate.tableId,
           hand_number: paidLate.handNumber,
           totalPayout: paidLate.totalPayout,

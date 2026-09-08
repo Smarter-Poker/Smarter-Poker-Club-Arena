@@ -35,6 +35,7 @@ import AgentBackOffice from '../components/agent/AgentBackOffice';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState } from '../components/common/EmptyState';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -89,6 +90,8 @@ interface AgentCommission {
   // phase 7 made every other surface say so; this list showed a claimed row and
   // an owed one identically, which is the same figure meaning two things.
   settled_at?: string | null;
+  /** 'claim' | 'round2' | null - which mechanism paid it (v_agent_commissions). */
+  settled_via?: string | null;
 }
 // ChipTransaction imported from types/database.types (canonical definition)
 
@@ -277,9 +280,13 @@ export default function AgentDashboardPage() {
         const { data: comms } = await retryFetch(
           () =>
             supabase
-              .from('agent_commissions')
+              // v_agent_commissions, not the table: since 20260908025653 round 2
+              // pays a period without stamping each row, so the view's
+              // settled_at (COALESCE(own stamp, settlement paid_at)) is the only
+              // honest "has this been paid" on this screen.
+              .from('v_agent_commissions')
               .select(
-                'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at'
+                'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at, settled_via'
               )
               .eq('club_id', uuid)
               .eq('user_id', user.id)
@@ -359,8 +366,30 @@ export default function AgentDashboardPage() {
     let cancelled = false;
     const init = async () => {
       if (!user?.id) return;
+      /* The hamburger now stamps `?club=` on this link (it sits in the
+         club-scoped Club Operations group), so an agent opening the dashboard
+         from inside a club lands on THAT club's book. The param is resolved,
+         so a slug works as well as a UUID.
+
+         The fallback keeps its role filter — an agent's book only exists in
+         clubs where they hold an agent-ish role — but no longer takes
+         `mems[0]` from an unordered query. An agent working two clubs was
+         shown whichever row came back first, which is a commission book
+         chosen by the query planner. */
       const qClub = searchParams.get('club') || searchParams.get('clubId');
-      let targetClub = qClub;
+      let targetClub = qClub
+        ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
+        : null;
+
+      /* Named and unresolvable is a bad link. Do not answer it with a
+         different club's commission book; say so. */
+      if (qClub && !targetClub) {
+        if (!cancelled) {
+          setError('That Club Could Not Be Found.');
+          setLoading(false);
+        }
+        return;
+      }
 
       if (!targetClub) {
         const { data: mems } = await retryFetch(
@@ -372,10 +401,11 @@ export default function AgentDashboardPage() {
               // co_owner was missing, so a co-owner with no other membership
               // was told they belong to no club at all.
               .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'co_owner', 'admin'])
+              .order('joined_at', { ascending: true })
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
         );
-        if (mems && mems.length > 0) targetClub = mems[0].club_id;
+        targetClub = pickPreferredClubId((mems || []).map((m: { club_id: string }) => m.club_id));
       }
 
       if (targetClub && !cancelled) {
@@ -469,9 +499,9 @@ export default function AgentDashboardPage() {
     try {
       const uuid = resolvedClubIdRef.current || (await resolveClubUUID(clubId));
       const { data, error } = await supabase
-        .from('agent_commissions')
+        .from('v_agent_commissions')
         .select(
-          'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at'
+          'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at, settled_via'
         )
         .eq('club_id', uuid)
         .eq('user_id', user.id)

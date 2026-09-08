@@ -5,12 +5,15 @@ DO $probe$
 DECLARE
   v_settle text;
   v_receipt text;
+  v_legacy_award text;
   v_row record;
   v_result jsonb;
   v_immutable_refused boolean := false;
 BEGIN
   IF to_regprocedure('public.fn_settle_satellite_tournament(uuid,uuid)') IS NULL
      OR to_regprocedure('public.fn_ca_satellite_settlement_receipt(uuid,uuid)') IS NULL
+     OR to_regprocedure(
+          'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)') IS NULL
      OR to_regclass('public.tournament_satellite_settlements') IS NULL
      OR to_regclass('public.tournament_satellite_awards') IS NULL THEN
     RAISE EXCEPTION 'FAIL atomic satellite authority or immutable evidence tables are absent';
@@ -22,6 +25,9 @@ BEGIN
   SELECT pg_get_functiondef(
            'public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure)
     INTO v_receipt;
+  SELECT pg_get_functiondef(
+           'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)'::regprocedure)
+    INTO v_legacy_award;
   IF v_settle !~ 'v_ticket_award_count := floor\(v_pool / v_ticket_cost\)::integer'
      OR v_settle !~ 'v_bubble_position := v_ticket_award_count \+ 1'
      OR v_settle !~ 'pg_advisory_xact_lock\([[:space:]]*hashtextextended\(''ca:tournament-terminal-settlement:v1'',[[:space:]]*0\)\)'
@@ -35,7 +41,13 @@ BEGIN
      OR v_receipt !~ 'v_source_table_ids IS DISTINCT FROM v_h.source_table_ids'
      OR v_receipt !~ 'v_source_seat_ids IS DISTINCT FROM v_h.source_seat_ids'
      OR v_receipt !~ 'v_durable_released_ids IS DISTINCT FROM v_h.released_seat_ids'
-     OR v_receipt !~ 'v_durable_released_count IS DISTINCT FROM v_h.released_seat_count' THEN
+     OR v_receipt !~ 'v_durable_released_count IS DISTINCT FROM v_h.released_seat_count'
+     OR position('ca:tournament-terminal-settlement:v1' IN v_legacy_award) = 0
+     OR position('pg_advisory_xact_lock(' IN v_legacy_award) = 0
+     OR position('pg_advisory_xact_lock(' IN v_legacy_award) >
+          position('WHERE id = p_target_id' IN v_legacy_award)
+     OR position('WHERE id = p_target_id' IN v_legacy_award) >
+          position('WHERE id = p_satellite_id' IN v_legacy_award) THEN
     RAISE EXCEPTION 'FAIL installed satellite functions lost exact arithmetic or all-or-nothing proof';
   END IF;
 

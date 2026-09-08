@@ -717,7 +717,7 @@ it('Spin cancellation reverses aggregate rake with its original attribution iden
 
 it('stage one installs atomic cash authority without retiring rolling compatibility', () => {
   const core = read(
-    'supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+    'supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
   );
   expect(core).toContain('fn_ca_tournament_place_amounts');
   expect(core).not.toContain('CREATE OR REPLACE FUNCTION public.fn_tournament_payout_reconcile');
@@ -739,5 +739,19 @@ it('weekly invoice payment acknowledges every cent and rejects malformed amounts
   expect(sql).toContain('payment amount must be positive finite whole cents');
   expect(
     has('tests/sql/union-statement-payment-rollback-probe.sql', 'FAIL one cent short marked paid')
+  ).toBe(true);
+});
+
+it('final guarantee funding follows recorded tournament scope', () => {
+  const sql = read(
+    'supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql'
+  );
+  expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
+  expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
+  expect(
+    has(
+      'scripts/ci/probes/guarantee-funding-scope.sql',
+      'FAIL guarantee follows current club union instead of event union'
+    )
   ).toBe(true);
 });

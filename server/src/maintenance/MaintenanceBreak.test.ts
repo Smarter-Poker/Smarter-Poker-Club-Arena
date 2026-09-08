@@ -989,7 +989,7 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
    * Source-level, like the other pause laws: every park gate in the dealing
    * loop must consult maintenancePaused.
    */
-  it('every awaitPauseGate call in the dealing loop is guarded by maintenancePaused', async () => {
+  it('every awaitPauseGate call is owned by a pause authority and both maintenance gates stay wired', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, join } = await import('node:path');
@@ -999,14 +999,28 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
       .replace(/^\s*\/\/.*$/gm, '');
     const sites = [...src.matchAll(/await this\.awaitPauseGate\(\)/g)];
     expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
+    let maintenanceSites = 0;
+    let terminalOnlySites = 0;
     for (const m of sites) {
       const guard = src.slice(Math.max(0, m.index! - 220), m.index!);
+      const hasMaintenance = /maintenancePaused/.test(guard);
+      const hasTerminalCloseout = /terminalCloseoutPaused/.test(guard);
       expect(
         guard,
-        'a park gate that ignores maintenancePaused deals through the break: ' +
+        'an awaitPauseGate call without a named pause authority can park or release the wrong hand: ' +
           guard.trim().slice(-120)
-      ).toMatch(/maintenancePaused/);
+      ).toMatch(/maintenancePaused|terminalCloseoutPaused/);
+      if (hasMaintenance) maintenanceSites++;
+      if (hasTerminalCloseout && !hasMaintenance) terminalOnlySites++;
     }
+    expect(
+      maintenanceSites,
+      'both between-hand maintenance gates remain wired'
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      terminalOnlySites,
+      'the final-table closeout rechecks may be terminal-only and must remain explicit'
+    ).toBeGreaterThanOrEqual(1);
   });
 });
 

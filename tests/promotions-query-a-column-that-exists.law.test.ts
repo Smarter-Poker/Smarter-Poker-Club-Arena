@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceSqlStatement } from './helpers/sourceWindow';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on prose describing the old code. */
@@ -89,9 +90,22 @@ describe('the money-path migrations that guard the bounty chests', () => {
      * from retry forever, and fn_mystery_bounty_settle then reported the event
      * "balanced" off that same false flag.
      */
-    const owning = all().filter((m) => m.body.includes('FUNCTION public.fn_mystery_bounty_pay'));
-    expect(owning.length, 'no migration defines fn_mystery_bounty_pay').toBeGreaterThan(0);
-    const latest = owning[owning.length - 1].body;
+    // Select literal CREATE OR REPLACE definitions only. A later terminal
+    // migration deliberately mentions the function in its lock-order hardener
+    // and ACL statements; those references do not replace this body and must
+    // never hide the latest full definition from the guard.
+    const definitions = all().flatMap(({ body }) =>
+      [
+        ...body.matchAll(/^[\t ]*CREATE OR REPLACE FUNCTION public\.fn_mystery_bounty_pay\s*\(/gim),
+      ].map((match) =>
+        sliceSqlStatement(
+          body.slice(match.index),
+          'CREATE OR REPLACE FUNCTION public.fn_mystery_bounty_pay'
+        )
+      )
+    );
+    expect(definitions.length, 'no migration defines fn_mystery_bounty_pay').toBeGreaterThan(0);
+    const latest = definitions[definitions.length - 1];
 
     // The stamp must sit inside the credited branch.
     expect(latest).toMatch(

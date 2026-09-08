@@ -360,6 +360,25 @@ async function installHistoricalBoostedMilestone(
   streakStartedOn: string
 ): Promise<void> {
   const boostedBalance = currentBalance + HISTORICAL_MILESTONE_ACTUAL_DIAMONDS;
+  const historicalRunId = randomUUID();
+  // 2026-09-07 (Diamond Accounting Standard DR2, DR6): the 15 historical diamonds reach the balance
+  // through the Mint, which registers and journals the movement, never through a direct write to
+  // profiles.diamonds. A direct write moved the balance with no register row and filed DR6 on every
+  // run of this spec. The multiplier is a profile attribute, not money, and is still set directly.
+  const minted = await callServiceRpc<{ ok?: boolean; replayed?: boolean; reason?: string }>(
+    environment,
+    'fn_ca_mint',
+    {
+      p_asset: 'diamonds',
+      p_destination: 'player',
+      p_target_id: account.id,
+      p_amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
+      p_reason: 'Daily Missions certification: historical boosted milestone fixture',
+      p_op_id: `daily-missions-historical-fixture:${historicalRunId}`,
+      p_class: 'earned',
+    }
+  );
+  expect(minted.ok === true || minted.replayed === true, String(minted.reason || '')).toBe(true);
   const profile = await updateServiceRows<{
     diamonds: number;
     diamond_balance: number;
@@ -368,18 +387,13 @@ async function installHistoricalBoostedMilestone(
     environment,
     'profiles',
     query('diamonds,diamond_balance,diamond_multiplier', { id: `eq.${account.id}` }),
-    {
-      diamonds: boostedBalance,
-      diamond_balance: boostedBalance,
-      diamond_multiplier: 1.5,
-    }
+    { diamond_multiplier: 1.5 }
   );
   expect(profile).toHaveLength(1);
   expect(numeric(profile[0].diamonds)).toBe(boostedBalance);
   expect(numeric(profile[0].diamond_balance)).toBe(boostedBalance);
   expect(numeric(profile[0].diamond_multiplier)).toBe(1.5);
 
-  const historicalRunId = randomUUID();
   await insertServiceRows(environment, 'daily_challenge_milestone_claims', {
     user_id: account.id,
     streak_run_id: historicalRunId,
@@ -387,11 +401,17 @@ async function installHistoricalBoostedMilestone(
     milestone_days: 777,
     reward_diamonds: HISTORICAL_MILESTONE_RAW_DIAMONDS,
   });
+  // The register follows the journal (trg_ca_diamond_register_follows_journal): a journal row
+  // whose source is not 'the_mint' is registered as a second issuance. The 15 above were issued
+  // and registered by fn_ca_mint under the op id in metadata, so this row, which exists only so
+  // the dashboard sees a historical multiplier-shaped milestone, names the Mint as its source and
+  // registers nothing. One movement, one register row, one balance change.
   await insertServiceRows(environment, 'diamond_transactions', {
     user_id: account.id,
     amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS,
     transaction_type: 'daily_mission_milestone',
     type: 'daily_mission_milestone',
+    source: 'the_mint',
     description: 'Historical Daily Missions Streak Circuit [1.5x Boost]',
     balance_after: boostedBalance,
     reference_id: `daily-missions-historical-multiplier:${historicalRunId}`,
@@ -401,6 +421,7 @@ async function installHistoricalBoostedMilestone(
       multiplier: 1.5,
       exact_value: false,
       certification: 'historical_multiplier_compatibility',
+      registered_by_op_id: `daily-missions-historical-fixture:${historicalRunId}`,
     },
     counterparty: 'promo_budget:daily_mission_milestone',
     issuance_class: 'earned',

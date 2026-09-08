@@ -62,11 +62,20 @@ describe('only durable roster evidence can select the observed winner', () => {
 describe('the only historical state repair is an exact undecided CAS', () => {
   it('returns registered or multi-live legacy rows to RUNNING with one-row proof', () => {
     expect(BRANCH).toContain("'registered'");
-    expect(BRANCH).toMatch(/\.length >= 2/);
+    expect(BRANCH).toMatch(/durableResultPlayers\.length === 0/);
+    expect(BRANCH).toMatch(/playingPlayers\.length >= 2/);
     expect(BRANCH).toMatch(/\.update\(\{ status: 'RUNNING' \}/);
     expect(BRANCH).toMatch(/\{ count: 'exact' \}/);
     expect(BRANCH).toMatch(/\.eq\('status', 'COMPLETING'\)/);
     expect(BRANCH).toMatch(/count !== 1/);
+  });
+
+  it('never reopens a field after a durable winner or place 1 exists', () => {
+    const resultGate = BRANCH.indexOf('durableResultPlayers.length === 0');
+    const revive = BRANCH.indexOf(".update({ status: 'RUNNING' }", resultGate);
+    expect(BRANCH).toMatch(/statusOf\(player\) === 'winner' \|\| Number\(player\.position\) === 1/);
+    expect(resultGate).toBeGreaterThan(-1);
+    expect(revive).toBeGreaterThan(resultGate);
   });
 });
 

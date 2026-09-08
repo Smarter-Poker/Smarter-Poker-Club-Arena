@@ -20,6 +20,9 @@ const recovery = source.slice(
 const receiptVerifier = readFileSync(join(__dirname, 'completionSettlementReceipt.ts'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, ' ')
   .replace(/^[ \t]*\/\/.*$/gm, ' ');
+const terminalRpc = readFileSync(join(__dirname, 'terminalSettlementRpc.ts'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/^[ \t]*\/\/.*$/gm, ' ');
 
 describe('recovery has no authority to invent a result', () => {
   it('does not rank by chips or infer a result from hand history', () => {
@@ -51,13 +54,15 @@ describe('recovery only replays an authoritative settlement receipt', () => {
   });
 
   it('selects place or final-deal mode on the one terminal database door', () => {
-    expect(recovery).toMatch(/fn_complete_tournament_terminal/);
+    expect(recovery).toMatch(/dealEvidenceErr \|\| !Array\.isArray\(dealEvidence\)/);
+    expect(recovery).toMatch(/requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/);
     expect(recovery).toMatch(/isFinalTableDeal \? 'final_table_deal' : 'places'/);
     expect(recovery).not.toMatch(/settleTournamentObligation/);
+    expect(terminalRpc).toMatch(/rpc\('fn_complete_tournament_terminal'/);
   });
 
   it('requires complete, unique payout evidence containing the durable winner', () => {
-    expect(recovery).toMatch(/verifyTournamentCompletionReceipt\(/);
+    expect(terminalRpc).toMatch(/verifyTournamentCompletionReceipt\(/);
     expect(receiptVerifier).toMatch(/receipt\.ok !== true/);
     expect(receiptVerifier).toMatch(/receipt\.fully_settled !== true/);
     expect(receiptVerifier).toMatch(/users\.has\(userId\)/);

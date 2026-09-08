@@ -60,15 +60,10 @@ function perfNow(): number {
  * and want opposite fixes - see ServerTableEngineTurns.secondLookPlan.
  */
 export type SecondLookDecline =
-  | 'not_facing_bet'
-  | 'small_pot'
-  | 'action_shape'
-  | 'no_think_time'
-  | 'governor';
+  'not_facing_bet' | 'small_pot' | 'action_shape' | 'no_think_time' | 'governor';
 
 export type SecondLookPlan =
-  | { ok: true; afterMs: number }
-  | { ok: false; reason: SecondLookDecline };
+  { ok: true; afterMs: number } | { ok: false; reason: SecondLookDecline };
 
 /**
  * One telemetry key per gate, fired as LITERALS.
@@ -655,6 +650,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
       const state = this.handController.getState();
       if (state.currentPlayerSeat !== seat) return;
+      if (this.armRemainingReconnectProtection(userId)) return;
 
       // Bible V8 §6.2: Auto-activate time bank when primary timer expires
       // FIX: Guard against race condition where the player already submitted an action
@@ -691,6 +687,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             if (!this.running || !this.handController) return;
             const tbState = this.handController.getState();
             if (tbState.currentPlayerSeat !== seat) return;
+            if (this.armRemainingReconnectProtection(userId)) return;
             if (this.turnFSM.state === 'time_bank_active') {
               this.turnFSM.transition('expired');
               this.turnFSM.transition('processing');
@@ -983,6 +980,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         if (!this.running || !this.handController) return;
         const tbState = this.handController.getState();
         if (tbState.currentPlayerSeat !== player.seat) return;
+        if (this.armRemainingReconnectProtection(userId)) return;
 
         const tbPlayer = tbState.players.find((p) => p.seat === player.seat);
         const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
@@ -1831,54 +1829,38 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     };
   }
 
-  /**
-   * Handle horse AI turn — INSTANT decisions, no browser timers needed
-   */
-  /**
-   * The player whose turn it is has dropped out of reconnect grace.
-   *
-   * WHAT THIS FIXES, and it is narrower than it first looks. The harm in a
-   * mid-turn drop is not the ordinary action clock — that is the player's own
-   * clock, running the length it always runs. The harm is the TIME BANK.
-   * onPrimaryTimerExpired auto-activates a bank whenever the table is
-   * configured to (or the player armed one before dropping), and TimeBankEngine
-   * is use-it-or-lose-it: playerActed deducts the FULL currentUseSeconds
-   * regardless of how much was consumed. So a player whose socket died at
-   * second 9 silently spends a paid-for bank on a decision they could not make,
-   * every single hand, until their pool is empty.
-   *
-   * So this suppresses the bank for the remainder of this turn and stops.
-   *
-   * WHAT THIS DELIBERATELY DOES NOT DO, because the first cut of this fix
-   * (PR #1009) did all three and each one was a regression:
-   *
-   *   1. It does not re-stamp playerTurnStartTime / playerTurnDuration.
-   *      Those two fields ARE turn_deadline_ms (ServerTableEngine:393). Setting
-   *      them to `Date.now()` + disconnectTimeoutSeconds hands a player 14
-   *      seconds into a 15-second clock a FRESH 30 seconds — so pulling your
-   *      own network cable becomes a repeatable way to buy roughly 39s of stall
-   *      on every decision. ReconnectTimeBank.test.ts exists because that exact
-   *      re-stamp was already caught and closed on the reconnect path; doing it
-   *      on the disconnect path is the same bug wearing the other shoe.
-   *
-   *   2. It does not start a disconnect countdown. onPlayerTurn's countdown is
-   *      disconnectTimeoutSeconds (30) — LONGER than the 15s clock already
-   *      armed — so it cannot make the table resolve sooner, and running it
-   *      alongside the live turn timer means two deadlines racing to act on one
-   *      seat. The existing timer already auto-folds AND records the strike
-   *      (recordConnectedTimeout, line ~588/~728), which is the whole of what
-   *      the disconnect path would have contributed.
-   *
-   *   3. It does not cancel the running bank countdown behind TimeBankEngine's
-   *      back. If a bank is genuinely ACTIVE its deadline is the one in force
-   *      and its expiry handler is what resolves the seat; cancelling the raw
-   *      `timebank:<uid>` PreciseActionTimer key while leaving bank.isActive
-   *      true strands the accounting.
-   *
-   * The governing principle is the one already written into
-   * rearmTurnTimerIfCurrent: losing your connection must not buy you more time,
-   * and must not lose you any either.
-   */
+  /** Transfer the current decision to the unspent, server-owned outage deadline. */
+  protected armRemainingReconnectProtection(userId: string): boolean {
+    if (!this.handController || this.disconnectEngine.isConnected(this.tableId, userId))
+      return false;
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+    if (
+      !player ||
+      player.seat !== state.currentPlayerSeat ||
+      player.is_folded ||
+      player.is_all_in ||
+      player.is_sitting_out
+    )
+      return false;
+    const deadline = this.disconnectEngine.getFsmState(this.tableId, userId)?.graceDeadlineMs;
+    if (!deadline || deadline <= Date.now()) return false;
+    // A running bank owns its accounting until its own expiry callback hands over.
+    if (this.timeBankEngine.getPlayerBank(this.tableId, userId)?.isActive) return false;
+    this.preciseTimer.cancelTimer(this.tableId, userId);
+    this.disconnectEngine.onPlayerTurn(
+      this.tableId,
+      userId,
+      Math.max(0, state.currentBet - (player.bet ?? 0)) === 0
+    );
+    const armed = this.disconnectEngine.armedAutoActionDeadlineMs(this.tableId, userId);
+    this.playerTurnStartTime = Date.now();
+    this.playerTurnDuration = Math.max(0, (armed - this.playerTurnStartTime) / 1000);
+    this.timeBankSuppressedThisTurn = true;
+    return true;
+  }
+
+  /** A mid-turn outage receives the same protection as an outage before the turn. */
   protected handlePlayerDisconnectedMidTurn(userId: string): void {
     if (!this.handController) return;
     const state = this.handController.getState();
@@ -1897,11 +1879,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     this.timeBankSuppressedThisTurn = true;
-
-    console.log(
-      `[ServerTableEngine:${this.tableId}] Player ${userId} dropped mid-turn. ` +
-        `Time bank suppressed for this turn; action clock left untouched.`
-    );
+    this.armRemainingReconnectProtection(userId);
   }
 
   /**
@@ -1949,6 +1927,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // definition, so the hang this method exists to prevent cannot occur.
     const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
     if (activeBank?.isActive) return;
+
+    // Reconnecting the same decision consumes the remainder of its protection;
+    // it must not mint another action clock on every heartbeat/close cycle.
+    const protection = this.disconnectEngine.getFsmState(this.tableId, userId)?.reconnectDeadlineMs;
+    if (protection !== undefined) {
+      if (protection <= Date.now()) {
+        if (
+          this.forceResolveSeat(
+            player.seat,
+            Math.max(0, state.currentBet - (player.bet ?? 0)) === 0
+          )
+        ) {
+          this.markProgress();
+        } else {
+          this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+        }
+        return;
+      }
+      this.startTurnTimer(userId, player.seat, Math.max(0.001, (protection - Date.now()) / 1000));
+      this.timeBankSuppressedThisTurn = true;
+      return;
+    }
 
     const timeBankAlreadyUsedThisTurn = this.timeBankActivatedThisTurn;
     // handleTurnChange is async. Calling it bare left a rejection unhandled and

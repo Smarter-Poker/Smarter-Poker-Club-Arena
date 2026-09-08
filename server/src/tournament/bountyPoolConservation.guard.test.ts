@@ -38,18 +38,50 @@ import path from 'path';
 
 const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
 
-/** Every migration that defines the finaliser, oldest first. */
-function definitions(): string[] {
-  return fs
-    .readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-    .filter((b) => b.includes('FUNCTION public.fn_finalize_bounty_pool'));
-}
-
 /** Strip SQL comments so a guard cannot pass on prose describing the old code. */
 const sql = (s: string) => s.replace(/^\s*--.*$/gm, '');
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Every literal, full CREATE OR REPLACE body for the named public function,
+ * oldest first. Signature checks, ACL statements and pg_get_functiondef
+ * hardeners mention a function but are not a definition of it.
+ */
+function fullDefinitions(fn: string): string[] {
+  const create = new RegExp(
+    `^[\\t ]*CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${escapeRegExp(fn)}\\s*\\(`,
+    'gim'
+  );
+  const definitions: string[] = [];
+
+  for (const filename of fs
+    .readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()) {
+    const migration = fs.readFileSync(path.join(MIGRATIONS, filename), 'utf8');
+    for (const match of migration.matchAll(create)) {
+      const start = match.index;
+      const tail = migration.slice(start);
+      const opener = /\bAS\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/i.exec(tail);
+      if (!opener) throw new Error(`${filename}: ${fn} has no dollar-quoted function body`);
+
+      const delimiter = opener[1];
+      const bodyStart = start + opener.index + opener[0].length;
+      const bodyEnd = migration.indexOf(delimiter, bodyStart);
+      if (bodyEnd === -1) throw new Error(`${filename}: ${fn} has no closing ${delimiter}`);
+
+      definitions.push(migration.slice(start, bodyEnd + delimiter.length));
+    }
+  }
+
+  return definitions;
+}
+
+/** Every full definition of the finaliser, oldest first. */
+function definitions(): string[] {
+  return fullDefinitions('fn_finalize_bounty_pool');
+}
 
 describe('fn_finalize_bounty_pool', () => {
   it('is defined by at least one migration', () => {
@@ -109,12 +141,7 @@ describe('fn_collect_bounty', () => {
    * finalisation run in, neither can hand out a chip the pool does not hold.
    */
   function collectDefinitions(): string[] {
-    return fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-      .filter((b) => b.includes('fn_collect_bounty'));
+    return fullDefinitions('fn_collect_bounty');
   }
 
   it('has a migration that moves it onto the ledger', () => {
@@ -136,8 +163,14 @@ describe('fn_collect_bounty', () => {
     // hybrid tripwire, the mystery-phase handoff or the already-collected
     // dedupe. The migration patches one line and RAISEs if that line is not
     // where it expects, then asserts every guard survived.
-    const defs = collectDefinitions();
-    const patcher = defs.filter((d) => d.includes('refusing to patch blind'));
+    const patcher = fs
+      .readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
+      .filter(
+        (body) => body.includes('fn_collect_bounty') && body.includes('refusing to patch blind')
+      );
     expect(patcher.length).toBeGreaterThan(0);
     const latest = patcher[patcher.length - 1];
     for (const guard of [

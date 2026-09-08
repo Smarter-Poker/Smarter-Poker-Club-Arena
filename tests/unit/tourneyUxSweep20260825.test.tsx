@@ -125,7 +125,9 @@ describe('Item 1 - a running tournament can be watched', () => {
     // Not the exact select string — adding a column must not break this.
     for (const feed of [DETAILS, ENTRIES_HOOK]) {
       const src = code(read(feed));
-      expect(src).toMatch(/\.select\(\s*'[^']*\btable_id\b[^']*'\s*\)/);
+      const playersQuery = src.slice(src.indexOf(".from('tournament_players')"));
+      expect(playersQuery.startsWith(".from('tournament_players')")).toBe(true);
+      expect(sliceCall(playersQuery, '.select(')).toMatch(/\btable_id\b/);
       expect(src).toMatch(/table_id: \(e\.table_id as string \| null\) \|\| null/);
     }
 

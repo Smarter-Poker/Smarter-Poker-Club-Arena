@@ -26,7 +26,7 @@ const ELIM = fs.readFileSync(path.join(HERE, 'TournamentManagerEliminations.ts')
 const SETTLEMENT = fs.readFileSync(
   path.resolve(
     HERE,
-    '../../../supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+    '../../../supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );

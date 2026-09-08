@@ -138,26 +138,23 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
     expect(v.delta).toBe(1);
   });
 
-  it('postHandTasks gates BOTH stack writes on the verdict and raises the CRITICAL alert', () => {
+  it('postHandTasks gates the one atomic stack write on the verdict and raises the CRITICAL alert', () => {
     const src = code(read('./ServerTableEngineSettlement.ts'));
     const fn = src.slice(src.indexOf('protected async postHandTasks('));
     const gate = fn.indexOf('checkTournamentChipConservation(');
     const sync = fn.indexOf("runStep('sync_stacks'");
-    const tsync = fn.indexOf("runStep('tournament_chip_sync'");
     expect(gate).toBeGreaterThan(-1);
     expect(sync).toBeGreaterThan(gate);
-    expect(tsync).toBeGreaterThan(sync);
     // the verdict is taken from the synchronous snapshot, never the live field
     expect(fn.slice(gate - 400, gate + 400)).toMatch(/dealt:\s*snap\.dealtStacks/);
     // the alert names the law and is critical
     expect(fn.slice(gate, sync)).toMatch(
       /raiseFinancialAlert\(\s*'critical',\s*'Tournament\.chip_conservation_broken'/
     );
-    // both writes are no-ops on a refusal
+    // The one write is a no-op on a refusal. There is no second writer.
     const syncBody = fn.slice(sync, fn.indexOf('});', sync));
-    const tsyncBody = fn.slice(tsync, fn.indexOf('});', tsync));
     expect(syncBody).toMatch(/if \(!tournamentHandConserved\) return;/);
-    expect(tsyncBody).toMatch(/if \(!tournamentHandConserved\) return;/);
+    expect(fn).not.toContain("runStep('tournament_chip_sync'");
   });
 
   it('the dealt stacks are captured when the HandController is built and carried in the snapshot', () => {
@@ -193,9 +190,8 @@ describe('LAW 3: a conservation refusal from the database is never written aroun
     expect(refusal).toBeGreaterThan(-1);
     const after = fn.slice(refusal);
     expect(after).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
-    expect(
-      after.slice(0, after.indexOf("'DB.settle_hand_stacks_conservation_refused'") + 900)
-    ).toMatch(/return false;/);
+    expect(after).toMatch(/return \{ kind: 'refused'/);
+    expect(after).toMatch(/if \(verdict\.kind === 'refused'\) return false;/);
     expect(fn).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
     expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
   });

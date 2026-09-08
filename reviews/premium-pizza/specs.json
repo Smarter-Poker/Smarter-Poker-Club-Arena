@@ -1,0 +1,61 @@
+[
+  {
+    "id": "pizza_slice",
+    "spec": {
+      "id": "pizza_slice",
+      "name": "Pizza Slice",
+      "tier": "free",
+      "category": "throws",
+      "spawn": "avatar-face",
+      "spawnMs": 167,
+      "flight": {
+        "ms": 333,
+        "mode": "straight",
+        "upright": true
+      },
+      "arrival": "blink-pop",
+      "payload": {
+        "sizeU": 1.4,
+        "anchor": "face",
+        "coversAvatar": true,
+        "ms": 3667
+      },
+      "beats": [
+        {
+          "at": 333,
+          "marker": "face-down"
+        },
+        {
+          "at": 1000,
+          "marker": "slide-smear"
+        },
+        {
+          "at": 1800,
+          "marker": "cheese-stretch"
+        },
+        {
+          "at": 2200,
+          "marker": "peel"
+        },
+        {
+          "at": 2900,
+          "marker": "drop"
+        },
+        {
+          "at": 3500,
+          "marker": "pepperoni-stays"
+        },
+        {
+          "at": 4000,
+          "marker": "cut"
+        }
+      ],
+      "audio": [
+        {
+          "at": 333,
+          "sample": "splat_wet_small"
+        }
+      ]
+    }
+  }
+]

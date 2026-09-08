@@ -89,6 +89,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
@@ -107,6 +108,7 @@ import type { BoardStage } from '../components/table/CommunityCards';
 import {
   boardForRabbitReveal,
   retainedBoardShows,
+  retainedGhostsShow,
   RABBIT_REVEAL_MIN_VISIBLE_MS,
   type RetainedRabbitBoard,
 } from '../components/table/retainedRabbitBoard';
@@ -1400,8 +1402,7 @@ const BOOT_EXPLANATIONS: Record<string, string> = {
  */
 function warmSeatToPlayer(seat: WarmSeat, heroUserId: string): SeatPlayer {
   const profiles = (seat as { profiles?: unknown }).profiles as
-    | { username?: string; display_name?: string; avatar_url?: string }
-    | undefined;
+    { username?: string; display_name?: string; avatar_url?: string } | undefined;
   return {
     id: seat.user_id,
     name: playerDisplayName(profiles),
@@ -7360,6 +7361,7 @@ export default function TablePage({
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
+  const [rabbitRevealedHandNumber, setRabbitRevealedHandNumber] = useState<number | null>(null);
   /**
    * P1 2026-09-05: the board a reveal was bought against, kept so the felt
    * can go on showing it under the ghost cards while the NEXT hand's preflop
@@ -7395,6 +7397,13 @@ export default function TablePage({
     handNumber: tableState.handNumber ?? 0,
     cardCount: tableState.communityCards.length,
   });
+  /* DISPLAY AND MOVE ON (Dan 2026-09-07): a newer hand owns the board from
+     its first frame; only the reveal's ghost cards ride its empty preflop
+     slots, and only until its flop. See retainedGhostsShow. */
+  const showRetainedRabbitGhosts = retainedGhostsShow(retainedRabbitBoard, {
+    handNumber: tableState.handNumber ?? 0,
+    cardCount: tableState.communityCards.length,
+  });
   /* Stable array identities for the memoised board: a fresh spread per
      render would defeat CommunityCards' own JSON compare for nothing. */
   const retainedCards = useMemo(
@@ -7416,7 +7425,9 @@ export default function TablePage({
     retainedRabbitBoard !== null &&
     retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
       ? retainedRabbitCards
-      : rabbitRevealedCards;
+      : rabbitRevealedHandNumber === (tableState.handNumber ?? 0)
+        ? rabbitRevealedCards
+        : [];
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
@@ -7499,10 +7510,11 @@ export default function TablePage({
     async (handNumber?: number): Promise<RabbitHuntRevealResult> => {
       if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-      const result = await requestRabbitHunt(
-        tableId,
-        handNumber ?? rabbitHandNumberRef.current ?? undefined
-      );
+      // Payment may finish after HAND_STARTED has cleared or replaced these refs.
+      const requestedHandNumber =
+        handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current;
+      const boardAtRequest = lastBoardOfHandRef.current;
+      const result = await requestRabbitHunt(tableId, requestedHandNumber);
       if (!result.success || !result.cards?.length) {
         // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
         // remove the button, or topping up cannot be followed by a retry.
@@ -7524,30 +7536,31 @@ export default function TablePage({
         rank: String(c.rank) as any,
         suit: suitMap[String(c.suit)] || 'h',
       }));
-      setRabbitRevealedCards(parsedCards);
-      // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
-      // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
-      // without freezing anything. It yields the moment a newer hand has cards.
-      setRetainedRabbitBoard(
-        boardForRabbitReveal(
-          lastBoardOfHandRef.current,
-          rabbitHandNumberRef.current ?? liveHandNumberRef.current,
-          parsedCards
-        )
-      );
-      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
-      retainedRabbitTimerRef.current = window.setTimeout(() => {
-        retainedRabbitTimerRef.current = null;
-        setRetainedRabbitBoard(null);
-      }, RABBIT_REVEAL_MIN_VISIBLE_MS);
-      // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
-      // this, a reveal on a table that never deals another hand stayed on the
-      // board forever (the only other clears are hand-boundary resets).
-      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
-      rabbitRevealClearTimerRef.current = window.setTimeout(() => {
-        rabbitRevealClearTimerRef.current = null;
-        setRabbitRevealedCards([]);
-      }, 8000);
+      // Explicit hand requests belong to the replayer, which renders its own
+      // result. A replayer purchase must never replace the live felt.
+      if (handNumber === undefined) {
+        setRabbitRevealedCards(parsedCards);
+        setRabbitRevealedHandNumber(requestedHandNumber);
+        // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
+        // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
+        // without freezing anything. It yields the moment a newer hand has cards.
+        setRetainedRabbitBoard(
+          boardForRabbitReveal(boardAtRequest, requestedHandNumber, parsedCards)
+        );
+        if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+        retainedRabbitTimerRef.current = window.setTimeout(() => {
+          retainedRabbitTimerRef.current = null;
+          setRetainedRabbitBoard(null);
+        }, RABBIT_REVEAL_MIN_VISIBLE_MS);
+        // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
+        // this, a reveal on a table that never deals another hand stayed on the
+        // board forever (the only other clears are hand-boundary resets).
+        if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
+        rabbitRevealClearTimerRef.current = window.setTimeout(() => {
+          rabbitRevealClearTimerRef.current = null;
+          setRabbitRevealedCards([]);
+        }, 8000);
+      }
       return {
         success: true,
         cards: parsedCards,
@@ -16243,8 +16256,7 @@ export default function TablePage({
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
         const potAwardsWire = (evt.data as any).pot_awards as
-          | import('../lib/showdownPresentation').PotAwardGroupWire[]
-          | undefined;
+          import('../lib/showdownPresentation').PotAwardGroupWire[] | undefined;
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||
@@ -21648,10 +21660,13 @@ export default function TablePage({
                 completion hold; the button's entire visible life was
                 boardClearMs, half a second on a fold. Dan, 2026-09-05: "IT
                 CURRENTLY DOESN'T REALLY HAVE ENOUGH TIME TO CLICK AND USE."
-                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - 1750ms of
-                rest AFTER the board clear, so the time is given where this
+                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - a rest
+                AFTER the hand-free broadcast, so the time is given where this
                 gate is already open and where a snapshot freeze has no live
                 hand to starve. Nothing here had to become hand-unsafe.
+                (2026-09-07: the window is the whole two-second rest before
+                the next deal, NEXT_HAND_REST_MS, and the engine's next-hand
+                bookkeeping runs under it rather than after it.)
 
                 `body.ca-raising` (TablePage.css) hides everything in this
                 corner while the raise overlay is open - checked, and it cannot
@@ -22138,7 +22153,7 @@ export default function TablePage({
                             every street exactly like a live board. */}
                         <CommunityCards
                           cards={board.cards.slice(0, board.visibleCount)}
-                          rabbitCards={board.revealed ? rabbitRevealedCards : []}
+                          rabbitCards={board.revealed ? liveRabbitCards : []}
                           stage={
                             board.visibleCount >= 5
                               ? 'river'
@@ -22178,7 +22193,9 @@ export default function TablePage({
                            around it. See retainedBoardShows. */
                         cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}
                         rabbitCards={
-                          showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards
+                          showRetainedRabbitBoard || showRetainedRabbitGhosts
+                            ? retainedRabbitCards
+                            : liveRabbitCards
                         }
                         stage={
                           showRetainedRabbitBoard
@@ -24295,7 +24312,10 @@ export default function TablePage({
         <>
           <div className="menu-overlay" onClick={toggleSideMenu} />
           <nav className="side-menu">
-            <button className="menu-item" onClick={() => navigate('/cashier')}>
+            <button
+              className="menu-item"
+              onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
+            >
               <span className="menu-item-icon">◉</span>
               <span className="menu-item-label">Cashier</span>
               <span className="menu-item-arrow">›</span>
@@ -24419,7 +24439,7 @@ export default function TablePage({
               className="menu-item"
               onClick={() => {
                 setIsSideMenuOpen(false);
-                navigate('/vip');
+                navigate(withClubContext('/vip', lobbyClubIdRef.current));
               }}
             >
               <span className="menu-item-icon">★</span>
@@ -24757,7 +24777,7 @@ export default function TablePage({
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
         onWaitListError={(m) => toast?.error?.(m)}
-        onTopUpAccount={() => navigate('/cashier')}
+        onTopUpAccount={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
         // Insurance
         showInsurance={showInsurance}
         insuranceOffer={insuranceOffer}

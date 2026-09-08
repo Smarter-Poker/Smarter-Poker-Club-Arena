@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = (path: string) => resolve(__dirname, '..', path);
-const migration = '20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
+const migration = '20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
 const sql = readFileSync(root(`supabase/migrations/${migration}`), 'utf8');
 
 function taggedBody(tag: string): string {
@@ -46,6 +46,7 @@ describe('non-satellite terminal completion is one database transaction', () => 
       'fn_finalize_bounty_pool(uuid,uuid)',
       'fn_mystery_bounty_settle(uuid,uuid)',
       'fn_settle_tournament_rake(uuid,text)',
+      'fn_award_satellite_seat(uuid,uuid,uuid,text,integer)',
     ]) {
       expect(rollingComponents).toContain(`public.${signature}`);
     }
@@ -54,6 +55,8 @@ describe('non-satellite terminal completion is one database transaction', () => 
     expect(collectBounty).toMatch(
       /v_begin_replacement[\s\S]*?BEGIN\s+PERFORM pg_advisory_xact_lock\([\s\S]*?p_collector_user_id IS NULL/
     );
+    expect(sql).toContain('rolling satellite award lost its target-before-source row-lock order');
+    expect(sql).toContain("position('WHERE id = p_target_id' IN v_satellite_award_source) >");
   });
 
   it('settles mystery, bounty and rake before one completed receipt', () => {
@@ -117,6 +120,11 @@ describe('non-satellite terminal completion is one database transaction', () => 
     expect(playerMirror).toBeGreaterThan(seatLock);
     expect(seatVacate).toBeGreaterThan(playerMirror);
     expect(handHardening).toContain("tp.status::text = 'playing'");
+    expect(handHardening).toContain("md5(v_definition) <> '027f6ca632a9aca339efd1c896e7f6a6'");
+    expect(sql).toContain('20260908045608 zero-delta departed-seat refinement');
+    expect(handHardening).toContain('jsonb_array_elements(v_canonical)');
+    expect(handHardening).not.toContain('jsonb_array_elements(p_stacks)');
+    expect(handHardening).toContain("'request', v_request");
     expect(handHardening).toContain('target.value::numeric = 0');
     expect(handHardening).toContain("status = 'left'");
     expect(handHardening).toContain("'tournament_zero_stack_seat_count'");
@@ -264,6 +272,10 @@ describe('real database probes pin late rollback and hand-boundary replay', () =
     root('scripts/ci/probes/atomic-terminal-rolling-lock-order.sql'),
     'utf8'
   );
+  const satelliteOutcomeWaitProbe = readFileSync(
+    root('scripts/ci/probes/atomic-satellite-outcome-serialization.sql'),
+    'utf8'
+  );
 
   it('covers a positive overlay, active mystery, nonzero rake and exact replay', () => {
     expect(closureProbe).toContain("'guaranteed_prize',40");
@@ -295,6 +307,10 @@ describe('real database probes pin late rollback and hand-boundary replay', () =
     expect(mixedMysteryProbe).toContain('v_first::text IS DISTINCT FROM v_replay::text');
     expect(rollingLockProbe).toContain('fn_settle_tournament_rake(');
     expect(rollingLockProbe).toContain('fn_collect_bounty(');
+    expect(rollingLockProbe).toContain('fn_award_satellite_seat(');
     expect(rollingLockProbe).toContain('dblink_is_busy');
+    expect(satelliteOutcomeWaitProbe).toContain('fn_resolve_satellite_settlement_outcome(');
+    expect(satelliteOutcomeWaitProbe).toContain('ca:tournament-terminal-settlement:v1');
+    expect(satelliteOutcomeWaitProbe).toContain('dblink_is_busy');
   });
 });

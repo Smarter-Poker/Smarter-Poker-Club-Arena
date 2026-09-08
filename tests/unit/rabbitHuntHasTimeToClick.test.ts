@@ -35,6 +35,7 @@ import {
   FLIP_CEILING_MS,
   flipMs,
 } from '../../src/presentation/cardPresentation/profiles';
+import { sliceBlockAfter } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const stripComments = (src: string) =>
@@ -44,11 +45,14 @@ const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 const DEALING_CODE = stripComments(DEALING);
 
 describe('the hand rests before the next one', () => {
+  /* 2026-09-07: the rest is the WHOLE gap between completion and the next
+     deal (Dan: "THE NEXT HAND 2 SECONDS AFTER THE HAND IS COMPLETED"). It is
+     armed at the hand-free broadcast and awaited immediately before dealHand,
+     so the settlement barrier, the roster read and the hand-number allocation
+     all run under it instead of after it. The Rabbit Hunt window is that
+     same rest. tests/the-next-hand-deals-two-seconds-after-completion.law.test.ts
+     pins the number across every surface; these pin the shape. */
   it('the rest is its own beat and NOT folded into the animation hold', () => {
-    // handCompletionHoldMs has exactly one job: outlast the animations it is
-    // holding for. Every number in it is derived from an animation length.
-    // This one is derived from a human being's reaction time, so putting it in
-    // there would make the hold's arithmetic stop meaning what its header says.
     const fold = handCompletionHoldMs({ wentToShowdown: false });
     expect(fold).toBe(
       HAND_COMPLETION.BETS_SWEEP_MS +
@@ -56,60 +60,66 @@ describe('the hand rests before the next one', () => {
         HAND_COMPLETION.MUCK_MS +
         HAND_COMPLETION.POST_PUSH_PAUSE_MS
     );
-    // Stated the other way round, so the pin fails if anyone ever adds it in:
-    // the hold must not have grown by the rest.
     expect(fold).not.toBe(
       HAND_COMPLETION.BETS_SWEEP_MS +
         HAND_COMPLETION.POT_PUSH_MS +
         HAND_COMPLETION.MUCK_MS +
         HAND_COMPLETION.POST_PUSH_PAUSE_MS +
-        HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS
+        HAND_COMPLETION.NEXT_HAND_REST_MS
     );
-    expect(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS).toBe(1750);
+    expect(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS).toBe(HAND_COMPLETION.NEXT_HAND_REST_MS);
   });
 
-  it('the engine sleeps it AFTER the hand-free broadcast and the board clear', () => {
-    // Order is the entire fix. Before the broadcast the client still believes
-    // a hand is in progress, so the button cannot render and the time is spent
-    // on nobody. (A reveal used to freeze the client snapshot for three
-    // seconds as well; since 2026-09-05 it paints on a retained board and
-    // freezes nothing - see retainedRabbitBoard.ts.)
-    const broadcast = DEALING_CODE.indexOf('this.broadcastCurrentState();');
-    const clear = DEALING_CODE.indexOf('boardClearMs(wentToShowdown)');
-    const rest = DEALING_CODE.indexOf('HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS');
+  it('the engine arms it AFTER the hand-free broadcast and awaits it right before the deal', () => {
+    const hold = DEALING_CODE.indexOf("this.setLoopPhase('post_hand_hold')");
+    const broadcast = DEALING_CODE.indexOf('this.broadcastCurrentState();', hold);
+    const arm = DEALING_CODE.indexOf('this.armNextHandRest(', broadcast);
+    const awaited = DEALING_CODE.indexOf('await this.awaitNextHandRest();');
+    const deal = DEALING_CODE.indexOf("this.setLoopPhase('dealing');");
+    expect(hold, 'post-hand hold not found').toBeGreaterThan(-1);
     expect(broadcast, 'hand-free broadcast not found').toBeGreaterThan(-1);
-    expect(clear, 'board clear not found').toBeGreaterThan(-1);
-    expect(rest, 'the post-hand rest is not in the dealing loop').toBeGreaterThan(-1);
-    expect(broadcast).toBeLessThan(clear);
-    expect(clear).toBeLessThan(rest);
+    expect(arm, 'the rest is not armed after the broadcast').toBeGreaterThan(broadcast);
+    expect(awaited, 'the rest is not awaited in the dealing loop').toBeGreaterThan(-1);
+    expect(deal).toBeGreaterThan(awaited);
+
+    // Terminal settlement is allowed to seize the table during this await,
+    // but no ordinary work may consume time after the player's rest or run
+    // before the last no-more-cards gate.
+    const afterRest = DEALING_CODE.slice(awaited + 'await this.awaitNextHandRest();'.length);
+    const terminalGate = sliceBlockAfter(afterRest, 'if (this.terminalCloseoutPaused)');
+    const beforeDeal = DEALING_CODE.slice(
+      awaited + 'await this.awaitNextHandRest();'.length,
+      deal
+    ).trim();
+    expect(beforeDeal).toBe(terminalGate.trim());
+    expect(terminalGate).toMatch(/this\.setLoopPhase\('parked_for_terminal_closeout'\)/);
+    expect(terminalGate).toMatch(/await this\.awaitPauseGate\(\)/);
+    expect(terminalGate).toMatch(/if \(!this\.running\) break;[\s\S]*continue;/);
   });
 
   it('it happens on EVERY hand, with nothing to branch on', () => {
-    // A rest that only happened when a rabbit hunt was purchasable would tell
-    // the whole table, from the rhythm alone, that the deck still had cards in
-    // it. Same reasoning as the rebuy pause (CLAUDE.md 10.5): a beat that
-    // happens sometimes is a tell. So there must be no condition between the
-    // board clear and the sleep.
-    const clear = DEALING_CODE.indexOf('boardClearMs(wentToShowdown)');
-    const rest = DEALING_CODE.indexOf('HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS');
-    const between = DEALING_CODE.slice(clear, rest);
+    const hold = DEALING_CODE.indexOf("this.setLoopPhase('post_hand_hold')");
+    const broadcast = DEALING_CODE.indexOf('this.broadcastCurrentState();', hold);
+    const arm = DEALING_CODE.indexOf('this.armNextHandRest(', broadcast);
+    const between = DEALING_CODE.slice(broadcast, arm);
     expect(between).not.toMatch(/\bif\s*\(/);
     expect(between).not.toMatch(/\?\s*HAND_COMPLETION/);
     expect(between).not.toMatch(/rabbitHuntOffers|cards_available|isRabbitAvailable/);
+    // the old separate sleeps are gone: the clear and the window live inside the rest
+    expect(DEALING_CODE).not.toMatch(/await this\.sleep\(boardClearMs\(/);
+    expect(DEALING_CODE).not.toMatch(/await this\.sleep\(HAND_COMPLETION\.RABBIT_HUNT_WINDOW_MS\)/);
   });
 
-  it('the visible window is now longer than the floor that was meant to protect it', () => {
-    // RABBIT_MIN_VISIBLE_MS is 2000 and used to exceed the whole visible
-    // window, which is what made it decorative. The button is on screen from
-    // the hand-free broadcast, so its life is the board clear plus the rest.
+  it('the board clear can never outlive the rest, and the button window clears its floor', () => {
+    expect(DEALING_CODE).toMatch(
+      /armNextHandRest\(\s*Math\.max\(HAND_COMPLETION\.NEXT_HAND_REST_MS, boardClearMs\(wentToShowdown\)\)/
+    );
     const floor = Number(
       read('src/pages/TablePage.tsx').match(/const RABBIT_MIN_VISIBLE_MS = (\d+);/)![1]
     );
     for (const wentToShowdown of [false, true]) {
-      const visible = boardClearMs(wentToShowdown) + HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS;
-      expect(visible, `window on ${wentToShowdown ? 'a showdown' : 'a fold'}`).toBeGreaterThan(
-        floor
-      );
+      expect(HAND_COMPLETION.NEXT_HAND_REST_MS).toBeGreaterThan(boardClearMs(wentToShowdown));
+      expect(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS).toBeGreaterThanOrEqual(floor);
     }
   });
 });

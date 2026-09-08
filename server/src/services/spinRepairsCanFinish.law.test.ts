@@ -16,7 +16,7 @@ const executableGameServer = gameServer
 const stageOne = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260908032728_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    '../../../supabase/migrations/20260908065237_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );

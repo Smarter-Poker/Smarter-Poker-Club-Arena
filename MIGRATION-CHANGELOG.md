@@ -17014,3 +17014,41 @@ both sides, ui-text gate green.
 **Why:** Cashier history latency should scale with one club and one wallet, not the global ledger.
 **Verified:** YES — both ledger indexes and the roster index are live, ready, and valid in production.
 **TypeScript:** PASS — no runtime TypeScript surface.
+
+## Change: Chip Journal Errors Roll Back The Movement (2026-09-08)
+
+**Files:** supabase/migrations/20260908024909_chip_journal_failure_rolls_back_movement.sql; scripts/ci/probes/chip-journal-atomicity; .github/workflows/ci.yml.
+**Before:** Production fn_ca_autoledger lines 69-98, fn_club_members_ledger_writer lines 48-92, fn_ca_post_leg lines 17-30, plus direct treasury/rake/seat journals swallowed journal INSERT failures.
+**Change:** Eight posting handlers rethrow the original SQLSTATE, so the enclosing movement rolls back. CI executes the real function bodies with injected failures against isolated PostgreSQL in the existing required TypeScript Check.
+**Why:** Production failures 871 (BBJ 0.25, lock timeout) and 867 (rake 0.68, lock timeout) demonstrate balances accepted without accounting records.
+**Verified:** Production migration applied; all eight live definitions re-read with swallowed ledger logging absent. Isolated PostgreSQL: 45 original defect reproductions, 57 fixed checks including successful balance assertions and replay.
+**TypeScript:** Initial local check lacked installed native packages; clean lockfile installation performed; subsequent TypeScript check passed.
+**Limits:** This fixes shared journal failure atomicity, not separate hand stack/rake/BBJ transactions or every historical incident. Existing repair dependencies remain open work, not a claimed solution.
+
+## 20260908032050 Satellite Award Atomicity
+
+Applied to production: satellite seat creation, source transfer, target counters and payout receipt now roll back together on failure. Missing/insufficient source funding and inconsistent idempotency keys cannot commit a new award. 15 original reproductions; 17 corrected PostgreSQL cases plus 57 existing checks passed. See docs/changelog/2026-09-08-satellite-award-atomicity.md.
+
+## 2026-09-08: Cashout Escrow And Receipt Atomicity
+
+Applied 20260908035339_cashout_escrow_ledger_atomicity.sql to production. Request, approve and release declare the actual escrow journal counterparty, serialize caller retries, validate replay payloads, and propagate receipt failures so the whole movement rolls back. 64 isolated PostgreSQL cases pass, including four concurrent sessions tests. Authenticated and service_role grants preserved; no historical balance changes. See docs/changelog/2026-09-08-cashout-escrow-atomicity.md.
+
+## 2026-09-08: Hand Settlement Roster And Replay Identity
+
+Applied 20260908042156_hand_settlement_roster_and_replay_identity.sql. Reproduced a duplicate-player request minting 5 chips while returning success; duplicate/malformed/mixed rosters now fail before writes. Seat locking uses UUID order and new successful receipts bind the economic payload. 17 new PostgreSQL cases and 34 existing source guard tests pass. Service-only grants preserved. See docs/changelog/2026-09-08-hand-settlement-roster.md.
+
+## 2026-09-08: Union Close Period Boundaries
+
+Applied 20260908044150_union_close_period_boundaries_are_disjoint.sql. The weekly cursor aligns after the reset floor, uses Pacific calendar boundaries across DST, and the direct close refuses future/misaligned or overlapping periods. Eleven PostgreSQL boundary/concurrency cases pass. Rates, funding, reset floor and historical records remain unchanged. See docs/changelog/2026-09-08-union-close-period-boundaries.md.
+
+## 20260908045746: BBJ Contribution Identity
+
+Applied: serialize hand/table-hand retries before receipt and allocation; bind replay payload; preserve journal context. Original NULL-hand race reproduced, 32 new PostgreSQL cases pass. See docs/changelog/2026-09-08-bbj-contribution-identity.md.
+
+## 20260908051016: BBJ Table Routing And Receipt
+
+Applied: service-only table-scoped pool resolution and contribution commit; registered money RPC. Seven PostgreSQL route/rollback cases and fourteen engine receipt tests pass. See docs/changelog/2026-09-08-bbj-table-routing.md.
+
+## 20260908052322: Insurance Payment Scope And Journal Identity
+
+Applied: game-scoped insurance bank, canonical cents, bound replay, explicit journal, service-only access. Forty-one PostgreSQL cases pass; see docs/changelog/2026-09-08-insurance-payment-identity.md.

@@ -24,6 +24,10 @@ $fixture_guard$;
 
 SET LOCAL session_replication_role=replica;
 
+INSERT INTO auth.users(id)
+VALUES ('2d1cd6c3-5700-4af9-a271-d4863fdab20d')
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO public.tournaments
 SELECT (jsonb_populate_record(NULL::public.tournaments,
          to_jsonb(t)||jsonb_build_object(

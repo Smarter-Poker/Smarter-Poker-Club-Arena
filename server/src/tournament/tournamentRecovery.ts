@@ -11,7 +11,7 @@ import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
-import { verifyTournamentCompletionReceipt } from './completionSettlementReceipt.js';
+import { requestTournamentTerminalReceipt } from './terminalSettlementRpc.js';
 
 const TOURNAMENT_CANCELLATION_SYSTEM_ACTOR_ID = '2d1cd6c3-5700-4af9-a271-d4863fdab20d';
 
@@ -301,16 +301,16 @@ export async function recoverStuckCompletingTournaments(
     // PAYOUT-INTEGRITY 2026-08-25: an unreadable list is not an empty one. The
     // discarded error made a failed scan indistinguishable from "nothing is
     // stuck", which is the one thing this watchdog exists to detect.
-    if (stuckErr) {
+    if (stuckErr || !Array.isArray(stuck)) {
       reportError(
         new Error(
-          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr.message} - recovered nothing this pass`
+          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr?.message ?? 'no rows value'} - recovered nothing this pass`
         ),
         'GameServer.recoverStuckCompleting_scan_failed'
       );
       return;
     }
-    for (const t of stuck ?? []) {
+    for (const t of stuck) {
       try {
         /**
          * ═══════════════════════════════════════════════════════════════════
@@ -380,14 +380,27 @@ export async function recoverStuckCompletingTournaments(
           const registeredPlayers = satellitePlayers.filter(
             (player) => statusOf(player) === 'registered'
           );
+          const playingPlayers = satellitePlayers.filter(
+            (player) => statusOf(player) === 'playing'
+          );
           const livePlayers = satellitePlayers.filter((player) =>
             ['playing', 'winner'].includes(statusOf(player))
           );
+          const durableResultPlayers = satellitePlayers.filter(
+            (player) => statusOf(player) === 'winner' || Number(player.position) === 1
+          );
 
           // Only this historical, visibly undecided shape may be revived. The
-          // exact compare-and-set keeps two recovery processes from both
-          // claiming the transition.
-          if (registeredPlayers.length > 0 || livePlayers.length >= 2) {
+          // presence of a durable winner or place 1 makes the event decided,
+          // even if another stale registration or playing row survived. In
+          // that shape the atomic settlement authority must refuse or finish;
+          // recovery may never reopen play over a recorded result. The exact
+          // compare-and-set keeps two recovery processes from both claiming
+          // the genuinely undecided transition.
+          if (
+            durableResultPlayers.length === 0 &&
+            (registeredPlayers.length > 0 || playingPlayers.length >= 2)
+          ) {
             const revived = await supabase
               .from('tournaments')
               .update({ status: 'RUNNING' }, { count: 'exact' })
@@ -403,7 +416,7 @@ export async function recoverStuckCompletingTournaments(
                   tournament_name: (t as { name?: string }).name ?? null,
                   reason,
                   registered_count: registeredPlayers.length,
-                  live_count: livePlayers.length,
+                  live_count: playingPlayers.length,
                   updated_count: revived.count ?? null,
                   error: revived.error?.message ?? null,
                 }
@@ -499,7 +512,7 @@ export async function recoverStuckCompletingTournaments(
           .from('tournament_players')
           .select('user_id, status, position')
           .eq('tournament_id', t.id);
-        if (playersErr || !players) {
+        if (playersErr || !Array.isArray(players)) {
           throw new Error(
             `durable field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr?.message ?? 'no rows'}`
           );
@@ -531,35 +544,14 @@ export async function recoverStuckCompletingTournaments(
           .eq('tournament_id', t.id)
           .eq('source', 'final_table_deal')
           .limit(1);
-        if (dealEvidenceErr) {
+        if (dealEvidenceErr || !Array.isArray(dealEvidence)) {
           throw new Error(
-            `deal evidence unreadable for ${t.id.slice(0, 8)}: ${dealEvidenceErr.message}`
+            `deal evidence unreadable for ${t.id.slice(0, 8)}: ${dealEvidenceErr?.message ?? 'no rows value'}`
           );
         }
         const isFinalTableDeal = (dealEvidence?.length ?? 0) > 0;
         const settlementMode = isFinalTableDeal ? 'final_table_deal' : 'places';
-        const settlementCall = await supabase.rpc('fn_complete_tournament_terminal', {
-          p_tournament_id: t.id,
-          p_observed_winner_id: winnerId,
-          p_settlement_mode: settlementMode,
-        });
-        if (settlementCall.error) {
-          throw new Error(
-            `${isFinalTableDeal ? 'final-table deal' : 'place'} terminal settlement replay failed for ${t.id.slice(0, 8)}: ${settlementCall.error.message}`
-          );
-        }
-
-        const receipt = verifyTournamentCompletionReceipt(
-          settlementCall.data,
-          t.id,
-          settlementMode,
-          winnerId
-        );
-        if (!receipt) {
-          throw new Error(
-            `${isFinalTableDeal ? 'final-table deal' : 'place'} terminal settlement replay returned an invalid stored receipt for ${t.id.slice(0, 8)}`
-          );
-        }
+        await requestTournamentTerminalReceipt(t.id, settlementMode, winnerId);
 
         console.log(
           `[GameServer] Resumed COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}) from its authoritative settlement receipt with durable table closeout`

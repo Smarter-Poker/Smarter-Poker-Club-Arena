@@ -29,6 +29,7 @@ import { confirmDialog } from '../components/common/confirmDialog';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
@@ -84,6 +85,10 @@ interface CommissionRow {
   source_type: string;
   notes: string | null;
   created_at: string;
+  /** From v_agent_commissions: COALESCE(own stamp, the settlement's paid_at). */
+  settled_at: string | null;
+  /** 'claim' | 'round2' | null - which payer settled it. */
+  settled_via?: string | null;
 }
 interface AuditLogRow {
   id: string;
@@ -403,7 +408,6 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', load, 1500),
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', load, 1500),
       masterBus.subscribeDebounced('TOURNAMENT_STARTED', load, 1500),
-      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', load, 1500),
       // High-frequency: longer debounce (2000ms) — fires on every hand
       masterBus.subscribeDebounced('BALANCE_UPDATED', load, 2000),
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', load, 2000),
@@ -617,6 +621,8 @@ function SettlementsTab({ clubId }: { clubId: string }) {
   const [data, setData] = useState<{
     currentPeriod: Record<string, string | number | null> | null;
     pendingCommissions: CommissionRow[];
+    /** null when the balance could not be read - never silently 0. */
+    bankBalance: number | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -640,13 +646,27 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       if (pErr) throw pErr;
       const currentPeriod = periods?.[0] || null;
 
-      // agent_commissions schema: id, club_id, user_id, amount, commission_rate, source_type, source_id, notes, created_at
-      // Note: agent_commissions has NO period_id or status columns
+      /* agent_commissions has no period_id and no status, but it DOES have
+         settled_at - the column fn_agent_claim_commission stamps, and the only
+         one the phase 8 append-only guard permits to move (NULL -> a time,
+         once). Reading it is what lets this screen tell "owed" from "claimed"
+         instead of offering a button that pretended to change it. */
+      /* READ THE VIEW, NOT THE TABLE (2026-09-08, phase 7). The comment above is
+         right that settled_at is what tells owed from claimed - it was, until
+         20260908025653. Round 2 now pays a whole period and records it in
+         agent_commission_settlements instead of stamping every row, so a row
+         the union close has ALREADY PAID still has settled_at NULL and the
+         bare table reports it as awaiting a claim. v_agent_commissions is the
+         reader that knows both payers: settled_at is COALESCE(own stamp, the
+         settlement's paid_at) and settled_via says which one. It is
+         security_invoker, so the same RLS decides the same rows. */
       let commissions: CommissionRow[] = [];
       if (currentPeriod) {
         const { data: comms } = await supabase
-          .from('agent_commissions')
-          .select('id, user_id, amount, commission_rate, source_type, notes, created_at')
+          .from('v_agent_commissions')
+          .select(
+            'id, user_id, amount, commission_rate, source_type, notes, created_at, settled_at, settled_via'
+          )
           .eq('club_id', uuid)
           .gte('created_at', currentPeriod.start_at)
           .order('created_at', { ascending: false })
@@ -654,7 +674,32 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         commissions = comms || [];
       }
 
-      if (isMounted.current) setData({ currentPeriod, pendingCommissions: commissions });
+      /* What the club bank actually holds. An agent's claim is refused when
+         the treasury cannot cover it, and funding the bank is the one part of
+         this that belongs to an operator - so it is the number this screen
+         owes them. Read-only; nothing here writes it.
+
+         THE ERROR IS BOUND, AND null IS NOT ZERO. A read that failed says
+         nothing about the balance, and treating it as 0 would put "the bank
+         cannot cover what agents are owed" on the screen because we could not
+         ask - the same false alarm this platform raised 23 times on
+         2026-09-08 when a check could not reach the database. Unknown is
+         rendered as unknown. */
+      const { data: clubRow, error: bankErr } = await supabase
+        .from('clubs')
+        .select('chip_treasury')
+        .eq('id', uuid)
+        .maybeSingle();
+      if (bankErr) {
+        console.warn('[AdminDashboard] club bank balance unavailable:', bankErr.message);
+      }
+
+      if (isMounted.current)
+        setData({
+          currentPeriod,
+          pendingCommissions: commissions,
+          bankBalance: bankErr || clubRow == null ? null : Number(clubRow.chip_treasury ?? 0),
+        });
     } catch (err: unknown) {
       if (isMounted.current) setError(safeErrorMessage(err));
     } finally {
@@ -695,22 +740,36 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         if (clErr) throw clErr;
         const r = res as { success?: boolean; error?: string } | null;
         if (r && r.success === false) throw new Error(r.error || 'Failed to close period');
-      } else if (actionName === 'pay' && extras.commissionId) {
-        // agent_commissions has no 'status' column — delete to acknowledge payment
-        const { error: payErr } = await supabase
-          .from('agent_commissions')
-          .delete()
-          .eq('id', extras.commissionId);
-        if (payErr) throw payErr;
-      } else if (actionName === 'pay_all' && cp) {
-        // agent_commissions has no period_id/status — delete all for this club in current period
-        const { error: paErr } = await supabase
-          .from('agent_commissions')
-          .delete()
-          .eq('club_id', uuid)
-          .gte('created_at', cp.start_at);
-        if (paErr) throw paErr;
       }
+      /* THERE IS NO 'pay' OR 'pay_all' ANY MORE, AND THERE SHOULD NEVER HAVE
+         BEEN (2026-09-08).
+
+         Both branches DELETED rows from `agent_commissions` - the commission
+         ledger - to mean "paid". Three things were wrong with that, in
+         increasing order of seriousness:
+
+         1. It never ran. RLS on agent_commissions grants writes to
+            `service_role` only; `authenticated` has read policies and nothing
+            else. A browser DELETE therefore matched zero rows, PostgREST
+            returned no error, and the operator was told it worked. `n_tup_del`
+            on that table is 1, ever - and `pay_all` would have deleted EVERY
+            commission row in the club for the period.
+         2. Deleting a ledger row is not a payment. It destroys the evidence of
+            what was owed instead of recording that it was settled. Since the
+            phase 8 append-only guard the table would refuse the DELETE outright.
+         3. **An admin does not pay an agent's commission at all.** The real
+            path is `fn_agent_claim_commission`, and it deliberately takes no
+            p_user_id: "a parameter naming somebody else would make this a way
+            to move another person's earnings, and Dan's rule is that agents
+            handle their own payouts." It debits the club bank, credits the
+            agent's own wallet, writes the settlement row and the chip
+            transaction, and is idempotent on an op_id.
+
+         So this screen no longer offers an action the platform does not have.
+         It shows what is owed, what has been claimed, and the one thing an
+         operator genuinely controls: whether the club bank can cover it -
+         which is the exact refusal the claim returns ("Ask An Owner To Fund
+         The Bank, Then Claim Again"). */
       load();
     } catch (err: unknown) {
       if (isMounted.current) setError(safeErrorMessage(err));
@@ -800,27 +859,47 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         )}
       </div>
 
-      {/* Pending Commissions */}
+      {/* Commissions this period */}
       <h3 className="admin-section-title">
-        <span>Pending Commissions</span>
-        {(data.pendingCommissions || []).length > 0 && (
-          <button
-            onClick={() =>
-              doAction('pay_all', { periodId: cp?.id != null ? String(cp.id) : undefined })
-            }
-            disabled={processing}
-            className="admin-btn admin-btn-ghost admin-btn-sm"
-            style={{ borderColor: '#31A24C', color: '#31A24C' }}
-          >
-            Mark All As Paid
-          </button>
-        )}
+        <span>Commissions This Period</span>
       </h3>
+
+      {/* WHAT AN OPERATOR CAN ACTUALLY DO. Agents claim their own commission
+          (fn_agent_claim_commission); the claim is refused when the club bank
+          cannot cover it. So the useful thing this screen can say is whether
+          the bank covers what is owed - and, when it does not, the same
+          sentence the claim itself returns. */}
+      {(() => {
+        const owed = (data.pendingCommissions || [])
+          .filter((c) => !c.settled_at)
+          .reduce((sum, c) => sum + Number(c.amount || 0), 0);
+        if (owed <= 0) return null;
+        const bank = data.bankBalance;
+        const short = bank != null && bank < owed;
+        return (
+          <div
+            className={short ? 'admin-error-banner' : 'admin-card'}
+            style={{ marginBottom: '16px' }}
+          >
+            <div className="admin-text-secondary">
+              Unclaimed This Period {fmtChips(owed)} · Club Bank{' '}
+              {bank == null ? 'Unavailable' : fmtChips(bank)}
+            </div>
+            <div style={{ marginTop: '6px' }}>
+              {bank == null
+                ? 'The Club Bank Balance Could Not Be Read, So Whether It Covers This Is Unknown. Reload To Try Again.'
+                : short
+                  ? 'The Club Bank Cannot Cover What Agents Are Owed. Fund The Bank So Their Claims Go Through.'
+                  : 'The Club Bank Covers What Agents Are Owed. Agents Claim From Their Own Agent Page.'}
+            </div>
+          </div>
+        );
+      })()}
 
       {(data.pendingCommissions || []).length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">→</span>
-          <span>No Pending Commissions To Pay.</span>
+          <span>No Commissions Recorded This Period.</span>
         </div>
       ) : (
         <div className="admin-table-scroll">
@@ -831,7 +910,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                 <th style={{ textAlign: 'right' }}>Source</th>
                 <th style={{ textAlign: 'center' }}>Rate</th>
                 <th style={{ textAlign: 'right' }}>Payout</th>
-                <th style={{ textAlign: 'center' }}>Action</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -846,13 +925,13 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                     {fmtChips(c.amount)}
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <button
-                      onClick={() => doAction('pay', { commissionId: c.id })}
-                      disabled={processing}
-                      className="admin-btn admin-btn-success admin-btn-sm"
-                    >
-                      Mark Paid
-                    </button>
+                    {c.settled_at ? (
+                      <span className="admin-badge admin-badge-green">
+                        {c.settled_via === 'round2' ? 'Settled' : 'Claimed'}
+                      </span>
+                    ) : (
+                      <span className="admin-badge">Awaiting Claim</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -2574,17 +2653,40 @@ export default function AdminDashboardPage() {
       if (!user?.id) return;
 
       try {
-        const qClub = searchParams.get('club') || searchParams.get('clubId');
-        let targetClub = qClub;
+        /* The param is RESOLVED now (slug or 6-digit code both work, and the
+           result is the UUID the role check below compares against) — it used
+           to be used raw, so a slug reached `.eq('club_id', <slug>)` and
+           raised 22P02 rather than denying access cleanly.
 
-        // Auto-discover club if none in URL
+           The auto-discovery keeps its role filter, because picking a club
+           where this operator is an ordinary member would hand them a page
+           their own role check then refuses. Only the CHOICE changed: it was
+           `mems[0]` on a query with no ORDER BY, so an operator working two
+           clubs got whichever row Postgres returned first and that could
+           change under them. Now the club they were last in wins. */
+        const qClub = searchParams.get('club') || searchParams.get('clubId');
+        let targetClub = qClub
+          ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
+          : null;
+
+        /* A club that was NAMED and could not be resolved is a bad link, not
+           an invitation to pick a different club. Falling into the discovery
+           below would render another club's operations centre under the URL
+           of the one that was asked for - the substitution the resolver
+           exists to end. */
+        if (qClub && !targetClub) {
+          if (!cancelled) setError('That Club Could Not Be Found.');
+          return;
+        }
+
         if (!targetClub) {
           const { data: mems } = await supabase
             .from('club_members')
             .select('club_id, role')
             .eq('user_id', user.id)
-            .in('role', ['owner', 'co_owner', 'admin', 'manager']);
-          if (mems && mems.length > 0) targetClub = mems[0].club_id;
+            .in('role', ['owner', 'co_owner', 'admin', 'manager'])
+            .order('joined_at', { ascending: true });
+          targetClub = pickPreferredClubId((mems || []).map((m) => m.club_id));
         }
 
         if (targetClub && !cancelled) {

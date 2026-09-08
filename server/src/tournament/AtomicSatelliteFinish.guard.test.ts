@@ -244,6 +244,7 @@ describe('all financial effects share one database transaction', () => {
       'a6a1b360-821c-4201-b378-1591e3df3892',
       'e3570642-2e39-42ae-a8f6-164055ffd6e6',
       'eddd8116-5792-47fd-b570-790c67581e9f',
+      '6b0c3243-75fb-487f-8da2-245b2426dbbe',
     ]) {
       expect(SQL).toContain(`'${id}'::uuid`);
     }

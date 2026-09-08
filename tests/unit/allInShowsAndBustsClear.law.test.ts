@@ -12,7 +12,12 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sliceBetween } from '../helpers/sourceWindow';
+import {
+  sliceBetween,
+  sliceBlockAfter,
+  sliceDollarQuoted,
+  sliceSqlStatement,
+} from '../helpers/sourceWindow';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TABLE = fs.readFileSync(path.join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
@@ -22,6 +27,13 @@ const DEALING = fs.readFileSync(
 );
 const MANAGER = fs.readFileSync(
   path.join(ROOT, 'server/src/tournament/TournamentManager.ts'),
+  'utf8'
+);
+const TERMINAL_MIGRATION = fs.readFileSync(
+  path.join(
+    ROOT,
+    'supabase/migrations/20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+  ),
   'utf8'
 );
 
@@ -49,10 +61,31 @@ describe('the equity overlay gets half a second after the hand, no more', () => 
 });
 
 describe('a busted tournament seat is vacated the moment the hand settles', () => {
-  it('the dealing loop vacates stack-0 seats with the rebuy race guard', () => {
-    const block = sliceBetween(DEALING, 'BUSTED PLAYERS DO NOT LINGER', 'catch (vacateThrew)');
-    expect(block).toMatch(/\.is\('left_at', null\)/);
-    expect(block).toMatch(/\.lte\('stack', 0\)/);
+  it('the atomic hand writer mirrors standings and vacates only its named zero stacks', () => {
+    // The process publishes the durable outcome; it is no longer a second
+    // table_seats/tournament_players writer that can crash between the two.
+    const publish = sliceBlockAfter(DEALING, 'for (const player of justBustedPlayers)');
+    expect(publish).toMatch(/type:\s*'seat_left'/);
+    expect(publish).not.toMatch(/\.from\('(?:table_seats|tournament_players)'\)/);
+
+    // Reconstruct the exact SQL replacement installed into the canonical
+    // hand-stack authority. Both writes and their proof live in one database
+    // transaction, keyed by the same v_targets roster.
+    const syncAt = TERMINAL_MIGRATION.indexOf('v_sync_replacement text :=');
+    expect(syncAt).toBeGreaterThan(-1);
+    const sync = sliceDollarQuoted(TERMINAL_MIGRATION.slice(syncAt), '$replacement$');
+    const standings = sliceSqlStatement(sync, 'UPDATE public.tournament_players');
+    const vacate = sliceSqlStatement(sync, 'UPDATE public.table_seats');
+    expect(standings).toMatch(/SET chips = target\.stack/);
+    expect(standings).toMatch(/tp\.status::text = 'playing'/);
+    expect(vacate).toMatch(/SET left_at = v_zero_stack_vacated_at/);
+    expect(vacate).toMatch(/ts\.stack = 0/);
+    expect(sync.indexOf('UPDATE public.tournament_players')).toBeLessThan(
+      sync.indexOf('UPDATE public.table_seats')
+    );
+    expect(TERMINAL_MIGRATION).toMatch(/'tournament_players_synced'/);
+    expect(TERMINAL_MIGRATION).toMatch(/'tournament_zero_stack_seats_vacated'/);
+    expect(TERMINAL_MIGRATION).toMatch(/EXECUTE v_hardened/);
   });
 
   it('the seating sweep never hands a zero-chip playing entrant a free stack', () => {

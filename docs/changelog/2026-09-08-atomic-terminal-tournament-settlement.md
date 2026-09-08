@@ -35,6 +35,9 @@ All rolling component finish doors and the live multi-claimant bounty door
 take the same global transaction lock before any row lock. Satellite and
 non-satellite terminal settlement use that identical first lock, eliminating
 cross-event bank and recipient lock inversions during the server rollout.
+The later `20260908032050` rewrite of the legacy satellite seat payer is also
+wrapped at the final stage-one boundary. It takes the global lock first while
+retaining its audited target-tournament-before-source-tournament row order.
 
 `tables.terminal_closed_at` records the receipt's completion time on every
 closed tournament table. Its database guard rejects reopening, reassociation,

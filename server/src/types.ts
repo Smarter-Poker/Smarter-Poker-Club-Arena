@@ -47,13 +47,7 @@ export type GameVariant =
 
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
-  | 'empty'
-  | 'waiting'
-  | 'seating'
-  | 'running'
-  | 'paused'
-  | 'closing'
-  | 'closed';
+  'empty' | 'waiting' | 'seating' | 'running' | 'paused' | 'closing' | 'closed';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Player Types
@@ -288,6 +282,12 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
+  /** Server-only, authoritative membership used by disconnect protection. */
+  reconnect_membership?: {
+    is_vip?: boolean | null;
+    vip_tier?: string | null;
+    vip_expires_at?: string | null;
+  };
   user_id: string;
   username: string;
   stack: number;
@@ -800,12 +800,7 @@ export interface PayoutEntry {
 }
 
 export type TournamentStatus =
-  | 'ANNOUNCED'
-  | 'REGISTERING'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'LATE_REG';
+  'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'LATE_REG';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rake Distribution Types

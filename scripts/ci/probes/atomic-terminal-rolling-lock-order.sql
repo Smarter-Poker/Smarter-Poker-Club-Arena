@@ -85,7 +85,39 @@ BEGIN
 
   PERFORM public.dblink_disconnect('rolling_caller');
   PERFORM public.dblink_disconnect('terminal_holder');
+  PERFORM public.dblink_connect('terminal_holder',v_conn);
+  PERFORM public.dblink_connect('rolling_caller',v_conn);
+
+  -- The 20260908032050 legacy satellite-seat rewrite lands after the atomic
+  -- satellite migration. The terminal migration wraps that final body while
+  -- preserving its target-before-source row order. NULL ids move no state.
+  PERFORM public.dblink_send_query('terminal_holder',$remote$
+    SELECT 1 AS done
+      FROM (SELECT pg_advisory_xact_lock(
+              hashtextextended('ca:tournament-terminal-settlement:v1',0)),
+            pg_sleep(1.2)) hold
+  $remote$);
+  PERFORM pg_sleep(0.15);
+  PERFORM public.dblink_send_query('rolling_caller',$remote$
+    SELECT public.fn_award_satellite_seat(
+      NULL::uuid,NULL::uuid,NULL::uuid,NULL::text,NULL::integer) AS result
+  $remote$);
+  PERFORM pg_sleep(0.25);
+  v_busy := public.dblink_is_busy('rolling_caller');
+  IF v_busy <> 1 THEN
+    RAISE EXCEPTION
+      'FAIL rolling satellite award did not wait behind terminal lock';
+  END IF;
+  PERFORM done FROM public.dblink_get_result('terminal_holder') AS x(done integer);
+  SELECT result INTO v_result
+    FROM public.dblink_get_result('rolling_caller') AS x(result jsonb);
+  IF v_result->>'reason' <> 'target_not_found' THEN
+    RAISE EXCEPTION 'FAIL rolling satellite award lock probe returned %',v_result;
+  END IF;
+
+  PERFORM public.dblink_disconnect('rolling_caller');
+  PERFORM public.dblink_disconnect('terminal_holder');
   RAISE EXCEPTION
-    'AUDIT_TEST_PASS: a rolling direct rake component and live multi-claimant bounty authority both waited behind the terminal wrapper transaction lock before any row lock; no money or fixture state moved';
+    'AUDIT_TEST_PASS: a rolling direct rake component, live multi-claimant bounty authority and later legacy satellite-seat rewrite all waited behind the terminal wrapper transaction lock before any row lock; no money or fixture state moved';
 END;
 $lock_order_probe$;

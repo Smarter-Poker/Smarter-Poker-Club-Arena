@@ -348,11 +348,9 @@ describe('the engine pause outlasts the break', () => {
     // the gate go live in `releasePauseGate`. The budget must still be
     // dropped there — a break's multi-minute window inherited by the next
     // hand-for-hand pause is the 2026-08-19 bug in reverse.
-    const release = ENGINE.slice(ENGINE.indexOf('private releasePauseGate()'));
+    const release = sliceMethod(ENGINE, 'private releasePauseGate(): void');
     expect(release).toMatch(/pauseMaxWaitMs = null/);
-    expect(ENGINE.slice(ENGINE.indexOf('resumeDealing(): void {'))).toMatch(
-      /this\.releasePauseGate\(\)/
-    );
+    expect(sliceMethod(ENGINE, 'resumeDealing(): void')).toMatch(/this\.releasePauseGate\(\)/);
   });
 });
 
@@ -622,11 +620,11 @@ describe('a paused table parks whatever it was doing', () => {
      * step that publishes the bundle, so a cosmetic red here stops every
      * deploy on the platform.
      */
-    const release = sliceMethod(ENGINE_BASE, 'releasePauseGate()');
+    const release = sliceMethod(ENGINE_BASE, 'private releasePauseGate(): void');
     expect(release).toMatch(/this\.holdBeforeNextHand = false/);
     expect(release).toMatch(/this\.pauseMaxWaitMs = null/);
     // And resumeDealing must still route through it rather than half-resuming.
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
     expect(resume).toMatch(/this\.releasePauseGate\(\)/);
   });
 
@@ -639,12 +637,14 @@ describe('a paused table parks whatever it was doing', () => {
      * hand inside the break AND destroyed the break's pause budget on the way
      * through, so the table self-resumed two minutes into a five minute break.
      */
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
-    expect(resume).toMatch(/if \(this\.maintenancePaused\)/);
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
+    expect(resume).toMatch(/if \(this\.maintenancePaused \|\| this\.terminalCloseoutPaused\)/);
     // The maintenance resume is the mirror image: it must not lift a
     // hand-for-hand pause it did not set.
-    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance()');
-    expect(maint).toMatch(/if \(this\.handForHandPaused\) return/);
+    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance(): void');
+    expect(maint).toMatch(
+      /if \(this\.handForHandPaused \|\| this\.terminalCloseoutPaused\) return/
+    );
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

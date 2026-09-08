@@ -368,8 +368,20 @@ describe('satellite award current_players write', () => {
 
   it('shipped source pin: the atomic database authority owns target registration counts', () => {
     const src = readFileSync(join(process.cwd(), 'src/tournament/TournamentManager.ts'), 'utf8');
-    expect(src).toContain("rpc('fn_settle_satellite_tournament'");
-    expect(src).toContain('verifySatelliteSettlementReceipt(');
+    const settlementRpc = readFileSync(
+      join(process.cwd(), 'src/tournament/satelliteSettlementRpc.ts'),
+      'utf8'
+    );
+    expect(src).toContain(
+      "import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js'"
+    );
+    expect(src).toContain('await requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
+    expect(src).not.toContain("rpc('fn_settle_satellite_tournament'");
+    expect(settlementRpc).toContain("rpc('fn_settle_satellite_tournament'");
+    expect(settlementRpc).toContain(
+      'verifySatelliteSettlementReceipt(data, tournamentId, observedWinnerId)'
+    );
+    expect(settlementRpc).toContain("rpc('fn_resolve_satellite_settlement_outcome'");
     // Strip comments first — the fix documents the old formula in prose, and a
     // naive substring check would match its own documentation.
     const code = src

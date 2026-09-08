@@ -80,18 +80,42 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SER
      *    stays inside one dealing tick budget.
      */
     fetch: async (input: any, init: any = {}) => {
-      const attemptOnce = () => {
+      const attemptOnce = async () => {
+        const callerSignal: AbortSignal | undefined =
+          init.signal ??
+          (typeof Request !== 'undefined' && input instanceof Request ? input.signal : undefined);
+        // Cancellation may precede this attempt, including during retry backoff.
+        callerSignal?.throwIfAborted();
         const ctl = new AbortController();
+        const onAbort = () => ctl.abort(callerSignal?.reason);
         const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), DB_TIMEOUT_MS);
-        if (init.signal) {
-          init.signal.addEventListener('abort', () => ctl.abort(init.signal.reason));
+        callerSignal?.addEventListener('abort', onAbort, { once: true });
+        try {
+          // Clone request bodies per attempt so safe pre-execution retries
+          // never replay a consumed stream.
+          const attemptInput =
+            typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
+          const response = await fetch(attemptInput, { ...init, signal: ctl.signal });
+          // fetch resolves at HEADERS, not when the body has arrived. These
+          // database responses are consumed in full by the SDK. Drain a clone
+          // under the same deadline, leaving the original response readable and
+          // preserving its status, headers and URL. Discard chunks as we go.
+          const reader = response.clone().body?.getReader();
+          if (reader) {
+            try {
+              while (!(await reader.read()).done) {
+                /* drain to EOF */
+              }
+            } finally {
+              reader.releaseLock();
+            }
+          }
+          ctl.signal.throwIfAborted();
+          return response;
+        } finally {
+          clearTimeout(t);
+          callerSignal?.removeEventListener('abort', onAbort);
         }
-        // A Request object's body stream is consumed by fetch — clone per
-        // attempt so a retry never replays a consumed stream. (supabase-js
-        // passes a URL string + init in practice; this is belt-and-braces.)
-        const attemptInput =
-          typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
-        return fetch(attemptInput, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t));
       };
 
       const RETRYABLE = new Set(['PGRST001', 'PGRST002', 'PGRST003']);

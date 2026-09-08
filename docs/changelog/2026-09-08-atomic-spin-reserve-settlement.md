@@ -15,13 +15,14 @@ three-seat contribution twice while evaluating affordability.
 
 ## Root Repair
 
-Migration `20260908032728_spin_reserve_settlement_commits_its_journal_or_nothing`
+Migration `20260908065237_spin_reserve_settlement_commits_its_journal_or_nothing`
 installs one database-owned Spin money boundary:
 
 - The earlier platform-wide strict `fn_ca_autoledger` makes each
   `spin_bonus_pools.balance` write, exact chip-ledger leg, and escrow effect
-  commit together or roll back together. This Spin migration requires that
-  authority and does not redefine or weaken it.
+  commit together or roll back together. This Spin migration pins the exact
+  authority installed by `20260908024909` both before and after its work, and
+  does not redefine or weaken it.
 - Each new three-seat contribution or jackpot draw row requires one exact
   journal leg in the same transaction. Contribution and draw receipts cannot
   later be updated or deleted.

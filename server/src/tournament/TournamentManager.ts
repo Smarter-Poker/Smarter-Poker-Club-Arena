@@ -35,11 +35,20 @@ export class TournamentManager extends TournamentManagerEliminations {
     // Check for final table (table_size or fewer players remaining, 2026-08-22
     // parity: was hardcoded 9) — only announce once
     if (!this.isFinalTable) {
-      const { count: remainingPlayers } = await supabase
+      const { count: remainingPlayers, error: remainingPlayersError } = await supabase
         .from('tournament_players')
         .select('*', { count: 'exact', head: true })
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'playing');
+
+      if (remainingPlayersError || typeof remainingPlayers !== 'number') {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] final-table headcount is unreadable: ${remainingPlayersError?.message ?? 'no exact count'}`
+          ),
+          'Tournament.final_table_headcount_unreadable'
+        );
+      }
 
       const finalTableSize = Math.min(
         10,
@@ -67,7 +76,11 @@ export class TournamentManager extends TournamentManagerEliminations {
        * `countLiveTablesWithPlayers()` returns null for UNKNOWN, which is
        * treated as "not yet".
        */
-      if ((remainingPlayers || 0) <= finalTableSize) {
+      if (
+        !remainingPlayersError &&
+        typeof remainingPlayers === 'number' &&
+        remainingPlayers <= finalTableSize
+      ) {
         const liveTables = await this.countLiveTablesWithPlayers();
         if (liveTables === 1) {
           this.isFinalTable = true;
@@ -120,7 +133,7 @@ export class TournamentManager extends TournamentManagerEliminations {
               'Tournament.final_table_flag_write_failed'
             );
           }
-          await this.broadcast('final_table', { playerCount: remainingPlayers || 0 });
+          await this.broadcast('final_table', { playerCount: remainingPlayers });
         } else if (liveTables !== null && liveTables > 1) {
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] ${remainingPlayers} players left but still spread over ${liveTables} tables - NOT the final table until the balancer consolidates`
@@ -134,26 +147,36 @@ export class TournamentManager extends TournamentManagerEliminations {
     // ── FIX 154: Build BalancerTable[] from live DB state ──
     const balancerTables: BalancerTable[] = [];
     for (const tableId of this.tableEngines.keys()) {
-      const { data: seats } = await supabase
+      const { data: seats, error: seatsError } = await supabase
         .from('table_seats')
         .select('user_id, stack, seat_number')
         .eq('table_id', tableId)
         .is('left_at', null);
 
-      const { data: tableRow } = await supabase
+      const { data: tableRow, error: tableError } = await supabase
         .from('tables')
         .select('max_players')
         .eq('id', tableId)
         .maybeSingle();
 
+      if (seatsError || !Array.isArray(seats) || tableError || !tableRow) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] cannot balance from an unreadable table ${tableId.slice(0, 8)}: ${seatsError?.message ?? tableError?.message ?? 'missing seats or table row'}`
+          ),
+          'Tournament.balance_table_state_unreadable'
+        );
+        return;
+      }
+
       balancerTables.push({
         tableId,
-        playerCount: (seats || []).length,
+        playerCount: seats.length,
         maxSeats: tableRow?.max_players || 9,
         // B6: current button seat (0 before the first hand) so the balancer can
         // move the big-blind-due-next player instead of the smallest stack.
         buttonSeat: this.tableEngines.get(tableId)?.getCurrentButtonSeat() ?? 0,
-        players: (seats || []).map((s: any) => ({
+        players: seats.map((s: any) => ({
           userId: s.user_id,
           stack: s.stack || 0,
           seat: s.seat_number || 0,
@@ -235,26 +258,36 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (this.tableEngines.size > 1) {
       const freshTables: BalancerTable[] = [];
       for (const tableId of this.tableEngines.keys()) {
-        const { data: seats } = await supabase
+        const { data: seats, error: seatsError } = await supabase
           .from('table_seats')
           .select('user_id, stack, seat_number')
           .eq('table_id', tableId)
           .is('left_at', null);
 
-        const { data: tableRow } = await supabase
+        const { data: tableRow, error: tableError } = await supabase
           .from('tables')
           .select('max_players')
           .eq('id', tableId)
           .maybeSingle();
 
+        if (seatsError || !Array.isArray(seats) || tableError || !tableRow) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] cannot rebalance from an unreadable table ${tableId.slice(0, 8)}: ${seatsError?.message ?? tableError?.message ?? 'missing seats or table row'}`
+            ),
+            'Tournament.rebalance_table_state_unreadable'
+          );
+          return;
+        }
+
         freshTables.push({
           tableId,
-          playerCount: (seats || []).length,
+          playerCount: seats.length,
           maxSeats: tableRow?.max_players || 9,
           // B6: current button seat (0 before the first hand) so the balancer
           // can move the big-blind-due-next player instead of the smallest stack.
           buttonSeat: this.tableEngines.get(tableId)?.getCurrentButtonSeat() ?? 0,
-          players: (seats || []).map((s: any) => ({
+          players: seats.map((s: any) => ({
             userId: s.user_id,
             stack: s.stack || 0,
             seat: s.seat_number || 0,
@@ -586,23 +619,36 @@ export class TournamentManager extends TournamentManagerEliminations {
    *     instead of proceeding mid-hand (chips created/destroyed).
    */
   protected async waitForHandComplete(tableId: string): Promise<boolean> {
-    const isIdle = async (): Promise<boolean> => {
-      const { data: snap } = await supabase
+    const isIdle = async (): Promise<boolean | null> => {
+      const { data: snap, error: snapshotError } = await supabase
         .from('hand_state_snapshots')
         .select('id')
         .eq('table_id', tableId)
         .eq('is_complete', false)
         .limit(1)
         .maybeSingle();
+      if (snapshotError) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] cannot prove table ${tableId.slice(0, 8)} is between hands: ${snapshotError.message}`
+          ),
+          'Tournament.hand_boundary_unreadable'
+        );
+        return null;
+      }
       return !snap;
     };
 
-    if (await isIdle()) return true;
+    const initiallyIdle = await isIdle();
+    if (initiallyIdle === null) return false;
+    if (initiallyIdle) return true;
     let waited = 0;
     while (waited < 60000 && this.running) {
       await new Promise((r) => setTimeout(r, 2000));
       waited += 2000;
-      if (await isIdle()) return true;
+      const idle = await isIdle();
+      if (idle === null) return false;
+      if (idle) return true;
     }
     return false;
   }

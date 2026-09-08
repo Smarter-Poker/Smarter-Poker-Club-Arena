@@ -1,0 +1,128 @@
+/* The player owns travel. All times below are relative to landing at 333 ms. */
+.thr-rubber_duck__bounce {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: thr-rubber_duck-bounce calc(3.267s * var(--animation-speed, 1)) linear forwards;
+}
+@keyframes thr-rubber_duck-bounce {
+  0% {
+    transform: translateY(-10px);
+  }
+  5% {
+    transform: translateY(-20px) scale(0.96, 1.04);
+  }
+  8.17% {
+    transform: translateY(0) scale(1.12, 0.86);
+  }
+  12% {
+    transform: translateY(-5px) scale(1);
+  }
+  16% {
+    transform: translateY(-16px);
+  }
+  20.42% {
+    transform: translateY(0) scale(1.1, 0.88);
+  }
+  24% {
+    transform: translateY(-3px) scale(1);
+  }
+  26% {
+    transform: translateY(-10px);
+  }
+  29.6% {
+    transform: translateY(0) scale(1.08, 0.9);
+  }
+  34%,
+  78% {
+    transform: translateY(0) scale(1);
+  }
+  81.63% {
+    transform: scale(1.1, 0.87);
+  }
+  87%,
+  100% {
+    transform: scale(1);
+  }
+}
+.thr-rubber_duck__side {
+  animation: thr-rubber_duck-side calc(1.667s * var(--animation-speed, 1)) linear forwards;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+@keyframes thr-rubber_duck-side {
+  0%,
+  90% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  99.9% {
+    opacity: 1;
+    transform: scaleX(0.65);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(0.65);
+  }
+}
+.thr-rubber_duck__front {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-rubber_duck-front calc(0.2s * var(--animation-speed, 1)) ease-out
+    calc(1.667s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-rubber_duck-front {
+  0% {
+    opacity: 1;
+    transform: scaleX(0.65);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+.thr-rubber_duck__puddle {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-rubber_duck-puddle calc(2.9s * var(--animation-speed, 1)) ease-out
+    calc(0.367s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-rubber_duck-puddle {
+  0% {
+    opacity: 1;
+    transform: scale(0.3);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  25%,
+  55%,
+  85% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  40%,
+  70%,
+  100% {
+    opacity: 1;
+    transform: scale(1.04, 0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-rubber_duck__bounce {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-rubber_duck__side {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .thr-rubber_duck__front,
+  .thr-rubber_duck__puddle {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

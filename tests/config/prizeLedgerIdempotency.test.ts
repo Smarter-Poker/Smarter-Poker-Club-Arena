@@ -48,7 +48,7 @@ const sqlCode = (src: string) => src.replace(/^[ \t]*--.*$/gm, '');
 
 const MIGRATION = 'supabase/migrations/20260822190000_credit_player_wallet_once.sql';
 const ATOMIC_CASH_MIGRATION =
-  'supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql';
+  'supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql';
 
 /** Every engine file that pays a player for a tournament outcome. */
 const PAYOUT_SOURCES = [
@@ -97,8 +97,7 @@ describe('prize ledger idempotency — the engine side', () => {
     );
     const eliminations = tsCode(read('server/src/tournament/TournamentManagerEliminations.ts'));
     const terminalRpc = tsCode(read('server/src/tournament/terminalSettlementRpc.ts'));
-    expect(cashRecovery).toMatch(/fn_complete_tournament_terminal/);
-    expect(cashRecovery).toMatch(/p_observed_winner_id:\s*winnerId/);
+    expect(cashRecovery).toMatch(/requestTournamentTerminalReceipt\(/);
     expect(cashRecovery).not.toMatch(/settleTournamentObligation\(/);
     expect(eliminations).toMatch(/requestTournamentTerminalReceipt\(/);
     expect(terminalRpc).toMatch(/fn_complete_tournament_terminal/);

@@ -43,24 +43,42 @@ const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
 /** Strip SQL comments so a guard cannot pass on prose describing the old code. */
 const strip = (s: string) => s.replace(/^\s*--.*$/gm, '');
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
  * The NEWEST definition of the named function, sliced out of the migration
  * that carries it. Sliced, because a migration that redefines two functions
  * would otherwise let one of them satisfy an assertion about the other.
  */
 function newestDefining(fn: string): string {
-  const bodies = fs
+  const create = new RegExp(
+    `^[\\t ]*CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${escapeRegExp(fn)}\\s*\\(`,
+    'gim'
+  );
+  const definitions: string[] = [];
+
+  for (const filename of fs
     .readdirSync(MIGRATIONS)
     .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-    .filter((b) => b.includes(`FUNCTION public.${fn}`));
-  expect(bodies.length).toBeGreaterThan(0);
+    .sort()) {
+    const migration = strip(fs.readFileSync(path.join(MIGRATIONS, filename), 'utf8'));
+    for (const match of migration.matchAll(create)) {
+      const start = match.index;
+      const tail = migration.slice(start);
+      const opener = /\bAS\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/i.exec(tail);
+      if (!opener) throw new Error(`${filename}: ${fn} has no dollar-quoted function body`);
 
-  const body = strip(bodies[bodies.length - 1]);
-  const start = body.indexOf(`FUNCTION public.${fn}`);
-  const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
-  return body.slice(start, next === -1 ? undefined : next);
+      const delimiter = opener[1];
+      const bodyStart = start + opener.index + opener[0].length;
+      const bodyEnd = migration.indexOf(delimiter, bodyStart);
+      if (bodyEnd === -1) throw new Error(`${filename}: ${fn} has no closing ${delimiter}`);
+
+      definitions.push(migration.slice(start, bodyEnd + delimiter.length));
+    }
+  }
+
+  expect(definitions.length).toBeGreaterThan(0);
+  return definitions[definitions.length - 1];
 }
 
 describe('fn_mystery_bounty_settle', () => {
@@ -76,7 +94,7 @@ describe('fn_mystery_bounty_settle', () => {
   it('voids the awards of the chests it sweeps to the champion', () => {
     const def = newestDefining('fn_mystery_bounty_settle');
     expect(def).toMatch(
-      /UPDATE\s+public\.tournament_bounty_awards[\s\S]{0,200}SET\s+status\s*=\s*'void'/,
+      /UPDATE\s+public\.tournament_bounty_awards[\s\S]{0,200}SET\s+status\s*=\s*'void'/
     );
   });
 

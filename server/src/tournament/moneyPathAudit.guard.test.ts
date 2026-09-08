@@ -40,6 +40,7 @@ const SATELLITE_RECOVERY = code(
 const MANAGER = code(read('src/tournament/TournamentManager.ts'));
 const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
 const COMPLETION_RECEIPT = code(read('src/tournament/completionSettlementReceipt.ts'));
+const TERMINAL_RPC = code(read('src/tournament/terminalSettlementRpc.ts'));
 const SATELLITE_RPC = code(read('src/tournament/satelliteSettlementRpc.ts'));
 const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
 
@@ -127,7 +128,7 @@ describe('no money path writes a ledger row it did not earn', () => {
       fs.readFileSync(
         path.join(
           MIGRATIONS,
-          '20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+          '20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
         ),
         'utf8'
       )
@@ -173,7 +174,7 @@ describe('no money path writes a ledger row it did not earn', () => {
       fs.readFileSync(
         path.join(
           MIGRATIONS,
-          '20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+          '20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
         ),
         'utf8'
       )
@@ -195,9 +196,11 @@ describe('the recovery watchdog cannot pay money it has no right to', () => {
 
   it('calls only the terminal domain authority and checks transport failure', () => {
     expect(RECOVERY).toMatch(/isFinalTableDeal[\s\S]*settlementMode/);
-    expect(RECOVERY).toMatch(/fn_complete_tournament_terminal/);
+    expect(RECOVERY).toMatch(/requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/);
     expect(RECOVERY).not.toMatch(/rpc\(\s*'fn_settle_tournament_(?:places|final_table_deal|rake)'/);
-    expect(RECOVERY).toMatch(/if \(settlementCall\.error\)/);
+    expect(TERMINAL_RPC).toMatch(/rpc\('fn_complete_tournament_terminal'/);
+    expect(TERMINAL_RPC).toMatch(/TerminalSettlementOutcomeUnknownError/);
+    expect(TERMINAL_RPC).toMatch(/TerminalSettlementRefusedError/);
   });
 
   it('routes a decided satellite only through its whole-event authority', () => {
@@ -212,12 +215,12 @@ describe('the recovery watchdog cannot pay money it has no right to', () => {
   });
 
   it('accepts only a complete, internally consistent settlement receipt', () => {
-    expect(RECOVERY).toMatch(/verifyTournamentCompletionReceipt\(/);
+    expect(TERMINAL_RPC).toMatch(/verifyTournamentCompletionReceipt\(/);
     expect(COMPLETION_RECEIPT).toMatch(/receipt\.status !== 'COMPLETED'/);
     expect(COMPLETION_RECEIPT).toMatch(/users\.has\(userId\)/);
     expect(COMPLETION_RECEIPT).toMatch(/places\.has\(place\)/);
     expect(COMPLETION_RECEIPT).toMatch(/payout\.place === 1 && payout\.userId === winnerId/);
-    expect(RECOVERY).toMatch(/terminal settlement replay returned an invalid stored receipt/);
+    expect(TERMINAL_RPC).toMatch(/terminal settlement returned an invalid stored receipt/);
   });
 });
 

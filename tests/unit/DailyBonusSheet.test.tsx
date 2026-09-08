@@ -16,6 +16,11 @@ vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toas
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: () => true }));
 vi.mock('../../src/utils/playPremiumSfx', () => ({ playPremiumSfx: () => undefined }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: () => undefined }));
+vi.mock('../../src/components/table/ThrowableImage', () => ({
+  ThrowableImage: ({ throwableId }: { throwableId: string }) => (
+    <img alt="" data-testid="throwable-render" data-id={throwableId} />
+  ),
+}));
 vi.mock('../../src/services/DailyBonusService', async () => {
   const actual = await vi.importActual<typeof import('../../src/services/DailyBonusService')>(
     '../../src/services/DailyBonusService'
@@ -121,6 +126,53 @@ describe('DailyBonusSheet', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(7);
   });
 
+  it('is cut from the console art: painted renders for icons, the console faces for buttons', async () => {
+    mocks.getStatus.mockResolvedValue({
+      ...status,
+      tiles: [
+        tile({ slot: 1 }),
+        tile({
+          slot: 2,
+          kind: 'throwables',
+          label: 'Throwables',
+          quantity: 2,
+          base_diamonds: 0,
+          diamonds: 0,
+        }),
+        tile({
+          slot: 3,
+          kind: 'rabbit_hunts',
+          label: 'Rabbit Hunt',
+          quantity: 1,
+          base_diamonds: 0,
+          diamonds: 0,
+        }),
+        tile({ slot: 4, kind: 'mystery', label: 'Mystery Tile', base_diamonds: 0, diamonds: 0 }),
+        tile({ slot: 5, label: 'VIP Bonus', vip_only: true, base_diamonds: 10, diamonds: 10 }),
+      ],
+    });
+    const { container } = render(<DailyBonusSheet mode="inline" />);
+    await screen.findByText('+5');
+    const srcs = Array.from(
+      container.querySelectorAll<HTMLImageElement>('.dbs-tile__icon img')
+    ).map((img) => img.getAttribute('src') ?? '');
+    expect(srcs.some((s) => s.endsWith('images/diamond-icon.png'))).toBe(true);
+    expect(srcs.some((s) => s.endsWith('game-card-icons/rabbit-hunt.png'))).toBe(true);
+    expect(srcs.some((s) => s.endsWith('game-card-icons/mystery-bounty.png'))).toBe(true);
+    expect(srcs.some((s) => s.endsWith('images/global-header/vip.png'))).toBe(true);
+    expect(screen.getByTestId('throwable-render').getAttribute('data-id')).toBe('tomato');
+    // No line icons anywhere on the sheet: every tile icon is a render.
+    expect(container.querySelectorAll('.dbs-tile__icon svg')).toHaveLength(0);
+    // Every claim control is the console's own button face.
+    for (const b of screen.getAllByRole('button', { name: 'Claim' })) {
+      expect(b.className).toContain('dbs-btn');
+    }
+    // The readouts, the week and the tiles all sit on the card's plaque.
+    expect(container.querySelectorAll('.dbs__readouts .dbs-plaque')).toHaveLength(3);
+    expect(container.querySelectorAll('.dbs__week .dbs-plaque')).toHaveLength(7);
+    expect(container.querySelectorAll('.dbs-tile .dbs-plaque')).toHaveLength(5);
+  });
+
   it('a VIP tile is locked for a non-VIP and has no claim control', async () => {
     render(<DailyBonusSheet mode="inline" />);
     await screen.findByText('+5');
@@ -155,6 +207,17 @@ describe('DailyBonusSheet', () => {
       expect(mocks.toast.error).toHaveBeenCalledWith('Daily Diamond Cap Reached')
     );
     expect(screen.queryByText('Claimed')).toBeNull();
+  });
+
+  it('the modal renders on <body>, outside any host container that could trap a fixed overlay', async () => {
+    render(
+      <div style={{ perspective: '1200px', overflow: 'hidden' }}>
+        <DailyBonusSheet mode="modal" open onClose={() => undefined} />
+      </div>
+    );
+    await screen.findByText('+5');
+    const overlay = document.querySelector('.dbs-overlay');
+    expect(overlay?.parentElement).toBe(document.body);
   });
 
   it('says so when the account is not eligible instead of showing an empty sheet', async () => {

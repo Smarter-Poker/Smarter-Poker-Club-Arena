@@ -206,9 +206,13 @@ describe('the terminal tournament boundary owns the next deal', () => {
     const source = readFileSync(join(__dirname, 'ServerTableEngineDealing.ts'), 'utf8');
     const announce = source.indexOf("'announce_seat_moves'");
     const announceGate = source.indexOf('if (this.terminalCloseoutPaused)', announce);
+    const rest = source.indexOf('await this.awaitNextHandRest();', announceGate);
+    const restGate = source.indexOf('if (this.terminalCloseoutPaused)', rest);
     const deal = source.indexOf('await this.dealHand(activePlayers)', announce);
     expect(announceGate).toBeGreaterThan(announce);
-    expect(deal).toBeGreaterThan(announceGate);
+    expect(rest).toBeGreaterThan(announceGate);
+    expect(restGate).toBeGreaterThan(rest);
+    expect(deal).toBeGreaterThan(restGate);
 
     const method = source.slice(source.indexOf('protected async dealHand('));
     const allocate = method.indexOf('await this.allocateGlobalHandNumber()');

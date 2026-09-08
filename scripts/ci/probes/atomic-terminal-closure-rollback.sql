@@ -22,6 +22,13 @@ $fixture_guard$;
 -- the injected failure run with every production trigger enabled.
 SET LOCAL session_replication_role = replica;
 
+-- The merged platform-wide strict auto-ledger records its database-owned
+-- actor on every bank delta. Production has this system principal; the
+-- schema-only rehearsal clone does not, so add only its FK identity here.
+INSERT INTO auth.users(id)
+VALUES ('2d1cd6c3-5700-4af9-a271-d4863fdab20d')
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO public.tournaments
 SELECT (jsonb_populate_record(NULL::public.tournaments,
   to_jsonb(t) || jsonb_build_object(

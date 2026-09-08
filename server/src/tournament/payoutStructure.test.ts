@@ -255,7 +255,7 @@ describe('every payout path actually uses the rule', () => {
     expect(RECOVERY).not.toMatch(/resolvePayoutStructure\(/);
     expect(RECOVERY).not.toMatch(/computePlacePrize\(/);
     expect(RECOVERY).not.toMatch(/payout_structure|spin_multiplier/);
-    expect(RECOVERY).toMatch(/fn_complete_tournament_terminal/);
+    expect(RECOVERY).toMatch(/requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/);
     expect(RECOVERY).toMatch(/isFinalTableDeal \? 'final_table_deal' : 'places'/);
   });
 
@@ -263,7 +263,7 @@ describe('every payout path actually uses the rule', () => {
     expect(ELIM).not.toMatch(
       /winnerPrize\s*=\s*Math\.round\(\s*\(?\s*tournament\??\.?\??\.prize_pool/
     );
-    expect(ELIM).toMatch(/fn_complete_tournament_terminal/);
+    expect(ELIM).toMatch(/requestTournamentTerminalReceipt\(/);
     expect(ELIM).toMatch(/winnerPrize\s*=\s*receipt\.winnerAmount/);
   });
 

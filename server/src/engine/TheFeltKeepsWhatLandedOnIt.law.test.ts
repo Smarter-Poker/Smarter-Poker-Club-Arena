@@ -198,7 +198,7 @@ describe('LAW 2: the hand write is a difference, declared, and written once', ()
     expect(calls.length).toBe(1);
     const bbj = settleCode.slice(
       settleCode.indexOf("await runStep('bbj_payout'"),
-      settleCode.indexOf("await runStep('tournament_chip_sync'")
+      settleCode.indexOf("await runStep('pending_addons'")
     );
     expect(bbj).not.toMatch(/syncStacks\(/);
   });
@@ -226,8 +226,8 @@ describe('LAW 3: the write is atomic, in delta mode, with no absolute fallback',
   it('a refusal is final and a transport failure is retried, bounded, then named', () => {
     expect(fn).toContain("'DB.settle_hand_stacks_conservation_refused'");
     expect(fn).toContain("'DB.settle_hand_stacks_declined'");
-    expect(fn).toContain("'DB.settle_hand_stacks_unreachable'");
-    expect(fn).toMatch(/attempt <= STACK_WRITE_ATTEMPTS/);
+    expect(fn).toContain("'DB.settle_hand_stacks_unconfirmed'");
+    expect(fn).toMatch(/attempt <= STACK_WRITE_RETRY_DELAYS_MS\.length/);
     expect(fn).toMatch(/JSON\.stringify\(payload\)/);
   });
 

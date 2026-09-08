@@ -34,10 +34,10 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 const ELIM = read('src/tournament/TournamentManagerEliminations.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const CASH_AUTHORITY = read(
-  '../supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+  '../supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
 );
 const TERMINAL_AUTHORITY = read(
-  '../supabase/migrations/20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+  '../supabase/migrations/20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 );
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
@@ -255,13 +255,15 @@ describe('a failed query must never read as "nobody is left" - the money paths',
     // Reached, not merely present — `if (false) { throw ... }` passed a
     // string-only assertion during the sabotage run.
     expect(code(RECOVERY)).toMatch(
-      /if\s*\(\s*playersErr\s*\|\|\s*!players\s*\)\s*\{[\s\S]{0,400}?durable field unreadable/
+      /if\s*\(\s*playersErr\s*\|\|\s*!Array\.isArray\(players\)\s*\)\s*\{[\s\S]{0,400}?durable field unreadable/
     );
   });
 
   it('and an unreadable COMPLETING scan is not an empty one', () => {
+    expect(code(RECOVERY)).toMatch(/stuckErr \|\| !Array\.isArray\(stuck\)/);
     expect(code(RECOVERY)).toMatch(/recoverStuckCompleting_scan_failed/);
     expect(code(RECOVERY)).not.toMatch(/const\s*\{\s*data:\s*stuck\s*\}\s*=/);
+    expect(code(RECOVERY)).not.toMatch(/stuck \?\? \[\]/);
   });
 
   it('an unreadable bust list skips the sweep instead of finishing the tournament', () => {
@@ -403,8 +405,7 @@ describe('a write that decides a payout is checked', () => {
       source.indexOf('protected async checkFinalTableDeal'),
       source.indexOf('private async settleFinalTableDeal')
     );
-    expect(deal).toMatch(/fn_complete_tournament_terminal/);
-    expect(deal).toMatch(/verifyTournamentCompletionReceipt/);
+    expect(deal).toMatch(/requestTournamentTerminalReceipt\(/);
     expect(deal).not.toMatch(/status:\s*'COMPLETED'/);
   });
 
@@ -412,77 +413,28 @@ describe('a write that decides a payout is checked', () => {
     const recovery = code(RECOVERY).slice(
       code(RECOVERY).indexOf('export async function recoverStuckCompletingTournaments')
     );
-    expect(recovery).toMatch(/fn_complete_tournament_terminal/);
-    expect(recovery).toMatch(/verifyTournamentCompletionReceipt/);
+    expect(recovery).toMatch(/requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/);
     expect(recovery).not.toMatch(/status:\s*'COMPLETED'/);
   });
 });
 
-describe('one player, one stack', () => {
-  it('the chip sync keys on the player, not on the seat', () => {
-    // Defect: one entry pushed per SEAT. A table move that writes the
-    // destination seat without stamping left_at on the source leaves a player
-    // holding two open seats. Measured on production 2026-08-25, one running
-    // MTT: 502 open seats across 376 players, 108 holding more than one,
-    // double-counting 1,461,180 chips. Postgres resolves
-    // `UPDATE ... FROM jsonb_to_recordset` against duplicate keys by picking an
-    // ARBITRARY row, so fn_sync_tournament_chips could overwrite a live stack
-    // with a dead one — and a dead seat's stack is usually 0, which is exactly
-    // what the bust sweep eliminates players for.
-    expect(code(ELIM)).not.toMatch(/chipUpdates\.push\(\{\s*user_id:\s*seat\.user_id/);
-    expect(code(ELIM)).toMatch(/bestSeat/);
-    expect(code(ELIM)).toMatch(/joined_at/);
-  });
+describe('tournament_players is the atomic stack mirror', () => {
+  const sweep = code(ELIM).slice(
+    code(ELIM).indexOf('protected startEliminationChecker'),
+    code(ELIM).indexOf('private async tryTournamentRebuys')
+  );
 
-  it('two live seats with no usable joined_at is UNKNOWN, not a guess', () => {
-    expect(code(ELIM)).toMatch(/ambiguous_live_seat/);
-  });
-
-  it('a failed seat read stops the sweep rather than busting on a partial picture', () => {
-    // Defect: `if (seats)` skipped a table whose read failed exactly as if it
-    // had no seats, and the sweep went on to decide who was out.
-    // Reached, not merely present.
-    //
-    // 2026-08-28: the condition was widened from `if (seatsErr)` to
-    // `if (seatsErr || !chunk)` when the per-table loop became one paged read.
-    // A null page is the same UNKNOWN as an errored one and must bail the same
-    // way — a page that came back as nothing would otherwise end the paging
-    // loop early and hand the sweep a SHORT chip picture, which is the exact
-    // failure this test exists to prevent, wearing a different hat.
-    expect(code(ELIM)).toMatch(
-      /if\s*\(\s*seatsErr\s*\|\|\s*!chunk\s*\)\s*\{[\s\S]{0,600}?seat_read_failed[\s\S]*?return;/
+  it('the elimination sweep reads the per-hand tournament mirror directly', () => {
+    expect(sweep).toMatch(
+      /from\('tournament_players'\)[\s\S]{0,180}?select\('user_id, chips'\)[\s\S]{0,180}?eq\('status', 'playing'\)/
     );
   });
 
-  /**
-   * THE SWEEP MUST NOT GET SLOWER AS THE FIELD GETS BIGGER (2026-08-28).
-   *
-   * Reported: a horse at 0 chips, unmarked, for 22 minutes in a running
-   * 326-player freeroll with zero eliminations recorded. The cause was this
-   * read: one AWAITED round-trip PER TABLE, and that event had 37 tables. At
-   * even 150ms apiece the "5-second" sweep needed 5.5s just to read seats, so
-   * `isProcessingEliminations` dropped tick after tick. The bigger the field
-   * the later the sweep — exactly backwards, since a big field is where busts
-   * come fastest.
-   */
-  it('reads seats once for the tournament, not once per table', () => {
-    expect(code(ELIM)).not.toMatch(/for\s*\(const\s*\[tableId\]\s*of\s*this\.tableEngines\)/);
-    expect(code(ELIM)).toMatch(/\.eq\('tables\.tournament_id', this\.tournamentId\)/);
-  });
-
-  it('pages that read, so a big field cannot silently truncate it', () => {
-    // A ceiling here understates the chip picture, and an understated stack is
-    // what the bust sweep below eliminates people for.
-    expect(code(ELIM)).toMatch(/SEAT_PAGE/);
-    expect(code(ELIM)).toMatch(/seat_paging_runaway/);
-  });
-
-  it('covers tables this process holds no engine for', () => {
-    // The old loop read an IN-MEMORY map. A table adopted late, created by the
-    // balancer between hydrations, or orphaned by a restart was invisible: its
-    // players' chips never synced, so they could never appear in the bust list,
-    // so they could never be eliminated, so their seats sat there permanently.
-    expect(code(ELIM)).toMatch(/tables!inner\(tournament_id\)/);
+  it('has no seat-to-standing reconciler, seat ranking, or stack repair writer', () => {
+    expect(sweep).not.toMatch(/from\('table_seats'\)/);
+    expect(sweep).not.toMatch(/syncTournamentChips|fn_sync_tournament_chips/);
+    expect(sweep).not.toMatch(/bestSeat|joined_at|ambiguous_live_seat|seat_paging_runaway/);
+    expect(sweep).not.toMatch(/from\('tournament_players'\)[\s\S]{0,180}?update\(\{\s*chips/);
   });
 });
 

@@ -65,15 +65,15 @@ BEGIN
        'service_role',
        'public.fn_resolve_tournament_terminal_outcome(uuid,uuid,text)',
        'EXECUTE')
-     OR has_function_privilege(
+     OR NOT has_function_privilege(
        'service_role','public.fn_settle_tournament_places(uuid,uuid)','EXECUTE')
-     OR has_function_privilege(
+     OR NOT has_function_privilege(
        'service_role','public.fn_settle_tournament_final_table_deal(uuid)','EXECUTE')
-     OR has_function_privilege(
+     OR NOT has_function_privilege(
        'service_role','public.fn_finalize_bounty_pool(uuid,uuid)','EXECUTE')
-     OR has_function_privilege(
+     OR NOT has_function_privilege(
        'service_role','public.fn_mystery_bounty_settle(uuid,uuid)','EXECUTE')
-     OR has_function_privilege(
+     OR NOT has_function_privilege(
        'service_role','public.fn_settle_tournament_rake(uuid,text)','EXECUTE')
      OR has_table_privilege(
        'service_role','public.tournament_terminal_settlements','SELECT') THEN
@@ -83,7 +83,7 @@ BEGIN
   SELECT count(*) INTO v_count
     FROM public.tournament_terminal_settlement_cutover c
    WHERE c.authority = 'fn_complete_tournament_terminal:v1'
-     AND c.migration_version = '20260908045932';
+     AND c.migration_version = '20260908065324';
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'FAIL terminal cutover watermark is not exact';
   END IF;

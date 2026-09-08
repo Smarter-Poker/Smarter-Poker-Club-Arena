@@ -1,0 +1,98 @@
+.thr-heart__beat {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-heart-beat calc(1.05s * var(--animation-speed, 1)) ease-in-out
+    calc(0.35s * var(--animation-speed, 1)) 3 forwards;
+}
+@keyframes thr-heart-beat {
+  0%,
+  10%,
+  30%,
+  100% {
+    transform: scale(1);
+  }
+  15%,
+  24% {
+    transform: scale(1.17);
+  }
+  20% {
+    transform: scale(1.04);
+  }
+}
+.thr-heart__child0 {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-heart-child0 calc(1.6s * var(--animation-speed, 1)) ease-out
+    calc(1.2s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-heart-child0 {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.2);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-62px, -100px) scale(1) rotate(-20.666666666666668deg);
+  }
+}
+.thr-heart__child1 {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-heart-child1 calc(1.6s * var(--animation-speed, 1)) ease-out
+    calc(1.6s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-heart-child1 {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.2);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(57px, -90px) scale(1) rotate(19deg);
+  }
+}
+.thr-heart__child2 {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-heart-child2 calc(1.6s * var(--animation-speed, 1)) ease-out
+    calc(2s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-heart-child2 {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.2);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-29px, -126px) scale(1) rotate(-9.666666666666666deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-heart__beat,
+  .thr-heart__child0,
+  .thr-heart__child1,
+  .thr-heart__child2 {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-heart__beat {
+    opacity: 1 !important;
+  }
+  .thr-heart__child0,
+  .thr-heart__child1,
+  .thr-heart__child2 {
+    opacity: 0 !important;
+  }
+}

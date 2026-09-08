@@ -17,6 +17,7 @@ import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 /* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
    INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
    /tournaments/:id destination must render in the tab rather than change the
@@ -1509,6 +1510,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
         if (tableId) {
           if (spinJoinCancelRef.current) return;
+          warmTable(tableId);
           setSpinJoin(null);
           navigate(`/table/${tableId}`);
           return;
@@ -1582,6 +1584,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           const sibTableId = await tableService.resolveTournamentLiveTable(sibId);
           if (spinJoinCancelRef.current) return;
           if (sibTableId) {
+            warmTable(sibTableId);
             setSpinJoin(null);
             navigate(`/table/${sibTableId}`);
             return;
@@ -3509,9 +3512,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          cash game the panel's id IS the table id, so the roster read and the
          engine SUBSCRIBE go out now, while the player reads the buy-in sheet -
          so the felt mounts with players and avatars already on it. Spin / SNG
-         resolve their live table later (spinQuickJoin), so they are warmed at
-         the join tap instead, below. */
+         ids name tournaments: resolve their actual live table while the panel
+         is open. The entry tap still re-elects it because games can recycle. */
       if (entry.kind === 'cash') warmTable(entry.id);
+      else {
+        void tableService
+          .resolveTournamentLiveTable(entry.id)
+          .then((tableId) => warmTable(tableId))
+          .catch(() => undefined); // best-effort preparation; entry reports failures
+      }
     },
     [openTournamentLobby]
   );
@@ -4722,7 +4731,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       <DiamondWalletModal
         isOpen={showDiamondWallet}
         onClose={() => setShowDiamondWallet(false)}
-        onBuyClick={() => navigate('/vip')}
+        onBuyClick={() => navigate(withClubContext('/vip', clubId))}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

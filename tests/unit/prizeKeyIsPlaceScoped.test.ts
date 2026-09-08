@@ -29,22 +29,18 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceCall, sliceMethod } from '../helpers/sourceWindow';
 
 const PAYING_PATHS = [
   'server/src/tournament/TournamentManagerEliminations.ts',
   'server/src/tournament/tournamentRecovery.ts',
   'server/src/tournament/TournamentManager.ts',
 ];
+const TERMINAL_HELPER = 'server/src/tournament/terminalSettlementRpc.ts';
+const SATELLITE_HELPER = 'server/src/tournament/satelliteSettlementRpc.ts';
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-
-/**
- * Every settleTournamentObligation({...}) argument object in a file, brace to
- * brace. Each is one obligation being settled.
- */
-const settleCalls = (src: string): string[] =>
-  code(src).match(/settleTournamentObligation\(\s*supabase\s*,\s*\{[\s\S]*?\n\s*\}/g) ?? [];
 
 /** Real template-literal keys only (a `${` means the engine builds it). */
 const tourneyKeys = (src: string): string[] =>
@@ -55,22 +51,30 @@ describe('a place is paid once: the place obligation, not a hand-built key', () 
     it(`${path} settles through an approved database authority`, () => {
       const src = code(read(path));
       if (path.endsWith('/tournamentRecovery.ts')) {
-        const cashRecovery = src.slice(
-          src.indexOf('export async function recoverStuckCompletingTournaments')
+        const recovery = sliceMethod(src, 'recoverStuckCompletingTournaments(');
+        const cashCall = sliceCall(recovery, 'requestTournamentTerminalReceipt(');
+        const satelliteCall = sliceCall(recovery, 'requestSatelliteSettlementReceipt(');
+        expect(cashCall).toMatch(
+          /requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/
         );
-        expect(cashRecovery).toMatch(/fn_complete_tournament_terminal/);
-        expect(cashRecovery).toMatch(/p_settlement_mode:\s*settlementMode/);
-        expect(cashRecovery).not.toMatch(/settleTournamentObligation\(/);
+        expect(satelliteCall).toMatch(/requestSatelliteSettlementReceipt\(t\.id, winnerId\)/);
+        expect(recovery).not.toMatch(
+          /supabase\.rpc\('fn_(?:complete_tournament_terminal|settle_satellite_tournament)'/
+        );
       } else if (path.endsWith('/TournamentManagerEliminations.ts')) {
-        const finish = src.slice(src.indexOf('protected async finishTournament'));
-        expect(finish).toMatch(/fn_complete_tournament_terminal/);
+        const finish = sliceMethod(src, 'protected async finishTournament(');
+        expect(sliceCall(finish, 'requestTournamentTerminalReceipt(')).toMatch(
+          /requestTournamentTerminalReceipt\(this\.tournamentId, 'places', winnerId\)/
+        );
         expect(finish).not.toMatch(/settleTournamentObligation\(/);
+        expect(finish).not.toMatch(/supabase\.rpc\('fn_complete_tournament_terminal'/);
       } else if (path.endsWith('/TournamentManager.ts')) {
-        expect(src).toMatch(/rpc\('fn_settle_satellite_tournament'/);
-        expect(src).toMatch(/verifySatelliteSettlementReceipt\s*\(/);
+        const satellite = sliceMethod(src, 'processSatelliteAwards(');
+        expect(sliceCall(satellite, 'requestSatelliteSettlementReceipt(')).toMatch(
+          /requestSatelliteSettlementReceipt\(this\.tournamentId, winnerId\)/
+        );
+        expect(src).not.toMatch(/supabase\.rpc\('fn_settle_satellite_tournament'/);
         expect(src).not.toMatch(/rpc\('fn_award_satellite_seat'/);
-      } else {
-        expect(settleCalls(src).length).toBeGreaterThan(0);
       }
     });
 
@@ -84,34 +88,45 @@ describe('a place is paid once: the place obligation, not a hand-built key', () 
       expect(tourneyKeys(payingSource)).toEqual([]);
     });
 
-    it(`${path} gives every 'place' settle a place`, () => {
-      const src = read(path);
-      for (const call of settleCalls(src)) {
-        // Either the literal kind is 'place' / 'late_reg_adjustment', or the
-        // kind is a variable that the call sites resolve — in which case the
-        // call must still forward a `place:` field.
-        const isPlaceKind = /kind:\s*'(place|late_reg_adjustment)'/.test(call);
-        const isUserKind =
-          /kind:\s*'(bubble_protection|final_table_deal|refund|satellite_remainder|mystery_bounty|bounty|bounty_residual|seat)'/.test(
-            call
-          );
-        if (isUserKind) continue;
-        expect(
-          /\bplace:/.test(call),
-          `${path}: a ${isPlaceKind ? "'place'" : 'variable-kind'} settle without a place:\n${call}`
-        ).toBe(true);
-      }
+    it(`${path} has no application-side obligation payer`, () => {
+      // A direct payer here would recreate the second authority this suite
+      // retired, even if it happened to supply a place today.
+      expect(code(read(path))).not.toMatch(/settleTournamentObligation\(/);
     });
   }
 
   it('the finish path delegates every place to the one authoritative database door', () => {
-    const eliminations = read('server/src/tournament/TournamentManagerEliminations.ts');
-    const finish = code(eliminations).slice(
-      code(eliminations).indexOf('protected async finishTournament'),
-      code(eliminations).indexOf('protected abstract checkTableBalance')
+    const finish = sliceMethod(
+      code(read('server/src/tournament/TournamentManagerEliminations.ts')),
+      'protected async finishTournament('
     );
-    expect(finish).toMatch(/fn_complete_tournament_terminal/);
-    expect(finish).toMatch(/p_observed_winner_id:\s*winnerId/);
+    expect(sliceCall(finish, 'requestTournamentTerminalReceipt(')).toMatch(
+      /requestTournamentTerminalReceipt\(this\.tournamentId, 'places', winnerId\)/
+    );
     expect(finish).not.toMatch(/kind:\s*'place'/);
+
+    const terminalAuthority = sliceMethod(
+      code(read(TERMINAL_HELPER)),
+      'requestTournamentTerminalReceipt('
+    );
+    expect(terminalAuthority).toMatch(/p_tournament_id:\s*tournamentId/);
+    expect(terminalAuthority).toMatch(/p_observed_winner_id:\s*observedWinnerId/);
+    expect(terminalAuthority).toMatch(/p_settlement_mode:\s*settlementMode/);
+    expect(sliceCall(terminalAuthority, "supabase.rpc('fn_complete_tournament_terminal'")).toMatch(
+      /fn_complete_tournament_terminal'[\s\S]*request/
+    );
+  });
+
+  it('the satellite path delegates to its one receipt-validating database door', () => {
+    const satelliteAuthority = sliceMethod(
+      code(read(SATELLITE_HELPER)),
+      'requestSatelliteSettlementReceipt('
+    );
+    expect(satelliteAuthority).toMatch(/p_tournament_id:\s*tournamentId/);
+    expect(satelliteAuthority).toMatch(/p_observed_winner_id:\s*observedWinnerId/);
+    expect(sliceCall(satelliteAuthority, "supabase.rpc('fn_settle_satellite_tournament'")).toMatch(
+      /fn_settle_satellite_tournament'[\s\S]*request/
+    );
+    expect(satelliteAuthority).toMatch(/verifySatelliteSettlementReceipt\(/);
   });
 });

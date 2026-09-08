@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 const MIGRATION = readFileSync(
   resolve(
     __dirname,
-    '../../../supabase/migrations/20260908034440_tournament_cancellation_commits_one_stored_receipt.sql'
+    '../../../supabase/migrations/20260908065250_tournament_cancellation_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );

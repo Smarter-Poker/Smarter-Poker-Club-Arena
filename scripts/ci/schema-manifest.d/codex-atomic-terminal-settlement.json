@@ -6,6 +6,7 @@
     "fn_ca_mystery_bounty_completion_evidence",
     "fn_ca_settle_hand_stacks_absolute",
     "fn_ca_tournament_terminal_receipt",
+    "fn_award_satellite_seat",
     "fn_collect_bounty",
     "fn_complete_tournament_terminal",
     "fn_finalize_bounty_pool",

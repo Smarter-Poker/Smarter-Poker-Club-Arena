@@ -14,6 +14,8 @@
  * Server adaptation: No masterBus — uses injected PreciseActionTimer + callbacks.
  */
 
+import { reconnectProtectionSeconds, type ReconnectMembership } from './reconnectProtection.js';
+import { thawReconnectClock } from '../maintenance/reconnectFreeze.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
@@ -37,6 +39,10 @@ export interface DisconnectConfig {
 export interface PlayerConnectionState {
   playerId: string;
   tableId: string;
+  reconnectMembership?: ReconnectMembership;
+  reconnectDeadlineMs?: number;
+  reconnectGrantedAtMs?: number;
+  reconnectThawedAtMs?: number;
   isConnected: boolean;
   lastHeartbeat: number;
   consecutiveTimeouts: number;
@@ -138,6 +144,9 @@ export interface DisconnectFsmEntry {
   state: DisconnectFsmState;
   sinceMs: number;
   graceDeadlineMs: number | null;
+  reconnectDeadlineMs?: number;
+  reconnectGrantedAtMs?: number;
+  reconnectThawedAtMs?: number;
   /* ═══ 2026-09-04 (disconnect audit items 2, 3, 4): THE ENTRY CARRIES WHAT
      THE RESTORE NEEDS. Until today it was three fields, `sinceMs` was
      `lastHeartbeat` for a sat-out player (so a restore reset their 5-minute
@@ -262,7 +271,9 @@ export class DisconnectEngine {
    * Configure disconnect handling for a table
    */
   configure(tableId: string, config: Partial<DisconnectConfig>): void {
-    this.tableConfigs.set(tableId, { ...this.DEFAULT_CONFIG, ...config });
+    // Owner directive: game and table settings cannot alter disconnect protection.
+    void config;
+    this.tableConfigs.set(tableId, { ...this.DEFAULT_CONFIG });
   }
 
   /**
@@ -288,10 +299,15 @@ export class DisconnectEngine {
    * orbit). Now: create only when absent; an existing player keeps all
    * accumulated disconnect/sit-out/strike state across hands.
    */
-  registerPlayer(tableId: string, playerId: string): void {
+  registerPlayer(tableId: string, playerId: string, membership?: ReconnectMembership): void {
     const key = `${tableId}:${playerId}`;
-    if (this.playerStates.has(key)) return;
+    const existing = this.playerStates.get(key);
+    if (existing) {
+      if (membership) existing.reconnectMembership = { ...membership };
+      return;
+    }
     this.playerStates.set(key, {
+      reconnectMembership: membership ? { ...membership } : undefined,
       playerId,
       tableId,
       isConnected: true,
@@ -412,6 +428,12 @@ export class DisconnectEngine {
 
     state.isConnected = false;
     state.disconnectedAt = Date.now();
+    // A heartbeat alone does not replenish the allowance. A voluntary action does.
+    if (state.reconnectDeadlineMs === undefined) {
+      state.reconnectGrantedAtMs = state.disconnectedAt;
+      state.reconnectDeadlineMs =
+        state.disconnectedAt + reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
+    }
 
     this.emitEvent({
       type: 'PLAYER_DISCONNECTED',
@@ -577,6 +599,8 @@ export class DisconnectEngine {
     const state = this.playerStates.get(`${tableId}:${playerId}`);
     if (!state) return;
     state.consecutiveTimeouts = 0;
+    state.reconnectDeadlineMs = undefined;
+    state.reconnectGrantedAtMs = undefined;
     // A deliberate action is the strongest possible proof of presence — it
     // outranks a missing heartbeat. Clear the away-blind budget with it.
     state.awayBlindSbCharged = false;
@@ -1026,6 +1050,7 @@ export class DisconnectEngine {
     const key = `${tableId}:${playerId}`;
     const s = this.playerStates.get(key);
     if (!s) return null;
+    thawReconnectClock(s);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
 
     // Everything a restore needs to continue rather than restart (item 2/4).
@@ -1037,6 +1062,9 @@ export class DisconnectEngine {
       awayBlindSbCharged: s.awayBlindSbCharged === true,
       awayBlindBbCharged: s.awayBlindBbCharged === true,
       pageLeftAtMs: s.pageLeftAt ?? null,
+      reconnectDeadlineMs: s.reconnectDeadlineMs,
+      reconnectGrantedAtMs: s.reconnectGrantedAtMs,
+      reconnectThawedAtMs: s.reconnectThawedAtMs,
     };
     if (s.isSittingOut) {
       // sinceMs is the sit-out's own start (item 4). It used to be
@@ -1053,7 +1081,8 @@ export class DisconnectEngine {
       return { state: 'CONNECTED', sinceMs: s.lastHeartbeat, graceDeadlineMs: null, ...carried };
     }
     const dAt = s.disconnectedAt ?? s.lastHeartbeat;
-    const graceDeadlineMs = dAt + config.disconnectTimeoutSeconds * 1000;
+    const graceDeadlineMs =
+      s.reconnectDeadlineMs ?? dAt + reconnectProtectionSeconds(s.reconnectMembership ?? {}) * 1000;
     if (Date.now() < graceDeadlineMs) {
       return { state: 'MISSING', sinceMs: dAt, graceDeadlineMs, ...carried };
     }
@@ -1111,6 +1140,13 @@ export class DisconnectEngine {
         playerId,
         tableId,
         isConnected: connected || sittingOut,
+        reconnectDeadlineMs: Number.isFinite(entry.reconnectDeadlineMs)
+          ? entry.reconnectDeadlineMs
+          : !connected && !sittingOut && Number.isFinite(entry.graceDeadlineMs)
+            ? entry.graceDeadlineMs!
+            : undefined,
+        reconnectGrantedAtMs: entry.reconnectGrantedAtMs,
+        reconnectThawedAtMs: entry.reconnectThawedAtMs,
         lastHeartbeat: entry.sinceMs || Date.now(),
         // 2026-09-04 (item 2): strikes, the blind budget, the sit-out reason
         // and the /away stamp survive a restart when the snapshot carries
@@ -1172,15 +1208,22 @@ export class DisconnectEngine {
     const state = this.playerStates.get(key);
     if (!state) return;
 
+    thawReconnectClock(state);
+
     this.emitEvent({
       type: 'DISCONNECT_TIMER_STARTED',
       tableId,
       playerId,
-      timeoutSeconds: config.disconnectTimeoutSeconds,
+      timeoutSeconds: reconnectProtectionSeconds(state.reconnectMembership ?? {}),
     });
 
     // Use PreciseActionTimer for the countdown (deadline-based, drift-immune)
-    const durationMs = config.disconnectTimeoutSeconds * 1000;
+    const deadline =
+      state.reconnectDeadlineMs ??
+      (state.disconnectedAt ?? Date.now()) +
+        reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
+    state.reconnectDeadlineMs = deadline;
+    const durationMs = Math.max(0, deadline - Date.now());
     this.preciseTimer.startTimer(tableId, `disconnect:${playerId}`, durationMs, () => {
       // Check if player reconnected during the countdown
       if (state.isConnected) return;

@@ -404,8 +404,13 @@ jobs:
           ref: main
           token: ${{ steps.app-token.outputs.token || secrets.GH_PAT }}
           path: world-hub
+          # THE SECOND WRITER IS THE WHOLE SERVER SIDE, not one directory. The
+          # phase 7 deep dive scanned beyond pages/api/club-arena and found the
+          # legacy poker engine under src/lib calling two closed doors.
           sparse-checkout: |
-            pages/api/club-arena
+            pages/api
+            src/lib
+            lib
           sparse-checkout-cone-mode: true
 
       - name: Ask the register about every call the World Hub makes
@@ -415,7 +420,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
-          node scripts/ci/audit-second-writer.mjs --routes world-hub/pages/api/club-arena 2>&1 | tee /tmp/second-writer.log
+          node scripts/ci/audit-second-writer.mjs --routes world-hub/pages/api --routes world-hub/src/lib --routes world-hub/lib 2>&1 | tee /tmp/second-writer.log
 
       # A red job in a scheduled workflow is a tree nobody hears fall
       # (CLAUDE.md 10.86 rule 3). The reader is this issue.
@@ -430,7 +435,7 @@ jobs:
           N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
                 --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
           BODY=$(printf '%s\n' \
-            "\`scripts/ci/audit-second-writer.mjs\` compared every \`.rpc()\` call and every direct money-table write under the World Hub's \`pages/api/club-arena/\` with \`pg_proc\` and \`ca_money_rpc_registry\` (via \`fn_ca_second_writer_check\`), and at least one disagrees: a door that is missing, closed, not executable by the service role, called with parameter names no overload accepts, or a balance column written directly." \
+            "\`scripts/ci/audit-second-writer.mjs\` compared every \`.rpc()\` call and every direct money-table write under the World Hub's \`pages/api\`, \`src/lib\` and \`lib\` with \`pg_proc\` and \`ca_money_rpc_registry\` (via \`fn_ca_second_writer_check\`), and at least one disagrees: a door that is missing, closed, not executable by the service role, called with parameter names no overload accepts, or a balance column written directly." \
             "" \
             "Such a route has been failing on every call, or moving chips outside the register, since the day the two sides diverged. Fix the ROUTE (in the World Hub) or the REGISTER (here) - never the check." \
             "" \

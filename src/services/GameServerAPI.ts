@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { parseJwtPayload, readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -82,9 +83,30 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const resp = await fetch(url, init);
   if (resp.status !== 401) return resp;
+  // A refusal belongs to the login that sent it. The SDK's current session
+  // may have changed while fetch or refresh was pending. Never turn an old
+  // player's intent into an action for the newly signed-in player.
+  const originalToken = new Headers(init.headers).get('Authorization')?.replace(/^Bearer\s+/i, '');
+  const original = originalToken ? parseJwtPayload(originalToken) : null;
+  const ownsRequest = (token: string | null | undefined): boolean => {
+    if (
+      !token ||
+      typeof original?.sub !== 'string' ||
+      typeof original.session_id !== 'string' ||
+      !original.sub ||
+      !original.session_id
+    ) {
+      return false;
+    }
+    const candidate = parseJwtPayload(token);
+    return candidate?.sub === original.sub && candidate.session_id === original.session_id;
+  };
+  const stillOwnsRequest = () => ownsRequest(readLocalSession()?.accessToken);
+  if (!stillOwnsRequest()) return resp;
   try {
     const refreshed = await supabase.auth.refreshSession();
     const token = refreshed.data.session?.access_token ?? null;
+    if (!stillOwnsRequest()) return resp;
     if (!token) {
       // 2026-09-05: the engine refused us and the refresh could not produce a
       // token either. That is the 2026-09-03 shape - a session revoked out
@@ -95,12 +117,13 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
       // Lazy: this module is only needed once a request has already been
       // refused, and a static import puts it in the entry chunk (CI, 2026-09-05).
       void import('../lib/sessionRevoked')
-        .then((m) => m.handleEngineAuthRejection('http:401'))
+        .then((m) => (stillOwnsRequest() ? m.handleEngineAuthRejection('http:401') : 'unknown'))
         .catch(() => {
           /* a chunk that will not load must never sign anyone out */
         });
       return resp;
     }
+    if (!ownsRequest(token)) return resp;
     const headers = {
       ...((init.headers as Record<string, string> | undefined) ?? {}),
       Authorization: `Bearer ${token}`,
@@ -746,8 +769,7 @@ export async function setSitOut(
      * The status code is still the fallback for a response with no usable body
      * — a proxy error page, a 502, an empty 500. */
     const body = (await response.json().catch(() => null)) as
-      | (ActionResult & { willFoldNextHand?: boolean })
-      | null;
+      (ActionResult & { willFoldNextHand?: boolean }) | null;
     if (body && typeof body.success === 'boolean') return body;
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return { success: false, error: 'Server sent an unreadable response' };

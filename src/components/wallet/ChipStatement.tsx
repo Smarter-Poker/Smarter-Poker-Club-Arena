@@ -365,6 +365,13 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
       <footer className="chip-statement__footer">
         Generated {when(statement.generated_at)} From The Chip Journal. Every Line Is A Journal Leg;
         Nothing Is Summarised Away.
+        {scope === 'player' && (
+          <>
+            {' '}
+            The Balance Is Your Wallet Only: Chips Sitting On A Table Or In A Tournament Are Not In
+            It Until They Come Back, And Promo Chips Are A Separate Wallet.
+          </>
+        )}
       </footer>
     </section>
   );

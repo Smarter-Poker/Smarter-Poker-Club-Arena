@@ -6,6 +6,7 @@ const PLAYER_A = '00000000-0000-4000-8000-000000000002';
 const PLAYER_B = '00000000-0000-4000-8000-000000000003';
 
 const exactProof = (): TournamentStackProof => ({
+  written: { [PLAYER_A]: 0, [PLAYER_B]: 3000 },
   tournament_id: TOURNAMENT_ID,
   tournament_players_synced: true,
   tournament_player_count: 2,
@@ -27,6 +28,8 @@ describe('tournament hand persistence proof', () => {
     ['missing sync marker', { tournament_players_synced: undefined }],
     ['wrong tournament', { tournament_id: PLAYER_A }],
     ['wrong count', { tournament_player_count: 1 }],
+    ['missing written targets', { written: undefined }],
+    ['divergent written target', { written: { [PLAYER_A]: 1, [PLAYER_B]: 2999 } }],
     ['missing player list', { tournament_player_user_ids: [PLAYER_A] }],
     ['noncanonical player list', { tournament_player_user_ids: [PLAYER_B, PLAYER_A] }],
     [

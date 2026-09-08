@@ -31,6 +31,31 @@ import {
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
+/** The socket watchdog cannot run until authentication has returned a token. */
+async function tokenForConnection(
+  getToken: () => Promise<string | null>,
+  signal: AbortSignal
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<string | null>((resolve, reject) => {
+      onAbort = () => reject(new Error('Engine connection cancelled'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      timer = setTimeout(() => reject(new Error('Engine token request timed out')), 15_000);
+      // Both outcomes stay observed if the deadline or disconnect wins first.
+      Promise.resolve(getToken()).then(resolve, reject);
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
+}
+
 // ─── Protocol types — mirror server/src/transport/TableStateHub.ts ────────────
 
 export type EngineSnapshot = Record<string, unknown>;
@@ -239,12 +264,7 @@ export const RESTART_WINDOW_GRACE_MS = 90_000;
 export { PROTOCOL_VERSION, engineSocketUrl } from './EngineSocketMux';
 
 export type EngineConnectionStatus =
-  | 'idle'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'failed'
-  | 'auth_failed';
+  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'auth_failed';
 
 export interface EngineStateClientOptions {
   /** Base URL, e.g. https://engine.smarter.poker. Scheme is rewritten to ws(s). */
@@ -351,6 +371,7 @@ export class EngineStateClient {
    */
   private connectionGeneration = 0;
   private openingGeneration: number | null = null;
+  private tokenWait: AbortController | null = null;
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
@@ -423,6 +444,8 @@ export class EngineStateClient {
   disconnect(): void {
     this.connectionGeneration++;
     this.intentionalClose = true;
+    this.tokenWait?.abort();
+    this.tokenWait = null;
     // Review fix 2026-08-25: no queued frame may fire onSnapshot/onEvent
     // against a page that has moved on (the CA-22 class).
     this.resetInbox();
@@ -495,13 +518,17 @@ export class EngineStateClient {
     // status stuck at 'connecting' — the single worst frozen-table path in
     // the client. A rejection is now just another retry.
     let token: string | null = null;
+    const tokenWait = new AbortController();
+    this.tokenWait = tokenWait;
     try {
-      token = await this.opts.getToken();
+      token = await tokenForConnection(() => this.opts.getToken(), tokenWait.signal);
     } catch {
       if (!this.intentionalClose && generation === this.connectionGeneration) {
         this.scheduleReconnect();
       }
       return;
+    } finally {
+      if (this.tokenWait === tokenWait) this.tokenWait = null;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight
     // (tableId switch / unmount / StrictMode double-invoke). If so, abort before
@@ -1399,6 +1426,7 @@ export class EngineChannelClient {
   private handshakeFailures = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
+  private sessionBlocked = false;
   private handshakeTimer: number | null = null;
   private static readonly HANDSHAKE_TIMEOUT_MS = 15_000;
 
@@ -1542,6 +1570,7 @@ export class EngineChannelClient {
 
   /** Open the channel connection. Safe to call multiple times (no-op if already connected). */
   async connect(): Promise<void> {
+    if (this.sessionBlocked) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
     this.retryCount = 0;
@@ -1573,6 +1602,8 @@ export class EngineChannelClient {
   disconnect(): void {
     this.connectionGeneration++;
     this.intentionalClose = true;
+    this.tokenWait?.abort();
+    this.tokenWait = null;
     this.clearHandshakeTimer();
     this.stopWatchdog();
     if (this.onOnline !== null && typeof window !== 'undefined') {
@@ -1594,6 +1625,19 @@ export class EngineChannelClient {
     this.setStatus('idle');
   }
 
+  /** Account changes discard intent; an ordinary disconnect retains it. */
+  resetSession(allowReconnect: boolean): void {
+    this.sessionBlocked = !allowReconnect;
+    this.disconnect();
+    this.sendQueue = [];
+    this.desiredClubs.clear();
+    this.desiredTournaments.clear();
+    this.desiredLobby = false;
+    this.lastPresence.clear();
+    for (const listeners of Object.values(this.listeners)) listeners.clear();
+    this.handshakeFailures = 0;
+  }
+
   /** Current connection status. */
   getStatus(): EngineConnectionStatus {
     return this.status;
@@ -1606,6 +1650,7 @@ export class EngineChannelClient {
    * If the socket isn't open yet, the message is queued and sent on connect.
    */
   send(msg: ChannelClientMessage): void {
+    if (this.sessionBlocked) return;
     // 2026-08-24: record the net desired subscription state FIRST, whether or
     // not the socket is currently open — this is what reconnect replays.
     const stateful = this.recordDesiredState(msg);
@@ -1697,6 +1742,7 @@ export class EngineChannelClient {
 
   private connectionGeneration = 0;
   private openingGeneration: number | null = null;
+  private tokenWait: AbortController | null = null;
 
   private async openOnce(): Promise<void> {
     // Single-flight + live-socket guard — same race as EngineStateClient:
@@ -1719,13 +1765,17 @@ export class EngineChannelClient {
     // 2026-08-22: a getToken rejection must be a retry, not the permanent end
     // of the reconnect ladder (same fix as EngineStateClient.openOnce).
     let token: string | null = null;
+    const tokenWait = new AbortController();
+    this.tokenWait = tokenWait;
     try {
-      token = await this.opts.getToken();
+      token = await tokenForConnection(() => this.opts.getToken(), tokenWait.signal);
     } catch {
       if (!this.intentionalClose && generation === this.connectionGeneration) {
         this.scheduleReconnect();
       }
       return;
+    } finally {
+      if (this.tokenWait === tokenWait) this.tokenWait = null;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight. Abort
     // before creating the socket to avoid leaking a zombie channel connection.
@@ -1882,7 +1932,11 @@ export class EngineChannelClient {
     // Use setTimeout(0) for same reason as EngineStateClient EVENT handler:
     // prevent React 18 batching from dropping rapid sequential messages
     // (e.g. FINANCIAL_UPDATE arriving back-to-back for wallet + ledger).
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     setTimeout(() => {
+      if (generation !== this.connectionGeneration || socket !== this.ws || this.intentionalClose)
+        return;
       (this.listeners[key] as Set<Listener<typeof msg>>).forEach((listener) => {
         try {
           listener(msg);

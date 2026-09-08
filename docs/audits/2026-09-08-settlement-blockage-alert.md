@@ -23,4 +23,4 @@ is a backstop for sustained freezes and does not diagnose those shorter gaps.
 
 Validation: the installed Prometheus promtool accepted the modified rule file
 from stdin without replacing any live configuration. The existing monitoring
-mount/loaded-rule/routing law suite passed (3 tests). Publication is still pending.
+mount/loaded-rule/routing law suite passed (35 tests). Publication is still pending.

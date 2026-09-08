@@ -206,3 +206,15 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
     expect(out.sidePots.map((p) => p.eligibleSeats)).not.toContainEqual([3, 5, 7]);
   });
 });
+
+describe('decision context from live and reconnect snapshots', () => {
+  it('preserves the opaque server context without recreating it from client time', () => {
+    expect(
+      mapEngineSnapshot(makeSnapshot({ action_context: 'original-hand-turn' }), 'hero', 9)
+        .actionContext
+    ).toBe('original-hand-turn');
+  });
+  it('does not invent a context for an older engine', () => {
+    expect(mapEngineSnapshot(makeSnapshot(), 'hero', 9).actionContext).toBeUndefined();
+  });
+});

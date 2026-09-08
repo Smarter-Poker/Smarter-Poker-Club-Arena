@@ -2,6 +2,12 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: HTTP Actions Belong To The Displayed Decision
+
+Before: handlers/action.ts forwarded only user/action/amount; ServerTableEngineTurns.ts:1389 checked the live seat but had no original hand/turn identity. A delayed raise could apply to a later decision.
+After: server snapshots and turn_change carry a controller-incarnation/action-state context; TablePage and MultiTablePage return the displayed context unchanged through HTTP retries. The engine rejects stale/missing context before mutation and the replay fingerprint includes context. Old clients receive a readable success:false reload envelope. Structured rejection details reach current clients; late optimistic rollback is fenced to its original decision.
+Re-read: yes. TypeScript: both projects passed. Regression history and remaining build/publication gates: docs/audits/2026-09-08-phase2-poker-rules.md. Real-time law: context travels on the discrete turn_change event; snapshots provide reconciliation, no polling added.
+
 ## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
 
 Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.

@@ -9,6 +9,7 @@
  */
 
 import { HandController } from './HandController.js';
+import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
@@ -142,6 +143,10 @@ export function _setEngineLeaseMonotonicNowForTests(now?: () => number): void {
 }
 
 export abstract class ServerTableEngineBase {
+  public getActionContext(): string | null {
+    return this.handController ? playerActionContext(this.handController) : null;
+  }
+
   protected tableId: string;
   protected running: boolean = false;
   /** A table-engine object is one lifecycle generation and is never restarted. */

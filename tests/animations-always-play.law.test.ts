@@ -268,6 +268,12 @@ describe('LAW: no animation may be skipped by state plumbing', () => {
     expect(TABLE_PAGE).toContain('ambientSoundsAllowedRef');
   });
 
+  it('the table bridge preserves the incoming throw receipt', () => {
+    expect(TABLE_PAGE).toMatch(
+      /receiveThrowRef\.current\?\.\(fromSeat, toSeat, throwableId, throwId\)/
+    );
+  });
+
   it('confetti and particle canvases complete even in hidden tabs', () => {
     // Hidden tabs get no rAF; without a wall-clock backstop onComplete never
     // fired and the latched parent state swallowed the NEXT win's burst.

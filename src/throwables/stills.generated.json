@@ -248,5 +248,10 @@
     "192": "images/throwables/stylized/party_face-192-f419c0766bdc.webp",
     "320": "images/throwables/stylized/party_face-320-685c34757398.webp",
     "640": "images/throwables/stylized/party_face-640-5bc7d34c717f.webp"
+  },
+  "thinking": {
+    "192": "images/throwables/stylized/thinking-192-9cbb19695bb1.webp",
+    "320": "images/throwables/stylized/thinking-320-877857176660.webp",
+    "640": "images/throwables/stylized/thinking-640-cd5f0f744985.webp"
   }
 }

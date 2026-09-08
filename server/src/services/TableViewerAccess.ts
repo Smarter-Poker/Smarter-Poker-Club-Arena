@@ -1,6 +1,8 @@
 import { supabase } from './supabase.js';
+import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
 
 export type TableViewerAccessReason =
+  | 'diamond_member'
   | 'seated'
   | 'club_member'
   | 'membership_required'
@@ -29,7 +31,9 @@ export async function authorizeTableViewer(
   const [{ data: table, error: tableError }, seatResult] = await Promise.all([
     supabase
       .from('tables')
-      .select('club_id, union_id, restrict_observers')
+      .select(
+        'club_id, union_id, restrict_observers, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+      )
       .eq('id', tableId)
       .maybeSingle(),
     supabase
@@ -49,8 +53,21 @@ export async function authorizeTableViewer(
   const unionId = typeof table.union_id === 'string' ? table.union_id : null;
   const accessScopeId = unionId || clubId;
   if (!accessScopeId) return { allowed: false, reason: 'check_failed', clubId: null };
+  let arena;
+  try {
+    arena = parseTableArenaIdentity(table);
+    if (!userId) throw new Error('Authentication Required');
+  } catch {
+    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+  }
   if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
   if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
+
+  if (arena.kind === 'diamond_arena') {
+    return table.restrict_observers === true
+      ? { allowed: false, reason: 'observers_restricted', clubId }
+      : { allowed: true, reason: 'diamond_member', clubId };
+  }
 
   /*
    * The lobby's ownership rule is union-aware: a member of Shark can see a

@@ -8905,7 +8905,8 @@ export default function TablePage({
      *      timeout about *deciding* to buy in may eject someone who has
      *      already bought in — whatever else races, that stays true.
      */
-    const commitInFlight = seatFirstPending || seatFirstPendingRef.current;
+    const commitInFlight =
+      buyInProcessingRef.current || seatFirstPending || seatFirstPendingRef.current;
     const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0;
     const sheetOpen =
       (showBuyInModal || seatFirstConfirm !== null) && !commitInFlight && !alreadySeated;
@@ -8932,7 +8933,8 @@ export default function TablePage({
          is precisely the race that took Dan off a seat he had paid for. Refs,
          not state: a value committed during this tick is visible here and the
          re-rendered state is not. */
-      if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;
+      if (buyInProcessingRef.current || seatFirstPendingRef.current || heroSeatRef.current > 0)
+        return;
 
       // Release the sheet and the optimistic seat, exactly as a cancel does.
       setShowBuyInModal(false);
@@ -25277,7 +25279,7 @@ export default function TablePage({
           buyInIdempotencyKeyRef.current = null;
         }}
         onConfirmBuyIn={async (amount, autoRebuy) => {
-          if (buyInProcessingRef.current) return;
+          if (buyInProcessingRef.current) return false;
           buyInProcessingRef.current = true;
           const optimisticSeat = selectedSeat;
           let seatedOptimistically = false;
@@ -25311,7 +25313,8 @@ export default function TablePage({
             // owns seat validation; no preliminary network read may delay it. `seatedOptimistically` gates
             // that rollback so we never tear down a seat we never painted.
             if (userId && userId !== 'guest' && tableId && optimisticSeat) {
-              setShowBuyInModal(false);
+              // Keep the sheet visible until the server answers. The seat
+              // can paint optimistically underneath its Joining state.
               setTableState((prev) => {
                 const updatedPlayers = [...prev.players];
                 for (let j = 0; j < updatedPlayers.length; j++) {
@@ -25368,11 +25371,10 @@ export default function TablePage({
                     // its ref, so an immediate retry is still de-duplicated by
                     // transaction_idempotency_keys on the server.
                     revertSeat();
-                    setShowBuyInModal(false);
                     toast?.error(
                       'You Are Offline. Try The Buy-In Again When Your Connection Returns.'
                     );
-                    return;
+                    return false;
                   }
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
@@ -25480,6 +25482,7 @@ export default function TablePage({
                    carries the raw message. */
                 const refusal = cashBuyInRefusalText(error);
                 toast.error(refusal ?? 'Buy-in failed. Please try again or check your balance.');
+                return false;
               }
             } else {
               reportError(
@@ -25487,8 +25490,10 @@ export default function TablePage({
                 'TablePage.FELL_THROUGH__no_branch_matched'
               );
               toast.error('Unable to complete buy-in. Please try again.');
+              return false;
             }
             setShowBuyInModal(false);
+            return true;
           } catch (outerErr) {
             reportError(outerErr, 'TablePage.UNHANDLED_error_in_onConfirm');
             revertSeat();
@@ -25497,10 +25502,11 @@ export default function TablePage({
             } else {
               toast.error('Unable To Complete Buy-In. Please Try Again.');
             }
-            setShowBuyInModal(false);
+            if (buyInCommitted) setShowBuyInModal(false);
+            return buyInCommitted;
           } finally {
             buyInProcessingRef.current = false;
-            setSelectedSeat(null);
+            if (buyInCommitted) setSelectedSeat(null);
           }
         }}
         // Rabbit Hunt

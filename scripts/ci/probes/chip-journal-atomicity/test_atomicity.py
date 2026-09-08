@@ -3,7 +3,9 @@
 import os, subprocess, sys, re
 from pathlib import Path
 pg=os.environ.get("PSQL", "/opt/homebrew/opt/postgresql@17/bin/psql")
-if os.environ.get("PGCONTAINER"):
+if os.environ.get("PGNODE"):
+ args=[os.environ["PGNODE"],str(Path(__file__).resolve().parent/"postgres-runtime/query.mjs")]
+elif os.environ.get("PGCONTAINER"):
  args=["docker","exec","-i",os.environ["PGCONTAINER"],"psql","-X","-q","-U","postgres","-d","journal_atomicity","-v","ON_ERROR_STOP=1"]
 else:
  args=[pg,"-X","-q","-h",os.environ["PGHOST"],"-p",os.environ["PGPORT"],"-U",os.environ.get("PGUSER","smarter.poker"),"-d",os.environ.get("PGDATABASE","postgres"),"-v","ON_ERROR_STOP=1"]

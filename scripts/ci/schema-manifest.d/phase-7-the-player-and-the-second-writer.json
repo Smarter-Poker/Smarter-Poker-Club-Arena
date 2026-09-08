@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/phase-7-the-player-and-the-second-writer",
+  "functions": ["fn_ca_second_writer_check", "fn_ca_chip_statement"]
+}

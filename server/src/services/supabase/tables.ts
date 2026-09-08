@@ -11,6 +11,7 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -43,122 +44,130 @@ export async function loadTable(tableId: string) {
  * Load seated players with profiles for a table
  */
 export async function loadSeatedPlayers(tableId: string) {
-  const { data: seats, error } = await supabase
+  /* ONE ROUND TRIP, NOT TWO (2026-09-07). This was a seats read followed by a
+     profiles read keyed on the seats' user_ids - two PostgREST calls in
+     series, at the 250-700ms each costs from the engine box, on the critical
+     path of every deal (it is the roster the next hand is dealt from, read
+     under the rest - see prepareNextHand). `fk_table_seats_user_id_profiles`
+     lets PostgREST embed the profile in the seat row, so the same two
+     queries are one request. The columns, the alias and the filters are the
+     old ones; SEATED_PROFILE_SELECT is shared with the two-step path below,
+     which is kept as the fallback for a PostgREST that cannot resolve the
+     embedding (a schema-cache reload mid-flight answers PGRST200), so a
+     roster read degrades to slower, never to empty. */
+  const embedded = await supabase
     .from('table_seats')
-    // is_sitting_out added 2026-08-25 for restart fidelity. The engine WRITES
-    // this column on every sit-out and sit-back and never read it back, so an
-    // engine restart between hands dealt cards to players who had sat out —
-    // while the column, and therefore every client, still said they were out.
-    //
-    // sit_out_at added 2026-08-28, and it is the half that makes the eviction
-    // actually fire. The boolean survived a restart; the CLOCK did not, because
-    // it was a field on an in-memory Map. restoreSitOutsFromSeats() re-stamped
-    // it to Date.now() on every boot, so on a table whose engine recycled more
-    // often than every five minutes the 5-minute limit could never mature and
-    // the seat was held forever. Dan 2026-08-28: "FOR SOME REASON THIS NEVER
-    // KICKS THE USER OFF THE CASH GAME AFTER THE 5 MIN."
-    // entry_hold / entry_post_agreed added 2026-08-30, and they are the THIRD
-    // instance of the same lesson on this one query: the engine wrote a fact
-    // and never read it back. is_sitting_out (2026-08-25) dealt cards to
-    // players who had sat out; sit_out_at (2026-08-28) handed every sat-out
-    // seat a fresh five minutes on every restart so the eviction never fired.
-    // These two are the cash entry hold — without them a deploy releases every
-    // held player free, button-eligible, and re-prompts anyone who had already
-    // agreed to post.
     .select(
-      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed'
+      `${SEAT_SELECT}, profile:profiles!fk_table_seats_user_id_profiles(${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at)`
     )
     .eq('table_id', tableId)
     .is('left_at', null)
     .order('seat_number', { ascending: true });
-
-  // 2026-08-15: returning [] on ERROR made a transient DB failure
-  // indistinguishable from "the table is empty". The engine then assigned []
-  // to seatedPlayers, which (a) stopped the synthetic horse heartbeats so every
-  // horse went stale and disconnected 30s later, (b) made the table watchdog
-  // read the table as idle-by-design so it never tripped, and (c) reported
-  // seated_count: 0 to clients. Throwing keeps the engine's last-known-good
-  // roster and routes into the dealing loop's transient-error backoff, which
-  // already classifies fetch/timeout failures correctly.
+  if (!embedded.error) {
+    // supabase-js types an embedded relation as an array because it cannot
+    // see the FK's cardinality; PostgREST returns an object for a to-one FK.
+    // Read whichever shape arrives, and drop a seat whose profile is missing
+    // exactly as the two-step path drops one the profiles read did not return.
+    const rows = (embedded.data ?? []) as unknown as Array<
+      SeatRow & { profile: SeatedProfileRow | SeatedProfileRow[] | null }
+    >;
+    const out: ReturnType<typeof seatedPlayerFrom>[] = [];
+    for (const seat of rows) {
+      const profile = Array.isArray(seat.profile) ? (seat.profile[0] ?? null) : seat.profile;
+      if (profile) out.push(seatedPlayerFrom(seat, profile));
+    }
+    return out;
+  }
+  reportError(
+    new Error(
+      `loadSeatedPlayers: embedded roster read failed for ${tableId} (${embedded.error.message}); using the two-step read`
+    ),
+    'DB.load_seated_players_embed_fallback'
+  );
+  const { data: seats, error } = await supabase
+    .from('table_seats')
+    .select(SEAT_SELECT)
+    .eq('table_id', tableId)
+    .is('left_at', null)
+    .order('seat_number', { ascending: true });
   if (error) {
     throw new Error('loadSeatedPlayers failed for ' + tableId + ': ' + error.message);
   }
   if (!seats || seats.length === 0) return [];
-
   const userIds = seats.map((d) => d.user_id);
   const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
-    /* Dan 2026-08-21: the felt shows the CLUB ARENA avatar, never the social
-       media photo. `arena_avatar_url` is library art only; `avatar_url` is the
-       player's (or horse's) social profile picture and is not ours to read.
-
-       Aliased rather than renamed: the returned key stays `avatar_url`, so the
-       engine types, the snapshot mapper and every seat component downstream are
-       untouched. Only the source column moves.
-
-       Highest-leverage avatar read in the app - it feeds every seat at every
-       table. If it regresses, the felt shows photographs again. */
-    .select(
-      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name, equipped_frame, equipped_aura'
-    )
+    .select(`${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at`)
     .in('id', userIds);
   if (profileErr) {
-    // The filter below drops every seat whose profile is missing, so a silent
-    // profiles failure emptied the table just as thoroughly as a seats failure.
     throw new Error('loadSeatedPlayers profiles failed for ' + tableId + ': ' + profileErr.message);
   }
-
-  const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
-
-  return seats
+  const profileMap = new Map<string, SeatedProfileRow>(
+    (profiles ?? []).map((p) => [p.id, p as SeatedProfileRow])
+  );
+  return (seats as SeatRow[])
     .filter((seat) => profileMap.has(seat.user_id))
-    .map((seat) => {
-      const profile = profileMap.get(seat.user_id)!;
-      return {
-        user_id: seat.user_id,
-        /* Dan 2026-08-18: horses are IDENTITIES, not accounts — their
-           `username` is only an internal handle that a DB trigger forces to
-           lowercase, so shipping it printed "gatecityethan" / "steven
-           ferrara" on the felt. display_name holds the real, properly-cased
-           name (half real "First Last", half styled poker alias), so horses
-           always resolve through it. Humans keep the use_real_name
-           preference exactly as before. */
-        username: profile.is_horse
-          ? profile.display_name || profile.username || 'Player'
-          : profile.use_real_name
-            ? profile.display_name || profile.username || 'Player'
-            : profile.username || profile.display_name || 'Player',
-        stack: seat.stack,
-        seat_number: seat.seat_number || 1,
-        is_horse: profile.is_horse || false,
-        // AUDIT V2 (2026-07-23): pass the raw jsonb value through — it can be a
-        // string OR an object ({"style":"tag",...}). resolveHorseStyle() in
-        // HorseLogic handles both plus a deterministic per-horse fallback.
-        horse_profile: profile.horse_profile ?? undefined,
-        time_bank_remaining: seat.time_bank_remaining || 0,
-        time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
-        is_sitting_out: seat.is_sitting_out === true,
-        /* The persisted sit-out clock. Null whenever is_sitting_out is false —
-           a database trigger (trg_stamp_sit_out_at) owns both, so the pair can
-           never disagree regardless of which writer touched the row. */
-        sit_out_at: (seat as { sit_out_at?: string | null }).sit_out_at ?? null,
-        /* The persisted cash entry hold, read by restoreEntryHoldsFromSeats()
-           once per process on boot. Mapped through here rather than queried
-           separately so the restore has no round trip of its own — it reads
-           the roster the engine already loaded. */
-        entry_hold: (seat as { entry_hold?: string | null }).entry_hold ?? null,
-        entry_post_agreed:
-          (seat as { entry_post_agreed?: boolean | null }).entry_post_agreed === true,
-        avatar_url: profile.avatar_url || '',
-        /* Cosmetics ride the avatar's pipeline rather than getting one of their
-           own: same query, same snapshot field group, same client mapper. They
-           are re-read here once per hand alongside the avatar, so a player who
-           equips a frame mid-session is wearing it on everyone's felt by the
-           next deal even if their realtime subscription dropped. */
-        equipped_frame: profile.equipped_frame || '',
-        equipped_aura: profile.equipped_aura || '',
-      };
-    });
+    .map((seat) => seatedPlayerFrom(seat, profileMap.get(seat.user_id)!));
+}
+
+const SEAT_SELECT =
+  'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
+
+interface SeatRow {
+  user_id: string;
+  stack: number;
+  seat_number: number | null;
+  time_bank_remaining: number | null;
+  time_bank_uses_remaining: number | null;
+  is_sitting_out: boolean | null;
+  sit_out_at?: string | null;
+  entry_hold?: string | null;
+  entry_post_agreed?: boolean | null;
+}
+
+interface SeatedProfileRow {
+  id: string;
+  display_name: string | null;
+  username: string | null;
+  is_horse: boolean | null;
+  horse_profile: unknown;
+  avatar_url: string | null;
+  use_real_name: boolean | null;
+  equipped_frame: string | null;
+  equipped_aura: string | null;
+  is_vip?: boolean | null;
+  vip_tier?: string | null;
+  vip_expires_at?: string | null;
+}
+
+/** One seat + its profile -> the SeatedPlayer shape the engine deals from. Shared by both read paths. */
+function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
+  return {
+    user_id: seat.user_id,
+    username: profile.is_horse
+      ? profile.display_name || profile.username || 'Player'
+      : profile.use_real_name
+        ? profile.display_name || profile.username || 'Player'
+        : profile.username || profile.display_name || 'Player',
+    stack: seat.stack,
+    seat_number: seat.seat_number || 1,
+    is_horse: profile.is_horse || false,
+    reconnect_membership: {
+      is_vip: profile.is_vip,
+      vip_tier: profile.vip_tier,
+      vip_expires_at: profile.vip_expires_at,
+    },
+    horse_profile: (profile.horse_profile ?? undefined) as string | undefined,
+    time_bank_remaining: seat.time_bank_remaining || 0,
+    time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
+    is_sitting_out: seat.is_sitting_out === true,
+    sit_out_at: seat.sit_out_at ?? null,
+    entry_hold: seat.entry_hold ?? null,
+    entry_post_agreed: seat.entry_post_agreed === true,
+    avatar_url: profile.avatar_url || '',
+    equipped_frame: profile.equipped_frame || '',
+    equipped_aura: profile.equipped_aura || '',
+  };
 }
 
 /**

@@ -3333,7 +3333,6 @@ export abstract class TournamentManagerBase {
         const buyIn = tournament.buy_in_amount || 0;
         // Same reasoning as p_seats on the draw above: three seats, always.
         const seats = SPEC_SPIN_SEATS;
-        const tier = spinTier(spinMultiplier);
         let prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
         /**
@@ -3505,6 +3504,9 @@ export abstract class TournamentManagerBase {
         // blinds MUST be rewritten here — before
         // createTablesAndSeatPlayers below reads them — or a 500x would run
         // on 1-minute levels.
+        // Settlement may adopt an already-booked multiplier. Derive every
+        // tier-dependent field from that final value, including payout shares.
+        const tier = spinTier(spinMultiplier);
         const spinBlinds = Array.from({ length: 12 }, (_, i) => {
           const b = spinBlindsForLevel(i + 1);
           return {
@@ -7153,8 +7155,16 @@ export abstract class TournamentManagerBase {
         );
         return null;
       }
+      const rawPool = res.prize_pool;
       const pool = Number(res.prize_pool);
-      if (!Number.isFinite(pool)) {
+      if (
+        (typeof rawPool !== 'number' && typeof rawPool !== 'string') ||
+        (typeof rawPool === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(rawPool)) ||
+        !Number.isFinite(pool) ||
+        pool < 0 ||
+        !Number.isSafeInteger(Math.round(pool * 100)) ||
+        Math.round(pool * 100) / 100 !== pool
+      ) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] fn_apply_prize_guarantee returned no readable prize_pool (${JSON.stringify(data ?? null).slice(0, 160)})`

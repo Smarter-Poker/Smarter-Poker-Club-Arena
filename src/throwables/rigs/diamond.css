@@ -1,0 +1,86 @@
+.thr-diamond__gem {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-diamond-gem calc(1.3s * var(--animation-speed, 1)) linear forwards;
+}
+@keyframes thr-diamond-gem {
+  0%,
+  7.69% {
+    opacity: 1;
+    transform: scaleX(1) rotate(0);
+  }
+  30% {
+    transform: scaleX(0.35) rotate(10deg);
+  }
+  53% {
+    transform: scaleX(1) rotate(0);
+  }
+  76% {
+    transform: scaleX(0.35) rotate(-10deg);
+  }
+  99.9% {
+    opacity: 1;
+    transform: scaleX(1) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1) rotate(0);
+  }
+}
+.thr-diamond__flare {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-diamond-flare calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(1.3s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-diamond-flare {
+  0% {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+.thr-diamond__shard {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-diamond-shard calc(1.4s * var(--animation-speed, 1)) ease-in
+    calc(1.3s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-diamond-shard {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.5), var(--lift)) rotate(calc(var(--spin) * 0.3));
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) rotate(var(--spin));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-diamond__gem {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .thr-diamond__flare,
+  .thr-diamond__shard {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

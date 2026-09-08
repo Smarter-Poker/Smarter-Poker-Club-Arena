@@ -1,0 +1,331 @@
+[
+  {
+    "id": "tomato",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a580aa82-69b3-4fe8-842f-57d4aff8edce.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/tomato.png"
+  },
+  {
+    "id": "cracked_egg",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-8fe24ff7-d472-494e-98c9-4474da6e6be0.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cracked_egg.png"
+  },
+  {
+    "id": "banana_peel",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-93f80790-bd17-4ebe-a5ee-35deb0c6c084.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/banana_peel.png"
+  },
+  {
+    "id": "pizza_slice",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-41fc72f2-b469-4034-9c80-948caf50366d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/pizza_slice.png"
+  },
+  {
+    "id": "cake",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-9b95282d-dcc9-4700-a48d-14e97685628d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cake.png"
+  },
+  {
+    "id": "poop",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-fb374ec3-5f5c-4ad4-890c-e0b08cc5baa4.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/poop.png"
+  },
+  {
+    "id": "water_gun",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-4e953905-b307-488f-bb5e-f3e6f9206460.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/water_gun.png"
+  },
+  {
+    "id": "anvil",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-6a43c2d8-747d-4aaa-8f86-5435a400914a.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/anvil.png"
+  },
+  {
+    "id": "trash_can",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-c634c561-aad2-4f38-8de5-7c9e4632251b.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/trash_can.png"
+  },
+  {
+    "id": "snowman",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-183e9ba2-dfb2-4e41-aa10-f167e4569235.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/snowman.png"
+  },
+  {
+    "id": "magnet",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-74500f2a-ace4-49cc-bc55-0dd350766133.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/magnet.png"
+  },
+  {
+    "id": "basketball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-7a5b9197-9cc8-4624-a42a-e3916d230cec.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/basketball.png"
+  },
+  {
+    "id": "football",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-24dd60f7-460e-4d3a-a90e-e5bad020e2ae.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/football.png"
+  },
+  {
+    "id": "tennis_ball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-346675f8-082e-4745-9ef9-1955e10497cf.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/tennis_ball.png"
+  },
+  {
+    "id": "bowling_ball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-31eddd38-6c18-44d1-8254-b7f83ef5bcfe.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/bowling_ball.png"
+  },
+  {
+    "id": "horseshoe",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-fe61334b-54a0-4afc-981d-5566ee0456be.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/horseshoe.png"
+  },
+  {
+    "id": "dice",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-136557f8-66cb-499b-b865-dc60bc736f5d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/dice.png"
+  },
+  {
+    "id": "magic_8_ball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-e78d1231-b758-4370-9261-e2463fa3adfe.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/magic_8_ball.png"
+  },
+  {
+    "id": "beer",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a22592b3-843b-402e-88dd-bc4ee932fa08.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/beer.png"
+  },
+  {
+    "id": "champagne",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a84f7559-37ea-4ec9-a334-300deaab52b0.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/champagne.png"
+  },
+  {
+    "id": "coffee",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-62081703-403a-4883-9361-2a0615d2bd4d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/coffee.png"
+  },
+  {
+    "id": "cash_stack",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-2b8f896b-16cd-4f4a-b15f-8922ab39096a.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cash_stack.png"
+  },
+  {
+    "id": "diamond",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-6e72cb65-8c81-4acd-9c1d-4fa30eab6886.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/diamond.png"
+  },
+  {
+    "id": "rose",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-b8e6c64a-8941-4b1d-bd59-7ffa2187308f.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/rose.png"
+  },
+  {
+    "id": "trophy",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-f05f1d67-1b8a-4fd2-98b9-91d6b2ab6b89.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/trophy.png"
+  },
+  {
+    "id": "fireworks",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-cece36de-6596-44e4-bacf-9969dd621bc2.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/fireworks.png"
+  },
+  {
+    "id": "bomb",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-0188b111-3ce6-4398-a91d-45d1c9fe204a.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/bomb.png"
+  },
+  {
+    "id": "rocket",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-ef0f7141-dd4b-430c-a357-19dc2e4a0805.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/rocket.png"
+  },
+  {
+    "id": "ufo",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-d07cc3df-3294-47c5-bad6-d9262178118b.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/ufo.png"
+  },
+  {
+    "id": "alien",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a2289811-34eb-413c-88a3-f6de5c62be2e.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/alien.png"
+  },
+  {
+    "id": "robot",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-773900a1-ca76-490a-8372-b3fc29576294.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/robot.png"
+  },
+  {
+    "id": "ghost",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-8eecc82d-eb48-4886-9887-bd7f934c5b9e.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/ghost.png"
+  },
+  {
+    "id": "skull",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-29d76020-4d97-4631-88ae-d9bad32cf920.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/skull.png"
+  },
+  {
+    "id": "lightning_bolt",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-b395abd7-1884-4e6f-9e4b-f33bcadfec4c.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/lightning_bolt.png"
+  },
+  {
+    "id": "doge",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-566081a9-85b7-45cd-9566-f3fbe229f427.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/doge.png"
+  },
+  {
+    "id": "shark",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-e5740ecb-38cc-4ecd-ba10-31de767833eb.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/shark.png"
+  },
+  {
+    "id": "chicken",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-d0dff48d-ae6a-489d-a395-b18dd056da43.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/chicken.png"
+  },
+  {
+    "id": "rubber_duck",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-474dcd1b-cea2-4a05-b1d5-e5663ba1906c.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/rubber_duck.png"
+  },
+  {
+    "id": "bear",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-b827322c-3314-46e3-986d-02f9e2ec8318.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/bear.png"
+  },
+  {
+    "id": "thumbs_up",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-4b414706-ab52-459c-bc45-8c9081337e44.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/thumbs_up.png"
+  },
+  {
+    "id": "thumbs_down",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-4e801d27-e80c-4806-b97e-6d712d7eb2f4.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/thumbs_down.png"
+  },
+  {
+    "id": "laughing_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-849c83d9-6349-4c78-a00f-11901edccfca.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/laughing_emoji.png"
+  },
+  {
+    "id": "crying_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-622d6632-9a1f-4a81-a2bf-68625ba16e77.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/crying_emoji.png"
+  },
+  {
+    "id": "angry_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-95d4f9df-a899-4b43-bb75-49f51eb0514d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/angry_emoji.png"
+  },
+  {
+    "id": "cool_sunglasses_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-e99e0995-a418-4780-b0b1-f295c80fb18d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cool_sunglasses_emoji.png"
+  },
+  {
+    "id": "heart",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-68eda044-495d-4cf6-a433-44ea06b50771.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/heart.png"
+  },
+  {
+    "id": "star",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-9ea41a05-30bb-4f49-9415-80d220e56a44.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/star.png"
+  }
+]

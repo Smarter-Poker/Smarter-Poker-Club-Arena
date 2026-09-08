@@ -23,6 +23,7 @@ import {
 import HandHistoryPanel from '@/components/table/HandHistoryPanel';
 import { HandDetailModal } from '@/components/table/HandDetailModal';
 import { adaptServiceHandToPanel } from '@/lib/handHistoryAdapter';
+import { routerBasenameFrom } from '@/lib/appBase';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 afterEach(cleanup);
@@ -94,11 +95,14 @@ describe('the deep link', () => {
   });
 
   it("uses the router's own basename", () => {
+    // The basename is derived from the build base (src/lib/appBase.ts); on the
+    // web that is '/hub/club-arena', and a deep link is a WEB link on every
+    // target, so it must start with the web basename even in the native app.
     const main = read('src/main.tsx');
-    const m = /basename="([^"]+)"/.exec(main);
-    expect(m).not.toBeNull();
+    expect(main).toContain('basename={ROUTER_BASENAME}');
+    const webBasename = routerBasenameFrom('/hub/club-arena/');
     expect(
-      handDeepLink('x', 'https://smarter.poker').startsWith(`https://smarter.poker${m![1]}/`)
+      handDeepLink('x', 'https://smarter.poker').startsWith(`https://smarter.poker${webBasename}/`)
     ).toBe(true);
   });
 

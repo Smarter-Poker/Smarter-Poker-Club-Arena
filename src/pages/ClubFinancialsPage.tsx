@@ -35,6 +35,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -46,6 +47,7 @@ import RakeReports from '../components/admin/RakeReports';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState, PermissionState } from '../components/common/EmptyState';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import ChipStatement from '../components/wallet/ChipStatement';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
@@ -442,7 +444,7 @@ export default function ClubFinancialsPage() {
           // Dan 2026-08-23: role decides the rows. Club Bank, and the cashier
           // behind it, are owner / co-owner / admin / super agent only.
           role={userRole || 'player'}
-          onBuyDiamonds={() => navigate('/vip')}
+          onBuyDiamonds={() => navigate(withClubContext('/vip', clubId))}
           onOpenPlayerWallet={() => setShowPlayerWallet(true)}
           onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
           onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
@@ -673,6 +675,21 @@ export default function ClubFinancialsPage() {
           <div className="ledger-card">
             <h3>Club Chip Audit Trail</h3>
             <TransactionLedgerView clubId={resolvedClubId} clubScoped limit={25} />
+          </div>
+        </section>
+      )}
+
+      {/* Phase 7 (roadmap 9.5): the treasury's own statement - balance now,
+          both directions, and the nightly reading it is checked against. Same
+          gate as the ledger above (ca_can_view_club_finances). */}
+      {resolvedClubId && isUUID(resolvedClubId) && (
+        <section className="ledger-section">
+          <div className="ledger-card">
+            <ChipStatement
+              scope="club_treasury"
+              clubId={resolvedClubId}
+              title="Treasury Statement"
+            />
           </div>
         </section>
       )}

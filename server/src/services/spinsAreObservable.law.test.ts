@@ -13,10 +13,16 @@
  * contract that keeps it watched.
  */
 import { describe, expect, it, vi } from 'vitest';
+// The failure is an explicit fixture even when this checkout has live credentials.
+vi.mock('./supabase.js', () => ({
+  supabase: {
+    rpc: vi.fn(async () => ({ data: null, error: { message: 'audit fixture: unavailable' } })),
+  },
+}));
+import { supabase } from './supabase.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SpinMetrics, LAG_WINDOW_MINUTES, type SpinMetricsSnapshot } from './SpinMetrics.js';
-import { supabase } from './supabase.js';
 
 const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
@@ -141,17 +147,8 @@ describe('the engine exposes spin gauges', () => {
 
   it('a failed refresh keeps the last good snapshot rather than zeroing it', async () => {
     const m = seeded();
-    // Force the failure. A developer machine may have a reachable database,
-    // and a law test must never turn into an accidental live metrics read.
-    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValueOnce({
-      data: null,
-      error: { message: 'forced metrics read failure' },
-    } as never);
-    try {
-      await m.refresh();
-    } finally {
-      rpc.mockRestore();
-    }
+    await m.refresh();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_spin_metrics', expect.any(Object));
     expect(m.get().fairnessDraws).toBe(2489);
     expect(m.get().revealP50Ms).toBe(4767);
     expect(m.get().fairnessRealisedE).toBeCloseTo(2.740056, 6);

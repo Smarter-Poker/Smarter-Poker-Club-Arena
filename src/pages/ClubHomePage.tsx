@@ -17,6 +17,7 @@ import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 /* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
    INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
    /tournaments/:id destination must render in the tab rather than change the
@@ -611,6 +612,7 @@ function tournamentOpenFirst(
  * club lobby the player came from.
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
+import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
   return (
@@ -4473,7 +4475,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               } catch (err) {
                 reportError(err, 'ClubHomePage.share_ref_lookup_failed');
               }
-              const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
+              const shareUrl = `${publicOrigin()}/hub/club-arena/invite/${club.id}${refQuery}`;
               /* The same leak as the card, and further out: this string is
                  handed to the OS share sheet, so `display_name` was carrying a
                  player's legal name into WhatsApp, SMS and anywhere else the
@@ -4721,7 +4723,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       <DiamondWalletModal
         isOpen={showDiamondWallet}
         onClose={() => setShowDiamondWallet(false)}
-        onBuyClick={() => navigate('/vip')}
+        onBuyClick={() => navigate(withClubContext('/vip', clubId))}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

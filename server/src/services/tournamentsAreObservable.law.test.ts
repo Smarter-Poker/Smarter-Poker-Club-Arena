@@ -16,6 +16,13 @@
  * These pins are the contract that keeps that from being true again.
  */
 import { describe, expect, it, vi } from 'vitest';
+// The failure is an explicit fixture even when this checkout has live credentials.
+vi.mock('./supabase.js', () => ({
+  supabase: {
+    rpc: vi.fn(async () => ({ data: null, error: { message: 'audit fixture: unavailable' } })),
+  },
+}));
+import { supabase } from './supabase.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -24,7 +31,6 @@ import {
   TournamentMetrics,
   UNPAID_LOOKBACK_HOURS,
 } from './TournamentMetrics.js';
-import { supabase } from './supabase.js';
 
 const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
@@ -92,18 +98,9 @@ describe('the engine exposes tournament gauges', () => {
       seatFirstWaiting: 3,
       collectedAt: Date.now(),
     };
-    // Force the failure. Developer machines may carry a reachable Supabase
-    // configuration, so "the test has no database" is not a deterministic
-    // failure mode and can silently turn this into a live integration read.
-    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValueOnce({
-      data: null,
-      error: { message: 'forced metrics read failure' },
-    } as never);
-    try {
-      await m.refresh();
-    } finally {
-      rpc.mockRestore();
-    }
+    // The mocked RPC refuses the read; the snapshot must survive.
+    await m.refresh();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_tournament_metrics', expect.any(Object));
     expect(m.get().running).toBe(42);
     expect(m.get().registering).toBe(7);
   });

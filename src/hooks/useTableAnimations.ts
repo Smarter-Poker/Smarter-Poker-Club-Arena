@@ -8,14 +8,11 @@
  * and confetti trigger state.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { roomService } from '../services/RoomService';
 import type { ChipAnimationEvent } from '../components/table/ChipAnimation';
 import { preloadThrowableImages } from '../components/table/ThrowableImage';
-
-/** Minimum gap between outgoing throws (ms) — prevents spam + diamond drain. */
-const THROW_RATE_LIMIT_MS = 1500;
 
 export interface UseTableAnimationsReturn {
   // Throwables
@@ -49,7 +46,6 @@ export function useTableAnimations(
   }, []);
 
   // Throwable state
-  const lastThrowAtRef = useRef(0);
   const [showThrowableSelector, setShowThrowableSelector] = useState(false);
   const [throwTargetSeat, setThrowTargetSeat] = useState<number | null>(null);
   const [activeThrows, setActiveThrows] = useState<ThrowEvent[]>([]);
@@ -64,11 +60,10 @@ export function useTableAnimations(
     async (throwable: Throwable) => {
       if (!tableId || !userId || throwTargetSeat === null) return;
 
-      // Rate limit: this path bypassed the chat limiter entirely, so a held
-      // tap could emit unbounded broadcasts (and diamond charges).
-      const now = Date.now();
-      if (now - lastThrowAtRef.current < THROW_RATE_LIMIT_MS) return;
-      lastThrowAtRef.current = now;
+      // The selector has already consumed inventory through the server RPC,
+      // which enforces the account cooldown under a lock. A second timer
+      // here measures response arrival, not charge time: variable latency
+      // could discard an already-paid throw. Every approved selection plays.
 
       const event = throwableService.createThrowEvent(heroSeat, throwTargetSeat, throwable.id);
 

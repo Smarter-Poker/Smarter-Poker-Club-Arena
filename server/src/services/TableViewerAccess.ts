@@ -23,35 +23,15 @@ export async function authorizeTableViewer(
   tableId: string,
   userId: string
 ): Promise<TableViewerAccess> {
-  const { data: table, error: tableError } = await supabase
-    .from('tables')
-    .select('club_id, union_id, restrict_observers')
-    .eq('id', tableId)
-    .maybeSingle();
-
-  if (tableError) return { allowed: false, reason: 'check_failed', clubId: null };
-  if (!table) return { allowed: false, reason: 'table_not_found', clubId: null };
-
-  const clubId = typeof table.club_id === 'string' ? table.club_id : null;
-  const unionId = typeof table.union_id === 'string' ? table.union_id : null;
-  const accessScopeId = unionId || clubId;
-  if (!accessScopeId) return { allowed: false, reason: 'check_failed', clubId: null };
-
-  /*
-   * The lobby's ownership rule is union-aware: a member of Shark can see a
-   * Midway-owned table even though that durable row names Midway's shell club
-   * as club_id. This gate used to require an exact club_members(club_id) row,
-   * so the lobby offered Watch Table and both engine transports refused it.
-   *
-   * Resolve the table owner's authoritative scope and the viewer's complete
-   * active membership set in the SAME second database wave as the seat read.
-   * fn_join_club enforces four active memberships, so this is bounded without
-   * an authorization-breaking LIMIT. fn_club_scope_ids also covers the legacy
-   * union_clubs relationship as well as clubs.union_id. No scope is cached:
-   * a club leaving a union must revoke access on the next subscription.
-   */
-  const scopeOwnerId = accessScopeId;
-  const [seatResult, membershipsResult, scopeResult] = await Promise.all([
+  // Both reads depend only on the requested table and authenticated player.
+  // A verified current seat is already sufficient access; membership matters
+  // only for observers and must not delay or reject a seated reconnect.
+  const [{ data: table, error: tableError }, seatResult] = await Promise.all([
+    supabase
+      .from('tables')
+      .select('club_id, union_id, restrict_observers')
+      .eq('id', tableId)
+      .maybeSingle(),
     supabase
       .from('table_seats')
       .select('id')
@@ -60,18 +40,38 @@ export async function authorizeTableViewer(
       .is('left_at', null)
       .limit(1)
       .maybeSingle(),
+  ]);
+
+  if (tableError) return { allowed: false, reason: 'check_failed', clubId: null };
+  if (!table) return { allowed: false, reason: 'table_not_found', clubId: null };
+
+  const clubId = typeof table.club_id === 'string' ? table.club_id : null;
+  const unionId = typeof table.union_id === 'string' ? table.union_id : null;
+  const accessScopeId = unionId || clubId;
+  if (!accessScopeId) return { allowed: false, reason: 'check_failed', clubId: null };
+  if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+  if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
+
+  /*
+   * The lobby's ownership rule is union-aware: a member of Shark can see a
+   * Midway-owned table even though that durable row names Midway's shell club
+   * as club_id. Resolve the table owner's authoritative scope and the viewer's
+   * complete active membership set only after proving the viewer is not
+   * seated. That keeps a seated reconnect independent from both observer
+   * lookups while retaining fail-closed, uncached authorization for observers.
+   */
+  const [membershipsResult, scopeResult] = await Promise.all([
     supabase
       .from('club_members')
       .select('club_id')
       .eq('user_id', userId)
       .in('status', ['active', 'approved']),
-    supabase.rpc('fn_club_scope_ids', { p_club_id: scopeOwnerId }),
+    supabase.rpc('fn_club_scope_ids', { p_club_id: accessScopeId }),
   ]);
 
-  if (seatResult.error || membershipsResult.error || scopeResult.error) {
+  if (membershipsResult.error || scopeResult.error) {
     return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
   }
-  if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
   const scopeIds = new Set(
     Array.isArray(scopeResult.data)
       ? scopeResult.data.filter((id): id is string => typeof id === 'string')

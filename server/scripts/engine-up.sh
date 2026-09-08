@@ -65,6 +65,45 @@ HEALTH_RETRIES="${HEALTH_RETRIES:-3}"
 
 log() { echo "[engine-up] $*"; }
 
+# Where outgoing engine logs are kept. Read by nothing automated; read by the
+# next agent asking "what did the engine do before it died at 16:52".
+LOG_DIR="${LOG_DIR:-/var/log/club-arena-engine}"
+LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-14}"
+LOG_KEEP_MB="${LOG_KEEP_MB:-6144}"
+
+save_outgoing_log() {
+  local c="$1" id img started stamp out
+  mkdir -p "$LOG_DIR" || return 1
+  id="$(docker inspect -f '{{.Id}}' "$c" 2>/dev/null | cut -c1-12)" || return 1
+  img="$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null | sed 's#.*[:/]##' | cut -c1-8 | tr -c 'A-Za-z0-9._\n-' '_')"
+  started="$(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null | cut -c1-19 | tr -d ':-')"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  out="$LOG_DIR/engine-${stamp}-started${started:-unknown}-${id:-unknown}-${img:-unknown}.log.gz"
+  # -t: every line carries the daemon's timestamp, so the file is usable
+  # without the process's own clock.
+  if docker logs -t "$c" 2>&1 | gzip -6 > "$out"; then
+    log "saved the outgoing log to $out ($(du -h "$out" | cut -f1))"
+  else
+    rm -f "$out"; return 1
+  fi
+  # Retention: age first, then total size (oldest first) so a chatty week
+  # cannot fill the disk the engine and the database probes share.
+  find "$LOG_DIR" -name 'engine-*.log.gz' -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
+  local total
+  total="$(du -sm "$LOG_DIR" 2>/dev/null | cut -f1)"
+  while [ "${total:-0}" -gt "$LOG_KEEP_MB" ]; do
+    local oldest
+    # Never delete the file just written: the newest log is the one the next
+    # investigation needs, whatever the cap says.
+    [ "$(ls -1 "$LOG_DIR"/engine-*.log.gz 2>/dev/null | wc -l)" -gt 1 ] || break
+    oldest="$(ls -1tr "$LOG_DIR"/engine-*.log.gz 2>/dev/null | head -1)"
+    [ -n "$oldest" ] || break
+    rm -f "$oldest"
+    total="$(du -sm "$LOG_DIR" 2>/dev/null | cut -f1)"
+  done
+  return 0
+}
+
 # Fail BEFORE touching the running container. A missing env file or image used
 # to be discovered only after the old container was already destroyed, which
 # turned a recoverable mistake into an outage.
@@ -86,6 +125,16 @@ log "replacing $CONTAINER with image $IMAGE"
 if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   log "stopping $CONTAINER (SIGTERM, 45s grace for snapshot flush)"
   docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
+  # THE OUTGOING ENGINE'S LOG SURVIVES IT (2026-09-07). `docker rm` deletes the
+  # json-file log with the container, and the container is replaced every
+  # hour, so the log of whatever went wrong in the previous hour was gone the
+  # moment anyone could look: on 2026-09-07 the engine was unreachable for a
+  # minute at 16:52 and resurfaced inside an off-schedule break, and there was
+  # nothing left to read. Dump the whole retained log (json-file keeps up to
+  # 5 x 50 MB) to disk, compressed, named by stop time + short id + image, and
+  # keep fourteen days or 6 GB, whichever is hit first. Never fatal: a failed
+  # dump must not stop the deploy.
+  save_outgoing_log "$CONTAINER" || log "WARN: could not save the outgoing log (continuing)"
   docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 fi
 

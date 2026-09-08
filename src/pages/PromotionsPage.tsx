@@ -3,16 +3,16 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
-import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
+import { ArenaActionButton, ClubButtonsSurface } from '../components/club-buttons/ClubButtons';
 import ReferralModal from '../components/social/ReferralModal';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
-import { bonusService } from '../services/BonusService';
 import { promotionService } from '../services/PromotionService';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -25,6 +25,7 @@ import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { publicOrigin } from '../lib/appBase';
 
 interface Promotion {
   id: string;
@@ -41,15 +42,20 @@ interface Promotion {
 
 export default function PromotionsPage() {
   useVisibilityRefresh(() => loadPromotions());
-  const { clubId } = useParams();
+  const { clubId: routeClubId } = useParams();
+  const location = useLocation();
+  /* Inside a club the hamburger stamps `?club=` on this link, so the global
+     `/promotions` route opens on THAT club's offers rather than the arena's.
+     The path param still wins when both are present. */
+  const clubId = routeClubId || readClubContextParam(location.search) || undefined;
   const { user } = useAuthUser();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'upcoming'>('active');
-  const [showBonusWheel, setShowBonusWheel] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
   const [visiblePromoCards, setVisiblePromoCards] = useState(new Set<number>());
   const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
@@ -98,7 +104,7 @@ export default function PromotionsPage() {
   const referralCode = playerNumber || '';
   const referralLink =
     clubId && referralCode
-      ? `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
+      ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
       : '';
 
   // Load the user's existing claims so cards show Claimed vs claimable.
@@ -338,15 +344,18 @@ export default function PromotionsPage() {
         metrics={[
           { label: 'Visible Offers', value: filteredPromos.length, tone: 'live' },
           { label: 'View', value: filter.toUpperCase() },
-          { label: 'Daily Bonus', value: 'Ready', tone: 'attention' },
         ]}
       />
-      {/* Daily Bonus Button */}
-      <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
-        <span className="bonus-icon">▦</span>
-        <span className="bonus-text">Claim Your Daily Bonus!</span>
-        <span className="bonus-arrow">›</span>
-      </div>
+      {/* Daily Club Arena Bonus: the painted action shell, not a flat banner. */}
+      <ClubButtonsSurface className="promotions-daily-bonus">
+        <ArenaActionButton
+          icon="diamond"
+          label="Daily Club Arena Bonus"
+          sublabel="Claim Today’s Tiles"
+          size="large"
+          onClick={() => navigate('/bonuses')}
+        />
+      </ClubButtonsSurface>
 
       {/* Referral Banner */}
       <div className="referral-banner" onClick={() => setShowReferral(true)}>
@@ -497,44 +506,6 @@ export default function PromotionsPage() {
           ))
         )}
       </div>
-
-      {/* Daily Bonus Wheel Modal */}
-      {showBonusWheel && (
-        <div className="bonus-wheel-overlay" onClick={() => setShowBonusWheel(false)}>
-          <div className="bonus-wheel-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowBonusWheel(false)}>
-              ✕
-            </button>
-            <DailyBonusWheel
-              onSpin={async () => {
-                // The SERVER decides what a daily bonus pays — fn_claim_daily_bonus
-                // reads a fixed 7-day ladder out of daily_bonus_rewards; there is
-                // no randomness anywhere in it. Hand the real outcome back so the
-                // wheel stops on the day that was actually credited instead of a
-                // segment picked by Math.random() in the browser.
-                try {
-                  const res = await bonusService.claimDailyBonus(user?.id || '');
-                  toast.success(
-                    res.rewardType === 'vip_points'
-                      ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
-                      : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
-                  );
-                  return {
-                    day: res.day,
-                    reward: res.reward,
-                    rewardType:
-                      res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
-                  };
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
-                  setShowBonusWheel(false);
-                  return null;
-                }
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Referral Modal */}
       <ReferralModal

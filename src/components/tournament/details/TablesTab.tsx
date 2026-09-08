@@ -54,7 +54,8 @@
  * number and does not print a second message about it: one refusal, one voice.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef } from 'react';
+import { warmTable, observeLobbyTableWarmups } from '../../../services/tableWarmup';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../common/Toast';
 import { openTableAsObserver } from '../../../utils/observeTable';
@@ -280,6 +281,10 @@ const TableRow = React.memo(function TableRow({
       <button
         type="button"
         className={className}
+        data-warm-table={table.id}
+        onPointerEnter={() => warmTable(table.id)}
+        onTouchStart={() => warmTable(table.id)}
+        onFocus={() => warmTable(table.id)}
         onClick={() => onOpen(table)}
         aria-label={`Watch ${table.name || `Table ${displayNumber}`}, ${seatText} Players Seated`}
       >
@@ -301,6 +306,7 @@ export default function TablesTab({
 }: TournamentTabProps) {
   const navigate = useNavigate();
   const toast = useToast();
+  const tableListRef = useRef<HTMLUListElement>(null);
 
   /** Live players only. An eliminated row keeps its last table_id, and counting
    *  it would report a nine-handed table that has two players left on it. */
@@ -431,6 +437,14 @@ export default function TablesTab({
     [navigate, toast]
   );
 
+  const warmTableIds = lines
+    .filter((line) => line.openable)
+    .map((line) => line.table.id)
+    .join(',');
+  useEffect(() => {
+    return observeLobbyTableWarmups(tableListRef.current ? [tableListRef.current] : []);
+  }, [warmTableIds]);
+
   if (tables.length === 0) {
     return (
       <div className="tl-panel tt-panel">
@@ -475,7 +489,7 @@ export default function TablesTab({
         {openTables > 1 && <span className="tl-badge tl-badge--good">Auto-Balancing Enabled</span>}
       </div>
 
-      <ul className="tl-list tl-scroll tt-list">
+      <ul ref={tableListRef} className="tl-list tl-scroll tt-list">
         {lines.map((line, i) => (
           <TableRow
             {...line}

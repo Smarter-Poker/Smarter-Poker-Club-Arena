@@ -52,6 +52,7 @@ import {
   boardClearMs,
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { nextHandGap } from './nextHandGapRecorder.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -222,11 +223,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await this.withStepBudget(
-          'load_seats',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          loadSeatedPlayers(this.tableId)
-        );
+        this.seatedPlayers = await this.prepareNextHand();
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -239,20 +236,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // ServerTableEngineBase.adoptMovedPresence.
         this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
-        await this.withStepBudget(
-          'refresh_blinds',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.refreshBlinds()
-        );
-        // 2026-08-18: cash tables re-read their rake settings here (throttled
-        // to once a minute inside the method). tableInfo is otherwise loaded
-        // once per engine lifetime, so before this an owner changing the rake
-        // saw nothing until the table restarted.
-        await this.withStepBudget(
-          'refresh_rake',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.refreshRakeConfig()
-        );
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -610,13 +593,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             'leave_pending',
             ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
             (async () => {
-              const cashedOutIds = await processLeavePending(
-                this.tableId,
-                this.tableInfo?.club_id || '',
-                (lockedUserId, stayRemainingMs) =>
-                  this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
-                this.forcedLeaves
-              );
+              const cashedOutIds = await this.takePreparedLeavePending();
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
               for (const leftUserId of cashedOutIds) {
@@ -833,6 +810,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.announcePendingSeatMoves()
         );
 
+        // THE REST ENDS HERE (Dan 2026-09-07). Everything above this line
+        // since the hand-free broadcast - the settlement barrier, the roster
+        // read, the sweeps, the seat-move notice - ran under the armed rest;
+        // this waits out whatever of it is left, records how long the felt
+        // actually waited, and only then deals.
+        await this.awaitNextHandRest();
+
         /* The event loop may have resumed after the local lease deadline but
            before its raw timeout callback got CPU. Re-prove authority at the
            sole new-hand edge; a stale dealer cannot allocate a hand number,
@@ -936,34 +920,43 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             potAwardGroups: countAwardGroups(this.currentHandPerPotAwards),
           });
 
-          // Phase 1: the completion sequence actually plays out.
+          // Phase 1: the completion sequence actually plays out. When this
+          // sleep ends the hand IS completed in Dan's 2026-08-21 sense: the
+          // winning hand shown, the pot pushed with its total, the cards
+          // mucked.
           this.setLoopPhase('post_hand_hold');
           await this.sleep(resultDisplayMs);
-          // Phase 2: board clear (clients animate the card/chip sweep).
+          // Phase 2: the hand-free broadcast. Clients animate the board clear
+          // from it, and it is what makes the Rabbit Hunt button visible.
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
-          await this.sleep(boardClearMs(wentToShowdown));
-          // Phase 3: the hand RESTS (Dan 2026-09-05, "1.75 ... ON ALL HANDS
-          // UPON COMPLETION, GIVE USERS A CHANCE TO USE THE RABBIT HUNT").
+          // Phase 3: THE REST (Dan 2026-09-07: "THE NEXT HAND 2 SECONDS AFTER
+          // THE HAND IS COMPLETED"). One number, HAND_COMPLETION.NEXT_HAND_REST_MS,
+          // between completion and the next deal. The board clear
+          // (boardClearMs, ~0.4-0.6s), the Rabbit Hunt window (Dan 2026-09-05,
+          // RABBIT_HUNT_WINDOW_MS, the same number) and every piece of
+          // next-hand bookkeeping live INSIDE it.
           //
-          // It sits HERE, after the broadcast above has told every client the
-          // hand is over, and not inside handCompletionHoldMs, for two
-          // reasons that are really one reason. The client renders the Rabbit
-          // Hunt button behind `!tableState.isHandInProgress`, so the offer
-          // it received at settlement is invisible until that clean state
-          // lands. (Until 2026-09-05 a reveal also froze the client's
-          // snapshot for three seconds, which was only safe with no live hand
-          // to starve; the reveal now paints on a retained copy of the board
-          // and freezes nothing - TablePage P1.) Before this beat existed the
-          // button's whole visible life was boardClearMs - half a second on a
-          // fold.
+          // It is ARMED here and AWAITED immediately before dealHand
+          // (awaitNextHandRest), not slept here. Before 2026-09-07 the engine
+          // slept the clear and the window at this point and only THEN went to
+          // the top of the loop to wait for settlement, reload the roster, run
+          // the seat sweeps and allocate a hand number - a chain of PostgREST
+          // round trips at the 250-700ms each really costs from the engine
+          // box. Measured on production that evening: p50 11.2s, p90 20.6s
+          // from one hand's end to the next hand's start, against a designed
+          // 2.25-2.65s. Arming the deadline first lets all of that run under
+          // the rest, and the felt waits for whichever finishes last.
           //
-          // Unconditional. A rest that happened only when a rabbit hunt was
-          // purchasable would tell the whole table, from the rhythm alone,
-          // that the deck still had cards in it (CLAUDE.md 10.5: timing is
-          // part of the treatment). The per-user setting hides the BUTTON and
-          // never touches this sleep.
-          this.setLoopPhase('post_hand_rabbit_window');
-          await this.sleep(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS);
+          // Unconditional, on every hand, with nothing to branch on between
+          // the broadcast and the arming - a rest that varied with the deck
+          // would tell the table what the deck still held (CLAUDE.md 10.5:
+          // timing is part of the treatment). The per-user "hide the button"
+          // setting does not shorten it. boardClearMs is the floor, so the
+          // clear animation can never outlive the rest whatever the constants
+          // are set to.
+          this.armNextHandRest(
+            Math.max(HAND_COMPLETION.NEXT_HAND_REST_MS, boardClearMs(wentToShowdown))
+          );
 
           // ── Dan's Rebuy Pause (2026-08-24) ──
           // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.
@@ -1338,6 +1331,218 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
+  /** Read fresh hand inputs only after the settlement and pause gates. */
+  /**
+   * THE REST (Dan 2026-09-07). Armed at the hand-free broadcast, awaited
+   * immediately before the next deal. See the note where it is armed.
+   */
+  protected armNextHandRest(restMs: number): void {
+    const now = Date.now();
+    this.nextHandNotBeforeMs = now + restMs;
+    this.lastCompletionAtMs = now;
+    this.gapPhaseMs = {};
+    this.gapPhaseName = this.loopPhase;
+    this.gapPhaseSinceMs = now;
+    this.gapHadRebuyPause = false;
+    this.gapSawIdle = false;
+  }
+
+  protected async awaitNextHandRest(): Promise<void> {
+    await this.settlePreparedHandNumber();
+    if (this.nextHandNotBeforeMs === null) return;
+    const remaining = this.nextHandNotBeforeMs - Date.now();
+    if (remaining > 0) {
+      this.setLoopPhase('next_hand_rest');
+      await this.sleep(remaining);
+    }
+    this.nextHandNotBeforeMs = null;
+    if (this.lastCompletionAtMs !== null && !this.gapSawIdle) {
+      const now = Date.now();
+      this.accrueGapPhase(now);
+      nextHandGap.record({
+        tableId: this.tableId,
+        gapMs: now - this.lastCompletionAtMs,
+        phases: this.gapPhaseMs,
+        rebuyPaused: this.gapHadRebuyPause,
+        at: now,
+      });
+    }
+    // A table that idled between the two hands (short-handed, parked, held
+    // for a spin reveal) is not a sample of the rest; it waited on people.
+    this.lastCompletionAtMs = null;
+    this.gapPhaseMs = {};
+  }
+
+  /** Loop phases that mean the table was waiting on something other than bookkeeping. */
+  private static readonly IDLE_LOOP_PHASES = new Set([
+    'idle_not_enough_players',
+    'start_wait_for_players',
+    'parked_for_pause',
+    'spin_reveal_hold',
+    'mystery_bounty_hold',
+    'admin_pause_lock',
+    'maintenance_lock',
+    'idle_cluster_closed',
+    'idle_seat_moves',
+  ]);
+
+  /** Per-phase share of the current gap; called from setLoopPhase while a rest is armed. */
+  protected accrueGapPhase(now: number): void {
+    // `== null` on purpose: the base constructor sets a loop phase before this
+    // class's field initialisers have run, and undefined must read as "no rest armed".
+    if (this.lastCompletionAtMs == null) return;
+    const dt = now - this.gapPhaseSinceMs;
+    if (dt > 0) this.gapPhaseMs[this.gapPhaseName] = (this.gapPhaseMs[this.gapPhaseName] ?? 0) + dt;
+    this.gapPhaseName = this.loopPhase;
+    this.gapPhaseSinceMs = now;
+    if (this.loopPhase === 'rebuy_pause') this.gapHadRebuyPause = true;
+    if (ServerTableEngineDealing.IDLE_LOOP_PHASES.has(this.loopPhase)) this.gapSawIdle = true;
+  }
+
+  protected override setLoopPhase(phase: string): void {
+    super.setLoopPhase(phase);
+    this.accrueGapPhase(Date.now());
+  }
+
+  private nextHandNotBeforeMs: number | null = null;
+  private lastCompletionAtMs: number | null = null;
+  private gapPhaseMs: Record<string, number> = {};
+  private gapPhaseName = '';
+  private gapPhaseSinceMs = 0;
+  private gapHadRebuyPause = false;
+  private gapSawIdle = false;
+
+  /**
+   * EVERYTHING THE NEXT HAND NEEDS FROM THE DATABASE, IN ONE ROUND (2026-09-07).
+   *
+   * Three independent reads and one allocation used to run one after another
+   * at the top of the iteration: the roster (itself two round trips), the
+   * leave-pending sweep, and - inside dealHand - the global hand number. At
+   * the 250-700ms a PostgREST call costs from the engine box that was two to
+   * three seconds on the felt, every hand, AFTER the rest had already been
+   * slept. They now start together, under the rest.
+   *
+   * Independence, stated so it can be checked:
+   * - readNextHandInputs reads seats, blinds and rake; nothing here writes them.
+   * - processLeavePending marks leaving seats left and cashes them out. It is
+   *   raced with the roster read ONLY when no add-on is pending (an add-on
+   *   must credit a seat before that seat can leave, so the serial order
+   *   pending_addons -> leave_pending is kept whenever one exists). The
+   *   roster is filtered by the sweep's result afterwards in either order, so
+   *   a seat that left during the read never deals.
+   * - allocateGlobalHandNumber takes the next value of a sequence. It is
+   *   consumed by dealHand a few seconds later or discarded (see
+   *   takePreparedHandNumber), never reused.
+   * The roster read failing still throws exactly as before; the other two
+   * settle on their own and are consumed where they always were.
+   */
+  protected async prepareNextHand(): Promise<SeatedPlayer[]> {
+    const leaveSweepCanRace =
+      !this.isTournamentTable() &&
+      !this.pendingAddOnSweepNeeded &&
+      this.pendingAddOns.size === 0 &&
+      this.preparedLeavePending === null;
+    if (leaveSweepCanRace) {
+      const sweep = this.withStepBudget(
+        'leave_pending',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        processLeavePending(
+          this.tableId,
+          this.tableInfo?.club_id || '',
+          (lockedUserId, stayRemainingMs) =>
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+          this.forcedLeaves
+        )
+      );
+      // Consumed by takePreparedLeavePending, which surfaces a rejection in
+      // the step that always owned it; this only keeps it from being unhandled.
+      sweep.catch(() => undefined);
+      this.preparedLeavePending = sweep;
+    }
+    if (this.preparedHandNumber === null) {
+      this.preparedHandNumber = this.allocateGlobalHandNumber()
+        .then((n) => ({ n, at: Date.now() }))
+        .catch((err: unknown) => {
+          // dealHand allocates again itself; this only loses the overlap.
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
+            err instanceof Error ? err.message : err
+          );
+          return null;
+        });
+    }
+    return this.readNextHandInputs();
+  }
+
+  private preparedLeavePending: Promise<string[]> | null = null;
+  private preparedHandNumber: Promise<{ n: number; at: number } | null> | null = null;
+  private preparedHandNumberValue: { n: number; at: number } | null = null;
+  /** A pre-allocated hand number older than this is discarded rather than dealt. */
+  protected static readonly PREPARED_HAND_NUMBER_MAX_AGE_MS = 15_000;
+
+  protected async takePreparedLeavePending(): Promise<string[]> {
+    const prepared = this.preparedLeavePending;
+    this.preparedLeavePending = null;
+    if (prepared) return prepared;
+    return processLeavePending(
+      this.tableId,
+      this.tableInfo?.club_id || '',
+      (lockedUserId, stayRemainingMs) =>
+        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+      this.forcedLeaves
+    );
+  }
+
+  /** Resolves the pre-allocation (if any) into a value dealHand can take synchronously. */
+  protected async settlePreparedHandNumber(): Promise<void> {
+    const pending = this.preparedHandNumber;
+    this.preparedHandNumber = null;
+    if (!pending) return;
+    this.preparedHandNumberValue = await pending;
+  }
+
+  protected takePreparedHandNumber(): number | null {
+    const prepared = this.preparedHandNumberValue;
+    this.preparedHandNumberValue = null;
+    if (!prepared) return null;
+    if (Date.now() - prepared.at > ServerTableEngineDealing.PREPARED_HAND_NUMBER_MAX_AGE_MS) {
+      return null;
+    }
+    return prepared.n;
+  }
+
+  protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
+    // These reads have no dependency on each other. Blinds update tournament
+    // settings; rake refresh updates cash settings; neither uses the roster.
+    // Keep every existing query and budget, but pay the slowest read instead
+    // of adding their round trips to the gap between hands.
+    const reads = [
+      this.withStepBudget(
+        'load_seats',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        loadSeatedPlayers(this.tableId)
+      ),
+      this.withStepBudget(
+        'refresh_blinds',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshBlinds()
+      ),
+      this.withStepBudget(
+        'refresh_rake',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshRakeConfig()
+      ),
+    ] as const;
+    this.setLoopPhase('load_next_hand_inputs');
+    // Do not fail fast and start another iteration while a sibling read is
+    // still in its budget. The old roster is retained if any input fails.
+    const [seats, blinds, rake] = await Promise.allSettled(reads);
+    if (seats.status === 'rejected') throw seats.reason;
+    if (blinds.status === 'rejected') throw blinds.reason;
+    if (rake.status === 'rejected') throw rake.reason;
+    return seats.value;
+  }
+
   protected async refreshBlinds(): Promise<void> {
     if (!this.tableInfo || !this.isTournamentTable()) return;
     // BUG-SENTRY-7463185461 FIX: retry up to 3x on transient fetch failures.
@@ -1379,7 +1584,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // every table, club, union, cash game and tournament, and can never repeat.
     // Was `this.handCount++` — a per-table counter that reset on every engine
     // restart and produced the same "Hand #196" on dozens of tables at once.
-    this.handCount = await this.allocateGlobalHandNumber();
+    // ALLOCATED UNDER THE REST since 2026-09-07 (prepareNextHand) - the same
+    // sequence, taken at most a few seconds earlier and only for a hand that is
+    // about to be dealt; a number held for longer than that is discarded and a
+    // fresh one taken here, so the ascending-by-deal-order property holds.
+    this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());
     this.handsDealtThisSession++;
     const handNumber = this.handCount;
     const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
@@ -2491,7 +2700,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dbConsumedSeconds: 0,
         });
       }
-      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+      this.disconnectEngine.registerPlayer(
+        this.tableId,
+        p.user_id,
+        this.seatedPlayers.find((seat) => seat.user_id === p.user_id)?.reconnect_membership
+      );
     }
 
     // Step 5: Wire disconnect auto-action callback into HandController

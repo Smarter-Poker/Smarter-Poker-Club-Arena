@@ -1682,11 +1682,10 @@ export abstract class ServerTableEngineBase {
     });
 
     // Initialize ported core modules
-    this.preciseTimer = new PreciseActionTimer((event) => {
-      console.log(
-        `[ServerTableEngine:${tableId}] Timer event: ${event.type} player=${event.playerId}`
-      );
-    });
+    // Routine start/cancel/expiry events need no console observer. The
+    // timer still owns its expiry callbacks and reports callback failures.
+    // Live sample 2026-09-08: 855 log writes per 10 seconds across the fleet.
+    this.preciseTimer = new PreciseActionTimer();
     this.actionValidator = new ServerActionValidator((event) => {
       console.warn(
         `[ServerTableEngine:${tableId}] Action rejected: ${event.code} - ${event.reason}`

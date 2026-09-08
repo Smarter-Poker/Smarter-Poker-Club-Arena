@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/completed-snapshots-kept-for-hours",
+  "functions": ["sp_prune_hand_state_snapshots"]
+}

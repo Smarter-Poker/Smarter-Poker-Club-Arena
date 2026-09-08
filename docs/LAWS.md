@@ -98,6 +98,50 @@ whichever test the next agent notices first.
   violation and remove it; do not read 10.6 as a reason to give the squeeze
   to seats Dan excluded.
 
+- **The header portrait's frame is a 0.5px black hairline and the baked
+  ornament is masked (ruled 2026-09-07, Dan, fourth time):** the approved
+  artwork bakes a silver ring with a blue glow around the profile slot. That
+  ring is never shown. `.profileBtn` paints an opaque `#000` disc over the
+  whole ornament at every width - centred on it, covering the glow (r 52 on
+  the 1648x168 plane) and clear of the rails (r 62) - and the photo's only
+  frame is `border: 0.5px solid rgba(0, 0, 0, 0.94)` on `.profileAvatarSlot`,
+  declared once. Dan, 2026-09-07, with a screenshot of the ring: "the profile
+  pic is supposed to be a .5 pixel black frame that 'appears invisible'
+  instead of this thick broken frame that exists now. once you fix it back, i
+  need you to harden it, and make it regression proof." Earlier, the same:
+  2026-08-31 (#2183, #2305, #2366 - ring removed, thin black edge, 0.5px),
+  2026-09-03 ("INSTEAD OF HAVING THE .50 PIXEL BLACK INVISIBLE CIRCLE
+  FRAME"), 2026-09-05 ("NOT IN ITS FRAME"). The loser: the 2026-09-01
+  "aperture" treatment (#2515) that removed the disc below 901px, seated the
+  photo inside the ring and wrote tests calling the disc "a shape drawn over
+  approved artwork" - which is why the 09-03 and 09-05 fixes restored only
+  the hairline and left the ring. "NO BOXES OVER HEADER ICONS" is about focus
+  rings on icons; the disc is its one deliberate exception. Pinned by
+  arithmetic in `the-header-portrait-frame-is-a-hairline.law.test.ts` and by
+  rendered pixels in `tests/e2e/header-portrait-frame.spec.ts`. The World Hub
+  and Club Commander headers carry the identical rule
+  (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in the World Hub repo). Do not show
+  the ring; do not read "fix the profile image" as "show the ring".
+
+- **The next hand deals two seconds after completion (ruled 2026-09-07,
+  Dan):** "LOTS OF HANDS ARE NOT STARTING THE NEXT HAND 2 SECONDS AFTER THE
+  HAND IS COMPLETED ... SOME UP TO 10 SECONDS+." "Completed" keeps its
+  2026-08-21 meaning (winning hand shown, pot pushed with its total, cards
+  mucked - the end of `handCompletionHoldMs`); from there to the next deal is
+  `HAND_COMPLETION.NEXT_HAND_REST_MS`, 2000ms, and it is the whole gap. The
+  2026-09-05 ruling that the hand rests 1.75s for the Rabbit Hunt button is
+  not reversed but absorbed: the button's window IS the rest
+  (`RABBIT_HUNT_WINDOW_MS` is the same number), and a purchase "displays and
+  moves on" - it never touches the schedule. The loser is the shape in which
+  the engine slept the board clear and the window and only then went to wait
+  for settlement, reload the roster, sweep the leavers and allocate a hand
+  number, each a PostgREST round trip at 250-700ms from the engine box:
+  measured p50 11.2s / p90 20.6s between hands on 2026-09-07. All of that now
+  runs under the rest. The five-second rebuy pause (2026-08-24) is untouched
+  and remains its own beat. Pinned by
+  `the-next-hand-deals-two-seconds-after-completion.law.test.ts`; measured by
+  `/health.nextHandGap`.
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

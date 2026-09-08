@@ -9,11 +9,11 @@
  */
 
 import nodeCrypto from 'node:crypto';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
 import { IN_LIST_CHUNK } from '../services/supabase/chunkedIn.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   mysteryChestHoldMs,
   mysteryChestPostRevealMs,
@@ -1062,26 +1062,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       balanceStage: {
         if (this.eliminationSweepCursor.nextStage > 7) break balanceStage;
-        await this.checkTableBalance();
-        if (sweepStopped()) return;
+        // A tournament break freezes seat movement as well as dealing. A
+        // balance operation closes one live seat and opens another, so it may
+        // only run after the same maintenance predicate used by the table
+        // engines has proved the platform thawed.
+        if (!isMaintenanceFrozen()) {
+          await this.checkTableBalance();
+          if (sweepStopped()) return;
 
-        // The old five-second manager interval also happened to poll final
-        // table deal votes. Preserve the feature's intended ten-second
-        // cadence only after table balancing has proved the field is on one
-        // live final table and the feature is enabled. This delayed wake uses
-        // the scheduler's one process timer and stops naturally when the deal
-        // is handled, the tournament finishes, or the manager unregisters.
-        if (
-          this.isFinalTable &&
-          this.tournamentCache?.final_table_deal_enabled === true &&
-          !this.finalTableDealHandled &&
-          !this.tournamentFinished
-        ) {
-          const dueIn = Math.max(
-            0,
-            this.lastDealPollAt + TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS - Date.now()
-          );
-          this.requestUrgentEliminationSweepAfter(dueIn);
+          // The old five-second manager interval also happened to poll final
+          // table deal votes. Preserve the feature's intended ten-second
+          // cadence only after table balancing has proved the field is on one
+          // live final table and the feature is enabled. This delayed wake uses
+          // the scheduler's one process timer and stops naturally when the deal
+          // is handled, the tournament finishes, or the manager unregisters.
+          if (
+            this.isFinalTable &&
+            this.tournamentCache?.final_table_deal_enabled === true &&
+            !this.finalTableDealHandled &&
+            !this.tournamentFinished
+          ) {
+            const dueIn = Math.max(
+              0,
+              this.lastDealPollAt + TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS - Date.now()
+            );
+            this.requestUrgentEliminationSweepAfter(dueIn);
+          }
         }
         if (completedStage(8)) return;
       }
@@ -1089,7 +1095,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       expansionStage: {
         if (this.eliminationSweepCursor.nextStage > 8) break expansionStage;
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
-        if (!(await this.checkDynamicTableExpansion())) return;
+        if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
         if (completedStage(9)) return;
       }
@@ -4504,6 +4510,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       try {
         const funded = await this.applyPrizeGuarantee('finish_fallback');
         if (funded === null) {
+          await raiseFinancialAlert(
+            'critical',
+            'Tournament.finish_guarantee_unconfirmed',
+            'The tournament prize pool has no confirmed funding receipt. Winner pricing and completion were not attempted.',
+            {
+              tournament_id: this.tournamentId,
+              guaranteed_prize: Number(tournament.guaranteed_prize ?? 0),
+              confirmed_pool: null,
+              reason: 'funding_receipt_missing',
+            }
+          );
           this.tournamentFinished = false;
           return;
         }
@@ -4531,6 +4548,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               `[Tournament:${this.tournamentId.slice(0, 8)}] funded prize pool could not be proven final (${refreshErr?.message ?? `rpc=${funded}, row=${refreshedPool}, guarantee=${refreshedGuarantee}, finalized=${String(refreshed?.prize_pool_finalized)}`})`
             ),
             'Tournament.guarantee_refresh_failed'
+          );
+          await raiseFinancialAlert(
+            'critical',
+            'Tournament.finish_guarantee_unconfirmed',
+            'The funded tournament prize pool could not be proven final and at least as large as its published guarantee. Winner pricing and completion were not attempted.',
+            {
+              tournament_id: this.tournamentId,
+              guaranteed_prize: refreshedGuarantee,
+              confirmed_pool: funded,
+              observed_pool: Number.isFinite(refreshedPool) ? refreshedPool : null,
+              prize_pool_finalized: refreshed?.prize_pool_finalized ?? null,
+              detail: refreshErr?.message ?? null,
+            }
           );
           this.tournamentFinished = false;
           return;

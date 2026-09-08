@@ -90,6 +90,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
@@ -109,6 +110,7 @@ import type { BoardStage } from '../components/table/CommunityCards';
 import {
   boardForRabbitReveal,
   retainedBoardShows,
+  retainedGhostsShow,
   RABBIT_REVEAL_MIN_VISIBLE_MS,
   type RetainedRabbitBoard,
 } from '../components/table/retainedRabbitBoard';
@@ -157,6 +159,7 @@ import {
   leaveAvailableLabel,
 } from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
+import { createSeatIdentityOverrides } from '../lib/seatIdentityOverrides';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 import {
   isPreActionHonorable,
@@ -823,6 +826,7 @@ import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { publicOrigin } from '../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -913,6 +917,8 @@ if (!_win.__pokerLocks) {
  * that is about to succeed — which is what the old 3s threshold did.
  */
 const ENGINE_LOSS_TOAST_DELAY_MS = 15_000;
+/** Stable empty roster for the profile sync at an anonymous table (2026-09-07). */
+const NO_SEATED_IDS: readonly (string | undefined)[] = [];
 
 // Props for embedded multi-table mode
 interface TablePageProps {
@@ -1928,6 +1934,24 @@ export default function TablePage({
   const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>(
     () => hydrateIdentity(cachedAuthUserId()).avatarUrl || ''
   );
+  /* AN AVATAR CHANGE STAYS CHANGED (Dan 2026-09-07). The engine republishes
+     the identity it read at the top of the hand on every broadcast; the live
+     profile sync delivers the database's newer value the moment it changes.
+     Both used to land on the same `players[i].avatar`, last writer wins, so a
+     changed face flipped old/new on every action until the next deal. This
+     holds each database-sourced identity until the engine proves it has
+     re-read the row. See src/lib/seatIdentityOverrides.ts for the rule. */
+  const seatIdentityOverridesRef = useRef(createSeatIdentityOverrides());
+  /* Published by the engine (2026-09-07). At an anonymous table the engine
+     scrubs every seat's identity and the profile sync must stay off, or it
+     paints the real face straight over the scrub. */
+  const [tableIsAnonymous, setTableIsAnonymous] = useState(false);
+  const tableIsAnonymousRef = useRef(false);
+  tableIsAnonymousRef.current = tableIsAnonymous;
+  useEffect(() => {
+    const overrides = seatIdentityOverridesRef.current;
+    return () => overrides.clear();
+  }, [tableId]);
   // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
   // unmounted + remounted) the whole .community-area on every stage change —
   // one frame after CommunityCards had marked the new cards as newly dealt.
@@ -2334,6 +2358,15 @@ export default function TablePage({
     if (!USE_ENGINE_WS) return;
     if (!engineSnapshot) return;
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
+    setTableIsAnonymous(mapped.isAnonymous);
+    /* Identity resolution BEFORE the card/status merge below: the engine owns
+       the hand, the database owns the face, and a face the database has
+       already changed is not repainted with the copy the engine took at deal
+       time. Bypassed entirely at an anonymous table (the scrub is the engine's
+       and must stand). */
+    const rosterPlayers = mapped.isAnonymous
+      ? mapped.players
+      : seatIdentityOverridesRef.current.apply(mapped.players);
     // Phase 1.2 PR-F: stash disconnect map for the top-level toast
     setDisconnectStates(mapped.disconnectStates);
     setHeroLeave(mapped.heroLeave);
@@ -2361,7 +2394,7 @@ export default function TablePage({
       const cardHoldPrevHand = prev.handNumber ?? 0;
       const cardHoldSameHand =
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
-      const nextPlayers: (SeatPlayer | null)[] = mapped.players.map((p, i) => {
+      const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
         const sp = p as unknown as SeatPlayer;
         if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
@@ -7355,6 +7388,7 @@ export default function TablePage({
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
+  const [rabbitRevealedHandNumber, setRabbitRevealedHandNumber] = useState<number | null>(null);
   /**
    * P1 2026-09-05: the board a reveal was bought against, kept so the felt
    * can go on showing it under the ghost cards while the NEXT hand's preflop
@@ -7390,6 +7424,13 @@ export default function TablePage({
     handNumber: tableState.handNumber ?? 0,
     cardCount: tableState.communityCards.length,
   });
+  /* DISPLAY AND MOVE ON (Dan 2026-09-07): a newer hand owns the board from
+     its first frame; only the reveal's ghost cards ride its empty preflop
+     slots, and only until its flop. See retainedGhostsShow. */
+  const showRetainedRabbitGhosts = retainedGhostsShow(retainedRabbitBoard, {
+    handNumber: tableState.handNumber ?? 0,
+    cardCount: tableState.communityCards.length,
+  });
   /* Stable array identities for the memoised board: a fresh spread per
      render would defeat CommunityCards' own JSON compare for nothing. */
   const retainedCards = useMemo(
@@ -7411,7 +7452,9 @@ export default function TablePage({
     retainedRabbitBoard !== null &&
     retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
       ? retainedRabbitCards
-      : rabbitRevealedCards;
+      : rabbitRevealedHandNumber === (tableState.handNumber ?? 0)
+        ? rabbitRevealedCards
+        : [];
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
@@ -7494,10 +7537,11 @@ export default function TablePage({
     async (handNumber?: number): Promise<RabbitHuntRevealResult> => {
       if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-      const result = await requestRabbitHunt(
-        tableId,
-        handNumber ?? rabbitHandNumberRef.current ?? undefined
-      );
+      // Payment may finish after HAND_STARTED has cleared or replaced these refs.
+      const requestedHandNumber =
+        handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current;
+      const boardAtRequest = lastBoardOfHandRef.current;
+      const result = await requestRabbitHunt(tableId, requestedHandNumber);
       if (!result.success || !result.cards?.length) {
         // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
         // remove the button, or topping up cannot be followed by a retry.
@@ -7519,30 +7563,31 @@ export default function TablePage({
         rank: String(c.rank) as any,
         suit: suitMap[String(c.suit)] || 'h',
       }));
-      setRabbitRevealedCards(parsedCards);
-      // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
-      // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
-      // without freezing anything. It yields the moment a newer hand has cards.
-      setRetainedRabbitBoard(
-        boardForRabbitReveal(
-          lastBoardOfHandRef.current,
-          rabbitHandNumberRef.current ?? liveHandNumberRef.current,
-          parsedCards
-        )
-      );
-      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
-      retainedRabbitTimerRef.current = window.setTimeout(() => {
-        retainedRabbitTimerRef.current = null;
-        setRetainedRabbitBoard(null);
-      }, RABBIT_REVEAL_MIN_VISIBLE_MS);
-      // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
-      // this, a reveal on a table that never deals another hand stayed on the
-      // board forever (the only other clears are hand-boundary resets).
-      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
-      rabbitRevealClearTimerRef.current = window.setTimeout(() => {
-        rabbitRevealClearTimerRef.current = null;
-        setRabbitRevealedCards([]);
-      }, 8000);
+      // Explicit hand requests belong to the replayer, which renders its own
+      // result. A replayer purchase must never replace the live felt.
+      if (handNumber === undefined) {
+        setRabbitRevealedCards(parsedCards);
+        setRabbitRevealedHandNumber(requestedHandNumber);
+        // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
+        // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
+        // without freezing anything. It yields the moment a newer hand has cards.
+        setRetainedRabbitBoard(
+          boardForRabbitReveal(boardAtRequest, requestedHandNumber, parsedCards)
+        );
+        if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+        retainedRabbitTimerRef.current = window.setTimeout(() => {
+          retainedRabbitTimerRef.current = null;
+          setRetainedRabbitBoard(null);
+        }, RABBIT_REVEAL_MIN_VISIBLE_MS);
+        // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
+        // this, a reveal on a table that never deals another hand stayed on the
+        // board forever (the only other clears are hand-boundary resets).
+        if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
+        rabbitRevealClearTimerRef.current = window.setTimeout(() => {
+          rabbitRevealClearTimerRef.current = null;
+          setRabbitRevealedCards([]);
+        }, 8000);
+      }
       return {
         success: true,
         cards: parsedCards,
@@ -14253,44 +14298,69 @@ export default function TablePage({
   // The engine remains authoritative — this only ever refreshes the three
   // identity fields, never stack, status, cards or seat. See the hook for why
   // postgres_changes and not the engine socket or the legacy broadcast channel.
-  const seatedUserIds = useMemo(() => tableState.players.map((p) => p?.id), [tableState.players]);
+  // At an anonymous table the engine scrubs every identity; subscribing here
+  // would paint the real face over the scrub. A stable empty array keeps the
+  // hook's id-set memo from churning.
+  const seatedUserIds = useMemo(
+    () => (tableIsAnonymous ? NO_SEATED_IDS : tableState.players.map((p) => p?.id)),
+    [tableState.players, tableIsAnonymous]
+  );
 
-  const handleSeatedProfileChange = useCallback((change: SeatedProfileChange) => {
-    setTableState((prev) => {
-      const idx = prev.players.findIndex((p) => p?.id === change.userId);
-      if (idx === -1) return prev;
-      const existing = prev.players[idx];
-      if (!existing) return prev;
+  const handleSeatedProfileChange = useCallback(
+    (change: SeatedProfileChange) => {
+      // The subscription is already off at an anonymous table; this covers a
+      // delivery that raced the first snapshot (reconcile fires on subscribe).
+      if (tableIsAnonymousRef.current) return;
+      setTableState((prev) => {
+        const idx = prev.players.findIndex((p) => p?.id === change.userId);
+        if (idx === -1) return prev;
+        const existing = prev.players[idx];
+        if (!existing) return prev;
 
-      const nextAvatar = change.avatar ?? existing.avatar;
-      // Undefined means the event did not touch that field; null means the
-      // player explicitly removed it. The old `?? undefined` collapsed both
-      // meanings and an avatar-only optimistic event could strip cosmetics.
-      const nextFrame = change.frame === undefined ? existing.frame : (change.frame ?? undefined);
-      const nextAura = change.aura === undefined ? existing.aura : (change.aura ?? undefined);
+        /* Undefined means the event did not touch that field; null means the
+           player explicitly removed it - mergeSeatIdentity inside `record`
+           keeps both meanings apart. The override is what stops the next
+           engine broadcast repainting the copy it took at deal time over this
+           (Dan 2026-09-07: the old/new bounce). */
+        const next = seatIdentityOverridesRef.current.record(change, {
+          avatar: existing.avatar,
+          frame: existing.frame,
+          aura: existing.aura,
+        });
 
-      /* No-op guard. Realtime echoes the hero's own write back to them, and a
-         `profiles` UPDATE fires for any column — a chip balance, a last-seen
-         stamp — so most deliveries here change nothing. Returning `prev`
-         unchanged is what stops each one re-rendering nine seats. */
-      if (
-        existing.avatar === nextAvatar &&
-        existing.frame === nextFrame &&
-        existing.aura === nextAura
-      ) {
-        return prev;
+        /* No-op guard. Realtime echoes the hero's own write back to them, and a
+           `profiles` UPDATE fires for any column — a chip balance, a last-seen
+           stamp — so most deliveries here change nothing. Returning `prev`
+           unchanged is what stops each one re-rendering nine seats. */
+        if (
+          existing.avatar === next.avatar &&
+          existing.frame === next.frame &&
+          existing.aura === next.aura
+        ) {
+          return prev;
+        }
+
+        const updatedPlayers = [...prev.players];
+        updatedPlayers[idx] = {
+          ...existing,
+          avatar: next.avatar,
+          frame: next.frame,
+          aura: next.aura,
+        };
+        return { ...prev, players: updatedPlayers };
+      });
+      /* REGARDLESS OF DEVICE. The same change made on the player's OTHER
+         device reaches this one through the same database row, so the hero's
+         own surfaces (buy-in modal, hero hub, the pre-deal placeholder seat)
+         follow it here too, and the first-paint cache is refreshed with what
+         the database just said - never the other way round. */
+      if (change.userId && change.userId === userId && change.avatar) {
+        setHeroAvatarUrl(change.avatar);
+        persistIdentity(userId, { avatarUrl: change.avatar });
       }
-
-      const updatedPlayers = [...prev.players];
-      updatedPlayers[idx] = {
-        ...existing,
-        avatar: nextAvatar,
-        frame: nextFrame,
-        aura: nextAura,
-      };
-      return { ...prev, players: updatedPlayers };
-    });
-  }, []);
+    },
+    [userId]
+  );
 
   const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
@@ -20429,8 +20499,19 @@ export default function TablePage({
       if (buyingTimeBankRef.current) return false; // no double-charge on a double-tap
       buyingTimeBankRef.current = true;
       try {
-        const { data, error } = await supabase.rpc('fn_purchase_time_banks', {
+        /* One request id per attempt (review D15, 2026-09-07): the server dedupes on it through
+           digital_purchase_receipts, so a retried or double-delivered call cannot charge twice.
+           The one-argument overload minted a fresh key per call and defeated that. */
+        const requestId =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = Math.floor(Math.random() * 16);
+                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+              });
+        const { data, error } = await supabase.rpc('fn_purchase_time_banks_v2', {
           p_quantity: quantity,
+          p_request_id: requestId,
         });
         if (error) throw error;
         const result = (data ?? {}) as {
@@ -21958,10 +22039,13 @@ export default function TablePage({
                 completion hold; the button's entire visible life was
                 boardClearMs, half a second on a fold. Dan, 2026-09-05: "IT
                 CURRENTLY DOESN'T REALLY HAVE ENOUGH TIME TO CLICK AND USE."
-                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - 1750ms of
-                rest AFTER the board clear, so the time is given where this
+                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - a rest
+                AFTER the hand-free broadcast, so the time is given where this
                 gate is already open and where a snapshot freeze has no live
                 hand to starve. Nothing here had to become hand-unsafe.
+                (2026-09-07: the window is the whole two-second rest before
+                the next deal, NEXT_HAND_REST_MS, and the engine's next-hand
+                bookkeeping runs under it rather than after it.)
 
                 `body.ca-raising` (TablePage.css) hides everything in this
                 corner while the raise overlay is open - checked, and it cannot
@@ -22448,7 +22532,7 @@ export default function TablePage({
                             every street exactly like a live board. */}
                         <CommunityCards
                           cards={board.cards.slice(0, board.visibleCount)}
-                          rabbitCards={board.revealed ? rabbitRevealedCards : []}
+                          rabbitCards={board.revealed ? liveRabbitCards : []}
                           stage={
                             board.visibleCount >= 5
                               ? 'river'
@@ -22488,7 +22572,9 @@ export default function TablePage({
                            around it. See retainedBoardShows. */
                         cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}
                         rabbitCards={
-                          showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards
+                          showRetainedRabbitBoard || showRetainedRabbitGhosts
+                            ? retainedRabbitCards
+                            : liveRabbitCards
                         }
                         stage={
                           showRetainedRabbitBoard
@@ -24605,7 +24691,10 @@ export default function TablePage({
         <>
           <div className="menu-overlay" onClick={toggleSideMenu} />
           <nav className="side-menu">
-            <button className="menu-item" onClick={() => navigate('/cashier')}>
+            <button
+              className="menu-item"
+              onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
+            >
               <span className="menu-item-icon">◉</span>
               <span className="menu-item-label">Cashier</span>
               <span className="menu-item-arrow">›</span>
@@ -24708,7 +24797,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                const shareUrl = `${window.location.origin}/hub/club-arena/table/${tableId}`;
+                const shareUrl = `${publicOrigin()}/hub/club-arena/table/${tableId}`;
                 navigator.clipboard
                   ?.writeText(shareUrl)
                   .then(() => {
@@ -24729,7 +24818,7 @@ export default function TablePage({
               className="menu-item"
               onClick={() => {
                 setIsSideMenuOpen(false);
-                navigate('/vip');
+                navigate(withClubContext('/vip', lobbyClubIdRef.current));
               }}
             >
               <span className="menu-item-icon">★</span>
@@ -25067,7 +25156,7 @@ export default function TablePage({
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
         onWaitListError={(m) => toast?.error?.(m)}
-        onTopUpAccount={() => navigate('/cashier')}
+        onTopUpAccount={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
         // Insurance
         showInsurance={showInsurance}
         insuranceOffer={insuranceOffer}

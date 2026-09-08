@@ -221,6 +221,28 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
   });
 });
 
+describe('the tournament balancer does not move players during the break', () => {
+  // Measured 2026-09-07: 26 seats / 571k chips moved between parked tables
+  // inside the 17:55 freeze by the elimination sweep's balance step - a
+  // promise broken, and the whole of the scorecard's freeze_conserved drift.
+  it('checkTableBalance and checkDynamicTableExpansion run only when not frozen', () => {
+    const src = read('tournament/TournamentManagerEliminations.ts');
+    const balance = at(src, 'await this.checkTableBalance();', 'balance call');
+    const expand = at(src, 'await this.checkDynamicTableExpansion();', 'expansion call');
+    const block = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 1);
+    expect(block, 'the balance call is not inside an isMaintenanceFrozen() guard').toMatch(
+      /^\{\s*await this\.checkTableBalance\(\);/
+    );
+    const guardStart = src.lastIndexOf('if (!isMaintenanceFrozen())', balance);
+    expect(guardStart, 'no isMaintenanceFrozen() guard before the balance call').toBeGreaterThan(
+      -1
+    );
+    expect(balance - guardStart).toBeLessThan(block.length + 40);
+    expect(expand).toBeGreaterThan(balance);
+    expect(expand - balance).toBeLessThan(block.length);
+  });
+});
+
 describe('the break is idle before the first table is woken (MaintenanceBreak.end)', () => {
   it("phase = 'idle' precedes resumeEveryEngine() inside end()", () => {
     const src = read('maintenance/MaintenanceBreak.ts');

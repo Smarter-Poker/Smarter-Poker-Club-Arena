@@ -57,7 +57,7 @@ describe('the finish path funds the guarantee', () => {
     expect(fund).toBeLessThan(price);
   });
 
-  it('re-reads the pool after funding rather than trusting the local snapshot', () => {
+  it('uses the validated funding receipt instead of the stale local snapshot', () => {
     const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
     const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
     expect(window).toMatch(/from\('tournaments'\)/);

@@ -42,7 +42,6 @@ export interface EnginePublicPlayer {
   equipped_frame?: string;
   /** Equipped avatar aura token, e.g. `aura-fire`. '' or absent means none. */
   equipped_aura?: string;
-  is_horse?: boolean;
   hand_name?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25: the engine ruled this hand muckable at
@@ -286,6 +285,13 @@ export interface MappedTableStatePatch {
    * others is the shape of the seat-7 incident.
    */
   maxSeats: number;
+  /**
+   * The engine publishes `is_anonymous` (2026-09-07) when `seatIdentity()`
+   * is scrubbing every seat's name, avatar and cosmetics. The page must then
+   * NOT paint a real face over the scrub from its own live profile sync. An
+   * engine older than the field maps to false, which is today's behaviour.
+   */
+  isAnonymous: boolean;
   /**
    * CHIP CONTINUITY: the hero's own leave lock, as the engine published it.
    * `remainingMs` is as of `at` (engine clock, ms); the leave control counts
@@ -622,5 +628,6 @@ export function mapEngineSnapshot(
     // Phase 1 (2026-08-31): the resolved seat count, identical to the length
     // of every per-seat array in this patch. See the field docs above.
     maxSeats: effectiveMaxSeats,
+    isAnonymous: (s as unknown as { is_anonymous?: unknown }).is_anonymous === true,
   };
 }

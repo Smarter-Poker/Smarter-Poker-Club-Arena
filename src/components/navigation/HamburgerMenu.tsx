@@ -29,6 +29,7 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { AUTH_STORAGE_KEY, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
+import { isPlatformStaffRole } from '../../utils/platformRoles';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
@@ -36,6 +37,7 @@ import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibration
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
+import { switchClubTarget } from '../../utils/clubScopedPath';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { capture } from '../../lib/analytics';
 import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
@@ -52,6 +54,8 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
+import { mediaUrl } from '../../utils/mediaBase';
+import { signInUrl } from '../../lib/signIn';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -219,10 +223,40 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   });
 
-  const match = location.pathname.match(/^\/clubs\/([a-zA-Z0-9-]+)/);
-  const clubId = match ? match[1] : null;
-  const clubRole = clubId === workspace.routeClubId ? workspace.clubRole : null;
-  const effectivePlatformStaff = clubId ? workspace.isPlatformStaff : isPlatformStaff;
+  /* ── THE MENU STAYS INSIDE THE CLUB YOU ARE INSIDE ────────────────────────
+     Dan, 2026-09-02: "IF YOU ARE A PART OF MULTIPLE CLUBS (OR UNIONS) IT
+     SHOULD ALWAYS BE OPEN TO THAT SPECIFIC CLUB."
+
+     This read `location.pathname` alone, so the drawer only knew which club
+     it was in while standing on a `/clubs/…` URL. The moment you took one
+     club-scoped link — Leaderboards, Wallet, Marketplace, all of which live
+     at global paths — `clubId` went null, every subsequent link in the drawer
+     was rebuilt without a club, and the context select and staff sections
+     disappeared. The club survived exactly one hop.
+
+     `workspace.routeClubId` is the existing reader that already looks at BOTH
+     the path and `?club=` (ClubWorkspaceContext.getRouteClubId), and the
+     provider is mounted above this component. Using it means the drawer holds
+     the club across every page in the club-scoped set, and the identifier it
+     hands to `getClubArenaNavigation` is the same string the URL is carrying
+     — slug stays slug, which is Dan's "THE SLUGS MUST MATCH". */
+  const clubId = workspace.routeClubId;
+  const clubRole = workspace.clubRole;
+  /* EITHER READER MAY SAY YES; NEITHER MAY VETO. This was
+     `clubId ? workspace.isPlatformStaff : isPlatformStaff`, which was safe
+     only while `clubId` meant "on a /clubs/… path". Now that it is also true
+     on `/leaderboard?club=…`, that ternary would hand the whole decision to
+     the workspace on ordinary global pages — and the workspace reports
+     `isPlatformStaff: false` while it is still loading, and again if its
+     authorization read fails. An admin would have watched Platform Operations
+     blink out of their drawer on every club-scoped page, and lose it outright
+     on a network stumble.
+
+     The two are independent reads of the same `profiles.role` column, so OR
+     is not a widening of trust: it is two witnesses to one fact, and this
+     drawer is navigation rather than an authorization boundary (the route and
+     API guards are what actually enforce /admin). */
+  const effectivePlatformStaff = workspace.isPlatformStaff || isPlatformStaff;
   const navigationGroups = getClubArenaNavigation({
     clubId,
     clubRole,
@@ -544,7 +578,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             /* `profiles.show_stack_bb` is NOT read here any more — see the note
                where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
-            setIsPlatformStaff(data.role === 'admin' || data.role === 'super_admin');
+            setIsPlatformStaff(isPlatformStaffRole(data.role));
           }
         });
 
@@ -616,6 +650,26 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     navigatingRef.current = true;
     navigate(path);
     onClose();
+  };
+
+  /**
+   * Switch club without losing the page you are on.
+   *
+   * This select used to be reachable only from a `/clubs/…` path, so sending
+   * the player to that club's lobby was the whole of "switch club". Now that
+   * the drawer keeps its club across `?club=`-scoped pages, the same control
+   * appears on Leaderboards, Wallet and Marketplace — and jumping to the
+   * lobby from there would answer "show me this in the other club" by
+   * throwing away the page, which is the same class of fault as the bug this
+   * branch fixes, just in the other direction.
+   *
+   * So: on a club-scoped global page, swap the club and STAY. Anywhere else,
+   * the lobby remains the right destination.
+   */
+  const handleSwitchClub = (nextClubUUID: string) => {
+    if (!nextClubUUID) return;
+    const club = clubChoices.find((candidate) => candidate.id === nextClubUUID);
+    handleNavigate(switchClubTarget(location, club ?? { id: nextClubUUID }));
   };
 
   // Table Studio is a modal destination, not content inside the command
@@ -838,8 +892,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         /* private mode */
       }
       onClose();
-      const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
-      window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
+      // Web: the World Hub login. Native: the in-app AuthPage (src/lib/signIn).
+      window.location.href = signInUrl(location.pathname + location.search);
     }
   };
 
@@ -895,11 +949,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       >
         <div className={styles.utilityRail}>
           <div className={styles.brandLockup}>
-            <img
-              src="/hub/club-arena/images/diamond-icon.webp"
-              alt=""
-              className={styles.brandMark}
-            />
+            <img src={mediaUrl('images/diamond-icon.webp')} alt="" className={styles.brandMark} />
             <span>
               <span className={styles.brandEyebrow}>Smarter.Poker</span>
               <span className={styles.brandTitle} id={dialogTitleId}>
@@ -987,7 +1037,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span>Club Context</span>
               <select
                 value={workspace.clubUUID || ''}
-                onChange={(event) => handleNavigate(`/clubs/${event.target.value}`)}
+                onChange={(event) => handleSwitchClub(event.target.value)}
               >
                 {clubChoices.map((club) => (
                   <option key={club.id} value={club.id}>

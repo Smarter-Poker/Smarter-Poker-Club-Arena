@@ -100,9 +100,13 @@ describe('the bar stretches across the top', () => {
     // over the logo. The source crop starts at pixel 1111 of 1648, so that
     // exact ratio must keep scaling with the complete artwork plane.
     expect(controls).not.toContain('height: var(');
-    expect(profile).toContain('left: 66.75%');
-    expect(1171 * 0.6675).toBeCloseTo(781.64, 2);
-    expect(390 * 0.6675).toBeCloseTo(260.33, 2);
+    // The disc is centred on the ornament at x = 1159.75 / 1648 = 70.37% of
+    // the plane (2026-09-07; it used to start at 66.75%). Its left edge is a
+    // percentage of the plane, never a pixel, so it scales with the artwork.
+    expect(profile).toMatch(/left: 6\d(\.\d+)?%;/);
+    expect(profile).not.toMatch(/left: \d+px/);
+    expect(1171 * 0.6698).toBeCloseTo(784.34, 2);
+    expect(390 * 0.6698).toBeCloseTo(261.22, 2);
   });
 
   it('paints no background of its own behind or around the artwork', () => {
@@ -263,24 +267,22 @@ describe('mobile uses the identical desktop header', () => {
   });
 });
 
-describe('the profile region shows the complete live profile picture', () => {
+describe('the profile region shows the live profile picture inside the hairline, over the masked ornament', () => {
   /*
-   * UPDATED 2026-09-01. This block used to pin an opaque black disc over the
-   * baked ornament on EVERY width, with a 72% portrait centred at 50%/50%.
-   * Measured against the artwork this header actually renders
-   * (images/global-header/global-header-desktop.png, 1648x168), the ornament is
-   * a circle centred at (1159.75, 80.5) with a 94-unit outer diameter and an
-   * 81-unit aperture inside its chrome band. The disc was 117.8 units - wider
-   * than the ornament - so it painted out the ring and its blue glow, and the
-   * 72% portrait was 84.8 units sitting 3.6 units low, overlapping the band.
-   * Dan, 2026-09-01: "the profile image needs to be fixed on most of them".
-   * Below 901px the portrait now fills the measured aperture and the approved
-   * ring frames it. At and above 901px the artwork is squashed by
-   * `object-fit: fill` into a 96px band, so the ornament is an ellipse up there
-   * and the old opaque mask is still correct - the second test pins that it
-   * survived unchanged.
+   * UPDATED 2026-09-07. From 2026-09-01 (#2515) this block pinned the OPPOSITE:
+   * that the button "paints nothing", that the photo sits in the baked ring's
+   * aperture, and that the black disc is "a shape drawn over approved artwork".
+   * That reading came from one sentence ("the profile image needs to be
+   * fixed") and produced the header Dan then reported three times - 09-03,
+   * 09-05 and 09-07 ("this thick broken frame") - because the tests forbade
+   * the fix. The ring is never shown. The button is an opaque black disc over
+   * the whole ornament and the photo's only frame is the 0.5px hairline.
+   *
+   * The binding version of this, by arithmetic rather than literal, is
+   * tests/the-header-portrait-frame-is-a-hairline.law.test.ts. This block
+   * keeps the wiring: the button, the slot, the image, and the desktop band.
    */
-  it('fills the measured ornament aperture and stops covering the approved ring', () => {
+  it('masks the ornament with a black disc and seats the hairlined photo in it', () => {
     expect(TSX_CODE).toContain('avatarUrl');
     expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
@@ -291,21 +293,19 @@ describe('the profile region shows the complete live profile picture', () => {
 
     const profileButton = ruleBody(CSS, '.profileBtn');
     expect(profileButton).toContain('contain: layout paint');
-    expect(profileButton).toContain('left: 66.75%');
-    expect(profileButton).toContain('width: 7.15%');
-    expect(profileButton).toContain('top: 15%');
     expect(profileButton).toContain('aspect-ratio: 1');
-    // The hit region paints nothing. A shape drawn over approved artwork is a
-    // defect, and this one was hiding the chrome ring and its glow.
-    expect(profileButton).not.toMatch(/background:\s*#000/);
-    expect(profileButton).not.toMatch(/border-radius:\s*50%/);
+    expect(profileButton).toContain('position: absolute !important');
+    // THE MASK. Opaque, round, over the ring and its glow.
+    expect(profileButton).toMatch(/background:\s*#000/);
+    expect(profileButton).toMatch(/border-radius:\s*50%/);
 
     const slot = ruleBody(CSS, '.profileAvatarSlot');
-    expect(slot).toContain('top: 46.9% !important');
-    expect(slot).toContain('left: 50.7% !important');
-    expect(slot).toContain('width: 68.7%');
+    expect(slot).toContain('top: 50% !important');
+    expect(slot).toContain('left: 50% !important');
+    expect(slot).toContain('width: 72%');
     expect(slot).toContain('aspect-ratio: 1');
     expect(slot).toContain('transform: translate(-50%, -50%) !important');
+    expect(slot).toContain('border: 0.5px solid rgba(0, 0, 0, 0.94)');
     expect(slot).toContain('border-radius: 50%');
     expect(slot).toContain('background: transparent');
     expect(slot).toContain('z-index: 1');
@@ -315,29 +315,25 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(portrait).toContain('border-radius: 50% !important');
     expect(portrait).toContain('background: transparent !important');
     // cover, never contain: an avatar is almost never 1:1, and contain
-    // letterboxes it with black bars instead of filling the aperture.
+    // letterboxes it with black bars instead of filling the circle.
     expect(portrait).toContain('object-fit: cover !important');
     expect(portrait).not.toContain('object-fit: contain');
   });
 
   it('keeps the desktop profile mask inside the compressed 96px header rail', () => {
+    // Desktop cancels aspect-ratio (the band is squashed) and sizes the disc's
+    // height from the band; the width comes from the base rule. The law test
+    // proves the resulting ellipse covers the squashed ornament and misses the
+    // rails; this pins the shape of the override.
     expect(CSS).toMatch(
-      /@media \(min-width: 901px\)[\s\S]*?\.profileBtn\s*\{[\s\S]*?top: 13%;[\s\S]*?height: 74%;[\s\S]*?aspect-ratio: auto;[\s\S]*?background: #000;/
+      /@media \(min-width: 901px\)[\s\S]*?\.profileBtn\s*\{[\s\S]*?top: [\d.]+%;[\s\S]*?height: [\d.]+%;[\s\S]*?aspect-ratio: auto;/
     );
     /* THE PORTRAIT IS INSIDE THE FRAME (Dan 2026-09-05: "THE PROFILE PIC IN
-       THE GLOBAL HEADER IS DISTORTED AND NOT IN ITS FRAME").
-
-       PIN CORRECTED. It used to require `width: 72%` on the desktop slot,
-       preserving the pre-2026-09-01 geometry verbatim. That geometry was the
-       defect: the rule above cancels `aspect-ratio` while the mobile
-       `width: 7.15%` is inherited, so this button is ~120px wide by ~71px tall
-       at a 1680px viewport - and 72% of its WIDTH is an 86px circle inside a
-       71px box that is `overflow: hidden`. The portrait had its top and bottom
-       sliced off, which is what "distorted" looks like.
-
-       The slot is sized from the button's HEIGHT now, which is the axis that
-       constrains it. The pin follows: it must never again be sized from the
-       width on this breakpoint. */
+       THE GLOBAL HEADER IS DISTORTED AND NOT IN ITS FRAME"). The desktop disc
+       is wider than it is tall, so the slot is sized from its HEIGHT - the
+       axis that constrains it - and must never again be sized from the width
+       on this breakpoint, where 72% of the width was a circle taller than the
+       disc and `overflow: hidden` sliced its top and bottom off. */
     expect(CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.profileAvatarSlot\s*\{[\s\S]*?top: 50% !important;[\s\S]*?left: 50% !important;[\s\S]*?width: auto;[\s\S]*?height: 86%;/
     );
@@ -345,6 +341,8 @@ describe('the profile region shows the complete live profile picture', () => {
       /\.profileAvatarSlot\s*\{([\s\S]*?)\}/
     );
     expect(desktopSlot?.[1]).not.toMatch(/width:\s*\d/);
+    // The hairline is inherited from the base rule - one copy to regress.
+    expect(desktopSlot?.[1]).not.toMatch(/border:/);
   });
 });
 

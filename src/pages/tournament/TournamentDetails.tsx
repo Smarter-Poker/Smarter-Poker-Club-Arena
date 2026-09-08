@@ -79,6 +79,7 @@ import { useTournamentRegistration, isLateStatus } from '../../hooks/useTourname
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { openTableAsObserver } from '../../utils/observeTable';
 import './PremiumTournamentConsole.css';
+import { publicOrigin } from '../../lib/appBase';
 
 /** Ordinal suffix helper (1st, 2nd, 3rd...) */
 function getOrdinal(n: number): string {
@@ -1278,7 +1279,7 @@ export default function TournamentDetails({
    * tournament page.
    */
   const shareTournament = useCallback(async () => {
-    const url = `${window.location.origin}/hub/club-arena/tournaments/${tournament?.id ?? ''}`;
+    const url = `${publicOrigin()}/hub/club-arena/tournaments/${tournament?.id ?? ''}`;
     const title = tournament?.name || 'Tournament';
     try {
       if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {

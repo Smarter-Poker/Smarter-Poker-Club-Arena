@@ -22,8 +22,9 @@
  *   - nothing explains it: the script FAILS. That is the alarm, and it is the
  *     only reason this file exists.
  *
- * Run by .github/workflows/schema-manifest-refresh.yml on its existing 05:20
- * UTC schedule - after the 04:25 manifest cron, and with no new scheduled
+ * Run by .github/workflows/schema-manifest-refresh.yml on the schedules it
+ * already has (daily 05:20 UTC and hourly at :40) - the first run after the
+ * 04:25 manifest cron carries the new day, and there is no new scheduled
  * trigger anywhere (CLAUDE.md 10.85).
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -42,14 +43,34 @@ if (!url || !key) {
 
 async function rest(path) {
   const res = await fetch(`${url}/rest/v1/${path}`, {
-    headers: supabaseServerHeaders(key, { Accept: 'application/json' }),
+    headers: supabaseServerHeaders(key, {
+      Accept: 'application/json',
+      // Ask for the exact total so a truncated page cannot pass as the whole.
+      Prefer: 'count=exact',
+    }),
   });
   // Never coerce an unreadable answer into an empty one (CLAUDE.md 10.86).
   if (!res.ok) {
     console.error(`[anchor] ${path} returned HTTP ${res.status} - refusing to treat that as "no rows".`);
     process.exit(2);
   }
-  return res.json();
+  const rows = await res.json();
+  // PostgREST caps one response at max-rows (1,000 here). One line a day,
+  // that is under three years - after which every later day would silently
+  // never be anchored while this script kept reporting "up to date". Found by
+  // the deep dive over phase 6 (2026-09-07). Content-Range is "0-N/total";
+  // if total is more than we were given, we did not read the whole table.
+  const range = res.headers.get('content-range') || '';
+  const total = Number(range.split('/')[1]);
+  if (!Number.isFinite(total)) {
+    console.error(`[anchor] ${path}: no exact count in Content-Range ("${range}") - refusing to guess whether the answer is complete.`);
+    process.exit(2);
+  }
+  if (Array.isArray(rows) && rows.length < total) {
+    console.error(`[anchor] ${path}: ${rows.length} of ${total} rows returned - the response was truncated. Page it before trusting it.`);
+    process.exit(2);
+  }
+  return rows;
 }
 
 const days = await rest('ca_ledger_day_manifests?select=day,row_count,first_seq,last_seq,net_amount,sha256&order=day.asc');

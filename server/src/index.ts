@@ -21,7 +21,7 @@
  * Deploy to: Hetzner VPS (primary), or any Node.js host.
  */
 
-import { createServer } from 'http';
+import { createEngineHttpServer } from './http/createEngineHttpServer.js';
 import { reportError } from './services/errorReporter.js';
 import { handHistoryQueueDepth } from './services/supabase.js';
 import { tableStateHub } from './transport/TableStateHub.js';
@@ -134,7 +134,9 @@ const engineWs = new EngineWebSocketServer({
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).
 const channelWs = new ChannelWebSocketServer();
 
-const httpServer = createServer(createRouter({ gameServer, tableStateHub, engineWs, channelHub }));
+const httpServer = createEngineHttpServer(
+  createRouter({ gameServer, tableStateHub, engineWs, channelHub })
+);
 engineWs.attach(httpServer);
 channelWs.attach(httpServer);
 

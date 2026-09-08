@@ -195,10 +195,14 @@ jobs:
     # copies each day's line into docs/attestation/chip-ledger-days.tsv, where
     # git owns the history instead.
     #
-    # It rides this workflow's existing 05:20 UTC schedule - after the 04:25
-    # manifest cron - so no new scheduled trigger is added anywhere
-    # (CLAUDE.md 10.85, and the precedent in 10.83 for carrying extra checks on
-    # a schedule that already exists).
+    # It rides this workflow's existing schedules - BOTH of them, the daily
+    # 05:20 and the hourly :40, because unlike `refresh` it carries no `if:`
+    # that skips the hourly cron - so no new scheduled trigger is added
+    # anywhere (CLAUDE.md 10.85, and the precedent in 10.83 for carrying extra
+    # checks on a schedule that already exists). Hourly is the better cadence
+    # for an alarm: an unexplained change is seen within the hour, not the
+    # next morning, and a run with nothing new is a no-op. The 04:25 manifest
+    # cron's new day is picked up by the first run after it.
     #
     # THE SCRIPT FAILS when a day this file already carries hashes differently
     # in the database and no restatement explains it. That failure is the whole
@@ -281,9 +285,37 @@ jobs:
           gh issue comment "$N" --repo "$REPO" --body "Recovered. Every day the database attests now matches the line git already carries, or is explained by a restatement. Closing." || true
           gh issue close "$N" --repo "$REPO" || true
 
+      # THE LINE HAS TO REACH MAIN, AND GITHUB_TOKEN CANNOT TAKE IT THERE.
+      #
+      # Found by the deep dive over phase 6 (2026-09-07 evening). This step
+      # used to push with secrets.GITHUB_TOKEN and then `gh pr create`. A push
+      # made with GITHUB_TOKEN emits no `push` event, so agent-open-pr.yml
+      # never saw the branch, and `gh pr create` needs the "Allow GitHub
+      # Actions to create pull requests" setting, which is off here - the
+      # refresh job above says so in its own comment. github-actions[bot] has
+      # opened ZERO pull requests in this repository, ever. So the first new
+      # day after the 35 an agent pushed by hand would have been appended to a
+      # branch nobody sees, for ever, while this job stayed green - an anchor
+      # that never advances, reporting success.
+      #
+      # It now mints the estate's own App token exactly as agent-open-pr.yml
+      # does, and pushes with THAT: the push fires agent-open-pr (which opens
+      # the pull request) and agent-autopilot (which merges it on green), the
+      # same route every other change takes to main. If the App is not
+      # configured the step still pushes, but says out loud that nothing will
+      # open the pull request, rather than pretending the notice is delivery.
+      - name: Mint a GitHub App installation token
+        id: app-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+
       - name: Commit the new lines
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          PUSH_TOKEN_KIND: ${{ steps.app-token.outputs.token && 'app' || secrets.GH_PAT && 'pat' || 'github-token' }}
         run: |
           set -euo pipefail
 
@@ -302,17 +334,135 @@ jobs:
           Appended by .github/workflows/schema-manifest-refresh.yml from
           ca_ledger_day_manifests. Append-only: a day already anchored is never
           rewritten, and a change with no restatement fails the job instead."
-          git push -f origin "$BRANCH"
+
+          # Push with the token in hand, not the checkout's default credential:
+          # only a push made with the App (or a PAT) fires agent-open-pr.yml.
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+
+          if [ "$PUSH_TOKEN_KIND" = "github-token" ]; then
+            echo "::error::Branch $BRANCH was pushed with GITHUB_TOKEN, which fires no push event and cannot open a pull request here. The new anchor line will NOT reach main until vars.AUTOPILOT_APP_ID / secrets.AUTOPILOT_APP_PRIVATE_KEY are set (agent-open-pr.yml uses the same pair)."
+            exit 1
+          fi
 
           OPEN=$(gh pr list --state open --head "$BRANCH" --json number --jq 'length' 2>/dev/null || echo 0)
           if [ "$OPEN" != "0" ]; then
             echo "::notice::Anchored in the existing PR for branch $BRANCH."
             exit 0
           fi
+          # agent-open-pr.yml opens it on the push event; this is the same
+          # request made directly, so the line does not wait on a sweep.
           gh pr create --head "$BRANCH" --base main \
             --title "chore(attestation): anchor the ledger day manifests" \
             --body "One line per attested day, appended from ca_ledger_day_manifests. See docs/attestation/README.md." \
-            || echo "::notice::Branch $BRANCH is pushed; open the PR by hand if Actions cannot."
+            || echo "::notice::agent-open-pr.yml will open the pull request for $BRANCH on the push event."
+
+  second-writer:
+    name: The second writer agrees with the register
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    # PHASE 7 OF THE CHIP-ACCOUNTING PROGRAMME, roadmap 9.6 (2026-09-07).
+    #
+    # The database registers every money door (ca_money_rpc_registry). The
+    # World Hub, in ANOTHER repository, carries its own money routes under
+    # pages/api/club-arena/ and calls those doors by name over PostgREST -
+    # and until today nothing had ever compared the two. The first comparison
+    # found two routes calling doors the register had CLOSED four days
+    # earlier, and three RPC calls whose parameter NAMES matched no live
+    # signature, so each had answered PGRST202 on every call and whatever the
+    # route did next was the only thing that had ever run.
+    #
+    # A door is only closed if both repos agree it is closed. So this job
+    # checks the World Hub out beside this repository, scans its routes, and
+    # asks production (fn_ca_second_writer_check) whether every call still
+    # agrees. It rides the schedules this workflow already has (hourly at :40
+    # and daily at 05:20 - no new trigger, CLAUDE.md 10.85), and it lives here
+    # rather than in the World Hub because this workflow already holds the
+    # service-role key and the estate's App token.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The App token can read every repository in the estate; GITHUB_TOKEN
+      # can read only this one. Same App as agent-open-pr.yml.
+      - name: Mint a GitHub App installation token for the World Hub
+        id: app-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Smarter-Poker-World-Hub
+
+      - name: Check out the World Hub's routes
+        uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-World-Hub
+          ref: main
+          token: ${{ steps.app-token.outputs.token || secrets.GH_PAT }}
+          path: world-hub
+          # THE SECOND WRITER IS THE WHOLE SERVER SIDE, not one directory. The
+          # phase 7 deep dive scanned beyond pages/api/club-arena and found the
+          # legacy poker engine under src/lib calling two closed doors.
+          sparse-checkout: |
+            pages/api
+            src/lib
+            lib
+          sparse-checkout-cone-mode: true
+
+      - name: Ask the register about every call the World Hub makes
+        id: audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          node scripts/ci/audit-second-writer.mjs --routes world-hub/pages/api --routes world-hub/src/lib --routes world-hub/lib 2>&1 | tee /tmp/second-writer.log
+
+      # A red job in a scheduled workflow is a tree nobody hears fall
+      # (CLAUDE.md 10.86 rule 3). The reader is this issue.
+      - name: Raise the alarm
+        if: failure() && steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Second writer: a World Hub route disagrees with the money-door register"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          BODY=$(printf '%s\n' \
+            "\`scripts/ci/audit-second-writer.mjs\` compared every \`.rpc()\` call and every direct money-table write under the World Hub's \`pages/api\`, \`src/lib\` and \`lib\` with \`pg_proc\` and \`ca_money_rpc_registry\` (via \`fn_ca_second_writer_check\`), and at least one disagrees: a door that is missing, closed, not executable by the service role, called with parameter names no overload accepts, or a balance column written directly." \
+            "" \
+            "Such a route has been failing on every call, or moving chips outside the register, since the day the two sides diverged. Fix the ROUTE (in the World Hub) or the REGISTER (here) - never the check." \
+            "" \
+            '\`\`\`' \
+            "$(sed -e 's/\x1b\[[0-9;]*m//g' /tmp/second-writer.log | head -80)" \
+            '\`\`\`' \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          if [ -n "${N:-}" ]; then
+            gh issue comment "$N" --repo "$REPO" --body "$BODY" || echo "::error::could not comment on #$N"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
+          fi
+
+      - name: Close the alarm when both repos agree again
+        if: success() && steps.audit.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Second writer: a World Hub route disagrees with the money-door register"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          [ -n "${N:-}" ] || exit 0
+          gh issue comment "$N" --repo "$REPO" --body "Recovered. Every call the World Hub makes agrees with the register. Closing." || true
+          gh issue close "$N" --repo "$REPO" || true
 
   definer-exposure:
     name: No unaccounted DEFINER writer is reachable from a browser

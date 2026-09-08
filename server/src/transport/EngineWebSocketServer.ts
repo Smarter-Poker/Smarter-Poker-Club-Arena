@@ -34,6 +34,7 @@ import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
 import { supabase } from '../services/supabase.js';
+import { reportError } from '../services/errorReporter.js';
 import { authorizeTableViewer, type TableViewerAccess } from '../services/TableViewerAccess.js';
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
 // Round 70: blacklist gate + Round 67/190: connection audit log both use
@@ -1029,7 +1030,7 @@ export class EngineWebSocketServer {
     // socket in this.connections and subscribed to the hub with NO close
     // handler: a permanent leak the sweeps could never collect.
     try {
-      this.onResync?.(tableId, userId);
+      this.resyncPlayer(tableId, userId);
       // Presence: tell the engine this player has a live transport again.
       this.onConnect?.(tableId, userId);
     } catch {
@@ -1066,6 +1067,15 @@ export class EngineWebSocketServer {
     ws.on('error', () => this.onClose(ws));
   }
 
+  /** A private-state replay failure must not abort transport recovery or presence. */
+  private resyncPlayer(tableId: string, userId: string): void {
+    try {
+      this.onResync?.(tableId, userId);
+    } catch (error) {
+      reportError(error, 'EngineWS.private_state_resync');
+    }
+  }
+
   private sendMuxError(
     conn: ConnectionState,
     tableId: string,
@@ -1092,7 +1102,7 @@ export class EngineWebSocketServer {
         /* ignore */
       }
       this.hub.resync(tableId, existing);
-      this.onResync?.(tableId, conn.userId);
+      this.resyncPlayer(tableId, conn.userId);
       return;
     }
     // Audit round 4: counting only SETTLED subscriptions let a client that
@@ -1236,7 +1246,7 @@ export class EngineWebSocketServer {
       // outer catch, which would delete the sub entry and orphan the hub
       // subscriber (unreachable by onClose).
       try {
-        this.onResync?.(tableId, conn.userId);
+        this.resyncPlayer(tableId, conn.userId);
         // Presence: mux SUBSCRIBE established a live transport for this table.
         this.onConnect?.(tableId, conn.userId);
       } catch {
@@ -1274,7 +1284,7 @@ export class EngineWebSocketServer {
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
           this.hub.resync(tableId, sub);
-          this.onResync?.(tableId, conn.userId);
+          this.resyncPlayer(tableId, conn.userId);
         }
         return;
       }
@@ -1338,7 +1348,7 @@ export class EngineWebSocketServer {
         this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        this.onResync?.(conn.tableId, conn.userId);
+        this.resyncPlayer(conn.tableId, conn.userId);
         return;
       }
       default:

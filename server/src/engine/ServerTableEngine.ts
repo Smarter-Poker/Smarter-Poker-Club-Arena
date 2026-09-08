@@ -279,6 +279,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
          the original bug's own starting position, reached through the recovery
          path. Same source as the other two: the table row, never the roster. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
+      // 2026-09-07: published beside max_seats on every payload so the client
+      // knows when seatIdentity() has scrubbed the roster and must not paint
+      // a real face over it from its own profile sync (an-avatar-change-
+      // stays-changed changelog). Absent on an older engine = not anonymous.
+      is_anonymous: this.tableInfo?.is_anonymous === true,
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
       // 2026-08-23: publish the betting structure rather than leaving the
@@ -384,7 +389,16 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
             position: positionLabels.get(p.seat) ?? '',
-            is_horse: p.is_horse ?? false, // Bible V8 §2.3
+            /* NO is_horse ON THE WIRE (Dan 2026-09-02: "NOBODY SHOULD EVER EVER
+               EVER BE ABLE TO LOOK AT OUR CODE OR USE A DEVELOPER TOOL AND FIND
+               THIS OUT"). All three client payloads - this resync, the hand
+               broadcast and the between-hands roster - used to carry
+               `is_horse: p.is_horse ?? false` on every seat, so the WebSocket
+               frame in any player's Network tab labelled every horse at the
+               table. The flag stays on the engine's own Player record for the
+               horse's input device (HorseLogic, autoRebuyHorse); it is never
+               serialised to a client. Pinned by
+               TheEngineNeverSaysHorseOnTheWire.law.test.ts. */
             // CHIP CONTINUITY: the stay clock, identical in all three payloads.
             // Judged on the ROSTER stack (what the seat holds outside the
             // hand), not the live hand stack net of bets - a bet is not a loss
@@ -555,6 +569,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
          Clients older than this field fall back to the inference and are no
          worse off than they are today. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
+      // 2026-09-07: published beside max_seats on every payload so the client
+      // knows when seatIdentity() has scrubbed the roster and must not paint
+      // a real face over it from its own profile sync (an-avatar-change-
+      // stays-changed changelog). Absent on an older engine = not anonymous.
+      is_anonymous: this.tableInfo?.is_anonymous === true,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       // Dan 2026-08-29: the subset of the above who have ALREADY agreed to
       // post and are held out only by the seat they are in. Published so the
@@ -666,7 +685,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
-            is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // CHIP CONTINUITY: the stay clock, identical in all three payloads.
             // Roster stack, not the live hand stack - see getTableState().
             ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
@@ -760,6 +778,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
          Clients older than this field fall back to the inference and are no
          worse off than they are today. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
+      // 2026-09-07: published beside max_seats on every payload so the client
+      // knows when seatIdentity() has scrubbed the roster and must not paint
+      // a real face over it from its own profile sync (an-avatar-change-
+      // stays-changed changelog). Absent on an older engine = not anonymous.
+      is_anonymous: this.tableInfo?.is_anonymous === true,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
       pots: [],
@@ -779,7 +802,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
         time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
         position: '',
-        is_horse: p.is_horse ?? false,
         is_waiting_for_bb: this.waitingForBB.has(p.user_id),
         hand_name: '',
         // CHIP CONTINUITY: the stay clock keeps counting between hands, so the

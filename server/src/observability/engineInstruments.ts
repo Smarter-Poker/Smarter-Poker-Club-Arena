@@ -159,6 +159,24 @@ import { MetricsRegistry, type Gauge } from './Metrics.js';
 
 export const alwaysOnRegistry = new MetricsRegistry();
 
+/** Settlement timing uses bounded counters, not per-hand samples or IDs.
+ * Compare duration/count deltas for mean step wall time; slow/count for the
+ * fraction taking at least one second. Includes awaited error reporting.
+ * outcome describes thrown errors, not a guarantee of financial success.
+ */
+export const settlementStepCount = alwaysOnRegistry.counter(
+  'poker_settlement_step_total',
+  'Completed settlement step attempts; labels step, audience, format, outcome=returned|threw'
+);
+export const settlementStepDuration = alwaysOnRegistry.counter(
+  'poker_settlement_step_duration_ms_total',
+  'Cumulative settlement step wall time including awaited error handling (ms)'
+);
+export const settlementStepSlow = alwaysOnRegistry.counter(
+  'poker_settlement_step_slow_total',
+  'Settlement step attempts taking at least 1000ms'
+);
+
 /** act -> broadcast, ms, 2 series (audience=human|horse). */
 export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
   'poker_act_to_broadcast_ms',

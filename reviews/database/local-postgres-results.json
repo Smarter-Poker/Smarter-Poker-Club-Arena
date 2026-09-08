@@ -73,6 +73,34 @@
     {
       "name": "Cooldown uses actual consumption time for pack after a delayed transaction",
       "passed": true
+    },
+    {
+      "name": "30th member throw is free even with zero diamonds",
+      "passed": true
+    },
+    {
+      "name": "Member allowance precedes a purchased pack",
+      "passed": true
+    },
+    {
+      "name": "After 30 member throws, packs precede diamonds",
+      "passed": true
+    },
+    {
+      "name": "31st member throw with no pack costs exactly one diamond",
+      "passed": true
+    },
+    {
+      "name": "VIP still has 500 and Lifetime remains unlimited after the member policy",
+      "passed": true
+    },
+    {
+      "name": "Expired VIP falls back to the ordinary member allowance",
+      "passed": true
+    },
+    {
+      "name": "Concurrent member requests cannot overrun the last free throw",
+      "passed": true
     }
   ],
   "observedBug": {

@@ -135,6 +135,40 @@ try {
     assert.equal((await use(c,req)).idempotent,true);
     assert.equal(await count('throw_usage',id),1);
   });
+  await db.query(fs.readFileSync(path.resolve(root, '../../supabase/migrations/20260908025914_throwable_member_monthly_allowance.sql'), 'utf8'));
+  await check('30th member throw is free even with zero diamonds', async () => {
+    const id=await user({ used:29,diamonds:0 }); const c=await connect(id); const r=await use(c);
+    assert.equal(r.source,'member_monthly'); assert.equal(r.free_remaining,0); assert.equal(await balance(id),0);
+  });
+  await check('Member allowance precedes a purchased pack', async () => {
+    const id=await user(); const credit=await pack(id,2); const c=await connect(id);
+    assert.equal((await use(c)).source,'member_monthly');
+    assert.equal((await db.query('select uses_remaining from feature_purchases where id=$1',[credit])).rows[0].uses_remaining,2);
+  });
+  await check('After 30 member throws, packs precede diamonds', async () => {
+    const id=await user({used:30}); await pack(id,1); const c=await connect(id);
+    assert.equal((await use(c)).source,'purchased'); assert.equal(await balance(id),10);
+  });
+  await check('31st member throw with no pack costs exactly one diamond', async () => {
+    const id=await user({used:30}); const c=await connect(id);
+    assert.equal((await use(c)).source,'diamonds'); assert.equal(await balance(id),9);
+  });
+  await check('VIP still has 500 and Lifetime remains unlimited after the member policy', async () => {
+    const id=await user({vip:true,used:499}); const c=await connect(id);
+    assert.equal((await use(c)).free_remaining,0);
+    const lifetime=await user({vip:true,tier:'lifetime',used:900});
+    assert.equal((await use(await connect(lifetime))).source,'lifetime_vip');
+  });
+  await check('Expired VIP falls back to the ordinary member allowance', async () => {
+    const id=await user({vip:true,expired:true}); const c=await connect(id);
+    assert.equal((await use(c)).source,'member_monthly'); assert.equal(await balance(id),10);
+  });
+  await check('Concurrent member requests cannot overrun the last free throw', async () => {
+    const id=await user({used:29}); const cs=await Promise.all(Array.from({length:4},()=>connect(id)));
+    const rs=await Promise.all(cs.map(c=>use(c)));
+    assert.equal(rs.filter(r=>r.success).length,1); assert.equal(rs.filter(r=>r.code==='RATE_LIMITED').length,3);
+    assert.equal(await balance(id),10); assert.equal(await count('throw_usage',id),30);
+  });
   fs.writeFileSync(path.join(root,'local-postgres-results.json'),JSON.stringify({postgres:(await db.query('select version()')).rows[0].version,scope:'Exported production functions on synthetic local tables; not production RLS, triggers, HTTP auth, or browser verification.',results,observedBug,candidateAppliedToThisLocalDatabase:true},null,2)+'\n');
   console.log(`${results.length} PostgreSQL contract checks passed. Locked-pack charge and delayed-transaction cooldown bugs reproduced; exact local migrations verified.`);
 } finally {

@@ -71,24 +71,31 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Warm the render cache the moment the panel opens
+    let disposed = false;
+    let latestRequest = 0;
     preloadThrowableImages();
+    setThrowables(throwableService.getThrowablesByCategory());
+    setAllowance(null);
+    setLoading(true);
 
-    async function load() {
-      const data = throwableService.getThrowablesByCategory();
-      const allowanceData = await throwableService.getThrowAllowance(userId);
-      setThrowables(data);
-      setAllowance(allowanceData);
+    async function refreshAllowance() {
+      const request = ++latestRequest;
+      const next = await throwableService.getThrowAllowance(userId);
+      // An old account or an earlier entitlement refresh must not overwrite
+      // the currently displayed balance when responses arrive out of order.
+      if (disposed || request !== latestRequest) return;
+      setAllowance(next);
       setLoading(false);
     }
-    load();
-  }, [userId]);
-
-  useEffect(() => {
-    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+    void refreshAllowance();
+    const unsubscribe = masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
       if (event.payload.userId !== userId || event.payload.category !== 'throwable') return;
-      void throwableService.getThrowAllowance(userId).then(setAllowance);
+      void refreshAllowance();
     });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, [userId]);
 
   /**
@@ -168,7 +175,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
               <span className="throwable-selector__cost">Allowance Unavailable</span>
             ) : allowance.unlimited ? (
               <span className="throwable-selector__free">Unlimited</span>
-            ) : allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
+            ) : allowance.freeThrowsRemaining > 0 ? (
               <span className="throwable-selector__free">
                 {' '}
                 {allowance.freeThrowsRemaining} Free

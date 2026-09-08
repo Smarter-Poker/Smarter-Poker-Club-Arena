@@ -19,6 +19,9 @@
  */
 
 import { supabase } from '../lib/supabase';
+import stillManifest from '../throwables/stills.generated.json';
+
+const premiumStills: Record<string, Record<string, string>> = stillManifest;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -792,6 +795,8 @@ const imageUrlCache = new Map<string, string>();
  * the fallback when the transform endpoint is unavailable.
  */
 export function getThrowableRawUrl(id: string): string {
+  const premium = premiumStills[id]?.['640'];
+  if (premium) return `${import.meta.env.BASE_URL}${premium}`;
   const key = `${id}@raw`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -825,6 +830,8 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
   //   <=96px  -> 192  (selector tiles at 84)
   //   >96px   -> 320  (flight 84-116, impact 112-152, bomb-pot hero ~210)
   const bucket = displayPx !== undefined && displayPx <= 96 ? 192 : 320;
+  const premium = premiumStills[id]?.[String(bucket)];
+  if (premium) return `${import.meta.env.BASE_URL}${premium}`;
   const key = `${id}@${bucket}`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -841,6 +848,7 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
 }
 
 const VIP_FREE_THROWS_PER_MONTH = 500;
+const MEMBER_FREE_THROWS_PER_MONTH = 30;
 const DIAMOND_COST_PER_THROW = 1;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -931,6 +939,7 @@ class ThrowableServiceClass {
         .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
 
       const profile = profileResult.data;
+      if (!profile) throw new Error('Profile unavailable');
       const isVip =
         !!profile?.is_vip &&
         (profile.vip_tier === 'lifetime' ||
@@ -946,16 +955,7 @@ class ThrowableServiceClass {
         };
       }
 
-      if (!isVip) {
-        return {
-          isVip: false,
-          freeThrowsRemaining: 0,
-          packThrowsRemaining,
-          diamondCost: packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
-        };
-      }
-
-      // Get this month's usage for VIP
+      // Every member receives the calendar-month allowance; VIP raises it to 500.
       const monthStart = new Date();
       monthStart.setUTCDate(1);
       monthStart.setUTCHours(0, 0, 0, 0);
@@ -968,10 +968,11 @@ class ThrowableServiceClass {
 
       if (error || count === null) throw error || new Error('Allowance count unavailable');
       const used = count;
-      const remaining = Math.max(0, VIP_FREE_THROWS_PER_MONTH - used);
+      const limit = isVip ? VIP_FREE_THROWS_PER_MONTH : MEMBER_FREE_THROWS_PER_MONTH;
+      const remaining = Math.max(0, limit - used);
 
       return {
-        isVip: true,
+        isVip,
         freeThrowsRemaining: remaining,
         packThrowsRemaining,
         diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,

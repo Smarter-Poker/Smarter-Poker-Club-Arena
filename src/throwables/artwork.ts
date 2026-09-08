@@ -1,4 +1,6 @@
 import manifest from './artwork.generated.json';
+import stillManifest from './stills.generated.json';
+const stills: Record<string, Record<string, string>> = stillManifest;
 
 const rigs: Record<string, readonly string[]> = manifest.rigs;
 const sizes: Record<string, readonly number[]> = manifest.sizes;
@@ -13,7 +15,10 @@ export function hasThrowableArtwork(id: string): boolean {
 
 /** Share concurrent decodes without preloading the entire catalogue. Failed
  * requests are evicted so a later user retry actually retries the network. */
-function prepareSheet(name: string): Promise<void> {
+function prepareSheet(
+  name: string,
+  delivery?: { url: string; size: readonly number[] }
+): Promise<void> {
   if (ready.has(name)) {
     ready.delete(name);
     ready.add(name);
@@ -36,10 +41,10 @@ function prepareSheet(name: string): Promise<void> {
     const timeout = setTimeout(() => finish(new Error('Artwork load timed out')), LOAD_TIMEOUT_MS);
     img.decoding = 'async';
     img.onerror = () => finish(new Error('Artwork could not load'));
-    img.src = `${import.meta.env.BASE_URL}images/throwables/animated/${name}.webp`;
+    img.src = delivery?.url ?? `${import.meta.env.BASE_URL}images/throwables/animated/${name}.webp`;
     img.decode().then(
       () => {
-        const size = sizes[name];
+        const size = delivery?.size ?? sizes[name];
         if (!size || img.naturalWidth !== size[0] || img.naturalHeight !== size[1]) {
           finish(new Error('Artwork dimensions do not match the rig'));
         } else finish();
@@ -56,9 +61,17 @@ function prepareSheet(name: string): Promise<void> {
   return task;
 }
 
-/** Legacy items have no atlas to decode. Premium items require every sheet,
- * including shared effects, before a charge or a playback clock can start. */
+/** Require every atlas for a rig, or the approved static image for an item
+ * awaiting its bespoke rig. A failed legacy image must not be charged either. */
 export async function prepareThrowableArtwork(id: string): Promise<void> {
-  const names = Object.prototype.hasOwnProperty.call(rigs, id) ? rigs[id] : [];
-  await Promise.all(names.map(prepareSheet));
+  if (hasThrowableArtwork(id)) {
+    await Promise.all(rigs[id].map((name) => prepareSheet(name)));
+    return;
+  }
+  const still = stills[id]?.['320'];
+  if (still)
+    await prepareSheet(`still:${id}`, {
+      url: `${import.meta.env.BASE_URL}${still}`,
+      size: [320, 320],
+    });
 }

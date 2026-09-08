@@ -102,6 +102,7 @@ const DIR_RULES = [
   // losslessly and validated against their approved sources; resizing or
   // lossy re-encoding would alter the performance artwork after verification.
   { prefix: 'images/throwables/animated/', maxDim: 0 },
+  { prefix: 'images/throwables/stylized/', maxDim: 0 },
   // Approved Club Arena footer is a pixel-locked visual source. Re-encoding
   // the lossless WebP changed 465,144 of 490,496 pixels in the production
   // artifact, so it must pass through byte-for-byte.

@@ -40,7 +40,9 @@ describe('LAW: the felt reads one avatar column', () => {
   it('the engine roster load selects through the mirror, and the mirror carries the arena alias', () => {
     const tables = read('server/src/services/supabase/tables.ts');
     expect(tables).toMatch(/import \{ SEATED_PROFILE_SELECT \} from '\.\/tableAvatar\.js'/);
-    expect(tables).toMatch(/\.from\('profiles'\)[\s\S]{0,1500}?\.select\(SEATED_PROFILE_SELECT\)/);
+    expect(tables).toMatch(
+      /\.from\('profiles'\)[\s\S]{0,1500}?\.select\(`\$\{SEATED_PROFILE_SELECT\}, is_vip, vip_tier, vip_expires_at`\)/
+    );
     expect(engine.SEATED_PROFILE_SELECT).toContain(engine.TABLE_AVATAR_SELECT);
     // The photograph column is not in the projection under any name.
     expect(engine.SEATED_PROFILE_SELECT.replace(engine.TABLE_AVATAR_SELECT, '')).not.toMatch(

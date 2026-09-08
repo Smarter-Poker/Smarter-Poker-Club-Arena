@@ -147,6 +147,11 @@ export class MuxTableSocket {
     this.mux.release(this, code, reason);
   }
 
+  /** Replace a silent shared transport; a responsive transport only re-subscribes this table. */
+  recoverAfterUnansweredProbe(startedAt: number): void {
+    this.mux.recoverAfterUnansweredProbe(this, startedAt);
+  }
+
   /** @internal 2026-08-22: SUBSCRIBE->SUBSCRIBED watchdog handle. */
   _subTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -501,6 +506,20 @@ class EngineSocketMuxImpl {
           this.stopWatchdog();
         }
       }, LINGER_AFTER_LAST_RELEASE_MS);
+    }
+  }
+
+  /** A superseded facade cannot tear down the current owner's transport. */
+  recoverAfterUnansweredProbe(facade: MuxTableSocket, startedAt: number): void {
+    if (this.facades.get(facade.tableId) !== facade) return;
+    if (this.lastInboundAt <= startedAt) {
+      // Re-acquiring another facade on this same half-open physical socket
+      // would add a full SUBSCRIBE timeout to mobile wake recovery.
+      this.teardownPhysical(4001, 'no traffic after foreground state probe');
+    } else {
+      // Other tables and PINGs prove transport activity, but not this table's
+      // snapshot. Keep their connection and re-establish only this subscription.
+      facade.close(4001, 'no table state after foreground probe');
     }
   }
 

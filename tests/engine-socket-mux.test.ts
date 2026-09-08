@@ -528,3 +528,33 @@ describe('physical transport identity', () => {
     expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
   });
 });
+
+describe('foreground recovery belongs to the current table facade', () => {
+  it('cannot close the replacement transport through a superseded facade', async () => {
+    const old = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const replacement = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    old.recoverAfterUnansweredProbe(Date.now());
+    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+    expect(replacement.readyState).toBe(FakeWebSocket.OPEN);
+  });
+
+  it('keeps another table live when traffic proves the physical socket is responsive', async () => {
+    const first = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const second = engineSocketMux.acquire('https://engine.example', T2, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    ws._frame({ type: 'SUBSCRIBED', tableId: T2 });
+    const startedAt = Date.now();
+    await vi.advanceTimersByTimeAsync(1);
+    ws._frame({ type: 'PING', ts: Date.now() });
+    first.recoverAfterUnansweredProbe(startedAt);
+    expect(first.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(second.readyState).toBe(FakeWebSocket.OPEN);
+    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+  });
+});

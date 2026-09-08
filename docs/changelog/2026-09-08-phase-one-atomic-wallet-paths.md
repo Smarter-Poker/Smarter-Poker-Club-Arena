@@ -24,9 +24,9 @@ Live self-stake definition hash: 438f699e38c8e2e6a9949c76e526731b. The public se
 
 Expanded read-only baseline: 3,716 public/private functions, 1,312 lexical writer candidates, 80 dynamic-SQL candidates, 787 non-internal triggers, 135 jobs (135 active at observation). These are candidate inventories, not completed semantic reviews. The 109 original work items plus nine additions are mapped without omissions in docs/audits/2026-09-08-execution-work-items.csv.
 
-Automatic approval review refused the final build's Sentry source-map upload. The local verification build uses the existing optional-upload gate with an empty SENTRY_AUTH_TOKEN for that process only. No publisher, CI guard, stored credential or production configuration is changed.
+An earlier build was blocked on Sentry upload authorization. The user subsequently approved it explicitly; the normal production build and Sentry source-map upload passed on September 8.
 
-Phase 1 remains incomplete until release authorization, normal merge/publication and authenticated acceptance evidence are satisfied. Detailed audit publication also remains blocked by the earlier disclosure review. No Phase 2 completion or readiness is claimed.
+Publication is authorized. Phase 1 remains incomplete until normal merge/publication and the scoped release acceptance evidence are satisfied. Phase 2 review has begun as requested while publication proceeds; no Phase 2 completion is claimed.
 
 Real-time behavior: verified receipts emit BALANCE_UPDATED; portal reads use club_members.chip_balance. No polling, watcher, reconciler or repair job was added.
 
@@ -39,3 +39,5 @@ The normal pre-push gate caught an obsolete law test that required a fresh UUID 
 A new full-service concurrency test reproduced a real race in both self-stake and agent-send: twenty overlapping calls with immediate acknowledgements produced twenty operation IDs. Submission now coalesces the entire request through acknowledgement. Each tab also persists its own opaque retry identity so another tab's acknowledgement cannot erase an uncertain request. Neither change introduces a watcher, reconciler, timeout expiry or financial repair.
 
 Verification and deployment of this follow-up remain pending.
+
+Follow-up verification: 119 focused tests passed across seven files; normal push related-test gate passed 311 tests; TypeScript passed. Real Chromium verified twenty overlapping submissions invoke one callback, a subsequent completed gesture gets a new ID, another tab's shared-record cleanup preserves the uncertain tab identity, and reload retains that identity. The normal production build and Sentry upload passed. CI's entry-chunk gate identified the new helper as an unnecessary eager startup dependency; both services now dynamically import it at the transfer boundary. The budget and module gates remain unchanged.

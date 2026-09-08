@@ -13,11 +13,6 @@
  */
 
 import { supabase, getAuthUser } from '../lib/supabase';
-import {
-  assertChipAmount,
-  runAgentWalletOperation,
-  confirmedAgentWalletReceipt,
-} from './AgentWalletIntent';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
 import { retryFetch } from '../utils/retryFetch';
@@ -428,6 +423,8 @@ export const WalletService = {
    * Agent self-transfer: Business → Player (to play at tables)
    */
   async agentSelfTransfer(clubId: string, amount: number): Promise<boolean> {
+    const { assertChipAmount, runAgentWalletOperation, confirmedAgentWalletReceipt } =
+      await import('./AgentWalletIntent');
     assertChipAmount(amount);
     const { data: auth, error: authError } = await getAuthUser();
     if (authError || !auth.user) throw new Error('Sign In Before Transferring Chips');

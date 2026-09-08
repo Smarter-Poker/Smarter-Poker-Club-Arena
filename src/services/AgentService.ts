@@ -16,11 +16,6 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { uuid } from '../utils/uuid';
-import {
-  assertChipAmount,
-  runAgentWalletOperation,
-  confirmedAgentWalletReceipt,
-} from './AgentWalletIntent';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import {
@@ -702,6 +697,8 @@ class AgentServiceClass {
    * a browser can establish and the reason bug 2 was possible at all.
    */
   async transferToPlayer(playerId: string, clubId: string, amount: number): Promise<boolean> {
+    const { assertChipAmount, runAgentWalletOperation, confirmedAgentWalletReceipt } =
+      await import('./AgentWalletIntent');
     assertChipAmount(amount);
     const { data: auth, error: authError } = await getAuthUser();
     if (authError || !auth.user) throw new Error('Sign In Before Transferring Chips');

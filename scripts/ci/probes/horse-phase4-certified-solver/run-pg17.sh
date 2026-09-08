@@ -33,9 +33,12 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908163125_the_horse_reads_only_a_certified_solver_dataset.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908163137_the_solver_score_keeps_every_decision_receipt.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908163147_both_solver_hosts_and_the_compactor_leave_receipts.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908182100_the_certified_solver_foreign_keys_have_indexes.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"
 "${PSQL[@]}" -f "$HERE/pipeline-liveness.sql"
 STATUS=$("${PSQL[@]}" -Atc "select ca_gto_v31_certification_status(null)->>'contract';")
 [[ "$STATUS" == 'smarter-poker.gto-v31-certification-status.v1' ]]
+INDEX_COUNT=$("${PSQL[@]}" -Atc "select count(*) from pg_indexes where schemaname='public' and indexname in ('gto_v31_datasets_input_bundle_id_idx','gto_v31_release_evaluations_source_result_id_idx');")
+[[ "$INDEX_COUNT" == '2' ]]
 echo PHASE4_STATUS_OK

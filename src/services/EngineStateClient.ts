@@ -1168,6 +1168,11 @@ export class EngineStateClient {
     this.unansweredSnapshotResyncs = 0;
   }
 
+  /** Refresh authoritative state after a confirmed server purchase. */
+  requestSnapshot(): void {
+    this.requestResync();
+  }
+
   private requestResync(): void {
     // Repeated gaps and PINGs must not extend the first request's deadline.
     if (this.ws?.readyState === 1) this.pendingSnapshotSince ??= Date.now();

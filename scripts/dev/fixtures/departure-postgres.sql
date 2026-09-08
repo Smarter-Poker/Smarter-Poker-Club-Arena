@@ -1,4 +1,7 @@
 -- Isolated PostgreSQL contract fixture, never a production migration.
+CREATE ROLE anon;
+CREATE ROLE authenticated;
+CREATE ROLE service_role;
 CREATE SCHEMA auth;
 CREATE SCHEMA extensions;
 CREATE TABLE tables(id uuid PRIMARY KEY,tournament_id uuid,current_players integer);

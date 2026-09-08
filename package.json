@@ -63,6 +63,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
     "@capgo/capacitor-updater": "^8.51.15",
+    "@revenuecat/purchases-capacitor": "^13.5.0",
     "@rive-app/canvas": "^2.40.1",
     "@sentry/react": "^10.38.0",
     "@supabase/supabase-js": "^2.49.0",

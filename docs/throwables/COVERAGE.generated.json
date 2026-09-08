@@ -2,12 +2,11 @@
   "total": 80,
   "original": 48,
   "additional": 32,
-  "enabledPicker": 50,
+  "enabledPicker": 51,
   "premiumStills": 50,
-  "integratedAtlasRigs": 49,
+  "integratedAtlasRigs": 50,
   "note": "Source inventory only. Glove uses a separate player. No row is fully accepted by file presence; sound, gates, multiplayer, device and publication need separate evidence.",
   "missingAtlasRigs": [
-    "rat_card",
     "donkey",
     "loser_hand",
     "thinking",
@@ -425,9 +424,9 @@
     },
     {
       "id": "rat_card",
-      "picker": false,
+      "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },

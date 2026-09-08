@@ -29,9 +29,15 @@ if [ "$REMOTE" = "$(cat "$HERE/Caddyfile")" ]; then
 else
   diff <(printf '%s\n' "$REMOTE") "$HERE/Caddyfile" | head -40 || true
   [ "${DRY_RUN:-0}" = "1" ] && { echo "[origin] dry run, nothing sent."; exit 0; }
-  scp -q -i "$KEY" "$HERE/Caddyfile" "root@$HOST:/etc/caddy/Caddyfile"
-  $SSH 'caddy validate --config /etc/caddy/Caddyfile >/dev/null' || { echo "[origin] REFUSING: the config does not validate on the box"; exit 2; }
-  $SSH 'systemctl reload caddy || systemctl restart caddy'
+  # Validate a unique staged copy before touching the live configuration.
+  # A failed validation must not leave a broken file for the next restart.
+  STAGED=$($SSH 'mktemp /etc/caddy/Caddyfile.staged.XXXXXXXX')
+  [[ "$STAGED" =~ ^/etc/caddy/Caddyfile\.staged\.[A-Za-z0-9]+$ ]] || { echo "[origin] invalid staging path"; exit 2; }
+  trap '$SSH "rm -f -- $STAGED"' EXIT
+  scp -q -i "$KEY" "$HERE/Caddyfile" "root@$HOST:$STAGED"
+  $SSH "caddy validate --adapter caddyfile --config $STAGED >/dev/null" || { echo "[origin] REFUSING: staged config does not validate; live config untouched"; exit 2; }
+  $SSH "mv -- $STAGED /etc/caddy/Caddyfile && (systemctl reload caddy || systemctl restart caddy)"
+  trap - EXIT
 fi
 
 # Verify against the public hostname, not the box: that is what a player hits.

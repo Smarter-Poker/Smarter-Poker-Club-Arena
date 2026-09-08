@@ -1013,6 +1013,258 @@
           "gain": 1
         }
       ]
+    },
+    "alien_blip": {
+      "$comment": "Authored electronic character cue; reproducible synthesis, no external sample.",
+      "levelDb": -10,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='sin(2*PI*(640*t+90*t*t)+2*sin(2*PI*23*t))*exp(-7*t)':d=0.28:s=48000",
+          "filter": "afade=t=in:st=0:d=0.008,afade=t=out:st=0.22:d=0.06",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "scan_sweep": {
+      "$comment": "Authored electronic character cue; reproducible synthesis, no external sample.",
+      "levelDb": -12,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.7*sin(2*PI*(360*t+720*t*t))+0.2*sin(2*PI*120*t)':d=0.8:s=48000",
+          "filter": "tremolo=f=14:d=0.4,afade=t=in:st=0:d=0.06,afade=t=out:st=0.65:d=0.15",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "servo_whir": {
+      "$comment": "Authored electronic character cue; reproducible synthesis, no external sample.",
+      "levelDb": -13,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.5*sin(2*PI*96*t+3*sin(2*PI*2*t))+0.2*sin(2*PI*768*t)':d=1.4:s=48000",
+          "filter": "tremolo=f=6:d=0.75,afade=t=in:st=0:d=0.1,afade=t=out:st=1.2:d=0.2",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "zap_short": {
+      "$comment": "Authored electronic character cue; reproducible synthesis, no external sample.",
+      "levelDb": -8,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "anoisesrc=d=0.4:c=white:a=0.6:r=48000:seed=816",
+          "filter": "highpass=f=900,lowpass=f=6000,tremolo=f=35:d=0.9,afade=t=in:st=0:d=0.005,afade=t=out:st=0.18:d=0.22",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "power_down": {
+      "$comment": "Authored electronic character cue; reproducible synthesis, no external sample.",
+      "levelDb": -12,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='sin(2*PI*(650*t-450*t*t))+0.2*sin(2*PI*87*t)':d=0.6:s=48000",
+          "filter": "afade=t=in:st=0:d=0.02,afade=t=out:st=0.35:d=0.25",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "duck_squeak": {
+      "$comment": "Authored rubber-toy chirp; no animal or voice recording.",
+      "source": "own-synthesis",
+      "duration": 0.24,
+      "levelDb": -10,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=0.5*sin(2*PI*(900*t+350*t*t)+2*sin(2*PI*53*t)):s=48000:d=0.24",
+          "filter": "afade=t=in:d=0.015,afade=t=out:st=0.12:d=0.12",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "water_lap": {
+      "$comment": "Quiet authored water bed, modulated filtered noise.",
+      "source": "own-synthesis",
+      "duration": 1.6,
+      "levelDb": -17,
+      "layers": [
+        {
+          "lavfi": "anoisesrc=color=pink:seed=724:sample_rate=48000:duration=1.6",
+          "filter": "highpass=f=500,lowpass=f=2600,tremolo=f=3:d=0.85,afade=t=in:d=0.15,afade=t=out:st=1.25:d=0.35",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "raspberry_short": {
+      "$comment": "Authored comic lip-trill-like buzz, no human recording.",
+      "source": "own-synthesis",
+      "levelDb": -12,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=0.5*sin(2*PI*145*t+1.5*sin(2*PI*32*t))*(0.6+0.4*sin(2*PI*24*t)):s=48000:d=0.65",
+          "filter": "lowpass=f=1800,afade=t=in:d=0.03,afade=t=out:st=0.4:d=0.25",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "basket_swish": {
+      "source": "own-synthesis",
+      "levelDb": -12,
+      "layers": [
+        {
+          "lavfi": "anoisesrc=color=pink:seed=637:s=48000:d=0.28",
+          "filter": "highpass=f=1300,lowpass=f=7500,afade=t=in:d=0.04,afade=t=out:st=0.08:d=0.2",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "basket_bounce": {
+      "source": "own-synthesis",
+      "levelDb": -7,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=sin(2*PI*(90*t-25*t*t))*exp(-20*t):s=48000:d=0.24",
+          "filter": "afade=t=out:st=0.1:d=0.14",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "tennis_pop": {
+      "source": "own-synthesis",
+      "levelDb": -8,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14",
+          "filter": "afade=t=out:st=0.07:d=0.07",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "tennis_pop_soft": {
+      "source": "own-synthesis",
+      "levelDb": -11,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14",
+          "filter": "afade=t=out:st=0.07:d=0.07",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "tennis_pop_last": {
+      "source": "own-synthesis",
+      "levelDb": -14,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14",
+          "filter": "afade=t=out:st=0.07:d=0.07",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "roll_rumble": {
+      "source": "own-synthesis",
+      "levelDb": -14,
+      "layers": [
+        {
+          "lavfi": "anoisesrc=color=brown:seed=546:s=48000:d=0.6",
+          "filter": "lowpass=f=300,tremolo=f=17:d=0.5,afade=t=in:d=0.08,afade=t=out:st=0.48:d=0.12",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "pins_crash": {
+      "$comment": "Licensed wood impacts and falling wood layered for a ten-pin strike.",
+      "source": "oga-wood-metal",
+      "levelDb": -5,
+      "trimEnd": 1.2,
+      "layers": [
+        {
+          "file": "wood_hit_03.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "wood_hit_04.ogg",
+          "at": 0.04,
+          "gain": 0.8
+        },
+        {
+          "file": "wood_falling_05.ogg",
+          "at": 0.1,
+          "gain": 0.9
+        },
+        {
+          "file": "wood_falling_04.ogg",
+          "at": 0.2,
+          "gain": 0.6
+        }
+      ]
+    },
+    "chip_clatter": {
+      "source": "kenney-casino-audio",
+      "levelDb": -10,
+      "trimEnd": 0.7,
+      "layers": [
+        {
+          "file": "chips-collide-2.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "chips-stack-3.ogg",
+          "at": 0.14,
+          "gain": 0.8
+        },
+        {
+          "file": "chips-handle-4.ogg",
+          "at": 0.27,
+          "gain": 0.6
+        }
+      ]
+    },
+    "steam_hiss": {
+      "source": "own-synthesis",
+      "levelDb": -19,
+      "layers": [
+        {
+          "lavfi": "anoisesrc=color=white:seed=213:s=48000:d=1.6",
+          "filter": "highpass=f=3500,lowpass=f=8500,afade=t=in:d=0.08,afade=t=out:st=1.2:d=0.4",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "magnet_hum": {
+      "source": "own-synthesis",
+      "levelDb": -16,
+      "layers": [
+        {
+          "lavfi": "aevalsrc=sin(2*PI*105*t+2*sin(2*PI*3*t)):s=48000:d=0.8",
+          "filter": "afade=t=in:d=0.05,afade=t=out:st=0.65:d=0.15",
+          "at": 0,
+          "gain": 1
+        }
+      ]
     }
   }
 }

@@ -612,12 +612,16 @@ function tournamentOpenFirst(
  * club lobby the player came from.
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
+import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  const { clubId } = useParams<{ clubId: string }>();
   return (
     <PageErrorBoundary pageName="ClubHomePage">
-      <ClubHomePageContent clubIdOverride={clubIdOverride} />
+      <ArenaAccessBoundary clubKey={clubIdOverride || clubId}>
+        <ClubHomePageContent clubIdOverride={clubIdOverride} />
+      </ArenaAccessBoundary>
     </PageErrorBoundary>
   );
 }

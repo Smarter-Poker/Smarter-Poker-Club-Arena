@@ -101,7 +101,8 @@ BEGIN
     IF TG_OP='UPDATE' AND (NEW.asset,NEW.is_platform) IS DISTINCT FROM (OLD.asset,OLD.is_platform) THEN
       RAISE EXCEPTION 'Arena Asset Is Immutable' USING ERRCODE='23514';
     END IF;
-    IF NEW.asset='diamonds' AND auth.uid() IS NOT NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role' THEN
+    IF NEW.asset='diamonds' AND auth.uid() IS NOT NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role'
+       AND NOT coalesce(public.fn_is_platform_admin(),false) THEN
       RAISE EXCEPTION 'Diamond Arena Requires Platform Operations' USING ERRCODE='42501';
     END IF;
     RETURN NEW;
@@ -127,7 +128,8 @@ BEGIN
       END IF;
     ELSIF TG_TABLE_NAME='union_clubs' THEN
       RAISE EXCEPTION 'Diamond Arena Cannot Join A Union' USING ERRCODE='23514';
-    ELSIF auth.uid() IS NOT NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role' THEN
+    ELSIF auth.uid() IS NOT NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role'
+       AND NOT coalesce(public.fn_is_platform_admin(),false) THEN
       RAISE EXCEPTION 'Diamond Games Require Platform Operations' USING ERRCODE='42501';
     ELSIF NEW.union_id IS NOT NULL THEN
       RAISE EXCEPTION 'Diamond Games Cannot Belong To A Union' USING ERRCODE='23514';
@@ -163,14 +165,18 @@ FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_chip_seat();
 
 -- Club owner/agent permissions never confer Diamond management rights.
 DO $definition$
-DECLARE v_def text; v_next text;
+DECLARE v_def text; v_next text; v_signature text;
 BEGIN
-  SELECT pg_get_functiondef('public.fn_can_create_games(uuid,uuid)'::regprocedure) INTO v_def;
-  v_next := replace(v_def, E'BEGIN\n', $patch$BEGIN
+  FOREACH v_signature IN ARRAY ARRAY[
+    'public.fn_can_create_games(uuid,uuid)', 'public.is_club_admin(uuid,uuid)'
+  ] LOOP
+    SELECT pg_get_functiondef(v_signature::regprocedure) INTO v_def;
+    v_next := regexp_replace(v_def, E'BEGIN\n', $patch$BEGIN
   IF EXISTS (SELECT 1 FROM public.clubs WHERE id=p_club_id AND asset='diamonds') THEN RETURN false; END IF;
 $patch$);
-  IF v_next=v_def THEN RAISE EXCEPTION 'fn_can_create_games source changed; inspect before applying'; END IF;
-  EXECUTE v_next;
+    IF v_next=v_def THEN RAISE EXCEPTION '% source changed; inspect before applying',v_signature; END IF;
+    EXECUTE v_next;
+  END LOOP;
 END $definition$;
 
 CREATE OR REPLACE FUNCTION public.fn_poker_reject_diamond_hierarchy()
@@ -194,6 +200,30 @@ BEGIN
     EXECUTE format('CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.fn_poker_reject_diamond_hierarchy()',v_table);
   END LOOP;
 END $hierarchy$;
+
+-- The aggregate lobby RPC must not expose member fields before entry authorization.
+-- Preserve its current chip implementation and signature, including invoker security.
+DO $lobby$
+DECLARE v_def text; v_next text;
+BEGIN
+ SELECT pg_get_functiondef('public.get_club_home(text)'::regprocedure) INTO v_def;
+ v_next := regexp_replace(v_def, E'BEGIN\n', $patch$BEGIN
+  DECLARE v_access jsonb;
+  BEGIN
+    IF auth.uid() IS NULL THEN RETURN jsonb_build_object('found',false,'reason','authentication_required'); END IF;
+    v_access := public.fn_poker_arena_context(p_club_key);
+    IF v_access IS NULL THEN RETURN jsonb_build_object('found',false); END IF;
+    IF v_access->'arena'->>'asset'='diamonds' THEN
+      RETURN jsonb_build_object('found',true,'access_only',true,'arena_context',v_access);
+    END IF;
+    IF NOT coalesce((v_access->>'member')::boolean,false) THEN
+      RETURN jsonb_build_object('found',false,'reason','membership_required');
+    END IF;
+  END;
+$patch$);
+ IF v_next=v_def THEN RAISE EXCEPTION 'get_club_home source changed; inspect before applying'; END IF;
+ EXECUTE v_next;
+END $lobby$;
 
 -- Data transition follows DDL so deferred counter triggers cannot block ALTER TABLE.
 UPDATE public.club_members m SET role='player', status='automatic', credit_limit=0,

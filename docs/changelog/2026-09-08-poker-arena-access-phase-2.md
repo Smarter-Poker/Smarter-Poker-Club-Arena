@@ -24,3 +24,13 @@ The original Diamond Arena card image remains required for the Diamond club sele
 - Work is saved in isolated branch agent/codex-diamond-phase-2/feature/diamond-arena-access. No hooks were bypassed. The orphan-protection hook refused rebase; abort restored the committed branch and a normal merge preserved both histories.
 
 Final local build: npm run build completed with TypeScript, Vite, fonts, media optimization and provenance at 0b4682152c, behind-main=0, clean source. The earlier freshness refusal was resolved by merging main without bypassing guards. The isolated PostgreSQL server was stopped after verification. Publication and production migration remain blocked, and phase exit work above remains open.
+
+## Phase 2 Continuation
+
+The previous open lobby and ordinary management paths now have implementation and focused coverage. ArenaAccessBoundary is wired into ClubHomePage, including embedded table-tab entry. It checks fresh entitlement before cached chip content mounts; stale club responses and sign-out cannot expose the prior club. Diamond entry recognizes automatic membership and shows the current pre-release state without a Join control, chip wallets or hierarchy. It does not claim the Phase 5 skin is delivered.
+
+The aggregate get_club_home RPC now authorizes before returning member content. Chip members retain its existing implementation. Diamond returns only access context until its skin exists. Ordinary is_club_admin(uuid,uuid) ownership does not grant Diamond control; verified platform staff retain the separate fn_is_platform_admin path. Live mutations are still not applied.
+
+The updated isolated SQL fixture passes 32 assertions, including direct aggregate RPC access and platform-staff versus club-owner permissions. Eight component behavior tests cover entry, required joins, Diamond recognition, stale responses, sign-out, unknown identity, retries and revalidation failure. The legacy dependency inventory is docs/audits/2026-09-08-diamond-phase-2-access-and-legacy-inventory.md.
+
+Automatic approval review rejected apply_migration(poker_arena_identity_and_access): the concrete live RLS, trigger, access-function, lobby and historical membership changes could deny production service. General permission to proceed with Phase 2 was not accepted as explicit approval for that exact mutation. No workaround, alternate mutation tool or push/publication was attempted. The prepared migration is 20260908135547_poker_arena_identity_and_access.sql, with lock_timeout 5 seconds and statement_timeout 30 seconds. Application, full live trigger-chain verification and release gates remain open. Phase 2 is not complete.

@@ -58,6 +58,8 @@ export const PREMIUM_THROWABLE_MATTE = { hard: 2, soft: 8 } as const;
 const cache = new Map<string, Promise<string>>();
 const resolved = new Map<string, string>();
 const objectUrls: string[] = [];
+let cacheGeneration = 0;
+const IMAGE_LOAD_TIMEOUT_MS = 10_000;
 
 // MUST mirror getThrowableImageUrl's buckets exactly, or a cutout gets cached
 // under a key no reader ever asks for and every lookup silently misses.
@@ -115,10 +117,24 @@ function bgDistance(data: Uint8ClampedArray, i: number, bg: [number, number, num
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      img.onload = null;
+      img.onerror = null;
+      if (error) reject(error);
+      else resolve(img);
+    };
+    const timeout = setTimeout(
+      () => finish(new Error('cutout: image load timed out')),
+      IMAGE_LOAD_TIMEOUT_MS
+    );
     img.crossOrigin = 'anonymous';
     img.decoding = 'async';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`cutout: image failed to load (${src})`));
+    img.onload = () => finish();
+    img.onerror = () => finish(new Error(`cutout: image failed to load (${src})`));
     img.src = src;
   });
 }
@@ -197,7 +213,7 @@ export function knockOutBackground(
   return cleared;
 }
 
-async function buildCutout(id: string, px: number): Promise<string> {
+async function buildCutout(id: string, px: number, generation: number): Promise<string> {
   let img: HTMLImageElement;
   try {
     img = await loadImage(getThrowableImageUrl(id, px));
@@ -205,6 +221,8 @@ async function buildCutout(id: string, px: number): Promise<string> {
     // Transform endpoint unavailable — try the original before giving up.
     img = await loadImage(getThrowableRawUrl(id));
   }
+
+  if (generation !== cacheGeneration) throw new Error('cutout: cache was released');
 
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
@@ -245,6 +263,9 @@ async function buildCutout(id: string, px: number): Promise<string> {
       'image/png'
     )
   );
+  // Route teardown can happen while the browser encodes the canvas. A late
+  // result must not recreate revoked cache entries or leak a new object URL.
+  if (generation !== cacheGeneration) throw new Error('cutout: cache was released');
   const url = URL.createObjectURL(blob);
   objectUrls.push(url);
   resolved.set(`${id}@${bucketOf(px)}`, url);
@@ -266,8 +287,9 @@ export function getThrowableCutout(id: string, px = 320): Promise<string> {
   if (hit) return hit;
   // URL selection takes display pixels, not the already-normalized cache
   // bucket. Passing 192 here selected the 320px source for every small icon.
-  const p = buildCutout(id, px).catch((err) => {
-    cache.delete(key); // allow a later retry (transient network, etc.)
+  const p = buildCutout(id, px, cacheGeneration).catch((err) => {
+    // A released request may settle after a new request for this same key.
+    if (cache.get(key) === p) cache.delete(key);
     throw err;
   });
   cache.set(key, p);
@@ -281,6 +303,7 @@ export function peekThrowableCutout(id: string, px = 320): string | null {
 
 /** Release every blob URL this module created (route teardown / tests). */
 export function releaseThrowableCutouts(): void {
+  cacheGeneration += 1;
   for (const u of objectUrls.splice(0)) {
     try {
       URL.revokeObjectURL(u);

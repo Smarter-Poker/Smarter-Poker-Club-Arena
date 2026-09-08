@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { readClubContextParam } from '../../utils/clubScopedPath';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -69,13 +70,20 @@ interface Tournament {
 export default function TournamentLobbyPage() {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
-  const { clubId } = useParams<{ clubId?: string }>();
+  const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const { user } = useAuthUser();
   const toast = useToast();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<TournamentStatus>('upcoming');
   const [searchParams] = useSearchParams();
+  /* The global `/tournaments` route used to mount with no club at all, so
+     the hamburger's Tournaments link from inside a club showed the arena-wide
+     public list rather than the club's schedule. The nav stamps `?club=` on
+     that link now; honour it as the club when the path has none, so the
+     scoping rules below (union games + this club's own private ones) apply
+     to the club the player is actually in. */
+  const clubId = routeClubId || readClubContextParam(searchParams) || undefined;
   const initialType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
   const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>(initialType);
 

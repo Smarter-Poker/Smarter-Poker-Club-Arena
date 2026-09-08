@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { withClubContext } from '../../utils/clubScopedPath';
 
 interface CommandAction {
   id: string;
@@ -105,7 +106,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           label: 'Player Stats',
           icon: '▲',
           description: 'Detailed Player Statistics',
-          action: () => navigate(`/stats`),
+          action: () => navigate(withClubContext('/stats', clubId)),
           category: 'Navigation',
         }
       );

@@ -864,9 +864,25 @@ export class TournamentManager extends TournamentManagerEliminations {
           held_from_this_satellite?: boolean | null;
           origin_unknown?: boolean;
         } | null;
+        const reportUnconfirmedSeat = async (detail: string): Promise<void> => {
+          await raiseFinancialAlert(
+            'critical',
+            'Satellite.seat_outcome_unconfirmed',
+            'Satellite seat outcome is unconfirmed. Inspect the original registration and funding records before retrying or substituting cash.',
+            {
+              tournament_id: this.tournamentId,
+              target_id: target.id,
+              user_id: w.user_id,
+              position: w.position,
+              ticket_value: ticketCost,
+              detail,
+            }
+          );
+        };
         // A transport error cannot prove the seat transaction rolled back.
         // Do not turn a possibly committed seat into an additional cash award.
         if (seatErr) {
+          await reportUnconfirmedSeat(seatErr.message);
           throw new Error(`Satellite seat outcome unconfirmed: ${seatErr.message}`);
         }
         if (
@@ -882,6 +898,7 @@ export class TournamentManager extends TournamentManagerEliminations {
               !seat.reason ||
               /duplicate|unique|already_registered/i.test(seat.reason)))
         ) {
+          await reportUnconfirmedSeat('Incomplete or ambiguous receipt');
           throw new Error('Satellite seat receipt is incomplete or ambiguous');
         }
         const regErr = seat.ok === false ? { message: seat.reason || 'seat_refused' } : null;

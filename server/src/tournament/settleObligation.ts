@@ -304,7 +304,31 @@ export async function settleTournamentObligation(
 
     if (!error) {
       const result: SettleTournamentObligationResult = { ...base, ...parseResult(data) };
-      if (result.ok) return result;
+      if (result.ok) {
+        // A successful transfer may leave recorded debt. Surface that exact remainder
+        // through the existing financial incident path without retrying the payment.
+        if (typeof result.remaining === 'number' && result.remaining > 0) {
+          const keyed = place !== null ? `place:${place}` : `user:${input.userId}`;
+          await raiseFinancialAlert(
+            'critical',
+            'Tournament.obligation_partial',
+            `Tournament settlement confirmed ${result.amount_paid} chips paid and ${result.remaining} chips still owed to ${input.userId}.`,
+            {
+              dedupe_key: `partial:${input.tournamentId}:${input.kind}:${keyed}`,
+              tournament_id: input.tournamentId,
+              kind: input.kind,
+              place,
+              user_id: input.userId,
+              amount_owed: result.amount_owed,
+              amount_paid: result.amount_paid,
+              remaining: result.remaining,
+              obligation_id: result.obligation_id,
+              source: input.source,
+            }
+          );
+        }
+        return result;
+      }
 
       if (result.refused_reason === 'invalid_response') {
         // The RPC may have committed. An invalid receipt proves neither payment

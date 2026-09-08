@@ -18,9 +18,12 @@ async function run(
   guarantee = 100,
   receipt?: Record<string, unknown>,
   awardRead?: { data: unknown; error: unknown },
-  format: Record<string, unknown> = {}
+  format: Record<string, unknown> = {},
+  playerReads: Record<string, { data: unknown; error: unknown }> = {},
+  writeErrors: Record<string, unknown> = {},
+  writeCounts: Record<string, number | null | undefined> = {}
 ) {
-  const updates: Array<{ table: string; value: any }> = [];
+  const updates: Array<{ table: string; value: any; options: any }> = [];
   const alerts = vi.fn(async () => undefined);
   const report = vi.fn();
   const price = vi.fn((pool: number) => pool);
@@ -40,14 +43,16 @@ async function run(
     from(table: string) {
       let columns = '';
       let value: any;
+      let options: any;
       const q: any = {
         select(c: string) {
           columns = c;
           return q;
         },
-        update(v: any) {
+        update(v: any, o: any) {
           value = v;
-          updates.push({ table, value });
+          options = o;
+          updates.push({ table, value, options });
           return q;
         },
         eq() {
@@ -69,6 +74,13 @@ async function run(
           return q;
         },
         then(resolve: any, reject: any) {
+          if (value?.status && writeErrors[value.status])
+            return Promise.resolve({ data: null, error: writeErrors[value.status] }).then(
+              resolve,
+              reject
+            );
+          if (table === 'tournament_players' && !value && playerReads[columns])
+            return Promise.resolve(playerReads[columns]).then(resolve, reject);
           if (table === 'tournament_players' && columns === 'prize' && awardRead)
             return Promise.resolve(awardRead).then(resolve, reject);
           let data: unknown = [];
@@ -83,7 +95,13 @@ async function run(
           }
           if (table === 'tournament_players' && columns === 'username')
             data = { username: 'Winner' };
-          return Promise.resolve({ data, error: null }).then(resolve, reject);
+          const count =
+            options?.count === 'exact'
+              ? value?.status in writeCounts
+                ? writeCounts[value.status]
+                : 1
+              : null;
+          return Promise.resolve({ data, error: null, count }).then(resolve, reject);
         },
       };
       return q;
@@ -92,6 +110,7 @@ async function run(
   const owner = {
     tournamentId: 'event',
     tournamentFinished: false,
+    eliminatePlayer: vi.fn(async () => undefined),
     applyPrizeGuarantee: vi.fn(async () => {
       if (funded instanceof Error) throw funded;
       return funded;
@@ -203,5 +222,169 @@ describe('all satellite identities take the seat award path', () => {
     expect(r.settle).not.toHaveBeenCalled();
     expect(r.owner.processSatelliteAwards).toHaveBeenCalledOnce();
     expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(true);
+  });
+});
+
+describe('finishing needs a readable unresolved-player roster', () => {
+  it.each([
+    { data: null, error: { message: 'unavailable' } },
+    { data: null, error: null },
+    { data: {}, error: null },
+  ])('does not stamp or complete after an unknown roster: %j', async (roster) => {
+    const r = await run(20, 0, undefined, undefined, {}, { 'user_id, chips': roster });
+    expect(
+      r.updates.some((x) => x.value.status === 'winner' || x.value.status === 'COMPLETED')
+    ).toBe(false);
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalled();
+  });
+
+  it.each([
+    { data: null, error: { message: 'positions unavailable' } },
+    { data: null, error: null },
+    { data: [{ position: 'bad' }], error: null },
+    { data: [{ position: 0 }], error: null },
+    { data: [{ position: 2 }, { position: 2 }], error: null },
+  ])(
+    'does not allocate places from an unknown or inconsistent position list: %j',
+    async (positions) => {
+      const r = await run(
+        20,
+        0,
+        undefined,
+        undefined,
+        {},
+        {
+          'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+          position: positions,
+        }
+      );
+      expect(
+        r.updates.some((x) => x.value.status === 'winner' || x.value.status === 'COMPLETED')
+      ).toBe(false);
+      expect(r.owner.broadcast).not.toHaveBeenCalled();
+      expect(r.report).toHaveBeenCalled();
+    }
+  );
+});
+
+describe('finish verifies that unresolved players were actually eliminated', () => {
+  it('does not complete when the recorded positions leave no free place', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {
+        'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+        position: { data: [{ position: 2 }], error: null },
+      }
+    );
+    expect(r.owner.eliminatePlayer).not.toHaveBeenCalled();
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+  });
+  it.each([
+    { data: [{ user_id: 'loser' }], error: null },
+    { data: null, error: { message: 'verification unavailable' } },
+    { data: null, error: null },
+  ])('does not complete after an unconfirmed elimination: %j', async (verification) => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {
+        'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+        position: { data: [], error: null },
+        user_id: verification,
+      }
+    );
+    expect(r.owner.eliminatePlayer).toHaveBeenCalledWith('loser', 2);
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+  });
+  it('completes after the assigned player is confirmed resolved', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {
+        'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+        position: { data: [], error: null },
+        user_id: { data: [], error: null },
+      }
+    );
+    expect(r.owner.eliminatePlayer).toHaveBeenCalledWith('loser', 2);
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(true);
+  });
+});
+
+describe('finish requires confirmed winner and completion writes', () => {
+  it('does not complete or announce after the winner stamp fails', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {},
+      {
+        winner: { message: 'winner write unavailable' },
+      }
+    );
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.owner.cleanupBroadcastChannel).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalledWith(expect.any(Error), 'Tournament.winner_row_stamp_failed');
+  });
+  it('does not announce completion or close the channel after the completion write fails', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {},
+      {
+        COMPLETED: { message: 'completion write unavailable', code: 'XX000' },
+      }
+    );
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.owner.cleanupBroadcastChannel).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.completed_transition_failed'
+    );
+  });
+});
+
+describe('finish writes require one confirmed affected row', () => {
+  it.each([0, null, undefined, 2])('does not complete after winner row count %s', async (count) => {
+    const r = await run(20, 0, undefined, undefined, {}, {}, {}, { winner: count });
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalledWith(expect.any(Error), 'Tournament.winner_row_stamp_failed');
+  });
+  it.each([0, null, undefined, 2])(
+    'does not announce completion after event row count %s',
+    async (count) => {
+      const r = await run(20, 0, undefined, undefined, {}, {}, {}, { COMPLETED: count });
+      expect(r.owner.broadcast).not.toHaveBeenCalled();
+      expect(r.owner.cleanupBroadcastChannel).not.toHaveBeenCalled();
+      expect(r.report).toHaveBeenCalledWith(
+        expect.any(Error),
+        'Tournament.completed_transition_failed'
+      );
+    }
+  );
+  it('asks for exact counts on both writes before announcing a confirmed completion', async () => {
+    const r = await run(20, 0);
+    for (const status of ['winner', 'COMPLETED']) {
+      expect(r.updates.find((x) => x.value.status === status)?.options).toEqual({ count: 'exact' });
+    }
+    expect(r.owner.broadcast).toHaveBeenCalledWith('tournament_winner', expect.anything());
   });
 });

@@ -79,7 +79,8 @@ function confirmedCashout(data: unknown, seatNumber?: number): { stack: number; 
     receipt.ok !== true ||
     typeof receipt.stack !== 'number' ||
     !Number.isFinite(receipt.stack) ||
-    receipt.stack < 0
+    receipt.stack < 0 ||
+    Math.round(receipt.stack * 100) / 100 !== receipt.stack
   ) {
     throw new Error('Cash-out receipt invalid; departure unconfirmed');
   }

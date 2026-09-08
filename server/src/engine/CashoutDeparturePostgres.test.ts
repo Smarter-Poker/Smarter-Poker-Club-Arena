@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
-import { realpathSync } from 'node:fs';
-import { basename, dirname } from 'node:path';
+import { realpathSync, readFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 const transport = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../services/supabase/client.js', () => ({
@@ -58,8 +58,266 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
+  });
+  const seedOccupancy = (stack = 25) => {
+    sql(`INSERT INTO tables VALUES('${TABLE}',NULL,1);
+      INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+      INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+      ${stack},now(),NULL,false,'${CLUB}')`);
+    return sql('SELECT to_json(occupancy_id) FROM table_seats') as string;
+  };
+  const boundCashout = (occupancy: string) =>
+    sql(`SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${occupancy}',NULL)`);
+  it.each([0, 25])('replays the original %s cashout after deletion and a new buy-in', (stack) => {
+    const original = seedOccupancy(stack);
+    const receipt = boundCashout(original);
+    expect(receipt).toMatchObject({
+      ok: true,
+      stack,
+      occupancy_id: original,
+      user_id: USER,
+      table_id: TABLE,
+    });
+    sql(`DELETE FROM table_seats;
+      UPDATE club_members SET chip_balance=chip_balance-40;
+      INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+      40,now(),NULL,false,'${CLUB}');
+      UPDATE tables SET current_players=1`);
+    const replacement = sql('SELECT to_json(occupancy_id) FROM table_seats');
+    expect(replacement).not.toBe(original);
+    expect(boundCashout(original)).toEqual(receipt);
+    expect(snapshot()).toEqual({
+      balance: 60 + stack,
+      active: 1,
+      credits: stack ? 1 : 0,
+      keys: stack ? 1 : 0,
+      closes: 1,
+    });
+    expect(boundCashout(replacement).stack).toBe(40);
+    expect(snapshot()).toEqual({
+      balance: 100 + stack,
+      active: 0,
+      credits: stack ? 2 : 1,
+      keys: stack ? 2 : 1,
+      closes: 2,
+    });
+  });
+  it('creates a new credit identity when a physical seat row and joined_at are reused', () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    sql(`UPDATE club_members SET chip_balance=chip_balance-40;
+      UPDATE table_seats SET left_at=NULL,stack=40;
+      UPDATE tables SET current_players=1`);
+    const replacement = sql('SELECT to_json(occupancy_id) FROM table_seats');
+    expect(replacement).not.toBe(original);
+    expect(boundCashout(replacement).stack).toBe(40);
+    expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 2, keys: 2, closes: 2 });
+  });
+  it('rejects an unknown occupancy without touching the current seat', () => {
+    seedOccupancy();
+    expect(() => boundCashout('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')).toThrow(
+      /CASHOUT_STALE_OCCUPANCY/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('rejects a replay with changed business scope', () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    expect(() =>
+      sql(`SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',3,'${original}',NULL)`)
+    ).toThrow(/CASHOUT_OCCUPANCY_SCOPE_MISMATCH/);
+    expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+  });
+  it('keeps a committed receipt replayable even after its table is deleted', () => {
+    const original = seedOccupancy();
+    const receipt = boundCashout(original);
+    sql('DELETE FROM table_seats; DELETE FROM tables');
+    expect(boundCashout(original)).toEqual(receipt);
+    expect(sql('SELECT count(*)::integer FROM wallet_transactions')).toBe(1);
+  });
+  it('rolls back the credit, seat exit and receipt on a failed seat write', () => {
+    const original = seedOccupancy();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL test.reject_exit='on';
+      SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}',NULL); COMMIT;`)
+    ).toThrow(/injected seat exit failure/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    expect(sql('SELECT count(*)::integer FROM seat_cashout_receipts')).toBe(0);
+    expect(boundCashout(original).stack).toBe(25);
+  });
+  it('rolls back every financial write if storing the final receipt fails', () => {
+    const original = seedOccupancy();
+    sql(`CREATE FUNCTION reject_test_receipt() RETURNS trigger LANGUAGE plpgsql AS
+      $$ BEGIN RAISE EXCEPTION 'injected receipt failure'; END $$;
+      CREATE TRIGGER reject_test_receipt BEFORE INSERT ON seat_cashout_receipts
+      FOR EACH ROW EXECUTE FUNCTION reject_test_receipt()`);
+    try {
+      expect(() => boundCashout(original)).toThrow(/injected receipt failure/);
+      expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+      expect(sql('SELECT count(*)::integer FROM seat_cashout_receipts')).toBe(0);
+    } finally {
+      sql(
+        'DROP TRIGGER reject_test_receipt ON seat_cashout_receipts; DROP FUNCTION reject_test_receipt()'
+      );
+    }
+    expect(boundCashout(original).stack).toBe(25);
+    expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+  });
+  it('does not expose stored financial receipts through table privileges', () => {
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+        expect(
+          sql(`SELECT to_json(has_table_privilege('${role}',
+          'public.seat_cashout_receipts','${privilege}'))`)
+        ).toBe(false);
+      }
+    }
+    expect(
+      sql(`SELECT to_json(relrowsecurity) FROM pg_class
+      WHERE oid='public.seat_cashout_receipts'::regclass`)
+    ).toBe(true);
+  });
+  it.each([false, true])(
+    'refuses another user before active or cached outcome access: committed=%s',
+    (committed) => {
+      const original = seedOccupancy();
+      if (committed) boundCashout(original);
+      const before = snapshot();
+      expect(() =>
+        sql(`BEGIN; SET LOCAL test.is_engine='false';
+      SET LOCAL test.auth_uid='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+      SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}',NULL);
+      COMMIT;`)
+      ).toThrow(/Cannot cash out for another user/);
+      expect(snapshot()).toEqual(before);
+    }
+  );
+  it('allows the owner to receive the same committed receipt without engine authority', () => {
+    const original = seedOccupancy();
+    const ownRequest = () =>
+      sql(`BEGIN; SET LOCAL test.is_engine='false';
+      SET LOCAL test.auth_uid='${USER}';
+      SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}','voluntary');
+      COMMIT;`);
+    const receipt = ownRequest();
+    expect(receipt.stack).toBe(25);
+    expect(ownRequest()).toEqual(receipt);
+    expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+  });
+  it.each(['user_id', 'table_id', 'seat_number'])('renews occupancy when %s changes', (column) => {
+    const original = seedOccupancy();
+    sql(
+      `UPDATE table_seats SET ${column}=${column === 'seat_number' ? '3' : "'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'"}`
+    );
+    expect(sql('SELECT to_json(occupancy_id) FROM table_seats')).not.toBe(original);
+  });
+  it('ignores a caller-selected occupancy on insert', () => {
+    seedOccupancy();
+    sql(`DELETE FROM table_seats;
+      INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id,occupancy_id)
+      VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,25,now(),'${CLUB}',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')`);
+    expect(sql('SELECT to_json(occupancy_id) FROM table_seats')).not.toBe(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    );
+  });
+  it.each([0, 25])(
+    'concurrent identical requests return one durable outcome for stack %s',
+    async (stack) => {
+      const original = seedOccupancy(stack);
+      const request = () =>
+        new Promise<any>((resolve, reject) => {
+          const child = spawn(process.env.CA_DEPARTURE_PSQL!, [
+            '-X',
+            '-qAt',
+            '-v',
+            'ON_ERROR_STOP=1',
+            '-h',
+            host!,
+            '-p',
+            '55443',
+            '-U',
+            'departure_test',
+            '-d',
+            'postgres',
+            '-c',
+            `SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}',NULL)`,
+          ]);
+          let output = '';
+          let error = '';
+          child.stdout.on('data', (data) => {
+            output += String(data);
+          });
+          child.stderr.on('data', (data) => {
+            error += String(data);
+          });
+          child.once('error', reject);
+          child.once('exit', (code) => {
+            if (code !== 0) reject(new Error(error));
+            else {
+              try {
+                resolve(JSON.parse(output.trim()));
+              } catch (error) {
+                reject(error);
+              }
+            }
+          });
+        });
+      const outcomes = await Promise.all([request(), request()]);
+      expect(outcomes[0]).toEqual(outcomes[1]);
+      expect(outcomes[0]).toMatchObject({ occupancy_id: original, stack });
+      expect(snapshot()).toEqual({
+        balance: 100 + stack,
+        active: 0,
+        credits: stack ? 1 : 0,
+        keys: stack ? 1 : 0,
+        closes: 1,
+      });
+      expect(sql('SELECT count(*)::integer FROM seat_cashout_receipts')).toBe(1);
+    }
+  );
+  const occupancyMigration = () =>
+    readFileSync(
+      resolve(
+        process.cwd(),
+        '../supabase/migrations/20260908220604_bind_cashout_requests_to_seat_occupancy.sql'
+      ),
+      'utf8'
+    );
+  it.each(['legacy', 'same_timestamp', 'malformed'])(
+    'refuses migration across active prior credit evidence: %s',
+    (kind) => {
+      seedOccupancy();
+      const suffix =
+        kind === 'legacy'
+          ? "''"
+          : kind === 'same_timestamp'
+            ? "':'||joined_at::text"
+            : "':invalid-time'";
+      sql(`INSERT INTO wallet_credit_idempotency(key,user_id,amount)
+      SELECT 'cashout:'||id::text||${suffix},user_id,25 FROM table_seats`);
+      expect(() => sql(occupancyMigration())).toThrow(/Active occupancy has legacy cashout credit/);
+      expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 1, closes: 0 });
+    }
+  );
+  it('replays the complete migration with committed receipts and unrelated key formats', () => {
+    const original = seedOccupancy();
+    const receipt = boundCashout(original);
+    sql(`INSERT INTO wallet_credit_idempotency VALUES('not:a:timestamp','${USER}',1)`);
+    sql(occupancyMigration());
+    expect(boundCashout(original)).toEqual(receipt);
+    expect(sql('SELECT count(*)::integer FROM wallet_transactions')).toBe(1);
+  });
+  it('keeps occupancy stable for stack updates and refuses caller-chosen replacements', () => {
+    const original = seedOccupancy();
+    sql('UPDATE table_seats SET stack=30');
+    expect(sql('SELECT to_json(occupancy_id) FROM table_seats')).toBe(original);
+    expect(() => sql('UPDATE table_seats SET occupancy_id=gen_random_uuid()')).toThrow(
+      /SEAT_OCCUPANCY_IMMUTABLE/
+    );
+    expect(sql('SELECT to_json(occupancy_id) FROM table_seats')).toBe(original);
   });
   it.each(['user', 'tournament'] as const)(
     'seat expiry waits for the %s lock without already owning the seat lock',
@@ -200,11 +458,15 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
           INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
           INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
           ${stack},now(),NULL,false,'${CLUB}')`);
+        const occupancyId = sql(
+          `SELECT to_json(occupancy_id) FROM table_seats WHERE table_id='${TABLE}'`
+        );
         let first = true;
         transport.rpc.mockImplementation(async (name: string, args: any) => {
           if (name === 'fn_offer_open_seat')
             return { data: { ok: false, reason: 'nobody_waiting' }, error: null };
-          expect(name).toBe('atomic_seat_cashout_locked');
+          expect(name).toBe('fn_cashout_seat_occupancy');
+          expect(args.p_occupancy_id).toBe(occupancyId);
           expect(args.p_table_id).toBe(TABLE);
           expect(args.p_user_id).toBe(USER);
           expect(args.p_seat_number).toBe(2);
@@ -213,7 +475,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
           try {
             const data = sql(`BEGIN;
               SET LOCAL test.reject_exit = '${injected === 'rollback' ? 'on' : 'off'}';
-              SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,NULL);
+              SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${occupancyId}',NULL);
               COMMIT;`);
             if (injected === 'lost_after_commit')
               return { data: null, error: { message: 'response lost after actual commit' } };
@@ -224,7 +486,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         });
         const e = new ServerTableEngine(TABLE) as any;
         e.tableInfo = { tournament_id: null, nit_game: false };
-        e.seatedPlayers = [{ user_id: USER, seat_number: 2, stack }];
+        e.seatedPlayers = [{ user_id: USER, seat_number: 2, stack, occupancy_id: occupancyId }];
         e.handController = null;
         e.disconnectEngine = {
           tickSitOutsAndCollectEvictions: () => [USER],

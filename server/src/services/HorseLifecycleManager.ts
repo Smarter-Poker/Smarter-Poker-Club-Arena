@@ -417,14 +417,16 @@ export class HorseLifecycleManager {
       // Get all active seats for this horse WITH their stacks
       const { data: activeSeats } = await supabase
         .from('table_seats')
-        .select('table_id, seat_number, stack')
+        .select('table_id, seat_number, stack, occupancy_id')
         .eq('user_id', horseId)
         .is('left_at', null);
 
       // FIX 208: Cash out each seat using direct queries (avoids PostgREST RPC cache issues)
       if (activeSeats && activeSeats.length > 0) {
         for (const seat of activeSeats) {
-          await atomicCashout(horseId, seat.table_id, seat.seat_number);
+          await atomicCashout(horseId, seat.table_id, seat.seat_number, {
+            occupancyId: seat.occupancy_id,
+          });
         }
       }
 
@@ -516,6 +518,7 @@ export class HorseLifecycleManager {
       // exists to reap orphaned seats was capable of never seeing the orphans.
       const stalePage = await fetchAllRows<{
         id: string;
+        occupancy_id: string;
         table_id: string;
         user_id: string;
         seat_number: number;
@@ -525,7 +528,7 @@ export class HorseLifecycleManager {
         (cursor, want) => {
           let q = supabase
             .from('table_seats')
-            .select('id, table_id, user_id, seat_number, stack, joined_at')
+            .select('id, table_id, user_id, seat_number, stack, joined_at, occupancy_id')
             .is('left_at', null)
             .lt('joined_at', thresholdTime)
             .order('id', { ascending: true })
@@ -586,7 +589,9 @@ export class HorseLifecycleManager {
           if (recentHand) continue;
 
           // FIX 208: Use direct atomicCashout instead of RPC
-          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
+          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number, {
+            occupancyId: seat.occupancy_id,
+          });
           cleaned++;
 
           // If horse, reset to available

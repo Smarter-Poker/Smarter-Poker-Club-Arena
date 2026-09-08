@@ -29,6 +29,8 @@ vi.mock('../services/supabase.js', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
   return {
     ...actual,
+    // This fixture has no departures; keep the idle timing test independent of transport.
+    processLeavePending: vi.fn(async () => []),
     loadSeatedPlayers: (...a: unknown[]) => loadSeatedPlayers(...a),
     loadTable: (...a: unknown[]) => loadTable(...a),
   };
@@ -63,6 +65,8 @@ function idleEngine() {
   engine.refreshBlinds = vi.fn().mockResolvedValue(undefined);
   engine.refreshRakeConfig = vi.fn().mockResolvedValue(undefined);
   engine.recoverBustedSeatedHorses = vi.fn().mockResolvedValue(undefined);
+  // No outstanding rows in the stand-up guard; addon behavior is driven below.
+  engine.usersWithPendingLedgerChips = vi.fn(async () => new Set<string>());
   engine.isTournamentTable = () => false;
   // A real (tiny) yield, not an instantly-resolved promise: the idle branch
   // awaits sleep(), and a synchronously-resolving stub starves the event loop

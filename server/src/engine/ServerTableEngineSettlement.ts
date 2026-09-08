@@ -2997,7 +2997,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            * it. A nit gives up a buy-in earlier, a gambler one later.
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
-            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            await markSeatAsLeft(
+              this.tableId,
+              horse.user_id,
+              horse.seat_number,
+              horse.occupancy_id
+            );
             if (!this.lifecycleCanMutate()) return;
             this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
@@ -3052,7 +3057,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
             );
           } else {
-            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            await markSeatAsLeft(
+              this.tableId,
+              horse.user_id,
+              horse.seat_number,
+              horse.occupancy_id
+            );
             if (!this.lifecycleCanMutate()) return;
             this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking on insufficient-funds leave too.
@@ -3140,7 +3150,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // orbit" - the target still stands and it tries again when the big
           // blind comes back around, exactly as a human would.
           if (!this.lifecycleCanMutate()) return;
-          const exit = await atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number);
+          const exit = await atomicCashoutVoluntary(
+            horse.user_id,
+            this.tableId,
+            horse.seat_number,
+            horse.occupancy_id
+          );
           if (!this.lifecycleCanMutate()) return;
           if (!exit.ok) {
             if (exit.code === 'LEAVE_LOCKED') {
@@ -3200,7 +3215,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.forcedLeaves
         );
         if (!this.lifecycleCanMutate()) return;
-        for (const userId of cashedOutIds) {
+        for (const { userId, occupancyId } of cashedOutIds) {
+          const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
+          if (current && current.occupancy_id !== occupancyId) continue;
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);

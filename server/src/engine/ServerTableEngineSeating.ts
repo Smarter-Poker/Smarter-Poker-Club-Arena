@@ -738,7 +738,19 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         // CHIP CONTINUITY: an admin kick of a seat the engine never loaded is
         // still a system exit the engine can complete itself - the target's
         // browser is not the caller and would never do the "client cleanup".
-        await atomicCashout(userId, this.tableId, undefined, { leaveMode: 'forced' });
+        const { data: reserved, error: reservedError } = await supabase
+          .from('table_seats')
+          .select('seat_number, occupancy_id')
+          .eq('table_id', this.tableId)
+          .eq('user_id', userId)
+          .is('left_at', null)
+          .maybeSingle();
+        if (reservedError) throw new Error(reservedError.message);
+        if (!reserved) return { success: true, immediate: true };
+        await atomicCashout(userId, this.tableId, reserved.seat_number, {
+          occupancyId: reserved.occupancy_id,
+          leaveMode: 'forced',
+        });
         this.chipContinuity.forget(userId);
         return { success: true, immediate: true };
       }
@@ -1000,6 +1012,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       if (opts.forced) {
         const out: { failed: string | null } = { failed: null };
         await atomicCashout(userId, this.tableId, player.seat_number, {
+          occupancyId: player.occupancy_id,
           leaveMode: 'forced',
           onFailed: (m) => {
             out.failed = m;
@@ -1025,7 +1038,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         return { success: true, immediate: true };
       }
 
-      const res = await atomicCashoutVoluntary(userId, this.tableId, player.seat_number);
+      const res = await atomicCashoutVoluntary(
+        userId,
+        this.tableId,
+        player.seat_number,
+        player.occupancy_id
+      );
       if (res.ok) {
         console.log(
           `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`

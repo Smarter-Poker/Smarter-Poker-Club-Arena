@@ -45,6 +45,7 @@ vi.mock('../services/supabase/cashSessions.js', async (importOriginal) => {
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const { deadlineScheduler } = await import('./DeadlineScheduler.js');
 
+const occupancyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const HUMAN = 'aaaaaaaa-0000-0000-0000-000000000001';
 const HORSE = 'aaaaaaaa-0000-0000-0000-000000000002';
@@ -77,8 +78,22 @@ function makeEngine() {
   e.running = true;
   e.handController = null;
   e.seatedPlayers = [
-    { user_id: HUMAN, username: 'human', stack: 180, seat_number: 1, is_horse: false },
-    { user_id: HORSE, username: 'horse', stack: 180, seat_number: 2, is_horse: true },
+    {
+      user_id: HUMAN,
+      username: 'human',
+      stack: 180,
+      seat_number: 1,
+      is_horse: false,
+      occupancy_id: occupancyId,
+    },
+    {
+      user_id: HORSE,
+      username: 'horse',
+      stack: 180,
+      seat_number: 2,
+      is_horse: true,
+      occupancy_id: occupancyId,
+    },
   ];
   e.hub = { emitEvent: vi.fn(), publish: vi.fn() };
   e.broadcastCurrentState = vi.fn(async () => undefined);
@@ -211,7 +226,7 @@ describe('a leave refused at settlement is held by the clock, then released', ()
     // Clock at zero: released through the guarded door, seat_left follows.
     e.chipContinuity.rows.set(HORSE, row(HORSE, { stay_remaining_ms: 0, stay_running: false }));
     await e.releaseLeavesHeldByClock();
-    expect(cashoutVoluntary).toHaveBeenCalledWith(HORSE, TABLE, 2);
+    expect(cashoutVoluntary).toHaveBeenCalledWith(HORSE, TABLE, 2, occupancyId);
     expect(e.leaveHeldByClock.has(HORSE)).toBe(false);
     expect(e.hub.emitEvent).toHaveBeenCalledWith(
       TABLE,

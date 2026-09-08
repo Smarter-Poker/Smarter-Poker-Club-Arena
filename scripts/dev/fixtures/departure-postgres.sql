@@ -19,8 +19,8 @@ CREATE TABLE chip_transactions(club_id uuid,to_user_id uuid,amount numeric,
 CREATE TABLE session_closes(user_id uuid,table_id uuid,stack numeric,reason text);
 -- Authorization, session policy and wallet provisioning are fixture boundaries.
 -- Cashout is loaded from its migration; credit from the pinned installed-function export.
-CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$;
-CREATE FUNCTION fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT nullif(current_setting('test.auth_uid',true),'')::uuid$$;
+CREATE FUNCTION fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$SELECT coalesce(nullif(current_setting('test.is_engine',true),''),'true')::boolean$$;
 CREATE FUNCTION fn_cash_leave_check(uuid,uuid) RETURNS jsonb LANGUAGE sql AS $$SELECT '{"allowed":true}'::jsonb$$;
 CREATE FUNCTION fn_player_home_club(uuid,uuid) RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$;
 CREATE FUNCTION fn_ensure_club_wallet(uuid,uuid) RETURNS void LANGUAGE sql AS $$SELECT$$;
@@ -35,3 +35,5 @@ BEGIN
 END$$;
 CREATE TRIGGER test_exit_failure BEFORE UPDATE ON table_seats
  FOR EACH ROW EXECUTE FUNCTION reject_test_exit();
+
+CREATE TABLE ca_money_rpc_registry(proname text PRIMARY KEY,status text,notes text);

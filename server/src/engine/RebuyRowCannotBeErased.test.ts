@@ -45,6 +45,7 @@ const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const { ServerTableEngineDealing } = await import('./ServerTableEngineDealing.js');
 const { supabase } = await import('../services/supabase.js');
 
+const occupancyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const TABLE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
 afterEach(() => {
@@ -129,7 +130,14 @@ describe('the rebuy pause sees a ledger row as an answer', () => {
 describe('the busted-seat stand-up keeps a seat with money in flight', () => {
   function bustedEngine() {
     const engine = bareEngine();
-    const hero = { user_id: 'hero', username: 'hero', seat_number: 1, stack: 0, is_horse: false };
+    const hero = {
+      user_id: 'hero',
+      username: 'hero',
+      seat_number: 1,
+      stack: 0,
+      is_horse: false,
+      occupancy_id: occupancyId,
+    };
     engine.seatedPlayers = [hero];
     engine.pendingAddOns = new Map();
     // Seen at zero long ago: the grace has expired.
@@ -160,7 +168,7 @@ describe('the busted-seat stand-up keeps a seat with money in flight', () => {
 
     await engine.standUpBustedCashPlayers();
 
-    expect(atomicCashout).toHaveBeenCalledWith('hero', TABLE, 1);
+    expect(atomicCashout).toHaveBeenCalledWith('hero', TABLE, 1, { occupancyId });
   });
 
   it('stands nobody up on an unreadable ledger (fail open toward the seat)', async () => {
@@ -213,7 +221,14 @@ describe('a sweep request cannot be erased by a sweep already in flight', () => 
 describe('the rebuy is on the felt for the first hand after it', () => {
   it('delivers the row into the next deal, in memory, before syncStacks could persist a zero', async () => {
     const engine = bareEngine();
-    const hero = { user_id: 'hero', username: 'hero', seat_number: 1, stack: 0, is_horse: false };
+    const hero = {
+      user_id: 'hero',
+      username: 'hero',
+      seat_number: 1,
+      stack: 0,
+      is_horse: false,
+      occupancy_id: occupancyId,
+    };
     const villain = {
       user_id: 'villain',
       username: 'v',

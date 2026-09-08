@@ -4,6 +4,12 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PGBIN="${PGBIN:-/opt/homebrew/opt/postgresql@17/bin}"
 test -x "$PGBIN/initdb"
 test -x "$PGBIN/psql"
+# Homebrew may place support files inside the keg rather than the compiled path.
+departure_share="$("$PGBIN/pg_config" --sharedir)"
+if [[ ! -f "$departure_share/postgres.bki" && -f "$PGBIN/../share/postgresql/postgres.bki" ]]; then
+  departure_share="$PGBIN/../share/postgresql"
+fi
+test -f "$departure_share/postgres.bki"
 departure_root="$(node -p 'require("node:os").tmpdir()')"
 departure_tmp="$(mktemp -d "$departure_root/ca-departure.XXXXXX")"
 cleanup() {
@@ -12,7 +18,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir "$departure_tmp/socket"
-"$PGBIN/initdb" -D "$departure_tmp/data" -U departure_test -A trust --no-locale -E UTF8 >/dev/null
+"$PGBIN/initdb" -L "$departure_share" -D "$departure_tmp/data" -U departure_test -A trust --no-locale -E UTF8 >/dev/null
 "$PGBIN/pg_ctl" -D "$departure_tmp/data" -l "$departure_tmp/postgres.log" \
   -o "-h '' -k '$departure_tmp/socket' -p 55443" -w start >/dev/null
 export CA_DEPARTURE_PG_HOST="$departure_tmp/socket" CA_DEPARTURE_PSQL="$PGBIN/psql"
@@ -45,6 +51,10 @@ done
 for departure_apply in 1 2; do
   "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
     -d postgres -f "$repo/supabase/migrations/20260908214235_seat_expiry_follows_cashout_lock_order.sql" >/dev/null
+done
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260908220604_bind_cashout_requests_to_seat_occupancy.sql" >/dev/null
 done
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \

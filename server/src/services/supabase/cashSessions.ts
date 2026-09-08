@@ -111,10 +111,12 @@ export type VoluntaryCashoutResult =
 export async function atomicCashoutVoluntary(
   userId: string,
   tableId: string,
-  seatNumber?: number
+  seatNumber: number,
+  occupancyId: string | undefined
 ): Promise<VoluntaryCashoutResult> {
   const out: { locked: number | null; failed: string | null } = { locked: null, failed: null };
   const stack = await atomicCashout(userId, tableId, seatNumber, {
+    occupancyId,
     leaveMode: 'voluntary',
     onLocked: (ms) => {
       out.locked = ms;

@@ -2779,7 +2779,12 @@ export abstract class ServerTableEngineBase {
         const live = this.handController.getState().players.find((p) => p.user_id === userId);
         if (live && !live.is_folded) continue; // dealt in after all: wait for the boundary
       }
-      const res = await atomicCashoutVoluntary(userId, this.tableId, seated.seat_number);
+      const res = await atomicCashoutVoluntary(
+        userId,
+        this.tableId,
+        seated.seat_number,
+        seated.occupancy_id
+      );
       if (res.ok) {
         this.leaveHeldByClock.delete(userId);
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
@@ -5226,13 +5231,17 @@ export abstract class ServerTableEngineBase {
         // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
         // database writes the bar from this leave mode; every other eviction
         // stays a plain system exit.
-        await atomicCashout(
-          userId,
-          this.tableId,
-          seated.seat_number,
-          nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
-        );
-        departed.add(userId);
+        await atomicCashout(userId, this.tableId, seated.seat_number, {
+          occupancyId: seated.occupancy_id,
+          ...(nitEvict ? { leaveMode: 'vpip_evicted' as const } : {}),
+        });
+        if (
+          this.seatedPlayers.some(
+            (p) => p.user_id === userId && p.occupancy_id !== seated.occupancy_id
+          )
+        )
+          continue;
+        departed.add(seated.occupancy_id!);
         this.hub?.emitEvent(this.tableId, {
           type: 'seat_left',
           table_id: this.tableId,
@@ -5260,7 +5269,9 @@ export abstract class ServerTableEngineBase {
         // Retrying through a different helper would discard the eviction mode.
       }
     }
-    this.seatedPlayers = this.seatedPlayers.filter((p) => !departed.has(p.user_id));
+    this.seatedPlayers = this.seatedPlayers.filter(
+      (p) => !p.occupancy_id || !departed.has(p.occupancy_id)
+    );
   }
 
   /**

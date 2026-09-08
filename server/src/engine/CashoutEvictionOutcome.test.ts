@@ -9,7 +9,14 @@ const { ServerTableEngine } = await import('./ServerTableEngine.js');
 function engine() {
   const e = new ServerTableEngine('dddddddd-dddd-dddd-dddd-dddddddddddd') as any;
   e.tableInfo = { tournament_id: null, nit_game: false };
-  e.seatedPlayers = [{ user_id: 'player', seat_number: 2, stack: 100 }];
+  e.seatedPlayers = [
+    {
+      user_id: 'player',
+      occupancy_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      seat_number: 2,
+      stack: 100,
+    },
+  ];
   e.disconnectEngine = {
     tickSitOutsAndCollectEvictions: () => ['player'],
     collectAwayBlindEvictions: () => [],

@@ -17,7 +17,7 @@ import { tableCountChangedFilter } from './tables.js';
  * ═══════════════════════════════════════════════════════════════════════════
  *  CASHING A SEAT OUT LIVES IN THE DATABASE NOW (2026-08-27)
  * ═══════════════════════════════════════════════════════════════════════════
- * Both functions below call ONE rpc, `atomic_seat_cashout_locked`.
+ * Both functions below share ONE occupancy-bound RPC, `fn_cashout_seat_occupancy`.
  *
  * THE BUG THAT MOVED IT. Cash-out used to be three PostgREST round-trips here:
  * read the stack, credit it, stamp `left_at`. Three round-trips are three
@@ -36,25 +36,11 @@ import { tableCountChangedFilter } from './tables.js';
  * arriving second finds `left_at` set, its own zero-row guard raises, and its
  * debit rolls back.
  *
- * TWO THINGS THIS FILE LEARNED THE HARD WAY, now enforced inside the RPC:
- *
- *   1. THE IDEMPOTENCY KEY IS SCOPED TO AN OCCUPANCY, NOT A SEAT.
- *      `table_seats` has UNIQUE (table_id, seat_number) - one row per physical
- *      seat, forever. Cash tables are fine because the buy-in deletes and
- *      re-inserts, but the tournament balancer moves a player in by setting an
- *      existing row's `left_at` back to null, REUSING the id. A key of
- *      `cashout:<id>` would let the first occupant to cash out poison that seat
- *      for every occupant after them - their credit would dedupe away to
- *      nothing and their seat would still be cleared. `joined_at` separates
- *      them. The RPC derives that key from the row it locked, so the key can no
- *      longer disagree with the seat being paid for.
- *
- *   2. THE LEGACY-KEY GUARD. Credits written before 2026-08-20 used the
- *      unscoped `cashout:<id>`. A retry asking under the new format would miss
- *      them and pay twice, so the RPC checks the legacy key too - and, being
- *      under the lock, that check can no longer be separated from the credit it
- *      guards. It skips only the CREDIT, never the seat exit: leaving the seat
- *      occupied would double-count the chips in fn_club_chip_circulation.
+ * The database assigns each occupancy a UUID, renewed even if a physical
+ * seat row and its timestamp are reused. Callers retain that original UUID.
+ * The RPC binds authorization, locked credit, exit and durable receipt to it.
+ * Repeating a committed request returns its original receipt, even after a
+ * rejoin. An unknown identity fails before any financial mutation.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -67,80 +53,48 @@ import { tableCountChangedFilter } from './tables.js';
  * real ones included. Believing the old sentence would lead someone to assume a
  * failure here cannot touch a human's chips. It can.
  *
- * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
+ * Departure is confirmed only for the original occupancy.
  */
-/** A completed transport call is not proof that the seat departed. */
-function confirmedCashout(data: unknown, seatNumber?: number): { stack: number; absent: boolean } {
+type CashoutScope = { userId: string; tableId: string; seatNumber: number; occupancyId: string };
+
+/** A receipt must prove the exact occupancy this request was authorized for. */
+function confirmedCashout(data: unknown, scope: CashoutScope): { stack: number } {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('Cash-out receipt missing; departure unconfirmed');
   }
   const receipt = data as Record<string, unknown>;
   if (
     receipt.ok !== true ||
+    receipt.reason !== undefined ||
     typeof receipt.stack !== 'number' ||
     !Number.isFinite(receipt.stack) ||
     receipt.stack < 0 ||
-    Math.round(receipt.stack * 100) / 100 !== receipt.stack
-  ) {
-    throw new Error('Cash-out receipt invalid; departure unconfirmed');
-  }
-  if (receipt.reason === 'no_active_seat' && receipt.stack === 0) {
-    return { stack: 0, absent: true };
-  }
-  if (
-    receipt.reason !== undefined ||
-    !Number.isInteger(receipt.seat_number) ||
-    (seatNumber !== undefined && receipt.seat_number !== seatNumber) ||
+    Math.round(receipt.stack * 100) / 100 !== receipt.stack ||
+    receipt.seat_number !== scope.seatNumber ||
+    receipt.occupancy_id !== scope.occupancyId ||
+    receipt.user_id !== scope.userId ||
+    receipt.table_id !== scope.tableId ||
+    receipt.idempotency_key !== 'cashout:occupancy:' + scope.occupancyId ||
     typeof receipt.credited !== 'boolean' ||
-    typeof receipt.tournament_table !== 'boolean' ||
-    typeof receipt.idempotency_key !== 'string' ||
-    !receipt.idempotency_key.startsWith('cashout:') ||
-    receipt.idempotency_key.length <= 'cashout:'.length
+    typeof receipt.tournament_table !== 'boolean'
   ) {
-    throw new Error('Cash-out receipt incomplete; departure unconfirmed');
+    throw new Error('Cash-out receipt does not confirm the requested occupancy');
   }
-  return { stack: receipt.stack, absent: false };
+  return { stack: receipt.stack };
 }
 
 export async function markSeatAsLeft(
   tableId: string,
   userId: string,
-  seatNumber: number
+  seatNumber: number,
+  occupancyId: string | undefined
 ): Promise<void> {
-  // 2026-08-27: same single locked transaction as atomicCashout. This function
-  // and that one had byte-for-byte the same read/credit/vacate gap, and they
-  // have already drifted apart twice while being patched separately (see the
-  // 2026-08-26 audit). Sharing one RPC is what stops them drifting a third
-  // time - there is now exactly one implementation of "cash a seat out", and it
-  // lives in the database where the lock is.
-  //
-  // Everything the old body defended is now structural rather than earned:
-  // a failed credit rolls back with the vacate, so the stack cannot be
-  // destroyed; the legacy-key guard runs under the lock; and the write is
-  // scoped to the seat the RPC itself locked, so it cannot vacate another seat
-  // this call never read.
-  try {
-    const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
-      p_user_id: userId,
-      p_table_id: tableId,
-      p_seat_number: seatNumber,
-    });
-    if (error) throw new Error(error.message);
-    const receipt = confirmedCashout(data, seatNumber);
-    if (!receipt.absent) void notifyWaitlistSeatOpen(tableId);
-  } catch (err: any) {
-    console.error(
-      `[markSeatAsLeft] Departure unconfirmed for ${userId} at ${tableId} seat ${seatNumber}:`,
-      err?.message
-    );
-    throw err;
-  }
+  await atomicCashout(userId, tableId, seatNumber, { occupancyId });
 }
 
 /**
- * Atomic cashout — direct query version for use by HorseLifecycleManager and index.ts
- * FIX 208: Avoids PostgREST RPC "text = uuid" errors
- * Returns the cashed-out stack amount, or 0 if seat not found
+ * Atomic cashout for the original occupancy. Returns its committed amount.
+ * An unknown or stale occupancy rejects instead of claiming a zero cashout.
  */
 /**
  * CHIP CONTINUITY (2026-09-04). `leaveMode` is what the database enforces the
@@ -156,6 +110,8 @@ export async function markSeatAsLeft(
  * cannot accidentally execute success cleanup.
  */
 export interface CashoutOptions {
+  /** Captured from the original roster/seat read, never refreshed on retry. */
+  occupancyId: string | undefined;
   /** 'vpip_evicted' (Dan 2026-09-05): a nit-game eviction - a system exit
       that also bars the player from this game for the rejoin window. */
   leaveMode?: 'voluntary' | 'forced' | 'vpip_evicted';
@@ -168,22 +124,30 @@ const LEAVE_LOCKED_RE = /LEAVE_LOCKED:(\d+)/;
 export async function atomicCashout(
   userId: string,
   tableId: string,
-  seatNumber?: number,
-  opts?: CashoutOptions
+  seatNumber: number,
+  opts: CashoutOptions
 ): Promise<number> {
   // 2026-08-27: read + credit + vacate now happen in ONE transaction, with the
   // seat row held under FOR UPDATE. See the block comment at the top of this
   // file: the old three-round-trip sequence let an add-on commit between the
   // read and the credit, and the difference was destroyed.
   //
-  // The RPC derives the occupancy-scoped idempotency key and the legacy key
-  // from the row it locked, so this call cannot use a key that disagrees with
-  // the seat it is actually paying for.
+  // The RPC verifies the captured occupancy before crediting or exiting.
+  // Its durable receipt makes a lost-response retry independent of later seats.
   try {
-    const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
+    const occupancyId = opts.occupancyId;
+    if (
+      typeof occupancyId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(occupancyId) ||
+      !Number.isInteger(seatNumber)
+    ) {
+      throw new Error('Cash-out requires the original seat occupancy');
+    }
+    const { data, error } = await supabase.rpc('fn_cashout_seat_occupancy', {
       p_user_id: userId,
       p_table_id: tableId,
-      p_seat_number: seatNumber ?? null,
+      p_seat_number: seatNumber,
+      p_occupancy_id: occupancyId,
       p_leave_mode: opts?.leaveMode ?? null,
     });
 
@@ -198,8 +162,8 @@ export async function atomicCashout(
       throw new Error(String(error.message || 'cash-out failed'));
     }
 
-    const receipt = confirmedCashout(data, seatNumber);
-    if (!receipt.absent) void notifyWaitlistSeatOpen(tableId);
+    const receipt = confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
+    void notifyWaitlistSeatOpen(tableId);
     return receipt.stack;
   } catch (err: any) {
     console.warn(
@@ -303,7 +267,7 @@ export async function processLeavePending(
   onLocked?: (userId: string, stayRemainingMs: number) => void,
   /** Seats whose leave is a system exit (admin kick): the clock does not block them. */
   forcedUserIds?: ReadonlySet<string>
-): Promise<string[]> {
+): Promise<Array<{ userId: string; occupancyId: string }>> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
      atomic_seat_cashout_locked. `stack` was selected here and never used, which
@@ -312,17 +276,18 @@ export async function processLeavePending(
      2026-08-27 race. Do not add it back. */
   const { data: pendingSeats } = await supabase
     .from('table_seats')
-    .select('user_id, seat_number')
+    .select('user_id, seat_number, occupancy_id')
     .eq('table_id', tableId)
     .eq('leave_pending', true)
     .is('left_at', null);
 
   if (!pendingSeats || pendingSeats.length === 0) return [];
 
-  const cashedOut: string[] = [];
+  const cashedOut: Array<{ userId: string; occupancyId: string }> = [];
   for (const seat of pendingSeats) {
     const out: { lockedMs: number | null; failed: boolean } = { lockedMs: null, failed: false };
     await atomicCashout(seat.user_id, tableId, seat.seat_number, {
+      occupancyId: seat.occupancy_id,
       leaveMode: forcedUserIds?.has(seat.user_id) ? 'forced' : 'voluntary',
       onLocked: (ms) => {
         out.lockedMs = ms;
@@ -337,6 +302,7 @@ export async function processLeavePending(
         .update({ leave_pending: false })
         .eq('table_id', tableId)
         .eq('user_id', seat.user_id)
+        .eq('occupancy_id', seat.occupancy_id)
         .is('left_at', null);
       onLocked?.(seat.user_id, out.lockedMs);
       continue;
@@ -344,7 +310,7 @@ export async function processLeavePending(
     // Any other failure: the seat is untouched (one transaction) and the next
     // sweep retries it. Only a seat that actually left is reported as gone.
     if (out.failed) continue;
-    cashedOut.push(seat.user_id);
+    cashedOut.push({ userId: seat.user_id, occupancyId: seat.occupancy_id });
   }
 
   // Authoritative recount after all departures.

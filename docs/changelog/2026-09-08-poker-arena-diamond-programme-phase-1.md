@@ -7,3 +7,5 @@ This change adds the 12-phase programme and amends DIAMOND-RULINGS 4/16 and corr
 Documentation only: no runtime feature, schema, balance, credential, engine setting or public route is changed. The initial dependency map identifies the old member chip_balance funding and transfer prohibition as work to replace. Branch publication is recorded separately from runtime deployment.
 
 Verification: git diff --check passed; npx tsc --noEmit exited 0; all 12 phase headings and 24 referenced source paths verified; all three amended specifications reference the programme. No runtime tests or production build were needed for this documentation-only change. No hooks were bypassed.
+
+Latest user instruction: remove all old Diamond Arena code and legacy paths. The programme now requires physical runtime deletion, dependency verification, removal of old route aliases, and forward database retirement with preserved financial evidence.

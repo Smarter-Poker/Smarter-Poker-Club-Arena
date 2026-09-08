@@ -16,7 +16,7 @@ The user explicitly approved:
 - Diamond Arena contains players only. No union structure, agents, subagents, downlines, commissions, agent wallets or private-club ownership flow.
 - Player-to-player diamond transfers ARE allowed through the platform wallet and from inside Diamond Arena.
 - Diamond Arena gameplay, available balances, custody, fees, prizes, refunds, house funding and reporting are diamond-only. Never convert them to chips or include them in chip balances, journals, treasury totals or supply.
-- Reuse Club Arena code and approved assets extensively. Treat the old independent Diamond Arena application as zero: no reuse and no completion credit.
+- Reuse Club Arena code and approved assets extensively. Treat the old independent Diamond Arena application as zero: no reuse and no completion credit. Remove all old Diamond Arena runtime code and legacy paths, not merely hide or disable them.
 - Preserve active tables when switching lobbies; never automatically switch the player's active table.
 - Platform operations remain staff-authorized. A staff permission is not an agent hierarchy.
 - Existing horse parity rules remain applicable; “players only” describes the absence of union/agent business roles, not a new exclusion of horses. Any automated participation must use the same funded diamond paths and existing authorization rules.
@@ -103,7 +103,7 @@ Paths are relative to Club Arena unless marked World Hub.
 | Wallet transfer     | World Hub DiamondWalletModal.jsx; pages/api/store/diamond-transfer.js, current successors             | Verify/restore single atomic player-to-player path; preserve existing eligible-recipient rules |
 | History/stats       | HandHistoryService.ts; StatsFactsService.ts; SessionStatsService.ts; LeaderboardService.ts            | Shared facts infrastructure, separate asset/scope and replay privacy                           |
 | Operations          | financialAlerts.ts; integrity modules; platform staff API                                             | Reuse alerts/recovery, scope incidents and powers explicitly                                   |
-| Navigation/publish  | src/main.tsx; vite.config.ts; World Hub next.config.js; publish-club-arena.yml                        | Same SPA/origin; compatibility links and old iframe retirement                                 |
+| Navigation/publish  | src/main.tsx; vite.config.ts; World Hub next.config.js; publish-club-arena.yml                        | Same SPA/origin; remove legacy Diamond routes and iframe implementation                        |
 | Capacity            | server/src/services/tableLease.ts; server/src/scale/                                                  | Verify actual live integration before claiming horizontal scaling                              |
 
 Every implementation phase must expand its row into exact current callers, database functions, triggers, constraints and tests before editing. This table is the boundary inventory, not a claim that all transitive dependencies have been certified.
@@ -192,7 +192,7 @@ Exit: authorized test users can transfer available diamonds once; reserved game 
 - [ ] Reuse shared lobby sections and approved game-card designs.
 - [ ] Scope labels, available balance, icons, filters and persistent preferences to selected arena.
 - [ ] Preserve active table, animation and sound behavior across navigation.
-- [ ] Maintain existing URLs; wire Diamond legacy entry to selection inside same SPA.
+- [ ] Keep shared Club Arena technical URLs where needed; create the new Diamond selection inside Poker Arena. Remove the old standalone Diamond route, redirects, aliases and iframe entry points.
 - [ ] Test mobile, desktop, deep links, back/refresh, auth return and old caches.
 
 Exit: correct shell/selection/access behavior without old iframe or simulated game content.
@@ -271,11 +271,18 @@ Exit: reproducible evidence, measured operating envelope and no unresolved criti
 - [ ] Use established Hetzner static/engine publishing; World Hub routing through its pipeline.
 - [ ] Verify published SHAs and real public route behavior.
 - [ ] Verify certified buy-in/play/leave/transfer end to end after deployment.
-- [ ] Confirm old Diamond app/iframe/writers are unreachable without deleting financial testimony.
+- [ ] Delete all legacy Diamond Arena runtime modules, routes, API handlers, iframe assets, jobs, deployment targets, flags and obsolete configuration after dependency verification. Disabled or unreachable code does not satisfy removal.
+- [ ] Remove exclusive obsolete database functions, triggers and tables through new forward migrations after reconciling balances and obligations. Preserve historical migration files and financial journal evidence.
+- [ ] Search both repositories and deployment configuration for every inventoried legacy symbol/path; document each remaining match as shared infrastructure or historical evidence. Verify old URLs expose no Diamond Arena screen, API or redirect alias.
+- [ ] Verify shared Diamond Wallet, player transfers and Club Arena gameplay still work after deletion.
 - [ ] Keep rollback compatible with outstanding Diamond tables/obligations.
 - [ ] Update phase evidence and all programme status records.
 
 Exit: usable published Diamond skin, exact financial reconciliation, no orphan routes or chip contamination.
+
+## Legacy Removal Contract
+
+Inventory legacy Diamond Arena files, routes, database objects, deployment resources and incoming callers in Phase 2. Remove replaced writers during Phase 3, old UI and route paths during Phase 5, and remaining exclusive infrastructure during Phase 12. Do not build new code on legacy Arena services. Reuse comes from Club Arena and the shared platform wallet. Removing an old Arena wrapper must retain the shared service it calls. No compatibility route for the old standalone Diamond Arena is required; update every internal caller to the new Poker Arena selection. Financial records remain historical evidence, not a legacy execution path. Rollback must not reactivate old Diamond writers or chip-backed funding.
 
 ## Verification Standard
 

@@ -21,10 +21,13 @@
  * on any softer threshold, because several skins carry an outer glow whose extent
  * is a styling choice and not the table.
  *
- * TOLERANCE is 8px on any edge, ~1.3% of the canvas. Wide enough that the four
- * skins sitting a pixel or two out are left alone rather than resampled for
- * nothing; tight enough that arctic_white (40px) and ice_cavern (46px) cannot hide
- * in it.
+ * CENTRE AND SIZE ARE TWO ASSERTIONS, not one, because only one of them can
+ * always be fixed by moving pixels. Centre is 4px with no exemptions — every one
+ * of the fourteen can satisfy it, and it is what decides whether the seat ring
+ * lands on the rail. Size is 8px (~1.3% of the canvas), wide enough to leave the
+ * skins sitting a pixel or two out alone rather than resampling them for nothing,
+ * with two named exemptions in SIZE_EXEMPT that each carry the measurement that
+ * earned them.
  *
  * Shared by `scripts/repair-table-skins.mjs` (which corrects the art) and
  * `tests/table-skin-art-is-sound.law.test.ts` (which stops it drifting again).
@@ -120,21 +123,6 @@ export function opaqueBounds({ data, width, height, channels }) {
     }
   }
   return { minX, minY, maxX, maxY };
-}
-
-/** Signed per-edge drift from canonical. Positive means "inside" canonical. */
-export function edgeDrift(bounds) {
-  return {
-    left: bounds.minX - CANONICAL.minX,
-    top: bounds.minY - CANONICAL.minY,
-    right: CANONICAL.maxX - bounds.maxX,
-    bottom: CANONICAL.maxY - bounds.maxY,
-  };
-}
-
-export function worstDrift(bounds) {
-  const d = edgeDrift(bounds);
-  return Math.max(Math.abs(d.left), Math.abs(d.top), Math.abs(d.right), Math.abs(d.bottom));
 }
 
 /** How far the table's centre is from the canvas centre, per axis. */

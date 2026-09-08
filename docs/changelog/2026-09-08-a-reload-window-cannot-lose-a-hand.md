@@ -110,7 +110,7 @@ still being attempted, with the payload already in hand.
 
 ## Pinned
 
-`tests/a-reload-window-cannot-lose-a-hand.law.test.ts`, 16 pins: the budget is
+`tests/a-reload-window-cannot-lose-a-hand.law.test.ts`, 17 pins: the budget is
 derived from the measurement rather than re-typed, it outlasts several reloads,
 the inline ladder stays inside the dealing budget, `DEAL_STEP_BUDGET_MS` is
 pinned as the ceiling that number is measured against, both callers hand off

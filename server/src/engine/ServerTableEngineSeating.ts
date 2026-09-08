@@ -707,7 +707,8 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // and is only cleared when the next hand builds a fresh player array, which
     // is exactly the window this rule is about.
     //
-    // A folded player is free to go: their chips are no longer in the pot.
+    // A folded player may leave the UI, but their contribution remains in
+    // this hand until settlement. Their cashout must wait for that boundary.
     // ═══════════════════════════════════════════════════════════════════════
     const liveHand = this.handController?.getState();
     const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
@@ -894,12 +895,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // UI, still in the seat, chips still on the table. It could sit like that
     // forever, and nothing swept it.
     //
-    // Deferral is now reserved for the only case that needs it: a player with
-    // live chips in the pot of a hand still being played. Everyone else —
-    // sitting out, already folded, all-in and settled, or simply not dealt in —
-    // leaves immediately.
+    // Every participant in this live hand waits for settlement, including a
+    // folded player. Folding removes winning eligibility, not the committed
+    // contribution or the need to persist the final stack. A player who was
+    // not dealt into this hand can still leave immediately.
     const handState = this.handController?.getState();
-    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId && !p.is_folded);
+    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId);
 
     if (this.handController !== null && playerInLiveHand) {
       // Mid-hand: fold the player immediately if it's their turn or they're still in

@@ -35,7 +35,11 @@ const make = new Function(
 function fixture(
   seat: unknown,
   error: unknown = null,
-  options: { cashReceipt?: Record<string, unknown>; readError?: string } = {}
+  options: {
+    cashReceipt?: Record<string, unknown>;
+    readError?: string;
+    target?: Record<string, unknown>;
+  } = {}
 ) {
   const writes: string[] = [];
   const alerts: unknown[][] = [];
@@ -43,7 +47,12 @@ function fixture(
     from(table: string) {
       let op = 'read';
       const c: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'not', 'order']) c[m] = () => c;
+      let selected = '';
+      c.select = (columns: string) => {
+        selected = columns;
+        return c;
+      };
+      for (const m of ['eq', 'not', 'order']) c[m] = () => c;
       c.update = () => {
         op = 'update';
         return c;
@@ -61,6 +70,14 @@ function fixture(
                   status: 'REGISTERING',
                   buy_in_amount: 10,
                   buy_in_fee: 0,
+                  ...Object.fromEntries(
+                    Object.entries(options.target ?? {}).filter(([key]) =>
+                      selected
+                        .split(',')
+                        .map((x) => x.trim())
+                        .includes(key)
+                    )
+                  ),
                 }
               : [{ user_id: 'winner', username: 'Winner', position: 1 }],
           count: 1,
@@ -198,4 +215,19 @@ describe('satellite cash and reads require confirmed completion', () => {
     await f.run();
     expect(f.writes).toContain('tournament_players');
   });
+});
+
+it('reads the minutes-only admission window and awards a seat instead of cash', async () => {
+  const f = fixture({ ok: true, awarded: true }, null, {
+    target: {
+      status: 'RUNNING',
+      late_reg_levels: 0,
+      rebuy_levels: 0,
+      late_reg_mins: 60,
+      started_at: new Date(Date.now() - 60000).toISOString(),
+    },
+  });
+  await f.run();
+  expect(f.writes).not.toContain('cash');
+  expect(f.writes).toContain('tournament_players');
 });

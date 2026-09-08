@@ -40,6 +40,9 @@ export interface SatelliteTargetState {
    *  the rest of the tournament code already uses when it is unset. */
   late_reg_levels?: number | null;
   rebuy_levels?: number | null;
+  /** Used only when there is no positive level-based admission cap. */
+  late_reg_mins?: number | null;
+  started_at?: string | null;
   current_players?: number | null;
   max_players?: number | null;
   /** The platform's single statement that the pool has stopped moving. Once it
@@ -53,7 +56,10 @@ export interface SatelliteTargetState {
  * True only when a seat can genuinely be taken in the target: registration is
  * open (before the start, or during late registration) AND there is room.
  */
-export function isSatelliteTargetOpen(target: SatelliteTargetState | null): boolean {
+export function isSatelliteTargetOpen(
+  target: SatelliteTargetState | null,
+  now = Date.now()
+): boolean {
   if (!target) return false;
 
   /* A FINALIZED POOL IS A CLOSED DOOR (2026-08-31). This is checked before the
@@ -85,7 +91,18 @@ export function isSatelliteTargetOpen(target: SatelliteTargetState | null): bool
        whole level. See tests/unit/currentLevelIsAnIndex.test.ts for the rule
        itself. */
     const level = Number(target.current_level ?? 0);
-    return cap > 0 && level < cap;
+    if (cap > 0) return level < cap;
+    // Match fn_tournament_late_registration_open: a positive level cap wins;
+    // otherwise a minutes-only window closes exactly at started_at + minutes.
+    const minutes = Number(target.late_reg_mins ?? 0);
+    const started = target.started_at ? Date.parse(target.started_at) : Number.NaN;
+    return (
+      Number.isFinite(minutes) &&
+      minutes > 0 &&
+      Number.isFinite(started) &&
+      Number.isFinite(now) &&
+      now < started + minutes * 60000
+    );
   }
 
   // COMPLETED, COMPLETING, CANCELLED: nothing to enter.

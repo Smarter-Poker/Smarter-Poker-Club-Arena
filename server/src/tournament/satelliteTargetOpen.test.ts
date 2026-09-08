@@ -171,3 +171,45 @@ describe('the pool bounds the payout (the 2026-08-30 leak)', () => {
     expect(plan.awardCount).toBe(5);
   });
 });
+
+describe('minutes-only admission matches the database deadline', () => {
+  const start = Date.parse('2026-09-08T14:00:00Z');
+  const target = {
+    status: 'RUNNING',
+    late_reg_levels: 0,
+    rebuy_levels: 0,
+    late_reg_mins: 10,
+    started_at: new Date(start).toISOString(),
+  };
+  it('opens before the deadline and closes exactly at it', () => {
+    expect(isSatelliteTargetOpen(target, start + 599999)).toBe(true);
+    expect(isSatelliteTargetOpen(target, start + 600000)).toBe(false);
+    expect(isSatelliteTargetOpen(target, start + 600001)).toBe(false);
+  });
+  it('keeps a positive level cap authoritative over the minutes window', () => {
+    expect(isSatelliteTargetOpen({ ...target, late_reg_levels: 5, current_level: 5 }, start)).toBe(
+      false
+    );
+    expect(
+      isSatelliteTargetOpen({ ...target, late_reg_levels: 5, current_level: 4 }, start + 600001)
+    ).toBe(true);
+    expect(
+      isSatelliteTargetOpen(
+        { ...target, late_reg_levels: null, rebuy_levels: 5, current_level: 5 },
+        start
+      )
+    ).toBe(false);
+  });
+  it('keeps finalized pools and full targets closed', () => {
+    expect(isSatelliteTargetOpen({ ...target, prize_pool_finalized: true }, start)).toBe(false);
+    expect(isSatelliteTargetOpen({ ...target, max_players: 2, current_players: 2 }, start)).toBe(
+      false
+    );
+  });
+  it('cannot infer a timed opening without a valid start and duration', () => {
+    for (const started_at of [null, '', 'invalid'])
+      expect(isSatelliteTargetOpen({ ...target, started_at }, start)).toBe(false);
+    for (const late_reg_mins of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(isSatelliteTargetOpen({ ...target, late_reg_mins }, start)).toBe(false);
+  });
+});

@@ -19,7 +19,7 @@ For each operation, verify the caller's identity and scope, exact asset and prec
 
 Cash chips, tournament play chips, diamonds, ticket entitlements and attribution statistics are different quantities. Each must be conserved or changed by its explicitly authorized issuance/redemption rule; reporting must not add unrelated assets or treat a statistical rake credit as a second cash payment.
 
-Confirmed and addressed so far: eight journal functions that swallowed posting failures; satellite awards that survived transfer/receipt failure or short funding; promo client retries that generated a fresh payment identity; cashout escrow counterparties and receipt rollback/replay boundaries; duplicate hand-roster conservation and new hand-receipt payload binding. Their individual changelogs contain tests and deployment status.
+Confirmed and addressed so far: eight journal functions that swallowed posting failures; satellite awards that survived transfer/receipt failure or short funding; promo client retries that generated a fresh payment identity; cashout escrow counterparties and receipt rollback/replay boundaries; duplicate hand-roster conservation and new hand-receipt payload binding; union close calendar alignment and overlapping-period prevention. Their individual changelogs contain tests and deployment status.
 
 Open structural findings: cash-hand stacks, rake and BBJ still use separate transactions; stack-settlement failure responses can be discarded by callers; horse funding retry identities and ambiguous responses need alignment; wallet and cashier replay receipts require payload-binding review; legacy global-wallet transfer wiring needs review; historical incident families have not all been traced to a verified correction.
 

@@ -12,7 +12,8 @@ try {
  await a.query(input.actor);
  await b.query(input.actor);
  const first=(await a.query('SELECT '+input.first+' receipt')).rows[0].receipt;
- assert.equal(first.success,true);
+ if(input.compositeReceipt) assert.ok(first.id);
+ else assert.equal(first.success,true);
  let settled=false;
  const pending=b.query('SELECT '+input.second+' receipt')
   .then(result=>({receipt:result.rows[0].receipt}),error=>({error}))
@@ -27,9 +28,18 @@ try {
  assert.equal(waited,true,'Second transaction must contend before the first commits');
  await a.query('COMMIT');
  const second=await pending;
- if(input.conflict){
+ if(input.receiptError){
+  assert.equal(second.receipt?.success,false);
+  assert.equal(second.receipt?.error,input.receiptError);
+  await b.query('COMMIT');
+ } else if(input.conflict){
   assert.equal(second.error?.code,'22023','Conflicting cashout must fail without moving money');
   await b.query('ROLLBACK');
+ } else if(input.compositeReceipt){
+  assert.equal(second.error,undefined);
+  if(input.expectDistinctReceipts) assert.notEqual(second.receipt?.id,first.id);
+  else assert.equal(second.receipt?.id,first.id);
+  await b.query('COMMIT');
  } else {
   assert.equal(second.receipt?.success,true);
   assert.equal(second.receipt?.replayed,true);
@@ -37,7 +47,7 @@ try {
   await b.query('COMMIT');
  }
  await a.query(input.verify);
- console.log('fixed: concurrent cashout '+input.name+' passed');
+ console.log('fixed: concurrent '+input.name+' passed');
 } finally {
  await a.query('ROLLBACK').catch(()=>{});
  await b.query('ROLLBACK').catch(()=>{});

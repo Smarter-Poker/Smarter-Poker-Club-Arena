@@ -101,6 +101,18 @@
     {
       "name": "Concurrent member requests cannot overrun the last free throw",
       "passed": true
+    },
+    {
+      "name": "Reproduce: transaction-start time accepts an expired pack",
+      "passed": true
+    },
+    {
+      "name": "An expired pack is not consumed by a delayed transaction",
+      "passed": true
+    },
+    {
+      "name": "A pack expiring during a row-lock wait yields to the next valid pack",
+      "passed": true
     }
   ],
   "observedBug": {

@@ -83,8 +83,8 @@ describe('the surviving timer governs the seat-first sheet too', () => {
    * behaviour and the pin together, and say so.
    */
   it('arms only while the sheet is a DECISION - not while money is moving', () => {
-    expect(CODE).toContain(
-      'const commitInFlight = seatFirstPending || seatFirstPendingRef.current'
+    expect(CODE.replace(/\s+/g, ' ')).toContain(
+      'const commitInFlight = buyInProcessingRef.current || seatFirstPending || seatFirstPendingRef.current'
     );
     expect(CODE).toContain(
       'const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0'
@@ -122,7 +122,9 @@ describe('the surviving timer governs the seat-first sheet too', () => {
   it('and checks once more in the instant it would eject', () => {
     /* A whole second separates the guard from the fire. The RPC can land
        inside it - which is exactly the race that cost Dan his seat. */
-    expect(expiry).toContain('if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;');
+    expect(expiry.replace(/\s+/g, ' ')).toContain(
+      'if (buyInProcessingRef.current || seatFirstPendingRef.current || heroSeatRef.current > 0) return;'
+    );
   });
 
   it('exits to the real lobby, never a hard-coded path', () => {

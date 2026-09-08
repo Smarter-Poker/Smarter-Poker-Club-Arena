@@ -1,0 +1,23 @@
+{
+  "items": 18,
+  "cells": 189,
+  "checks": [
+    {
+      "speed": 0.5,
+      "animations": 1555
+    },
+    {
+      "speed": 1,
+      "animations": 1555
+    },
+    {
+      "speed": 2,
+      "animations": 1555
+    }
+  ],
+  "errors": [],
+  "reducedMotionFreshPage": {
+    "media": true,
+    "animated": []
+  }
+}

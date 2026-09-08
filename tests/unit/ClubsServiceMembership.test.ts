@@ -92,9 +92,14 @@ vi.mock('../../src/services/ReferralService', () => ({
 
 // ─── Import AFTER mocks ───────────────────────────────────────────────────
 
-import { getUserMemberships, joinClub } from '../../src/services/ClubsService';
+import {
+  getUserMemberships,
+  joinClub,
+  clearMembershipsWarmCache,
+} from '../../src/services/ClubsService';
 
 beforeEach(() => {
+  clearMembershipsWarmCache();
   queries.length = 0;
   membershipRows = [];
   joinRpcResult = { data: null, error: null };
@@ -103,6 +108,20 @@ beforeEach(() => {
 });
 
 describe('getUserMemberships', () => {
+  it('keeps chip memberships and excludes Diamond, retired, and unknown-asset rows', async () => {
+    membershipRows = [
+      { club_id: 'chip', club: { id: 'chip', asset: 'chips', lifecycle_status: 'active' } },
+      {
+        club_id: 'diamond',
+        club: { id: 'diamond', asset: 'diamonds', lifecycle_status: 'active' },
+      },
+      { club_id: 'retired', club: { id: 'retired', asset: 'chips', lifecycle_status: 'retired' } },
+      { club_id: 'unknown', club: { id: 'unknown', lifecycle_status: 'active' } },
+    ];
+    const result = await getUserMemberships({ id: 'user-under-test' });
+    expect(result.map((row) => row.club_id)).toEqual(['chip']);
+  });
+
   it('requests only active/approved memberships (pending joins are not memberships)', async () => {
     await getUserMemberships({ id: 'user-under-test' });
 

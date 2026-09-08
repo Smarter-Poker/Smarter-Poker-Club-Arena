@@ -182,6 +182,7 @@ it('preserves the Mini kind, tier and metadata when reconstructing a stored oper
                 contributions: {
                   ...PARAMS,
                   kind: 'mini',
+                  payoutTotalPercent: 0,
                   tierId: 'low',
                   metadata: { rule: 'near_miss' },
                 },
@@ -250,4 +251,51 @@ it.each([
   });
   processBBJPayout.mockResolvedValue({ status: 'already_paid' });
   expect(await reconcilePendingFees()).toMatchObject({ scanned: 1, resolved: 0, stillFailing: 1 });
+});
+
+it.each([
+  { tableId: 'different-table' },
+  { clubId: 'different-club' },
+  { handNumber: 42 },
+  { handNumber: NaN },
+  { handNumber: 1.5 },
+  { payoutTotalPercent: NaN },
+  { payoutTotalPercent: Infinity },
+  { payoutTotalPercent: -1 },
+  { payoutTotalPercent: 101 },
+  { loserUserId: PARAMS.winnerUserId },
+  { dealtInPlayerIds: ['bb', 'hw', null] },
+])(
+  'does not execute a queued jackpot with mismatched identity or invalid parameters: %j',
+  async (override) => {
+    const original = from.getMockImplementation()!;
+    from.mockImplementation((name: string) =>
+      name === 'pending_fee_distributions'
+        ? table(
+            { data: [{ ...QUEUED_ROW, contributions: { ...PARAMS, ...override } }], error: null },
+            (p) => patches.push(p)
+          )
+        : original(name)
+    );
+    processBBJPayout.mockResolvedValue({ status: 'already_paid' });
+    const summary = await reconcilePendingFees();
+    expect(processBBJPayout).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ resolved: 0, stillFailing: 1 });
+    expect((patches[0] as { resolved_at?: string }).resolved_at).toBeUndefined();
+  }
+);
+
+it('retains the captured row hand number for a legacy payload without handNumber', async () => {
+  const original = from.getMockImplementation()!;
+  const { handNumber: _omitted, ...legacy } = PARAMS;
+  from.mockImplementation((name: string) =>
+    name === 'pending_fee_distributions'
+      ? table({ data: [{ ...QUEUED_ROW, contributions: legacy }], error: null }, (p) =>
+          patches.push(p)
+        )
+      : original(name)
+  );
+  processBBJPayout.mockResolvedValue({ status: 'already_paid' });
+  await reconcilePendingFees();
+  expect(processBBJPayout.mock.calls[0][0].handNumber).toBe(QUEUED_ROW.hand_number);
 });

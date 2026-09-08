@@ -686,13 +686,27 @@ export async function reconcilePendingFees(): Promise<{
           !p.clubId ||
           !p.loserUserId ||
           !p.winnerUserId ||
+          p.tableId !== row.table_id ||
+          p.clubId !== row.club_id ||
+          !Number.isSafeInteger(row.hand_number) ||
+          row.hand_number <= 0 ||
+          (p.handNumber != null && p.handNumber !== row.hand_number) ||
+          typeof p.loserUserId !== 'string' ||
+          typeof p.winnerUserId !== 'string' ||
+          p.loserUserId === p.winnerUserId ||
           !Array.isArray(p.dealtInPlayerIds) ||
+          p.dealtInPlayerIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
           typeof p.payoutTotalPercent !== 'number' ||
+          !Number.isFinite(p.payoutTotalPercent) ||
+          p.payoutTotalPercent < 0 ||
+          (p.kind !== 'mini' && p.payoutTotalPercent === 0) ||
+          p.payoutTotalPercent > 100 ||
           (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
           (p.kind === 'mini' && !p.tierId)
         ) {
           ok = false;
-          failureMessage = 'bbj_payout row is missing its parameters';
+          failureMessage =
+            'bbj_payout row is missing its parameters or has an invalid operation identity';
         } else {
           const { data: seats } = await supabase
             .from('table_seats')

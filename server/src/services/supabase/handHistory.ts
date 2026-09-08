@@ -686,7 +686,9 @@ async function insertHandHistoryRow(
     if (hasPostCommitObligations && !atomicCommit.acceptedPostCommitFacts) {
       throw new Error('atomic hand commit refused (post_commit_facts_missing)');
     }
-    const payload = {
+    // Capture the complete accepted request before yielding. Engine-owned arrays
+    // may change while a response is lost; a retry must retain the original facts.
+    const payload = structuredClone({
       p_table_id: row.table_id,
       p_hand_number: row.hand_number,
       p_stacks: atomicCommit.stacks,
@@ -710,7 +712,7 @@ async function insertHandHistoryRow(
       ...(hasPostCommitObligations
         ? { p_post_commit_obligations: atomicCommit.postCommitObligations! }
         : {}),
-    };
+    });
     let lastError = 'no response';
 
     // Every retry is the same idempotent transaction.  This loop exists only
@@ -730,6 +732,13 @@ async function insertHandHistoryRow(
             throw new Error(
               `atomic hand commit refused (invalid_receipt): ${JSON.stringify(result)}`
             );
+          }
+          const requestedHistoryId = payload.p_hand_row.id;
+          if (
+            typeof requestedHistoryId === 'string' &&
+            historyId.toLowerCase() !== requestedHistoryId.toLowerCase()
+          ) {
+            throw new Error('atomic hand commit refused (receipt_identity_mismatch)');
           }
           // The authoritative transaction is already committed. Projection
           // is work-triggered and deliberately outside the dealing barrier;

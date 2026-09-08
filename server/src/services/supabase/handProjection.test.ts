@@ -7,6 +7,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { blankNonCode } from '../../testHelpers/sourceWindow.js';
+import {
+  currentTournamentDataAuthority,
+  dataActorHeaders,
+  runWithTournamentDataAuthority,
+} from './dataActorContext.js';
 
 type OutboxReply = {
   data: Array<{ hand_id: string; hand_number: number }> | null;
@@ -24,6 +29,7 @@ const queryCalls: Array<{
   limit?: number;
 }> = [];
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+const requestActors: string[] = [];
 const channels: FakeChannel[] = [];
 const removedChannels: FakeChannel[] = [];
 
@@ -49,6 +55,7 @@ class FakeChannel {
 vi.mock('./client.js', () => ({
   supabase: {
     from: (table: string) => {
+      requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
       const call = { table } as (typeof queryCalls)[number];
       queryCalls.push(call);
       const query = {
@@ -72,6 +79,7 @@ vi.mock('./client.js', () => ({
       return query;
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
+      requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
       rpcCalls.push({ fn, args });
       return (
         projectionReplies.shift() ?? {
@@ -113,6 +121,7 @@ beforeEach(async () => {
   queryCalls.length = 0;
   rpcCalls.length = 0;
   mockReportError.mockReset();
+  requestActors.length = 0;
 });
 
 describe('the accepted-hand projection worker', () => {
@@ -324,5 +333,51 @@ describe('the accepted-hand projection worker', () => {
     expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(1);
     expect(source).toContain('causalRetryOwed = summary.failed > 0 || summary.deferred > 0');
     expect(source).toContain('cancelCausalRetry(true)');
+  });
+});
+
+describe('projection worker owns its request context', () => {
+  const authority = {
+    tournamentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    leaseGeneration: '11111111-1111-4111-8111-111111111111',
+  };
+  it('a tournament wake cannot lend its lease to the global projection drain', async () => {
+    outboxReplies.push({
+      data: [{ hand_id: 'h-other-tournament', hand_number: 901 }],
+      error: null,
+    });
+    projectionReplies.push({ data: { ok: true }, error: null });
+    await runWithTournamentDataAuthority(authority, async () => {
+      const result = await worker.wakeHandProjection();
+      expect(result.projected).toBe(1);
+      expect(currentTournamentDataAuthority()).toEqual(authority);
+    });
+    expect(requestActors).toEqual(['service', 'service']);
+    expect(currentTournamentDataAuthority()).toBeNull();
+  });
+  it('a manager cannot establish a new service worker owner', async () => {
+    await worker.stopHandProjectionWorker();
+    requestActors.length = 0;
+    expect(() =>
+      runWithTournamentDataAuthority(authority, () => worker.startHandProjectionWorker())
+    ).toThrow('must start outside tournament authority');
+    await expect(worker.wakeHandProjection()).resolves.toMatchObject({ projected: 0 });
+    expect(requestActors).toEqual([]);
+    worker.startHandProjectionWorker();
+    await vi.waitFor(() => expect(requestActors).toEqual(['service']));
+  });
+
+  it('a retry caused by a tournament wake retains worker ownership after the caller returns', async () => {
+    outboxReplies.push(
+      { data: [{ hand_id: 'h-retry', hand_number: 902 }], error: null },
+      { data: [{ hand_id: 'h-retry', hand_number: 902 }], error: null }
+    );
+    projectionReplies.push(
+      { data: null, error: { message: 'temporary failure' } },
+      { data: { ok: true }, error: null }
+    );
+    await runWithTournamentDataAuthority(authority, () => worker.wakeHandProjection());
+    await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
+    expect(requestActors).toEqual(['service', 'service', 'service', 'service']);
   });
 });

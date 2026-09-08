@@ -268,3 +268,94 @@ describe('warm-up deadlines', () => {
     expect(getToken).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('lobby foreground preparation', () => {
+  it.each(['visibilitychange', 'pageshow', 'online'])(
+    'restores expired visible warmups on %s without waiting for the refresh tick',
+    async (eventName) => {
+      let intersect!: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void;
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          constructor(callback: typeof intersect) {
+            intersect = callback;
+          }
+          observe = vi.fn();
+          disconnect = vi.fn();
+        }
+      );
+      let visibility = 'visible';
+      const visibilitySpy = vi
+        .spyOn(document, 'visibilityState', 'get')
+        .mockImplementation(() => visibility as DocumentVisibilityState);
+      getSeatedPlayers.mockResolvedValue(ROWS);
+      const root = document.createElement('div');
+      const row = document.createElement('div');
+      row.setAttribute('data-warm-table', T);
+      root.append(row);
+      const cleanup = warm.observeLobbyTableWarmups([root]);
+      try {
+        intersect([{ target: row, isIntersecting: true }]);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(acquire).toHaveBeenCalledTimes(1);
+        visibility = 'hidden';
+        await vi.advanceTimersByTimeAsync(warm.WARM_TTL_MS + 1);
+        const target = eventName === 'visibilitychange' ? document : window;
+        target.dispatchEvent(new Event(eventName));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(acquire).toHaveBeenCalledTimes(1);
+        visibility = 'visible';
+        target.dispatchEvent(new Event(eventName));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(acquire).toHaveBeenCalledTimes(2);
+        expect(getSeatedPlayers).toHaveBeenCalledTimes(2);
+        // Duplicate Safari wake events reuse the fresh entry and its owner.
+        target.dispatchEvent(new Event(eventName));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(acquire).toHaveBeenCalledTimes(2);
+        cleanup();
+        await vi.advanceTimersByTimeAsync(warm.WARM_TTL_MS + 1);
+        target.dispatchEvent(new Event(eventName));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(acquire).toHaveBeenCalledTimes(2);
+      } finally {
+        cleanup();
+        visibilitySpy.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    }
+  );
+
+  it('retries a refused speculative slot on resume while keeping its fresh roster', async () => {
+    let intersect!: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: typeof intersect) {
+          intersect = callback;
+        }
+        observe = vi.fn();
+        disconnect = vi.fn();
+      }
+    );
+    getSeatedPlayers.mockResolvedValue(ROWS);
+    acquire.mockReturnValueOnce(null);
+    const root = document.createElement('div');
+    const row = document.createElement('div');
+    row.setAttribute('data-warm-table', T);
+    root.append(row);
+    const cleanup = warm.observeLobbyTableWarmups([root]);
+    try {
+      intersect([{ target: row, isIntersecting: true }]);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(acquire).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(new Event('pageshow'));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(acquire).toHaveBeenCalledTimes(2);
+      expect(getSeatedPlayers).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+    }
+  });
+});

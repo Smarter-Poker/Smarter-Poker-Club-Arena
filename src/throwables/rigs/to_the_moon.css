@@ -1,0 +1,91 @@
+.thr-to_the_moon__moon {
+  transform-origin: 0 0;
+  animation: thr-to_the_moon-moon calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-to_the_moon-moon {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+  12.73521% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-to_the_moon__rocket {
+  transform-origin: 0 0;
+  animation: thr-to_the_moon-rocket calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-to_the_moon-rocket {
+  0.00000% {
+    opacity: 0;
+    transform: translate(80px, -60px) rotate(-25deg);
+  }
+  12.73521% {
+    opacity: 1;
+    transform: translate(80px, -60px) rotate(-25deg);
+  }
+  23.64331% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-to_the_moon__flag {
+  transform-origin: 0 0;
+  animation: thr-to_the_moon-flag calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-to_the_moon-flag {
+  0.00000% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  23.64331% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  33.18789% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  53.64058% {
+    opacity: 1;
+    transform: skewY(6deg);
+  }
+  72.72975% {
+    opacity: 1;
+    transform: skewY(-6deg);
+  }
+  97.27298% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-to_the_moon__moon {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-to_the_moon__rocket {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-to_the_moon__flag {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+}

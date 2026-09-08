@@ -48,3 +48,11 @@ describe('buy-in confirmation failures', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+it('shows an explicit unsuccessful callback result without relying on a toast', async () => {
+  render(<BuyInModal {...base} onConfirm={async () => false} />);
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(screen.getByRole('alert').textContent).toContain('Buy-In Not Confirmed');
+});

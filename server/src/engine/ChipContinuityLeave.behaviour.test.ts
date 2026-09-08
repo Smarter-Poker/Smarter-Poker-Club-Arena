@@ -227,3 +227,65 @@ describe('a leave refused at settlement is held by the clock, then released', ()
     expect(e.leaveHeldByClock.has(HUMAN)).toBe(false);
   });
 });
+
+describe('cashout follows a settlement barrier that is extended while waiting', () => {
+  for (const forced of [false, true]) {
+    it(
+      forced
+        ? 'forced cashout waits for the appended settlement'
+        : 'voluntary cashout waits for the appended settlement',
+      async () => {
+        const e = makeEngine();
+        let finishFirst!: () => void;
+        let finishSecond!: () => void;
+        const first = new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        });
+        const second = new Promise<void>((resolve) => {
+          finishSecond = resolve;
+        });
+        e.postHandTasksPromise = first;
+        cashoutVoluntary.mockResolvedValue({
+          ok: false,
+          code: 'LEAVE_LOCKED',
+          stayRemainingMs: 1000,
+        });
+        cashout.mockImplementation(async (_user, _table, _seat, opts) => {
+          opts.onFailed('test refusal preserves the seat');
+        });
+        const leaving = e.leaveTable(HUMAN, { forced });
+        e.postHandTasksPromise = Promise.all([first, second]).then(() => undefined);
+        finishFirst();
+        for (let i = 0; i < 12; i++) await Promise.resolve();
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+        finishSecond();
+        await leaving;
+        expect(forced ? cashout : cashoutVoluntary).toHaveBeenCalledTimes(1);
+      }
+    );
+  }
+});
+
+describe('a rejected settlement is not a cashout authorization', () => {
+  for (const forced of [false, true]) {
+    it(
+      forced
+        ? 'forced leave propagates settlement failure'
+        : 'voluntary leave propagates settlement failure',
+      async () => {
+        const e = makeEngine();
+        let rejectSettlement!: (error: Error) => void;
+        e.postHandTasksPromise = new Promise<void>((_resolve, reject) => {
+          rejectSettlement = reject;
+        });
+        const leaving = e.leaveTable(HUMAN, { forced });
+        const rejected = expect(leaving).rejects.toThrow('settlement failed');
+        rejectSettlement(new Error('settlement failed'));
+        await rejected;
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+      }
+    );
+  }
+});

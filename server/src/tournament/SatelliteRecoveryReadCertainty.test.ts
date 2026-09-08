@@ -18,7 +18,10 @@ const compiled = ts.transpileModule(
 ).outputText;
 const build = new Function('supabase', 'reportError', 'raiseFinancialAlert', compiled);
 type Receipt = { count: unknown; error: { message: string } | null };
-async function run(overrides: Partial<Record<'alive' | 'records' | 'seats', Receipt>> = {}) {
+async function run(
+  overrides: Partial<Record<'alive' | 'records' | 'seats', Receipt>> = {},
+  writeReceipt: Receipt = { count: 1, error: null }
+) {
   const counts = {
     alive: { count: 1, error: null },
     records: { count: 0, error: null },
@@ -32,6 +35,7 @@ async function run(overrides: Partial<Record<'alive' | 'records' | 'seats', Rece
     from(table: string) {
       let sourceSeat = false;
       let update: unknown;
+      let exact = false;
       const query = {
         select() {
           return query;
@@ -43,14 +47,15 @@ async function run(overrides: Partial<Record<'alive' | 'records' | 'seats', Rece
         in() {
           return query;
         },
-        update(value: unknown) {
+        update(value: unknown, options?: { count?: string }) {
+          exact = options?.count === 'exact';
           update = value;
           updates.push(value);
           return query;
         },
         then(resolve: (value: unknown) => unknown, reject: (e: unknown) => unknown) {
           const result = update
-            ? { error: null }
+            ? { error: writeReceipt.error, count: exact ? writeReceipt.count : null }
             : table === 'tournaments'
               ? {
                   data: [{ id: 'satellite-event', name: 'Satellite', variant: 'satellite' }],
@@ -92,4 +97,51 @@ describe('satellite recovery requires readable counts before status transitions'
       { status: 'RUNNING' },
     ]);
   });
+});
+
+describe('satellite recovery only reports confirmed status transitions', () => {
+  for (const scenario of [
+    {
+      name: 'undecided',
+      counts: { alive: { count: 2, error: null } },
+      context: 'GameServer.recoverStuckCompleting_satellite_revived',
+    },
+    {
+      name: 'decided',
+      counts: {},
+      context: 'GameServer.recoverStuckCompleting_satellite_revived_decided',
+    },
+    {
+      name: 'awarded',
+      counts: { records: { count: 1, error: null } },
+      context: 'GameServer.recoverStuckCompleting_satellite_closed',
+    },
+  ]) {
+    it.each([
+      { count: 0, error: null },
+      { count: null, error: null },
+      { count: 2, error: null },
+      { count: 1, error: { message: 'write timeout' } },
+    ])(
+      `${scenario.name}: reports failure instead of a confirmed transition for %j`,
+      async (receipt) => {
+        const result = await run(scenario.counts, receipt);
+        expect(result.updates).toHaveLength(1);
+        expect(result.report).toHaveBeenCalledWith(
+          expect.any(Error),
+          'GameServer.recoverStuckCompleting_per_tournament'
+        );
+        expect(result.report).not.toHaveBeenCalledWith(expect.any(Error), scenario.context);
+      }
+    );
+    it(`${scenario.name}: retains a confirmed successful transition`, async () => {
+      const result = await run(scenario.counts);
+      expect(result.updates).toHaveLength(1);
+      expect(result.report).toHaveBeenCalledWith(expect.any(Error), scenario.context);
+      expect(result.report).not.toHaveBeenCalledWith(
+        expect.any(Error),
+        'GameServer.recoverStuckCompleting_per_tournament'
+      );
+    });
+  }
 });

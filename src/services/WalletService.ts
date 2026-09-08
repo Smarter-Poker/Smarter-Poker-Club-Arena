@@ -15,8 +15,7 @@
 import { supabase, getAuthUser } from '../lib/supabase';
 import {
   assertChipAmount,
-  reserveAgentWalletOperation,
-  completeAgentWalletOperation,
+  runAgentWalletOperation,
   confirmedAgentWalletReceipt,
 } from './AgentWalletIntent';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -433,26 +432,28 @@ export const WalletService = {
     const { data: auth, error: authError } = await getAuthUser();
     if (authError || !auth.user) throw new Error('Sign In Before Transferring Chips');
     const resolvedId = (await resolveClubUUID(clubId)) || clubId;
-    const operation = await reserveAgentWalletOperation({
-      userId: auth.user.id,
-      clubId: resolvedId,
-      targetId: auth.user.id,
-      kind: 'self_stake',
-      amount,
-    });
-    const { data, error } = await supabase.rpc('fn_agent_wallet_self_stake', {
-      p_club_id: resolvedId,
-      p_amount: amount,
-      p_reason: 'Agent Wallet To Own Player Wallet',
-      p_op_id: operation.operationId,
-    });
-    if (error) throw error;
-    if (!confirmedAgentWalletReceipt(data, amount, 'self_stake')) {
-      throw new Error(data?.error || 'Transfer Was Not Confirmed By The Server');
-    }
-    await completeAgentWalletOperation(operation);
-    masterBus.emit('BALANCE_UPDATED', { source: 'agent_self_stake', userId: auth.user.id });
-    return true;
+    return runAgentWalletOperation(
+      {
+        userId: auth.user.id,
+        clubId: resolvedId,
+        targetId: auth.user.id,
+        kind: 'self_stake',
+        amount,
+      },
+      async (operation) => {
+        const { data, error } = await supabase.rpc('fn_agent_wallet_self_stake', {
+          p_club_id: resolvedId,
+          p_amount: amount,
+          p_reason: 'Agent Wallet To Own Player Wallet',
+          p_op_id: operation.operationId,
+        });
+        if (error) throw error;
+        if (!confirmedAgentWalletReceipt(data, amount, 'self_stake')) {
+          throw new Error(data?.error || 'Transfer Was Not Confirmed By The Server');
+        }
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_self_stake', userId: auth.user.id });
+      }
+    );
   },
 
   /**

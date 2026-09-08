@@ -17,6 +17,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal('crypto', webcrypto);
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
@@ -49,6 +50,15 @@ describe.each(['self', 'send'])('canonical %s transfer', (kind) => {
     );
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.emit).toHaveBeenCalled();
+  });
+  it('coalesces overlapping submissions even when the server responds immediately', async () => {
+    mocks.rpc.mockResolvedValue({ data: receipt(), error: null });
+    await Promise.all(Array.from({ length: 20 }, () => submit()));
+    expect(new Set(mocks.rpc.mock.calls.map((call) => call[1].p_op_id)).size).toBe(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    await submit();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc.mock.calls[1][1].p_op_id).not.toBe(mocks.rpc.mock.calls[0][1].p_op_id);
   });
   it('reuses the operation after a committed response is lost and does not announce false success', async () => {
     mocks.rpc.mockRejectedValueOnce(new Error('response lost'));

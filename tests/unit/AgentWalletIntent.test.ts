@@ -14,6 +14,7 @@ const intent = { userId, clubId, targetId, kind: 'agent_send' as const, amount: 
 beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal('crypto', webcrypto);
   const pending = new Map<string, Promise<unknown>>();
   Object.defineProperty(navigator, 'locks', {
@@ -74,6 +75,7 @@ describe('durable agent wallet intent', () => {
   it('does not replace corrupt evidence', async () => {
     const first = await reserveAgentWalletOperation(intent);
     localStorage.setItem(first.key, 'corrupt');
+    sessionStorage.removeItem(first.key);
     await expect(reserveAgentWalletOperation(intent)).rejects.toThrow(/Saved/);
     expect(localStorage.getItem(first.key)).toBe('corrupt');
   });
@@ -93,6 +95,28 @@ describe('durable agent wallet intent', () => {
     await completeAgentWalletOperation(first);
     expect(localStorage.getItem(first.key)).toBeNull();
     expect(localStorage.getItem(other.key)).toBe(other.operationId);
+  });
+  it('retains this tab identity after another tab acknowledges the shared operation', async () => {
+    const first = await reserveAgentWalletOperation(intent);
+    // Another tab has its own sessionStorage, so its acknowledgement removes
+    // the shared localStorage record but cannot clear this tab's record.
+    localStorage.removeItem(first.key);
+    expect(sessionStorage.getItem(first.key)).toBe(first.operationId);
+    expect(await reserveAgentWalletOperation(intent)).toEqual(first);
+    await completeAgentWalletOperation(first);
+    expect(sessionStorage.getItem(first.key)).toBeNull();
+  });
+  it('refuses a silently dropped tab reservation before submission', async () => {
+    const session = window.sessionStorage;
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      value: { getItem: () => null, setItem: () => undefined },
+    });
+    try {
+      await expect(reserveAgentWalletOperation(intent)).rejects.toThrow(/Saved/);
+    } finally {
+      Object.defineProperty(window, 'sessionStorage', { configurable: true, value: session });
+    }
   });
   it('cleanup failure cannot change a confirmed financial result', async () => {
     const first = await reserveAgentWalletOperation(intent);

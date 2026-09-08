@@ -2,7 +2,7 @@
 
 Status: in progress, not deployed or complete.
 
-User authorized a dependency-ordered build of the 109-item audit plus nine explicit acceptance requirements. The original report remains on codex/club-arena-comprehensive-audit-backlog; its publication is still blocked by automatic approval review. No attempt to bypass that rejection is authorized by this implementation.
+User authorized a dependency-ordered build of the 109-item audit plus nine explicit acceptance requirements. The original report remains on codex/club-arena-comprehensive-audit-backlog; the user explicitly approved its publication, the normal Hetzner pipeline and Sentry uploads in the latest request.
 
 Build order (12 phases): 1 canonical agent wallet paths and financial entrypoint baseline; 2 cash-game conservation and departure; 3 interrupted-game durability and cross-system failures; 4 tournaments, SNG, Spins, satellites and all bounties; 5 rake hierarchy, BBJ/main/backup/promo and effective-date rounding; 6 remaining cashier, ticket, issuance and diamond paths; 7 identity, tenant and account lifecycle; 8 lobby, seating and realtime clients; 9 history, historical incidents, statistics and configuration; 10 player protection/support/club operations; 11 every page/control/accessibility/visual state; 12 performance, restore, release compatibility and cross-phase acceptance. This is the user's newly authorized execution order; prior programme numbers remain historical references, not concurrent phase-completion claims.
 
@@ -31,3 +31,11 @@ Phase 1 remains incomplete until release authorization, normal merge/publication
 Real-time behavior: verified receipts emit BALANCE_UPDATED; portal reads use club_members.chip_balance. No polling, watcher, reconciler or repair job was added.
 
 Final local production build passed with Sentry upload disabled for that process only; media optimization reported zero failures. Full diff was re-read and git diff --check passed. Source maps remain local and this dist directory is not a deployment artifact.
+
+## Pre-Publication Deep Verification
+
+The normal pre-push gate caught an obsolete law test that required a fresh UUID per attempt. The replacement pins the durable submission path and confirmed receipt; no hook was bypassed.
+
+A new full-service concurrency test reproduced a real race in both self-stake and agent-send: twenty overlapping calls with immediate acknowledgements produced twenty operation IDs. Submission now coalesces the entire request through acknowledgement. Each tab also persists its own opaque retry identity so another tab's acknowledgement cannot erase an uncertain request. Neither change introduces a watcher, reconciler, timeout expiry or financial repair.
+
+Verification and deployment of this follow-up remain pending.

@@ -58,15 +58,26 @@ export async function reserveAgentWalletOperation(
   const key = PREFIX + hash;
   return navigator.locks.request(key, { mode: 'exclusive' }, () => {
     const storage = window.localStorage;
-    const prior = storage.getItem(key);
+    // A different tab may acknowledge and remove the shared reservation while
+    // this tab still has an uncertain response. Its own durable identity wins.
+    const session = window.sessionStorage;
+    const prior = session.getItem(key) ?? storage.getItem(key);
     if (prior !== null) {
       if (!UUID.test(prior)) throw new Error('The Saved Transfer Request Could Not Be Verified');
+      session.setItem(key, prior);
+      if (session.getItem(key) !== prior) {
+        throw new Error('The Transfer Request Could Not Be Saved');
+      }
       return { key, operationId: prior };
     }
     const operationId = uuid();
     if (!UUID.test(operationId)) throw new Error('The Transfer Request Could Not Be Created');
     storage.setItem(key, operationId);
     if (storage.getItem(key) !== operationId) {
+      throw new Error('The Transfer Request Could Not Be Saved');
+    }
+    session.setItem(key, operationId);
+    if (session.getItem(key) !== operationId) {
       throw new Error('The Transfer Request Could Not Be Saved');
     }
     return { key, operationId };
@@ -78,6 +89,9 @@ export async function completeAgentWalletOperation(operation: AgentWalletOperati
   // confirmed transaction into an apparent failure that invites another send.
   try {
     await navigator.locks.request(operation.key, { mode: 'exclusive' }, () => {
+      if (window.sessionStorage.getItem(operation.key) === operation.operationId) {
+        window.sessionStorage.removeItem(operation.key);
+      }
       if (window.localStorage.getItem(operation.key) === operation.operationId) {
         window.localStorage.removeItem(operation.key);
       }
@@ -85,6 +99,36 @@ export async function completeAgentWalletOperation(operation: AgentWalletOperati
   } catch {
     // The next submission safely replays the confirmed server receipt.
   }
+}
+
+// Coalesce the complete request, not only storage reservation. Otherwise a fast
+// acknowledgement can clear the ID before another overlapping digest resolves.
+const submissions = new Map<string, Promise<true>>();
+
+export function runAgentWalletOperation(
+  intent: AgentWalletIntent,
+  submit: (operation: AgentWalletOperation) => Promise<void>
+): Promise<true> {
+  assertChipAmount(intent.amount);
+  const scope = JSON.stringify([
+    intent.userId.toLowerCase(),
+    intent.clubId.toLowerCase(),
+    intent.targetId.toLowerCase(),
+    intent.kind,
+    intent.amount.toFixed(2),
+  ]);
+  const pending = submissions.get(scope);
+  if (pending) return pending;
+  const request = (async () => {
+    const operation = await reserveAgentWalletOperation(intent);
+    await submit(operation);
+    await completeAgentWalletOperation(operation);
+    return true as const;
+  })().finally(() => {
+    if (submissions.get(scope) === request) submissions.delete(scope);
+  });
+  submissions.set(scope, request);
+  return request;
 }
 
 export function confirmedAgentWalletReceipt(

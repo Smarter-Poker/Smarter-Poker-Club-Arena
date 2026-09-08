@@ -18,8 +18,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { uuid } from '../utils/uuid';
 import {
   assertChipAmount,
-  reserveAgentWalletOperation,
-  completeAgentWalletOperation,
+  runAgentWalletOperation,
   confirmedAgentWalletReceipt,
 } from './AgentWalletIntent';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -707,29 +706,31 @@ class AgentServiceClass {
     const { data: auth, error: authError } = await getAuthUser();
     if (authError || !auth.user) throw new Error('Sign In Before Transferring Chips');
     const resolvedId = (await resolveClubUUID(clubId)) || clubId;
-    const operation = await reserveAgentWalletOperation({
-      userId: auth.user.id,
-      clubId: resolvedId,
-      targetId: playerId,
-      kind: 'agent_send',
-      amount,
-    });
-    const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
-      p_club_id: resolvedId,
-      p_to_user_id: playerId,
-      p_amount: amount,
-      p_destination: 'player_wallet',
-      p_reason: 'Agent Transfer To Player',
-      p_op_id: operation.operationId,
-    });
-    if (error) throw error;
-    if (!confirmedAgentWalletReceipt(data, amount, 'agent_send')) {
-      throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
-    }
-    await completeAgentWalletOperation(operation);
-    masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_sent', userId: auth.user.id });
-    masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_received', userId: playerId });
-    return true;
+    return runAgentWalletOperation(
+      {
+        userId: auth.user.id,
+        clubId: resolvedId,
+        targetId: playerId,
+        kind: 'agent_send',
+        amount,
+      },
+      async (operation) => {
+        const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
+          p_club_id: resolvedId,
+          p_to_user_id: playerId,
+          p_amount: amount,
+          p_destination: 'player_wallet',
+          p_reason: 'Agent Transfer To Player',
+          p_op_id: operation.operationId,
+        });
+        if (error) throw error;
+        if (!confirmedAgentWalletReceipt(data, amount, 'agent_send')) {
+          throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
+        }
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_sent', userId: auth.user.id });
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_received', userId: playerId });
+      }
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

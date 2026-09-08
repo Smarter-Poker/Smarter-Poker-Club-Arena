@@ -1,3 +1,4 @@
+import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
 /**
  * ServerTableEngine, layer 6/8 — the HAND_COMPLETE settlement pipeline and post-hand tasks.
  *
@@ -3183,16 +3184,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // persists in hand_state_snapshots.disconnect_states forever.
         // Round 64: extended to also call timeBankEngine.removePlayer so the
         // playerBanks Map sheds its entry too — same architectural fix.
-        const cashedOutIds = await processLeavePending(
-          this.tableId,
-          this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs) => {
-            if (this.lifecycleCanMutate()) {
-              this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
-            }
-          },
-          this.forcedLeaves
-        );
+        const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
         if (!this.lifecycleCanMutate()) return;
         for (const userId of cashedOutIds) {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
@@ -3209,7 +3201,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // This Hand"; a move planned during the hand waits for the next deal
         // to be announced, so nobody is moved off a hand they were not told
         // about.
-        await this.executePendingSeatMoves({ announcedOnly: true });
+        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves);
         if (!this.lifecycleCanMutate()) return;
       }
     });
@@ -3251,5 +3243,36 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // the recount is written. The game's ClusterController tick is woken so a
     // must-move plan or a break decision follows this boundary, not the clock.
     this.wakeClusterGame('hand_complete');
+  }
+
+  /**
+   * Read move candidates while the leave sweep runs. Candidates carry no cash
+   * amount and execute only AFTER every leave has completed. Their executor
+   * still rechecks the live source seat, destination and expiry under its existing
+   * database locks; the caller retains the announced-only filter. This list belongs to this boundary only.
+   */
+  protected async readCashHandDepartures(): Promise<{
+    cashedOutIds: string[];
+    pendingMoves: PendingSeatMove[];
+  }> {
+    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: [] };
+    const [leaves, moves] = await Promise.allSettled([
+      processLeavePending(
+        this.tableId,
+        this.tableInfo?.club_id || '',
+        (lockedUserId, stayRemainingMs) => {
+          if (this.lifecycleCanMutate()) {
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
+          }
+        },
+        this.forcedLeaves
+      ),
+      this.tableInfo?.cluster_id ? pendingSeatMoves(this.tableId) : Promise.resolve([]),
+    ]);
+    // Own both rejections immediately and let neither attempt outlive the
+    // boundary on a retry. No move may run after a failed leave sweep.
+    if (leaves.status === 'rejected') throw leaves.reason;
+    if (moves.status === 'rejected') throw moves.reason;
+    return { cashedOutIds: leaves.value, pendingMoves: moves.value };
   }
 }

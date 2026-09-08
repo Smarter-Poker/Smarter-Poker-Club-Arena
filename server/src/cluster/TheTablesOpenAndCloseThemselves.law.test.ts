@@ -265,9 +265,11 @@ describe('the engine executes at the hand boundary and announces at the start', 
       SETTLEMENT.indexOf("runStep('leave_pending'"),
       SETTLEMENT.indexOf("runStep('table_unlock'")
     );
-    expect(step).toMatch(/await processLeavePending\(/);
-    expect(step).toMatch(/await this\.executePendingSeatMoves\(\{ announcedOnly: true \}\);/);
-    expect(step.indexOf('processLeavePending(')).toBeLessThan(
+    expect(step).toMatch(/await this\.readCashHandDepartures\(\)/);
+    expect(step).toMatch(
+      /await this\.executePendingSeatMoves\(\{ announcedOnly: true \}, pendingMoves\);/
+    );
+    expect(step.indexOf('readCashHandDepartures(')).toBeLessThan(
       step.indexOf('executePendingSeatMoves(')
     );
   });

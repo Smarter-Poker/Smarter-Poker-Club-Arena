@@ -36,3 +36,36 @@ Confirm follow-up PR and required CI jobs; verify merged source includes each co
 Eight additional tests in CashoutDepartureIntegration.test.ts execute the real engine departure methods and the real cashout service through its normal module exports. Only the database transport is substituted. Both eviction and zero-stack paths retain tracking after a lost response, malformed receipt or rejected outcome, then emit exactly one departure on a subsequent confirmed no-active-seat receipt. Waitlist offers and departure events wait for a complete receipt. All eight tests and server TypeScript passed. These tests close the engine/service wiring gap, but do not assert a live database commit, browser rendering or deployed runtime adoption.
 
 The latest CI run for #3818, 34248426139, completed successfully. Server tests, TypeScript, client shards and structural checks passed. Live production E2E, post-deploy verification, production build and animation checks were skipped. Follow-up PR #3823 is open and retains separate CI and deployment obligations.
+
+## Verified Follow-up And PostgreSQL Recovery (17:37 UTC)
+
+PR #3823 merged as 4d1aa1ee45dc576ffd2322c537037e833fcac646. Its full server CI passed 7,578 tests across 564 files, plus 92 preliminary checks; required client/type/source checks passed. Browser, animation, live E2E and deployment/build jobs were skipped.
+
+PR #3837 merged as 8e89ccc64732cc1479ae5f50295597f82c367103. It restores bootstrap authority during shutdown and preserves the absolute reconnect deadline during clock handoff. First CI identified and led to correction of a real deadline defect. The next CI attempt passed those tests but failed the unmodified randomized shuffle distribution check (33.677 against 32.91). One unchanged failed-job rerun completed successfully; do not erase the earlier result or describe it as RNG certification.
+
+The isolated PostgreSQL 17.11 probe now runs the real engine departure methods and real cashout service through an RPC adapter executing actual PostgreSQL transactions. Six scenarios pass: eviction and zero-stack departure, each under normal success, lost response after commit, and an injected seat-exit error after the credit statement. They assert preserved in-memory tracking on unknown outcomes, rollback of credit/idempotency/session effects on database failure, one eventual departure, and no duplicate credit on retry.
+
+Run: bash scripts/dev/probe-departure-postgres.sh. It owns and removes a socket-only disposable database; no live connection or production wallet credentials are used. The ordinary server suite skips these six tests unless that runner supplies the private database socket. The separate probe execution, not a skipped CI result, is the pass evidence.
+
+Installed-function fingerprints were checked read-only against production and match the probe exactly:
+
+- atomic_seat_cashout_locked: 0b4260da309101634851da9c63df5180.
+- atomic_credit_wallet_and_log: ca0a0d6fe1f01c1f2bed49e7db1fd7e8.
+
+The credit fixture is a pinned read-only export including later dynamic migration patches; it is not a migration. An initial probe using the older CREATE declaration was superseded by the matching installed definition. Authorization, session policy, wallet provisioning, ledger triggers, PostgREST and browser rendering remain explicit fixture boundaries, assigned to their later phases. This evidence closes the isolated engine/service/database departure-and-retry scenario, not those broader audits.
+
+The normal containing engine rollout and this evidence branch's push/CI/merge still require verification. Phase 1 remains open until those gates are satisfied.
+
+PR #3840 initial CI caught a portability defect in the probe's safety check: a hardcoded temporary-directory prefix. The runner and test now share the OS temporary directory, resolve its real path, and still require the private departure fixture directory and socket. This corrects the fixture rather than exempting it from the portability gate. Separate PostgreSQL execution remains required for the six opt-in cases.
+
+## Containing Deployment Verified (18:01 UTC)
+
+Normal Hetzner workflow 34258578581, job 102170524208, passed its server tests and deployed the explicitly selected 4932f6f91ad9b08300cf20afbeb9576b6559770f. Cutover began inside the scheduled break; the container started at 17:55:33 UTC. Public version and container health passed at 17:56:01, current was promoted, and engine_leader independently reported the new version at 17:56:03. Deployment truth attempt 241 records shipped=true. No forced restart was used.
+
+Read-only inspection inside the running image confirms receipt validation, unhandled cashout failure propagation, eviction and busted departure after awaited cashout, bootstrap shutdown context binding, and absolute reconnect deadline handoff. All six affected production files in main matched their verified #3837 merge before deployment. The deployed commit contains #3809, #3818, #3823 and #3837.
+
+At 18:01:05 UTC, cache-busted engine health returned HTTP 200, status ok, version4932f6f9, maintenance idle, all eight resume waves complete, 242/242 tables resumed and zero stalled tables. Both frontend endpoints independently returned4932f6f91ad9b08300cf20afbeb9576b6559770f, built17:39:49 by publisher34257700085. A transient503 was observed during announced cutover; subsequent health and thaw checks passed.
+
+The scoped Phase1 implementation, isolated engine/service/database recovery and deployed runtime gates are now evidenced. PR#3840 carries the reproducible probe and this record; its latest required CI and merge must pass before the phase completion announcement. This test/documentation branch changes no production behavior, so it does not require another engine restart.
+
+Full requirement rows remain pending for their later scopes: A02 financial animations, O01 parity on every later repaired path, O02 full operation-specific triggers and policies, and O12 later release records. The broader216-requirement audit and7038-file review are not completed by this phase.

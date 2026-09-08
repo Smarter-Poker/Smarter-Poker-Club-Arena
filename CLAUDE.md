@@ -95,7 +95,13 @@ automatic. Your job ends at step 2.
    swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
    `/hub/club-arena/*` -> that origin, so the player is still on
    `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
-   A publish takes seconds. Nothing is committed to the World Hub repo any
+   The rsync and the symlink swap take seconds. The PUBLISH does not:
+   measured 2026-09-08, merge to bundle-stamped was 3m54s, and the whole
+   pipeline is a four-job DAG with a full `npm run build` in the middle. The
+   old wording said "a publish takes seconds" and it is the first number an
+   agent reads here, so it was routinely mistaken for the end-to-end figure -
+   see `.agent/audits/2026-09-08-publish-pipeline-improvements.md` for the
+   stage-by-stage breakdown. Nothing is committed to the World Hub repo any
    more, and Vercel does not rebuild the World Hub for a Club Arena merge.
    Rollback is re-pointing the symlink; ten releases are kept.
 6. **Verify** by reading, never by assuming:
@@ -121,8 +127,13 @@ existed to prevent.
 
 **Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
 cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
-times, then raises an in-app notification), and the orphan sweep in
-`agent-autopilot.yml`. If production is behind `main` for more than ~25
+times, then raises an in-app notification), and the orphan sweep - which lives
+in `publish-watchdog.yml` too, at its "Find work that nothing will ever
+publish" step running `.github/scripts/orphan-work-watchdog.sh`. It was
+attributed to `agent-autopilot.yml` here until 2026-09-08; autopilot's only
+orphan-shaped step reaps stuck workflow RUNS, which is a different thing, and
+an agent sent to the wrong file finds nothing and concludes the net does not
+exist. If production is behind `main` for more than ~25
 minutes, something is genuinely broken - read the watchdog issue it filed.
 
 **There is no second publisher.** `tests/no-commit-left-behind.law.test.ts`

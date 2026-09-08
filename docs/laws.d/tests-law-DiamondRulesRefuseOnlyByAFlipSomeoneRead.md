@@ -1,0 +1,3 @@
+# tests/law/DiamondRulesRefuseOnlyByAFlipSomeoneRead.law.test.ts
+
+A diamond rule the rulings promise will refuse (DR2, DR4, DR6, DR7 budget and cap, DR8, DR20) is born in log mode in `ca_diamond_rule_modes`, is read by its writer under its exact name, and reaches refuse only through `fn_ca_diamond_rule_flip`, which refuses to flip before `flip_after` and while the rule has any non-info incident in its clean window; no migration flips by hand. The signup grant is issued by the Mint under `signup:<id>` and no seeder inserts a balance; purchased lots are consumed FIFO at both sinks; a receivable is settled by the next credit with its own journal row, never a negative balance (docs/DIAMOND-RULINGS.md 1, 2, 17, 18, 20).

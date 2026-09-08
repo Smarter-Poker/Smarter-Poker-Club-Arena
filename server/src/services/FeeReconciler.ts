@@ -313,8 +313,12 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
         attempt: async () => {
           const res = await insertOnce();
           if (res.done) return { done: true };
-          // A non-transient rejection will not become transient by waiting.
-          if (!TRANSIENT_DB_ERROR.test(res.error)) return { done: true };
+          // A permanent rejection ends retrying only after the original fee
+          // is checked and any unconfirmed banking reaches the existing alarm.
+          if (!TRANSIENT_DB_ERROR.test(res.error)) {
+            await alarmUnqueueableFee(kind, fee, res.error);
+            return { done: true };
+          }
           return { done: false, error: res.error };
         },
         onGiveUp: async (finalError, elapsedMs, attempts) => {

@@ -45,6 +45,13 @@ try {
   if(input.expectDistinctReceipts) assert.notEqual(second.receipt?.id,first.id);
   else assert.equal(second.receipt?.id,first.id);
   await b.query('COMMIT');
+ } else if(input.fundingReceipt){
+  assert.equal(second.error,undefined);
+  assert.equal(second.receipt?.success,true);
+  assert.equal(second.receipt?.replayed,true);
+  assert.equal(second.receipt?.op_id,first.op_id);
+  assert.equal(second.receipt?.new_stack,first.new_stack);
+  await b.query('COMMIT');
  } else if(input.ticketReceipt){
   assert.equal(second.error,undefined);
   assert.equal(second.receipt?.success,true);

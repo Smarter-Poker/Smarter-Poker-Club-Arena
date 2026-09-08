@@ -83,3 +83,36 @@ describe('LAW: a horse report is not a public record', () => {
     }
   });
 });
+
+describe('LAW: a horse avatar does not live at a path that says horse', () => {
+  /* 541 of 1,000 horse profiles carried `avatar_url` under
+     `social-media/horse-avatars-v2/` or `social-media/avatars/horse_avatar_*`
+     and no human did - the flag spelled out in the <img src> of every seat
+     and post. The copies live where human uploads live (`avatars/<uuid>/`),
+     the migration repoints and asserts, and the script that copied them is
+     kept so the next generator run can be checked against it. */
+  const AVATARS = '20260908022510_a_horse_avatar_does_not_live_at_a_path_that_says_horse.sql';
+
+  it('the repointing migration derives the neutral key and proves the copy exists first', () => {
+    const sql = read(AVATARS);
+    expect(sql).toContain("p.id::text || '/avatar.' ||");
+    expect(sql).toContain("o.bucket_id = 'avatars' AND o.name = m.new_key");
+    expect(sql).toMatch(
+      /RAISE EXCEPTION 'PRE-FLIGHT: % destination objects are not in storage\.objects/
+    );
+    expect(sql).toMatch(
+      /RAISE EXCEPTION 'POST-FLIGHT: % horse profiles still carry a horse-named avatar'/
+    );
+    expect(sql).toContain("settings = settings - '_snapshot' - 'snapshot'");
+  });
+
+  it('the copy script exists and writes to the human convention', () => {
+    const script = readFileSync(
+      join(root, 'scripts/ops/copy-horse-avatars-to-neutral-paths.mjs'),
+      'utf8'
+    );
+    expect(script).toContain("destinationBucket: 'avatars'");
+    expect(script).toContain('`${row.id}/avatar.${ext}`');
+    expect(script).not.toMatch(/horse-avatars-v2\/\$\{/);
+  });
+});

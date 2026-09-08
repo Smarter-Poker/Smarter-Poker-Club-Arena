@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/diamond-verification-pass (2026-09-08). Applied to production as 20260908041432_the_verification_pass_fixes_what_read_as_armed. It patches existing functions and revokes one grant; it declares no new name.",
+  "tables": [],
+  "functions": []
+}

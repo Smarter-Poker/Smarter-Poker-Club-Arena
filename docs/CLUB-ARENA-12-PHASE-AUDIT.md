@@ -42,3 +42,9 @@ Regression baseline: 16 failures with 28 passing tests before the correction. Af
 ## Required Phase Summary
 
 Only after all exit evidence is satisfied: Phase N Of 12 Is Done, followed by concrete changes, tests and deployment evidence, remaining limitations outside that phase, then Ready To Start Phase N+1 Of 12. If a gate is pending, say Phase N Of 12 Is Not Complete and identify the missing evidence. Never use a partial pass to advance the phase counter.
+
+### Phase 1 Follow-up: Zero-stack Departure
+
+The zero-stack no-rebuy sweep also emitted departure before cashout confirmation and attempted a different fallback after failure. Two behavioral tests reproduced premature events. The sweep now waits for the same atomic cashout receipt before its event and cleanup, retaining seat and grace tracking for retry on failure. Pending-ledger rebuy, prompt grace and live all-in protections remain in place.
+
+September 8 verification: 74 focused tests across receipt, eviction, rebuy-ledger and sit-out safeguards passed; server TypeScript passed. PR #3818 merged as ab0f53926ac53c7b8b3d0d7be1278e9fd08e7500. This follow-up still requires its own push gates, merge and engine adoption evidence. Phase 1 remains incomplete.

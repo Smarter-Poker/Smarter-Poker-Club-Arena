@@ -140,7 +140,7 @@ def verify_cashout(run):
    actor=PLAYER if name=="request" else AGENT
    payload=dict(name=name,setup=setup,actor=f"SELECT set_config('test.actor',{actor},true)",
     first=operation,second=operation,conflict=False,verify=verify,cleanup=cleanup)
-   result=subprocess.run([os.environ["PGNODE"],str(here/"test_cashout_concurrency.mjs")],input=json.dumps(payload),text=True,capture_output=True)
+   result=subprocess.run([os.environ["PGNODE"],str(here/"test_transaction_concurrency.mjs")],input=json.dumps(payload),text=True,capture_output=True)
    if result.returncode: raise RuntimeError(result.stderr)
    print(result.stdout.strip(),flush=True)
   # Two different players' refunds collide on one agent operation key.
@@ -160,6 +160,6 @@ def verify_cashout(run):
    END $check$;"""
   payload=dict(name="conflicting refunds",setup=setup,actor=f"SELECT set_config('test.actor',{AGENT},true)",
    first=operation,second=operation.replace(REQUEST,second_request),conflict=True,verify=verify,cleanup=cleanup)
-  result=subprocess.run([os.environ["PGNODE"],str(here/"test_cashout_concurrency.mjs")],input=json.dumps(payload),text=True,capture_output=True)
+  result=subprocess.run([os.environ["PGNODE"],str(here/"test_transaction_concurrency.mjs")],input=json.dumps(payload),text=True,capture_output=True)
   if result.returncode: raise RuntimeError(result.stderr)
   print(result.stdout.strip(),flush=True)

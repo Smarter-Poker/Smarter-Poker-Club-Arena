@@ -1692,6 +1692,7 @@ class MasterBusCore {
     // When auth state changes, sync user data across stores
     this.subscribe('AUTH_STATE_CHANGED', (event) => {
       const { userId, isAuthenticated } = event.payload;
+      realtimeChannelService.handleIdentityChange(isAuthenticated ? userId : null);
 
       if (isAuthenticated && userId) {
         // Load user-specific data

@@ -68,6 +68,53 @@ def verify_bbj(run):
    IF NOT caught OR EXISTS(SELECT 1 FROM bbj_contributions) OR EXISTS(SELECT 1 FROM ca_bbj_alloc_state)
    THEN RAISE EXCEPTION 'Invalid amount admitted'; END IF;
   END $check$;ROLLBACK;""")
+
+ # Actual pool resolver snapshot is pinned by the migration dependency hash.
+ routing_ddl=ddl+here.joinpath("bbj-routing-fixture.sql").read_text()
+ routing_ddl+=list(extract((root/"supabase/migrations/20260908051016_bbj_table_routing_and_receipt_are_one_transaction.sql").read_text(),"bbj_record_table_contribution"))[-1]
+ U="'40000000-0000-4000-8000-000000000006'"
+ post=f"bbj_record_table_contribution({T},{C},1,0.25,2,{H})"
+ journal="CREATE TRIGGER bbj_probe_journal AFTER UPDATE ON bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('main_balance=bbj_pool','backup_balance=bbj_pool','promo_balance=bbj_pool');"
+ for private,union in [(True,True),(False,True),(False,False)]:
+  seed=f"INSERT INTO clubs(id,union_id) VALUES({C},{U if union else 'NULL'}); INSERT INTO tables(id,club_id,is_private) VALUES({T},{C},{str(private).lower()});"
+  if union:seed+=f"INSERT INTO bbj_pools(id,union_id) VALUES({P},{U});"
+  expected=f"pool_id={P}" if union and not private else f"pool_id IN (SELECT id FROM bbj_pools WHERE club_id={C} AND union_id IS NULL)"
+  run("BEGIN;"+routing_ddl+seed+journal+f"""
+  SELECT {post};
+  DO $check$ BEGIN
+   IF NOT EXISTS(SELECT 1 FROM bbj_contributions WHERE {expected} AND amount=0.25)
+    OR (SELECT sum(total_contributed) FROM bbj_pools)<>0.25
+    OR (SELECT sum(amount) FROM chip_ledger)<>0.25
+   THEN RAISE EXCEPTION 'Wrong BBJ destination or accounting'; END IF;
+  END $check$;ROLLBACK;""")
+ seed=f"INSERT INTO clubs(id,union_id) VALUES({C},{U}); INSERT INTO tables(id,club_id,is_private) VALUES({T},{C},false); INSERT INTO bbj_pools(id,union_id) VALUES({P},{U});"
+ run("BEGIN;"+routing_ddl+seed+journal+f"""
+ SELECT {post};
+ UPDATE clubs SET union_id=NULL WHERE id={C};
+ SELECT {post};
+ DO $check$ BEGIN
+  IF (SELECT count(*) FROM bbj_pools)<>1 OR (SELECT count(*) FROM bbj_contributions)<>1
+   OR (SELECT total_contributed FROM bbj_pools)<>0.25
+  THEN RAISE EXCEPTION 'Replay changed destination after membership update'; END IF;
+ END $check$;ROLLBACK;""")
+ seed=f"INSERT INTO clubs(id) VALUES({C}); INSERT INTO tables(id,club_id,is_private) VALUES({T},{C},true);"
+ for fault in ["55P03","23514"]:
+  run("BEGIN;"+routing_ddl+seed+journal+f"""
+  DO $check$ DECLARE caught boolean:=false; BEGIN
+   PERFORM set_config('test.journal_sqlstate','{fault}',true);
+   BEGIN PERFORM {post}; EXCEPTION WHEN SQLSTATE '{fault}' THEN caught:=true; END;
+   IF NOT caught OR EXISTS(SELECT 1 FROM bbj_pools) OR EXISTS(SELECT 1 FROM bbj_contributions)
+    OR EXISTS(SELECT 1 FROM ca_bbj_alloc_state) OR EXISTS(SELECT 1 FROM chip_ledger)
+   THEN RAISE EXCEPTION 'Pool creation or payment escaped rollback'; END IF;
+  END $check$;ROLLBACK;""")
+ run("BEGIN;"+routing_ddl+seed+journal+f"""
+ DO $check$ DECLARE caught boolean:=false; BEGIN
+  BEGIN PERFORM bbj_record_table_contribution({T},{Q},1,0.25,2,{H});
+  EXCEPTION WHEN SQLSTATE '22023' THEN caught:=true; END;
+  IF NOT caught OR EXISTS(SELECT 1 FROM bbj_pools) THEN RAISE EXCEPTION 'Wrong club admitted'; END IF;
+ END $check$;ROLLBACK;""")
+ print("TOTAL fixed BBJ routing: 7 passing cases",flush=True)
+
  print("TOTAL fixed BBJ sequential: 28 passing cases",flush=True)
  if os.environ.get("PGNODE"):
   for hand in [H,"NULL"]:

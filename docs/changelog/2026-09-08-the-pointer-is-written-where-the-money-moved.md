@@ -24,12 +24,12 @@ anything.
 **And it was never 20 rows.** The scan reports a sample; the table tells the
 real story:
 
-| measure                                  | value          |
-| ---------------------------------------- | -------------- |
-| `rakeback_period_payouts` rows           | 2,704          |
-| paid with **no** evidence pointer        | **2,704**      |
-| rows that have ever carried a pointer    | **0**          |
-| chips involved                           | 285,190.25     |
+| measure                               | value      |
+| ------------------------------------- | ---------- |
+| `rakeback_period_payouts` rows        | 2,704      |
+| paid with **no** evidence pointer     | **2,704**  |
+| rows that have ever carried a pointer | **0**      |
+| chips involved                        | 285,190.25 |
 
 `wallet_transaction_id` has never been written, once, since the table was
 created.
@@ -69,10 +69,10 @@ deferred, for real reasons (`insufficient_club_treasury` 459,
 933 of the 2,704 rows carry a sub-cent amount. Rounding a money column is only
 safe if it changes nothing anyone was paid, so that was **proved, not assumed**:
 
-| check                                              | result      |
-| -------------------------------------------------- | ----------- |
-| wallet matches the **rounded** amount              | **933/933** |
-| wallet matches the **exact** sub-cent amount       | **0/933**   |
+| check                                        | result      |
+| -------------------------------------------- | ----------- |
+| wallet matches the **rounded** amount        | **933/933** |
+| wallet matches the **exact** sub-cent amount | **0/933**   |
 
 The players were always paid in whole cents. The column held an intermediate
 that never matched the money. Rounded, the constraint validated, and

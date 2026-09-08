@@ -1,0 +1,56 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "rat_card",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "rat_card",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "rat_card",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "rat_card",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "rat_card",
+          "count": 11
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "rat_card",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

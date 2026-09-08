@@ -195,10 +195,25 @@ function reloadForNewBundle(): Promise<void> {
  * Resolves 'unknown' if the module cannot be loaded, so a chunk that fails to
  * arrive can never sign a player out.
  */
-function askWhetherTheSessionIsAlive(source: string): Promise<'alive' | 'revoked' | 'unknown'> {
-  return import('../lib/sessionRevoked')
-    .then((m) => m.handleEngineAuthRejection(source))
-    .catch(() => 'unknown' as const);
+async function askWhetherTheSessionIsAlive(
+  source: string
+): Promise<'alive' | 'revoked' | 'unknown'> {
+  // The auth service may be unreachable during the same outage that closed
+  // the engine socket. A probe that never settles must not own the reconnect
+  // ladder forever. This bounds only our wait, not the shared SDK operation.
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let waiting = true;
+  try {
+    return await new Promise<'alive' | 'revoked' | 'unknown'>((resolve) => {
+      deadline = setTimeout(() => resolve('unknown'), 15_000);
+      void import('../lib/sessionRevoked')
+        .then((m) => (waiting ? m.handleEngineAuthRejection(source) : ('unknown' as const)))
+        .then(resolve, () => resolve('unknown'));
+    });
+  } finally {
+    waiting = false;
+    clearTimeout(deadline);
+  }
 }
 
 /**

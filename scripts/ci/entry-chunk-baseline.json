@@ -124,6 +124,7 @@
     "src/hooks/useShellUpdateGate.ts",
     "src/hooks/useTableSettings.ts",
     "src/lib/analytics.ts",
+    "src/lib/appBase.ts",
     "src/lib/authToken.ts",
     "src/lib/authUtils.ts",
     "src/lib/cachedIdentity.ts",

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Club Arena</string>
+    <string name="title_activity_main">Club Arena</string>
+    <string name="package_name">poker.smarter.clubarena</string>
+    <string name="custom_url_scheme">poker.smarter.clubarena</string>
+</resources>

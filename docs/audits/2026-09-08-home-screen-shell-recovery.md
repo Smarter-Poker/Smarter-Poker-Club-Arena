@@ -24,3 +24,7 @@ cause. A shortcut already executing old code must first adopt a new shell at a
 safe opportunity. Do not clear authentication storage or force a mid-hand reload.
 Physical iPad resume/network-switch verification and hand-delay outliers remain
 open; healthy desktop play does not close those issues.
+
+The entry-chunk review explicitly includes the small dependency-free deadline
+helper. A lazy import would add a potentially hanging network prerequisite
+before the timeout starts. Existing bundle-size limits remain unchanged.

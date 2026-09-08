@@ -17092,3 +17092,7 @@ Transfers require finite amounts and positive matching receipts. Internal transf
 ## 2026-09-08: Agent Self-Stake Ledger Context
 
 Migration 20260908151800 applied and live definition/permissions verified. Self-stake restores surrounding ledger settings after success or insufficient funds. Thirty new PostgreSQL cases pass, with 493 combined scenarios passing. Details: docs/changelog/2026-09-08-agent-self-stake-ledger-context.md.
+
+## 2026-09-08: BBJ Main Leg Source Correction
+
+Migration 20260908160032 appends one proven missing 0.25 main BBJ journal entry without changing any balance. It preserves the correct 0.25/0.12/0.13 split and the prior incident explanation. Twenty-four isolated PostgreSQL cases pass; live hand total, correction receipt and incident were read-verified. Details: docs/changelog/2026-09-08-bbj-main-leg-source-correction.md.

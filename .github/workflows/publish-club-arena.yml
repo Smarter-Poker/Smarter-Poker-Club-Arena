@@ -272,6 +272,11 @@ jobs:
       # and tests_proven stays false and the shards run.
       - name: Has this exact tree already passed the client suite?
         id: proven
+        # SKIPPED WHEN THERE IS NOTHING TO PUBLISH (2026-09-08). This step made
+        # four gh api calls unconditionally, including on every */30 catch-up
+        # tick that the dedupe step above had already decided to skip - about
+        # 48 times a day answering a question nobody was going to ask.
+        if: steps.dedupe.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -653,13 +658,38 @@ jobs:
         run: |
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
-          SSHOPTS="-i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=25"
+          # ONE HANDSHAKE, NOT FIVE (2026-09-08). This step opens a separate
+          # SSH connection for every rsync and every remote command - the
+          # verify probe, three rsyncs, two command sessions - each paying a
+          # full TCP + key exchange at -o ConnectTimeout=25 to a box in
+          # another datacentre. ControlMaster makes the first one carry the
+          # rest and closes 60s after the last.
+          #
+          # It degrades safely: if the socket cannot be created, ssh warns and
+          # opens a normal connection, which is exactly today's behaviour. The
+          # path is kept short deliberately - a Unix socket path is capped near
+          # 104 characters and $HOME on a runner is already long.
+          mkdir -p /tmp/cacm
+          SSHOPTS="-i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=25 -o ControlMaster=auto -o ControlPath=/tmp/cacm/%C -o ControlPersist=60"
           SSH="ssh $SSHOPTS $ORIGIN_USER@$ORIGIN_HOST"
           test -f dist/index.html && test -f dist/build-info.json
           # The release directory is written in full BEFORE anything points at
           # it, so a player never sees a half-copied bundle. rsync is idempotent:
           # a re-run of the same sha converges on the same tree.
-          rsync -az --delete -e "ssh $SSHOPTS" dist/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/releases/$SHA/"
+          # --link-dest AGAINST THE LIVE RELEASE (2026-09-08). releases/$SHA/
+          # never exists before this line, so rsync had nothing to compare
+          # against and transferred 100% of an 84MB bundle every publish -
+          # and --delete was a no-op into an empty directory. Pointing it at
+          # current/ lets rsync HARDLINK every chunk whose hash did not change
+          # (most of them, most publishes) and send only what is new.
+          #
+          # Hardlinks are safe with the prune below: deleting an old release
+          # only drops a link, and the bytes survive as long as any release
+          # still references them. Releases are immutable, so nothing is ever
+          # edited in place through a shared inode. If current/ is missing on
+          # a first publish, rsync ignores the option and copies everything -
+          # today's behaviour.
+          rsync -az --delete --link-dest="$ORIGIN_ROOT/current/" -e "ssh $SSHOPTS" dist/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/releases/$SHA/"
           # RUNTIME ASSET RETENTION. A player whose tab still holds the previous
           # index.html asks for the previous hashed assets mid-hand. The World
           # Hub sync kept one earlier generation for this; the origin keeps an

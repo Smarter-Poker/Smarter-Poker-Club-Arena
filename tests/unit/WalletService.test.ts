@@ -199,7 +199,13 @@ describe('WalletService', () => {
     });
     const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
     try {
-      await expect(WalletService.agentSelfTransfer('sender', 5)).resolves.toBe(true);
+      await expect(
+        WalletService.internalTransfer('sender', {
+          fromWallet: 'BUSINESS',
+          toWallet: 'PLAYER',
+          amount: 5,
+        })
+      ).resolves.toBe(true);
       expect(audit).not.toHaveBeenCalled();
       expect(mockRpc).toHaveBeenCalledTimes(1);
     } finally {
@@ -226,7 +232,13 @@ describe('WalletService', () => {
       mockRpc.mockResolvedValueOnce({ data, error: null });
       const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
       try {
-        await expect(WalletService.agentSelfTransfer('sender', 5)).rejects.toThrow(/confirmed/);
+        await expect(
+          WalletService.internalTransfer('sender', {
+            fromWallet: 'BUSINESS',
+            toWallet: 'PLAYER',
+            amount: 5,
+          })
+        ).rejects.toThrow(/confirmed/);
         expect(audit).not.toHaveBeenCalled();
         expect(mockBusEmit).not.toHaveBeenCalled();
       } finally {

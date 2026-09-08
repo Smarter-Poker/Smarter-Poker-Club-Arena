@@ -1,14 +1,15 @@
 /**
- * Worker-thread entry point for the Horse League.
+ * Compute-runtime entry point for the Horse League.
  *
  * The nightly duplicate-deal card is production analysis, not table state. It
  * used to execute thousands of full HorseLogic decisions on the live engine's
- * only event loop.  This worker owns an isolated RNG, HorseMind sandbox and
- * solver stores, so that analysis can consume a different CPU core without
- * delaying a single table timer, socket frame or ownership heartbeat.
+ * only event loop. Production loads it inside a lowest-priority child process;
+ * focused tests may load it in a worker thread. Both runtimes own an isolated
+ * RNG, HorseMind sandbox and solver stores.
  */
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { getPriority } from 'node:os';
 
 import { runMatchup } from './HorseLeague.js';
 import { scoreSolverAgreement } from './HorseSolverAgreement.js';
@@ -28,15 +29,28 @@ interface WorkerOptions {
   hydrateSolverStores?: boolean;
 }
 
-const port = parentPort;
+const runtimeAvailable =
+  (!isMainThread && parentPort !== null) || typeof process.send === 'function';
 
-if (!isMainThread && port) {
-  const options = (workerData ?? {}) as WorkerOptions;
+if (runtimeAvailable) {
+  const options = (
+    parentPort
+      ? (workerData ?? {})
+      : { hydrateSolverStores: process.env.HORSE_LEAGUE_HYDRATE_SOLVER_STORES !== '0' }
+  ) as WorkerOptions;
   const cancelled = new Set<number>();
   let activeJobId: number | null = null;
   let operation: Promise<void> = Promise.resolve();
 
-  const send = (message: HorseLeagueComputeResponse): void => port.postMessage(message);
+  const send = (message: HorseLeagueComputeResponse): void => {
+    if (parentPort) parentPort.postMessage(message);
+    else if (process.send) process.send(message);
+    else throw new Error('horse league compute runtime lost its parent transport');
+  };
+  const receive = (listener: (message: HorseLeagueComputeRequest) => void): void => {
+    if (parentPort) parentPort.on('message', listener);
+    else process.on('message', (message) => listener(message as HorseLeagueComputeRequest));
+  };
 
   const ready = (async () => {
     if (options.hydrateSolverStores !== false) {
@@ -47,6 +61,7 @@ if (!isMainThread && port) {
     }
     send({
       type: 'READY',
+      executionNice: getPriority(0),
       solverStores: {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),
@@ -100,7 +115,7 @@ if (!isMainThread && port) {
     }
   };
 
-  port.on('message', (message: HorseLeagueComputeRequest) => {
+  receive((message: HorseLeagueComputeRequest) => {
     if (message.type === 'CANCEL') {
       cancelled.add(message.jobId);
       return;

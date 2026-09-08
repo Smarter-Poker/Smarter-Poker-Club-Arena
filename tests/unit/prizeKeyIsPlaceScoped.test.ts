@@ -29,10 +29,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const PAYING_PATHS = [
-  'server/src/tournament/tournamentRecovery.ts',
-  'server/src/tournament/TournamentManager.ts',
-];
+const PAYING_PATHS = ['server/src/tournament/tournamentRecovery.ts'];
 const ATOMIC_PLACE_PATHS = [
   'server/src/tournament/TournamentManagerEliminations.ts',
   'server/src/tournament/tournamentRecovery.ts',

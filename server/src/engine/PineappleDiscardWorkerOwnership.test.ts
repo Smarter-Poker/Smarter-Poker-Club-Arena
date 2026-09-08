@@ -196,7 +196,7 @@ describe('Pineapple discard worker ownership', () => {
     }
   });
 
-  it('refreshes insurance equity and the next offer from committed two-card hands', async () => {
+  it('prices the next insurance street once from committed two-card hands', async () => {
     const players: SeatPlayer[] = [1, 2].map(
       (seat) =>
         ({
@@ -248,10 +248,9 @@ describe('Pineapple discard worker ownership', () => {
       controller
     );
 
-    expect(engine.broadcastAllInEquity).toHaveBeenCalledTimes(1);
-    expect(
-      engine.broadcastAllInEquity.mock.calls[0][0].map((player: SeatPlayer) => player.cards.length)
-    ).toEqual([2, 2]);
+    // The structured insurance worker pass owns both pricing and the public
+    // percentages. A second cosmetic job here would duplicate the CPU work.
+    expect(engine.broadcastAllInEquity).not.toHaveBeenCalled();
     expect(engine.runInsurancePerStreetFlow).toHaveBeenCalledTimes(1);
     const [nextOffers, nextAllIn] = engine.runInsurancePerStreetFlow.mock.calls[0];
     expect(nextOffers.map((player: { holeCards: Card[] }) => player.holeCards.length)).toEqual([

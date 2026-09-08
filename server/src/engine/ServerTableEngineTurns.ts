@@ -92,6 +92,18 @@ export function noteSecondLookDecline(reason: SecondLookDecline): void {
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
+   * True only after an externally-computed runout payout may have touched the
+   * HandController and before that controller has emitted HAND_COMPLETE.
+   *
+   * The no-seat watchdog normally calls continueRunout as a recovery. That is
+   * safe while a runout is only parked, but it would distribute the pot again
+   * after Run It Twice has already credited its winners. The runout layer owns
+   * this fence; the turn layer reads it because the watchdog is the only
+   * lower-layer continuation that can bypass the runout error boundary.
+   */
+  protected runoutPayoutMutationUnsafe = false;
+
+  /**
    * Dan 2026-08-20: a queued pre-action (auto-check / auto-fold / auto-call)
    * used to fire synchronously at 0ms the instant the turn arrived — the seat
    * never visibly took its turn, and with several players holding pre-actions
@@ -425,6 +437,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         ),
         'ServerTableEngine.' + this.tableId + '.watchdog_no_seat'
       );
+      if (this.runoutPayoutMutationUnsafe) {
+        // An external runout resolver has already started applying its payout.
+        // continueRunout would execute the ordinary distribution and can pay
+        // the same pot twice. This generation must be recovered from its
+        // authoritative hand snapshot instead.
+        this.killForRestart('runout_stalled_after_payout_mutation');
+        return;
+      }
       try {
         (this.handController as any).continueRunout?.();
       } catch {

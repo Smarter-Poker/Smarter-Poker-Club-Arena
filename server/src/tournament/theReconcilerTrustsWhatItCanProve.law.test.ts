@@ -14,10 +14,10 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..', '..', '..');
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
 const file = readdirSync(MIGRATIONS)
-  .filter((name) => name.endsWith('_tournament_places_settle_and_complete_atomically.sql'))
+  .filter((name) => name.endsWith('_tournament_manager_request_fencing_is_strict.sql'))
   .sort()
   .at(-1);
-if (!file) throw new Error('atomic tournament-place migration is missing');
+if (!file) throw new Error('strict Stage-B tournament cutover migration is missing');
 
 const SQL = readFileSync(join(MIGRATIONS, file), 'utf8')
   .replace(/^\s*--.*$/gm, '')
@@ -51,9 +51,11 @@ const ROUTINES = [
 ] as const;
 
 function activeSourceFiles(path: string): string[] {
+  if (/[/\\]fixtures[/\\]/.test(path) || /[/\\]probe-[^/\\]*\.sql$/.test(path)) return [];
   if (statSync(path).isFile()) return [path];
   return readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
     const child = join(path, entry.name);
+    if (/[/\\]fixtures[/\\]/.test(child) || /[/\\]probe-[^/\\]*\.sql$/.test(child)) return [];
     if (entry.isDirectory()) return activeSourceFiles(child);
     if (!entry.isFile()) return [];
     if (!/\.(?:[cm]?[jt]sx?|sql|sh)$/.test(entry.name)) return [];

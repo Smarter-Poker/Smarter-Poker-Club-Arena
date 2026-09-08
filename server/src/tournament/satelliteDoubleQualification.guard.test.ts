@@ -56,14 +56,18 @@ function functionDefinitions(name: string): string[] {
       const bodyHeader = source.slice(start).match(/\bAS\s+(\$[A-Za-z_]*\$)/);
       const delimiter = bodyHeader?.[1];
       const bodyStart = bodyHeader?.index == null ? -1 : start + bodyHeader.index;
-      const end = delimiter
-        ? source.indexOf(`${delimiter};`, bodyStart + bodyHeader![0].length)
-        : -1;
-      if (bodyStart < 0 || end < 0 || !delimiter) {
+      const closeFrom = bodyStart < 0 || !bodyHeader ? -1 : bodyStart + bodyHeader[0].length;
+      const escapedDelimiter = delimiter?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const closing =
+        closeFrom >= 0 && escapedDelimiter
+          ? source.slice(closeFrom).match(new RegExp(`${escapedDelimiter}\\s*;`))
+          : null;
+      const end = closing?.index == null ? -1 : closeFrom + closing.index;
+      if (bodyStart < 0 || end < 0 || !delimiter || !closing) {
         throw new Error(`SQL function ${name} has no complete body in ${file}`);
       }
-      definitions.push(source.slice(start, end + delimiter.length + 1));
-      from = end + delimiter.length + 1;
+      definitions.push(source.slice(start, end + closing[0].length));
+      from = end + closing[0].length;
     }
   }
   return definitions;
@@ -154,7 +158,7 @@ describe('a cross-satellite double win pays the ticket value', () => {
       /IF v_delivery->>'delivery'='cash' THEN[\s\S]*?fn_settle_satellite_cash_entitlement_exact\([\s\S]*?p_tournament_id,'place',e\.position,p\.user_id,e\.ticket_value/
     );
     expect(EXACT_CASH).toMatch(
-      /fn_settle_tournament_obligation\([\s\S]*?p_tournament_id,p_kind,p_place,p_user_id,round\(p_amount,2\),p_source/
+      /fn_settle_tournament_obligation_before_atomic_batch_gate\([\s\S]*?p_tournament_id,p_kind,p_place,p_user_id,round\(p_amount,2\),p_source/
     );
     expect(EXACT_CASH).toMatch(
       /count\(\*\)::integer[\s\S]*?o\.kind=p_kind[\s\S]*?o\.user_id=p_user_id[\s\S]*?o\.place IS NOT DISTINCT FROM p_place[\s\S]*?round\(o\.amount_paid,2\)=round\(p_amount,2\)[\s\S]*?o\.settled_at IS NOT NULL[\s\S]*?v_count<>1[\s\S]*?RAISE EXCEPTION/

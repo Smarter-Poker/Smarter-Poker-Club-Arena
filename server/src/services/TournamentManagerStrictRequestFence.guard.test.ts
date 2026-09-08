@@ -13,8 +13,10 @@ const migrationPath = (suffix: string): string => {
 };
 
 const stageAPath = migrationPath('tournament_manager_requests_carry_lease_authority.sql');
+const launchChildPath = migrationPath('tournament_launch_children_share_the_transition_lock.sql');
 const postCommitPath = migrationPath('post_commit_obligations_are_atomic_and_resumable.sql');
 const stageBPath = migrationPath('tournament_manager_request_fencing_is_strict.sql');
+const launchChild = readFileSync(launchChildPath, 'utf8');
 const postCommit = readFileSync(postCommitPath, 'utf8');
 const stageB = readFileSync(stageBPath, 'utf8');
 const designDoc = readFileSync(
@@ -56,6 +58,7 @@ const sqlFunction = (source: string, name: string, schema = 'public'): string =>
 const hook = sqlFunction(stageB, 'fn_smarter_data_api_pre_request', 'smarter_private');
 const scope = sqlFunction(stageB, 'fn_assert_tournament_manager_write_scope');
 const rowGuard = sqlFunction(stageB, 'trg_tournament_manager_write_scope');
+const strictOrigin = sqlFunction(stageB, 'trg_validate_tournament_table_origin');
 
 const routeArray = (name: string): Set<string> => {
   const body = hook.match(
@@ -180,6 +183,49 @@ describe('Stage-B tournament-manager request fencing is a strict cutover', () =>
     expect(hook).toContain("v_actor <> 'tournament-manager'");
     expect(hook).toContain("v_protocol <> '2'");
     expect(hook).not.toContain('legacy-unmarked');
+  });
+
+  it('retires the Stage-A raw-table bridge behind one refusing writer boundary', () => {
+    expect(launchChild).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_stage_a_bridge_legacy_capacity_receipt('
+    );
+
+    const tablesLock = stageB.indexOf(
+      'LOCK TABLE public.tables IN SHARE ROW EXCLUSIVE MODE NOWAIT;'
+    );
+    const originsLock = stageB.indexOf(
+      'LOCK TABLE public.tournament_table_origins IN SHARE ROW EXCLUSIVE MODE NOWAIT;'
+    );
+    const receiptsLock = stageB.indexOf(
+      'LOCK TABLE public.tournament_capacity_table_receipts\n' +
+        '  IN SHARE ROW EXCLUSIVE MODE NOWAIT;'
+    );
+    const wakesLock = stageB.indexOf(
+      'LOCK TABLE public.tournament_manager_wakes IN SHARE ROW EXCLUSIVE MODE NOWAIT;'
+    );
+    const leasesLock = stageB.indexOf(
+      'LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;'
+    );
+    const retire = stageB.indexOf(
+      'DROP FUNCTION IF EXISTS public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)'
+    );
+
+    expect(tablesLock).toBeGreaterThan(-1);
+    expect(originsLock).toBeGreaterThan(tablesLock);
+    expect(receiptsLock).toBeGreaterThan(originsLock);
+    expect(wakesLock).toBeGreaterThan(receiptsLock);
+    expect(leasesLock).toBeGreaterThan(wakesLock);
+    expect(retire).toBeGreaterThan(leasesLock);
+    expect(stageB.slice(leasesLock, retire)).toContain('l.protocol_version = 1');
+    expect(stageB.slice(leasesLock, retire)).toContain("interval '30 seconds'");
+    expect(stageB.slice(leasesLock, retire)).toContain(
+      'a fresh protocol-1 tournament manager still owns a lease'
+    );
+    expect(stageB.slice(retire, retire + 140)).toContain('RESTRICT;');
+    expect(strictOrigin).toContain('tournament_capacity_table_receipts');
+    expect(strictOrigin).toContain('TOURNAMENT_CAPACITY_RECEIPT_REQUIRED');
+    expect(strictOrigin).not.toContain('fn_stage_a_bridge_legacy_capacity_receipt');
+    expect(stageB).toContain('Stage-B found a capacity origin without durable receipt provenance');
   });
 
   it('holds one exact fresh manager generation for every mutation transaction', () => {

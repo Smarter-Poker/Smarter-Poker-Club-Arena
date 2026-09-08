@@ -54,10 +54,7 @@ const PAYOUT_SOURCES = [
   'server/src/tournament/TournamentManager.ts',
   'server/src/tournament/tournamentRecovery.ts',
 ] as const;
-const SINGLE_OBLIGATION_SOURCES = [
-  'server/src/tournament/TournamentManager.ts',
-  'server/src/tournament/tournamentRecovery.ts',
-] as const;
+const SINGLE_OBLIGATION_SOURCES = ['server/src/tournament/tournamentRecovery.ts'] as const;
 
 describe('prize ledger idempotency — the engine side', () => {
   for (const path of PAYOUT_SOURCES) {
@@ -80,6 +77,9 @@ describe('prize ledger idempotency — the engine side', () => {
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_player_wallet_once'/);
       if (path === 'server/src/tournament/TournamentManagerEliminations.ts') {
         expect(code).toMatch(/settleTournamentPlacesAtomically\(/);
+        expect(code).not.toMatch(/settleTournamentObligation\(/);
+      } else if (path === 'server/src/tournament/TournamentManager.ts') {
+        expect(code).toMatch(/fn_settle_satellite_finish_atomic/);
         expect(code).not.toMatch(/settleTournamentObligation\(/);
       } else {
         expect(code).toMatch(/settleTournamentObligation\(/);

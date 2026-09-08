@@ -12,6 +12,17 @@ const SQL = readFileSync(
   ),
   'utf8'
 );
+const PLACE_SQL = readFileSync(
+  join(
+    root,
+    'supabase/migrations/20260908042400_tournament_places_settle_and_complete_atomically.sql'
+  ),
+  'utf8'
+);
+const STRICT_SQL = readFileSync(
+  join(root, 'supabase/migrations/20260908043500_tournament_manager_request_fencing_is_strict.sql'),
+  'utf8'
+);
 const MANAGER = readFileSync(join(here, 'TournamentManager.ts'), 'utf8');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const MANIFEST = readFileSync(
@@ -27,6 +38,14 @@ function body(name: string): string {
   return SQL.slice(start, end);
 }
 
+function bodyFrom(source: string, name: string): string {
+  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
+  expect(start, `${name} definition exists`).toBeGreaterThan(-1);
+  const end = source.indexOf('$function$;', source.indexOf('AS $function$', start));
+  expect(end, `${name} definition closes`).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
 describe('a satellite finish has one frozen economic authority', () => {
   it('freezes target price and funded seat promise when the source starts', () => {
     const capture = body('trg_capture_satellite_economics_on_start');
@@ -38,6 +57,12 @@ describe('a satellite finish has one frozen economic authority', () => {
     expect(capture).toContain('v_target.buy_in_fee');
     expect(capture).toContain('NEW.prize_pool');
     expect(capture).toContain('satellite cannot start: funded pool');
+    expect(SQL).toMatch(
+      /DO \$assert_active_satellite_economics\$[\s\S]*?FROM public\.tournaments t[\s\S]*?LEFT JOIN public\.tournament_satellite_economic_snapshots s[\s\S]*?upper\(COALESCE\(t\.status,''\)\) IN \('RUNNING','COMPLETING'\)[\s\S]*?drain it before deploying atomic settlement/
+    );
+    expect(SQL).not.toMatch(
+      /DO \$assert_active_satellite_economics\$[\s\S]*?FROM public\.tournament_entry_close_receipts r[\s\S]*?\$assert_active_satellite_economics\$/
+    );
   });
 
   it('materializes one contiguous immutable plan consumed by H4H and finish', () => {
@@ -91,6 +116,23 @@ describe('the atomic finalizer cannot certify partial money', () => {
 });
 
 describe('the engine and ACL expose only the atomic doors', () => {
+  it('contracts satellite cash to the private core before the public payer becomes strict', () => {
+    const cash = bodyFrom(PLACE_SQL, 'fn_settle_satellite_cash_entitlement_exact');
+    const strictPayer = bodyFrom(STRICT_SQL, 'fn_settle_tournament_obligation');
+    expect(cash).toContain('fn_settle_tournament_obligation_before_atomic_batch_gate(');
+    expect(cash).not.toContain('public.fn_settle_tournament_obligation(');
+    expect(strictPayer).toContain("'satellite_remainder'");
+    expect(strictPayer).toContain("'seat'");
+    expect(strictPayer).toContain('v_kind = ANY(v_atomic_kinds)');
+    expect(strictPayer).toContain("'refused_reason', 'atomic_batch_required'");
+    expect(SQL).toMatch(
+      /CREATE TRIGGER aaa_guard_atomic_satellite_completion[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER aaa_guard_atomic_satellite_completion/
+    );
+    expect(STRICT_SQL).toMatch(
+      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER aaa_guard_atomic_satellite_completion/
+    );
+  });
+
   it('calls the atomic RPC after bounty and rake, and fails closed', () => {
     expect(MANAGER).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
     expect(MANAGER).not.toContain("supabase.rpc('fn_award_satellite_seat'");

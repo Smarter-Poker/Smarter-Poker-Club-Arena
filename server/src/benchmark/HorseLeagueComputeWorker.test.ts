@@ -242,4 +242,23 @@ describe('Horse League compute isolation', () => {
     expect(body).toContain('await compute.runMatchup(');
     expect(body).not.toContain('await runMatchup(');
   });
+
+  it('runs the production league in a verified lowest-priority process', () => {
+    const clientSource = readFileSync(
+      new URL('./HorseLeagueComputeWorkerClient.ts', import.meta.url),
+      'utf8'
+    );
+    const processSource = readFileSync(
+      new URL('./HorseLeagueComputeProcess.ts', import.meta.url),
+      'utf8'
+    );
+
+    expect(clientSource).toContain('fork(');
+    expect(clientSource).toContain('HorseLeagueComputeProcess');
+    expect(clientSource).toContain('message.executionNice !== osConstants.priority.PRIORITY_LOW');
+    expect(clientSource).not.toContain('new Worker(');
+    expect(processSource).toContain('setPriority(0, osConstants.priority.PRIORITY_LOW)');
+    expect(processSource).toContain('getPriority(0)');
+    expect(processSource).toContain("await import('./HorseLeagueComputeWorker.js')");
+  });
 });

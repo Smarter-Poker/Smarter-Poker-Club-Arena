@@ -254,6 +254,36 @@ export const horseDecisionWorkerEventLoopDelayP99: Gauge = alwaysOnRegistry.gaug
   'Event-loop delay p99 inside the sole live HorseLogic worker over its latest status sample (ms).'
 );
 
+/** Worker-only all-in/insurance compute capacity and queue pressure. */
+export const equityWorkerPoolReady: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_ready',
+  '1 only when every configured equity worker has completed its READY handshake; 0 while idle, starting, degraded, failed, or stopping.'
+);
+export const equityWorkerPoolConfiguredWorkers: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_configured_workers',
+  'Configured equity worker count after reserving CPU contexts for the authoritative event loop and live HorseLogic worker.'
+);
+export const equityWorkerPoolReadyWorkers: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_ready_workers',
+  'Equity workers that completed READY and have not exited.'
+);
+export const equityWorkerPoolBusyWorkers: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_busy_workers',
+  'Equity workers currently evaluating an accepted operation.'
+);
+export const equityWorkerPoolQueueDepth: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_queue_depth',
+  'Worker-only all-in equity and insurance operations waiting to execute.'
+);
+export const equityWorkerPoolOldestQueuedAgeMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_oldest_queued_age_ms',
+  'Age of the oldest queued equity worker operation in milliseconds; 0 when empty.'
+);
+export const equityWorkerPoolLastCompletionAgeMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_worker_pool_last_completion_age_ms',
+  'Milliseconds since the equity pool last completed an operation; -1 before its first completion.'
+);
+
 /** Main-thread governor diagnostics remain a realtime-loop signal only. */
 export const mainEventLoopGovernorScale: Gauge = alwaysOnRegistry.gauge(
   'poker_main_event_loop_governor_scale',

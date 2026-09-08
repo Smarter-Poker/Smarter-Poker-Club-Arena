@@ -1842,33 +1842,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
     }
 
-    // Price the stone-bubble entitlement before the atomic elimination call.
-    // The database settles this refund in the same transaction as status,
-    // place and seat ownership; this value is used below only for the UI event.
-    let bubbleRefund = 0;
-    if (!isSatellite && (tournament as any).bubble_protection === true && prize <= 0) {
-      const bubbleField = await this.finalFieldSize();
-      if (!this.eliminationMutationAllowed()) return false;
-      if (bubbleField === null) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] finalized field size is unreadable; refusing to decide bubble protection for place ${position}`
-          ),
-          'Tournament.bubble_field_size_unreadable'
-        );
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-        return false;
-      }
-      const payouts = resolvePayoutStructure(
-        tournament as any,
-        bubbleField !== undefined && bubbleField >= position ? bubbleField : undefined
-      );
-      const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;
-      const configuredRefund = Math.max(0, Number((tournament as any).buy_in_amount || 0));
-      if (paidPlaces > 0 && position === paidPlaces + 1 && configuredRefund > 0) {
-        bubbleRefund = configuredRefund;
-      }
-    }
+    // Elimination records a provisional result, never a Bubble payment. The
+    // terminal database batch derives the one canonical stone-bubble holder
+    // from finalized standings and the frozen buy-in contract, then pays that
+    // refund together with every place or rolls the whole settlement back.
+    const bubbleRefund = 0;
 
     let bountyMode: string | null = null;
     let durableBountyKnocker: string | null = null;
@@ -1917,7 +1895,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const { data: existing, error: existingErr } = await supabase
         .from('tournament_bounty_obligations')
         .select(
-          'id,table_id,hand_id,hand_number,mode,state,knocker_user_id,claimants,position,prize'
+          'id,table_id,hand_id,hand_number,mode,state,knocker_user_id,claimants,position,prize,bubble_refund'
         )
         .eq('tournament_id', this.tournamentId)
         .eq('eliminated_user_id', userId)
@@ -1935,6 +1913,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         claimants?: unknown;
         position?: number;
         prize?: number;
+        bubble_refund?: number;
       } | null;
       const canonicalClaims = Array.isArray(row?.claimants)
         ? row!.claimants
@@ -1952,6 +1931,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         Number(row.hand_number) === bountyEvidence!.handNumber &&
         Number(row.position) === position &&
         Math.round(Number(row.prize) * 100) === Math.round(prize * 100) &&
+        Math.round(Number(row.bubble_refund) * 100) === Math.round(bubbleRefund * 100) &&
         !!row.knocker_user_id &&
         canonicalClaims.length > 0;
 
@@ -1974,35 +1954,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       bountyMode = String(row!.mode || '');
       durableBountyKnocker = String(row!.knocker_user_id || '');
       durableBountyClaimants = canonicalClaims;
-      // Fresh bounty claims settle any paid place in the same transaction as
-      // status/outbox/seat ownership. An `already` row is the replay of that
-      // exact generation, not permission to run a second payer here.
+      // An `already` row is the replay of that exact generation, not permission
+      // to run a place or Bubble payer here.
     } else {
       if (!this.eliminationMutationAllowed()) return false;
-      // Status, place obligation/payment and tournament-scoped seat release
-      // are one transaction. A process death can no longer leave an
-      // `eliminated, prize=N` row with no payable receipt, which the old
-      // recovery code mistook for already paid.
-      const { data: updateData, error: updateErr } = await supabase.rpc(
+      // Result, exact status CAS and tournament-scoped seat release are one
+      // transaction. Place and Bubble money wait for the finalized terminal
+      // batch. A transport failure is ambiguous, so replay the same idempotent
+      // RPC once; its locked exact-position/prize and knockout-generation
+      // checks turn a lost successful response into `{ already: true }`.
+      const eliminationRequest = {
+        p_tournament_id: this.tournamentId,
+        p_user_id: userId,
+        p_position: position,
+        p_prize: prize,
+        p_bubble_refund: bubbleRefund,
+      };
+      let eliminationResponse = await supabase.rpc(
         'fn_eliminate_tournament_player_atomic',
-        {
-          p_tournament_id: this.tournamentId,
-          p_user_id: userId,
-          p_position: position,
-          p_prize: prize,
-          p_bubble_refund: bubbleRefund,
-        }
+        eliminationRequest
       );
+      if (eliminationResponse.error) {
+        eliminationResponse = await supabase.rpc(
+          'fn_eliminate_tournament_player_atomic',
+          eliminationRequest
+        );
+      }
+      const { data: updateData, error: updateErr } = eliminationResponse;
       const update = (updateData ?? {}) as {
         ok?: boolean;
         claimed?: boolean;
         already?: boolean;
         reason?: string;
       };
-      if (updateErr || update.ok !== true) {
+      const eliminationReceiptAccepted =
+        !updateErr && update.ok === true && (update.claimed === true || update.already === true);
+      if (!eliminationReceiptAccepted) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] atomic elimination FAILED for ${userId.slice(0, 8)} at place ${position}: ${updateErr?.message ?? update.reason ?? 'refused'} - status, seat and prize remain retryable together`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] atomic elimination FAILED for ${userId.slice(0, 8)} at place ${position} after exact transport replay: ${updateErr?.message ?? update.reason ?? 'no accepted commit receipt'}`
           ),
           'Tournament.elimination_write_failed'
         );
@@ -2042,18 +2032,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // the new live seat. Both atomic elimination RPCs already release the
     // tournament-scoped seat they locked; no second application write follows.
 
-    /* THE RESULT ROW IS THE PREPARE INPUT; MONEY WAITS FOR THE ATOMIC FINISH.
-       Paying here made every place a separate HTTP/database transaction. A
-       later failure could therefore leave the early places committed and the
-       tournament COMPLETED with the rest missing. `prize` records exactly what
-       this player earned. finishTournament prepares one obligation per such
-       row, then pays the complete set and flips COMPLETED in one transaction. */
-
-    /* Bubble Protection is part of the same all-or-none terminal batch as
-       place money. Preparation derives the exact stone-bubble holder only
-       after the field and final standings are frozen, then the normal or
-       final-table-deal settler pays that obligation with every place. No
-       application RPC is permitted here between result and terminal commit. */
+    /* RESULT, SEAT RELEASE AND BOUNTY OUTBOX SHARE THE ELIMINATION COMMIT.
+       The atomic elimination RPC records the provisional place, releases the
+       locked seat, and, for bounty events, records the exact knockout outbox.
+       It moves no place or Bubble money. Tournament completion normalizes the
+       final standings and pays the immutable place-plus-Bubble plan in one
+       all-or-none database transaction. */
 
     // ── BOUNTY / PKO / MYSTERY BOUNTY COLLECTION ──
     // Determine who knocked this player out by finding the last hand winner at their table
@@ -4672,16 +4656,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('status', 'playing')
       .neq('user_id', winnerId);
 
-    if (stillPlayingErr) {
+    if (stillPlayingErr || !Array.isArray(stillPlaying)) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr?.message ?? 'invalid roster'}`
         ),
         'Tournament.unresolved_players_read_failed'
       );
       this.tournamentFinished = false;
       return;
-    } else if (stillPlaying && stillPlaying.length > 0) {
+    } else if (stillPlaying.length > 0) {
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) - assigning places 2..${stillPlaying.length + 1}`
       );
@@ -4695,18 +4679,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('position')
         .eq('tournament_id', this.tournamentId)
         .not('position', 'is', null);
-      if (finishTakenErr || !finishTaken) {
+      if (
+        finishTakenErr ||
+        !Array.isArray(finishTaken) ||
+        finishTaken.some((r) => !Number.isInteger(Number(r.position)) || Number(r.position) < 1) ||
+        new Set(finishTaken.map((r) => Number(r.position))).size !== finishTaken.length
+      ) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] could not read occupied finishing places: ${finishTakenErr?.message ?? 'no rows'}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] cannot assign finishing places from an unreadable or inconsistent position list: ${finishTakenErr?.message ?? 'invalid or duplicate positions'}`
           ),
-          'Tournament.finishing_places_read_failed'
+          'Tournament.finish_positions_unconfirmed'
         );
         this.tournamentFinished = false;
         return;
       }
       const finishTakenPositions = new Set<number>(
-        (finishTaken || [])
+        finishTaken
           .map((r) => Number((r as { position: unknown }).position))
           .filter((n) => Number.isFinite(n))
       );
@@ -4738,6 +4727,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         finishTakenPositions.add(finishNext);
         finishNext--;
       }
+      // eliminatePlayer can return without claiming a stale bust or failed
+      // status write. Its return is not proof that the assigned player is out.
+      const { data: remainingPlayers, error: remainingPlayersErr } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing')
+        .neq('user_id', winnerId);
+      if (remainingPlayersErr || !Array.isArray(remainingPlayers) || remainingPlayers.length > 0) {
+        reportError(
+          new Error('Tournament finish cannot confirm that every remaining player was resolved.'),
+          'Tournament.finish_players_unresolved'
+        );
+        this.tournamentFinished = false;
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+        return;
+      }
     }
 
     // PAYOUT-INTEGRITY 2026-08-25: this row is the result/entitlement record
@@ -4746,17 +4752,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // as the 113 under-paid tournaments the comment above describes — and
     // fn_tournament_payout_reconcile would then read prize 0 for place 1 and
     // try to top the winner up to the full first prize a second time.
-    const { data: winnerStamp, error: winnerStampErr } = await supabase
+    const { error: winnerStampErr, count: winnerStampCount } = await supabase
       .from('tournament_players')
-      .update({ status: 'winner', position: 1, prize: winnerPrize })
+      .update({ status: 'winner', position: 1, prize: winnerPrize }, { count: 'exact' })
       .eq('tournament_id', this.tournamentId)
-      .eq('user_id', winnerId)
-      .select('id')
-      .maybeSingle();
-    if (winnerStampErr || !winnerStamp) {
+      .eq('user_id', winnerId);
+    if (winnerStampErr || winnerStampCount !== 1) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr?.message ?? 'no matching player row'}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr?.message ?? `affected rows: ${winnerStampCount ?? 'unknown'}`}`
         ),
         'Tournament.winner_row_stamp_failed'
       );

@@ -22,7 +22,11 @@
  * This is serialization, not stale-manager authorization.  Exact launch
  * generation is persisted and returned by the lock helper so a later RPC
  * boundary can require a transaction-local generation marker without
- * changing the provenance model.
+ * changing the provenance model. One deliberately narrow Stage-A bridge also
+ * admits the old engine's raw RUNNING-table INSERT while its exact fresh
+ * protocol-1 tournament lease is locked. It creates the canonical capacity
+ * receipt and manager wake inside that same transaction; it is not a repair.
+ * Stage B removes the bridge after old processes drain.
  */
 
 BEGIN;
@@ -500,6 +504,139 @@ CREATE TRIGGER aa_tournament_table_launch_proof_lock
 REVOKE ALL ON FUNCTION public.trg_lock_and_classify_tournament_table()
   FROM PUBLIC, anon, authenticated, service_role;
 
+/* The old engine creates a dynamic RUNNING table with one raw PostgREST
+   INSERT. It cannot issue the canonical capacity RPC inside that request.
+   During Stage A only, the deferred validator may complete that exact old
+   transaction by creating the normal late-registration wake and capacity
+   receipt before it decides whether the origin is proved.
+
+   This is deliberately narrower than service_role. The verified request role
+   and claims must both be service_role, every Smarter actor header must be
+   absent, the transaction actor must still be legacy-unmarked, the request
+   must be POST /tables, and that tournament must have one fresh protocol-1
+   lease locked FOR SHARE. Marked or protocol-2 work never enters the bridge
+   and therefore still owes its receipt before validation. Stage B removes
+   this private helper at a locked writer boundary; already-committed tables
+   remain ordinary capacity origins with ordinary durable receipts. */
+CREATE OR REPLACE FUNCTION public.fn_stage_a_bridge_legacy_capacity_receipt(
+  p_table_id uuid,
+  p_tournament_id uuid
+) RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_headers jsonb;
+  v_claims jsonb;
+  v_request_role text;
+  v_actor_marker text;
+  v_method text;
+  v_path text;
+  v_wake_id bigint;
+  v_stale_seconds constant integer := 30;
+BEGIN
+  IF p_table_id IS NULL OR p_tournament_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  BEGIN
+    v_headers := COALESCE(
+      NULLIF(current_setting('request.headers', true), '')::jsonb,
+      '{}'::jsonb
+    );
+    v_claims := COALESCE(
+      NULLIF(current_setting('request.jwt.claims', true), '')::jsonb,
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN invalid_text_representation THEN
+    RAISE EXCEPTION
+      'DATA_ACTOR_INVALID: malformed legacy capacity request context'
+      USING ERRCODE = '22023';
+  END;
+
+  v_request_role := btrim(COALESCE(auth.role(), ''));
+  v_actor_marker := btrim(
+    COALESCE(current_setting('app.smarter_data_actor', true), '')
+  );
+  v_method := upper(
+    btrim(COALESCE(current_setting('request.method', true), ''))
+  );
+  v_path := lower(
+    btrim(COALESCE(current_setting('request.path', true), ''), '/')
+  );
+  IF left(v_path, 8) = 'rest/v1/' THEN
+    v_path := substr(v_path, 9);
+  END IF;
+
+  IF v_request_role <> 'service_role'
+     OR btrim(COALESCE(v_claims ->> 'role', '')) <> 'service_role'
+     OR btrim(COALESCE(v_headers ->> 'x-smarter-data-actor', '')) <> ''
+     OR btrim(COALESCE(v_headers ->> 'x-smarter-data-protocol', '')) <> ''
+     OR btrim(COALESCE(v_headers ->> 'x-smarter-tournament-id', '')) <> ''
+     OR btrim(
+          COALESCE(
+            v_headers ->> 'x-smarter-tournament-lease-generation',
+            ''
+          )
+        ) <> ''
+     OR v_actor_marker NOT IN ('', 'legacy-unmarked')
+     OR COALESCE(
+          current_setting('app.smarter_manager_request_fenced', true),
+          ''
+        ) <> ''
+     OR v_method <> 'POST'
+     OR v_path <> 'tables' THEN
+    RETURN false;
+  END IF;
+
+  /* This row lock is the rolling cutover handoff. Lease replacement and the
+     Stage-B relation lock cannot cross the raw table INSERT transaction. */
+  PERFORM 1
+    FROM public.engine_tournament_leases l
+   WHERE l.tournament_id = p_tournament_id
+     AND l.protocol_version = 1
+     AND l.heartbeat_at >=
+         clock_timestamp() - make_interval(secs => v_stale_seconds)
+   FOR SHARE;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  v_wake_id := public.fn_emit_tournament_manager_wake(
+    p_tournament_id,
+    'late_registration'
+  );
+  IF v_wake_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  INSERT INTO public.tournament_capacity_table_receipts (
+    table_id,
+    tournament_id,
+    manager_wake_id
+  ) VALUES (
+    p_table_id,
+    p_tournament_id,
+    v_wake_id
+  );
+
+  /* Match the canonical capacity function's level-triggered receipt rule:
+     every still-unadmitted table points at the newest pending wake. */
+  UPDATE public.tournament_capacity_table_receipts
+     SET manager_wake_id = v_wake_id,
+         updated_at = clock_timestamp()
+   WHERE tournament_id = p_tournament_id
+     AND manager_admitted_at IS NULL;
+
+  RETURN true;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 /* This function is executed at transaction end for each future provenance
    row.  It is what turns "capacity" from a trigger-time label into same-
    transaction durable proof. */
@@ -521,6 +658,19 @@ BEGIN
   END IF;
 
   IF NEW.origin_kind = 'capacity' THEN
+    IF upper(v_parent_status) = 'RUNNING'
+       AND NOT EXISTS (
+         SELECT 1
+           FROM public.tournament_capacity_table_receipts c
+          WHERE c.table_id = NEW.table_id
+            AND c.tournament_id = NEW.tournament_id
+       ) THEN
+      PERFORM public.fn_stage_a_bridge_legacy_capacity_receipt(
+        NEW.table_id,
+        NEW.tournament_id
+      );
+    END IF;
+
     IF upper(v_parent_status) <> 'RUNNING'
        OR NOT EXISTS (
          SELECT 1
@@ -712,6 +862,7 @@ DECLARE
   v_seat_source text;
   v_table_source text;
   v_origin_source text;
+  v_legacy_capacity_bridge_source text;
   v_capacity_source text;
   v_receipt_lock_at integer;
   v_parent_lock_at integer;
@@ -737,6 +888,10 @@ BEGIN
     FROM pg_proc p
    WHERE p.oid =
      'public.trg_validate_tournament_table_origin()'::regprocedure;
+  SELECT p.prosrc INTO STRICT v_legacy_capacity_bridge_source
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)'::regprocedure;
   SELECT p.prosrc INTO STRICT v_capacity_source
     FROM pg_proc p
    WHERE p.oid =
@@ -813,11 +968,35 @@ BEGIN
   END IF;
 
   IF position('tournament_capacity_table_receipts' IN v_origin_source) = 0
+     OR position(
+          'fn_stage_a_bridge_legacy_capacity_receipt' IN v_origin_source
+        ) = 0
      OR position('r.launch_id = NEW.launch_id' IN v_origin_source) = 0
      OR position('r.lease_generation = NEW.launch_lease_generation' IN v_origin_source) = 0
      OR position('r.completed_at IS NULL' IN v_origin_source) = 0
      OR position('ELSIF NEW.origin_kind = ''legacy'' THEN' IN v_origin_source) = 0 THEN
     RAISE EXCEPTION 'deferred table-origin proof lost capacity, exact launch, or honest legacy validation';
+  END IF;
+
+  IF position('request.headers' IN v_legacy_capacity_bridge_source) = 0
+     OR position('request.jwt.claims' IN v_legacy_capacity_bridge_source) = 0
+     OR position('auth.role()' IN v_legacy_capacity_bridge_source) = 0
+     OR position($needle$'legacy-unmarked'$needle$
+                 IN v_legacy_capacity_bridge_source) = 0
+     OR position($needle$v_method <> 'POST'$needle$
+                 IN v_legacy_capacity_bridge_source) = 0
+     OR position($needle$v_path <> 'tables'$needle$
+                 IN v_legacy_capacity_bridge_source) = 0
+     OR position('l.protocol_version = 1'
+                 IN v_legacy_capacity_bridge_source) = 0
+     OR position('v_stale_seconds constant integer := 30'
+                 IN v_legacy_capacity_bridge_source) = 0
+     OR position('FOR SHARE' IN v_legacy_capacity_bridge_source) = 0
+     OR position('fn_emit_tournament_manager_wake'
+                 IN v_legacy_capacity_bridge_source) = 0
+     OR position('INSERT INTO public.tournament_capacity_table_receipts'
+                 IN v_legacy_capacity_bridge_source) = 0 THEN
+    RAISE EXCEPTION 'Stage-A legacy capacity bridge is broad or non-canonical';
   END IF;
 
   IF NOT EXISTS (
@@ -879,6 +1058,11 @@ BEGIN
        'service_role',
        'public.fn_lock_tournament_launch_proof_parents(uuid[])',
        'EXECUTE'
+     )
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)',
+       'EXECUTE'
      ) THEN
     RAISE EXCEPTION 'launch table provenance or private lock helper ACL is unsafe';
   END IF;
@@ -888,6 +1072,7 @@ BEGIN
       FROM pg_proc p
      WHERE p.oid IN (
        'public.fn_lock_tournament_launch_proof_parents(uuid[])'::regprocedure,
+       'public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)'::regprocedure,
        'public.trg_lock_tournament_player_launch_proof()'::regprocedure,
        'public.trg_lock_and_validate_tournament_live_seat()'::regprocedure,
        'public.trg_lock_and_classify_tournament_table()'::regprocedure,

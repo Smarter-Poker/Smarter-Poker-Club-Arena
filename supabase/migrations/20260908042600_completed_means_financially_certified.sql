@@ -5,7 +5,8 @@
 -- the money and the terminal transition together.  This migration deliberately
 -- owns neither: it persists the canonical finish claim and writes an independent
 -- financial certificate in the SAME transaction as the domain RPC's status
--- update.  A direct or partially settled terminal write is refused.
+-- update. Stage B refuses a direct or partially settled terminal write after
+-- every older engine process has drained.
 --
 -- This migration makes the database own both boundaries:
 --
@@ -17,7 +18,7 @@
 --     for DB-first/application-first rolling compatibility.  It never pays and
 --     never changes tournament status.
 --
--- The trigger re-proves the sole winner, complete standings, exact obligations,
+-- The Stage-B triggers re-prove the sole winner, complete standings, exact obligations,
 -- zeroed escrow, synchronously settled and attributed rake, bounty completion,
 -- and the format-specific atomic settlement batch.  A refusal leaves the domain
 -- transaction uncommitted and therefore every payment re-drivable.  No cron,
@@ -728,6 +729,12 @@ CREATE TRIGGER aa_guard_tournament_completing_claim
 BEFORE UPDATE OF status ON public.tournaments
 FOR EACH ROW EXECUTE FUNCTION public.fn_guard_tournament_completing_claim();
 
+/* Stage A must coexist with an already-running engine that still claims a
+   finish through a direct RUNNING -> COMPLETING update. Install the exact guard
+   now, but leave it disabled until Stage B proves every old process drained. */
+ALTER TABLE public.tournaments
+  DISABLE TRIGGER aa_guard_tournament_completing_claim;
+
 CREATE OR REPLACE FUNCTION public.fn_certify_tournament_finish(
   p_tournament_id uuid,
   p_winner_user_id uuid,
@@ -811,7 +818,7 @@ GRANT EXECUTE ON FUNCTION public.fn_claim_tournament_finish(uuid,uuid,text)
 GRANT EXECUTE ON FUNCTION public.fn_certify_tournament_finish(uuid,uuid,text)
   TO service_role;
 
--- Install the only hot-table object as the final mutation in the transaction.
+-- Install the certificate hot-table object as the final catalog addition.
 -- CREATE/DROP TRIGGER takes ACCESS EXCLUSIVE on tournaments. The transaction's
 -- 250 ms lock budget makes a busy table abort the complete migration cleanly;
 -- no partial catalogue can become visible. PostgreSQL executes same-kind
@@ -826,6 +833,12 @@ FOR EACH ROW
 WHEN (NEW.status = 'COMPLETED' AND OLD.status IS DISTINCT FROM 'COMPLETED')
 EXECUTE FUNCTION public.fn_guard_tournament_completed_certificate();
 
+/* The same mixed-version window includes the older direct COMPLETING ->
+   COMPLETED write. Stage B enables this certificate guard together with the
+   claim guard and atomic place completion guard in one transaction. */
+ALTER TABLE public.tournaments
+  DISABLE TRIGGER zzzzzz_tournaments_financial_certificate;
+
 DO $verify$
 DECLARE
   v_src text;
@@ -838,12 +851,18 @@ BEGIN
      OR to_regprocedure('public.fn_tournament_finish_readiness(uuid,uuid)') IS NULL THEN
     RAISE EXCEPTION 'tournament finish contract function missing';
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger
+  IF (
+    SELECT count(*)
+      FROM pg_trigger
      WHERE tgrelid = 'public.tournaments'::regclass
-       AND tgname = 'zzzzzz_tournaments_financial_certificate' AND NOT tgisinternal
-  ) THEN
-    RAISE EXCEPTION 'financial completion trigger missing';
+       AND tgname IN (
+         'aa_guard_tournament_completing_claim',
+         'zzzzzz_tournaments_financial_certificate'
+       )
+       AND NOT tgisinternal
+       AND tgenabled = 'D'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Stage-A finish claim and certificate guards are not installed disabled';
   END IF;
   IF has_table_privilege('service_role','public.tournament_finish_receipts','INSERT')
      OR has_table_privilege('service_role','public.tournament_finish_receipts','UPDATE')
@@ -880,9 +899,10 @@ END;
 $verify$;
 
 -- Atomic domain migrations are installed immediately before this certificate
--- layer. A live engine can finish in that narrow deploy interval. Installing
--- the trigger above first closes the forward edge; this same transaction then
--- certifies only already-COMPLETED rows carrying a settled atomic domain batch.
+-- layer. A live engine can finish in that narrow deploy interval. This
+-- transaction certifies only already-COMPLETED rows carrying a settled atomic
+-- domain batch. Stage B repeats this proof while its trigger-enabling lock
+-- closes the complete mixed-version window.
 -- It never pays, changes standings, or rewrites tournament status. Any batch
 -- that cannot pass today's full proof aborts deployment instead of being
 -- grandfathered into a false certificate.

@@ -29,7 +29,7 @@ const expectedMetrics = [
   'poker_tournament_bounty_realtime_connected',
   'poker_tournament_manager_wake_realtime_connected',
   'poker_event_loop_delay_p50_ms',
-  'poker_equity_governor_sampler_late_ms',
+  'poker_main_event_loop_governor_sampler_late_ms',
 ];
 
 describe('realtime capacity alerts', () => {
@@ -92,20 +92,21 @@ describe('realtime capacity alerts', () => {
   it('keeps the existing sustained event-loop alert guarded and runbook-backed', () => {
     const warning = alert('EngineCoreOutOfHeadroom');
     expect(warning).toContain('poker_event_loop_delay_p50_ms > 40');
-    expect(warning).toContain('poker_equity_governor_sampler_late_ms > 40');
+    expect(warning).toContain('poker_main_event_loop_governor_sampler_late_ms > 40');
     expect(warning).toMatch(/for:\s*10m/);
     expect(warning).toContain('max_over_time(poker_maintenance_break_active[6m])');
     expect(warning).toContain('tournament-scheduler-and-engine-saturation.md');
 
     const rule = alert('EngineCoreSaturated');
     expect(rule).toContain('poker_event_loop_delay_p50_ms > 300');
-    expect(rule).toContain('poker_equity_governor_sampler_late_ms > 300');
+    expect(rule).toContain('poker_main_event_loop_governor_sampler_late_ms > 300');
     expect(rule).toMatch(/poker_event_loop_delay_p50_ms > 300\s+or /);
     expect(rule).not.toMatch(/\bor\s+on\(/);
     expect(rule).toMatch(/for:\s*5m/);
     expect(rule).toContain('max_over_time(poker_maintenance_break_active[6m])');
     expect(rule).toContain('tournament-scheduler-and-engine-saturation.md');
-    expect(rule).toContain('the 0.08 scale and 30-iteration deep floor');
+    expect(rule).toContain('poker_main_event_loop_governor_scale');
+    expect(rule).toContain('horse compute is isolated on a');
     expect(governor).toMatch(/if \(p50Ms < 1000\) return 0\.2;\s+return 0\.08;/);
     expect(runbook).toContain('1,000 ms or more should be 0.08');
   });

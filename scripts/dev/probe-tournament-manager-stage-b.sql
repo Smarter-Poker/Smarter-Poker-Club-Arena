@@ -69,7 +69,72 @@ $service_hook_execution_and_private_surface$;
 DO $probe$
 DECLARE
   v_denied boolean;
+  v_kind text;
+  v_result jsonb;
 BEGIN
+  FOREACH v_kind IN ARRAY ARRAY[
+    'place', 'late_reg_adjustment', 'bubble_protection',
+    'final_table_deal', 'satellite_remainder', 'seat'
+  ]::text[] LOOP
+    v_result := public.fn_settle_tournament_obligation(
+      '10000000-0000-4000-8000-000000000001', v_kind,
+      CASE WHEN v_kind IN ('place', 'late_reg_adjustment') THEN 1 ELSE NULL END,
+      '30000000-0000-4000-8000-000000000001', 1, 'pg17.stage_b', NULL, NULL
+    );
+    IF v_result->>'refused_reason' IS DISTINCT FROM 'atomic_batch_required' THEN
+      RAISE EXCEPTION 'public payer admitted pool kind %: %', v_kind, v_result;
+    END IF;
+  END LOOP;
+  v_result := public.fn_settle_tournament_obligation(
+    '10000000-0000-4000-8000-000000000001', 'refund', NULL,
+    '30000000-0000-4000-8000-000000000001', 1, 'pg17.stage_b', NULL, NULL
+  );
+  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'public payer stopped delegating a non-pool refund: %', v_result;
+  END IF;
+  IF (
+    SELECT count(*)
+      FROM pg_trigger t
+     WHERE t.tgrelid = 'public.tournaments'::regclass
+       AND t.tgname IN (
+         'aaa_guard_atomic_satellite_completion',
+         'aa_guard_tournament_completing_claim',
+         'zzzz_tournaments_atomic_place_completion_guard',
+         'zzzzz_tournaments_atomic_final_table_deal_completion_guard',
+         'zzzzzz_tournaments_financial_certificate',
+         'zzzz_tournament_pool_finalization_window_guard',
+         'zzzz_freeze_finalized_tournament_prize_pool'
+       )
+       AND NOT t.tgisinternal
+       AND t.tgenabled <> 'D'
+  ) <> 7 THEN
+    RAISE EXCEPTION 'Stage B did not activate all seven settlement guards';
+  END IF;
+
+  IF to_regprocedure(
+       'public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)'
+     ) IS NOT NULL THEN
+    RAISE EXCEPTION 'Stage B did not retire the raw legacy capacity bridge';
+  END IF;
+  IF (
+    SELECT count(*)
+      FROM public.tournament_table_origins o
+      JOIN public.tournament_capacity_table_receipts c
+        ON c.table_id = o.table_id
+       AND c.tournament_id = o.tournament_id
+      JOIN public.tournament_manager_wakes w
+        ON w.id = c.manager_wake_id
+     WHERE o.table_id IN (
+       '20000000-0000-4000-8000-000000000003',
+       '20000000-0000-4000-8000-000000000005'
+     )
+       AND o.origin_kind = 'capacity'
+       AND w.reason = 'late_registration'
+  ) <> 2 THEN
+    RAISE EXCEPTION
+      'Stage B lost canonical provenance for a Stage-A bridge-born table';
+  END IF;
+
   /* Headerless authenticated browser traffic remains valid. */
   PERFORM set_config('request.headers', '{}', true);
   PERFORM set_config('request.jwt.claims', '{"role":"authenticated"}', true);

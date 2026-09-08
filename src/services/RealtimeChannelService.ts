@@ -37,6 +37,7 @@ import type {
   HandReplayEventMessage,
 } from './EngineStateClient';
 import { reportError } from '../utils/errorReporter';
+import { readLocalSession } from '../lib/authUtils';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -135,6 +136,25 @@ function authHeader(): Record<string, string> {
 class RealtimeChannelService {
   private subscriptions: Map<string, SubscriptionRecord> = new Map();
   private presenceState: Map<string, ClubPresence[]> = new Map();
+  private authUserId = readLocalSession()?.userId ?? null;
+
+  /** Called synchronously by the existing MasterBus auth boundary. */
+  handleIdentityChange(userId: string | null): void {
+    if (userId === this.authUserId) return; // token refresh keeps the live subscription
+    this.authUserId = userId;
+    for (const [name, record] of this.subscriptions) {
+      for (const unlisten of record.unlisteners) {
+        try {
+          unlisten();
+        } catch (error) {
+          reportError(error, 'RealtimeChannelService.identity.' + name);
+        }
+      }
+    }
+    this.subscriptions.clear();
+    this.presenceState.clear();
+    engineChannelClient.resetSession(userId !== null);
+  }
 
   /** One server subscription can serve several independently mounted consumers. */
   private retainSubscription(

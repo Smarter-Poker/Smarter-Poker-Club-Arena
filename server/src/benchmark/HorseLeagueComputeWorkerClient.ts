@@ -1,5 +1,5 @@
 /**
- * Main-thread client for the isolated Horse League compute worker.
+ * Main-thread client for the isolated Horse League compute process.
  *
  * There is deliberately no synchronous fallback. If the worker cannot boot,
  * hydrate the solver corpus, answer heartbeats, or return a valid response,
@@ -8,7 +8,9 @@
  * boundary exists to prevent.
  */
 
-import { Worker } from 'node:worker_threads';
+import { fork, type ChildProcess } from 'node:child_process';
+import { constants as osConstants } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
@@ -30,6 +32,66 @@ interface WorkerLike {
   on(event: 'exit', listener: (code: number) => void): this;
   terminate(): Promise<number>;
   unref?(): void;
+}
+
+class LowPriorityComputeProcess implements WorkerLike {
+  constructor(private readonly child: ChildProcess) {}
+
+  postMessage(message: HorseLeagueComputeRequest): void {
+    if (!this.child.connected) {
+      throw new Error('horse league compute process IPC is closed');
+    }
+    this.child.send(message);
+  }
+
+  on(event: 'message', listener: (message: HorseLeagueComputeResponse) => void): this;
+  on(event: 'error', listener: (error: Error) => void): this;
+  on(event: 'exit', listener: (code: number) => void): this;
+  on(
+    event: 'message' | 'error' | 'exit',
+    listener:
+      | ((message: HorseLeagueComputeResponse) => void)
+      | ((error: Error) => void)
+      | ((code: number) => void)
+  ): this {
+    if (event === 'message') {
+      this.child.on('message', (message) =>
+        (listener as (value: HorseLeagueComputeResponse) => void)(
+          message as HorseLeagueComputeResponse
+        )
+      );
+    } else if (event === 'error') {
+      this.child.on('error', listener as (error: Error) => void);
+    } else {
+      this.child.on('exit', (code) => (listener as (value: number) => void)(code ?? 1));
+    }
+    return this;
+  }
+
+  terminate(): Promise<number> {
+    if (this.child.exitCode !== null) return Promise.resolve(this.child.exitCode);
+    return new Promise<number>((resolve) => {
+      let settled = false;
+      let killTimer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (code: number | null): void => {
+        if (settled) return;
+        settled = true;
+        if (killTimer) clearTimeout(killTimer);
+        resolve(code ?? 0);
+      };
+      this.child.once('exit', finish);
+      this.child.kill('SIGTERM');
+      killTimer = setTimeout(() => {
+        if (this.child.exitCode === null) this.child.kill('SIGKILL');
+      }, 5_000);
+      killTimer.unref?.();
+    });
+  }
+
+  unref(): void {
+    // Keep the IPC child referenced so shutdown can join its actual exit.
+    // The engine lifecycle explicitly terminates this process in finally.
+  }
 }
 
 export interface HorseLeagueComputeWorkerClientOptions {
@@ -64,10 +126,37 @@ export interface HorseLeagueCompute {
 }
 
 function defaultWorkerFactory(hydrateSolverStores: boolean): () => WorkerLike {
-  return () =>
-    new Worker(new URL('./HorseLeagueComputeWorker.js', import.meta.url), {
-      workerData: { hydrateSolverStores },
-    }) as WorkerLike;
+  return () => {
+    const extension = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
+    const childExecArgv: string[] = [];
+    for (let i = 0; i < process.execArgv.length; i++) {
+      const arg = process.execArgv[i];
+      if (arg === '-e' || arg === '--eval' || arg === '-p' || arg === '--print') {
+        i += 1;
+        continue;
+      }
+      if (arg === '--input-type') {
+        i += 1;
+        continue;
+      }
+      if (arg.startsWith('--input-type=')) continue;
+      childExecArgv.push(arg);
+    }
+    const child = fork(
+      fileURLToPath(new URL(`./HorseLeagueComputeProcess${extension}`, import.meta.url)),
+      [],
+      {
+        execArgv: childExecArgv,
+        env: {
+          ...process.env,
+          HORSE_LEAGUE_HYDRATE_SOLVER_STORES: hydrateSolverStores ? '1' : '0',
+        },
+        serialization: 'advanced',
+        stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      }
+    );
+    return new LowPriorityComputeProcess(child);
+  };
 }
 
 function currentSolverStores(): SolverStoreCounts {
@@ -85,6 +174,7 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
   private readonly expectedSolverStores: SolverStoreCounts;
   private readonly heartbeatTimeoutMs: number;
   private readonly cancelPollMs: number;
+  private readonly requireLowPriorityProcess: boolean;
   private readonly readyPromise: Promise<SolverStoreCounts>;
   private resolveReady!: (counts: SolverStoreCounts) => void;
   private rejectReady!: (error: Error) => void;
@@ -98,6 +188,7 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     this.expectedSolverStores = options.expectedSolverStores ?? currentSolverStores();
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? JOB_HEARTBEAT_TIMEOUT_MS;
     this.cancelPollMs = options.cancelPollMs ?? CANCEL_POLL_MS;
+    this.requireLowPriorityProcess = options.workerFactory === undefined;
     this.readyPromise = new Promise<SolverStoreCounts>((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
@@ -177,6 +268,17 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
   private onMessage(message: HorseLeagueComputeResponse): void {
     if (message.type === 'READY') {
       clearTimeout(this.readyTimer);
+      if (
+        this.requireLowPriorityProcess &&
+        message.executionNice !== osConstants.priority.PRIORITY_LOW
+      ) {
+        this.fail(
+          new Error(
+            `horse league compute process started at nice ${String(message.executionNice)}; expected ${osConstants.priority.PRIORITY_LOW}`
+          )
+        );
+        return;
+      }
       const missing = (
         Object.keys(this.expectedSolverStores) as Array<keyof SolverStoreCounts>
       ).filter((key) => message.solverStores[key] < this.expectedSolverStores[key]);

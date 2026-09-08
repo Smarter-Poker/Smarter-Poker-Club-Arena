@@ -221,7 +221,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
     });
   });
 
-  it('does not resolve settlement until the worker FIFO acknowledges observation', async () => {
+  it('returns after enqueue without waiting behind older worker FIFO jobs', async () => {
     const ack = deferred<{
       type: 'ACK';
       requestId: number;
@@ -231,16 +231,10 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
     }>();
     mockObserveCompletedHand.mockReturnValueOnce(ack.promise);
     const input = params(GLOBAL_HAND + 801);
-    let settled = false;
-
-    const pending = logHandHistory(input).then((result) => {
-      settled = true;
-      return result;
-    });
-    await vi.waitFor(() => expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1));
-
+    const result = await logHandHistory(input);
     expect(inserts()).toHaveLength(1);
-    expect(settled).toBe(false);
+    expect(result).toMatchObject({ handId: 'inserted', settlementCommitted: true });
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
     ack.resolve({
       type: 'ACK',
       requestId: 91,
@@ -248,9 +242,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       fence: `${input.tableId}:${input.handNumber}:legacy:observe`,
       operation: 'OBSERVE_COMPLETED_HAND',
     });
-
-    await expect(pending).resolves.toMatchObject({ handId: 'inserted' });
-    expect(settled).toBe(true);
+    await ack.promise;
   });
 
   it('reports a rejected observation without endangering the committed hand', async () => {
@@ -261,9 +253,11 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
 
     expect(result).toMatchObject({ handId: 'inserted', settlementCommitted: true });
     expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
-    expect(mockReportError).toHaveBeenCalledWith(
-      observationError,
-      'HandHistory.horse_mind_observation_failed'
+    await vi.waitFor(() =>
+      expect(mockReportError).toHaveBeenCalledWith(
+        observationError,
+        'HandHistory.horse_mind_observation_failed'
+      )
     );
   });
 

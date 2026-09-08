@@ -12,10 +12,17 @@ import { randomUUID } from 'node:crypto';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import {
+  HorseDecisionAbortedError,
   liveHorseDecisionWorkerStatus,
   startLiveHorseDecisionWorker,
   stopLiveHorseDecisionWorker,
 } from './engine/horseDecision/client.js';
+import {
+  EquityWorkerPoolAbortedError,
+  equityWorkerPoolStatus,
+  startEquityWorkerPool,
+  stopEquityWorkerPool,
+} from './engine/equity/EquityWorkerPool.js';
 import { nextHandGap } from './engine/nextHandGapRecorder.js';
 import { EngineTelemetry } from './engine/EngineTelemetry.js';
 import { evaluateEngineLiveness } from './engine/EngineLivenessVerdict.js';
@@ -68,6 +75,13 @@ import {
   horseDecisionWorkerOldestQueuedAgeMs,
   horseDecisionWorkerQueueDepth,
   horseDecisionWorkerReady,
+  equityWorkerPoolReady,
+  equityWorkerPoolConfiguredWorkers,
+  equityWorkerPoolReadyWorkers,
+  equityWorkerPoolBusyWorkers,
+  equityWorkerPoolQueueDepth,
+  equityWorkerPoolOldestQueuedAgeMs,
+  equityWorkerPoolLastCompletionAgeMs,
   mainEventLoopGovernorSamplerLateMs,
   mainEventLoopGovernorScale,
 } from './observability/engineInstruments.js';
@@ -1817,12 +1831,43 @@ export class GameServer {
      * Unexpected worker loss is process-fatal because silently replacing it
      * would reset RNG and learned-memory ordering inside active hands.
      */
-    await startLiveHorseDecisionWorker({
-      onFatal: (error) => {
-        this.revokeDealerPrerequisites(generation);
-        throw error;
-      },
-    });
+    try {
+      await startLiveHorseDecisionWorker({
+        onFatal: (error) => {
+          this.revokeDealerPrerequisites(generation);
+          throw error;
+        },
+      });
+    } catch (error) {
+      // stop() can intentionally cancel a worker that has not reached READY.
+      // That is a successful boot cancellation, not a fatal startup failure.
+      if (
+        error instanceof HorseDecisionAbortedError &&
+        !this.directAdmissionIsCurrent(generation)
+      ) {
+        return;
+      }
+      throw error;
+    }
+    if (!this.directAdmissionIsCurrent(generation)) return;
+
+    /**
+     * All-in equity and insurance are also hard realtime dependencies. Every
+     * configured worker must author a READY handshake before table discovery
+     * can route a hand here; degraded capacity removes this process from
+     * routing instead of moving calculator work back onto the table thread.
+     */
+    try {
+      await startEquityWorkerPool();
+    } catch (error) {
+      if (
+        error instanceof EquityWorkerPoolAbortedError &&
+        !this.directAdmissionIsCurrent(generation)
+      ) {
+        return;
+      }
+      throw error;
+    }
     if (!this.directAdmissionIsCurrent(generation)) return;
 
     // Step 1: Clean up stale data from previous runs.
@@ -2204,6 +2249,18 @@ export class GameServer {
       beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
       beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
     ];
+    // If shutdown lands while the worker is still hydrating, begin its
+    // cancellation before joining performStart(). No dealer can have been
+    // admitted before worker READY, so this cannot interrupt a live hand. A
+    // ready worker remains alive until every admitted dealer has drained below.
+    const startingHorseDecisionStop =
+      liveHorseDecisionWorkerStatus().phase === 'starting'
+        ? beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker)
+        : null;
+    const startingEquityWorkerStop =
+      equityWorkerPoolStatus().phase === 'starting'
+        ? beginOwnedStop('EquityWorkerPool', stopEquityWorkerPool)
+        : null;
     this.tournamentMetrics.stop();
     this.spinMetrics.stop();
     this.replicationMetrics.stop();
@@ -2456,14 +2513,26 @@ export class GameServer {
       }
     }
 
+    // No table can enqueue new compute after the dealer/manager drain. Abort
+    // and join every remaining equity operation before distributed ownership
+    // is released to a successor process.
+    const equityWorkerStop = await (startingEquityWorkerStop ??
+      beginOwnedStop('EquityWorkerPool', stopEquityWorkerPool));
+    if (equityWorkerStop.status === 'rejected') {
+      const error = new AggregateError(
+        [equityWorkerStop.reason],
+        'EquityWorkerPool did not certify shutdown'
+      );
+      reportError(error, 'GameServer.equity_worker_pool_shutdown_failed');
+      ownershipFailures.push(error);
+    }
+
     // The worker FIFO can contain the last completed-hand observation or a
     // decision already accepted before its table was fenced. Dealers and
     // managers must stop first; then this drain flushes the worker-owned mind,
     // telemetry and solver clocks before any distributed lease is released.
-    const horseDecisionStop = await beginOwnedStop(
-      'LiveHorseDecisionWorker',
-      stopLiveHorseDecisionWorker
-    );
+    const horseDecisionStop = await (startingHorseDecisionStop ??
+      beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker));
     if (horseDecisionStop.status === 'rejected') {
       const error = new AggregateError(
         [horseDecisionStop.reason],
@@ -2592,6 +2661,7 @@ export class GameServer {
   getStatus() {
     const now = Date.now();
     const liveHorseDecision = liveHorseDecisionWorkerStatus();
+    const equityWorkers = equityWorkerPoolStatus();
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
     const tableLiveness = this.tableLivenessSnapshot();
@@ -2942,11 +3012,15 @@ export class GameServer {
       // longer hydrates a second solver artifact whose status could look healthy
       // while the live action path was empty or failed.
       solverPolicyArtifact: liveHorseDecision.solverPolicyArtifact,
+      equityWorkerPool: equityWorkers,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
       status:
-        this.running && this.dealerPrerequisitesReady && liveHorseDecision.phase === 'ready'
+        this.running &&
+        this.dealerPrerequisitesReady &&
+        liveHorseDecision.phase === 'ready' &&
+        equityWorkers.phase === 'ready'
           ? 'ok'
           : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
@@ -3193,6 +3267,7 @@ export class GameServer {
       ...(() => {
         const main = equityGovernor.snapshot();
         const worker = liveHorseDecisionWorkerStatus();
+        const equityWorkers = equityWorkerPoolStatus();
         const workerGovernor = worker.governor;
 
         // Existing event-loop series retain their realtime-main-thread
@@ -3231,6 +3306,13 @@ export class GameServer {
             ? workerGovernor.timerLateMs
             : 0
         );
+        equityWorkerPoolReady.set(equityWorkers.phase === 'ready' ? 1 : 0);
+        equityWorkerPoolConfiguredWorkers.set(equityWorkers.configuredWorkers);
+        equityWorkerPoolReadyWorkers.set(equityWorkers.readyWorkers);
+        equityWorkerPoolBusyWorkers.set(equityWorkers.busyWorkers);
+        equityWorkerPoolQueueDepth.set(equityWorkers.queueDepth);
+        equityWorkerPoolOldestQueuedAgeMs.set(equityWorkers.oldestQueuedAgeMs);
+        equityWorkerPoolLastCompletionAgeMs.set(equityWorkers.lastCompletionAgeMs ?? -1);
         return [];
       })(),
       ...alwaysOnPrometheusLines(),

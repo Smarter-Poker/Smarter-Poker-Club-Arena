@@ -935,14 +935,14 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
   });
 
   it('an all-in seat whose discard the engine makes for it is announced too', () => {
-    // AUDIT 2026-08-31: resolvePendingPineappleDiscards spliced the card and
+    // AUDIT 2026-08-31: the forced-discard commit spliced the card and
     // emitted CARDS_DEALT only. No PLAYER_ACTION meant no toss, no cue, three
     // backs left on the felt, and the discard missing from hand_history - the
     // Phase 3 bug still alive on the one path a player cannot see coming.
     // CLAUDE.md 10.6: owed every time it is owed, not on the convenient paths.
     const resolve = sliceMethod(
       read('server/src/engine/HandController.ts'),
-      'private resolvePendingPineappleDiscards(): void {'
+      'public commitPreparedPineappleRunoutDiscards(flop: readonly Card[]): boolean {'
     );
     expect(resolve).toContain("action: 'discard'");
     expect(resolve).toContain("type: 'PLAYER_ACTION'");

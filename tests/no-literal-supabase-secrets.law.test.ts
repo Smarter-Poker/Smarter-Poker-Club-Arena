@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -16,12 +16,22 @@ describe('a Supabase server credential is never source code', () => {
 
   it('contains no literal production-shaped sb_secret key in a tracked file', () => {
     const root = resolve(process.cwd());
-    const files = execFileSync('git', ['ls-files', '-z'], {
-      cwd: root,
-      encoding: 'utf8',
-    })
-      .split('\0')
-      .filter(Boolean);
+    // Ask Git to identify the tiny candidate set instead of decoding every
+    // tracked binary and source file in every Vitest shard. The full-tree
+    // scan used to cross the test timeout under CI contention and turn a
+    // security law into a nondeterministic collection failure.
+    const scan = spawnSync(
+      'git',
+      ['grep', '-I', '-l', '-z', '-E', 'sb_secret_[A-Za-z0-9_-]+', '--'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+      }
+    );
+    if (scan.status !== 0 && scan.status !== 1) {
+      throw new Error(`git grep could not inspect tracked sources (status ${String(scan.status)})`);
+    }
+    const files = (scan.stdout ?? '').split('\0').filter(Boolean);
     const violations: string[] = [];
 
     for (const file of files) {

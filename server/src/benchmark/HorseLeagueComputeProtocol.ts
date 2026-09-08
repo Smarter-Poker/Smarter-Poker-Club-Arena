@@ -25,7 +25,7 @@ export type HorseLeagueComputeRequest =
   | { type: 'CANCEL'; jobId: number };
 
 export type HorseLeagueComputeResponse =
-  | { type: 'READY'; solverStores: SolverStoreCounts }
+  | { type: 'READY'; solverStores: SolverStoreCounts; executionNice?: number }
   | { type: 'HEARTBEAT'; jobId: number }
   | { type: 'MATCHUP_RESULT'; jobId: number; result: LeagueResult }
   | { type: 'AGREEMENT_RESULT'; jobId: number; result: AgreementResult }

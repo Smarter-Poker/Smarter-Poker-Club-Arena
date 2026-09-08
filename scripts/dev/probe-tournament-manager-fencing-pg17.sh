@@ -91,15 +91,142 @@ psql_cmd=("${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 -h "$socket_dir" -p "$port" -
   "$seat_first_atomic_migration" >/dev/null
 "${psql_cmd[@]}" -f \
   "$repo_dir/scripts/dev/probe-seat-first-atomic.sql"
+
+"${psql_cmd[@]}" -f \
+  "$repo_dir/scripts/dev/probe-stage-a-legacy-capacity.sql"
+
+browser_capacity_log="${probe_root}/stage-a-browser-capacity.log"
+if "${psql_cmd[@]}" -f \
+  "$repo_dir/scripts/dev/probe-stage-a-browser-capacity-denied.sql" \
+  >"$browser_capacity_log" 2>&1; then
+  echo 'Stage A let an authenticated browser use the legacy capacity bridge.' >&2
+  exit 1
+fi
+if ! grep -q 'TOURNAMENT_CAPACITY_RECEIPT_REQUIRED' "$browser_capacity_log"; then
+  cat "$browser_capacity_log" >&2
+  echo 'Stage-A browser capacity insert failed for an unexpected reason.' >&2
+  exit 1
+fi
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT count(*) FROM public.tables WHERE id='20000000-0000-4000-8000-000000000004'")" != '0' ]]; then
+  echo 'Rejected Stage-A browser table survived its failed transaction.' >&2
+  exit 1
+fi
+
+legacy_session_log="${probe_root}/legacy-capacity-session-a.log"
+"${psql_cmd[@]}" -f \
+  "$repo_dir/scripts/dev/probe-stage-a-legacy-capacity-session-a.sql" \
+  >"$legacy_session_log" 2>&1 &
+legacy_session_pid=$!
+
+legacy_ready='f'
+for _ in {1..80}; do
+  legacy_ready="$("${psql_cmd[@]}" -Atc \
+    "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=9080430 AND granted)")"
+  [[ "$legacy_ready" == 't' ]] && break
+  sleep 0.05
+done
+if [[ "$legacy_ready" != 't' ]]; then
+  wait "$legacy_session_pid" || true
+  cat "$legacy_session_log" >&2
+  echo 'Legacy table writer did not reach the Stage-A cutover boundary.' >&2
+  exit 1
+fi
+
+inflight_cutover_log="${probe_root}/inflight-legacy-cutover.log"
+if "${psql_cmd[@]}" -f "$stage_b_migration" \
+  >"$inflight_cutover_log" 2>&1; then
+  echo 'Stage B crossed an in-flight legacy raw table writer.' >&2
+  exit 1
+fi
+if ! grep -Eq 'could not obtain lock on relation "(public\.)?tables"' \
+  "$inflight_cutover_log"; then
+  cat "$inflight_cutover_log" >&2
+  echo 'Stage B refused the in-flight writer for an unexpected reason.' >&2
+  exit 1
+fi
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT to_regprocedure('public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)') IS NOT NULL")" != 't' ]]; then
+  echo 'Failed Stage-B attempt partially retired the Stage-A capacity bridge.' >&2
+  exit 1
+fi
+
+wait "$legacy_session_pid"
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT count(*) FROM public.tournament_table_origins o JOIN public.tournament_capacity_table_receipts c USING (table_id,tournament_id) JOIN public.tournament_manager_wakes w ON w.id=c.manager_wake_id WHERE o.table_id='20000000-0000-4000-8000-000000000005' AND o.origin_kind='capacity' AND w.reason='late_registration'")" != '1' ]]; then
+  cat "$legacy_session_log" >&2
+  echo 'In-flight Stage-A table did not commit canonical capacity provenance.' >&2
+  exit 1
+fi
+
+live_protocol_one_log="${probe_root}/live-protocol-one-cutover.log"
+if "${psql_cmd[@]}" -f "$stage_b_migration" \
+  >"$live_protocol_one_log" 2>&1; then
+  echo 'Stage B retired the bridge while a fresh protocol-1 lease remained.' >&2
+  exit 1
+fi
+if ! grep -q \
+  'a fresh protocol-1 tournament manager still owns a lease' \
+  "$live_protocol_one_log"; then
+  cat "$live_protocol_one_log" >&2
+  echo 'Stage B rejected a live protocol-1 manager for an unexpected reason.' >&2
+  exit 1
+fi
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT to_regprocedure('public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)') IS NOT NULL")" != 't' ]]; then
+  echo 'Protocol-1 refusal partially retired the Stage-A capacity bridge.' >&2
+  exit 1
+fi
+
+"${psql_cmd[@]}" -c \
+  "DELETE FROM public.engine_tournament_leases WHERE protocol_version=1;" \
+  >/dev/null
 # The post-commit migration has a full money-path rehearsal of its own. This
 # minimal authority fixture declares its exact 12-argument settlement and
 # processor catalog doors; the ordering check above prevents Stage B from ever
 # sorting before the real DB-first expand migration.
+"${psql_cmd[@]}" -c \
+  "INSERT INTO public.tournaments(id,name,status) VALUES ('10000000-0000-4000-8000-000000000099','Legacy Deal Carryover','RUNNING'); INSERT INTO public.tournament_final_table_deal_receipts(tournament_id) VALUES ('10000000-0000-4000-8000-000000000099');" \
+  >/dev/null
+carryover_log="${probe_root}/active-final-table-deal.log"
+if "${psql_cmd[@]}" -f "$stage_b_migration" >"$carryover_log" 2>&1; then
+  echo 'Stage B accepted an active final-table-deal receipt without a replayable terminal state.' >&2
+  exit 1
+fi
+if ! grep -q 'active final-table deal has a batch or payment evidence that cannot replay' \
+  "$carryover_log"; then
+  cat "$carryover_log" >&2
+  echo 'Stage B rejected the active final-table deal for an unexpected reason.' >&2
+  exit 1
+fi
+"${psql_cmd[@]}" -c \
+  "DELETE FROM public.tournament_final_table_deal_receipts WHERE tournament_id='10000000-0000-4000-8000-000000000099'; DELETE FROM public.tournaments WHERE id='10000000-0000-4000-8000-000000000099';" \
+  >/dev/null
+
 "${psql_cmd[@]}" -f \
   "$stage_b_migration" >/dev/null
 
 "${psql_cmd[@]}" -f \
   "$repo_dir/scripts/dev/probe-tournament-manager-stage-b.sql"
+
+post_cutover_capacity_log="${probe_root}/stage-b-legacy-capacity.log"
+if "${psql_cmd[@]}" -f \
+  "$repo_dir/scripts/dev/probe-stage-b-legacy-capacity-denied.sql" \
+  >"$post_cutover_capacity_log" 2>&1; then
+  echo 'Stage B still admitted a raw legacy tournament table insert.' >&2
+  exit 1
+fi
+if ! grep -q 'TOURNAMENT_CAPACITY_RECEIPT_REQUIRED' \
+  "$post_cutover_capacity_log"; then
+  cat "$post_cutover_capacity_log" >&2
+  echo 'Post-cutover raw table insert failed for an unexpected reason.' >&2
+  exit 1
+fi
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT count(*) FROM public.tables WHERE id='20000000-0000-4000-8000-000000000006'")" != '0' ]]; then
+  echo 'Rejected post-cutover raw table survived its failed transaction.' >&2
+  exit 1
+fi
 
 session_a_log="${probe_root}/session-a.log"
 "${psql_cmd[@]}" -f \

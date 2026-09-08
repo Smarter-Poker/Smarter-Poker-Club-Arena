@@ -3,15 +3,17 @@
  *  ONE SETTLE PATH FOR TOURNAMENT MONEY (chip accounting standard, Lane A2)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Every independent tournament obligation - refunds, bounties and satellite
- * awards - leaves through THIS module and the public classification gate
- * `fn_settle_tournament_obligation`. Normal structure places, late-registration
- * adjustments, Bubble Protection and final-table-deal shares are deliberately
- * refused by that public function: their atomic helpers submit the complete
- * batch, and only those SECURITY DEFINER batch functions may call the private
- * obligation core while the whole plan can still roll back. Nothing in the
- * engine may call `fn_credit_and_log`, `credit_player_wallet` or
- * `fn_credit_player_wallet_once` for a tournament outcome.
+ * Every independent non-pool tournament obligation, including refunds and
+ * bounties, leaves through THIS module and the public classification gate
+ * `fn_settle_tournament_obligation`. Every prize-pool kind is deliberately
+ * refused by that public function: structure places, late-registration
+ * adjustments, Bubble Protection, final-table deals, satellite cash remainder
+ * and satellite seats. Their atomic helpers submit the complete plan. Private
+ * obligation cores move obligation-backed pool money, while the satellite
+ * ticket helper proves its fully funded seat transfer inside the same atomic
+ * finish transaction. Nothing in the engine may call `fn_credit_and_log`,
+ * `credit_player_wallet` or `fn_credit_player_wallet_once` for a tournament
+ * outcome.
  * `OneSettlePathForTournamentMoney.law.test.ts` pins the primitive boundary;
  * the two atomic-settlement laws pin the complete-batch boundary.
  *
@@ -38,8 +40,8 @@
  * wallet, writes `tournament_payouts` and `wallet_transactions` under a key it
  * derives from the obligation row, and stamps `app.money_path` so the R3
  * trigger lets the credit through. A replay is `ok: true, paid: 0` - never an
- * error. Normal places and deal shares receive the same primitive only from
- * their all-or-none database batch.
+ * error. Prize-pool obligations receive the same primitive only from their
+ * all-or-none database batch.
  *
  * THE CONTRACT THIS MODULE KEEPS WITH ITS CALLERS:
  *

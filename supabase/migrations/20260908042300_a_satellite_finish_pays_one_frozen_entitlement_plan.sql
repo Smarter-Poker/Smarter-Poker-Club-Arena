@@ -441,8 +441,7 @@ DO $assert_active_satellite_economics$
 BEGIN
   IF EXISTS (
     SELECT 1
-      FROM public.tournament_entry_close_receipts r
-      JOIN public.tournaments t ON t.id=r.tournament_id
+      FROM public.tournaments t
       LEFT JOIN public.tournament_satellite_economic_snapshots s
         ON s.tournament_id=t.id
      WHERE s.tournament_id IS NULL
@@ -452,7 +451,7 @@ BEGIN
          OR t.satellite_target_id IS NOT NULL)
   ) THEN
     RAISE EXCEPTION
-      'an active satellite entry-close receipt has no provable start-time economics';
+      'an active satellite has no provable start-time economics; drain it before deploying atomic settlement';
   END IF;
 END;
 $assert_active_satellite_economics$;
@@ -1405,6 +1404,12 @@ CREATE TRIGGER aaa_guard_atomic_satellite_completion
 BEFORE UPDATE OF status ON public.tournaments
 FOR EACH ROW EXECUTE FUNCTION public.trg_guard_atomic_satellite_completion();
 
+/* An already-running Stage-A engine still settles satellite awards one leg at
+   a time and then writes COMPLETED directly. Keep the exact atomic guard
+   installed but disabled until Stage B runs after every older process drains. */
+ALTER TABLE public.tournaments
+  DISABLE TRIGGER aaa_guard_atomic_satellite_completion;
+
 REVOKE ALL ON FUNCTION public.trg_freeze_satellite_entitlement()
   FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.trg_freeze_satellite_economic_snapshot()
@@ -1498,6 +1503,14 @@ BEGIN
   IF (SELECT p.provolatile FROM pg_proc p
        WHERE p.oid='public.fn_check_atomic_satellite_finish(uuid)'::regprocedure)<>'v' THEN
     RAISE EXCEPTION 'satellite checker must see writes made earlier in the atomic settlement command';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t
+     WHERE t.tgrelid='public.tournaments'::regclass
+       AND t.tgname='aaa_guard_atomic_satellite_completion'
+       AND NOT t.tgisinternal AND t.tgenabled='D'
+  ) THEN
+    RAISE EXCEPTION 'Stage-A satellite completion guard is not installed disabled';
   END IF;
 END;
 $assertions$;

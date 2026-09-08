@@ -113,9 +113,9 @@ describe('throwable artwork readiness', () => {
 it('waits for a static premium image before allowing a legacy item to consume inventory', async () => {
   const { prepareThrowableArtwork } = await import('../../src/throwables/artwork');
   const ready = vi.fn();
-  const task = prepareThrowableArtwork('anvil').then(ready);
+  const task = prepareThrowableArtwork('magic_8_ball').then(ready);
   expect(images).toHaveLength(1);
-  expect(images[0].src).toContain('/images/throwables/stylized/anvil-320-');
+  expect(images[0].src).toContain('/images/throwables/stylized/magic_8_ball-320-');
   expect(ready).not.toHaveBeenCalled();
   images[0].naturalWidth = 320;
   images[0].naturalHeight = 320;

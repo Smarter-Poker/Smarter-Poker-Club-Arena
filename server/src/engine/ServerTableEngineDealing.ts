@@ -2746,6 +2746,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
     // Wait for hand to complete
     return new Promise<void>((resolve) => {
+      const controllerForHand = this.handController!;
       // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
       // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.
       // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
@@ -2753,8 +2754,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
       // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
       let unsub: () => void = () => {};
+      let handWaitReleased = false;
+      const releaseHandWait = (reason: string): void => {
+        if (handWaitReleased) return;
+        handWaitReleased = true;
+        try {
+          clearTimeout(handTimeout);
+          if (this.handSafetyTimer === handTimeout) this.handSafetyTimer = null;
+          unsub();
+        } catch (error) {
+          reportError(error, 'ServerTableEngine.' + this.tableId + '.hand_wait_release_failed', {
+            reason,
+            handNumber,
+          });
+        } finally {
+          if (this.activeHandWaitRelease?.controller === controllerForHand) {
+            this.activeHandWaitRelease = null;
+          }
+          if (this.handController === controllerForHand) this.handController = null;
+          this.runoutRevealActive = false;
+          resolve();
+        }
+      };
       const handTimeout = setTimeout(() => {
-        this.handSafetyTimer = null;
         // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
         // or superseded while the void timer was armed, the shared timers now
         // belong to the replacement engine — clearing them here would wipe the
@@ -2766,10 +2788,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // dealingLoop deal the next hand from a superseded instance — two
           // engines dealing one table. Local teardown only; never the shared
           // timers (they belong to the successor).
-          unsub();
-          this.handController = null;
-          this.runoutRevealActive = false;
-          resolve();
+          releaseHandWait('engine_stopped_or_superseded');
           return;
         }
         console.warn(
@@ -2780,7 +2799,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // late completion (e.g. a pending horse think-timer) could then fire the
         // HAND_COMPLETE branch and null the NEXT live hand's controller. Detach
         // the listener and cancel this table's action timers on timeout.
-        unsub();
         this.preciseTimer.clearTable(this.tableId);
         this.actionValidator.clearTable(this.tableId);
         /**
@@ -2810,14 +2828,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.bomb_completed_on_void')
           );
         }
-        this.handController = null;
-        this.runoutRevealActive = false;
-        resolve();
+        releaseHandWait('hand_safety_timeout');
       }, HAND_SAFETY_TIMEOUT_MS);
       // Track on the instance so stop()/killForRestart() can clear it.
       this.handSafetyTimer = handTimeout;
 
-      unsub = this.handController!.onEvent((event: HandEvent) => {
+      unsub = controllerForHand.onEvent((event: HandEvent) => {
         // 2026-08-15: handleHandEvent is async and its promise was discarded,
         // so ANY rejection inside it (broadcast, hub publish, settlement DB
         // write) vanished into index.ts's unhandled-rejection swallow while the
@@ -2831,10 +2847,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
 
         if (event.type === 'HAND_COMPLETE') {
-          clearTimeout(handTimeout);
-          this.handSafetyTimer = null;
-          unsub();
-
           // GUARD (2026-08-22): everything between here and resolve() used to
           // run unprotected inside HandController.emit's listener loop. A
           // throw from recordHandTiming or clearTurnTimer escaped back into
@@ -2856,19 +2868,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             reportError(e, 'ServerTableEngine.' + this.tableId + '.hand_complete_listener_threw');
           }
 
-          this.handController = null;
-          // ANIMATION AUDIT 2026-08-19: end of the all-in reveal window.
-          this.runoutRevealActive = false;
-          resolve();
+          releaseHandWait('hand_complete');
         }
       });
+      this.activeHandWaitRelease = {
+        controller: controllerForHand,
+        release: releaseHandWait,
+      };
 
       // Start the hand!
       try {
         // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
         // inherit a stale all-in reveal flag from an abnormal exit.
         this.runoutRevealActive = false;
-        this.handController!.start();
+        controllerForHand.start();
 
         // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.
         // C15: deliberately NOT coalesced. The hand-start snapshot is the anchor
@@ -2877,11 +2890,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         void this.flushSnapshot();
       } catch (err) {
         reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
-        clearTimeout(handTimeout);
-        this.handSafetyTimer = null;
-        unsub();
-        this.handController = null;
-        resolve();
+        releaseHandWait('hand_start_failed');
       }
     });
   }

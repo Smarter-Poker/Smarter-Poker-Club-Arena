@@ -105,6 +105,612 @@ BEGIN
 END;
 $require_stage_a_request_authority$;
 
+/* Contract the Stage-A tournament-settlement compatibility door only after the
+   exact atomic-batch engine is the sole running build. Stage A deliberately
+   kept this public signature behavior-compatible with older engines and kept
+   every format completion, certificate and pool-lifecycle trigger disabled.
+   The payer and all seven guards contract in this one transaction, so no state can expose one
+   strict boundary without the others. */
+DO $require_stage_a_tournament_settlement_expand$
+DECLARE
+  v_source text;
+  v_satellite_cash_source text;
+  v_satellite_guard_enabled boolean;
+  v_guard_enabled boolean;
+  v_final_deal_guard_enabled boolean;
+  v_finish_claim_guard_enabled boolean;
+  v_finish_certificate_guard_enabled boolean;
+  v_pool_window_guard_enabled boolean;
+  v_pool_freeze_guard_enabled boolean;
+BEGIN
+  IF to_regprocedure(
+       'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'
+     ) IS NULL
+     OR to_regprocedure(
+          'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.trg_tournament_atomic_place_completion_guard()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_settle_satellite_cash_entitlement_exact(uuid,text,integer,uuid,numeric,text)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.trg_guard_atomic_satellite_completion()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.trg_atomic_final_table_deal_completion_guard()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_guard_tournament_completing_claim()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_guard_tournament_completed_certificate()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.trg_tournament_pool_finalization_window_guard()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.trg_freeze_finalized_tournament_prize_pool()'
+        ) IS NULL THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A expand objects';
+  END IF;
+
+  SELECT pg_get_functiondef(
+           'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure
+         )
+    INTO v_source;
+  IF position('fn_settle_tournament_obligation_before_atomic_batch_gate('
+              IN v_source) = 0 THEN
+    RAISE EXCEPTION
+      'Refusing Stage-B contraction over an unknown single-obligation wrapper';
+  END IF;
+
+  SELECT pg_get_functiondef(
+           'public.fn_settle_satellite_cash_entitlement_exact(uuid,text,integer,uuid,numeric,text)'::regprocedure
+         )
+    INTO v_satellite_cash_source;
+  IF position('fn_settle_tournament_obligation_before_atomic_batch_gate('
+              IN v_satellite_cash_source) = 0
+     OR position('public.fn_settle_tournament_obligation('
+                 IN v_satellite_cash_source) > 0 THEN
+    RAISE EXCEPTION
+      'Stage-B requires the atomic satellite helper to use the private obligation core';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_satellite_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'aaa_guard_atomic_satellite_completion'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A satellite completion guard';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'zzzz_tournaments_atomic_place_completion_guard'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A completion guard';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_final_deal_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'zzzzz_tournaments_atomic_final_table_deal_completion_guard'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A final-table-deal completion guard';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_finish_claim_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'aa_guard_tournament_completing_claim'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A finish-claim guard';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_finish_certificate_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'zzzzzz_tournaments_financial_certificate'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A financial-certificate guard';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_pool_window_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'zzzz_tournament_pool_finalization_window_guard'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A pool-window guard';
+  END IF;
+
+  SELECT t.tgenabled <> 'D'
+    INTO v_pool_freeze_guard_enabled
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'zzzz_freeze_finalized_tournament_prize_pool'
+     AND NOT t.tgisinternal;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'Stage-B tournament settlement contraction requires the Stage-A finalized-pool guard';
+  END IF;
+
+  IF position('atomic_batch_required' IN v_source) = 0 THEN
+    IF position('FOR UPDATE' IN v_source) > 0
+       OR v_satellite_guard_enabled
+       OR v_guard_enabled
+       OR v_final_deal_guard_enabled
+       OR v_finish_claim_guard_enabled
+       OR v_finish_certificate_guard_enabled
+       OR v_pool_window_guard_enabled
+       OR v_pool_freeze_guard_enabled THEN
+      RAISE EXCEPTION
+        'Stage-A settlement expand objects are not in their compatible state';
+    END IF;
+  ELSIF position('v_kind' IN v_source) = 0
+        OR position('v_atomic_kinds' IN v_source) = 0
+        OR position('v_kind = ANY(v_atomic_kinds)' IN v_source) = 0
+        OR position('satellite_remainder' IN v_source) = 0
+        OR position($needle$'seat'$needle$ IN v_source) = 0
+        OR position('FOR UPDATE' IN v_source) > 0
+        OR position('v_is_satellite' IN v_source) > 0
+        OR NOT v_satellite_guard_enabled
+        OR NOT v_guard_enabled
+        OR NOT v_final_deal_guard_enabled
+        OR NOT v_finish_claim_guard_enabled
+        OR NOT v_finish_certificate_guard_enabled
+        OR NOT v_pool_window_guard_enabled
+        OR NOT v_pool_freeze_guard_enabled THEN
+    RAISE EXCEPTION
+      'Existing Stage-B settlement contract is incomplete';
+  END IF;
+END;
+$require_stage_a_tournament_settlement_expand$;
+
+/* Retire the raw-table rolling bridge at one explicit writer boundary. Lock
+   tables first because the old request obtains that relation before its
+   deferred validator locks a protocol-1 lease. NOWAIT makes a concurrent
+   legacy insert or wake/receipt writer abort this entire cutover without a
+   partial catalog change. Holding the lease relation EXCLUSIVE then prevents
+   a heartbeat or a bridge FOR SHARE lock from crossing the replacement. */
+LOCK TABLE public.tables IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_table_origins IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_capacity_table_receipts
+  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_manager_wakes IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
+
+DO $refuse_live_protocol_one_tournament_manager$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM public.engine_tournament_leases l
+     WHERE l.protocol_version = 1
+       AND l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+  ) THEN
+    RAISE EXCEPTION
+      'Stage-B cutover refused: a fresh protocol-1 tournament manager still owns a lease';
+  END IF;
+END;
+$refuse_live_protocol_one_tournament_manager$;
+
+/* Stage B preserves every already-committed bridge table as an ordinary
+   capacity origin with its canonical receipt. Only the transaction-time
+   synthesis is removed; all future capacity paths are receipt-only. */
+CREATE OR REPLACE FUNCTION public.trg_validate_tournament_table_origin()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_parent_status text;
+BEGIN
+  SELECT t.status::text INTO v_parent_status
+    FROM public.tournaments t
+   WHERE t.id = NEW.tournament_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'tournament table origin lost parent tournament %', NEW.tournament_id
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF NEW.origin_kind = 'capacity' THEN
+    IF upper(v_parent_status) <> 'RUNNING'
+       OR NOT EXISTS (
+         SELECT 1
+           FROM public.tournament_capacity_table_receipts c
+          WHERE c.table_id = NEW.table_id
+            AND c.tournament_id = NEW.tournament_id
+       ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CAPACITY_RECEIPT_REQUIRED: RUNNING table % must create its canonical capacity receipt in the same transaction',
+        NEW.table_id
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.origin_kind = 'launch' THEN
+    IF upper(v_parent_status) <> 'REGISTERING'
+       OR NOT EXISTS (
+         SELECT 1
+           FROM public.tournament_launch_receipts r
+          WHERE r.tournament_id = NEW.tournament_id
+            AND r.launch_id = NEW.launch_id
+            AND r.lease_generation = NEW.launch_lease_generation
+            AND r.completed_at IS NULL
+       ) THEN
+      RAISE EXCEPTION
+        'STALE_TOURNAMENT_LAUNCH_TABLE: table % does not belong to the exact incomplete launch receipt',
+        NEW.table_id
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.origin_kind = 'prelaunch' THEN
+    IF upper(v_parent_status) = 'RUNNING'
+       OR EXISTS (
+         SELECT 1
+           FROM public.tournament_launch_receipts r
+          WHERE r.tournament_id = NEW.tournament_id
+       ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_PRELAUNCH_ORIGIN_STALE: table % crossed a launch boundary in its birth transaction',
+        NEW.table_id
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.origin_kind = 'legacy' THEN
+    RETURN NEW;
+  ELSE
+    RAISE EXCEPTION 'unknown tournament table origin %', NEW.origin_kind
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP FUNCTION IF EXISTS public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)
+  RESTRICT;
+
+DO $assert_stage_a_legacy_capacity_bridge_retired$
+DECLARE
+  v_origin_source text;
+BEGIN
+  SELECT p.prosrc INTO STRICT v_origin_source
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.trg_validate_tournament_table_origin()'::regprocedure
+     AND p.prosecdef;
+
+  IF to_regprocedure(
+       'public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)'
+     ) IS NOT NULL
+     OR position('fn_stage_a_bridge_legacy_capacity_receipt'
+                 IN v_origin_source) > 0
+     OR position('tournament_capacity_table_receipts'
+                 IN v_origin_source) = 0
+     OR position('TOURNAMENT_CAPACITY_RECEIPT_REQUIRED'
+                 IN v_origin_source) = 0 THEN
+    RAISE EXCEPTION 'Stage-B capacity validation still has a legacy admission path';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_table_origins o
+     WHERE o.origin_kind = 'capacity'
+       AND NOT EXISTS (
+         SELECT 1
+           FROM public.tournament_capacity_table_receipts c
+          WHERE c.table_id = o.table_id
+            AND c.tournament_id = o.tournament_id
+       )
+  ) THEN
+    RAISE EXCEPTION 'Stage-B found a capacity origin without durable receipt provenance';
+  END IF;
+END;
+$assert_stage_a_legacy_capacity_bridge_retired$;
+
+/* Freeze the five ledgers that can reveal an in-flight legacy final-table
+   deal before inspecting them. A concurrent writer refuses this attempt;
+   holding these locks through COMMIT prevents a new one from crossing between
+   the proof and the strict payer/trigger activation. */
+LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_obligations IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_payouts IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_final_table_deal_batches
+  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_final_table_deal_receipts
+  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+
+DO $refuse_inflight_legacy_final_table_deal$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+     FROM public.tournaments t
+     WHERE upper(COALESCE(t.status, '')) IN ('RUNNING', 'COMPLETING')
+       AND (
+         EXISTS (
+           SELECT 1
+             FROM public.tournament_final_table_deal_batches b
+            WHERE b.tournament_id = t.id
+         )
+         OR EXISTS (
+           SELECT 1
+             FROM public.tournament_final_table_deal_receipts r
+            WHERE r.tournament_id = t.id
+         )
+         OR EXISTS (
+           SELECT 1
+             FROM public.tournament_obligations o
+            WHERE o.tournament_id = t.id
+              AND o.kind = 'final_table_deal'
+         )
+         OR EXISTS (
+           SELECT 1
+             FROM public.tournament_payouts p
+            WHERE p.tournament_id = t.id
+              AND p.source = 'final_table_deal'
+         )
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'an active final-table deal has a batch or payment evidence that cannot replay; drain or resolve it before Stage B';
+  END IF;
+END;
+$refuse_inflight_legacy_final_table_deal$;
+
+CREATE OR REPLACE FUNCTION public.fn_settle_tournament_obligation(
+  p_tournament_id uuid,
+  p_kind text,
+  p_place integer,
+  p_user_id uuid,
+  p_amount numeric,
+  p_source text,
+  p_description text DEFAULT NULL,
+  p_adjustment_id uuid DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_kind text := lower(btrim(COALESCE(p_kind, '')));
+  v_atomic_kinds CONSTANT text[] := ARRAY[
+    'place', 'late_reg_adjustment', 'bubble_protection',
+    'final_table_deal', 'satellite_remainder', 'seat'
+  ];
+BEGIN
+  /* Preserve the private core's canonical validation responses for malformed
+     calls and non-structure classes. Every valid structure class is private to
+     its complete atomic transaction, regardless of tournament format. */
+  IF p_tournament_id IS NULL OR p_user_id IS NULL
+     OR round(COALESCE(p_amount, 0), 2) < 0
+     OR v_kind NOT IN ('place','bounty','bounty_residual','mystery_bounty',
+                       'refund','seat','satellite_remainder',
+                       'bubble_protection','final_table_deal',
+                       'late_reg_adjustment')
+     OR (v_kind IN ('place', 'late_reg_adjustment') AND p_place IS NULL)
+     OR NOT (v_kind = ANY(v_atomic_kinds)) THEN
+    RETURN public.fn_settle_tournament_obligation_before_atomic_batch_gate(
+      p_tournament_id, p_kind, p_place, p_user_id, p_amount, p_source,
+      p_description, p_adjustment_id);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', false, 'paid', 0, 'already_paid', 0,
+    'refused_reason', 'atomic_batch_required', 'obligation_id', NULL,
+    'idempotency_key', NULL,
+    'detail', 'prize-pool money, including satellite seats and cash remainder, moves only inside its complete atomic batch');
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_obligation(
+  uuid, text, integer, uuid, numeric, text, text, uuid
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_obligation(
+  uuid, text, integer, uuid, numeric, text, text, uuid
+) TO service_role;
+
+COMMENT ON FUNCTION public.fn_settle_tournament_obligation(
+  uuid, text, integer, uuid, numeric, text, text, uuid
+) IS
+  'Strict Stage-B single-obligation payer for non-pool money. Every prize-pool kind, including satellite seats and cash remainder, is refused for every tournament format; only private cores inside complete atomic batch functions may move that money.';
+
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER aaa_guard_atomic_satellite_completion;
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER zzzz_tournaments_atomic_place_completion_guard;
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard;
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER aa_guard_tournament_completing_claim;
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER zzzzzz_tournaments_financial_certificate;
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER zzzz_tournament_pool_finalization_window_guard;
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER zzzz_freeze_finalized_tournament_prize_pool;
+
+/* Stage-A atomic completions can occur after the certificate migration's first
+   bounded backfill and before this cutover. The seven ENABLE statements hold
+   the tournament table lock until commit, so this exact repeat closes that
+   window: pre-cutover atomic completions receive a certificate, and every
+   post-cutover completion crosses the now-active trigger. It moves no money. */
+DO $certificate_atomic_stage_b_window$
+DECLARE
+  r record;
+  v_kind text;
+  v_winner uuid;
+  v_receipt public.tournament_finish_receipts%ROWTYPE;
+  v_ready jsonb;
+BEGIN
+  FOR r IN
+    SELECT t.id,t.ended_at
+      FROM public.tournaments t
+     WHERE t.status='COMPLETED'
+       AND (
+         EXISTS (SELECT 1 FROM public.tournament_place_settlement_batches b
+                  WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL)
+         OR EXISTS (SELECT 1 FROM public.tournament_final_table_deal_batches b
+                     WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL)
+         OR EXISTS (SELECT 1 FROM public.tournament_satellite_settlement_batches b
+                     WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL)
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_finish_receipts f
+          WHERE f.tournament_id=t.id AND f.certified_at IS NOT NULL
+       )
+     ORDER BY t.id
+  LOOP
+    v_kind:=public.fn_tournament_finish_kind(r.id);
+    IF v_kind='final_table_deal' THEN
+      SELECT b.chip_leader INTO v_winner
+        FROM public.tournament_final_table_deal_batches b
+       WHERE b.tournament_id=r.id AND b.settled_at IS NOT NULL;
+    ELSE
+      SELECT (array_agg(tp.user_id ORDER BY tp.user_id))[1] INTO v_winner
+        FROM public.tournament_players tp
+       WHERE tp.tournament_id=r.id AND tp.status='winner' AND tp.position=1;
+    END IF;
+    IF v_winner IS NULL THEN
+      RAISE EXCEPTION 'completed atomic tournament % has no unique domain winner',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+
+    INSERT INTO public.tournament_finish_receipts(
+      tournament_id,winner_user_id,finish_kind,claim_source)
+    VALUES(r.id,v_winner,v_kind,'certificate_stage_b_backfill')
+    ON CONFLICT (tournament_id) DO NOTHING;
+    SELECT * INTO v_receipt FROM public.tournament_finish_receipts
+     WHERE tournament_id=r.id FOR UPDATE;
+    IF v_receipt.winner_user_id IS DISTINCT FROM v_winner
+       OR v_receipt.finish_kind IS DISTINCT FROM v_kind THEN
+      RAISE EXCEPTION 'completed atomic tournament % conflicts with its finish receipt',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+
+    v_ready:=public.fn_tournament_finish_readiness(r.id,v_winner);
+    IF COALESCE((v_ready->>'ok')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'completed atomic tournament % cannot be backfill-certified: %',
+        r.id,COALESCE(v_ready->'failures','[]'::jsonb)
+        USING ERRCODE='check_violation';
+    END IF;
+    UPDATE public.tournament_finish_receipts
+       SET certified_at=COALESCE(certified_at,now()),
+           completed_at=COALESCE(completed_at,COALESCE(r.ended_at,now())),
+           evidence=COALESCE(evidence,v_ready),updated_at=now()
+     WHERE tournament_id=r.id;
+  END LOOP;
+END;
+$certificate_atomic_stage_b_window$;
+
+/* The atomic engines are now the only running builds, so retire the complete
+   deferred payout-repair graph in this contraction transaction. Stage A left
+   these exact RPCs and dispatch routes alive for rolling compatibility with
+   older processes. RESTRICT makes an unknown database dependency abort the
+   cutover instead of being cascade-dropped. */
+DO $retire_applying_rpc_authority$
+BEGIN
+  IF to_regprocedure('public.fn_tournament_payout_sweep(integer,boolean,integer)')
+     IS NOT NULL THEN
+    EXECUTE
+      'REVOKE ALL ON FUNCTION public.fn_tournament_payout_sweep(integer, boolean, integer) FROM PUBLIC, anon, authenticated, service_role';
+  END IF;
+  IF to_regprocedure('public.fn_ca_backpay_guarantee_shortfalls(boolean,integer)')
+     IS NOT NULL THEN
+    EXECUTE
+      'REVOKE ALL ON FUNCTION public.fn_ca_backpay_guarantee_shortfalls(boolean, integer) FROM PUBLIC, anon, authenticated, service_role';
+  END IF;
+  IF to_regprocedure('public.sp_ca_reconcile_backpaid_events(boolean)')
+     IS NOT NULL THEN
+    EXECUTE
+      'REVOKE ALL ON PROCEDURE public.sp_ca_reconcile_backpaid_events(boolean) FROM PUBLIC, anon, authenticated, service_role';
+  END IF;
+  IF to_regclass('public.ca_settle_sources') IS NOT NULL THEN
+    EXECUTE
+      'DELETE FROM public.ca_settle_sources WHERE lower(source) = ANY($1)'
+      USING ARRAY[
+        'reconcile',
+        'fn_tournament_payout_reconcile',
+        'fn_pay_backed_payout_shortfalls',
+        'fn_ca_backpay_guarantee_shortfalls',
+        'fn_tournament_payout_sweep',
+        'sp_ca_reconcile_backpaid_events',
+        'fn_backpay_hu_winner_shortfalls'
+      ]::text[];
+  END IF;
+END;
+$retire_applying_rpc_authority$;
+
+/* A removed RPC must not remain discoverable as a dormant money path. The
+   historical payout and alert rows stay intact; only executable and dispatch
+   authority is retired. */
+DELETE FROM public.ca_money_rpc_registry
+ WHERE proname IN (
+   'fn_tournament_payout_reconcile',
+   'fn_pay_backed_payout_shortfalls',
+   'fn_ca_backpay_guarantee_shortfalls',
+   'fn_tournament_payout_sweep',
+   'sp_ca_reconcile_backpaid_events',
+   'fn_backpay_hu_winner_shortfalls'
+ );
+
+DO $retire_applying_sweep$
+BEGIN
+  IF to_regnamespace('cron') IS NOT NULL THEN
+    PERFORM cron.unschedule(j.jobid)
+      FROM cron.job j
+     WHERE j.jobname = 'ca-payout-sweep-hourly'
+        OR j.command ~* '(fn_tournament_payout_sweep|fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)';
+  END IF;
+END;
+$retire_applying_sweep$;
+
+DO $retire_legacy_roster$
+BEGIN
+  IF to_regclass('public.ca_expected_cron_jobs') IS NOT NULL THEN
+    EXECUTE 'DELETE FROM public.ca_expected_cron_jobs WHERE jobname = $1'
+      USING 'ca-payout-sweep-hourly';
+  END IF;
+END;
+$retire_legacy_roster$;
+
+DROP PROCEDURE IF EXISTS public.sp_ca_reconcile_backpaid_events(boolean) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_tournament_payout_sweep(integer, boolean, integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_pay_backed_payout_shortfalls(boolean, integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_ca_backpay_guarantee_shortfalls(boolean, integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_backpay_hu_winner_shortfalls(integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_tournament_payout_reconcile(uuid, boolean) RESTRICT;
+
+/* These two findings describe failures of the retired applying sweep itself,
+   not proof that a player's shortfall was repaired. Every obligation and
+   player-money finding stays open. */
+UPDATE public.financial_alerts
+   SET resolved = true,
+       resolved_at = now(),
+       resolution =
+         'The applying payout repair cron was retired by the Stage-B atomic tournament settlement cutover. This closes only the retired sweep operation and does not close any player-money finding.'
+ WHERE resolved IS NOT TRUE
+   AND source IN ('fn_tournament_payout_sweep',
+                  'fn_tournament_payout_sweep_truncated');
+
 REVOKE ALL ON SCHEMA smarter_private
   FROM PUBLIC, anon, authenticated, service_role, authenticator;
 GRANT USAGE ON SCHEMA smarter_private TO anon, authenticated, service_role;
@@ -710,9 +1316,12 @@ $assert_seat_first_repair_retired$;
 
 DO $assert_strict_manager_request_fence$
 DECLARE
+  v_legacy_roster_has_job boolean := false;
   v_hook_source text;
   v_scope_source text;
   v_row_guard_source text;
+  v_single_obligation_source text;
+  v_satellite_cash_source text;
 BEGIN
   SELECT p.prosrc INTO STRICT v_hook_source
     FROM pg_proc p
@@ -729,6 +1338,14 @@ BEGIN
    WHERE p.oid =
          'public.trg_tournament_manager_write_scope()'::regprocedure
      AND p.prosecdef;
+  SELECT pg_get_functiondef(
+           'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure
+         )
+    INTO STRICT v_single_obligation_source;
+  SELECT pg_get_functiondef(
+           'public.fn_settle_satellite_cash_entitlement_exact(uuid,text,integer,uuid,numeric,text)'::regprocedure
+         )
+    INTO STRICT v_satellite_cash_source;
 
   IF position('TOURNAMENT_MANAGER_AUTHORITY_REQUIRED' IN v_hook_source) = 0
      OR position('ENGINE_DATA_AUTHORITY_REQUIRED' IN v_hook_source) = 0
@@ -746,6 +1363,145 @@ BEGIN
      OR position('OLD.table_id = ANY(v_deleted_table_ids)' IN v_row_guard_source) = 0
      OR position('pg_trigger_depth() > 1' IN v_row_guard_source) = 0 THEN
     RAISE EXCEPTION 'Stage-B route authority or manager row scope is incomplete';
+  END IF;
+
+  IF position('v_kind' IN v_single_obligation_source) = 0
+     OR position('v_atomic_kinds' IN v_single_obligation_source) = 0
+     OR position('v_kind = ANY(v_atomic_kinds)'
+                 IN v_single_obligation_source) = 0
+     OR position('FOR UPDATE' IN v_single_obligation_source) > 0
+     OR position('v_is_satellite' IN v_single_obligation_source) > 0
+     OR position('late_reg_adjustment' IN v_single_obligation_source) = 0
+     OR position('bubble_protection' IN v_single_obligation_source) = 0
+     OR position('final_table_deal' IN v_single_obligation_source) = 0
+     OR position('satellite_remainder' IN v_single_obligation_source) = 0
+     OR position($needle$'seat'$needle$ IN v_single_obligation_source) = 0
+     OR position('atomic_batch_required' IN v_single_obligation_source) = 0
+     OR position('fn_settle_tournament_obligation_before_atomic_batch_gate('
+                 IN v_single_obligation_source) = 0
+     OR has_function_privilege(
+          'anon',
+          'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'authenticated',
+          'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)',
+          'EXECUTE'
+        )
+     OR NOT has_function_privilege(
+          'service_role',
+          'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)',
+          'EXECUTE'
+        ) THEN
+    RAISE EXCEPTION 'Stage-B single-obligation settlement boundary is not strict';
+  END IF;
+
+  IF position('fn_settle_tournament_obligation_before_atomic_batch_gate('
+              IN v_satellite_cash_source) = 0
+     OR position('public.fn_settle_tournament_obligation('
+                 IN v_satellite_cash_source) > 0 THEN
+    RAISE EXCEPTION 'Stage-B atomic satellite payer does not use its private core';
+  END IF;
+
+  IF (
+    SELECT count(*)
+      FROM pg_trigger t
+     WHERE t.tgrelid = 'public.tournaments'::regclass
+       AND t.tgname IN (
+         'aaa_guard_atomic_satellite_completion',
+         'aa_guard_tournament_completing_claim',
+         'zzzz_tournaments_atomic_place_completion_guard',
+         'zzzzz_tournaments_atomic_final_table_deal_completion_guard',
+         'zzzzzz_tournaments_financial_certificate',
+         'zzzz_tournament_pool_finalization_window_guard',
+         'zzzz_freeze_finalized_tournament_prize_pool'
+       )
+       AND NOT t.tgisinternal
+       AND t.tgenabled <> 'D'
+  ) <> 7 THEN
+    RAISE EXCEPTION 'Stage-B finish, certificate or pool-lifecycle guard is not enabled';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public'
+       AND p.proname IN (
+         'fn_tournament_payout_reconcile',
+         'fn_pay_backed_payout_shortfalls',
+         'fn_ca_backpay_guarantee_shortfalls',
+         'fn_tournament_payout_sweep',
+         'sp_ca_reconcile_backpaid_events',
+         'fn_backpay_hu_winner_shortfalls'
+       )
+  ) THEN
+    RAISE EXCEPTION 'a deferred tournament payout reconciliation routine remains installed';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM public.ca_money_rpc_registry
+     WHERE proname IN (
+       'fn_tournament_payout_reconcile',
+       'fn_pay_backed_payout_shortfalls',
+       'fn_ca_backpay_guarantee_shortfalls',
+       'fn_tournament_payout_sweep',
+       'sp_ca_reconcile_backpaid_events',
+       'fn_backpay_hu_winner_shortfalls'
+     )
+  ) THEN
+    RAISE EXCEPTION 'a retired tournament payout reconciliation route remains registered';
+  END IF;
+
+  /* Keep cron.job in a statement reached only when the cron extension exists. PostgreSQL
+     resolves relations while preparing a statement, so a combined boolean
+     expression still breaks a development database without that extension. */
+  IF to_regnamespace('cron') IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'ca-payout-sweep-hourly') THEN
+      RAISE EXCEPTION 'the applying payout repair cron is still scheduled';
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM cron.job
+       WHERE active
+         AND command ~* '(fn_tournament_payout_sweep|fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)'
+    ) THEN
+      RAISE EXCEPTION 'a deferred tournament payout reconciliation command is still scheduled';
+    END IF;
+  END IF;
+  IF to_regclass('public.ca_settle_sources') IS NOT NULL THEN
+    EXECUTE
+      'SELECT EXISTS (SELECT 1 FROM public.ca_settle_sources WHERE lower(source) = ANY($1))'
+      INTO v_legacy_roster_has_job
+      USING ARRAY[
+        'reconcile',
+        'fn_tournament_payout_reconcile',
+        'fn_pay_backed_payout_shortfalls',
+        'fn_ca_backpay_guarantee_shortfalls',
+        'fn_tournament_payout_sweep',
+        'sp_ca_reconcile_backpaid_events',
+        'fn_backpay_hu_winner_shortfalls'
+      ]::text[];
+    IF v_legacy_roster_has_job THEN
+      RAISE EXCEPTION 'retired reconcile sources can still settle obligations directly';
+    END IF;
+  END IF;
+  IF to_regclass('public.ca_expected_cron_jobs') IS NOT NULL THEN
+    EXECUTE
+      'SELECT EXISTS (SELECT 1 FROM public.ca_expected_cron_jobs WHERE jobname = $1)'
+      INTO v_legacy_roster_has_job
+      USING 'ca-payout-sweep-hourly';
+    IF v_legacy_roster_has_job THEN
+      RAISE EXCEPTION 'the retired payout repair cron is still in the expected roster';
+    END IF;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.financial_alerts
+     WHERE resolved IS NOT TRUE
+       AND source IN ('fn_tournament_payout_sweep',
+                      'fn_tournament_payout_sweep_truncated')
+  ) THEN
+    RAISE EXCEPTION 'a retired applying payout sweep finding is still open';
   END IF;
 
   IF to_regprocedure('public.claim_tournament_lease(uuid,text,text,integer)')

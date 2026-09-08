@@ -94,10 +94,10 @@ describe('no money path writes a ledger row it did not earn', () => {
   const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
   const cutoverFile = fs
     .readdirSync(MIGRATIONS)
-    .filter((name) => name.endsWith('_tournament_places_settle_and_complete_atomically.sql'))
+    .filter((name) => name.endsWith('_tournament_manager_request_fencing_is_strict.sql'))
     .sort()
     .at(-1);
-  if (!cutoverFile) throw new Error('atomic tournament place cutover migration is missing');
+  if (!cutoverFile) throw new Error('strict Stage-B tournament cutover migration is missing');
   const CUTOVER = sql(fs.readFileSync(path.join(MIGRATIONS, cutoverFile), 'utf8'));
 
   it('the deferred reconciler is dropped, not retained as a detector', () => {

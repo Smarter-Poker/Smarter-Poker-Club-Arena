@@ -930,6 +930,13 @@ FOR EACH ROW
 WHEN (NEW.status = 'COMPLETED' AND OLD.status IS DISTINCT FROM 'COMPLETED')
 EXECUTE FUNCTION public.trg_atomic_final_table_deal_completion_guard();
 
+/* A legacy deal may already have written its payout rows before this migration
+   lands, then complete through its old application tail. The public deal RPC
+   below makes every new call atomic; Stage B enables this completion guard only
+   after in-flight older calls have drained. */
+ALTER TABLE public.tournaments
+  DISABLE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard;
+
 CREATE OR REPLACE FUNCTION public.fn_settle_final_table_deal_atomic(
   p_tournament_id uuid
 ) RETURNS jsonb
@@ -2291,9 +2298,9 @@ BEGIN
     SELECT 1 FROM pg_trigger
      WHERE tgrelid = 'public.tournaments'::regclass
        AND tgname = 'zzzzz_tournaments_atomic_final_table_deal_completion_guard'
-       AND NOT tgisinternal AND tgenabled <> 'D'
+       AND NOT tgisinternal AND tgenabled = 'D'
   ) THEN
-    RAISE EXCEPTION 'atomic final-table-deal completion guard is not enabled';
+    RAISE EXCEPTION 'Stage-A final-table-deal completion guard is not installed disabled';
   END IF;
   IF to_regprocedure('public.trg_lock_atomic_final_table_deal_status()') IS NULL
      OR NOT EXISTS (

@@ -30,6 +30,9 @@ describe('live HorseLogic has one lifecycle owner', () => {
     expect(code.slice(workerStart, cleanup)).toContain('onFatal: (error) =>');
     expect(code.slice(workerStart, cleanup)).toContain('throw error;');
     expect(code.slice(workerStart, cleanup)).toContain(
+      'error instanceof HorseDecisionAbortedError &&'
+    );
+    expect(code.slice(workerStart, cleanup)).toContain(
       'if (!this.directAdmissionIsCurrent(generation)) return;'
     );
   });
@@ -39,7 +42,7 @@ describe('live HorseLogic has one lifecycle owner', () => {
     const dealerJoin = stop.indexOf(
       'const [engineStopResults, managerStopResults] = await Promise.all('
     );
-    const workerStop = stop.indexOf('stopLiveHorseDecisionWorker');
+    const workerStop = stop.indexOf('stopLiveHorseDecisionWorker', dealerJoin);
     const ownershipFailure = stop.indexOf('ownershipFailures.push(error)', workerStop);
     const ownershipGate = stop.indexOf('if (ownershipFailures.length > 0)', workerStop);
     const cashRelease = stop.indexOf('await releaseTables(cashLeaseClaims)', workerStop);
@@ -49,6 +52,20 @@ describe('live HorseLogic has one lifecycle owner', () => {
     expect(ownershipFailure).toBeGreaterThan(workerStop);
     expect(ownershipGate).toBeGreaterThan(ownershipFailure);
     expect(cashRelease).toBeGreaterThan(ownershipGate);
+  });
+
+  it('cancels a worker still hydrating before joining boot', () => {
+    const stop = blankNonCode(sliceMethod(gameServerSource, 'private async performStop('));
+    const startupCancellation = stop.indexOf('const startingHorseDecisionStop =');
+    const bootJoin = stop.indexOf('await this.startOperation.catch(');
+    const dealerJoin = stop.indexOf(
+      'const [engineStopResults, managerStopResults] = await Promise.all('
+    );
+    const finalWorkerJoin = stop.indexOf('startingHorseDecisionStop ??', dealerJoin);
+
+    expect(startupCancellation).toBeGreaterThan(-1);
+    expect(startupCancellation).toBeLessThan(bootJoin);
+    expect(finalWorkerJoin).toBeGreaterThan(dealerJoin);
   });
 
   it('publishes worker phase, queue and worker-owned solver health', () => {

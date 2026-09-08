@@ -723,9 +723,10 @@ $function$;
 -- A non-bounty place is also one accounting event. The old engine stamped
 -- status/position/prize first and only then created the payable obligation;
 -- a crash in that gap left a row that looked fully recorded but had never
--- moved money. This transaction couples the zero-stack CAS, exact place
--- obligation/payment and tournament-scoped seat release. A CAS race raises so
--- any credit performed earlier in this same call rolls back with it.
+-- reached terminal settlement. This transaction couples the zero-stack CAS,
+-- exact result and tournament-scoped seat release. Place and Bubble money wait
+-- for the finalized all-or-none tournament batch, where a provisional open-
+-- registration ladder cannot become a payout.
 CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic(
   p_tournament_id uuid,
   p_user_id uuid,
@@ -740,16 +741,15 @@ AS $function$
 DECLARE
   v_t public.tournaments%ROWTYPE;
   v_p public.tournament_players%ROWTYPE;
-  v_settle jsonb;
-  v_place_obligation public.tournament_obligations%ROWTYPE;
-  v_bubble_settle jsonb;
-  v_bubble_obligation public.tournament_obligations%ROWTYPE;
   v_changed integer;
   v_released_tables uuid[] := ARRAY[]::uuid[];
 BEGIN
   IF p_position < 2 OR p_prize IS NULL OR p_prize < 0
      OR p_bubble_refund IS NULL OR p_bubble_refund < 0 THEN
     RETURN jsonb_build_object('ok',false,'reason','invalid_place_or_prize');
+  END IF;
+  IF p_bubble_refund <> 0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','bubble_refund_requires_finalized_batch');
   END IF;
   SELECT * INTO v_t FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','tournament_not_found'); END IF;
@@ -771,87 +771,11 @@ BEGIN
        OR round(COALESCE(v_p.prize,0),2) <> round(p_prize,2) THEN
       RETURN jsonb_build_object('ok',false,'reason','elimination_identity_conflict');
     END IF;
-    IF p_prize > 0 AND NOT EXISTS (
-      SELECT 1 FROM public.tournament_obligations o
-       WHERE o.tournament_id=p_tournament_id AND o.kind='place'
-         AND o.place=p_position AND o.user_id=p_user_id
-         AND round(o.amount_owed,2)=round(p_prize,2)
-         AND round(o.amount_paid,2)=round(p_prize,2)
-         AND o.settled_at IS NOT NULL
-    ) THEN
-      RETURN jsonb_build_object('ok',false,'reason','eliminated_place_not_paid');
-    END IF;
-    IF p_bubble_refund > 0 AND NOT EXISTS (
-      SELECT 1 FROM public.tournament_obligations o
-       WHERE o.tournament_id=p_tournament_id AND o.kind='bubble_protection'
-         AND o.user_id=p_user_id AND o.place IS NULL
-         AND round(o.amount_owed,2)=round(p_bubble_refund,2)
-         AND round(o.amount_paid,2)=round(p_bubble_refund,2)
-         AND o.settled_at IS NOT NULL
-    ) THEN
-      RETURN jsonb_build_object('ok',false,'reason','eliminated_bubble_not_paid');
-    END IF;
     RETURN jsonb_build_object('ok',true,'already',true,'position',v_p.position,'prize',v_p.prize);
   END IF;
   IF v_p.status <> 'playing' OR COALESCE(v_p.chips,0) > 0 THEN
     RETURN jsonb_build_object('ok',false,'reason','not_busted');
   END IF;
-  IF p_bubble_refund>0 AND (NOT COALESCE(v_t.bubble_protection,false) OR p_prize>0) THEN
-    RETURN jsonb_build_object('ok',false,'reason','invalid_bubble_refund');
-  END IF;
-
-  IF p_prize > 0 THEN
-    v_settle := public.fn_settle_tournament_obligation(
-      p_tournament_id,'place',p_position,p_user_id,round(p_prize,2),
-      'engine.eliminatePlayer',
-      format('Tournament prize: position %s',p_position));
-    IF NOT COALESCE((v_settle->>'ok')::boolean,false) THEN
-      -- fn_settle_tournament_obligation may already have inserted or raised
-      -- amount_owed on its durable obligation before discovering a refusal.
-      -- A normal RETURN would commit that half-operation while leaving this
-      -- player playing. Raise so the entire elimination transaction rewinds.
-      RAISE EXCEPTION 'place payment refused: %',COALESCE(v_settle::text,'null')
-        USING ERRCODE='check_violation';
-    END IF;
-    SELECT * INTO v_place_obligation
-      FROM public.tournament_obligations o
-     WHERE o.id=(v_settle->>'obligation_id')::uuid
-       AND o.tournament_id=p_tournament_id AND o.kind='place'
-       AND o.place=p_position AND o.user_id=p_user_id
-     FOR UPDATE;
-    IF NOT FOUND
-       OR round(v_place_obligation.amount_owed,2) <> round(p_prize,2)
-       OR round(v_place_obligation.amount_paid,2) <> round(p_prize,2)
-       OR v_place_obligation.settled_at IS NULL THEN
-      RAISE EXCEPTION 'place payment did not produce the exact durable receipt'
-        USING ERRCODE='check_violation';
-    END IF;
-  END IF;
-
-  IF p_bubble_refund > 0 THEN
-    v_bubble_settle := public.fn_settle_tournament_obligation(
-      p_tournament_id,'bubble_protection',NULL,p_user_id,round(p_bubble_refund,2),
-      'engine.eliminatePlayer',
-      format('Bubble protection: buy-in returned (bubbled at position %s)',p_position));
-    IF NOT COALESCE((v_bubble_settle->>'ok')::boolean,false) THEN
-      RAISE EXCEPTION 'bubble protection payment refused: %',COALESCE(v_bubble_settle::text,'null')
-        USING ERRCODE='check_violation';
-    END IF;
-    SELECT * INTO v_bubble_obligation
-      FROM public.tournament_obligations o
-     WHERE o.id=(v_bubble_settle->>'obligation_id')::uuid
-       AND o.tournament_id=p_tournament_id AND o.kind='bubble_protection'
-       AND o.place IS NULL AND o.user_id=p_user_id
-     FOR UPDATE;
-    IF NOT FOUND
-       OR round(v_bubble_obligation.amount_owed,2)<>round(p_bubble_refund,2)
-       OR round(v_bubble_obligation.amount_paid,2)<>round(p_bubble_refund,2)
-       OR v_bubble_obligation.settled_at IS NULL THEN
-      RAISE EXCEPTION 'bubble protection did not produce the exact durable receipt'
-        USING ERRCODE='check_violation';
-    END IF;
-  END IF;
-
   UPDATE public.tournament_players
      SET status='eliminated',position=p_position,prize=round(p_prize,2),eliminated_at=now()
    WHERE tournament_id=p_tournament_id AND user_id=p_user_id
@@ -876,9 +800,7 @@ BEGIN
   PERFORM public.fn_sync_seat_first_player_count(p_tournament_id);
 
   RETURN jsonb_build_object('ok',true,'claimed',true,'position',p_position,
-                            'prize',round(p_prize,2),'settlement',v_settle,
-                            'bubble_refund',round(p_bubble_refund,2),
-                            'bubble_settlement',v_bubble_settle);
+                            'prize',round(p_prize,2),'bubble_refund',0);
 END;
 $function$;
 
@@ -1035,10 +957,6 @@ DECLARE
   v_latest_joined_at timestamptz;
   v_position integer;
   v_prize numeric;
-  v_place_settle jsonb;
-  v_place_obligation public.tournament_obligations%ROWTYPE;
-  v_bubble_settle jsonb;
-  v_bubble_obligation public.tournament_obligations%ROWTYPE;
   v_claimed boolean := false;
   v_existing public.tournament_bounty_obligations%ROWTYPE;
   v_activation_generation bigint := 0;
@@ -1048,6 +966,9 @@ BEGIN
      OR p_hand_id IS NULL OR p_hand_number IS NULL OR p_hand_number < 1000000
      OR p_seat_joined_at IS NULL OR p_bubble_refund IS NULL OR p_bubble_refund<0 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'missing_identity');
+  END IF;
+  IF p_bubble_refund <> 0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','bubble_refund_requires_finalized_batch');
   END IF;
 
   IF p_claimants IS NOT NULL THEN
@@ -1134,9 +1055,6 @@ BEGIN
   END IF;
   v_position := p_position;
   v_prize := p_prize;
-  IF p_bubble_refund>0 AND (NOT COALESCE(v_t.bubble_protection,false) OR v_prize>0) THEN
-    RETURN jsonb_build_object('ok',false,'reason','invalid_bubble_refund');
-  END IF;
   -- The seat generation closes the rebuy/re-bust ambiguity. An old zero hand
   -- from the same physical table cannot authorize a newer seat.
   IF NOT EXISTS (
@@ -1297,52 +1215,6 @@ BEGIN
     RETURN jsonb_build_object('ok',false,'reason','exact_head_value_not_found');
   END IF;
 
-  IF v_prize > 0 THEN
-      v_place_settle := public.fn_settle_tournament_obligation(
-        p_tournament_id,'place',v_position,p_eliminated_user_id,round(v_prize,2),
-        'engine.eliminatePlayer',
-        format('Tournament prize: position %s',v_position));
-      IF NOT COALESCE((v_place_settle->>'ok')::boolean,false) THEN
-        RAISE EXCEPTION 'bounty elimination place payment refused: %',
-          COALESCE(v_place_settle::text,'null') USING ERRCODE='check_violation';
-      END IF;
-      SELECT * INTO v_place_obligation
-        FROM public.tournament_obligations o
-       WHERE o.id=(v_place_settle->>'obligation_id')::uuid
-         AND o.tournament_id=p_tournament_id AND o.kind='place'
-         AND o.place=v_position AND o.user_id=p_eliminated_user_id
-       FOR UPDATE;
-      IF NOT FOUND
-         OR round(v_place_obligation.amount_owed,2) <> round(v_prize,2)
-         OR round(v_place_obligation.amount_paid,2) <> round(v_prize,2)
-         OR v_place_obligation.settled_at IS NULL THEN
-        RAISE EXCEPTION 'bounty elimination place payment did not produce the exact durable receipt'
-          USING ERRCODE='check_violation';
-      END IF;
-  END IF;
-  IF p_bubble_refund>0 THEN
-      v_bubble_settle := public.fn_settle_tournament_obligation(
-        p_tournament_id,'bubble_protection',NULL,p_eliminated_user_id,
-        round(p_bubble_refund,2),'engine.eliminatePlayer',
-        format('Bubble protection: buy-in returned (bubbled at position %s)',v_position));
-      IF NOT COALESCE((v_bubble_settle->>'ok')::boolean,false) THEN
-        RAISE EXCEPTION 'bounty bubble protection payment refused: %',
-          COALESCE(v_bubble_settle::text,'null') USING ERRCODE='check_violation';
-      END IF;
-      SELECT * INTO v_bubble_obligation
-        FROM public.tournament_obligations o
-       WHERE o.id=(v_bubble_settle->>'obligation_id')::uuid
-         AND o.tournament_id=p_tournament_id AND o.kind='bubble_protection'
-         AND o.place IS NULL AND o.user_id=p_eliminated_user_id
-       FOR UPDATE;
-      IF NOT FOUND
-         OR round(v_bubble_obligation.amount_owed,2)<>round(p_bubble_refund,2)
-         OR round(v_bubble_obligation.amount_paid,2)<>round(p_bubble_refund,2)
-         OR v_bubble_obligation.settled_at IS NULL THEN
-        RAISE EXCEPTION 'bounty bubble protection did not produce the exact durable receipt'
-          USING ERRCODE='check_violation';
-      END IF;
-  END IF;
   UPDATE public.tournament_players
      SET status = 'eliminated', position = p_position, prize = p_prize,
          eliminated_at = now()
@@ -1350,10 +1222,10 @@ BEGIN
      AND user_id = p_eliminated_user_id
      AND status = 'playing' AND chips <= 0;
   IF NOT FOUND THEN
-    -- A paid place and the bounty/status claim are one transaction. A CAS
-    -- miss after settlement must undo the credit rather than commit a paid
-    -- place beside a still-playing row.
-    RAISE EXCEPTION 'bounty elimination CAS missed after locked settlement'
+    -- The status, exact knockout outbox and seat release are one transaction.
+    -- A CAS miss must undo the outbox rather than leave a payable bounty claim
+    -- beside a still-playing row. Place and Bubble money are not moved here.
+    RAISE EXCEPTION 'bounty elimination CAS missed after locked claim'
       USING ERRCODE='serialization_failure';
   END IF;
   v_claimed := true;
@@ -1392,8 +1264,7 @@ BEGIN
       WHERE o.tournament_id=p_tournament_id AND o.eliminated_user_id=p_eliminated_user_id
         AND o.seat_joined_at=p_seat_joined_at),
     'activation_generation',v_activation_generation,
-    'place_settlement',v_place_settle,
-    'bubble_refund',round(p_bubble_refund,2),'bubble_settlement',v_bubble_settle,
+    'bubble_refund',0,
     'obligation_id',(SELECT id FROM public.tournament_bounty_obligations o
       WHERE o.tournament_id=p_tournament_id AND o.eliminated_user_id=p_eliminated_user_id
         AND o.seat_joined_at=p_seat_joined_at));

@@ -2,7 +2,7 @@
 
 ## Current state, 2026-09-08
 
-38/47 existing non-glove rigs now use premium moving artwork. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. The premium frontend branch is pushed and PR #3673 is in CI. Hetzner publication is not yet verified.
+44/47 existing non-glove rigs now have premium moving artwork integrated locally, including bear/shark and the anvil/ghost/UFO batch. The complete handoff scope is 80 unique IDs (48 original including the glove, plus 32 additions), as enumerated in COVERAGE-CATALOGUE.json. Run `node scripts/dev/throwable-coverage.mjs --write` to regenerate source inventory. File presence is not full acceptance. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. PR #3673 merged and published through Hetzner as c864fbe1acf170bbf2ad34d5022267223356e699. Both origin and public route served this SHA, and all 181 artwork files per origin matched source bytes (362 checks). Pizza is the subsequent 39th rig. PR #3682, including audio deadline follow-up 07b76db354723adb3a6ea5341b17a6da160cd1e8, merged as f0f47d31ed8d32ea401ea10ea8e81b39fbdf3025. Both production routes now report descendant 8eaf501468bb1ccc15f00a09c25944f6178841dd, containing the pizza merge; exhaustive asset verification for the newer release remains pending.
 
 - Added heart, angry_emoji and cool_sunglasses_emoji. Independent heartbeat accents, progressive anger/shout/flames and dropping glasses/lens glint replace static landing-only behavior.
 - All 40 runtime atlases are lossless WebP: 40,685,060 bytes versus 56,890,941 source PNG bytes, 28.5% smaller. Both machines verified exact alpha and visible RGB preservation for all 40. Sources are under art-source/animated, outside the public deployment tree. Production media optimization preserves verified atlas bytes.
@@ -10,13 +10,23 @@
 - Receipt retry protection and removal of the post-payment client cooldown are now present in the full isolated checkout as well as this snapshot. Authenticated event receipts and shared wire identity are still pending.
 - Full isolated-checkout TypeScript and all 16,346 client tests across 1,188 files pass after the picker, cutout, account-response ownership and draft-member-policy changes. After a clean merge of origin/main, full TypeScript and the production build passed at 28e81ca4 with behind-main=0. All 141 built picker thumbnails match their hashed source bytes and all 39 then-integrated atlases are byte-identical. The chicken integration subsequently passed full TypeScript, 25 focused checks and a clean production build at ee90152b with behind-main=0; all 40 built atlases and 141 thumbnail hashes match.
 - All 47 approved non-glove picker stills are wired locally as 141 versioned WebP thumbnails, about 4.61 MB. Actual component browser QA covers all 47 on dark/light backgrounds, 94 decoded cutouts and no page errors. Narrow matte thresholds preserve dark bodies and cuffs. Small icons now decode the correct 192px bucket, with a real black-sphere opacity regression test.
-- Live database pack-credit fix is migration 20260908021633; actual consumption timestamps are migration 20260908023324. Both were applied and live source/privileges verified. Synthetic local PostgreSQL checks total 25. The 30-member monthly allowance was applied as 20260908040103; its live function hash and unchanged execute privileges were verified. VIP 500 and Lifetime unlimited behavior remain covered. The file was renamed from its reserved draft version to match the returned production ledger version.
+- Live database pack-credit fix is migration 20260908021633; actual consumption timestamps are migration 20260908023324. Both were applied and live source/privileges verified. Synthetic local PostgreSQL checks total 28. The 30-member monthly allowance was applied as 20260908040103; its live function hash and unchanged execute privileges were verified. VIP 500 and Lifetime unlimited behavior remain covered. The file was renamed from its reserved draft version to match the returned production ledger version.
 
-Remaining original rigs: anvil, bear, ghost, lightning_bolt, magic_8_ball, pizza_slice, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates; CI/publication and deployed SHA verification.
+Remaining original rigs: lightning_bolt, magic_8_ball, skull. Bear/shark animation sources passed 63 focused checks, full TypeScript and browser speed/reduced-motion checks, but their organic sound, bear vein mark and final morsel review remain pending. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates for future batches; pizza CI/publication and deployed SHA verification.
 
-Publication route: user clarified the Club Arena-to-Hetzner destination and continued the release. Standard branch push succeeded, pre-push hooks ran without bypass, and autopilot opened PR #3673. The earlier upload approval blocker is resolved. Follow CI/autopilot and publish-club-arena.yml; no manual merge or alternate publisher.
+Publication route: user clarified the Club Arena-to-Hetzner destination and continued the release. Standard branch push succeeded, pre-push hooks ran without bypass, and autopilot merged PR #3673. CI run 34186048786 passed all applicable jobs; publisher run 34186369801 delivered the verified release. The earlier upload approval blocker is resolved. Follow CI/autopilot and publish-club-arena.yml; no manual merge or alternate publisher.
 
-## Latest visual sequence: Chicken
+## Latest reliability fixes
+
+Audio response and body reads now have ten-second deadlines per container, permitting AAC fallback and a later retry after a stalled request. Six audio lifecycle tests and 37 combined audio/grammar/class-resolution checks pass with full TypeScript. The unused static pepperoni class that failed initial CI was removed; no gate budget was raised.
+
+Production pack expiry is rechecked using actual time when the credit is consumed, including after a row-lock wait. A credit expiring during that wait yields to the next valid pack before diamonds. Migration 20260908045142 is applied; MD5 9db52098a228a7be9f9c89ed5bf122a0; anonymous execute denied, authenticated allowed. PR #3688 carries the matching migration and 28-check PostgreSQL evidence, pushed as dbacf9e3fc8317c54c5319ec10e555f9a5b9344d. PR #3688 merged into main as bfb4c5a2e1.
+
+## Latest visual sequence: Pizza
+
+Face-down impact, sliding smear, stretching cheese tether, peel at 2200 ms, falling slice and cheese drop, pepperoni remaining on the forehead. Genuine transparent RGBA source replaces two rejected checkerboard outputs. 32 focused checks, 11 browser captures and 15 speed samples passed, with zero reduced-motion animations or page errors. Bespoke cheese and peel audio remain pending; an existing packaged wet impact cue plays.
+
+## Previous visual sequence: Chicken
 
 Chicken uses four authored poses: landing pop, downward peck, four head-up bobs, wide-beak cluck and four half-open ending bobs. The source sheet is unchanged and losslessly encoded. Recorded cluck/bawk sounds remain pending; only the packaged landing pop plays. The four newest sequences together passed 60 normalized-speed samples at 0.5/1/2, 44 beat/scale captures, zero reduced-motion animations and zero page errors. The payload-and-cue preview decodes 12 audio containers. This is not an authenticated table-flow test.
 
@@ -114,3 +124,11 @@ Still pending: 26 bespoke moving rigs; premium picker wiring; final art fringe/c
 ## 2026-09-08: Ten More Sequences
 
 31/47 non-glove rigs integrated locally, 16 still pending. Added thumbs_up, thumbs_down, star, diamond, basketball, football, tennis_ball, bowling_ball, coffee, magnet. 104 focused tests pass. Native atlas dimensions and source-directed returns fixed at the renderer/player. All 124 audio containers decode and meet the level floor. See docs/changelog/2026-09-08-throwable-sports-reactions-coffee-magnet.md for exact choreography, evidence and limitations. No push or publication.
+
+## Avatar-copy batch
+
+Anvil, ghost and UFO use read-only target-avatar copies scoped to their own table. Only these rigs request readback. Disabled avatars are not invented, srcset currentSrc is preserved, and an unavailable or tainted canvas does not break the real seat. The originals, cards, stacks and actions are never mutated. Anvil slams with dust and a flatten/pop gag; ghost passes twice and chills the copy; UFO lifts and shrinks the copy into its beam and returns it after departure.
+
+77 focused checks, full checkout TypeScript, 29 browser captures and 45 normalized speed samples passed. Reduced motion leaves zero animations and the harness reports no page errors. The new anvil source is real RGBA (SHA256 b2c1c6edadf5134a62152c0f0033afb4d3c7816750f49c968115009e951a5a08); the generated RGB checkerboard attempt was rejected. Bespoke sound acceptance and full authenticated device flows remain pending.
+
+Bear/shark PR #3696 merged as b07947266fb79601a720d0a51d2588898de88f46. Anvil/ghost/UFO publication is not yet verified.

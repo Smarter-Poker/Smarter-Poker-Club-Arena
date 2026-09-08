@@ -431,13 +431,15 @@ export async function logHandHistory(params: {
 
   // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
   // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
-  // HorseLogic in the sole worker FIFO. Awaiting this cheap observation before
-  // settlement returns guarantees the next hand cannot decide against stale
-  // opponent memory, while never splitting mutable HorseMind state across two
-  // threads. The durable hand commit above remains independent.
+  // HorseLogic in the sole worker FIFO. Enqueueing establishes the ordering:
+  // this observation is ahead of every decision the table can request next.
+  // Waiting for its ACK here would instead hold this table's settlement behind
+  // older work from every other table in the process. Graceful worker shutdown
+  // drains every accepted entry, so the durable hand commit can return as soon
+  // as the observation has been accepted into the FIFO.
   try {
     const handKey = `${params.tableId}:${params.handNumber}`;
-    await getLiveHorseDecisionWorker().observeCompletedHand({
+    const observation = getLiveHorseDecisionWorker().observeCompletedHand({
       generation: params.handNumber,
       fence: [
         params.tableId,
@@ -455,6 +457,9 @@ export async function logHandHistory(params: {
         params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0
       ),
     });
+    void observation.catch((error) =>
+      reportError(error, 'HandHistory.horse_mind_observation_failed')
+    );
   } catch (error) {
     reportError(error, 'HandHistory.horse_mind_observation_failed');
     /* observation must never endanger settlement */

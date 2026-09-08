@@ -19,6 +19,7 @@ vi.mock('../financialAlerts.js', () => ({
 }));
 
 import { syncStacks } from './tables.js';
+import { pendingWriteCount, resetPendingWrites } from './pendingWrites.js';
 
 const PLAYERS = [
   { user_id: 'player-a', stack: 0, stack_before: 100 },
@@ -26,10 +27,12 @@ const PLAYERS = [
 ];
 
 beforeEach(() => {
+  resetPendingWrites();
   vi.clearAllMocks();
 });
 
 afterEach(() => {
+  resetPendingWrites();
   vi.useRealTimers();
 });
 
@@ -53,14 +56,24 @@ describe('syncStacks reports whether the authoritative stack write landed', () =
     await expect(syncStacks('table-a', PLAYERS, 43, { rake: 0, bbj: 0 })).resolves.toBe(false);
   });
 
-  it('returns false after bounded transport retries are exhausted', async () => {
+  it('returns false after bounded inline retries, then lands the write off-path', async () => {
     vi.useFakeTimers();
     rpc.mockRejectedValue(new Error('transport down'));
 
     const result = syncStacks('table-a', PLAYERS, 44, { rake: 0, bbj: 0 });
-    await vi.runAllTimersAsync();
+    // Four bounded inline backoffs: 200 + 400 + 800 + 1,600ms. Advancing only
+    // that budget proves the dealing-path result without draining the durable
+    // retry interval that deliberately continues after syncStacks returns.
+    await vi.advanceTimersByTimeAsync(3_000);
 
     await expect(result).resolves.toBe(false);
     expect(rpc).toHaveBeenCalledTimes(5);
+    expect(pendingWriteCount()).toBe(1);
+
+    rpc.mockResolvedValue({ data: { success: true, replay: false }, error: null });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(rpc).toHaveBeenCalledTimes(6);
+    expect(pendingWriteCount()).toBe(0);
   });
 });

@@ -43,13 +43,18 @@
  */
 
 import type React from 'react';
+import type { AvatarSnapshot } from './avatarSnapshot';
 
 export interface RigProps {
   /** Instance-unique, safe for id attributes. Build every def id from it. */
   uid: string;
+  /** Read-only copy of the target from this table, when visible. */
+  targetAvatar?: AvatarSnapshot;
 }
 
 export interface ThrowableRig {
+  /** Only copy-based gags request avatar readback. */
+  needsTargetAvatar?: boolean;
   Projectile: React.FC<RigProps>;
   Payload: React.FC<RigProps>;
 }

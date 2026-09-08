@@ -1,3 +1,9 @@
+import { spec as ufoSpec, rig as ufoRig } from './rigs/ufo';
+import { spec as ghostSpec, rig as ghostRig } from './rigs/ghost';
+import { spec as anvilSpec, rig as anvilRig } from './rigs/anvil';
+import { spec as sharkSpec, rig as sharkRig } from './rigs/shark';
+import { spec as bearSpec, rig as bearRig } from './rigs/bear';
+import { spec as pizzaSliceSpec, rig as pizzaSliceRig } from './rigs/pizza_slice';
 import { spec as chickenSpec, rig as chickenRig } from './rigs/chicken';
 import { spec as dogeSpec, rig as dogeRig } from './rigs/doge';
 import { spec as cryingemojiSpec, rig as cryingemojiRig } from './rigs/crying_emoji';
@@ -58,6 +64,12 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  ufo: { spec: ufoSpec, rig: ufoRig },
+  ghost: { spec: ghostSpec, rig: ghostRig },
+  anvil: { spec: anvilSpec, rig: anvilRig },
+  shark: { spec: sharkSpec, rig: sharkRig },
+  bear: { spec: bearSpec, rig: bearRig },
+  pizza_slice: { spec: pizzaSliceSpec, rig: pizzaSliceRig },
   chicken: { spec: chickenSpec, rig: chickenRig },
   doge: { spec: dogeSpec, rig: dogeRig },
   crying_emoji: { spec: cryingemojiSpec, rig: cryingemojiRig },

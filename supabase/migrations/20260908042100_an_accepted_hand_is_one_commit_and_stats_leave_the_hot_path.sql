@@ -1215,7 +1215,7 @@ $function$;
 
 -- The accepted-hand transaction above creates one immutable knockout
 -- generation. Consume that exact generation in the same transaction as the
--- status/payment RPC. Without this bridge, a delayed sweep can reuse an old
+-- status/result RPC. Without this bridge, a delayed sweep can reuse an old
 -- zero-stack observation after a rebuy and eliminate the new entry.
 --
 -- The predecessor names are intentionally retained for the DB-first rolling
@@ -1381,7 +1381,7 @@ DECLARE
   v_result jsonb;
 BEGIN
   -- The predecessor takes the same tournament/player locks. Taking them first
-  -- here makes the candidate check and the eventual payout/status mutation one
+  -- here makes the candidate check and the eventual result/status mutation one
   -- serial transaction, including exact replays after a lost HTTP response.
   PERFORM 1 FROM public.tournaments t
    WHERE t.id=p_tournament_id FOR UPDATE;

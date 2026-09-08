@@ -86,6 +86,7 @@ interface QueuedJob {
   abortListener?: () => void;
   settled: boolean;
   enqueuedAt: number;
+  deadlineTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
@@ -144,7 +145,6 @@ export class LiveHorseDecisionWorkerClient {
   private readonly queue: QueuedJob[] = [];
   private active: QueuedJob | null = null;
   private activeStartedAt: number | null = null;
-  private activeDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
   private dispatchHoldDepth = 0;
   /** Insert commits after work queued before the barrier, before causal successors. */
   private priorityInsertIndex: number | null = null;
@@ -156,6 +156,7 @@ export class LiveHorseDecisionWorkerClient {
   private rejectStop: ((error: Error) => void) | null = null;
   private shutdownPosted = false;
   private shutdownAcknowledged = false;
+  private startupCancellationInProgress = false;
   private fatalNotified = false;
   private terminationPromise: Promise<void> | null = null;
   private readonly readyTimer: ReturnType<typeof setTimeout>;
@@ -175,8 +176,12 @@ export class LiveHorseDecisionWorkerClient {
     // Keep the readiness rejection observed without altering its semantics.
     void this.readyPromise.catch(() => undefined);
     this.worker = (options.workerFactory ?? defaultWorkerFactory)();
-    this.worker.on('message', (message) => this.onMessage(message));
-    this.worker.on('error', (error) => this.fail(error));
+    this.worker.on('message', (message) => {
+      if (!this.startupCancellationInProgress) this.onMessage(message);
+    });
+    this.worker.on('error', (error) => {
+      if (!this.startupCancellationInProgress) this.fail(error);
+    });
     this.worker.on('exit', (code) => {
       if (!this.shutdownAcknowledged && this.phase !== 'stopped' && this.phase !== 'failed') {
         this.fail(new Error(`live horse decision worker exited with code ${code}`));
@@ -318,6 +323,48 @@ export class LiveHorseDecisionWorkerClient {
       this.stopPromise = this.terminateWorker();
       return this.stopPromise;
     }
+    if (this.phase === 'starting') {
+      // No live dealer can exist before READY, so there is no accepted hand
+      // work to drain. Cancel startup immediately instead of making the
+      // process shutdown wait for the 90-second READY fault deadline. This is
+      // an intentional termination, not a worker crash, and lets GameServer
+      // release leadership inside the process-wide 40-second shutdown bound.
+      const error = new HorseDecisionAbortedError(
+        'live horse decision worker startup was cancelled by shutdown'
+      );
+      this.phase = 'stopping';
+      clearTimeout(this.readyTimer);
+      this.stopStatusTimer();
+      this.rejectReady(error);
+      for (const job of this.queue.splice(0)) {
+        this.clearJobDeadline(job);
+        this.detachAbort(job);
+        if (!job.settled) {
+          job.settled = true;
+          job.reject(error);
+        }
+      }
+      // Worker events already queued by Node may arrive between terminate()
+      // admission and its promise settling. They belong to this intentional
+      // cancellation and must not be reclassified as a production crash.
+      this.startupCancellationInProgress = true;
+      this.shutdownAcknowledged = true;
+      this.stopPromise = this.terminateWorker().then(
+        () => {
+          this.phase = 'stopped';
+        },
+        (terminationError) => {
+          const failure =
+            terminationError instanceof Error
+              ? terminationError
+              : new Error(String(terminationError));
+          this.lastError = failure.message;
+          this.phase = 'failed';
+          throw failure;
+        }
+      );
+      return this.stopPromise;
+    }
     this.phase = 'stopping';
     this.stopStatusTimer();
     this.stopPromise = new Promise<void>((resolve, reject) => {
@@ -343,6 +390,7 @@ export class LiveHorseDecisionWorkerClient {
     if (signal?.aborted) return Promise.reject(new HorseDecisionAbortedError());
 
     return new Promise<T>((resolve, reject) => {
+      const enqueuedAt = Date.now();
       const job: QueuedJob = {
         request,
         expected,
@@ -350,8 +398,11 @@ export class LiveHorseDecisionWorkerClient {
         reject,
         signal,
         settled: false,
-        enqueuedAt: Date.now(),
+        enqueuedAt,
+        deadlineTimer: null,
       };
+      job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), this.jobTimeoutMs);
+      job.deadlineTimer.unref?.();
       if (signal) {
         job.abortListener = () => this.abort(job);
         signal.addEventListener('abort', job.abortListener, { once: true });
@@ -382,6 +433,7 @@ export class LiveHorseDecisionWorkerClient {
 
     const index = this.queue.indexOf(job);
     if (index >= 0) this.queue.splice(index, 1);
+    this.clearJobDeadline(job);
     this.maybeDispatch();
   }
 
@@ -393,7 +445,7 @@ export class LiveHorseDecisionWorkerClient {
       const job = this.queue.shift()!;
       if (job.settled) continue;
       this.active = job;
-      this.armActiveDeadline(job);
+      this.activeStartedAt = Date.now();
       this.safePost(job.request);
       return;
     }
@@ -510,6 +562,7 @@ export class LiveHorseDecisionWorkerClient {
 
     this.active = null;
     this.clearActiveDeadline();
+    this.clearJobDeadline(active);
     this.detachAbort(active);
     this.lastCompletedAt = Date.now();
     this.completedJobs += 1;
@@ -550,11 +603,13 @@ export class LiveHorseDecisionWorkerClient {
     this.clearActiveDeadline();
     this.rejectReady(error);
     if (this.active) {
+      this.clearJobDeadline(this.active);
       this.detachAbort(this.active);
       if (!this.active.settled) this.active.reject(error);
       this.active = null;
     }
     for (const job of this.queue.splice(0)) {
+      this.clearJobDeadline(job);
       this.detachAbort(job);
       if (!job.settled) job.reject(error);
     }
@@ -586,23 +641,34 @@ export class LiveHorseDecisionWorkerClient {
     }
   }
 
-  private armActiveDeadline(job: QueuedJob): void {
-    this.clearActiveDeadline();
-    this.activeStartedAt = Date.now();
-    this.activeDeadlineTimer = setTimeout(() => {
-      if (this.active !== job) return;
+  private onJobDeadline(job: QueuedJob): void {
+    if (this.active === job) {
       this.fail(
         new Error(
-          `live horse decision worker job ${job.request.requestId} (${job.request.type}) timed out after ${this.jobTimeoutMs}ms`
+          `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms queue-plus-compute deadline`
         )
       );
-    }, this.jobTimeoutMs);
-    this.activeDeadlineTimer.unref?.();
+      return;
+    }
+    if (job.settled) return;
+    const index = this.queue.indexOf(job);
+    if (index >= 0) this.queue.splice(index, 1);
+    job.settled = true;
+    this.detachAbort(job);
+    job.reject(
+      new HorseDecisionAbortedError(
+        `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
+      )
+    );
+    this.maybeDispatch();
+  }
+
+  private clearJobDeadline(job: QueuedJob): void {
+    if (job.deadlineTimer) clearTimeout(job.deadlineTimer);
+    job.deadlineTimer = null;
   }
 
   private clearActiveDeadline(): void {
-    if (this.activeDeadlineTimer) clearTimeout(this.activeDeadlineTimer);
-    this.activeDeadlineTimer = null;
     this.activeStartedAt = null;
   }
 

@@ -51,9 +51,16 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(clearTurn).toContain('this.cancelHorseDecisionWork()');
   });
 
-  it('serializes completed-hand learning through the same FIFO before returning', () => {
+  it('queues completed-hand learning through the same FIFO without holding settlement', () => {
     expect(handHistory).not.toContain('HorseMind.observeHandComplete(');
-    expect(handHistory).toContain('await getLiveHorseDecisionWorker().observeCompletedHand({');
+    expect(handHistory).not.toContain('await getLiveHorseDecisionWorker().observeCompletedHand({');
+    expect(handHistory).toContain(
+      'const observation = getLiveHorseDecisionWorker().observeCompletedHand({'
+    );
+    expect(handHistory).toContain('void observation.catch((error) =>');
+    expect(handHistory).toContain(
+      "reportError(error, 'HandHistory.horse_mind_observation_failed')"
+    );
     expect(workerRuntime).toContain("request.type === 'OBSERVE_COMPLETED_HAND'");
     expect(workerRuntime).toContain('this.executeObservation(request)');
     expect(workerRuntime).toContain('HorseMind.observeHandComplete(');

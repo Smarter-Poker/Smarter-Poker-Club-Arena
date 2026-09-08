@@ -144,3 +144,82 @@ describe('all satellite identities take the seat-award path', () => {
     );
   });
 });
+
+describe('finish proves the final roster before atomic settlement', () => {
+  it('fails closed when the unresolved-player roster is unreadable', () => {
+    const read = finish.indexOf('const { data: stillPlaying, error: stillPlayingErr }');
+    const guard = finish.indexOf('if (stillPlayingErr || !Array.isArray(stillPlaying))', read);
+    const stamp = finish.indexOf('const { error: winnerStampErr', guard);
+    const refusal = finish.slice(guard, stamp);
+
+    expect(read).toBeGreaterThanOrEqual(0);
+    expect(guard).toBeGreaterThan(read);
+    expect(stamp).toBeGreaterThan(guard);
+    expect(refusal).toContain("'Tournament.unresolved_players_read_failed'");
+    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
+  });
+
+  it('accepts only readable, positive-integer, unique finishing positions', () => {
+    const read = finish.indexOf('const { data: finishTaken, error: finishTakenErr }');
+    const accepted = finish.indexOf('const finishTakenPositions = new Set<number>', read);
+    const guard = finish.slice(read, accepted);
+
+    expect(read).toBeGreaterThanOrEqual(0);
+    expect(accepted).toBeGreaterThan(read);
+    expect(guard).toContain('finishTakenErr');
+    expect(guard).toContain('!Array.isArray(finishTaken)');
+    expect(guard).toContain('!Number.isInteger(Number(r.position))');
+    expect(guard).toContain('Number(r.position) < 1');
+    expect(guard).toContain(
+      'new Set(finishTaken.map((r) => Number(r.position))).size !== finishTaken.length'
+    );
+    expect(guard).toContain("'Tournament.finish_positions_unconfirmed'");
+    expect(guard).toMatch(/this\.tournamentFinished = false;\s*return;/);
+  });
+
+  it('requires each fallback assignment and the post-assignment roster read to succeed', () => {
+    const assignment = finish.indexOf('const eliminated = await this.eliminatePlayer(');
+    const assignmentGuard = finish.indexOf('if (!eliminated)', assignment);
+    const verificationRead = finish.indexOf(
+      'const { data: remainingPlayers, error: remainingPlayersErr }',
+      assignmentGuard
+    );
+    const verificationGuard = finish.indexOf(
+      'if (remainingPlayersErr || !Array.isArray(remainingPlayers) || remainingPlayers.length > 0)',
+      verificationRead
+    );
+    const stamp = finish.indexOf('const { error: winnerStampErr', verificationGuard);
+    const refusal = finish.slice(assignmentGuard, verificationRead);
+    const verification = finish.slice(verificationGuard, stamp);
+
+    expect(assignment).toBeGreaterThanOrEqual(0);
+    expect(finish.slice(assignment, assignmentGuard)).toContain(', finishNext, true)');
+    expect(assignmentGuard).toBeGreaterThan(assignment);
+    expect(refusal).toContain("'Tournament.finish_fallback_place_deferred'");
+    expect(refusal).toContain('this.requestUrgentEliminationSweepAfter(');
+    expect(verificationRead).toBeGreaterThan(assignmentGuard);
+    expect(verificationGuard).toBeGreaterThan(verificationRead);
+    expect(verification).toContain("'Tournament.finish_players_unresolved'");
+    expect(verification).toMatch(/this\.tournamentFinished = false;/);
+    expect(verification).toContain('this.requestUrgentEliminationSweepAfter(');
+    expect(verification).toMatch(/return;/);
+    expect(stamp).toBeGreaterThan(verificationGuard);
+  });
+});
+
+describe('winner entitlement write has exact cardinality', () => {
+  it('requires exactly one winner row before any settlement can run', () => {
+    const stamp = finish.indexOf('const { error: winnerStampErr, count: winnerStampCount }');
+    const guard = finish.indexOf('if (winnerStampErr || winnerStampCount !== 1)', stamp);
+    const normalize = finish.indexOf("'fn_normalize_tournament_final_standings'", guard);
+    const write = finish.slice(stamp, guard);
+    const refusal = finish.slice(guard, normalize);
+
+    expect(stamp).toBeGreaterThanOrEqual(0);
+    expect(write).toContain("{ count: 'exact' }");
+    expect(guard).toBeGreaterThan(stamp);
+    expect(refusal).toContain("'Tournament.winner_row_stamp_failed'");
+    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
+    expect(normalize).toBeGreaterThan(guard);
+  });
+});

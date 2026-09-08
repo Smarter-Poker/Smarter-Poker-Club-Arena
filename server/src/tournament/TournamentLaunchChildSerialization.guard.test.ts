@@ -41,6 +41,7 @@ const player = sqlFunction(MIGRATION, 'trg_lock_tournament_player_launch_proof')
 const seat = sqlFunction(MIGRATION, 'trg_lock_and_validate_tournament_live_seat');
 const table = sqlFunction(MIGRATION, 'trg_lock_and_classify_tournament_table');
 const origin = sqlFunction(MIGRATION, 'trg_validate_tournament_table_origin');
+const legacyCapacityBridge = sqlFunction(MIGRATION, 'fn_stage_a_bridge_legacy_capacity_receipt');
 const roster = sqlFunction(MIGRATION, 'trg_assert_live_tournament_seat_has_roster');
 const capacity = sqlFunction(CAPACITY, 'fn_ensure_late_registration_capacity');
 
@@ -167,9 +168,10 @@ describe('tournament launch children share the transition lock', () => {
     expect(origin.slice(origin.indexOf("ELSIF NEW.origin_kind = 'legacy' THEN"))).toContain(
       'RETURN NEW;'
     );
+    expect(MIGRATION).not.toContain("origin_kind = 'legacy_capacity'");
   });
 
-  it('makes a raw RUNNING table fail at commit without a same-transaction capacity receipt', () => {
+  it('keeps every RUNNING table receipt-proved after the bounded Stage-A bridge opportunity', () => {
     const running = table.indexOf("upper(v_parent_status) = 'RUNNING'");
     const capacityOrigin = table.indexOf("NEW.id, NEW.tournament_id, 'capacity'", running);
 
@@ -181,7 +183,30 @@ describe('tournament launch children share the transition lock', () => {
     expect(origin).toContain('FROM public.tournament_capacity_table_receipts c');
     expect(origin).toContain('c.table_id = NEW.table_id');
     expect(origin).toContain('c.tournament_id = NEW.tournament_id');
+    expect(origin).toContain('fn_stage_a_bridge_legacy_capacity_receipt');
     expect(origin).toContain('TOURNAMENT_CAPACITY_RECEIPT_REQUIRED');
+  });
+
+  it('bridges only the old headerless service-role POST with a fresh protocol-1 lease', () => {
+    expect(legacyCapacityBridge).toContain("v_request_role <> 'service_role'");
+    expect(legacyCapacityBridge).toContain(
+      "btrim(COALESCE(v_claims ->> 'role', '')) <> 'service_role'"
+    );
+    expect(legacyCapacityBridge).toContain("v_headers ->> 'x-smarter-data-actor'");
+    expect(legacyCapacityBridge).toContain("v_headers ->> 'x-smarter-data-protocol'");
+    expect(legacyCapacityBridge).toContain("v_actor_marker NOT IN ('', 'legacy-unmarked')");
+    expect(legacyCapacityBridge).toContain("v_method <> 'POST'");
+    expect(legacyCapacityBridge).toContain("v_path <> 'tables'");
+    expect(legacyCapacityBridge).toContain("left(v_path, 8) = 'rest/v1/'");
+    expect(legacyCapacityBridge).toContain('l.protocol_version = 1');
+    expect(legacyCapacityBridge).toContain('v_stale_seconds constant integer := 30');
+    expect(legacyCapacityBridge).toContain('FOR SHARE');
+    expect(legacyCapacityBridge).toContain('fn_emit_tournament_manager_wake');
+    expect(legacyCapacityBridge).toContain('INSERT INTO public.tournament_capacity_table_receipts');
+    expect(legacyCapacityBridge).not.toContain('INSERT INTO public.tournament_table_origins');
+    expect(MIGRATION).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_stage_a_bridge_legacy_capacity_receipt\(uuid,uuid\)\s+FROM PUBLIC, anon, authenticated, service_role;/
+    );
   });
 
   it('preserves the canonical table-then-receipt capacity transaction', () => {

@@ -220,11 +220,49 @@ describe('LiveHorseDecisionWorkerClient', () => {
     worker.emitMessage(ready);
     const pending = client.decideFast(snapshot('wedged'));
 
-    await expect(pending).rejects.toThrow('DECIDE_FAST) timed out after 5ms');
+    await expect(pending).rejects.toThrow(
+      'DECIDE_FAST) exceeded its 5ms queue-plus-compute deadline'
+    );
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(client.status()).toMatchObject({ phase: 'failed', activeRequestId: null });
     expect(worker.terminateCalls).toBe(1);
     expect(onFatal).toHaveBeenCalledTimes(1);
+  });
+
+  it('expires queued work against enqueue time without dispatching it or killing a healthy worker', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        readyTimeoutMs: 1_000,
+        jobTimeoutMs: 50,
+      });
+      const queued = client.decideFast(snapshot('queued-before-ready'));
+      const queuedRejection = expect(queued).rejects.toThrow(
+        'horse decision expired after 50ms before worker dispatch'
+      );
+
+      await vi.advanceTimersByTimeAsync(50);
+      await queuedRejection;
+      expect(worker.sent).toEqual([]);
+      expect(client.status()).toMatchObject({ phase: 'starting', queueDepth: 0 });
+      expect(onFatal).not.toHaveBeenCalled();
+
+      worker.emitMessage(ready);
+      const next = client.decideFast(snapshot('after-ready'));
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
+      worker.emitMessage(fastResult(2, 'after-ready'));
+      await expect(next).resolves.toMatchObject({ fence: 'after-ready' });
+      const stopped = client.stop();
+      expect(worker.sent.at(-1)).toEqual({ type: 'SHUTDOWN' });
+      worker.emitMessage({ type: 'STOPPED' });
+      await stopped;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('terminal-fails a synchronous postMessage exception without stranding active work', async () => {
@@ -386,6 +424,36 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.terminateCalls).toBe(1);
   });
 
+  it('keeps an accepted hand observation ahead of the table next decision', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const observation = client.observeCompletedHand({
+      generation: 7,
+      fence: 'observe-hand',
+      handKey: 'table:hand',
+      actions: [],
+      bigBlind: 2,
+    });
+    const nextDecision = client.decideFast(snapshot('next-hand'));
+
+    expect(worker.sent).toHaveLength(1);
+    expect(worker.sent[0]).toMatchObject({ type: 'OBSERVE_COMPLETED_HAND', requestId: 1 });
+    worker.emitMessage({
+      type: 'ACK',
+      requestId: 1,
+      generation: 7,
+      fence: 'observe-hand',
+      operation: 'OBSERVE_COMPLETED_HAND',
+    });
+    await observation;
+
+    expect(worker.sent).toHaveLength(2);
+    expect(worker.sent[1]).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
+    worker.emitMessage(fastResult(2, 'next-hand'));
+    await nextDecision;
+  });
+
   it('drains accepted jobs before graceful service shutdown', async () => {
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
@@ -412,20 +480,26 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(client.status().phase).toBe('stopped');
   });
 
-  it('does not start an execution deadline while a stopping client still awaits READY', async () => {
+  it('cancels a never-ready startup instead of crossing the process shutdown deadline', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
     const accepted = client.decideFast(snapshot('boot-queued'));
+    const readiness = client.ready();
     const stopped = client.stop();
 
     expect(worker.sent).toEqual([]);
     expect(client.status()).toMatchObject({ phase: 'stopping', activeRequestId: null });
+    worker.throwOnPost = new Error('worker port already closed');
     worker.emitMessage(ready);
-    expect(worker.sent[0]).toMatchObject({ type: 'DECIDE_FAST', requestId: 1 });
-    worker.emitMessage(fastResult(1, 'boot-queued'));
-    await accepted;
-    expect(worker.sent[1]).toEqual({ type: 'SHUTDOWN' });
-    worker.emitMessage({ type: 'STOPPED' });
+    worker.emitError(new Error('late termination error'));
+    worker.emitExit(1);
+    await expect(accepted).rejects.toBeInstanceOf(HorseDecisionAbortedError);
+    await expect(readiness).rejects.toBeInstanceOf(HorseDecisionAbortedError);
     await stopped;
+    expect(worker.terminateCalls).toBe(1);
+    expect(worker.sent).toEqual([]);
+    expect(onFatal).not.toHaveBeenCalled();
+    expect(client.status()).toMatchObject({ phase: 'stopped', queueDepth: 0 });
   });
 });

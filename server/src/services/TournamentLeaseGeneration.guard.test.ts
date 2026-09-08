@@ -97,7 +97,7 @@ describe('one tournament manager carries one database fencing generation', () =>
     );
     expect(heartbeat).toContain('p_stale_seconds IS DISTINCT FROM 30');
 
-    expect(leaseService).toContain("supabase.rpc('heartbeat_tournament_leases_v3'");
+    expect(leaseService).toContain("supabase.rpc('heartbeat_tournament_leases_v4'");
     expect(leaseService).toContain('lease_generation: claim.leaseGeneration');
     expect(leaseService).toMatch(/row\.state === 'kept'[\s\S]{0,100}exactGeneration/);
 

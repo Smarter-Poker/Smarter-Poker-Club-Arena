@@ -149,6 +149,64 @@ now emits `antes_posted` (from the `FORCED_BETS_POSTED` handler, `kind ===
 `createChipToPotEvent` the bomb ante uses, the moment they post. Presentation
 only; the money was already right. Pinned in `bombPotGuards.test.ts`.
 
+## Sweep after merge (PR #3870 -> the follow-up branch)
+
+Dan: "DO A FINAL SWEEP AND CHECK FOR ANY AND ALL BUGS, GAPS, STUBS, ERRORS,
+REGRESSIONS OR WIRING ISSUES." An adversarial second read of the merged
+commit found nine things; all are fixed in the follow-up:
+
+1. **`add_on_adjusted` (and Dan's `add_on_applied` bubble) were dead on
+   production.** Every cash engine is lease-verified, so a mid-hand add-on is
+   frozen into the hand's post-commit envelope and resolved inside
+   `fn_ca_process_hand_post_commit_obligations`, which returns a COUNT.
+   `processPendingAddOns` - the only emitter of both - runs on that path only
+   for unbound rows before the next deal. New `announceEnvelopeResolvedAddOns`
+   (Seating) runs from settlement right after the obligations land: reads the
+   frozen ids from `hand_atomic_commits.post_commit_payload`, the resolved
+   rows from `table_pending_addons`, emits the bubble per landed row and the
+   private frame per reduced row. Best effort; a failed read is reported,
+   never thrown.
+2. **The cap cache double-counted a landed add-on between hands.** The
+   envelope path refreshed `player.stack` from the seat and left
+   `pendingAddOns` alone, so `stack + pending` counted the same chips twice
+   and refused a legitimate top-up as "already at the maximum" - until the
+   next deal's sweep. The announcer rebuilds the map from the rows still
+   unresolved.
+3. **The client could apply the refund correction twice.** The USER_EVENT
+   effect re-runs when `handleHoleCardPayload` changes identity (mute, tab
+   switch) with the same frame still in state. Gated on frame identity, and
+   on the ledger row id (`pending_id`, now on the frame) so a RESYNC re-send
+   or a replayed settlement is a no-op too.
+4. **A capped bust REBUY would have credited a balance the client never
+   debited** (`confirmBustRebuy` calls `atomic_table_rebuy` directly). The
+   correction now applies only to `addon_kind === 'addon'`; a rebuy is told,
+   not adjusted.
+5. **The frame was fire-and-forget.** Retained per player and re-sent on
+   RESYNC (`rePushAddOnAdjusted`, wired beside `rePushPreAction`).
+6. **The deferred bell could be lost.** The engine sends the snapshot
+   BEFORE the discrete turn_change; the effect had already run for the turn
+   and a ref write does not re-run it. `turnAlertDeferred` is state now.
+7. **The multi-table surfaces still read the raw seat**: tab badge, soft
+   ping, dock countdown and desktop Notification fired "YOUR TURN" for the
+   engine's beat. `isHeroTurn` in the reporting effect reads
+   `heroPromptedToAct`; the whole gate moved ~14,000 lines up, above that
+   effect, because a const cannot be read before its declaration.
+8. **The bottom chrome blinked** for the beat: `heroActionState` returned
+   `'none'` (wrapper collapsed to 1px) between the `'waiting'` before and the
+   `'waiting'` after. It holds `'waiting'` through the beat.
+9. **BombPotOverlay re-measured its own SCALED box on resize** and snapped
+   back to full size onto the seats. `offsetHeight` (layout height) instead.
+
+Plus: the auto top-up treats "already at the maximum buy-in" as a silent
+no-op (it cannot see a queued add-on that already fills the seat);
+`ANTES_POSTED` no longer stacks a second chip click on `BLINDS_POSTED`'s;
+the 900ms beat claim in a comment corrected to the 250ms it has been since
+2026-09-07.
+
+Left as is, on purpose: hotkeys during the beat (engine dedupes; harmless),
+and `lastAddChipsResultRef` being shared by manual and auto top-ups (the
+auto toast reads the last result; overlapping requests are not a real path).
+
 ## Verified
 
 - `npx tsc --noEmit` clean (client and `server/`).

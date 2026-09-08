@@ -255,13 +255,25 @@ export function HandReveal({
             </>
           )}
 
-          {!isWinner && !revealed && !mucked && (
+          {/* DEAD-BUTTON FIX (final sweep 2026-09-08), the InsuranceModal
+              remedy: TableModalsLayer never passes userDiamonds or
+              onPayReveal, so with the defaults (0 < 10) this rendered a greyed
+              "Reveal (10)" that could never fire, to a player looking at a
+              diamond price. A paid reveal is offered only once there is a real
+              handler to pay through; until then the loser's modal shows the
+              cards it has and nothing it cannot sell. */}
+          {!isWinner && !revealed && !mucked && typeof onPayReveal === 'function' && (
             <button
               className={`hand-reveal__btn hand-reveal__btn--pay ${userDiamonds < revealCost ? 'hand-reveal__btn--disabled' : ''}`}
               onClick={handlePayReveal}
               disabled={userDiamonds < revealCost}
             >
               Reveal ({revealCost})
+            </button>
+          )}
+          {!isWinner && !revealed && !mucked && typeof onPayReveal !== 'function' && (
+            <button className="hand-reveal__btn hand-reveal__btn--close" onClick={onClose}>
+              Done
             </button>
           )}
 

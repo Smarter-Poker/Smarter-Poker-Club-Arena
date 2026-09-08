@@ -160,9 +160,10 @@ Exit: reviewable programme and reconciled policy, required checks passed, merged
 - [x] Authorize lobby, direct links, table state, WebSockets and staff routes consistently.
 - [x] Make unknown/mismatched asset fail at transaction entry; no fallback to chips.
 
-- [ ] Verify the merged Phase 2 frontend on production and confirm the engine runs the Phase 2 server code before starting Phase 3.
+- [x] Verify the merged Phase 2 frontend on production and confirm the engine runs the Phase 2 server code. Both serve release 4932f6f91ad9b08300cf20afbeb9576b6559770f, a verified descendant of the Phase 2 merge, on September 8, 2026.
+- [ ] Resolve the publication monitor UI acceptance discrepancy: home has no Diamond automatic-entry card and outer Diamond navigation still includes club-management links. Access-only route content passes; the shared selector and skin remain assigned to Phase 5.
 
-Implementation and audit evidence: PR #3814, merged as ea30980397158749d0d91c1726c9f8e004e83e56. All 24,638 unit tests, 166 browser checks and 39 isolated SQL assertions pass. Six production migrations are applied. Publication remains a separate, incomplete gate; do not mistake these checked implementation items for authorization to begin Phase 3.
+Implementation and audit evidence: PR #3814, merged as ea30980397158749d0d91c1726c9f8e004e83e56. All 24,638 unit tests, 166 browser checks and 39 isolated SQL assertions pass. Six production migrations are applied. Runtime publication is verified; the monitor UI acceptance discrepancy above remains open. The user explicitly authorized Phase 3 to proceed while Phase 2 publication and any scoped repairs are monitored in the background. Phase 2 rollout latency does not block Phase 3. See the Phase 2 changelog for exact release and browser evidence.
 
 Exit: access and wrong-asset integration tests pass, merged frontend and server publication verified, no public funded games yet.
 

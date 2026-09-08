@@ -45,6 +45,19 @@ const invalid = [
   { ...receipt, credited: undefined },
   { ok: true, reason: 'no_active_seat', stack: 7 },
 ];
+describe('callers without failure callbacks', () => {
+  it.each(invalid)('rejects unconfirmed response %#', async (data) => {
+    arrange(data);
+    await expect(atomicCashout('player', 'table', 2)).rejects.toThrow();
+  });
+  it.each(['connection lost', 'LEAVE_LOCKED:1234'])(
+    'rejects %s without a handler',
+    async (message) => {
+      arrange(null, { message });
+      await expect(atomicCashout('player', 'table', 2)).rejects.toThrow();
+    }
+  );
+});
 describe('cashout departure proof', () => {
   it.each(invalid)('keeps pending player tracking on an unconfirmed receipt %#', async (data) => {
     arrange(data);

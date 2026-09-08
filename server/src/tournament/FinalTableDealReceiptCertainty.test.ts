@@ -14,7 +14,13 @@ const compiled = ts.transpileModule('return async function(alive) ' + method.bod
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 const build = new Function('supabase', 'reportError', 'settleTournamentObligation', compiled);
-async function run(receipt: Record<string, unknown>) {
+async function run(
+  receipt: Record<string, unknown>,
+  rows: Array<{ user_id: string; amount: unknown }> = [
+    { user_id: 'first', amount: 100 },
+    { user_id: 'second', amount: 100 },
+  ]
+) {
   const updates: Array<{ table: string; value: any }> = [];
   const report = vi.fn();
   const settle = vi.fn(async (_db, input) =>
@@ -42,10 +48,7 @@ async function run(receipt: Record<string, unknown>) {
             update
               ? { error: null }
               : {
-                  data: [
-                    { user_id: 'first', amount: 100 },
-                    { user_id: 'second', amount: 100 },
-                  ],
+                  data: rows,
                   error: null,
                 }
           ).then(resolve, reject);
@@ -89,6 +92,38 @@ describe('a final table deal completes only after every share settles', () => {
     expect(r.updates.some((x) => x.table === 'tournaments' && x.value.status === 'COMPLETED')).toBe(
       true
     );
+    expect(r.owner.stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('deal payout roster validation before any settlement', () => {
+  it.each([
+    [{ user_id: 'first', amount: 100 }],
+    [
+      { user_id: 'first', amount: 100 },
+      { user_id: 'first', amount: 100 },
+    ],
+    [
+      { user_id: 'first', amount: 100 },
+      { user_id: 'stranger', amount: 100 },
+    ],
+    ...[null, '', 'bad', -1, Infinity, NaN, 0.001].map((amount) => [
+      { user_id: 'first', amount: 100 },
+      { user_id: 'second', amount },
+    ]),
+  ])('rejects invalid roster %# without paying or completing', async (...rows) => {
+    const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, rows);
+    expect(r.settle).not.toHaveBeenCalled();
+    expect(r.updates).toEqual([]);
+    expect(r.owner.stop).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalled();
+  });
+  it('accepts numeric database strings and a legitimate zero share', async () => {
+    const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, [
+      { user_id: 'first', amount: '100.00' },
+      { user_id: 'second', amount: 0 },
+    ]);
+    expect(r.settle).toHaveBeenCalledOnce();
     expect(r.owner.stop).toHaveBeenCalledOnce();
   });
 });

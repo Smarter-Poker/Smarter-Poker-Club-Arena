@@ -40,3 +40,21 @@ The deployed config was first checked read-only and matched the repository.
 Publish through the normal branch/autopilot process, then use the documented
 infra/ca-origin/deploy-origin-config.sh path on Hetzner and check live headers.
 A merged source change alone does not reload the origin configuration.
+
+## Deployment Correction
+
+The first staged deployment at 12:27:41 UTC failed: mktemp had created the
+candidate with mode 0600 owned by root. Root's validation succeeded, but the
+service running as caddy could not read the installed file. The reload and
+fallback restart failed. This was a regression introduced by this change.
+
+The live file was corrected to 0644 and Caddy started successfully at
+12:28:36 UTC. Public origin checks then returned HTTP 200. The script now sets
+0644 before the atomic rename. Its success test executes chmod and rename on
+real temporary files starting at 0600, and checks the installed mode, rather
+than merely mocking a successful remote command. All four tests pass.
+
+Origin HTML now returns stale-while-revalidate=60. The public World Hub route
+still returns 86400 because two explicit Club Arena shell header rules in
+World Hub's vercel.json override the origin. Those rules require a matching
+change; the origin-only deployment does not close public shell freshness.

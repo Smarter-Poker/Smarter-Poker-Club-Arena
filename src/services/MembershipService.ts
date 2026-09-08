@@ -216,7 +216,9 @@ export const MembershipService = {
         status: 'pending',
         invited_by: invitedBy,
       })
-      .select()
+      // Named: a bare .select() is RETURNING *, and club_members is moving to
+      // column-level grants that withhold is_bot from a player.
+      .select('club_id, user_id, role, status, joined_at, invited_by')
       .maybeSingle();
 
     if (error) throw error;

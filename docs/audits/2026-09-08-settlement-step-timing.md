@@ -1,0 +1,7 @@
+# Settlement Step Timing
+
+The roughly twelve-second observed hand gap remains unresolved. The prior phase sampler identifies the post-hand barrier but does not attribute its internal waits. Each of the sixteen guarded settlement steps now records cumulative wall time, invocation count and count over one second in the existing always-on metrics endpoint. These are counters with bounded labels (code-defined step, human/horse audience, format, returned/threw outcome), without player, table or hand IDs and without storing or sorting timing samples.
+
+Compare duration counter deltas divided by invocation counter deltas to identify average step costs over the same live interval. Compare slow-count deltas to invocation deltas for the fraction over one second. This does not provide p95 or p99. Returned means the step did not throw, not proof a financial operation succeeded. Error-reporting waits are included because they also hold the settlement barrier. Steps that intentionally skip work still count, so inspect their slow fraction as well as their mean.
+
+No financial calls are reordered, retried or detached. Timing failures are isolated so they cannot interrupt settlement. Measurement uses the monotonic performance clock. Remaining work: verify engine inclusion, sample active counters, correlate with presentation holds and pre-deal cleanup, fix the dominant waits, then remeasure live hand cadence.

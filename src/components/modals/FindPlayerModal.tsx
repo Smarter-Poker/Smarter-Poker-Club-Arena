@@ -19,6 +19,7 @@ import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { titleCase } from '../../utils/titleCase';
 import styles from './FindPlayerModal.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
@@ -301,7 +302,7 @@ export default function FindPlayerModal({
           <div className={styles.scrollBody}>
             <header className={styles.machineHeader}>
               <img
-                src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+                src={mediaUrl('images/club-arena/vault-iris-emblem-v1-320.webp')}
                 alt=""
                 width="320"
                 height="296"

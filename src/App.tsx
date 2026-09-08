@@ -248,6 +248,7 @@ function TableRouteSurface() {
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
+import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount() {
   return <ClubBottomNav />;
@@ -419,7 +420,12 @@ function FullApp() {
     // that header is ever absent the registration rejects with a SecurityError
     // — we fall back to the default scope so behaviour is never worse than it
     // was, rather than ending up with no service worker at all.
-    if ('serviceWorker' in navigator) {
+    // NATIVE: no service worker. Inside the Capacitor shell the bundle is
+    // already on disk, so sw-bus.js's cache-first layer is redundant, and on
+    // iOS a worker under capacitor://localhost is not reliably installed at
+    // all. Its message-driven notifications become native ones (Phase 4).
+    // Compile-time constant: this branch does not exist in the web bundle.
+    if (!IS_NATIVE_BUILD && 'serviceWorker' in navigator) {
       const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
           ? import.meta.env.BASE_URL

@@ -92,7 +92,20 @@ import {
   beyondGtoDepthCeiling,
   GTO_MAX_DEPTH_BB,
 } from './GtoPostflop.js';
-import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
+import {
+  gtoStreetAdviceV31,
+  type GtoV31GameFamily,
+  type GtoV31Objective,
+} from './GtoPostflopV31.js';
+import {
+  classifyGtoDecisionContext,
+  gtoV31FlopRootStack,
+  gtoV31HasHeadsUpPostflopLine,
+  gtoV31Position,
+  gtoV31PotType,
+  gtoV31UtilityContext,
+  type GtoV31NodeRole,
+} from './GtoDecisionContext.js';
 import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
@@ -701,10 +714,13 @@ function noteGtoMiss(layer: string, street: string, stackBB: number): void {
   noteFire(layer + '_miss_street_' + street);
 }
 
-function cellDepthIsPrimary(cell: string, stackBB: number): boolean {
+function cellDepthIsPrimary(cell: string, stackBB: number, certifiedDepth?: number): boolean {
+  if (certifiedDepth !== undefined) return certifiedDepth === snapDepthBucket(stackBB);
   const parts = cell.split('|');
   if (parts.length < 5) return true; // unknown shape: do not invent a miss
-  const d = Number(parts[3]);
+  // V29/V30 keys place depth at 3. Certified V31 keys place it at 8, after
+  // objective, utility context, table size, pot type, and both positions.
+  const d = Number(parts[parts.length >= 13 ? 8 : 3]);
   if (!isFinite(d)) return true;
   return d === snapDepthBucket(stackBB);
 }
@@ -1560,6 +1576,20 @@ export interface HorseDecideOpts {
    *  cannot express at all. Consulted BEFORE V30; empty store = inert
    *  (default: enabled) */
   v31GtoSuitAware?: boolean;
+  /**
+   * Offline promotion harness only: read this exact sealed candidate instead
+   * of the active V31 snapshot. Production never sets it. Keeping the
+   * selector in decide options makes duplicate-deal A/B evaluation use the
+   * same action path without allowing a candidate to replace live policy.
+   */
+  gtoV31DatasetChecksum?: string;
+  /** Offline promotion evidence hook. Never set by the live engine. */
+  onGtoV31Decision?: (receipt: {
+    datasetChecksum: string;
+    nodeRole: GtoV31NodeRole;
+    cell: string;
+    actionId: string;
+  }) => void;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
   /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
@@ -3724,9 +3754,217 @@ export class HorseLogic {
           ? 'callOnce'
           : 'foldToRaise';
 
-    // ═══ V37 SATELLITE, POSTFLOP (action) ═══ placed after the raise-plan
-    // assignment above so a chip-in here can never consume another table's
-    // plan (HorseRaisePlanIsPerDecision). The read itself is taken above.
+    const useV11 = opts.v11 !== false;
+    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
+    // marginal calls against the raked pot, not the raw one. Above the cap
+    // (large pots) the drag is zero and this reduces to honest pot odds.
+    // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
+    // V34: computed here, above the solver consult, so V32 prices the same
+    // raked pot the heuristic call line does.
+    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
+
+    // V31 CERTIFIED DIRECT POLICY. Node role, response semantics, both seats,
+    // objective, stack depth, board texture and holding are all part of the
+    // lookup key. An open policy can never answer a response decision, and a
+    // chip-EV tournament policy can never masquerade as ICM. The compact
+    // loader has already rejected any row without a complete active seal.
+    if (
+      (opts.v31GtoSuitAware ?? true) !== false &&
+      (street === 'flop' || street === 'turn' || street === 'river') &&
+      player.cards.length === 2 &&
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      opponents.length === 1 &&
+      // The certified V31 context has no straddle axis. A straddle-enabled
+      // hand can have a different root pot, preflop ranges, action order, and
+      // SPR, so a standard-pot cell is not evidence for it. V18/heuristics
+      // retain ownership until a separately keyed straddle corpus exists.
+      gs.straddleActive !== true &&
+      gs.bombPot !== true &&
+      !(gs.communityCards2 && gs.communityCards2.length > 0)
+    ) {
+      const opponent31 = opponents[0];
+      const heroSeat31 = gtoV31Position({
+        seat: player.seat,
+        dealerSeat: gs.dealerSeat,
+        players: gs.players,
+      });
+      const opponentSeat31 = gtoV31Position({
+        seat: opponent31.seat,
+        dealerSeat: gs.dealerSeat,
+        players: gs.players,
+      });
+      const context31 = classifyGtoDecisionContext({
+        street,
+        hero: player,
+        opponents,
+        actionHistory: gs.actionHistory,
+        currentBet: gs.currentBet,
+        pot: gs.pot,
+      });
+      let family31: GtoV31GameFamily | null = null;
+      let objective31: GtoV31Objective | null = null;
+      if (!isTournamentMode(gs)) {
+        family31 = 'cash';
+        objective31 = 'cash_ev';
+      } else if (gs.format === 'spin') {
+        family31 = 'spin';
+        objective31 = (gs.tournament?.spotsPaid ?? 1) <= 1 ? 'chip_ev' : 'icm';
+      } else if (
+        Array.isArray(gs.tournament?.stacks) &&
+        gs.tournament.stacks.length >= 2 &&
+        Array.isArray(gs.tournament?.payoutPct) &&
+        gs.tournament.payoutPct.length >= 1 &&
+        !((gs.tournament?.playersLeft ?? 0) <= 2 && (gs.tournament?.spotsPaid ?? 1) <= 1)
+      ) {
+        family31 = 'tourney_icm';
+        objective31 = 'icm';
+      } else {
+        family31 = 'tourney_ev';
+        objective31 = 'chip_ev';
+      }
+      const utility31 =
+        family31 && objective31
+          ? gtoV31UtilityContext({
+              family: family31,
+              objective: objective31,
+              tournament: gs.tournament,
+            })
+          : null;
+
+      const opponentRootStack31 = gtoV31FlopRootStack({
+        street,
+        player: opponent31,
+        actionHistory: gs.actionHistory,
+      });
+      const heroRootStack31 = gtoV31FlopRootStack({
+        street,
+        player,
+        actionHistory: gs.actionHistory,
+      });
+      const effective31 =
+        opponentRootStack31 !== null && heroRootStack31 !== null
+          ? Math.min(heroRootStack31, opponentRootStack31)
+          : null;
+      const stackBB31 = effective31 !== null && gs.bigBlind > 0 ? effective31 / gs.bigBlind : null;
+      const tooDeep31 =
+        stackBB31 !== null &&
+        (opts.v33DepthCeiling ?? true) !== false &&
+        beyondGtoDepthCeiling(stackBB31);
+      if (tooDeep31 && tele15) noteFire('gto_skip_too_deep');
+
+      const direct31 =
+        context31 &&
+        family31 &&
+        objective31 &&
+        utility31 &&
+        heroSeat31 &&
+        opponentSeat31 &&
+        stackBB31 !== null &&
+        heroSeat31.tableSize === opponentSeat31.tableSize &&
+        gtoV31HasHeadsUpPostflopLine(gs.actionHistory, player.seat, opponent31.seat) &&
+        !tooDeep31
+          ? gtoStreetAdviceV31({
+              street,
+              family: family31,
+              objective: objective31,
+              utilityContext: utility31,
+              tableSize: heroSeat31.tableSize,
+              potType: gtoV31PotType(gs.actionHistory),
+              heroPosition: heroSeat31.position,
+              opponentPosition: opponentSeat31.position,
+              stackBB: stackBB31,
+              board: gs.communityCards,
+              hand: gtoHandClass(player.cards[0], player.cards[1]),
+              holeCards: player.cards,
+              nodeRole: context31.nodeRole,
+              facingKind: context31.facingKind,
+              facingSizeBucket: context31.facingSizeBucket,
+              datasetChecksum: opts.gtoV31DatasetChecksum,
+            })
+          : null;
+      if (direct31?.hit && stackBB31 !== null) {
+        if (tele15 && !cellDepthIsPrimary(direct31.cell, stackBB31, direct31.depthBucket)) {
+          noteFire('gto_depth_fallback');
+        }
+        const actionId31 = rollMix(direct31.mix, fastRandom);
+        const action31 = actionId31 ? direct31.actions[actionId31] : null;
+        if (action31 && actionId31) {
+          if (opts.gtoV31DatasetChecksum && opts.onGtoV31Decision) {
+            opts.onGtoV31Decision({
+              datasetChecksum: direct31.sourceSeal.dataset_checksum,
+              nodeRole: direct31.nodeRole,
+              cell: direct31.cell,
+              actionId: actionId31,
+            });
+          }
+          if (tele15) noteFire(`v31_certified_${direct31.nodeRole}`);
+          if (action31.family === 'check') {
+            return this.legalize({ action: 'check', thinkTime: 0 }, player, gs, vi);
+          }
+          if (action31.family === 'fold') {
+            return this.legalize({ action: 'fold', thinkTime: 0 }, player, gs, vi);
+          }
+          if (action31.family === 'call') {
+            return this.legalize({ action: 'call', amount: toCall, thinkTime: 0 }, player, gs, vi);
+          }
+          if (action31.family === 'all_in') {
+            return this.legalize({ action: 'all_in', thinkTime: 0 }, player, gs, vi);
+          }
+          if (
+            action31.family === 'bet' &&
+            action31.size_unit === 'pot_fraction' &&
+            action31.size_value
+          ) {
+            return this.legalize(
+              { action: 'bet', amount: pot * action31.size_value, thinkTime: 0 },
+              player,
+              gs,
+              vi
+            );
+          }
+          if (
+            action31.family === 'raise' &&
+            action31.size_unit === 'pot_after_call_fraction' &&
+            action31.size_value
+          ) {
+            return this.legalize(
+              {
+                action: 'raise',
+                amount: currentBet + (pot + toCall) * action31.size_value,
+                thinkTime: 0,
+              },
+              player,
+              gs,
+              vi
+            );
+          }
+        }
+        if (tele15) noteFire('v31_certified_unusable_action');
+      } else if (direct31 && !direct31.hit && stackBB31 !== null && tele15) {
+        noteFire(`v31_certified_miss_${direct31.miss}`);
+        noteGtoMiss('v31', street, stackBB31);
+      } else if (tele15 && isTournamentMode(gs) && (!objective31 || !utility31)) {
+        noteFire('v31_certified_skip_unknown_tournament_utility');
+      } else if (tele15 && (!heroSeat31 || !opponentSeat31)) {
+        noteFire('v31_certified_skip_unknown_position');
+      } else if (tele15 && stackBB31 === null) {
+        noteFire('v31_certified_skip_unknown_root_stack');
+      } else if (
+        tele15 &&
+        !gtoV31HasHeadsUpPostflopLine(gs.actionHistory, player.seat, opponent31.seat)
+      ) {
+        noteFire('v31_certified_skip_multiway_history');
+      }
+    }
+
+    // ═══ V37 SATELLITE, POSTFLOP FALLBACK ═══ Certified exact satellite ICM
+    // gets first refusal above.  The survival heuristic remains the fail-
+    // closed answer when no exact candidate/active cell can answer (or when
+    // the game is ineligible), but it must never make the evaluator's
+    // satellite component structurally incapable of executing the candidate.
     if (sat37.locked) {
       if (tele15) noteFire('v37_sat_locked_postflop');
       if (facingBet) {
@@ -3746,14 +3984,6 @@ export class HorseLogic {
       return { action: 'check', thinkTime: 0 };
     }
 
-    const useV11 = opts.v11 !== false;
-    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
-    // marginal calls against the raked pot, not the raw one. Above the cap
-    // (large pots) the drag is zero and this reduces to honest pot odds.
-    // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
-    // V34: computed here, above the solver consult, so V32 prices the same
-    // raked pot the heuristic call line does.
-    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
     /** V34: the solver said CALL with a drawing hand; the semi-bluff raise
      *  gates below get first refusal, and the call is guaranteed after them. */
     let solverCall32 = false;
@@ -3985,80 +4215,11 @@ export class HorseLogic {
         const effStack29 = oppTotal29 > 0 ? Math.min(heroTotal29, oppTotal29) : heroTotal29;
         const stackBB29 = gs.bigBlind > 0 ? effStack29 / gs.bigBlind : 100;
 
-        // ═══ V31 FIRST (2026-08-30) ═══ The v2 export is DISJOINT from the
-        // v1 one V29/V30 read - zero of 9,584 sampled turn rows carry both -
-        // so this is not a better answer to the same question, it is the 59%
-        // of the turn V30 never sees. It is consulted first because when it
-        // CAN answer it answers strictly better: it knows how many of the
-        // board's flush suit the holding contains (bet frequency differs
-        // across those buckets by 0.334 on average on the turn, up to 1.000),
-        // and it knows the size the solver actually bet. v1 offers exactly
-        // one bet size everywhere - b16, 16% of pot - so V30 cannot express a
-        // large turn bet at all, while the v2 turn bet averages 246.8% of pot.
-        // NULL when the layer is ablated off, never a synthetic miss: a
-        // disabled layer that reports `empty_store` teaches the counters to
-        // lie about the table being empty, and those counters are the whole
-        // point of the attribution below.
-        /*
-         * DEPTH CEILING (2026-09-01). snapDepthBucket answers ANY stack over
-         * 110bb from the 150 cell, so an 800bb hero was being handed 150bb
-         * strategy with no miss recorded and nothing in the telemetry saying
-         * the answer was extrapolated. See GTO_MAX_DEPTH_BB for why the line
-         * sits at twice the deepest bucket. Beyond it the consult declines
-         * and the heuristic layers - which scale continuously with depth -
-         * play the spot. Flagged so it can be ablated in the league.
-         */
+        // Legacy V29/V30 remains a safe open-only fallback while no certified
+        // V31 cell matches. It never answers a response node.
         const tooDeep29 =
           (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB29);
         if (tooDeep29 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
-
-        const v31 =
-          !tooDeep29 && (opts.v31GtoSuitAware ?? true) !== false
-            ? gtoStreetAdviceV31({
-                street,
-                family: family29,
-                position: chartPos29,
-                stackBB: stackBB29,
-                board: gs.communityCards,
-                hand: hand29,
-                holeCards: player.cards,
-              })
-            : null;
-        if (v31?.hit) {
-          // Phase 3 observability: a hit from a NON-primary depth bucket is
-          // an answer of degraded fidelity. Count it, so "hit rate" can be
-          // split into "right cell" and "neighbour cell" instead of lumping
-          // a 150bb answer served from the 80 cell in with the real thing.
-          if (telemetryOn(opts) && !cellDepthIsPrimary(v31.cell, stackBB29)) {
-            noteFire('gto_depth_fallback');
-          }
-          const pick31 = rollMix(v31.mix, fastRandom);
-          if (!pick31) {
-            // A cell whose mix carries no mass. Counted on its own, because
-            // it is a DATA problem in a cell that exists — not a miss.
-            if (telemetryOn(opts)) noteFire('v31_gto_empty_mix');
-          } else {
-            if (pick31 === 'check') {
-              if (telemetryOn(opts)) noteFire('v31_gto_open');
-              return { action: 'check', thinkTime: 0 };
-            }
-            // The size comes from the CELL, never from a bucket midpoint:
-            // bet_big means ">=110% of pot" and the turn's real mean is 246.8.
-            // Guessing the middle of that bucket would size the solver's
-            // overbet at about a third of what it is, which is the entire
-            // reason this layer exists. snapFraction passes anything above
-            // 1.4 through untouched and legalize clamps to the stack, so a
-            // 2.46x pot bet survives intact and becomes all-in when short.
-            const frac31 = v31.sizeFrac[pick31];
-            if (typeof frac31 === 'number' && frac31 > 0) {
-              if (telemetryOn(opts)) noteFire('v31_gto_open');
-              return this.betSize(pot, frac31, player, gs, vi, params, useSizing);
-            }
-            // A bet bucket with no recorded size cannot be sized honestly, so
-            // fall through to V30 rather than invent a number.
-            if (telemetryOn(opts)) noteFire('v31_gto_no_size');
-          }
-        }
 
         // The open-node consult reads the same warehouse and the same depth
         // buckets, so the ceiling applies to it identically.
@@ -4072,26 +4233,6 @@ export class HorseLogic {
               board: gs.communityCards,
               hand: hand29,
             });
-        if (!advice29 && telemetryOn(opts) && v31 && !v31.hit) {
-          // OBSERVABILITY (2026-08-30): the gate was passed and NEITHER layer
-          // answered. Until now that was silent, so "the solver layer fires on
-          // 0.08% of decisions" could not be attributed to the gate, a missing
-          // cell, or a missing holding inside a cell. Literal labels, so the
-          // dead-layer grep audit can still see them.
-          //
-          // Only fired when V31 actually LOOKED AND MISSED. If it hit and was
-          // merely unusable, v31_gto_empty_mix or v31_gto_no_size already
-          // recorded that, and adding a `no_cell` on top would claim a cell
-          // was absent when one was found — corrupting the very attribution
-          // this exists to provide.
-          if (v31.miss === 'no_cell') noteFire('gto_miss_no_cell');
-          else if (v31.miss === 'hand_not_in_cell') noteFire('gto_miss_hand_not_in_cell');
-          else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
-          else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
-          else noteFire('gto_miss_empty_store');
-          // WHICH cells are missing, not merely how many. See noteGtoMiss.
-          noteGtoMiss('v31', street, stackBB29);
-        }
         if (advice29) {
           if (telemetryOn(opts) && !cellDepthIsPrimary(advice29.cell, stackBB29)) {
             noteFire('gto_depth_fallback');

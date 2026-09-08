@@ -1,0 +1,347 @@
+.thr-champagne_tower__glass0 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-glass0 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-glass0 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  6.40749% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-champagne_tower__filled0 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-filled0 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-filled0 {
+  0.00000% {
+    opacity: 0;
+  }
+  23.20614% {
+    opacity: 0;
+  }
+  28.00576% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-champagne_tower__glass1 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-glass1 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-glass1 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  7.84737% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-champagne_tower__filled1 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-filled1 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-filled1 {
+  0.00000% {
+    opacity: 0;
+  }
+  37.60499% {
+    opacity: 0;
+  }
+  42.40461% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-champagne_tower__glass2 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-glass2 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-glass2 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  9.28726% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-champagne_tower__filled2 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-filled2 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-filled2 {
+  0.00000% {
+    opacity: 0;
+  }
+  37.60499% {
+    opacity: 0;
+  }
+  42.40461% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-champagne_tower__glass3 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-glass3 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-glass3 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  10.72714% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-champagne_tower__filled3 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-filled3 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-filled3 {
+  0.00000% {
+    opacity: 0;
+  }
+  52.00384% {
+    opacity: 0;
+  }
+  56.80346% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-champagne_tower__glass4 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-glass4 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-glass4 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  12.16703% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-champagne_tower__filled4 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-filled4 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-filled4 {
+  0.00000% {
+    opacity: 0;
+  }
+  52.00384% {
+    opacity: 0;
+  }
+  56.80346% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-champagne_tower__glass5 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-glass5 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-glass5 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  13.60691% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-champagne_tower__filled5 {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-filled5 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-filled5 {
+  0.00000% {
+    opacity: 0;
+  }
+  52.00384% {
+    opacity: 0;
+  }
+  56.80346% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-champagne_tower__bottle {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-bottle calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-bottle {
+  0.00000% {
+    opacity: 0;
+    transform: rotate(-20deg);
+  }
+  13.60691% {
+    opacity: 0;
+    transform: rotate(-20deg);
+  }
+  16.00672% {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+  59.20326% {
+    opacity: 1;
+  }
+  66.40269% {
+    opacity: 0;
+    transform: rotate(-25deg);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-25deg);
+  }
+}
+.thr-champagne_tower__pour {
+  transform-origin: 0 0;
+  animation: thr-champagne_tower-pour calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-champagne_tower-pour {
+  0.00000% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  16.00672% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  18.40653% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  56.80346% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  60.40317% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-champagne_tower__glass0 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__filled0 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__glass1 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__filled1 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__glass2 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__filled2 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__glass3 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__filled3 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__glass4 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__filled4 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__glass5 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__filled5 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-champagne_tower__bottle {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-champagne_tower__pour {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+}

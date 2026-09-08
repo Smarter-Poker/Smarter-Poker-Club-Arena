@@ -12,7 +12,7 @@
  * MINT RATE (Dan 2026-08-21, BINDING): 100 Diamonds = 10,000 Chips.
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
 import { retryFetch } from '../utils/retryFetch';
@@ -415,13 +415,35 @@ export const WalletService = {
   /**
    * Agent self-transfer: Business → Player (to play at tables)
    */
-  async agentSelfTransfer(agentId: string, amount: number): Promise<boolean> {
-    return this.internalTransfer(agentId, {
-      fromWallet: 'BUSINESS',
-      toWallet: 'PLAYER',
-      amount,
-      note: 'Agent self-transfer for gameplay',
-    });
+  async agentSelfTransfer(clubId: string, amount: number): Promise<boolean> {
+    const { assertChipAmount, runAgentWalletOperation, confirmedAgentWalletReceipt } =
+      await import('./AgentWalletIntent');
+    assertChipAmount(amount);
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user) throw new Error('Sign In Before Transferring Chips');
+    const resolvedId = (await resolveClubUUID(clubId)) || clubId;
+    return runAgentWalletOperation(
+      {
+        userId: auth.user.id,
+        clubId: resolvedId,
+        targetId: auth.user.id,
+        kind: 'self_stake',
+        amount,
+      },
+      async (operation) => {
+        const { data, error } = await supabase.rpc('fn_agent_wallet_self_stake', {
+          p_club_id: resolvedId,
+          p_amount: amount,
+          p_reason: 'Agent Wallet To Own Player Wallet',
+          p_op_id: operation.operationId,
+        });
+        if (error) throw error;
+        if (!confirmedAgentWalletReceipt(data, amount, 'self_stake')) {
+          throw new Error(data?.error || 'Transfer Was Not Confirmed By The Server');
+        }
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_self_stake', userId: auth.user.id });
+      }
+    );
   },
 
   /**

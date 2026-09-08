@@ -69,6 +69,39 @@ import { tableCountChangedFilter } from './tables.js';
  *
  * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
  */
+/** A completed transport call is not proof that the seat departed. */
+function confirmedCashout(data: unknown, seatNumber?: number): { stack: number; absent: boolean } {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Cash-out receipt missing; departure unconfirmed');
+  }
+  const receipt = data as Record<string, unknown>;
+  if (
+    receipt.ok !== true ||
+    typeof receipt.stack !== 'number' ||
+    !Number.isFinite(receipt.stack) ||
+    receipt.stack < 0 ||
+    Math.round(receipt.stack * 100) / 100 !== receipt.stack
+  ) {
+    throw new Error('Cash-out receipt invalid; departure unconfirmed');
+  }
+  if (receipt.reason === 'no_active_seat' && receipt.stack === 0) {
+    return { stack: 0, absent: true };
+  }
+  if (
+    receipt.reason !== undefined ||
+    !Number.isInteger(receipt.seat_number) ||
+    (seatNumber !== undefined && receipt.seat_number !== seatNumber) ||
+    typeof receipt.credited !== 'boolean' ||
+    typeof receipt.tournament_table !== 'boolean' ||
+    typeof receipt.idempotency_key !== 'string' ||
+    !receipt.idempotency_key.startsWith('cashout:') ||
+    receipt.idempotency_key.length <= 'cashout:'.length
+  ) {
+    throw new Error('Cash-out receipt incomplete; departure unconfirmed');
+  }
+  return { stack: receipt.stack, absent: false };
+}
+
 export async function markSeatAsLeft(
   tableId: string,
   userId: string,
@@ -87,24 +120,20 @@ export async function markSeatAsLeft(
   // scoped to the seat the RPC itself locked, so it cannot vacate another seat
   // this call never read.
   try {
-    const { error } = await supabase.rpc('atomic_seat_cashout_locked', {
+    const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
       p_user_id: userId,
       p_table_id: tableId,
       p_seat_number: seatNumber,
     });
-    if (error) {
-      console.error(
-        `[markSeatAsLeft] Locked cash-out failed for ${userId} at ${tableId} seat ${seatNumber} - seat preserved so the stack is not destroyed:`,
-        error.message
-      );
-      return;
-    }
-    void notifyWaitlistSeatOpen(tableId);
+    if (error) throw new Error(error.message);
+    const receipt = confirmedCashout(data, seatNumber);
+    if (!receipt.absent) void notifyWaitlistSeatOpen(tableId);
   } catch (err: any) {
     console.error(
-      `[markSeatAsLeft] Transport failure for ${userId} at ${tableId} seat ${seatNumber} - seat preserved:`,
+      `[markSeatAsLeft] Departure unconfirmed for ${userId} at ${tableId} seat ${seatNumber}:`,
       err?.message
     );
+    throw err;
   }
 }
 
@@ -122,7 +151,9 @@ export async function markSeatAsLeft(
  * which the clock never blocks. A refusal is reported through `onLocked` with
  * the remaining milliseconds and the function returns 0 with the seat exactly
  * as it was; any other failure goes to `onFailed`. Callbacks rather than a
- * richer return type so every existing caller keeps its `number` contract.
+ * richer return type so handled refusals keep the number contract. Without a
+ * failure callback an unconfirmed departure rejects, so awaiting callers
+ * cannot accidentally execute success cleanup.
  */
 export interface CashoutOptions {
   /** 'vpip_evicted' (Dan 2026-09-05): a nit-game eviction - a system exit
@@ -158,36 +189,25 @@ export async function atomicCashout(
 
     if (error) {
       const locked = LEAVE_LOCKED_RE.exec(String(error.message || ''));
-      if (locked) {
+      if (locked && opts?.onLocked) {
         // Refused by the stay clock. Not a failure: the player is still in
         // their chair and the caller shows them the countdown.
         opts?.onLocked?.(Number(locked[1]));
         return 0;
       }
-      // The seat is untouched: the whole thing was one transaction, so a
-      // failure here rolled back the credit AND the vacate together. The stack
-      // is still on the seat and the next pass retries it. This is the property
-      // the old code needed `safeToClearSeat` to approximate.
-      console.warn(
-        `[atomicCashout] Locked cash-out failed for ${userId} at ${tableId} - seat preserved for retry:`,
-        error.message
-      );
-      opts?.onFailed?.(String(error.message || 'cash-out failed'));
-      return 0;
+      throw new Error(String(error.message || 'cash-out failed'));
     }
 
-    const stack = Number((data as any)?.stack ?? 0);
-    if ((data as any)?.reason === 'no_active_seat') return 0;
-
-    // Seat opened — notify the waitlist. Unchanged behaviour.
-    void notifyWaitlistSeatOpen(tableId);
-    return Number.isFinite(stack) ? stack : 0;
+    const receipt = confirmedCashout(data, seatNumber);
+    if (!receipt.absent) void notifyWaitlistSeatOpen(tableId);
+    return receipt.stack;
   } catch (err: any) {
     console.warn(
-      `[atomicCashout] Transport failure for ${userId} at ${tableId} - seat preserved for retry:`,
+      `[atomicCashout] Departure unconfirmed for ${userId} at ${tableId} - retain tracking for retry:`,
       err?.message
     );
-    opts?.onFailed?.(String(err?.message || 'transport failure'));
+    if (!opts?.onFailed) throw err;
+    opts.onFailed(String(err?.message || 'transport failure'));
     return 0;
   }
 }

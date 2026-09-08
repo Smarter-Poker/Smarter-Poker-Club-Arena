@@ -15,7 +15,7 @@
  */
 
 import { reconnectProtectionSeconds, type ReconnectMembership } from './reconnectProtection.js';
-import { thawReconnectClock } from '../maintenance/reconnectFreeze.js';
+import { thawTableReconnectClock } from '../maintenance/reconnectFreeze.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
@@ -1050,7 +1050,7 @@ export class DisconnectEngine {
     const key = `${tableId}:${playerId}`;
     const s = this.playerStates.get(key);
     if (!s) return null;
-    thawReconnectClock(s);
+    thawTableReconnectClock(tableId, s);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
 
     // Everything a restore needs to continue rather than restart (item 2/4).
@@ -1208,7 +1208,7 @@ export class DisconnectEngine {
     const state = this.playerStates.get(key);
     if (!state) return;
 
-    thawReconnectClock(state);
+    thawTableReconnectClock(tableId, state);
 
     this.emitEvent({
       type: 'DISCONNECT_TIMER_STARTED',
@@ -1223,8 +1223,7 @@ export class DisconnectEngine {
       (state.disconnectedAt ?? Date.now()) +
         reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
     state.reconnectDeadlineMs = deadline;
-    const durationMs = Math.max(0, deadline - Date.now());
-    this.preciseTimer.startTimer(tableId, `disconnect:${playerId}`, durationMs, () => {
+    this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, deadline, () => {
       // Check if player reconnected during the countdown
       if (state.isConnected) return;
 

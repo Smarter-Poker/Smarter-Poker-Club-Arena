@@ -147,6 +147,21 @@ describe('EngineStateClient — heartbeats cannot acknowledge missing game state
   const resyncs = (ws: FakeWebSocket) =>
     ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'RESYNC');
 
+  it('refreshes a confirmed purchase through the current table socket without another connection', async () => {
+    const { c, ws } = await openTable();
+    try {
+      const before = resyncs(ws).length;
+      const sockets = FakeWebSocket.instances.length;
+      c.requestSnapshot();
+      expect(resyncs(ws)).toHaveLength(before + 1);
+      expect(resyncs(ws).at(-1)).toMatchObject({ type: 'RESYNC', tableId: TABLE });
+      expect(FakeWebSocket.instances).toHaveLength(sockets);
+      expect(ws.closedWith).toHaveLength(0);
+    } finally {
+      c.disconnect();
+    }
+  });
+
   it('requests the missing first snapshot and reconnects despite continuing pings', async () => {
     const { c, ws, statuses } = await openTable();
     try {
@@ -1049,4 +1064,80 @@ describe('token acquisition cannot strand either connection type', () => {
       expect(onStatus).toHaveBeenLastCalledWith('idle');
     }
   );
+});
+
+describe('foreground recovery does not wait for an online event', () => {
+  function make(kind: 'table' | 'channel') {
+    return kind === 'table'
+      ? client({ initialDelay: 30_000, maxDelay: 30_000 }).c
+      : new EngineChannelClient({
+          baseUrl: 'https://engine.example',
+          getToken: async () => 'tok',
+          initialDelay: 30_000,
+          maxDelay: 30_000,
+        });
+  }
+  function wake(event: 'pageshow' | 'visibilitychange') {
+    (event === 'pageshow' ? window : document).dispatchEvent(new Event(event));
+  }
+  for (const kind of ['table', 'channel'] as const) {
+    for (const event of ['pageshow', 'visibilitychange'] as const) {
+      it(`${kind}: ${event} immediately replaces a closed connection during a long retry`, async () => {
+        const c = make(kind);
+        try {
+          void c.connect();
+          await flush();
+          live()._serverClose(1006);
+          const before = FakeWebSocket.instances.length;
+          wake(event);
+          await flush();
+          expect(FakeWebSocket.instances.length).toBe(before + 1);
+        } finally {
+          c.disconnect();
+        }
+      });
+    }
+    it(`${kind}: hidden pages and permanently disconnected clients do not reopen`, async () => {
+      const visibility = vi.spyOn(document, 'visibilityState', 'get');
+      const c = make(kind);
+      try {
+        void c.connect();
+        await flush();
+        live()._serverClose(1006);
+        const before = FakeWebSocket.instances.length;
+        visibility.mockReturnValue('hidden');
+        wake('pageshow');
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before);
+        c.disconnect();
+        visibility.mockReturnValue('visible');
+        wake('pageshow');
+        wake('visibilitychange');
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before);
+      } finally {
+        c.disconnect();
+        visibility.mockRestore();
+      }
+    });
+    it(`${kind}: a healthy open connection survives repeated wake events`, async () => {
+      const c = make(kind);
+      try {
+        void c.connect();
+        await flush();
+        const ws = live();
+        ws._open();
+        if (kind === 'table') ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        await flush();
+        const before = FakeWebSocket.instances.length;
+        wake('pageshow');
+        wake('visibilitychange');
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before);
+        expect(ws.closedWith).toHaveLength(0);
+      } finally {
+        c.disconnect();
+      }
+    });
+  }
 });

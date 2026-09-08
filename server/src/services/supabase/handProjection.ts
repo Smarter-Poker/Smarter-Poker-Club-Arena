@@ -10,6 +10,8 @@
  * and joined by the worker lifecycle.
  */
 
+import { AsyncResource } from 'node:async_hooks';
+import { currentTournamentDataAuthority } from './dataActorContext.js';
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 
@@ -52,11 +54,48 @@ export type HandPostCommitResult = {
 export async function processHandPostCommitObligations(
   handId: string
 ): Promise<HandPostCommitResult> {
-  const { data, error } = await supabase.rpc('fn_ca_process_hand_post_commit_obligations', {
-    p_hand_id: handId,
-  });
-  if (error) throw error;
-  return (data ?? {}) as HandPostCommitResult;
+  const apply = async (id: string): Promise<HandPostCommitResult> => {
+    const { data, error } = await supabase.rpc('fn_ca_process_hand_post_commit_obligations', {
+      p_hand_id: id,
+    });
+    if (error) throw error;
+    return (data ?? {}) as HandPostCommitResult;
+  };
+  const initial = await apply(handId);
+  if (initial.ok === true || initial.reason !== 'predecessor_pending') return initial;
+
+  // A recovered table can have an older accepted hand whose dealer vanished.
+  // Retrying only this hand cannot advance that dependency. Waiting for the
+  // global statistics outbox instead stranded live tables for minutes.
+  // Help ONLY this table's earlier immutable envelopes, oldest first, through
+  // the same row-locked, receipt-protected function. Never mark work complete
+  // locally and never run dashboard projections on the dealing path.
+  const { data: target, error: targetError } = await supabase
+    .from('hand_atomic_commits')
+    .select('table_id,hand_number')
+    .eq('hand_id', handId)
+    .maybeSingle();
+  if (targetError) throw targetError;
+  if (!target) return initial;
+  const { data: earlier, error: earlierError } = await supabase
+    .from('hand_atomic_commits')
+    .select('hand_id')
+    .eq('table_id', target.table_id)
+    .lt('hand_number', target.hand_number)
+    .not('post_commit_payload', 'is', null)
+    .is('post_commit_completed_at', null)
+    .order('hand_number', { ascending: true })
+    .limit(16);
+  if (earlierError) throw earlierError;
+  for (const predecessor of earlier ?? []) {
+    const result = await apply(predecessor.hand_id);
+    // The oldest unresolved dependency still owns the barrier on any doubt.
+    // Return the requested hand's refusal, not another hand's success receipt.
+    if (result.ok !== true) return initial;
+  }
+  // Includes the concurrent-worker case (the read found no earlier work).
+  // Only the requested hand's authoritative receipt can unblock its engine.
+  return apply(handId);
 }
 
 const DRAIN_PAGE = 100;
@@ -69,6 +108,7 @@ let drainPromise: Promise<HandProjectionDrainSummary> | null = null;
 let wakeAfterDrain = false;
 let stopping = false;
 let workerActive = false;
+let runOwnedDrain: (() => Promise<HandProjectionDrainSummary>) | null = null;
 let lifecycleEpoch = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryAttempt = 0;
@@ -199,12 +239,12 @@ function beginDrain(): Promise<HandProjectionDrainSummary> {
 
 /** Coalesce every transaction/Realtime work signal onto the active worker. */
 export function wakeHandProjection(): Promise<HandProjectionDrainSummary> {
-  if (!workerActive || stopping) return Promise.resolve(emptySummary());
+  if (!workerActive || stopping || !runOwnedDrain) return Promise.resolve(emptySummary());
   // A fresh causal signal supersedes a pending backoff and is permission to
   // try immediately. It also resets the backoff because the dependency state
   // may have changed since the preceding refusal.
   cancelCausalRetry(true);
-  return beginDrain();
+  return runOwnedDrain();
 }
 
 /**
@@ -214,6 +254,15 @@ export function wakeHandProjection(): Promise<HandProjectionDrainSummary> {
  */
 export function startHandProjectionWorker(): void {
   if (workerActive) return;
+  // Only process startup may establish this worker's authority. A manager
+  // can signal existing durable work, never create a service-context escape.
+  if (currentTournamentDataAuthority() !== null) {
+    throw new Error('Hand projection worker must start outside tournament authority');
+  }
+  // Capture the worker owner once. An idle drain woken by a tournament must
+  // not send global outbox requests under that tournament's lease. This
+  // private, zero-argument callback only drains server-owned durable claims.
+  runOwnedDrain = AsyncResource.bind(beginDrain, 'HandProjection.worker');
   workerActive = true;
   stopping = false;
   lifecycleEpoch++;
@@ -248,6 +297,7 @@ export function startHandProjectionWorker(): void {
 export async function stopHandProjectionWorker(): Promise<void> {
   workerActive = false;
   stopping = true;
+  runOwnedDrain = null;
   lifecycleEpoch++;
   wakeAfterDrain = false;
   cancelCausalRetry(true);

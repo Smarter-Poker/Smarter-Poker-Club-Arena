@@ -27,6 +27,10 @@ import { nextHandGap } from './engine/nextHandGapRecorder.js';
 import { EngineTelemetry } from './engine/EngineTelemetry.js';
 import { evaluateEngineLiveness } from './engine/EngineLivenessVerdict.js';
 import {
+  settlementHealthSnapshot,
+  settlementPrometheusLines,
+} from './observability/SettlementHealth.js';
+import {
   supabase,
   startHandHistoryRetry,
   stopHandHistoryRetry,
@@ -2936,6 +2940,10 @@ export class GameServer {
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
+      // A retrying settlement can keep process liveness fresh forever. Publish
+      // its continuous wait separately; one blockage must not withdraw routing
+      // or restart every healthy table via the HTTP health probe.
+      ...settlementHealthSnapshot(tableLiveness),
       /**
        * The numerator and denominator of the liveness verdict, published so
        * the verdict can be argued with from outside the process (2026-09-05).
@@ -3109,6 +3117,7 @@ export class GameServer {
      * the recovery chain. See the long note on `wholeFleetStalled` above.
      */
     const freeze: string[] = [
+      ...settlementPrometheusLines(liveness),
       '# HELP poker_stalled_tables Tables with 2+ dealable seats, not paused by design, and no progress for 2 minutes',
       '# TYPE poker_stalled_tables gauge',
       `poker_stalled_tables ${stalled.length}`,
@@ -3442,6 +3451,7 @@ export class GameServer {
         humans: engine.humansSeated(),
         handCount: engine.getHandCount(),
         msSinceProgress: engine.msSinceProgress(),
+        settlementAgeMs: engine.settlementAgeMs(),
         // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
         // /health could say a table had made no progress for 96 seconds but not
         // what it was doing for those 96 seconds, so a fleet-wide stall showed up

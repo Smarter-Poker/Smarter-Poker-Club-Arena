@@ -107,3 +107,96 @@ hand-gap outlier correlation after #3765's normal engine adoption; HTTP
 mutation response deadlines; session-revocation identity ownership; durable
 maintenance thaw/resume-wave compensation; physical network-switch testing.
 The observed healthy browser is not a substitute for these verifications.
+
+## 19:08 UTC delivery reconciliation
+
+This later snapshot supersedes delivery status above, without rewriting the
+historical incident evidence. Public and origin `build-info.json` both served
+`95b11188d7ce4e9b33b71bb0a218e3544724920c`, built 18:47:49 UTC, run 34264938814. Cache-busted engine health served `6f11ed3f` with maintenance
+idle and all 251 tables resumed across eight waves.
+
+Engine deployment 34264479798 / job 102190302161 succeeded through the normal
+Hetzner workflow. Its exact target was
+`6f11ed3f7337766543ed68e87de58e4f17e4f6c8`. Logs prove the new image started
+at 18:55:48, the public hostname served it at 18:56:20, and `engine_leader`
+reported the changed version at 18:56:22. The duplicate queued run
+34264499597 was cancelled by the existing workflow, not by this agent.
+
+Each cell below was recomputed with `git merge-base --is-ancestor` against
+fresh `origin/main`, the actual public artifact SHA and actual engine SHA.
+Repository inclusion in the frontend does not execute server code.
+
+| PR    | On main | In public artifact commit | In running engine commit |
+| ----- | ------- | ------------------------- | ------------------------ |
+| #3810 | Yes     | Yes                       | Yes                      |
+| #3816 | Yes     | Yes                       | Yes                      |
+| #3817 | Yes     | Yes                       | Yes                      |
+| #3820 | Yes     | Yes                       | Yes                      |
+| #3824 | Yes     | Yes                       | Yes                      |
+| #3827 | Yes     | Yes                       | Yes                      |
+| #3833 | Yes     | Yes                       | Yes                      |
+| #3835 | Yes     | Yes                       | Yes                      |
+| #3839 | Yes     | Yes                       | Yes                      |
+| #3843 | Yes     | Yes                       | Yes                      |
+| #3845 | Yes     | Yes                       | Yes                      |
+| #3850 | Yes     | Yes                       | Pending                  |
+| #3854 | Yes     | Yes                       | Pending                  |
+
+#3839's BBJ receipt function migration and #3845's resolved-add-on replay
+migration were also separately applied and verified in production; see their
+incident audits for exact function digests and natural settlement recovery.
+Neither application manually completed a hand or changed a balance.
+
+#3850 (maintenance reconnect wave clock) and #3854 (Spin draw readback)
+remain **not running in the engine** at this snapshot, despite being merged
+and present in the public repository artifact. The next engine adoption must
+be verified before claiming either server behavior is live. The new settlement
+blockage telemetry is likewise tracked separately from already served code.
+
+## Production Reconciliation, 20:03-20:06 UTC
+
+The scheduled Hetzner deployment run 34270395338 / job 102210235665 succeeded.
+Its public-host probe at 19:56:53 and engine_leader proof at 19:56:55 both report
+ad6342dfbe4699357a88be7c9e3aacc4d5ac3ae3, replacing 6f11ed3f. A fresh public
+health read independently reports ad6342df. This adopts #3850 reconnect wave
+compensation, #3854 Spin draw readback and #3857 settlement blockage health.
+All eight resume waves completed, 267 of 267 tables resumed. Settlement fields
+are present with status ok and zero blocked settlements at this sample.
+
+Both public Club Arena and ca-static build-info agree on
+b0eeaf65c52ae257c2a7bcb17cfa818404e5461a, built 19:45:29 by publisher run 34270591657. These are public artifact reads, not assumptions from merged PRs.
+
+The reported Madness table is dealing hand 8303519 with six seated and five
+dealable players. Both previously stuck Spin tournaments now report RUNNING in
+the database. The bounded four-minute engine log sample contains no repeat of
+the prior Spin draw readback loop.
+
+Remaining latency is material: at 20:06, the 2,000-sample hand-gap window is
+p50 2,003ms, p90 8,125ms, max 29,304ms. Settlement post-commit phase p90 is
+10,753ms and awaiting post-hand work p90 is 4,976ms. Per-phase percentiles have
+different sample populations and must not be summed. Seven durable envelopes
+were pending in a contemporaneous database sample, with the oldest only seconds
+old. These measurements do not support closing the hand-delay incident.
+
+The new cash buy-in receipt function was applied at catalog version
+20260908194834 and verified separately. Its durable client recovery change is
+still awaiting branch publication and CI at this checkpoint. Physical iPad
+home-screen and offline/reconnect testing remain unverified because the browser
+connection tool times out. No production buy-in or financial test was performed.
+
+## Publication verification around 21:00 UTC
+
+Cash recovery PR #3860 merged as 61df0dc0e0a5e06d7319d42cae801a477eaab057.
+CI 34274558668 passed; Hetzner publication 34275395230 served the same SHA from
+both public and origin build-info (built 20:34:54 UTC). The later public build
+is ba8804f916cc3b057d076e0c6a83a42d2ffca66d, built 20:51:56 UTC, run 34277055749. The scheduled engine cutover now reports version 61df0dc0;
+its next-hand sample set was still empty during the maintenance window.
+
+Settlement alert PR #3861 merged as e36633be204e546aead6836bca778bfbf4f41297.
+Monitoring deploy 34275598564 succeeded. Prometheus evaluated the installed
+PokerSettlementBlocked rule at 20:47:52 UTC with health ok, state inactive and
+the expected 60-second hold and maintenance exclusion. No synthetic alert sent.
+
+The physical iPad home-screen/offline flow and a paid join remain unverified.
+Browser CDP refresh is unavailable. Publication proof is not end-to-end gameplay
+proof, and hand-gap outliers remain under investigation.

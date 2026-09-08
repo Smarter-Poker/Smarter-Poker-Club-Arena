@@ -1,0 +1,81 @@
+{
+  "_owner": "agent/codex-horse-phase4/feat/horse-phase4-v31-certified-solver",
+  "tables": [
+    "gto_v31_input_bundles",
+    "gto_v31_datasets",
+    "gto_v31_runtime_cells",
+    "gto_v31_cell_source_receipts",
+    "gto_v31_source_artifacts",
+    "gto_v31_release_evaluations",
+    "horse_solver_agreement_decisions",
+    "solver_worker_heartbeats",
+    "solver_worker_liveness",
+    "solver_compact_heartbeats",
+    "solver_compact_liveness",
+    "solver_ingress_nonces"
+  ],
+  "functions": [
+    "fn_gto_v31_json_checksum",
+    "fn_gto_v31_source_artifact_checksum",
+    "ca_gto_v31_approve_input_bundle",
+    "ca_gto_v31_revoke_input_bundle",
+    "fn_gto_v31_node_checksum",
+    "fn_gto_v31_cell_key_checksum",
+    "fn_gto_v31_cell_payload_checksum",
+    "fn_gto_v31_cell_payload_valid",
+    "fn_gto_v31_register_dataset",
+    "fn_gto_v31_worker_contract",
+    "fn_gto_v31_combo_cards",
+    "fn_gto_v31_hand_key",
+    "fn_gto_v31_node_line_proof",
+    "fn_gto_v31_source_node_valid",
+    "fn_gto_v31_ingest_source_artifact",
+    "fn_gto_v31_build_cell",
+    "fn_gto_v31_heldout_metrics",
+    "fn_gto_v31_seal_build",
+    "fn_gto_v31_record_evaluation",
+    "fn_gto_v31_mark_candidate",
+    "fn_gto_v31_promote_dataset",
+    "fn_gto_v31_active_cells",
+    "fn_gto_v31_evaluation_cells",
+    "fn_audit_gto_v31_certified",
+    "fn_horse_solver_agreement_decision",
+    "fn_horse_solver_agreement_add",
+    "fn_audit_solver_agreement",
+    "ca_horse_solver_agreement",
+    "ca_horse_solver_agreement_decisions",
+    "fn_solver_ingress_claim",
+    "fn_solver_worker_heartbeat",
+    "fn_solver_compact_heartbeat",
+    "fn_audit_solver_pipeline_liveness",
+    "ca_solver_pipeline_liveness",
+    "ca_gto_v31_certification_status"
+  ],
+  "columns": {
+    "solved_spots_gold": [
+      "solver_version",
+      "solver_binary_checksum",
+      "machine_id",
+      "pipeline_commit",
+      "pipeline_bundle_checksum",
+      "manifest_version",
+      "manifest_checksum",
+      "source_artifact_checksum",
+      "quality_status",
+      "audited_at"
+    ],
+    "horse_solver_agreement": [
+      "eligible_spots",
+      "reconciled_spots",
+      "action_regret_bb",
+      "regret_eligible_spots",
+      "decision_checksum"
+    ],
+    "horse_league_results": [
+      "truncated_streets",
+      "candidate_policy_hits",
+      "candidate_node_roles",
+      "candidate_benchmark_components"
+    ]
+  }
+}

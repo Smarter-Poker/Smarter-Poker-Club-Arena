@@ -27,7 +27,8 @@
  */
 
 export type LedgerKind =
-  /** a HorseDecideOpts switch read by decide() / decidePreflopV7 */
+  /** a HorseDecideOpts control read by decide() / decidePreflopV7; this also
+   *  includes non-boolean offline evaluation selectors and evidence hooks */
   | 'flag'
   /** a StyleParams number the style + profile + persona resolve into */
   | 'param'
@@ -85,6 +86,17 @@ const flag = (
   consumer,
   note,
   since,
+});
+
+const evaluationControl = (key: string, note: string): LedgerEntry => ({
+  key,
+  kind: 'flag',
+  source:
+    'Offline GtoV31CandidateEvaluation and HorseLeague only; excluded from live worker requests',
+  cadence: 'per_action',
+  consumer: 'HorseLogic.decide certified V31 candidate path',
+  note,
+  since: 'Phase4',
 });
 
 const receipt = (
@@ -381,7 +393,9 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
 
 export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
-  // FLAGS. Every HorseDecideOpts switch. Off = the layer's league b-side.
+  // HORSE DECISION CONTROLS. Boolean switches use off as the league b-side;
+  // the two Phase 4 evaluation controls are offline-only and fail closed at
+  // the live worker boundary.
   // ─────────────────────────────────────────────────────────────────────────
   flag(
     'decisionTimeMs',
@@ -476,6 +490,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v29GtoFlop', 'NLH flop solver cells', 'V29'),
   flag('v30GtoTurnRiver', 'NLH turn/river solver cells', 'V30'),
   flag('v31GtoSuitAware', 'suit-aware solver lookups', 'V31'),
+  evaluationControl(
+    'gtoV31DatasetChecksum',
+    'selects one exact sealed candidate checksum without changing the active live store'
+  ),
+  evaluationControl(
+    'onGtoV31Decision',
+    'captures decision-level source receipts for paired replay and league reconciliation'
+  ),
   flag('v32FacingDefense', 'solver facing-bet defense', 'V32'),
   flag('v33DepthCeiling', 'solver depth ceiling (300bb)', 'V33'),
   flag('v37Satellite', 'satellite survival play', 'V37'),
@@ -798,6 +820,49 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V47: the absolute score - mean solver frequency of the action the horse chose, hold em push/fold spots only',
     'V47',
     { dayColumn: 'run_date', freshnessDays: 2 }
+  ),
+  table(
+    'horse_solver_agreement_decisions',
+    'nightly',
+    'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions',
+    'reconciled per-decision evidence behind the nightly chart-agreement summary, including the final action, reference mix, regret availability, and source seal',
+    'Phase4',
+    { dayColumn: 'run_date', freshnessDays: 2 }
+  ),
+  table(
+    'gto_v31_runtime_cells',
+    'boot',
+    'GtoPostflopV31Loader via fn_gto_v31_active_cells',
+    'the only certified postflop policy cells the live action path may load',
+    'Phase4'
+  ),
+  table(
+    'gto_v31_datasets',
+    'nightly',
+    'fn_audit_gto_v31_certified',
+    'candidate and active corpus release seals, held-out metrics, replay gate, and league gate',
+    'Phase4'
+  ),
+  table(
+    'gto_v31_cell_source_receipts',
+    'nightly',
+    'fn_gto_v31_mark_candidate',
+    'immutable lineage from each compact cell to its independently attributed source nodes',
+    'Phase4'
+  ),
+  table(
+    'solver_worker_liveness',
+    'minute',
+    'fn_audit_solver_pipeline_liveness',
+    'latest monotonic M1 and M2 progress, provenance, rate, ETA, invalid rows, and artifact receipt',
+    'Phase4'
+  ),
+  table(
+    'solver_compact_liveness',
+    'minute',
+    'fn_audit_solver_pipeline_liveness',
+    'latest certified compact-build state and source lag',
+    'Phase4'
   ),
   table(
     'horse_league_results',

@@ -21,6 +21,7 @@
  * Deploy to: Hetzner VPS (primary), or any Node.js host.
  */
 
+import { AsyncResource } from 'node:async_hooks';
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';
 import { reportError } from './services/errorReporter.js';
 import { handHistoryQueueDepth } from './services/supabase.js';
@@ -415,12 +416,16 @@ async function performShutdown(): Promise<void> {
   }
 }
 
-const shutdown = (): Promise<void> => {
+// Capture bootstrap context once. A fatal callback may originate inside one
+// tournament's authority, but process-wide teardown must drain every manager
+// through its own bound authority. Preserve those guards and restore the
+// process owner's context before entering the shared shutdown operation.
+const shutdown = AsyncResource.bind((): Promise<void> => {
   if (shutdownOperation) return shutdownOperation;
   shuttingDown = true;
   shutdownOperation = performShutdown();
   return shutdownOperation;
-};
+}, 'GameServer.processShutdown');
 
 // Leadership loss is the same ownership transition as SIGTERM.  The
 // leadership module deliberately does not release its lease or terminate the

@@ -22,7 +22,12 @@ export interface HorseDecisionFence {
 /** Options the live caller may pass. Worker ownership fixes telemetry/depth. */
 export type LiveHorseDecideOpts = Omit<
   HorseDecideOpts,
-  'telemetry' | 'deepEquity' | 'decisionTimeMs' | 'observeMind'
+  | 'telemetry'
+  | 'deepEquity'
+  | 'decisionTimeMs'
+  | 'observeMind'
+  | 'gtoV31DatasetChecksum'
+  | 'onGtoV31Decision'
 >;
 
 export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {

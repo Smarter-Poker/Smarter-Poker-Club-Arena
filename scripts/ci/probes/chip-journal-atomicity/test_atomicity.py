@@ -609,6 +609,10 @@ if mode=="fixed":
 if mode=="fixed":
  from test_bbj import verify_bbj
  verify_bbj(run)
+ from test_post_commit_addons import verify_post_commit_addons
+ verify_post_commit_addons(run)
+ from test_cash_buyin_receipt import verify_cash_buyin_receipt
+ verify_cash_buyin_receipt(run)
 
 if mode=="fixed":
  from test_insurance import verify_insurance
@@ -625,3 +629,15 @@ if mode=="fixed":
 if mode=='fixed':
  from test_rebuy_receipts import verify_rebuy_receipts
  verify_rebuy_receipts(run)
+
+if mode=="fixed":
+ from test_bbj_source_correction import verify_bbj_source_correction
+ verify_bbj_source_correction(run)
+
+if mode=="fixed":
+ from test_stats_witness_showdown import verify_stats_witness_showdown
+ verify_stats_witness_showdown(run)
+
+if mode == "fixed":
+    from test_stats_runout_index import verify_stats_runout_index
+    verify_stats_runout_index(run)

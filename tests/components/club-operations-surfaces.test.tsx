@@ -202,6 +202,12 @@ describe('the rail carries the queue into every tool', () => {
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
+  it('never mounts chip-club operations for Diamond Arena routes', async () => {
+    const { container } = mountRail('/clubs/diamond-arena/finance');
+    await waitFor(() => expect(container.querySelector('nav')).toBeNull());
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
   it('stays out of the way on a route outside the workspace', async () => {
     const { container } = mountRail(`/clubs/${SLUG}/lobby`);
     await waitFor(() => expect(container.querySelector('nav')).toBeNull());
@@ -242,7 +248,7 @@ describe('the finance sub-workspace reads its own group', () => {
     mountWorkspace('finance');
     await waitFor(() => expect(screen.getByText('Cashier')).toBeTruthy());
     const cashier = screen.getByText('Cashier').closest('a');
-    expect(within(cashier as HTMLElement).getByText('9 Waiting')).toBeTruthy();
+    expect(await within(cashier as HTMLElement).findByText('9 Waiting')).toBeTruthy();
   });
 
   it('stops promising live systems when nothing could be read', async () => {

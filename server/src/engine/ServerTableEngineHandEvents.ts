@@ -263,7 +263,32 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             }>;
           }
         ).postings;
+        /**
+         * THE ANTE IS SEEN LEAVING THE PLAYER (Dan 2026-09-04): "IF THERE IS
+         * AN ANTE, THAT NEEDS TO BE TAKEN FROM THE PLAYER AND ADDED TO THE
+         * POT PRE FLOP." The money already moves that way - postBlinds adds a
+         * regular ante straight to state.pot, so the pot pill has always
+         * counted it from the first snapshot. What the table never SHOWED
+         * was the chips going: BLINDS_POSTED carries only the SB and BB (and
+         * says so, above), and a bomb ante flies at the blast, but a plain
+         * ante just made every stack a little smaller and the pot a little
+         * bigger with nothing in between. This event is the presentation the
+         * bomb ante already has, for the regular ante: every seat that posted
+         * one, and how much, so the client can fly it to the middle.
+         */
         if (Array.isArray(postings)) {
+          const antePostings = postings
+            .filter((p) => p && p.kind === 'ante' && p.amount > 0)
+            .map((p) => ({ seat: p.seat, amount: p.amount }));
+          if (antePostings.length > 0) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'antes_posted',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              postings: antePostings,
+              timestamp: Date.now(),
+            });
+          }
           for (const p of postings) {
             if (!p || !(p.amount > 0)) continue;
             this.currentHandActions.push({

@@ -57,3 +57,9 @@ Installed player_leave_table(uuid,uuid), MD5 0d16681a00b7515c40cbb053760af51e, t
 The cash lock-order test failed against the installed wrapper because a third connection could not acquire the seat NOWAIT while expiry waited on the user advisory lock. The corrected wrapper passes that case and a separate tournament-parent contention case. All 18 isolated PostgreSQL cases pass, including rollback, lost response, malformed amounts, and both functions' grants. Both complete migrations are applied twice in the disposable database; server TypeScript passes. Expected player_leave_table MD5 is cbab2d426b0ec091b5b09f3e76eec640.
 
 This closes the proved lock inversion in player_leave_table only. Closing-table/cluster wrapper ordering and occupancy-bound retry identity remain open. Of six SQL definitions mentioning atomic_seat_cashout_locked, five invoke it and remove_horse only contains a retirement error; it is not an active cashout path.
+
+Seat-expiry correction applied as migration 20260908215333 (reserved source 20260908214235). Live player_leave_table definition MD5 matches cbab2d426b0ec091b5b09f3e76eec640. Anonymous/authenticated EXECUTE remain false; service_role remains true. Source publication is PR #3878.
+
+PR #3872 merged as 54ed5bc1eb25dd5f1da213bb2cd0c99cb164eb37 after CI34281137223 passed all required jobs. The public frontend subsequently served 243456f0231d4a2c5f4036f177604f3be6e2ccad, built at 2026-09-08T21:53:33Z by Hetzner run34282845196. Its actual entry asset index-Czg2Izqj-v6.js contains both the cashout receipt rejection and missing table-context guard.
+
+Engine health last observed version61df0dc0: it includes the wager/reopening merge but predates the receipt merge. The live database guards are active independently. Server receipt-guard adoption still needs scheduled-maintenance evidence; no restart was forced.

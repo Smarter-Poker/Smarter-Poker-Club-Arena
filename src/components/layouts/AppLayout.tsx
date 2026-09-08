@@ -11,7 +11,7 @@
 
 import { Outlet, useLocation } from 'react-router-dom';
 import RouteErrorBoundary from '../common/RouteErrorBoundary';
-import { useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import styles from './AppLayout.module.css';
 import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
@@ -22,7 +22,12 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
 import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
 import NavigationTelemetry from '../navigation/NavigationTelemetry';
-import DailyBonusEntry from '../daily-bonus/DailyBonusEntry';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+// The Daily Club Arena Bonus sheet is not first-paint material: the entry
+// chunk stays as it was and the sheet, its service and the club-buttons kit
+// arrive in their own chunk the first time a signed-in player lands here.
+const DailyBonusEntry = lazyWithRetry(() => import('../daily-bonus/DailyBonusEntry'));
 
 /*
  * THE ROUTE ART IS GONE (2026-08-30).
@@ -103,7 +108,11 @@ function AppLayoutContent() {
       {/* The Daily Club Arena Bonus sheet, once per day on entry. It waits
           behind the welcome and the profile gate so a first-run player meets
           them in order, and never opens on a table. */}
-      {isReady && profileReady && <DailyBonusEntry suspended={showWelcome || showProfileModal} />}
+      {isReady && profileReady && (
+        <Suspense fallback={null}>
+          <DailyBonusEntry suspended={showWelcome || showProfileModal} />
+        </Suspense>
+      )}
 
       {/* Global Header — Always visible except on active table pages.
           It carries Back and Hub on every page now, so there is no longer a

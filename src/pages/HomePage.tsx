@@ -34,7 +34,6 @@ import { ClubEntryTrustService, type ClubEntryFlags } from '../services/ClubEntr
 import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
-import DailyBonusEntry from '../components/daily-bonus/DailyBonusEntry';
 import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
@@ -70,6 +69,7 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazyWithRetry(() => import('../components/modals/CreateClubModal'));
 const JoinClubModal = lazyWithRetry(() => import('../components/modals/JoinClubModal'));
+const DailyBonusEntry = lazyWithRetry(() => import('../components/daily-bonus/DailyBonusEntry'));
 const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
@@ -1454,7 +1454,9 @@ function HomePageInner() {
 
       {/* DAILY CLUB ARENA BONUS - once per day on entry (HomePage mounts
           outside AppLayout, so it hosts its own copy). */}
-      <DailyBonusEntry />
+      <Suspense fallback={null}>
+        <DailyBonusEntry />
+      </Suspense>
 
       {/* FIND A PLAYER MODAL */}
       <Suspense fallback={null}>

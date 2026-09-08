@@ -200,15 +200,20 @@ describe('it cannot take a hand the main jackpot would have paid', () => {
 describe('the money comes out of the reserve and nowhere else', () => {
   it('the service calls fn_bbj_mini_payout and reads no pool percentage', () => {
     const fn = bbjService.slice(bbjService.indexOf('export async function processMiniBBJPayout'));
-    expect(fn).toContain("supabase.rpc('fn_bbj_mini_payout'");
+    expect(fn).toContain('await processBBJPayout({');
+    expect(fn).toContain("kind: 'mini'");
     expect(fn).not.toContain('main_balance');
-    expect(fn).not.toContain('payoutTotalPercent');
+    // Shared durability must retain separate RPC and funding arguments.
+    expect(bbjService).toContain(
+      "params.kind === 'mini' ? 'fn_bbj_mini_payout' : 'bbj_atomic_payout_v2'"
+    );
+    expect(bbjService).toContain('? { p_tier_id: params.tierId }');
+    expect(bbjService).toContain(': { p_payout_total_percent: params.payoutTotalPercent }');
   });
 
-  it('a refusal is skipped, never queued - a retry queue would be a repair job', () => {
-    /* CLAUDE.md 10.12. The main payout queues because losing one is
-       unacceptable; a mini is a few hundred chips several times a day and the
-       reserve is not going anywhere. */
+  it('business-rule refusals stay skipped while failed operations use existing settlement durability', () => {
+    // No separate repair queue is added. Runtime service tests assert that
+    // reserve-floor refusal closes the claim and transport failure leaves it open.
     const fn = bbjService.slice(bbjService.indexOf('export async function processMiniBBJPayout'));
     expect(fn).toContain("status: 'skipped'");
     expect(fn).not.toContain('queueUnpaidBBJPayout');

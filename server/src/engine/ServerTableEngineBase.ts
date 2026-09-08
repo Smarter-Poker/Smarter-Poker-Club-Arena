@@ -2499,7 +2499,14 @@ export abstract class ServerTableEngineBase {
         } catch {
           /* idle publish must never stall the wait loop */
         }
+        if (!this.lifecycleCanMutate()) return;
         if (this.seatedPlayers.length >= this.minPlayersToDeal()) break;
+        // A completed waiting sweep proves this loop is alive even when one
+        // player cannot start a hand. Discovery also watches tournament-owned
+        // tables, so an unchanged clock rebuilt healthy lone-seat tables every
+        // 180 seconds. Stamp only after the fresh read and awaited wait work:
+        // a rejected read or hung sweep must still age into recovery.
+        this.markProgress();
         console.log(
           `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
         );

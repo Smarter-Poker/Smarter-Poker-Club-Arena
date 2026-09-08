@@ -32,3 +32,16 @@ false; service_role execute is true. No engine restart is needed for this SQL.
 The next ordinary scheduled audit and fresh hand-gap samples must establish
 live runtime improvement. No claim that all tail delays or the iPad connection
 incident are resolved follows from these tests.
+
+## First production result and publication
+
+PR #3866 passed CI 34278254136 and merged at 21:06:13 UTC as
+aee6fd2e4489304cc62ccdc90fa0880a1db0f322. Public and origin build-info both
+served that SHA, built 21:08:33 UTC by Hetzner publication 34278658565.
+The 21:09 scheduled audit succeeded at 21:10:35.560, taking 95.27 seconds.
+This is not a substantial verified runtime improvement over the preceding
+97.62-second run. The narrowed check removes unnecessary reconstruction, but
+the overall audit latency remains unresolved. The seven-day EV candidate plan
+still estimates 389,962 all-in index entries and 42,733 filtered candidates;
+the old code comment describing about 400 hands no longer describes this load.
+No extra production audit invocation or heavy EXPLAIN ANALYZE was used.

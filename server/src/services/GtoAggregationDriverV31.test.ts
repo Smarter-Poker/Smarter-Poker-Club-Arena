@@ -34,6 +34,8 @@ const {
   _resetGtoAggregationDriverV31,
   gtoV31AggregationFinished,
   v30IsComplete,
+  BATCH,
+  MAX_CALLS_PER_TICK,
 } = await import('./GtoAggregationDriverV31.js');
 
 const ok = (processed: number, done = false) => ({
@@ -91,30 +93,45 @@ describe('GtoAggregationDriverV31', () => {
   });
 
   it('starts once every V30 street reports done', async () => {
-    rpc.mockResolvedValue(ok(10));
+    rpc.mockResolvedValue(ok(BATCH));
     const rows = await gtoV31AggregationTick();
-    expect(rows).toBe(40);
-    expect(rpc.mock.calls.length).toBe(4); // the hard per-tick cap
+    expect(rows).toBe(BATCH * MAX_CALLS_PER_TICK);
+    expect(rpc.mock.calls.length).toBe(MAX_CALLS_PER_TICK); // the hard per-tick cap
   });
 
   /**
-   * THE BATCH IS THE MEASUREMENT. On the engine's RPC path against an 8s
-   * statement_timeout: 5 -> 1.18s, 10 -> 6.67s, 15 -> 4.90s, 25 -> 9.06s
-   * and CANCELLED. If this ever reads 25 again the driver makes zero
-   * progress forever, because every call is rolled back before it commits.
+   * THE BATCH IS THE MEASUREMENT, AND THE MEASUREMENT WAS RE-TAKEN.
+   *
+   * The original table (5 -> 1.18s, 10 -> 6.67s, 15 -> 4.90s, 25 -> 9.06s
+   * CANCELLED) was measured while every batch ALSO re-read every row the
+   * driver had already processed: the keyset was an un-sargable OR chain, so
+   * a batch scanned idx_solved_spots_gold_solved_v2_at from the start and
+   * discarded the prefix - 761 ms and ~4.8 GB of buffers, growing with
+   * progress. Migration 20260908034500 made it a seek (0.082 ms, 12 buffers)
+   * and the batch was re-measured on this same RPC path: 25 -> 4.53s cold and
+   * 1.15/1.30/1.38s warm, comfortably inside the 8s ceiling; 50 and 100 still
+   * cancel. 25 is the largest size with a COLD sample behind it.
+   *
+   * The number this pins is deliberately the constant, not a literal: the
+   * rule it guards is "the driver asks for the size that was measured", and
+   * the measurement is recorded beside the constant in the driver.
    */
-  it('always asks for the measured batch of 10', async () => {
-    rpc.mockResolvedValue(ok(10));
+  it('always asks for the measured batch', async () => {
+    expect(BATCH).toBe(25);
+    rpc.mockResolvedValue(ok(BATCH));
     await gtoV31AggregationTick();
     for (const [, args] of rpc.mock.calls) {
-      expect((args as { p_batch: number }).p_batch).toBe(10);
+      expect((args as { p_batch: number }).p_batch).toBe(BATCH);
     }
   });
 
   it('a timeout ends the tick quietly - rolled back, cursor unmoved, not an incident', async () => {
-    rpc.mockResolvedValueOnce(ok(10)).mockResolvedValueOnce(timeout).mockResolvedValue(ok(10));
+    rpc
+      .mockResolvedValueOnce(ok(BATCH))
+      .mockResolvedValueOnce(timeout)
+      .mockResolvedValue(ok(BATCH));
     const rows = await gtoV31AggregationTick();
-    expect(rows).toBe(10); // stopped at the timeout, did not hammer on
+    expect(rows).toBe(BATCH); // stopped at the timeout, did not hammer on
     expect(rpc.mock.calls.length).toBe(2);
     expect(reported).toHaveLength(0);
   });

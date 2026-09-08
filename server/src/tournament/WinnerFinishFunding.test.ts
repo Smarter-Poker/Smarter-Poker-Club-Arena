@@ -17,7 +17,8 @@ async function run(
   funded: unknown,
   guarantee = 100,
   receipt?: Record<string, unknown>,
-  awardRead?: { data: unknown; error: unknown }
+  awardRead?: { data: unknown; error: unknown },
+  format: Record<string, unknown> = {}
 ) {
   const updates: Array<{ table: string; value: any }> = [];
   const alerts = vi.fn(async () => undefined);
@@ -32,6 +33,7 @@ async function run(
     variant: 'holdem',
     tournament_type: 'MTT',
     payout_structure: [{ place: 1, percentage: 100 }],
+    ...format,
   };
   const db = {
     rpc: vi.fn(async () => ({ data: { clean: true }, error: null })),
@@ -95,6 +97,7 @@ async function run(
       return funded;
     }),
     finalFieldSize: vi.fn(async () => 2),
+    processSatelliteAwards: vi.fn(async () => undefined),
     tableEngines: new Map(),
     broadcast: vi.fn(),
     settleTournamentRake: vi.fn(),
@@ -187,5 +190,18 @@ describe('fallback winner pricing needs a readable prior award list', () => {
       expect.anything(),
       expect.objectContaining({ amount: 15 })
     );
+  });
+});
+
+describe('all satellite identities take the seat award path', () => {
+  it.each([
+    { satellite_target_id: 'target' },
+    { variant: 'satellite' },
+    { tournament_type: 'satellite' },
+  ])('does not pay structure cash for %j', async (format) => {
+    const r = await run(null, 0, undefined, undefined, format);
+    expect(r.settle).not.toHaveBeenCalled();
+    expect(r.owner.processSatelliteAwards).toHaveBeenCalledOnce();
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(true);
   });
 });

@@ -3542,7 +3542,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // (processSatelliteAwards below), never per-place cash here.
     const isSatelliteFinish =
       (tournament as any)?.variant === 'satellite' ||
-      ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
+      String((tournament as any)?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      !!(tournament as any)?.satellite_target_id;
     /**
      * THE GUARANTEE IS FUNDED HERE OR IT IS NEVER FUNDED (2026-08-31, phase 6).
      *

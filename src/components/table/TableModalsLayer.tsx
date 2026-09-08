@@ -353,7 +353,7 @@ export interface TableModalsLayerProps {
    */
   buyInSecondsLeft?: number | null;
   onCloseBuyInModal: () => void;
-  onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
+  onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<boolean | void>;
 
   // Rabbit Hunt
   /**

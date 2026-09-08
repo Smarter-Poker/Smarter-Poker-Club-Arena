@@ -16,3 +16,12 @@ single-flight guard, and no reconnect status after a stale rejection.
 
 This closes the pending-token race. It does not establish that every auth,
 logout, server restart, or table recovery path has been audited.
+
+The follow-up audit reproduced a second race in both clients: a session probe
+started for a refused socket could finish after a new socket connected and
+change its status back to reconnecting. The probe result now belongs to the
+socket and lifecycle that requested it. Four additional regressions cover both
+clients with and without an intervening disconnect. Existing tests still require
+a current revoked session to stop retrying and an inconclusive current probe to
+keep recovery running. The shared session prober's own sign-out effects remain
+a separate audit item.

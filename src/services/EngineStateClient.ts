@@ -1109,10 +1109,14 @@ export class EngineStateClient {
    * a player whose session is fine and whose link is not.
    */
   private checkSessionThenReconnect(source: string): void {
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
-        if (this.intentionalClose) return;
+        // A recovery that already replaced this socket owns its own status.
+        if (this.intentionalClose || generation !== this.connectionGeneration || socket !== this.ws)
+          return;
         if (verdict === 'revoked') {
           this.setStatus('auth_failed');
           return;
@@ -1957,10 +1961,14 @@ export class EngineChannelClient {
 
   /** 2026-09-04: see EngineStateClient.checkSessionThenReconnect. */
   private checkSessionThenReconnect(source: string): void {
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
-        if (this.intentionalClose) return;
+        // A recovery that already replaced this socket owns its own status.
+        if (this.intentionalClose || generation !== this.connectionGeneration || socket !== this.ws)
+          return;
         if (verdict === 'revoked') {
           this.setStatus('auth_failed');
           return;

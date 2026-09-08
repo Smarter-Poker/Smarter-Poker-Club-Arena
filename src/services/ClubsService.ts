@@ -457,7 +457,7 @@ export async function joinClub(
   if (role !== 'owner') {
     const { count, error: countError } = await supabase
       .from('club_members')
-      .select('*', { count: 'exact', head: true })
+      .select('user_id', { count: 'exact', head: true })
       .eq('user_id', user.user.id)
       .in('status', ['active', 'approved']);
 
@@ -1220,9 +1220,11 @@ export async function canJoinMoreClubs(): Promise<{
   const { data: user } = await getAuthUser();
   if (!user.user) return { canJoin: false, currentCount: 0, maxClubs: MAX_CLUBS };
 
+  // `user_id`, not `*` (club_members has no `id`): a count needs one column, and `*` asks for every column
+  // including the ones a player is not granted (see tableSeatsCountNamesAColumn).
   const { count, error } = await supabase
     .from('club_members')
-    .select('*', { count: 'exact', head: true })
+    .select('user_id', { count: 'exact', head: true })
     .eq('user_id', user.user.id)
     .in('status', ['active', 'approved']);
 

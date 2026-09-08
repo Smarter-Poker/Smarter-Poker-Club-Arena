@@ -15,3 +15,5 @@ No competing receipt table or new watcher/reconciler is introduced. Historical b
 Production verification: migration 20260908131745 applied successfully, and the uncommitted filename was aligned to that authoritative record. Wrapper hash 2a05339c9329ce9fcbefbc1ab72901f5; private-core hash 7b987a8d9bc21645b5bf7ba1bde36f85. Shared receipt helpers are unchanged. Public wrapper permissions remain authenticated/service; private core remains owner-only.
 
 Registry wiring: migration 20260908133232 registers the audited private core without widening grants. The exact reviewed hash and owner-only access are checked before the insert and verified afterwards. The broader audit checkpoint is docs/audits/2026-09-08-chip-audit-checkpoint.md.
+
+CI follow-up: the migration-existence gate found a stale schema manifest for the private rebuy core. Re-read production on 2026-09-08: wrapper hash 2a05339c9329ce9fcbefbc1ab72901f5 and owner-only core hash 7b987a8d9bc21645b5bf7ba1bde36f85 still match the applied migration. Added the verified core to this branch’s schema fragment; no migration was reapplied and no permission changed.

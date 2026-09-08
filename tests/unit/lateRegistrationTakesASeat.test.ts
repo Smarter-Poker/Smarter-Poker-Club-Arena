@@ -181,11 +181,10 @@ describe('the felt never gives an instruction it will refuse', () => {
 });
 
 describe('nobody busts before the chips arrive', () => {
-  it('the sweep interval is named once, and the arming window is built from it', () => {
-    expect(BASE).toMatch(/static readonly ELIMINATION_SWEEP_MS = 5000;/);
-    expect(ELIM).toMatch(/\}, TournamentManagerBase\.ELIMINATION_SWEEP_MS\);/);
-    // A literal 5000 in the timer would drift from the window that assumes it.
-    expect(ELIM).not.toMatch(/\}, 5000\);/);
+  it('the post-credit bust slack is named once and no manager owns a sweep interval', () => {
+    expect(BASE).toMatch(/static readonly POST_CREDIT_BUST_SLACK_MS = 5000;/);
+    expect(ELIM).not.toMatch(/setInterval\(/);
+    expect(ELIM).toMatch(/registerEliminationScheduler/);
   });
 
   it('a deferred Spin credit arms the bust sweep to the same instant, plus slack', () => {
@@ -202,7 +201,7 @@ describe('nobody busts before the chips arrive', () => {
 
        Both branches are pinned: the hold when there is one, and the old
        arithmetic as the fallback for a freeroll Spin whose paid gate never runs
-       and so never stamps an anchor. The "+ one sweep interval of slack" this
+       and so never stamps an anchor. The "+ post-credit slack" this
        test exists for applies to whichever was used. */
     expect(BASE.indexOf('this.bustingArmedAt =')).toBeGreaterThan(-1);
     const arm = sliceStatement(BASE, 'this.bustingArmedAt =');
@@ -210,8 +209,8 @@ describe('nobody busts before the chips arrive', () => {
     expect(arm).toMatch(/this\.spinHoldUntil > 0 \? this\.spinHoldUntil/);
     // ...falling back to the pre-anchor arithmetic when nothing was stamped...
     expect(arm).toMatch(/Date\.now\(\) \+ spinRevealToDealMs\(\)/);
-    // ...plus one full sweep interval either way.
-    expect(arm).toMatch(/\+\s*\n?\s*TournamentManagerBase\.ELIMINATION_SWEEP_MS;/);
+    // ...plus the explicit post-credit visibility slack either way.
+    expect(arm).toMatch(/\+\s*\n?\s*TournamentManagerBase\.POST_CREDIT_BUST_SLACK_MS;/);
   });
 
   it('a sweep inside that window busts nobody', () => {

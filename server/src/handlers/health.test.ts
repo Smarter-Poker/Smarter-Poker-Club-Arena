@@ -7,9 +7,27 @@ import { handleHealth, handleWsMetrics, handleMetrics } from './health.js';
 import { mockRes, parseJson } from './_testHelpers.js';
 
 describe('handleHealth', () => {
-  it('returns 200 with gameServer.getStatus() payload', () => {
+  function statusCodeFor(status: Record<string, unknown>): number {
     const { res, captured } = mockRes();
-    const status = { running: true, uptime: 42 };
+    const gameServer = {
+      getStatus: vi.fn().mockReturnValue(status),
+      getPrometheusMetrics: vi.fn().mockReturnValue(''),
+    };
+    handleHealth(res, { gameServer });
+    expect(parseJson(captured)).toEqual(status);
+    return captured.statusCode ?? 0;
+  }
+
+  it('returns 200 only for a dealer-ready leader with its worker ready', () => {
+    const { res, captured } = mockRes();
+    const status = {
+      running: true,
+      uptime: 42,
+      liveness: 'ok',
+      status: 'ok',
+      dealerPrerequisitesReady: true,
+      liveHorseDecision: { phase: 'ready' },
+    };
     const gameServer = {
       getStatus: vi.fn().mockReturnValue(status),
       getPrometheusMetrics: vi.fn().mockReturnValue(''),
@@ -18,6 +36,19 @@ describe('handleHealth', () => {
     expect(captured.statusCode).toBe(200);
     expect(parseJson(captured)).toEqual(status);
     expect(captured.headers?.['Content-Type']).toBe('application/json');
+  });
+
+  it('keeps Caddy off booting, workerless, standby and dead processes', () => {
+    const ready = {
+      liveness: 'ok',
+      status: 'ok',
+      dealerPrerequisitesReady: true,
+      liveHorseDecision: { phase: 'ready' },
+    };
+    expect(statusCodeFor({ ...ready, dealerPrerequisitesReady: false })).toBe(503);
+    expect(statusCodeFor({ ...ready, liveHorseDecision: { phase: 'starting' } })).toBe(503);
+    expect(statusCodeFor({ ...ready, liveness: 'standby' })).toBe(503);
+    expect(statusCodeFor({ ...ready, liveness: 'dead' })).toBe(503);
   });
 });
 

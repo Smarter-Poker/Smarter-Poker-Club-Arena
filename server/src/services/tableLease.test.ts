@@ -13,21 +13,21 @@ const rpc = vi.fn();
 vi.mock('./supabase/client.js', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
 
 /**
- * The module reads ENGINE_LEASE_ENFORCE at import time (a constant, so the hot
- * path is a boolean test rather than an env lookup per table per tick), so each
- * enforcement mode needs a fresh module instance.
+ * The historical environment switch is deliberately ignored. A fresh module
+ * per case proves that even `off` cannot instantiate an unleased dealer.
  */
 async function loadLease(enforce: boolean) {
   vi.resetModules();
-  // 2026-08-20: enforcement is ON BY DEFAULT (the 23:48Z split-brain on a
-  // table with a seated human ended the evidence phase). Off is now the
-  // explicit opt-out, so the "unenforced" cases here load with 'off'.
   if (enforce) process.env.ENGINE_LEASE_ENFORCE = 'on';
   else process.env.ENGINE_LEASE_ENFORCE = 'off';
   return import('./tableLease.js');
 }
 
 const TABLE = '11111111-2222-4333-8444-555555555555';
+const TABLE_2 = '11111111-2222-4333-8444-555555555556';
+const TABLE_3 = '11111111-2222-4333-8444-555555555557';
+const GENERATION = 'aaaaaaaa-0000-4000-8000-000000000001';
+const GENERATION_2 = 'aaaaaaaa-0000-4000-8000-000000000002';
 
 beforeEach(() => {
   rpc.mockReset();
@@ -47,17 +47,106 @@ describe('INSTANCE_ID', () => {
   });
 });
 
-describe('claimTable', () => {
-  it('grants when the database grants', async () => {
-    const { claimTable } = await loadLease(true);
-    rpc.mockResolvedValue({
-      data: [{ granted: true, holder: 'me', holder_age_seconds: 0 }],
-      error: null,
-    });
-    await expect(claimTable(TABLE)).resolves.toBe(true);
+describe('claimTableLease', () => {
+  it('has no generation-minting compatibility adapter or default argument', async () => {
+    const lease = await loadLease(true);
+    expect(lease.claimTableLease.length).toBe(2);
+    expect('claimTable' in lease).toBe(false);
   });
 
-  it('refuses a table another live instance holds - but only with enforcement on', async () => {
+  it('returns a verified classified grant when the database grants', async () => {
+    const { claimTableLease } = await loadLease(true);
+    rpc.mockImplementation((_fn, args: { p_requested_generation: string }) => {
+      return {
+        data: [
+          {
+            granted: true,
+            holder: 'me',
+            holder_age_seconds: 0,
+            lease_generation: args.p_requested_generation,
+            protocol_version: 2,
+          },
+        ],
+        error: null,
+      };
+    });
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'granted',
+      verified: true,
+      leaseGeneration: GENERATION,
+      proofDeadlineMonotonicMs: expect.any(Number),
+    });
+    expect(rpc).toHaveBeenCalledWith(
+      'claim_table_lease_v2',
+      expect.objectContaining({ p_requested_generation: GENERATION })
+    );
+  });
+
+  it('refuses a grant that does not prove the exact requested protocol-2 generation', async () => {
+    const { claimTableLease } = await loadLease(true);
+    rpc.mockResolvedValue({
+      data: [
+        {
+          granted: true,
+          holder: 'me',
+          holder_age_seconds: 0,
+          lease_generation: GENERATION_2,
+          protocol_version: 2,
+        },
+      ],
+      error: null,
+    });
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'malformed_response',
+      requestedGeneration: GENERATION,
+      mayHaveCommitted: true,
+    });
+  });
+
+  it('keeps an exact caller generation stable across delayed same-process claim retries', async () => {
+    const { claimTableLease } = await loadLease(true);
+    rpc.mockImplementation((_fn, args: { p_requested_generation: string }) => ({
+      data: [
+        {
+          granted: true,
+          holder: 'me',
+          holder_age_seconds: 0,
+          lease_generation: args.p_requested_generation,
+          protocol_version: 2,
+        },
+      ],
+      error: null,
+    }));
+
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toMatchObject({
+      status: 'granted',
+      verified: true,
+      leaseGeneration: GENERATION,
+    });
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toMatchObject({
+      status: 'granted',
+      verified: true,
+      leaseGeneration: GENERATION,
+    });
+    expect(rpc.mock.calls.map(([, args]) => args.p_requested_generation)).toEqual([
+      GENERATION,
+      GENERATION,
+    ]);
+  });
+
+  it('rejects malformed caller generations locally instead of opening a different DB lease', async () => {
+    const { claimTableLease } = await loadLease(true);
+    await expect(claimTableLease(TABLE, 'not-a-uuid')).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'malformed_response',
+      requestedGeneration: 'not-a-uuid',
+      mayHaveCommitted: false,
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('classifies a live foreign owner and refuses it when enforcement is on', async () => {
     const denied = {
       data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
       error: null,
@@ -65,147 +154,365 @@ describe('claimTable', () => {
 
     const enforced = await loadLease(true);
     rpc.mockResolvedValue(denied);
-    await expect(enforced.claimTable(TABLE)).resolves.toBe(false);
-
-    const observing = await loadLease(false);
-    rpc.mockResolvedValue(denied);
-    await expect(observing.claimTable(TABLE)).resolves.toBe(true);
+    await expect(enforced.claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'owned_elsewhere',
+      conflict: expect.objectContaining({
+        tableId: TABLE,
+        holder: 'other-1',
+        holderAgeSeconds: 2.5,
+      }),
+    });
   });
 
-  it('records the conflict for /health in BOTH modes - observation is the point of the off mode', async () => {
-    const { claimTable, recentLeaseConflicts } = await loadLease(false);
+  it('ignores enforcement-off and refuses a live foreign owner', async () => {
+    const denied = {
+      data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
+      error: null,
+    };
+    const observing = await loadLease(false);
+    rpc.mockResolvedValue(denied);
+    await expect(observing.claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'owned_elsewhere',
+      conflict: expect.objectContaining({
+        tableId: TABLE,
+        holder: 'other-1',
+        holderAgeSeconds: 2.5,
+      }),
+    });
+    expect(observing.leaseDiagnostics().enforced).toBe(true);
+  });
+
+  it('records the conflict for health even when the removed override is set', async () => {
+    const { claimTableLease, recentLeaseConflicts, leaseDiagnostics } = await loadLease(false);
     rpc.mockResolvedValue({
       data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
       error: null,
     });
-    await claimTable(TABLE);
+    await claimTableLease(TABLE, GENERATION);
     expect(recentLeaseConflicts()).toEqual([
       expect.objectContaining({ tableId: TABLE, holder: 'other-1', holderAgeSeconds: 2.5 }),
     ]);
+    expect(leaseDiagnostics().enforced).toBe(true);
   });
 
-  it('FAILS OPEN on an RPC error - a database blip must not stop a table starting', async () => {
-    const { claimTable, leaseDiagnostics } = await loadLease(true);
+  it('classifies an RPC error as retryable and fails closed while enforcement is on', async () => {
+    const { claimTableLease, leaseDiagnostics } = await loadLease(true);
     rpc.mockResolvedValue({ data: null, error: { message: 'function does not exist' } });
-    await expect(claimTable(TABLE)).resolves.toBe(true);
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_error',
+      requestedGeneration: GENERATION,
+      mayHaveCommitted: true,
+    });
     expect(leaseDiagnostics().claimErrors).toBe(1);
   });
 
-  it('FAILS OPEN when the RPC throws outright', async () => {
-    const { claimTable } = await loadLease(true);
+  it('classifies a thrown transport failure as retryable and fails closed when enforced', async () => {
+    const { claimTableLease } = await loadLease(true);
     rpc.mockRejectedValue(new Error('ECONNRESET'));
-    await expect(claimTable(TABLE)).resolves.toBe(true);
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_threw',
+      requestedGeneration: GENERATION,
+      mayHaveCommitted: true,
+    });
   });
 
-  it('FAILS OPEN on an unrecognised payload rather than guessing', async () => {
-    const { claimTable } = await loadLease(true);
-    rpc.mockResolvedValue({ data: [], error: null });
-    await expect(claimTable(TABLE)).resolves.toBe(true);
+  it.each([
+    ['empty result', []],
+    ['multiple rows', [{ granted: true }, { granted: false }]],
+    ['missing discriminator', [{ holder: 'me' }]],
+    ['non-boolean discriminator', [{ granted: 'true' }]],
+  ])(
+    'classifies a malformed %s as retryable rather than guessing ownership',
+    async (_name, data) => {
+      const { claimTableLease } = await loadLease(true);
+      rpc.mockResolvedValue({ data, error: null });
+      await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+        status: 'retryable_failure',
+        reason: 'malformed_response',
+        requestedGeneration: GENERATION,
+        mayHaveCommitted: true,
+      });
+    }
+  );
+
+  it('ignores enforcement-off for transport and malformed responses', async () => {
+    const { claimTableLease } = await loadLease(false);
+
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'timeout' } });
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_error',
+      requestedGeneration: GENERATION,
+      mayHaveCommitted: true,
+    });
+
+    rpc.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_threw',
+      requestedGeneration: GENERATION,
+      mayHaveCommitted: true,
+    });
+
+    rpc.mockResolvedValueOnce({ data: [], error: null });
+    await expect(claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'malformed_response',
+      requestedGeneration: GENERATION,
+      mayHaveCommitted: true,
+    });
+  });
+
+  it('refuses a verified response that arrives after its conservative proof window', async () => {
+    const lease = await loadLease(true);
+    let now = 0;
+    lease._setTableLeaseMonotonicNowForTests(() => now);
+    rpc.mockImplementation(async () => {
+      now = lease.TABLE_LEASE_PROOF_WINDOW_MS;
+      return {
+        data: [
+          {
+            granted: true,
+            holder: 'me',
+            holder_age_seconds: 0,
+            lease_generation: GENERATION,
+            protocol_version: 2,
+          },
+        ],
+        error: null,
+      };
+    });
+    await expect(lease.claimTableLease(TABLE, GENERATION)).resolves.toEqual({
+      status: 'acquired_but_proof_expired',
+      leaseGeneration: GENERATION,
+    });
   });
 });
 
 describe('heartbeatTables', () => {
-  it('reports the tables that were genuinely taken by another LIVE instance', async () => {
+  it('proves only kept rows and reports every non-kept row as locally lost', async () => {
+    const lease = await loadLease(true);
+    let now = 1_000;
+    lease._setTableLeaseMonotonicNowForTests(() => now);
+    rpc.mockResolvedValue({
+      data: [
+        { table_id: TABLE, state: 'kept', lease_generation: GENERATION },
+        { table_id: TABLE_2, state: 'taken', lease_generation: GENERATION_2 },
+        { table_id: TABLE_3, state: 'missing', lease_generation: null },
+      ],
+      error: null,
+    });
+    await expect(
+      lease.heartbeatTables([
+        { tableId: TABLE, leaseGeneration: GENERATION },
+        { tableId: TABLE_2, leaseGeneration: GENERATION },
+        { tableId: TABLE_3, leaseGeneration: GENERATION_2 },
+      ])
+    ).resolves.toEqual({
+      status: 'answered',
+      proofs: [
+        {
+          tableId: TABLE,
+          leaseGeneration: GENERATION,
+          proofDeadlineMonotonicMs: 1_000 + lease.TABLE_LEASE_PROOF_WINDOW_MS,
+        },
+      ],
+      lostTableIds: [TABLE_2, TABLE_3],
+    });
+    expect(lease.recentLeaseConflicts().map((c) => c.tableId)).toEqual([TABLE_2]);
+    expect(lease.reclaimableLeaseCount()).toBe(1);
+    expect(rpc).toHaveBeenCalledWith('heartbeat_table_leases_v3', {
+      p_instance_id: lease.INSTANCE_ID,
+      p_claims: [
+        { table_id: TABLE, lease_generation: GENERATION },
+        { table_id: TABLE_2, lease_generation: GENERATION },
+        { table_id: TABLE_3, lease_generation: GENERATION_2 },
+      ],
+      p_stale_seconds: lease.LEASE_STALE_SECONDS,
+    });
+  });
+
+  it('fails closed on a successful incomplete or duplicate response', async () => {
     const { heartbeatTables } = await loadLease(true);
     rpc.mockResolvedValue({
-      data: [
-        { table_id: 'keep-1', state: 'kept' },
-        { table_id: 'lost-1', state: 'taken' },
-        { table_id: 'lost-2', state: 'taken' },
-      ],
+      data: [{ table_id: TABLE, state: 'kept', lease_generation: GENERATION }],
       error: null,
     });
-    await expect(heartbeatTables(['keep-1', 'lost-1', 'lost-2'])).resolves.toEqual([
-      'lost-1',
-      'lost-2',
-    ]);
-  });
+    await expect(
+      heartbeatTables([
+        { tableId: TABLE, leaseGeneration: GENERATION },
+        { tableId: TABLE_2, leaseGeneration: GENERATION_2 },
+      ])
+    ).resolves.toEqual({
+      status: 'answered',
+      proofs: [],
+      lostTableIds: [TABLE, TABLE_2],
+    });
 
-  /**
-   * THE 2026-08-29 BUG, PINNED. The old shape could only say "kept", so the
-   * caller subtracted and called the whole remainder a takeover. Production
-   * logged 204 teardowns in one hour — "another engine instance has taken it
-   * over. Stopping it here." — while eight of those table ids were held in the
-   * database by THAT VERY INSTANCE with a 2.8-second-old heartbeat.
-   *
-   * A missing row means claimTable's fail-open path started the table without
-   * writing one (596 supabase_timeouts in that same hour). A stale row means
-   * the holder went quiet. Neither is a takeover, and tearing a live table
-   * down for one is the false alarm, not the safety measure.
-   */
-  it('does NOT stop a table whose lease is merely missing or stale - nobody took it', async () => {
-    const { heartbeatTables, recentLeaseConflicts, reclaimableLeaseCount } = await loadLease(true);
     rpc.mockResolvedValue({
       data: [
-        { table_id: 'no-row', state: 'missing' },
-        { table_id: 'quiet-holder', state: 'stale' },
-        { table_id: 'really-taken', state: 'taken' },
+        { table_id: TABLE, state: 'kept', lease_generation: GENERATION },
+        { table_id: TABLE, state: 'kept', lease_generation: GENERATION },
       ],
       error: null,
     });
-    await expect(heartbeatTables(['no-row', 'quiet-holder', 'really-taken'])).resolves.toEqual([
-      'really-taken',
-    ]);
-    // Only the genuine takeover is a conflict worth showing on /health.
-    expect(recentLeaseConflicts().map((c) => c.tableId)).toEqual(['really-taken']);
-    expect(reclaimableLeaseCount()).toBe(2);
+    await expect(
+      heartbeatTables([
+        { tableId: TABLE, leaseGeneration: GENERATION },
+        { tableId: TABLE_2, leaseGeneration: GENERATION_2 },
+      ])
+    ).resolves.toEqual({
+      status: 'answered',
+      proofs: [],
+      lostTableIds: [TABLE, TABLE_2],
+    });
   });
 
-  it('treats an id the function did not answer for as reclaimable, never as taken', async () => {
+  it('fails closed before the RPC for duplicate or malformed exact claims', async () => {
     const { heartbeatTables } = await loadLease(true);
-    rpc.mockResolvedValue({ data: [{ table_id: 'answered', state: 'kept' }], error: null });
-    // 'silent' is absent from the result entirely. Silence is not evidence.
-    await expect(heartbeatTables(['answered', 'silent'])).resolves.toEqual([]);
-  });
-
-  it('reports nothing lost while enforcement is off, even when a lease is genuinely taken', async () => {
-    const { heartbeatTables, recentLeaseConflicts } = await loadLease(false);
-    rpc.mockResolvedValue({
-      data: [
-        { table_id: 'a', state: 'taken' },
-        { table_id: 'b', state: 'taken' },
-      ],
-      error: null,
+    await expect(
+      heartbeatTables([
+        { tableId: TABLE, leaseGeneration: GENERATION },
+        { tableId: TABLE, leaseGeneration: GENERATION_2 },
+      ])
+    ).resolves.toEqual({
+      status: 'answered',
+      proofs: [],
+      lostTableIds: [TABLE, TABLE],
     });
-    await expect(heartbeatTables(['a', 'b'])).resolves.toEqual([]);
-    // Still recorded, so /health shows the split-brain before we act on it.
-    expect(
-      recentLeaseConflicts()
-        .map((c) => c.tableId)
-        .sort()
-    ).toEqual(['a', 'b']);
+    await expect(
+      heartbeatTables([{ tableId: TABLE, leaseGeneration: 'not-a-uuid' }])
+    ).resolves.toEqual({
+      status: 'answered',
+      proofs: [],
+      lostTableIds: [TABLE],
+    });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('treats "could not ask" as "lost nothing" - the inversion that would freeze the platform', async () => {
+  it('types repeated transport failures as uncertain and never invents a new deadline', async () => {
     const { heartbeatTables } = await loadLease(true);
     rpc.mockResolvedValue({ data: null, error: { message: 'timeout' } });
-    await expect(heartbeatTables(['a', 'b', 'c'])).resolves.toEqual([]);
+    const claims = [
+      { tableId: TABLE, leaseGeneration: GENERATION },
+      { tableId: TABLE_2, leaseGeneration: GENERATION_2 },
+    ];
+    await expect(heartbeatTables(claims)).resolves.toEqual({
+      status: 'uncertain',
+      reason: 'rpc_error',
+    });
+    await expect(heartbeatTables(claims)).resolves.toEqual({
+      status: 'uncertain',
+      reason: 'rpc_error',
+    });
 
     rpc.mockRejectedValue(new Error('socket hang up'));
-    await expect(heartbeatTables(['a', 'b', 'c'])).resolves.toEqual([]);
+    await expect(heartbeatTables(claims)).resolves.toEqual({
+      status: 'uncertain',
+      reason: 'rpc_threw',
+    });
+  });
+
+  it('does not extend authority when event-loop delay consumes the proof window', async () => {
+    const lease = await loadLease(true);
+    let now = 0;
+    lease._setTableLeaseMonotonicNowForTests(() => now);
+    rpc.mockImplementation(async () => {
+      now = lease.TABLE_LEASE_PROOF_WINDOW_MS;
+      return {
+        data: [{ table_id: TABLE, state: 'kept', lease_generation: GENERATION }],
+        error: null,
+      };
+    });
+    await expect(
+      lease.heartbeatTables([{ tableId: TABLE, leaseGeneration: GENERATION }])
+    ).resolves.toEqual({
+      status: 'answered',
+      proofs: [],
+      lostTableIds: [TABLE],
+    });
   });
 
   it('does not call the database at all with no tables', async () => {
     const { heartbeatTables } = await loadLease(true);
-    await expect(heartbeatTables([])).resolves.toEqual([]);
+    await expect(heartbeatTables([])).resolves.toEqual({
+      status: 'answered',
+      proofs: [],
+      lostTableIds: [],
+    });
     expect(rpc).not.toHaveBeenCalled();
   });
 });
 
 describe('releaseTables', () => {
-  it('releases everything for this instance by default', async () => {
+  it('releases only exact table generations', async () => {
     const { releaseTables, INSTANCE_ID } = await loadLease(true);
-    rpc.mockResolvedValue({ data: 3, error: null });
-    await releaseTables();
-    expect(rpc).toHaveBeenCalledWith('release_table_leases', {
+    rpc.mockResolvedValue({ data: 1, error: null });
+    await expect(releaseTables([{ tableId: TABLE, leaseGeneration: GENERATION }])).resolves.toEqual(
+      { status: 'confirmed', releasedCount: 1, attempts: 1 }
+    );
+    expect(rpc).toHaveBeenCalledWith('release_table_leases_v2', {
       p_instance_id: INSTANCE_ID,
-      p_table_ids: null,
+      p_claims: [{ table_id: TABLE, lease_generation: GENERATION }],
     });
   });
 
-  it('never throws - it runs on the shutdown path', async () => {
+  it('does not call the database without a valid exact claim batch', async () => {
+    const { releaseTables } = await loadLease(true);
+    await expect(releaseTables()).resolves.toEqual({
+      status: 'confirmed',
+      releasedCount: 0,
+      attempts: 0,
+    });
+    await expect(
+      releaseTables([{ tableId: TABLE, leaseGeneration: 'not-a-uuid' }])
+    ).resolves.toMatchObject({ status: 'uncertain', reason: 'invalid_claims', attempts: 0 });
+    await expect(
+      releaseTables([
+        { tableId: TABLE, leaseGeneration: GENERATION },
+        { tableId: TABLE, leaseGeneration: GENERATION_2 },
+      ])
+    ).resolves.toMatchObject({ status: 'uncertain', reason: 'invalid_claims', attempts: 0 });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('retries an uncertain PostgREST answer immediately with the identical exact claim', async () => {
+    const { releaseTables } = await loadLease(true);
+    rpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'schema reload' } })
+      .mockResolvedValueOnce({ data: 0, error: null });
+    await expect(releaseTables([{ tableId: TABLE, leaseGeneration: GENERATION }])).resolves.toEqual(
+      { status: 'confirmed', releasedCount: 0, attempts: 2 }
+    );
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
+  });
+
+  it('returns a typed failure after bounded thrown transport failures', async () => {
     const { releaseTables } = await loadLease(true);
     rpc.mockRejectedValue(new Error('gone'));
-    await expect(releaseTables()).resolves.toBeUndefined();
+    await expect(releaseTables([{ tableId: TABLE, leaseGeneration: GENERATION }])).resolves.toEqual(
+      {
+        status: 'uncertain',
+        reason: 'rpc_threw',
+        detail: 'gone',
+        attempts: 2,
+      }
+    );
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not accept a malformed deletion count as release proof', async () => {
+    const { releaseTables } = await loadLease(true);
+    rpc.mockResolvedValue({ data: 2, error: null });
+    await expect(
+      releaseTables([{ tableId: TABLE, leaseGeneration: GENERATION }])
+    ).resolves.toMatchObject({
+      status: 'uncertain',
+      reason: 'malformed_response',
+      attempts: 2,
+    });
   });
 });

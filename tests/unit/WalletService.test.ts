@@ -53,10 +53,6 @@ vi.mock('../../src/services/FinancialAlertService', () => ({
   },
 }));
 
-vi.mock('../../src/utils/retryAsync', () => ({
-  retryAsync: (fn: () => any) => fn(),
-}));
-
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { WalletService } from '../../src/services/WalletService';
@@ -64,6 +60,7 @@ import { WalletService } from '../../src/services/WalletService';
 describe('WalletService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRpc.mockReset();
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -102,8 +99,18 @@ describe('WalletService', () => {
     });
 
     it('should emit BALANCE_UPDATED on successful transfer', async () => {
-      // fn_wallet_type_transfer returns jsonb { success: true } on success.
-      mockRpc.mockResolvedValueOnce({ data: { success: true }, error: null });
+      // The database returns both booked balances and the exact transfer scope.
+      mockRpc.mockResolvedValueOnce({
+        data: {
+          success: true,
+          from: 'BUSINESS',
+          to: 'PLAYER',
+          amount: 100,
+          from_balance: 50,
+          to_balance: 100,
+        },
+        error: null,
+      });
       mockFromChain.mockResolvedValue({ data: null, error: null }); // log transactions
 
       await WalletService.internalTransfer('user1', {
@@ -140,7 +147,7 @@ describe('WalletService', () => {
     });
 
     it('should emit BALANCE_UPDATED for both sender and receiver', async () => {
-      mockRpc.mockResolvedValueOnce({ error: null }); // atomic_wallet_transfer
+      mockRpc.mockResolvedValueOnce({ data: { success: true }, error: null });
       mockFromChain.mockResolvedValue({ data: null, error: null }); // log transactions
 
       await WalletService.transferToUser('sender', 'receiver', 100);
@@ -153,6 +160,109 @@ describe('WalletService', () => {
         'BALANCE_UPDATED',
         expect.objectContaining({ source: 'transfer_received', userId: 'receiver' })
       );
+    });
+  });
+
+  it('does not submit an unkeyed transfer twice after a lost response', async () => {
+    vi.useFakeTimers();
+    mockRpc
+      .mockRejectedValueOnce(new Error('network response lost after commit'))
+      .mockResolvedValue({ data: { success: true }, error: null });
+    const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
+    try {
+      const outcome = WalletService.transferToUser('sender', 'receiver', 5).then(
+        () => 'accepted',
+        () => 'unconfirmed'
+      );
+      await vi.runAllTimersAsync();
+      expect(await outcome).toBe('unconfirmed');
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(audit).not.toHaveBeenCalled();
+      expect(mockBusEmit).not.toHaveBeenCalled();
+    } finally {
+      audit.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not append duplicate history after the database books both transfer legs', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        from: 'BUSINESS',
+        to: 'PLAYER',
+        amount: 5,
+        from_balance: 95,
+        to_balance: 5,
+      },
+      error: null,
+    });
+    const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
+    try {
+      await expect(WalletService.agentSelfTransfer('sender', 5)).resolves.toBe(true);
+      expect(audit).not.toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it.each(['missing', 'source', 'destination', 'amount', 'balance'])(
+    'does not confirm an internal transfer with a mismatched %s receipt',
+    async (kind) => {
+      const data: Record<string, unknown> = {
+        success: true,
+        from: 'BUSINESS',
+        to: 'PLAYER',
+        amount: 5,
+        from_balance: 95,
+        to_balance: 5,
+      };
+      if (kind === 'missing') delete data.amount;
+      if (kind === 'source') data.from = 'PROMO';
+      if (kind === 'destination') data.to = 'PROMO';
+      if (kind === 'amount') data.amount = 6;
+      if (kind === 'balance') data.to_balance = NaN;
+      mockRpc.mockResolvedValueOnce({ data, error: null });
+      const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
+      try {
+        await expect(WalletService.agentSelfTransfer('sender', 5)).rejects.toThrow(/confirmed/);
+        expect(audit).not.toHaveBeenCalled();
+        expect(mockBusEmit).not.toHaveBeenCalled();
+      } finally {
+        audit.mockRestore();
+      }
+    }
+  );
+
+  describe('transfer receipt boundaries', () => {
+    const transfer = (kind: string, amount = 5) =>
+      kind === 'internal'
+        ? WalletService.internalTransfer('sender', {
+            fromWallet: 'BUSINESS',
+            toWallet: 'PLAYER',
+            amount,
+          })
+        : WalletService.transferToUser('sender', 'receiver', amount);
+    it.each(['internal', 'user'])('%s rejects nonfinite amounts before an RPC', async (kind) => {
+      for (const amount of [NaN, Infinity, -Infinity]) {
+        await expect(transfer(kind, amount)).rejects.toThrow(/positive/);
+      }
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockBusEmit).not.toHaveBeenCalled();
+    });
+    it.each(['internal', 'user'])('%s requires literal successful confirmation', async (kind) => {
+      const audit = vi.spyOn(WalletService, 'logTransaction').mockResolvedValue(undefined);
+      try {
+        for (const data of [null, {}, { success: 'false' }, { success: 1 }]) {
+          mockRpc.mockResolvedValueOnce({ data, error: null });
+          await expect(transfer(kind)).rejects.toThrow();
+        }
+        expect(audit).not.toHaveBeenCalled();
+        expect(mockBusEmit).not.toHaveBeenCalled();
+      } finally {
+        audit.mockRestore();
+      }
     });
   });
 

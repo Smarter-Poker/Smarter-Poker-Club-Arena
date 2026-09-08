@@ -1,0 +1,14 @@
+{
+  "_owner": "fix/the-vip-cap-and-five-that-answer-wrongly",
+  "_comment": "The VIP cap constraint and headroom rewrite (20260908144747), and the five review defects (20260908144801). fn_ca_diamond_cap_headroom is dropped and recreated with cap_vip/binding_cap; fn_ca_diamond_flip_forecast keeps last_seen and gains retired-rule rows.",
+  "tables": [],
+  "functions": [
+    "fn_ca_diamond_cap_headroom",
+    "fn_ca_diamond_flip_forecast",
+    "fn_ca_diamond_budget_reality",
+    "fn_ca_normalise_claim_loop",
+    "fn_ca_engine_spend_append_only",
+    "fn_ca_is_cert_account"
+  ],
+  "columns": {}
+}

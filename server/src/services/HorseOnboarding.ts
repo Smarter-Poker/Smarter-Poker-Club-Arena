@@ -242,8 +242,12 @@ interface HorseRow {
  * Returns the list of things it actually had to fix, which is what makes the
  * boot log worth reading.
  */
-export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
+export async function ensureHorseComplete(
+  row: HorseRow,
+  shouldContinue: () => boolean = () => true
+): Promise<string[]> {
   const fixed: string[] = [];
+  if (!shouldContinue()) return fixed;
   const ident = identityFor(row.id, row.display_name);
 
   // ── profile: alias, name, lifetime VIP, brain dials ──────────────────────
@@ -274,15 +278,18 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
     fixed.push('brain');
   }
   if (Object.keys(patch).length > 0) {
+    if (!shouldContinue()) return fixed;
     const { error } = await supabase
       .from('profiles')
       .update(patch)
       .eq('id', row.id)
       .eq('is_horse', true);
+    if (!shouldContinue()) return fixed;
     if (error) throw new Error(`profile update: ${error.message}`);
   }
 
   // 2. ensure social graph identity
+  if (!shouldContinue()) return fixed;
   const { data: author, error: authorErr } = await (async () => {
     // Add enough padding so the primitive test regex (600 chars) doesn't false-flag
     // the avatar_url alias as an avatar_url write in the profiles update above.
@@ -300,11 +307,13 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
       .eq('profile_id', row.id)
       .maybeSingle();
   })();
+  if (!shouldContinue()) return fixed;
   if (authorErr) throw new Error(`content_authors read: ${authorErr.message}`);
 
   if (!author) {
     // `avatar_seed` is what the World Hub headshot generator selects on, so
     // writing this row is what actually queues the photograph.
+    if (!shouldContinue()) return fixed;
     const { error } = await supabase.from('content_authors').insert({
       name: ident.realName,
       alias: ident.alias,
@@ -318,13 +327,16 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
       ['avatar_url']: row.avatar_url,
       is_active: true,
     });
+    if (!shouldContinue()) return fixed;
     // A duplicate alias is not a failure — it means somebody else got there.
     if (error && !/duplicate|unique/i.test(error.message)) {
       throw new Error(`content_authors insert: ${error.message}`);
     }
     if (!error) fixed.push('social');
   } else if (author.is_active === false) {
+    if (!shouldContinue()) return fixed;
     await supabase.from('content_authors').update({ is_active: true }).eq('id', author.id);
+    if (!shouldContinue()) return fixed;
     fixed.push('social-reactivated');
   }
 
@@ -336,7 +348,10 @@ export async function ensureHorseComplete(row: HorseRow): Promise<string[]> {
  * throws into the caller — an incomplete horse is a defect worth fixing but
  * never a reason the engine fails to start.
  */
-export async function sweepIncompleteHorses(limit = 1000): Promise<{
+export async function sweepIncompleteHorses(
+  limit = 1000,
+  shouldContinue: () => boolean = () => true
+): Promise<{
   checked: number;
   repaired: number;
   fixes: Record<string, number>;
@@ -345,6 +360,7 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
   let checked = 0;
   let repaired = 0;
   try {
+    if (!shouldContinue()) return { checked, repaired, fixes };
     const { data, error } = await supabase
       .from('profiles')
       .select(
@@ -352,11 +368,14 @@ export async function sweepIncompleteHorses(limit = 1000): Promise<{
       )
       .eq('is_horse', true)
       .limit(limit);
+    if (!shouldContinue()) return { checked, repaired, fixes };
     if (error) throw new Error(error.message);
     for (const row of (data ?? []) as HorseRow[]) {
+      if (!shouldContinue()) break;
       checked++;
       try {
-        const done = await ensureHorseComplete(row);
+        const done = await ensureHorseComplete(row, shouldContinue);
+        if (!shouldContinue()) break;
         if (done.length > 0) {
           repaired++;
           for (const f of done) fixes[f] = (fixes[f] ?? 0) + 1;

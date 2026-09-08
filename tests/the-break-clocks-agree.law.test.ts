@@ -30,8 +30,8 @@ const FREEZE_SQL = read(
 const THAW_SQL = read(
   'supabase/migrations/20260902091000_the_thaw_gives_back_every_frozen_minute.sql'
 );
-const BREAK_SQL = read(
-  'supabase/migrations/20260902080000_maintenance_break_survives_the_restart.sql'
+const ENTRY_BOUNDARY_SQL = read(
+  'supabase/migrations/20260908042800_maintenance_announcement_and_entry_purchases_are_serialized.sql'
 );
 const HOOK = read('src/hooks/useMaintenanceBreak.ts');
 
@@ -173,13 +173,18 @@ describe('the last-hand window is the same window everywhere', () => {
     expect(ENGINE).toMatch(/LAST_HAND_LEAD_MS = 2 \* 60 \* 1000/);
   });
 
-  it('the SQL fallback and the client fuse both allow four minutes, together', () => {
-    // A last_hand phase has no end time, so both readers bound it by the
-    // announcement instead: SQL stops reporting it after 4 minutes, and the
-    // client stops believing it after the same 4. If these ever differ, one
-    // surface shows a break the other has already dismissed.
-    expect(BREAK_SQL).toContain("INTERVAL '4 minutes'");
-    expect(HOOK).toMatch(/LAST_HAND_MAX_MS = 4 \* 60 \* 1000/);
+  it('the current SQL and browser use the exact seven-minute announcement window', () => {
+    // The original four-minute fallback is historical and superseded: it
+    // reopened entry at :57 although a recovered engine stayed parked to :00.
+    // The current migration derives the same :53 + 2 + 5 absolute end for the
+    // entry predicate, public state RPC and browser.
+    expect(ENTRY_BOUNDARY_SQL.match(/INTERVAL '7 minutes'/g) ?? []).toHaveLength(2);
+    expect(ENTRY_BOUNDARY_SQL).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_maintenance_break_state'
+    );
+    expect(HOOK).toMatch(/MAINTENANCE_WINDOW_MS = 7 \* 60 \* 1000/);
+    expect(HOOK).toContain('data.resume_expected_at');
+    expect(HOOK).toMatch(/if \(s\.breakEndsAtMs && serverNow\(\) >= s\.breakEndsAtMs\)/);
   });
 });
 

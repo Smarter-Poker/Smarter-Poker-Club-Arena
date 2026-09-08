@@ -2,7 +2,7 @@
  * A HAND TORN DOWN MID-DEAL IS NOT DEALT (2026-09-06).
  *
  * `dealHand` builds the HandController, awaits ONE RPC (the VIP time-bank
- * allowance), then registers its listener with `this.handController!` and
+ * allowance), then captures that exact controller, registers its listener and
  * starts the hand. `stop()` and `killForRestart()` set `handController` to
  * null, and between 09:30 and 12:30 CDT on 2026-09-06 they did so four times
  * inside that await - every one a table the cluster controller had just
@@ -26,14 +26,16 @@ describe('dealHand re-reads the controller after its one await', () => {
   );
   const awaitAt = SRC.indexOf('const tbExtras = await this.fetchTimeBankExtras(', construct);
   const guard = SRC.indexOf('if (!this.handController || !this.running) {', awaitAt);
-  const listener = SRC.indexOf('unsub = this.handController!.onEvent(', awaitAt);
-  const start = SRC.indexOf('this.handController!.start();', listener);
+  const capture = SRC.indexOf('const controllerForHand = this.handController!;', guard);
+  const listener = SRC.indexOf('unsub = controllerForHand.onEvent(', capture);
+  const start = SRC.indexOf('controllerForHand.start();', listener);
 
   it('the guard sits between the await and the listener', () => {
     expect(construct).toBeGreaterThan(0);
     expect(awaitAt).toBeGreaterThan(construct);
     expect(guard).toBeGreaterThan(awaitAt);
-    expect(listener).toBeGreaterThan(guard);
+    expect(capture).toBeGreaterThan(guard);
+    expect(listener).toBeGreaterThan(capture);
     expect(start).toBeGreaterThan(listener);
   });
 

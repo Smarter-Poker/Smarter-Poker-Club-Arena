@@ -129,7 +129,11 @@ describe('the break writes the FSM, the boot reads it', () => {
     // The gate that parks the loop for the break.
     const park = sliceBlockAfter(
       dealing,
-      'if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {'
+      `if (
+          this.maintenancePaused ||
+          this.finalTableDealPaused ||
+          (this.handForHandPaused && this.holdBeforeNextHand)
+        ) {`
     );
     expect(park).toMatch(
       /if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);/

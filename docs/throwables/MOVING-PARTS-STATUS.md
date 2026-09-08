@@ -2,7 +2,7 @@
 
 ## Current state, 2026-09-08
 
-38/47 existing non-glove rigs now use premium moving artwork. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. The premium frontend branch is pushed and PR #3673 is in CI. Hetzner publication is not yet verified.
+39/47 existing non-glove rigs now use premium moving artwork locally. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. PR #3673 merged and published through Hetzner as c864fbe1acf170bbf2ad34d5022267223356e699. Both origin and public route served this SHA, and all 181 artwork files per origin matched source bytes (362 checks). Pizza is the subsequent 39th rig and is not yet published.
 
 - Added heart, angry_emoji and cool_sunglasses_emoji. Independent heartbeat accents, progressive anger/shout/flames and dropping glasses/lens glint replace static landing-only behavior.
 - All 40 runtime atlases are lossless WebP: 40,685,060 bytes versus 56,890,941 source PNG bytes, 28.5% smaller. Both machines verified exact alpha and visible RGB preservation for all 40. Sources are under art-source/animated, outside the public deployment tree. Production media optimization preserves verified atlas bytes.
@@ -12,11 +12,15 @@
 - All 47 approved non-glove picker stills are wired locally as 141 versioned WebP thumbnails, about 4.61 MB. Actual component browser QA covers all 47 on dark/light backgrounds, 94 decoded cutouts and no page errors. Narrow matte thresholds preserve dark bodies and cuffs. Small icons now decode the correct 192px bucket, with a real black-sphere opacity regression test.
 - Live database pack-credit fix is migration 20260908021633; actual consumption timestamps are migration 20260908023324. Both were applied and live source/privileges verified. Synthetic local PostgreSQL checks total 25. The 30-member monthly allowance was applied as 20260908040103; its live function hash and unchanged execute privileges were verified. VIP 500 and Lifetime unlimited behavior remain covered. The file was renamed from its reserved draft version to match the returned production ledger version.
 
-Remaining original rigs: anvil, bear, ghost, lightning_bolt, magic_8_ball, pizza_slice, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates; CI/publication and deployed SHA verification.
+Remaining original rigs: anvil, bear, ghost, lightning_bolt, magic_8_ball, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates for future batches; pizza CI/publication and deployed SHA verification.
 
-Publication route: user clarified the Club Arena-to-Hetzner destination and continued the release. Standard branch push succeeded, pre-push hooks ran without bypass, and autopilot opened PR #3673. The earlier upload approval blocker is resolved. Follow CI/autopilot and publish-club-arena.yml; no manual merge or alternate publisher.
+Publication route: user clarified the Club Arena-to-Hetzner destination and continued the release. Standard branch push succeeded, pre-push hooks ran without bypass, and autopilot merged PR #3673. CI run 34186048786 passed all applicable jobs; publisher run 34186369801 delivered the verified release. The earlier upload approval blocker is resolved. Follow CI/autopilot and publish-club-arena.yml; no manual merge or alternate publisher.
 
-## Latest visual sequence: Chicken
+## Latest visual sequence: Pizza
+
+Face-down impact, sliding smear, stretching cheese tether, peel at 2200 ms, falling slice and cheese drop, pepperoni remaining on the forehead. Genuine transparent RGBA source replaces two rejected checkerboard outputs. 32 focused checks, 11 browser captures and 15 speed samples passed, with zero reduced-motion animations or page errors. Bespoke cheese and peel audio remain pending; an existing packaged wet impact cue plays.
+
+## Previous visual sequence: Chicken
 
 Chicken uses four authored poses: landing pop, downward peck, four head-up bobs, wide-beak cluck and four half-open ending bobs. The source sheet is unchanged and losslessly encoded. Recorded cluck/bawk sounds remain pending; only the packaged landing pop plays. The four newest sequences together passed 60 normalized-speed samples at 0.5/1/2, 44 beat/scale captures, zero reduced-motion animations and zero page errors. The payload-and-cue preview decodes 12 audio containers. This is not an authenticated table-flow test.
 

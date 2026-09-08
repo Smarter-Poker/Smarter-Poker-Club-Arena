@@ -11,6 +11,16 @@ function run(...args: string[]) {
 }
 afterAll(() => rmSync(out, { recursive: true, force: true }));
 describe('throwable darkroom commands', () => {
+  it('previews a draft without modifying the live registry', () => {
+    const before = readFileSync('src/throwables/registry.ts', 'utf8');
+    const result = run('--drafts', '--only=rat_card', out, '--html-only');
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Draft preview mode');
+    expect(readFileSync(join(out, 'harness.html'), 'utf8')).toContain('data-id="rat_card"');
+    expect(readFileSync('src/throwables/registry.ts', 'utf8')).toBe(before);
+    expect(run('--drafts', '--only=../rat_card', out, '--html-only').status).not.toBe(0);
+  });
+
   it('accepts space-separated selection and packages bounded atlas sprites', () => {
     const result = run('--only', 'beer,trophy,bomb', out, '--html-only');
     expect(result.status, result.stderr).toBe(0);

@@ -49,6 +49,7 @@ const { values, positionals } = parseArgs({
     only: { type: 'string' },
     items: { type: 'string' },
     shots: { type: 'boolean', default: false },
+    drafts: { type: 'boolean', default: false },
     'html-only': { type: 'boolean', default: false },
     'executable-path': { type: 'string' },
   },
@@ -75,6 +76,9 @@ const only =
         ),
       ];
 if (only && !only.length) throw new Error('The item list must not be empty');
+if (values.drafts && (!only || only.some((id) => !/^[a-z0-9_]+$/.test(id)))) {
+  throw new Error('Draft preview requires an explicit list of safe item IDs');
+}
 
 mkdirSync(OUT, { recursive: true });
 const copiedAtlases = new Set();
@@ -85,10 +89,30 @@ const copiedAtlases = new Set();
    to /tmp cannot find them however the externals are declared. */
 const tmp = mkdtempSync(join(repo, 'node_modules', '.throwable-darkroom-'));
 const entry = join(tmp, 'entry.mjs');
+const registryPath = JSON.stringify(join(repo, 'src/throwables/registry.ts'));
+const draftImports = values.drafts
+  ? only
+      .map(
+        (id, i) =>
+          `import * as draft${i} from ${JSON.stringify(join(repo, 'src/throwables/rigs', `${id}.tsx`))};`
+      )
+      .join('\n')
+  : '';
+const draftEntries = values.drafts
+  ? only.map((id, i) => `${JSON.stringify(id)}: draft${i}`).join(',')
+  : '';
 writeFileSync(
   entry,
-  `export { RIGGED_IDS, riggedThrowable } from ${JSON.stringify(join(repo, 'src/throwables/registry.ts'))};\nexport { THROWABLE_GRAMMAR } from ${JSON.stringify(join(repo, 'src/throwables/spec.ts'))};\n`
+  values.drafts
+    ? `import { RIGGED_IDS as liveIds, riggedThrowable as liveRig } from ${registryPath};
+${draftImports}
+const drafts = {${draftEntries}};
+export const RIGGED_IDS = [...new Set([...liveIds, ...Object.keys(drafts)])];
+export function riggedThrowable(id) { return liveRig(id) ?? (drafts[id] ? {spec: drafts[id].spec, rig: drafts[id].rig} : null); }
+export { THROWABLE_GRAMMAR } from ${JSON.stringify(join(repo, 'src/throwables/spec.ts'))};`
+    : `export { RIGGED_IDS, riggedThrowable } from ${registryPath};\nexport { THROWABLE_GRAMMAR } from ${JSON.stringify(join(repo, 'src/throwables/spec.ts'))};\n`
 );
+if (values.drafts) console.log('Draft preview mode: live catalogue and registry are unchanged');
 const bundle = join(tmp, 'rigs.mjs');
 const esbuild = await import(pathToFileURL(join(repo, 'node_modules/esbuild/lib/main.js')).href);
 await esbuild.build({

@@ -35,6 +35,53 @@ Six migrations, all applied to production, registered, probed in rolled-back tra
 
 **What is left, in one list**: the arena club and the rest of Phase 5; flipping the nine rules after their clean days (2026-09-14 for seven of them, 2026-09-22 for the two arena rules); the VIP price oracle (`vip_plans`); the ten delete-list names that still have callers; and the transfer panel still sitting unreachable inside `DiamondWalletModal.jsx`.
 
+## 0d. Status 2026-09-08, later the same day (Phase 5 opened)
+
+Three more migrations, applied, registered, probed and pinned by
+`tests/the-arena-is-one-club-and-it-mints-nothing.law.test.ts`:
+`20260908114501` (the arena club), `114517` (the books learn the arena),
+`114533` (a horse may play in the arena). Before them, `20260908060643` fixed a
+live money-identity break: the register followed the journal under an
+xact-scoped global advisory lock, so one transaction claiming several challenges
+serialised the whole economy and twenty-seven movements died on lock_timeout.
+
+**Phase 5.1 is closed.** The Diamond Arena club exists - `asset = diamonds`,
+`is_platform`, no union, owned by the service identity, every balance zero, one
+platform club enforced by a partial unique index, `ca_arena_settings.club_id`
+set. Creating it would have MINTED 100,000 CHIPS inside a diamond club, because
+`fn_seed_new_club_opening_bank` forces a chip opening grant on every non-union
+club with no reference to `asset`; both it and the recorder now return early for
+a non-chip club, and the migration asserts neither supply moved.
+
+**Phase 5.3 is closed.** An arena deposit classified as `spend` and a withdrawal
+as `arena`, so the register would have burned the float on the way in and minted
+it on the way out; both are transfers now. The diamond trial balance gains
+`arena_wallets` and the identity is `players + house + arena = register`. The
+chip supply snapshot excludes the platform club. The deploy gate's basis carries
+the arena on both sides. Proved by a real rolled-back round trip: 200 in, 200
+out, supply unchanged, identity 0 at every step.
+
+**Phase 5.4 is part-closed.** Horses may enter the arena: the house-board rule
+was a hard-coded list of four uuids, so the platform club was locked out of its
+own category the day it was created (10.5). It derives from `is_platform` now.
+Rake to the house, guarantees from the house and the BBJ pool are NOT built -
+there is no diamond table to probe a diamond branch against, and the pool is
+gated on chip 4.2/4.3.
+
+**Phase 5.5 is part-closed.** The World Hub arena pages were showing invented
+players, invented personal win records and invented lifetime stats, plus a
+realtime subscription to `diamond_arena_scores`, a table that does not exist.
+All removed. Routing `/hub/diamond-arena` into the SPA is still open.
+
+**Two open defects and two numbers for Dan** are in
+`docs/changelog/2026-09-08-phase-5-status-and-two-open-defects.md`. The first -
+one budget row serialising every award, 5,835 lost budget debits, and
+`DR7:engine_over_budget` flipping to `refuse` on 2026-09-14 against a figure
+known to be short - should be picked up before that date.
+
+**Entry condition for a diamond table: still not met.** Day one of the seven
+clean days is today.
+
 ## 1. Scorecard against the standard
 
 | Area                               | Grade          | Evidence (tonight)                                                                                                                                                                             | What is left                                                                                                                                                              |

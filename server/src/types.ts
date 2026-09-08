@@ -307,6 +307,11 @@ export interface SeatedPlayer {
   horse_profile?: string | Record<string, unknown>;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
+  /** Raw values from this roster read, never an optimistic write acknowledgement. */
+  persisted_time_bank?: {
+    remainingSeconds: number | null;
+    usesRemaining: number | null;
+  };
   /**
    * Persisted sit-out flag from `table_seats`. Restart fidelity, 2026-08-25:
    * the engine writes this column and, until now, never read it — so a restart

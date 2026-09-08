@@ -1,0 +1,9 @@
+{
+  "_owner": "feat/the-closing-position",
+  "tables": ["ca_epoch_closing_positions"],
+  "functions": [
+    "fn_ca_capture_closing_position",
+    "fn_ca_closing_position_is_immutable",
+    "fn_ca_closing_position_summary"
+  ]
+}

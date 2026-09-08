@@ -54,6 +54,76 @@ export interface GtoDecisionContext {
 
 const POSTFLOP_STREETS: HandStage[] = ['flop', 'turn', 'river'];
 
+function committedOnStreet(
+  history: ActionRecord[] | undefined,
+  seat: number,
+  street: HandStage
+): { amount: number; acted: boolean } | null {
+  let committed = 0;
+  let acted = false;
+  for (const action of Array.isArray(history) ? history : []) {
+    if (action.stage !== street || action.seat !== seat || action.action === 'discard') continue;
+    acted = true;
+    const amount = action.amount;
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) return null;
+    if (action.action === 'call') {
+      if (amount <= 0) return null;
+      committed += amount;
+    } else if (action.action === 'bet' || action.action === 'raise' || action.action === 'all_in') {
+      if (amount <= 0 || amount < committed) return null;
+      committed = amount;
+    } else if (action.action === 'fold' || amount !== 0) {
+      // A seat that folded cannot own a later-street decision. Checks carry
+      // no chips. Either shape is contradictory evidence, not a zero spend.
+      return null;
+    }
+  }
+  return { amount: committed, acted };
+}
+
+/**
+ * Effective-stack depth in a Pio postflop tree is the stack behind at its flop
+ * root. `stack + bet` only recovers the start of the current street, so turn
+ * and river lookups must add back chips committed on completed postflop
+ * streets. Otherwise a line solved from 80bb can silently consume a 20bb cell
+ * after a large flop and turn.
+ */
+export function gtoV31FlopRootStack(args: {
+  street: Extract<HandStage, 'flop' | 'turn' | 'river'>;
+  player: Pick<SeatPlayer, 'seat' | 'stack' | 'bet'>;
+  actionHistory?: ActionRecord[];
+}): number | null {
+  const stack = args.player.stack;
+  const bet = args.player.bet;
+  if (
+    typeof stack !== 'number' ||
+    !Number.isFinite(stack) ||
+    stack < 0 ||
+    typeof bet !== 'number' ||
+    !Number.isFinite(bet) ||
+    bet < 0
+  ) {
+    return null;
+  }
+  const streetIndex = POSTFLOP_STREETS.indexOf(args.street);
+  if (streetIndex < 0) return null;
+  const current = committedOnStreet(args.actionHistory, args.player.seat, args.street);
+  // Postflop has no forced wager. A state/history disagreement means the
+  // amount already spent on this street is unknowable, so a certified depth
+  // lookup must decline rather than guess.
+  if (current === null || Math.abs(current.amount - bet) > 0.005) return null;
+  let rootStack = stack + bet;
+  for (const priorStreet of POSTFLOP_STREETS.slice(0, streetIndex)) {
+    const committed = committedOnStreet(args.actionHistory, args.player.seat, priorStreet);
+    // Reaching a later street heads-up requires this seat to have completed
+    // every earlier betting round. An absent street is missing evidence, not
+    // proof that zero chips were committed.
+    if (committed === null || !committed.acted) return null;
+    rootStack += committed.amount;
+  }
+  return Number.isFinite(rootStack) && rootStack > 0 ? rootStack : null;
+}
+
 function wasDealtIn(player: SeatPlayer, requiredSeat?: number): boolean {
   return (
     player.seat === requiredSeat ||
@@ -282,10 +352,11 @@ function checkedThroughHeadsUp(
 /**
  * Classify the live public line at the instant hero must act.
  *
- * `pot` includes the wager currently faced, matching HorseGameState.  For a
- * first bet, the raw wager divided by pot-before is the size.  For a raise,
- * the raise increment is divided by the pot after hero hypothetically calls,
- * matching the engine's `currentBet + (pot + toCall) * fraction` convention.
+ * `pot` includes the wager currently faced, matching HorseGameState. For a
+ * first bet, the raw wager divided by pot-before is the size. For a raise,
+ * reconstruct the earlier decision boundary and divide the raise increment by
+ * the pot after the raiser called the previous wager. The live hero's later
+ * call boundary is larger and would systematically understate every raise.
  */
 export function classifyGtoDecisionContext(args: {
   street: HandStage;
@@ -297,17 +368,49 @@ export function classifyGtoDecisionContext(args: {
 }): GtoDecisionContext | null {
   if (!POSTFLOP_STREETS.includes(args.street)) return null;
   const actions = currentStreetActions(args.actionHistory, args.street);
-  const heroBet = Number.isFinite(args.hero.bet) ? Math.max(0, args.hero.bet) : 0;
-  const currentBet = Number.isFinite(args.currentBet) ? Math.max(0, args.currentBet) : 0;
+  if (
+    !Number.isFinite(args.hero.bet) ||
+    args.hero.bet < 0 ||
+    !Number.isFinite(args.hero.stack) ||
+    args.hero.stack <= 0 ||
+    !Number.isFinite(args.currentBet) ||
+    args.currentBet < args.hero.bet ||
+    !Number.isFinite(args.pot) ||
+    args.pot <= 0
+  ) {
+    return null;
+  }
+  const heroBet = args.hero.bet;
+  const currentBet = args.currentBet;
   const toCall = Math.max(0, currentBet - heroBet);
   const lastAggressive = [...actions].reverse().find(isAggressive);
 
   if (toCall > 0 && lastAggressive && lastAggressive.seat !== args.hero.seat) {
     const opponent = args.opponents.find((player) => player.seat === lastAggressive.seat);
-    const allIn = lastAggressive.action === 'all_in' || opponent?.is_all_in === true;
-    const heroAggressiveIndex = actions.findIndex(
-      (action) => action.seat === args.hero.seat && isAggressive(action)
-    );
+    if (!opponent) return null;
+    const wager = Number(lastAggressive.amount);
+    // The latest wager target is the same number HandController publishes as
+    // currentBet. If those two facts disagree, reconstructing either a size or
+    // an effective all-in node would certify a state that never existed.
+    if (!Number.isFinite(wager) || wager <= 0 || Math.abs(wager - currentBet) > 0.005) return null;
+    const heroStack = args.hero.stack;
+    // A covering opponent need not be all-in for the wager to put hero all-in.
+    // Pio solves at effective stack, so a target that consumes every chip hero
+    // can contest belongs to the all-in response node just as surely as an
+    // opponent whose own stack reached zero.
+    const allIn =
+      lastAggressive.action === 'all_in' ||
+      opponent.is_all_in === true ||
+      wager >= heroBet + heroStack - 0.005;
+    const lastAggressiveIndex = actions.lastIndexOf(lastAggressive);
+    let heroAggressiveIndex = -1;
+    for (let index = lastAggressiveIndex - 1; index >= 0; index--) {
+      const action = actions[index];
+      if (action.seat === args.hero.seat && isAggressive(action)) {
+        heroAggressiveIndex = index;
+        break;
+      }
+    }
     const heroAggressive = heroAggressiveIndex >= 0 ? actions[heroAggressiveIndex] : undefined;
     const opponentCheckedBeforeHeroBet =
       heroAggressiveIndex >= 0 &&
@@ -334,22 +437,36 @@ export function classifyGtoDecisionContext(args: {
       facingKind = 'bet';
     }
 
-    const wager = Math.max(0, Number(lastAggressive.amount) || currentBet);
     let fraction: number | null = null;
     if (facingKind === 'bet') {
       const potBefore = args.pot - wager;
-      if (potBefore > 0) fraction = wager / potBefore;
+      if (potBefore <= 0) return null;
+      fraction = wager / potBefore;
     } else if (facingKind === 'raise') {
+      const priorActions = actions.slice(0, lastAggressiveIndex);
       const previousTarget = Math.max(
         0,
-        ...actions
-          .slice(0, actions.lastIndexOf(lastAggressive))
-          .filter(isAggressive)
-          .map((action) => Number(action.amount) || 0)
+        ...priorActions.filter(isAggressive).map((action) => Number(action.amount) || 0)
       );
+      const raiserPriorAggression = [...priorActions]
+        .reverse()
+        .find((action) => action.seat === lastAggressive.seat && isAggressive(action));
+      const raiserPriorContribution = Math.max(0, Number(raiserPriorAggression?.amount) || 0);
       const raiseIncrement = Math.max(0, wager - previousTarget);
-      const potAfterCall = args.pot + toCall;
-      if (potAfterCall > 0) fraction = raiseIncrement / potAfterCall;
+      const chipsAddedByRaise = wager - raiserPriorContribution;
+      const raiserCall = previousTarget - raiserPriorContribution;
+      const potBeforeRaise = args.pot - chipsAddedByRaise;
+      const potAfterRaiserCall = potBeforeRaise + raiserCall;
+      if (
+        chipsAddedByRaise <= 0 ||
+        raiserCall < 0 ||
+        raiseIncrement <= 0 ||
+        potBeforeRaise <= 0 ||
+        potAfterRaiserCall <= 0
+      ) {
+        return null;
+      }
+      fraction = raiseIncrement / potAfterRaiserCall;
     }
     return {
       nodeRole,

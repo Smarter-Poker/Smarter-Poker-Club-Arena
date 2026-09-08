@@ -339,3 +339,7 @@ For each financial operation, acceptance must include competing spends, duplicat
 [coverage.json](coverage.json) records the baseline and discovery limitations. [register-integrity.json](register-integrity.json) records CSV row counts and SHA-256 digests. Source files can be recovered by their Git blob IDs from the pinned repository version. AST discovery is not type checking or a proof of a complete call graph. Page-to-route matching and suggested phase mappings are candidates requiring human/source verification.
 
 This register is a reproducible baseline of discovered surfaces and known remaining work, not a promise that undiscovered defects cannot exist. Completion requires evidence per item and per relevant page/control, plus the correct deployed runtime. Expand the register when a dynamic or indirect path is discovered; do not conceal it behind a global completion percentage.
+
+## Publication Addendum
+
+The user approved publication on September 8, 2026. This inventory remains pinned to its recorded source baseline; it is not a claim that later changes were already audited. The original 216-requirement register has since been recovered in docs/audits/2026-09-08-platform-coverage/phase-requirements.json. The 118-item execution mapping is maintained separately in docs/audits/2026-09-08-execution-work-items.csv.

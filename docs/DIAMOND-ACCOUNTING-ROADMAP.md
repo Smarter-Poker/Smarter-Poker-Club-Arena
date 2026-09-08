@@ -244,3 +244,110 @@ ledger_write_failed since 13:00 0        the serialisation fix holds
 Every engine reads HEALTHY on `fn_ca_diamond_cap_headroom(14)` with zero
 would-refuse across 1,395 user-days, and the binding cap is now reported
 alongside both columns rather than guessed from one.
+
+---
+
+## 0f. Status 2026-09-08, evening: the flip had no hand
+
+Picking up items 2, 3 and 4 from the list in 0e. Item 2 turned into something
+much larger, and item 1 turned out not to be where I said it was.
+
+### The flip was never connected
+
+Nine rules carry `flip_after` dates. **Nothing called `fn_ca_diamond_rule_flip`** —
+zero cron jobs, zero database functions, no application caller. The three dates
+would have passed unremarked and every rule would have stayed in `log` mode for
+ever, while the forecast, the headroom report, the VIP cap fix and the settlement
+of 759 rewards all reported on a transition that could not occur.
+
+The mechanism that hid it is worth naming, because it will recur: **the safety
+apparatus is what made it invisible.** Everyone kept checking whether the flip was
+_safe_. Nobody checked whether it was _connected_.
+
+`fn_ca_diamond_rule_flip_due()` now arms on a daily tick, passing the three
+existing gates plus a fourth — the forecast must report zero would-refuse **since
+the rule's configuration last changed** — and reporting every rule it cannot arm.
+Migration `20260908151633`.
+
+The planned "flip rehearsal" (0e item 2) was **not built, and should not be**:
+`fn_ca_diamond_rule_flip` already requires seven clean days, which is a stricter
+test than replaying 24 hours. Saying so is part of the job.
+
+### The forecast's configuration blind spot
+
+It counted incidents over a window while a rule's configuration could change
+inside it. Today that misread harmlessly. **The dangerous direction is the
+reverse**: lower a cap and it reads "SAFE TO ARM" for 24 hours on evidence from
+the old setting — and it is now wired to something that acts on it. It reports
+`since_config` and `config_at`; both configuration tables stamp `updated_at`,
+which neither did before.
+
+### One front door
+
+`fn_ca_diamond_health()` — thirteen areas, `ok`/`attention`/`critical`, one
+sentence each. There are 28 `fn_ca_diamond_*` / `fn_ca_mint_*` reporting
+functions, which is how "nothing arms the rules" survived a week of daily review.
+
+### The horse claim: the root fix, and where I was wrong
+
+0e item 1 said this was engine-side TypeScript in HorseLogic. **It was not.** The
+claim already ran server-side on a minute cadence, inside
+`record_daily_challenge_event`. What was wrong was which question that cadence
+asked — "who just acted" instead of "who is owed". A horse that stops playing
+stops claiming; a human keeps a button for seven days.
+
+`fn_ca_horse_claim_due` is keyed to who is owed, on the same minute tick.
+Migration `20260908152950`. It is not a repair job (10.12): it **is** the button,
+the same legitimate horse branch as `scheduleHorseAction`. Moving it out of the
+event path also deleted both duplicate copies of the loop, closing 0e item 5.
+
+Proven by a rolled-back probe: `horse claimed=t, human claimed=f, sweep paid 1,
+42 diamonds moved`.
+
+### Two instruments corrected within hours of being built
+
+Both were mine, and both are the failure they exist to catch:
+
+- `fn_ca_diamond_health` reported "19 earned rewards unclaimed" and blamed the
+  horse mechanism. All 19 belong to **two humans**, who have a button and have
+  not pressed it. Not a defect, and it must not be amber. The row separates horse
+  from human now.
+- Its `evaluation coverage` row read `critical` for 5,861 failures that had all
+  stopped minutes before that morning's fix. An alarm that stays red for a day
+  after its cause is fixed gets muted — and that row is the one saying whether
+  the others can be trusted. It distinguishes a live gap from a stopped one.
+
+### Still owed
+
+1. **VIP is defined inline in 33 functions.** A real refactor.
+2. **The October budget plans are fiction** (`daily_challenges` at 100,000 against
+   a September actual of 1,836,311). `fn_ca_diamond_budget_reality` names them;
+   setting them is Dan's (10.9).
+3. **`record_daily_challenge_event` still has two overloads plus a body function**
+   duplicating each other in every respect except the claim, which is now gone
+   from all three. Merging them is separate work.
+4. **`scripts/guard-merged-branch.sh` reads HEAD, not the push refspec.** The
+   message now says so and tells you when the override is correct rather than a
+   workaround. The real fix is for `.husky/pre-push` to read stdin once at the top
+   and pass the refspec down — and it needs care, because piping the existing
+   `while read` loop through a subshell would break its `FAIL` propagation and
+   silently disable every gate below it. That is a worse bug than the one being
+   fixed, which is why it was not done blind.
+
+### Verified live
+
+```
+rule arming           ok    ca-diamond-rule-flip-daily scheduled and active
+rules overdue         ok    No rule past its arming date and still stuck
+money identity        ok    players + float = register, exactly
+deploy gate           ok    The snapshot explains every movement it can see
+trial balance         ok    Every reconciling account balances
+per-user caps         ok    No user-day in fourteen days exceeds its cap
+VIP caps              ok    No cap gives a VIP less than a standard player
+horse claims          ok    No horse owed a reward it cannot claim
+horse claim button    ok    ca-horse-claim-due-minute scheduled and active
+horses are players    ok    No horse classified as test equipment
+budget plans          attention  3 lines are fiction (Dan's to set)
+unreachable money     ok    Nothing stranded
+evaluation coverage   attention  5,861 in 24h, none for 02:56; cause appears fixed
+```

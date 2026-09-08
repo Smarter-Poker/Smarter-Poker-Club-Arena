@@ -13,3 +13,12 @@ Automatic approval review rejected a second live rehearsal because broad policy,
 Remaining phase exit work: finish direct lobby/staff authorization and legacy dependency inventory; test against the complete production trigger chain in an approved environment; apply migration; pass repository gates; push, merge, publish and verify the served commit. No existing Diamond runtime earns completion credit. No funded games are enabled by this phase. Custody remains Phase 3, transfers Phase 4, shared skin/artwork and World Hub card/legacy route removal Phase 5.
 
 The original Diamond Arena card image remains required for the Diamond club selector. Nothing in this patch changes or removes the shared platform wallet or authorizes chip-backed Diamond play.
+
+## Recorded Local Evidence
+
+- Frontend: 102 tests passed across eight focused files after merging the current baseline.
+- Server: 40 tests passed across five files, including idle add-on and engine start/reconnect regressions. Server TypeScript passed.
+- Database: 23 assertions passed by running the actual migration against the isolated PostgreSQL fixture. No production schema change is claimed.
+- Frontend TypeScript and Vite compilation completed. The full build printed a freshness refusal after another main commit landed, despite returning exit code zero; this is not a passed publication gate.
+- Read-only production inventory: one Diamond identity, no union, zero chip treasury/pool/promo/insurance amounts, zero tables, one historical membership, zero agents, player-agent assignments and agent commissions. This does not certify all financial obligations.
+- Work is saved in isolated branch agent/codex-diamond-phase-2/feature/diamond-arena-access. No hooks were bypassed. The orphan-protection hook refused rebase; abort restored the committed branch and a normal merge preserved both histories.

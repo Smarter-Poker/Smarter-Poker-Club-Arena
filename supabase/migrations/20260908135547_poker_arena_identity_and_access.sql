@@ -199,4 +199,3 @@ END $hierarchy$;
 UPDATE public.club_members m SET role='player', status='automatic', credit_limit=0,
   agent_id=NULL, parent_agent_id=NULL
 FROM public.clubs c WHERE c.id=m.club_id AND c.asset='diamonds';
-

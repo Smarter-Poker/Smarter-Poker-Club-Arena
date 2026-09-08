@@ -114,9 +114,10 @@ describe('the surviving timer governs the seat-first sheet too', () => {
     /* The guards above are only guards if the effect re-runs when they
        change: pressing Buy In flips `seatFirstPending` and must tear the
        interval down in that same commit. Round 16 added both. */
-    expect(CODE).toContain(
-      '[showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]'
+    expect(CODE).toMatch(
+      /\[\s*showBuyInModal,\s*seatFirstConfirm,\s*tableId,\s*seatFirstPending,\s*tableState\.heroSeat,\s*cashBuyInRecovery,?\s*\]/
     );
+    expect(expiry).toContain('if (cashBuyInPendingRef.current) return;');
   });
 
   it('and checks once more in the instant it would eject', () => {

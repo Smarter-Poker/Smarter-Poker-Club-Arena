@@ -210,6 +210,14 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
 
   return (
     <div
+      data-testid="arena-lobby-game-card"
+      data-id={entry.id}
+      data-kind={entry.kind}
+      data-status={entry.status}
+      data-live={entry.live ? 'true' : 'false'}
+      data-players={entry.players}
+      data-capacity={entry.capacity}
+      data-target={entry.game ? 'game' : 'table'}
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
       onPointerEnter={() => {
         if (entry.kind === 'cash') warmTable(entry.id);

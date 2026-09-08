@@ -1,0 +1,120 @@
+.thr-energy_ball__sphere-grow {
+  transform-origin: 0 0;
+  animation: thr-energy_ball-sphere-grow calc(0.367s * var(--animation-speed, 1)) ease-out
+    calc(0s * var(--animation-speed, 1)) both;
+}
+@keyframes thr-energy_ball-sphere-grow {
+  from {
+    transform: scale(0.2);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.thr-energy_ball__arcs {
+  transform-origin: 0 0;
+  animation: thr-energy_ball-arcs calc(1.3s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-energy_ball-arcs {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.thr-energy_ball__pulse {
+  transform-origin: 0 0;
+  animation: thr-energy_ball-pulse calc(0.7s * var(--animation-speed, 1)) ease-in-out
+    calc(0s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-energy_ball-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.thr-energy_ball__collapse {
+  transform-origin: 0 0;
+  animation: thr-energy_ball-collapse calc(0.25s * var(--animation-speed, 1)) linear
+    calc(2.467s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-energy_ball-collapse {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.015);
+    opacity: 0;
+  }
+}
+.thr-energy_ball__flash {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-energy_ball-flash calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(2.767s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-energy_ball-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+.thr-energy_ball__pop {
+  transform-origin: 0 0;
+  animation: thr-energy_ball-pop calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0s * var(--animation-speed, 1)) both;
+}
+@keyframes thr-energy_ball-pop {
+  0% {
+    transform: scale(0.18);
+  }
+  45% {
+    transform: scale(1.3);
+  }
+  75% {
+    transform: scale(0.8);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-energy_ball__sphere-grow,
+  .thr-energy_ball__arcs,
+  .thr-energy_ball__pulse,
+  .thr-energy_ball__collapse,
+  .thr-energy_ball__flash,
+  .thr-energy_ball__pop {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-energy_ball__collapse {
+    opacity: 1;
+  }
+  .thr-energy_ball__sphere-grow {
+    opacity: 1;
+  }
+  .thr-energy_ball__pulse {
+    opacity: 0.5;
+  }
+  .thr-energy_ball__arcs {
+    opacity: 1;
+  }
+  .thr-energy_ball__flash {
+    opacity: 0;
+  }
+}

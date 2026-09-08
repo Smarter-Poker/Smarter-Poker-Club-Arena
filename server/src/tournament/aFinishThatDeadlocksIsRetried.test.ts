@@ -1,6 +1,6 @@
 /**
- * A FINISH THAT DEADLOCKS IS RETRIED, AND A MANAGER THAT NEVER CAME BACK DOES
- * NOT HIDE THE ROW (2026-09-06).
+ * A FINISH IS A DATABASE CERTIFICATE, AND A MANAGER THAT NEVER CAME BACK DOES
+ * NOT HIDE THE ROW (2026-09-07).
  *
  * 15:01, 15:06, 15:07 UTC: three events paid their winners, settled rake, and
  * deadlocked on COMPLETING -> COMPLETED. finishTournament logged "left for
@@ -11,14 +11,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import {
-  COMPLETED_FLIP_ATTEMPTS,
-  COMPLETED_FLIP_BACKOFF_MS,
-  isTransientFlipError,
-} from './completedFlip.js';
 import {
   COMPLETING_DWELL_MS,
   COMPLETING_MANAGED_GRACE_MS,
@@ -27,39 +22,39 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ELIM = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
+const RECOVERY = readFileSync(join(here, 'tournamentRecovery.ts'), 'utf8');
 const SERVER = readFileSync(join(here, '..', 'GameServer.ts'), 'utf8');
 
-describe('the flip is retried on a deadlock and nothing else', () => {
-  it('three attempts, a quarter second apart, growing', () => {
-    expect(COMPLETED_FLIP_ATTEMPTS).toBe(3);
-    expect(COMPLETED_FLIP_BACKOFF_MS).toBe(250);
-  });
-
-  it('a deadlock, a lock timeout and a serialization failure are transient', () => {
-    expect(isTransientFlipError({ code: '40P01', message: 'deadlock detected' })).toBe(true);
-    expect(
-      isTransientFlipError({ code: '55P03', message: 'canceling statement due to lock timeout' })
-    ).toBe(true);
-    expect(isTransientFlipError({ code: '40001' })).toBe(true);
-    expect(isTransientFlipError({ message: 'deadlock detected' })).toBe(true);
-  });
-
-  it('a refusal is not retried - a trigger that says no means no', () => {
-    expect(isTransientFlipError({ code: '23514', message: 'a spin cannot complete unpaid' })).toBe(
-      false
+describe('the finish boundary is owned by one database contract', () => {
+  it('claims the canonical winner before any settlement and certifies only after rake', () => {
+    const finish = sliceMethod(ELIM, 'protected async finishTournament(winnerId: string)');
+    expect(finish).toContain('claimTournamentFinish(');
+    expect(finish).toContain('settleTournamentPlacesAtomically(');
+    expect(finish.indexOf('claimTournamentFinish(')).toBeLessThan(
+      finish.indexOf('await this.settleTournamentRake(tournament)')
     );
-    expect(isTransientFlipError({ code: 'PGRST301', message: 'JWT expired' })).toBe(false);
-    expect(isTransientFlipError(null)).toBe(false);
+    expect(finish.indexOf('await this.settleTournamentRake(tournament)')).toBeLessThan(
+      finish.indexOf('settleTournamentPlacesAtomically(')
+    );
+    expect(finish.indexOf('settleTournamentPlacesAtomically(')).toBeLessThan(
+      finish.lastIndexOf('await this.cleanupCommittedTournament()')
+    );
+    expect(finish).toContain('this.tournamentFinished = false;');
+    expect(finish).not.toMatch(/\.from\('tournaments'\)[\s\S]*?status:\s*'COMPLETED'/);
   });
 
-  it('finishTournament loops the update and keeps the COMPLETING guard on every attempt', () => {
-    const i = ELIM.indexOf('for (let attempt = 1; attempt <= COMPLETED_FLIP_ATTEMPTS; attempt++)');
-    expect(i).toBeGreaterThan(0);
-    const body = ELIM.slice(i, ELIM.indexOf('if (completedErr) {', i));
-    expect(body).toContain(".eq('status', 'COMPLETING')");
-    expect(body).toContain("status: 'COMPLETED'");
-    expect(body).toContain('if (!error || !isTransientFlipError(error)) break;');
-    expect(body).toContain('COMPLETED_FLIP_BACKOFF_MS * attempt');
+  it('the deal and every recovery tail use that same contract', () => {
+    const dealCheck = sliceMethod(ELIM, 'protected async checkFinalTableDeal()');
+    const dealTail = sliceMethod(ELIM, 'private async settleFinalTableDeal(');
+    expect(dealCheck).toContain('settleFinalTableDealAtomically(');
+    expect(dealCheck.indexOf('settleFinalTableDealAtomically(')).toBeLessThan(
+      dealCheck.indexOf('return this.settleFinalTableDeal(deal)')
+    );
+    expect(dealTail).not.toContain('settleTournamentPlacesAtomically(');
+    expect(dealTail).not.toContain('claimTournamentFinish(');
+    expect(RECOVERY.match(/claimTournamentFinish\(/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(RECOVERY.match(/settleTournamentPlacesAtomically\(/g)?.length).toBeGreaterThanOrEqual(1);
+    expect(RECOVERY).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
   });
 });
 
@@ -89,14 +84,16 @@ describe('a manager past the grace is the thing that is stuck', () => {
       SERVER,
       'managerHasOverstayed(dwell.seenAt.get(String(stuck.id)), Date.now())'
     );
-    expect(loop).toContain('lingering.stop();');
-    expect(loop).toContain('this.tournamentEngines.delete(String(stuck.id));');
+    expect(loop).toContain('await this.stopTournamentManagerIfOwned(');
+    expect(loop).toContain("'GameServer.completing_manager_stop_failed'");
     expect(loop).toContain(
       "await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);"
     );
-    // The drop happens BEFORE the has() test that gates recovery, so the
-    // recovery that follows is the ordinary one.
-    expect(loop.indexOf('this.tournamentEngines.delete(String(stuck.id));')).toBeLessThan(
+    // The awaited identity-CAS teardown happens BEFORE the has() test that
+    // gates recovery, so a replacement can never be deleted by the stale
+    // watchdog continuation and recovery still enters through the ordinary
+    // managerless door.
+    expect(loop.indexOf('await this.stopTournamentManagerIfOwned(')).toBeLessThan(
       loop.indexOf('if (!this.tournamentEngines.has(stuck.id))')
     );
   });

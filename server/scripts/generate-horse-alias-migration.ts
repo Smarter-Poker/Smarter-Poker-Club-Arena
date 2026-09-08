@@ -22,7 +22,15 @@ if (!url || !key) {
   console.error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
   process.exit(1);
 }
-const supabase = createClient(url, key, { auth: { persistSession: false } });
+const supabase = createClient(url, key, {
+  auth: { persistSession: false },
+  global: {
+    headers: {
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
+  },
+});
 
 async function main(): Promise<void> {
   const taken = new Set<string>();

@@ -9,10 +9,9 @@
  * armed turn deadlines belonging to a table nothing owns any more. The table
  * stops being watched, and every stall on it becomes permanent.
  *
- * `stop()` cannot be the enforcement: its first line is
- * `if (!this.running) return`, so calling it from the reaper would be a no-op
- * dressed up as a safety net — worse than nothing, because the next reader
- * would believe it.
+ * `stop()` is now the enforcement: it owns one durable teardown promise even
+ * after a watchdog has cleared `running`, so the reaper can await the real
+ * cleanup result before admitting a replacement.
  *
  * The ownership guard is what makes cleanup safe rather than catastrophic: if a
  * REPLACEMENT engine has claimed the tableId, the scheduler entries are its
@@ -51,10 +50,12 @@ describe('reconcileTeardown', () => {
     expect(e.reconcileTeardown()).toBeNull();
   });
 
-  it('refuses to touch deadlines once a REPLACEMENT engine owns the table', () => {
+  it('refuses to touch deadlines once a REPLACEMENT engine owns the table', async () => {
     const old = new ServerTableEngine(TABLE) as any;
-    // Constructing the second engine makes it the current one for this id.
+    expect(old.claimProcessOwnership()).toBe(true);
+    await old.stop();
     const live = new ServerTableEngine(TABLE) as any;
+    expect(live.claimProcessOwnership()).toBe(true);
     old.running = false;
     arm('heartbeat_check');
 
@@ -63,10 +64,12 @@ describe('reconcileTeardown', () => {
     // how a table permanently loses its watchdog.
     expect(deadlineScheduler.persistPending(TABLE)).toHaveLength(1);
     expect(live).toBeDefined();
+    await live.stop();
   });
 
   it('names and cancels what a stopped owner left behind', () => {
     const e = new ServerTableEngine(TABLE) as any;
+    expect(e.claimProcessOwnership()).toBe(true);
     e.running = false;
     arm('heartbeat_check');
     arm('turn:seat3');

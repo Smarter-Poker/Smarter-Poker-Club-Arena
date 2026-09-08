@@ -73,7 +73,7 @@ function startable() {
   engine.resolveOrphanedAddOns = async () => {};
   engine.broadcastCurrentState = async () => {};
   engine.scheduleHeartbeatCheck = () => {};
-  engine.dealingLoop = async () => {};
+  engine.dealingLoop = vi.fn(async () => {});
   return engine;
 }
 
@@ -99,6 +99,8 @@ describe('engine.ready', () => {
 
     await engine.stop();
     await started; // the loop exits on running=false; start() resolves without dealing
+    expect(engine.dealingLoop).not.toHaveBeenCalled();
+    expect(engine.tableFSM.state).toBe('closed');
   });
 
   it('resolves false when start() fails before `waiting`', async () => {
@@ -107,8 +109,9 @@ describe('engine.ready', () => {
     engine.killForRestart = () => {
       engine.running = false;
     };
-    await engine.start();
+    await expect(engine.start()).rejects.toThrow('row is gone');
     expect(await engine.ready).toBe(false);
+    await engine.stop();
   });
 
   it('resolves false when the engine is stopped before it got there', async () => {
@@ -129,21 +132,30 @@ describe('engine.ready', () => {
     expect(await engine.ready).toBe(true);
     engine.killForRestart('drill');
     expect(await engine.ready).toBe(true);
+    await engine.stop();
+    expect(engine.dealingLoop).not.toHaveBeenCalled();
   });
 });
 
 describe('the on-demand door hands out `ready`, not `start()`', () => {
   it('ensureCashTableEngine returns engine.ready and keeps the start chain for its failure handling', () => {
     const src = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'GameServer.ts'), 'utf8');
-    const fn = src.slice(src.indexOf('async ensureCashTableEngine('));
-    const body = fn.slice(0, fn.indexOf('\n  }\n'));
-    expect(body).toContain('const readyPromise: Promise<boolean> = engine.ready.finally(');
-    expect(body).toContain('this.tableEngineStartPromises.set(tableId, readyPromise);');
-    expect(body).toContain('return readyPromise;');
+    const start = src.indexOf('private async performCashTableEngineAdmission(');
+    const end = src.indexOf('\n  /**\n   * Get a table engine by ID', start);
+    const body = src.slice(start, end);
+    expect(body).toContain(
+      'const readyPromise = this.trackDirectTableEngineReadiness(tableId, engine)'
+    );
+    expect(body).toContain('const readiness = await readyPromise;');
+    expect(body).toContain(
+      "return this.dealerAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';"
+    );
     expect(body).not.toContain('return startPromise;');
-    // The failure handling on the start chain stays: a failed start still
-    // frees the map slot, the hub room and the lease.
-    expect(body).toContain("reportError(startError, 'GameServer.on_demand_table_start_failed')");
-    expect(body).toContain('await releaseTables([tableId]);');
+    // The failure handling on the start chain stays: a failed start retires
+    // that exact generation and retains one causal admission obligation.
+    expect(body).toContain("reportError(startError, 'GameServer.direct_table_start_failed')");
+    expect(body).toContain(
+      "await this.recoverDirectTableEngine(tableId, engine, 'direct_start_failed', true)"
+    );
   });
 });

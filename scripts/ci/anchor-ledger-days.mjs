@@ -29,6 +29,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const FILE = 'docs/attestation/chip-ledger-days.tsv';
 const HEADER = '# day\trow_count\tfirst_seq\tlast_seq\tnet_amount\tsha256\tnote';
@@ -42,13 +43,11 @@ if (!url || !key) {
 
 async function rest(path) {
   const res = await fetch(`${url}/rest/v1/${path}`, {
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+    headers: supabaseServerHeaders(key, {
       Accept: 'application/json',
       // Ask for the exact total so a truncated page cannot pass as the whole.
       Prefer: 'count=exact',
-    },
+    }),
   });
   // Never coerce an unreadable answer into an empty one (CLAUDE.md 10.86).
   if (!res.ok) {

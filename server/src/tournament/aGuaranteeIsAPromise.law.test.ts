@@ -126,7 +126,7 @@ describe('the recovery path proves a result before it funds the guarantee', () =
     const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
     const readOnlyProofs = [
       RECOVERY_CODE.indexOf(".select('id, user_id, status, position, prize, chips')"),
-      RECOVERY_CODE.indexOf('if (playersErr)'),
+      RECOVERY_CODE.indexOf('if (playersErr || !Array.isArray(players))'),
       RECOVERY_CODE.indexOf('resolvePayoutStructure('),
       RECOVERY_CODE.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })'),
       RECOVERY_CODE.indexOf('if (alive.length > 1)'),

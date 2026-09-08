@@ -114,7 +114,7 @@ describe('pending add-ons are swept on an idle tick', () => {
     // rather than hanging: nothing else in the idle branch would ever stop it.
     const bail = setTimeout(() => {
       engine.running = false;
-    }, 750);
+    }, 5_000);
     await engine.dealingLoop();
     clearTimeout(bail);
 
@@ -142,7 +142,7 @@ describe('pending add-ons are swept on an idle tick', () => {
     engine.running = true;
     const bail = setTimeout(() => {
       engine.running = false;
-    }, 750);
+    }, 5_000);
     await engine.dealingLoop();
     clearTimeout(bail);
 

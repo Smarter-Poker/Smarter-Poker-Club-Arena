@@ -31,7 +31,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIST = path.join(ROOT, 'dist');
+// CA_DIST: the native build (npm run build:native) writes dist-native/ so the
+// two bundles can never be confused. Unset means 'dist', exactly as before.
+const DIST = path.join(ROOT, process.env.CA_DIST || 'dist');
+// CA_PUBLIC_BASE: the bundle's public base. Web '/hub/club-arena/', native '/'.
+const PUBLIC_BASE = (process.env.CA_PUBLIC_BASE || '/hub/club-arena/').replace(/\/?$/, '/');
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
@@ -72,7 +76,7 @@ async function main() {
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(path.join(fontsDir, name), buf);
     bytes += buf.length;
-    css = css.split(url).join(`/hub/club-arena/fonts/${name}`);
+    css = css.split(url).join(`${PUBLIC_BASE}fonts/${name}`);
   }
   // PERF PASS 2026-08-22 (handoff item 5): the stylesheet is content-hashed
   // (fonts-<hash>.css) so World Hub can serve it immutable like every other
@@ -89,7 +93,7 @@ async function main() {
   // Rewrite index.html: swap both stylesheet links (async + noscript) to the
   // local file and drop the Google preconnects.
   let newHtml = html
-    .replace(/https:\/\/fonts\.googleapis\.com\/css2\?[^"']+/g, `/hub/club-arena/fonts/${cssName}`)
+    .replace(/https:\/\/fonts\.googleapis\.com\/css2\?[^"']+/g, `${PUBLIC_BASE}fonts/${cssName}`)
     .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com"[^>]*>/, '')
     .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com"[^>]*>/, '');
   writeFileSync(htmlPath, newHtml);

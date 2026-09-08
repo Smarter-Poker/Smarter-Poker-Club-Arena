@@ -1,0 +1,12 @@
+{
+  "_owner": "fix/the-flip-had-no-hand",
+  "_comment": "The rule flip becomes reachable (20260908151633): a daily sweep, a configuration epoch the forecast counts from, updated_at triggers on both config tables, and one health front door over 28 reporting functions.",
+  "tables": [],
+  "functions": [
+    "fn_ca_diamond_rule_flip_due",
+    "fn_ca_diamond_health",
+    "fn_ca_diamond_flip_forecast",
+    "fn_ca_touch_updated_at"
+  ],
+  "columns": {}
+}

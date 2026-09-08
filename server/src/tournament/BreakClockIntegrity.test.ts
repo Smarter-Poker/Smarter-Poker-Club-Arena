@@ -86,9 +86,9 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
 
   it('refuses to advance a level while the tournament is on break', () => {
     // The guard must sit BEFORE the increment, or the level is already gone.
-    const guardAt = advance.indexOf('if (this.onBreak)');
+    const guardAt = advance.indexOf('if (this.isOnBreak())');
     const bumpAt = advance.indexOf('this.currentLevel++');
-    expect(guardAt, 'advanceBlindLevel must check onBreak').toBeGreaterThan(-1);
+    expect(guardAt, 'advanceBlindLevel must check isOnBreak()').toBeGreaterThan(-1);
     expect(bumpAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(bumpAt);
   });
@@ -96,7 +96,7 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
   it('owes the level to the resume rather than dropping it', () => {
     // A level that came due during the break is not lost: resumeFromBreak arms
     // the saved remaining, and startBlindTimer clamps it to at least 1000ms.
-    const guard = advance.slice(advance.indexOf('if (this.onBreak)'));
+    const guard = advance.slice(advance.indexOf('if (this.isOnBreak())'));
     const body = guard.slice(0, guard.indexOf('return;') + 'return;'.length);
     expect(body).toMatch(/this\.savedBlindTimerRemaining\s*=\s*1000/);
   });
@@ -104,7 +104,7 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
   it('does not arm a live level timer when a break began mid-transition', () => {
     // The tail used to be a bare `this.startBlindTimer(blindStructure);`.
     const tail = advance.slice(advance.lastIndexOf('startBlindTimer') - 400);
-    expect(tail).toMatch(/if\s*\(this\.onBreak\)/);
+    expect(tail).toMatch(/if\s*\(this\.isOnBreak\(\)\)/);
     expect(tail).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
     expect(tail).toMatch(/else\s*\{[\s\S]{0,120}this\.startBlindTimer\(blindStructure\);/);
   });

@@ -94,4 +94,17 @@ describe('leaderOuts - the cards that put the leader behind on the next street',
     ).toHaveLength(0);
     expect(leaderOuts(hero, [opp], [], 'nlh')).toHaveLength(0);
   });
+
+  it('normalizes FLO8 and uppercase PLO through the canonical Omaha rule', () => {
+    const hero = [c('A', 's'), c('A', 'h'), c('2', 'c'), c('3', 'c')];
+    const opp = [c('K', 's'), c('K', 'h'), c('Q', 'c'), c('J', 'c')];
+    const board = [c('4', 's'), c('5', 'h'), c('9', 'd'), c('T', 'd')];
+    const canonicalOuts = leaderOuts(hero, [opp], board, 'plo8');
+    const canonicalPricing = insuranceEquity(hero, [opp], board, 'plo8');
+
+    expect(leaderOuts(hero, [opp], board, 'FLO8')).toEqual(canonicalOuts);
+    expect(leaderOuts(hero, [opp], board, 'PLO4')).toEqual(canonicalOuts);
+    expect(insuranceEquity(hero, [opp], board, 'FLO8')).toEqual(canonicalPricing);
+    expect(insuranceEquity(hero, [opp], board, 'PLO4')).toEqual(canonicalPricing);
+  });
 });

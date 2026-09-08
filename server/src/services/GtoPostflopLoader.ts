@@ -5,7 +5,8 @@
  * consult reads synchronously. Paged at 500 rows so no single response
  * carries more than ~1.5MB of jsonb; refreshed every 6 hours so the ongoing
  * V30 aggregation (GtoAggregationDriver folding turn/river in) reaches the
- * fleet without a deploy.
+ * fleet without a deploy. The live worker explicitly awaits the initial load;
+ * this module's timer owns periodic refresh only.
  *
  * Reads ONLY the compact table. The 79 GB warehouse is never touched at
  * runtime — that is the whole architecture (2026-08-15 incident).
@@ -30,11 +31,9 @@ import {
 } from '../engine/GtoPostflop.js';
 
 const REFRESH_MS = 6 * 60 * 60_000;
-const BOOT_DELAY_MS = 25_000;
 const PAGE = 500;
 
 let timer: NodeJS.Timeout | null = null;
-let bootTimer: NodeJS.Timeout | null = null;
 
 export async function loadGtoPostflop(): Promise<number> {
   try {
@@ -75,8 +74,6 @@ export async function loadGtoPostflop(): Promise<number> {
 
 export function startGtoPostflopLoader(): void {
   if (timer) return;
-  bootTimer = setTimeout(() => void loadGtoPostflop(), BOOT_DELAY_MS);
-  bootTimer.unref?.();
   timer = setInterval(() => void loadGtoPostflop(), REFRESH_MS);
   timer.unref?.();
 }
@@ -85,9 +82,5 @@ export function stopGtoPostflopLoader(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
-  }
-  if (bootTimer) {
-    clearTimeout(bootTimer);
-    bootTimer = null;
   }
 }

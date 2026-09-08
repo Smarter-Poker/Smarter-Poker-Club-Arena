@@ -34,6 +34,13 @@ function loadTinyChart(): void {
       villain_action: 'fold_to_hero',
       hand_matrix: { AA: { push: 1, fold: 0 }, '72o': { push: 0, fold: 1 } },
     },
+    {
+      game_type: 'Tournament',
+      stack_depth: 8,
+      hero_position: 'UTG',
+      villain_action: 'fold_to_hero',
+      hand_matrix: { AA: { push: 1, fold: 0 }, '72o': { push: 0, fold: 1 } },
+    },
   ]);
 }
 
@@ -107,6 +114,8 @@ describe('V47 scoring', () => {
     expect(r.reference).toBeNull();
     expect(r.spots).toBe(0);
     expect(r.agreement).toBe(0);
+    expect(r.decisions).toEqual([]);
+    expect(r.decisionChecksum).toBeNull();
   });
 
   it('with a chart it scores, stays in range, and does not move the live RNG', () => {
@@ -118,6 +127,34 @@ describe('V47 scoring', () => {
     expect(r.agreement).toBeGreaterThanOrEqual(0);
     expect(r.agreement).toBeLessThanOrEqual(1);
     expect(r.pureMisses).toBeGreaterThanOrEqual(0);
+    expect(r.eligibleSpots).toBe(r.spots);
+    expect(r.reconciledSpots).toBe(r.decisions.length);
+    expect(r.decisionChecksum).toMatch(/^[0-9a-f]{64}$/);
+    expect(r.decisions[0]).toMatchObject({
+      stateKey: expect.any(String),
+      decisionState: {
+        schemaVersion: 1,
+        stage: 'preflop',
+        gameVariant: 'nlh',
+        gameType: 'Tournament',
+        format: 'mtt',
+        kind: 'open_jam',
+        position: 'UTG',
+        stackBb: 8,
+        hand: expect.any(String),
+        chart: 'Tournament|fold_to_hero|UTG|8',
+        villainAction: 'fold_to_hero',
+        legalActions: ['push', 'fold'],
+      },
+      finalAction: expect.any(String),
+      referenceDistribution: expect.any(Object),
+      chosenProbability: expect.any(Number),
+      sourceSeal: {
+        qualitySeal: 'CHART_AUDITED',
+        policyChecksum: expect.stringMatching(/^[0-9a-f]{64}$/),
+        provenanceComplete: true,
+      },
+    });
     // the probe runs inside the live engine process: the stream must resume
     // exactly where it was (the same bracket the league uses).
     expect(saveFastRandom()).toBe(before);
@@ -152,7 +189,13 @@ describe('V47 scoring', () => {
       hand: 'J4o',
       isTournament: true,
     });
-    expect(absent).toEqual({ action: 'fold', freq: 1, chart: expect.any(String) });
+    expect(absent).toMatchObject({
+      action: 'fold',
+      freq: 1,
+      chart: expect.any(String),
+      distribution: { push: 0, fold: 1 },
+      sourceSeal: { qualitySeal: 'CHART_AUDITED', provenanceComplete: true },
+    });
     // a cash spot has no CHART in a tournament-only store, and that is a gap
     expect(
       solverAdvice({

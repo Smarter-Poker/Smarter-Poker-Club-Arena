@@ -79,6 +79,21 @@ BEGIN
       'max_frequency_mae',0.10,'max_sizing_mae',0.10,'max_policy_ev_mae_bb',0.20,
       'max_action_regret_bb',0.10,'min_regret_coverage',0.80)));
 
+  failed:=false;
+  BEGIN
+    UPDATE public.gto_v31_datasets SET solver_version=' PioSOLVER-edge'
+     WHERE dataset_id=dataset;
+  EXCEPTION WHEN check_violation THEN failed:=true;
+  END;
+  IF NOT failed THEN RAISE EXCEPTION 'noncanonical solver identity was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    UPDATE public.gto_v31_datasets SET manifest_version=E'5\nforged'
+     WHERE dataset_id=dataset;
+  EXCEPTION WHEN check_violation THEN failed:=true;
+  END;
+  IF NOT failed THEN RAISE EXCEPTION 'control-bearing manifest identity was accepted'; END IF;
+
   FOR i IN 1..array_length(roles,1) LOOP
     role:=roles[i]; facing:=coverage->(i-1)->>'facing_kind'; bucket:=coverage->(i-1)->>'facing_size_bucket';
     board:=CASE streets[i] WHEN 'flop' THEN 'AsKd7c' WHEN 'turn' THEN 'AsKd7c2h' ELSE 'AsKd7c2h3s' END;
@@ -175,17 +190,29 @@ BEGIN
     matrix:=jsonb_build_object('schema','smarter-poker.pio-artifact.v31.1',
       'combo_order','card=rank*4+suit; combo=b*(b-1)/2+a; 2c2d=0..AhAs=1325',
       'nodes',jsonb_build_array(CASE WHEN i=1 THEN node_raw ELSE node END));
-    holdout_board:=CASE streets[i] WHEN 'flop' THEN 'AcKh7d'
-      WHEN 'turn' THEN 'AcKh7d2s' ELSE 'AcKh7d2s3c' END;
-    holdout_node_id:=replace(replace(nodes[i],':2h',':2s'),':3s',':3c');
-    SELECT jsonb_agg(to_jsonb(CASE WHEN EXISTS (
-             SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(n)) c(card)
-              WHERE position(c.card IN holdout_board)>0) THEN 0.0 ELSE 1.0 END) ORDER BY n),
+    holdout_board:=CASE streets[i] WHEN 'flop' THEN 'AhQc6d'
+      WHEN 'turn' THEN 'AhQc6d3s' ELSE 'AhQc6d3s4c' END;
+    holdout_node_id:=replace(replace(nodes[i],':3s',':4c'),':2h',':3s');
+    WITH train_keys AS MATERIALIZED (
+      SELECT DISTINCT public.fn_gto_v31_hand_key(train_n,board) AS hand_key
+        FROM generate_series(0,1325) train_n
+       WHERE NOT EXISTS (
+         SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(train_n)) c(card)
+          WHERE position(c.card IN board)>0)
+    ), holdout_combos AS MATERIALIZED (
+      SELECT n,NOT EXISTS (
+               SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(n)) c(card)
+                WHERE position(c.card IN holdout_board)>0
+             ) AND public.fn_gto_v31_hand_key(n,holdout_board) IN (
+               SELECT tk.hand_key FROM train_keys tk
+             ) AS eligible
+        FROM generate_series(0,1325) n
+    )
+    SELECT jsonb_agg(to_jsonb(CASE WHEN eligible THEN 1.0 ELSE 0.0 END) ORDER BY n),
            jsonb_agg(to_jsonb(0.0::numeric) ORDER BY n),
-           jsonb_agg(CASE WHEN EXISTS (
-             SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(n)) c(card)
-              WHERE position(c.card IN holdout_board)>0) THEN 'null'::jsonb ELSE to_jsonb(1.0::numeric) END ORDER BY n)
-      INTO holdout_live,holdout_zeros,holdout_nulls FROM generate_series(0,1325) n;
+           jsonb_agg(CASE WHEN eligible THEN to_jsonb(1.0::numeric)
+             ELSE 'null'::jsonb END ORDER BY n)
+      INTO holdout_live,holdout_zeros,holdout_nulls FROM holdout_combos;
     selected_action:=CASE WHEN facing='none' THEN 'bet75'
       WHEN role='all_in' THEN 'call' ELSE 'call' END;
     SELECT jsonb_object_agg(key,CASE WHEN key=selected_action THEN holdout_live ELSE holdout_zeros END),
@@ -201,7 +228,9 @@ BEGIN
       'node_checksum',public.fn_gto_v31_node_checksum(holdout_node_raw));
     IF public.fn_gto_texture_class_any(holdout_board)<>(coverage->(i-1)->>'texture_class')
        OR NOT public.fn_gto_v31_source_node_valid(holdout_node) THEN
-      RAISE EXCEPTION 'holdout board fixture % does not preserve the compact context',i;
+      RAISE EXCEPTION 'holdout board fixture % does not preserve the compact context (train texture %, holdout texture %, source valid %, node %)',
+        i,coverage->(i-1)->>'texture_class',public.fn_gto_texture_class_any(holdout_board),
+        public.fn_gto_v31_source_node_valid(holdout_node),holdout_node_id;
     END IF;
     holdout_matrix:=jsonb_build_object('schema','smarter-poker.pio-artifact.v31.1',
       'combo_order','card=rank*4+suit; combo=b*(b-1)/2+a; 2c2d=0..AhAs=1325',

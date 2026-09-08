@@ -382,11 +382,21 @@
 
 /* ── Phase 4: BOMB POT! thrown out of the blast ──────────────────────── */
 
+/* WHERE IT STANDS is decided by the component, not here (Dan 2026-09-04:
+   "IT COVERS THE BOARD WHILE DISPLAYING"). The old `top: 42%` of the viewport
+   put the title on the cards on every bomb hand. BombPotOverlay.tsx measures
+   the felt when the title phase begins and sets `bottom` (edge just above the
+   pot/board) and a scale for short windows, inline; `top`/`transform` below
+   are only the fallback for a table that has not painted yet, and the
+   fallback is deliberately ABOVE the board rather than on it. The transform
+   origin is the bottom edge so a scaled-down block shrinks upward, away from
+   the cards. */
 .bpo-title-block {
   position: absolute;
   left: 50%;
-  top: 42%;
-  transform: translate(-50%, -50%);
+  top: 22%;
+  transform: translate(-50%, 0);
+  transform-origin: 50% 100%;
   display: flex;
   flex-direction: column;
   align-items: center;

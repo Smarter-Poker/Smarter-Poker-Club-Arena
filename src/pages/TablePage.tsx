@@ -1,3 +1,4 @@
+import { uuid } from '../utils/uuid';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
 
 /**
@@ -25278,52 +25279,12 @@ export default function TablePage({
         onConfirmBuyIn={async (amount, autoRebuy) => {
           if (buyInProcessingRef.current) return;
           buyInProcessingRef.current = true;
-          // Mint a stable idempotency key for this entire attempt lifecycle.
-          // If one already exists (this is a retry of a failed-to-deliver RPC),
-          // REUSE IT — that is the whole point. A new UUID here would bypass the
-          // idempotency table and double-debit the wallet on a network retry.
-          if (!buyInIdempotencyKeyRef.current) {
-            buyInIdempotencyKeyRef.current = crypto.randomUUID();
-          }
-          const stableIdempotencyKey = buyInIdempotencyKeyRef.current;
-
-          pendingSeatStackRef.current = amount;
-          // Dan 2026-08-15: chips land in the seat on CONFIRM, not on RPC
-          // completion. Close the modal and paint the stack in this frame; the
-          // duplicate-seat check and atomic_table_buyin RPC run behind it and
-          // roll the seat back if either rejects. `seatedOptimistically` gates
-          // that rollback so we never tear down a seat we never painted.
           const optimisticSeat = selectedSeat;
           let seatedOptimistically = false;
-          if (userId && userId !== 'guest' && tableId && optimisticSeat) {
-            setShowBuyInModal(false);
-            setTableState((prev) => {
-              const updatedPlayers = [...prev.players];
-              for (let j = 0; j < updatedPlayers.length; j++) {
-                if (updatedPlayers[j]?.id === userId && j !== optimisticSeat - 1) {
-                  updatedPlayers[j] = null as any;
-                }
-              }
-              updatedPlayers[optimisticSeat - 1] = {
-                id: userId,
-                name: username || 'Player',
-                avatar: heroAvatarUrl || '',
-                stack: amount,
-                status: 'active',
-                isHero: true,
-                showCards: false,
-              };
-              return { ...prev, players: updatedPlayers, heroSeat: optimisticSeat };
-            });
-            heroSeatRef.current = optimisticSeat;
-            // Taking a seat is the one thing that clears the left-seat latch.
-            leftSeatPendingRef.current = false;
-            setPendingSeat(null);
-            seatedOptimistically = true;
-          }
+          let buyInCommitted = false;
           /** Undo the optimistic seat when the server refuses the buy-in. */
           const revertSeat = () => {
-            if (!seatedOptimistically || !optimisticSeat) return;
+            if (buyInCommitted || !seatedOptimistically || !optimisticSeat) return;
             setTableState((prev) => {
               const players = [...prev.players];
               if (players[optimisticSeat - 1]?.id === userId) {
@@ -25335,31 +25296,50 @@ export default function TablePage({
             setPendingSeat(null);
           };
           try {
+            // Mint a stable idempotency key for this entire attempt lifecycle.
+            // If one already exists (this is a retry of a failed-to-deliver RPC),
+            // REUSE IT — that is the whole point. A new UUID here would bypass the
+            // idempotency table and double-debit the wallet on a network retry.
+            if (!buyInIdempotencyKeyRef.current) {
+              buyInIdempotencyKeyRef.current = uuid();
+            }
+            const stableIdempotencyKey = buyInIdempotencyKeyRef.current;
+
+            pendingSeatStackRef.current = amount;
+            // Dan 2026-08-15: chips land in the seat on CONFIRM, not on RPC
+            // completion. Paint the stack in this frame. The atomic buy-in
+            // owns seat validation; no preliminary network read may delay it. `seatedOptimistically` gates
+            // that rollback so we never tear down a seat we never painted.
+            if (userId && userId !== 'guest' && tableId && optimisticSeat) {
+              setShowBuyInModal(false);
+              setTableState((prev) => {
+                const updatedPlayers = [...prev.players];
+                for (let j = 0; j < updatedPlayers.length; j++) {
+                  if (updatedPlayers[j]?.id === userId && j !== optimisticSeat - 1) {
+                    updatedPlayers[j] = null as any;
+                  }
+                }
+                updatedPlayers[optimisticSeat - 1] = {
+                  id: userId,
+                  name: username || 'Player',
+                  avatar: heroAvatarUrl || '',
+                  stack: amount,
+                  status: 'active',
+                  isHero: true,
+                  showCards: false,
+                };
+                return { ...prev, players: updatedPlayers, heroSeat: optimisticSeat };
+              });
+              heroSeatRef.current = optimisticSeat;
+              // Taking a seat is the one thing that clears the left-seat latch.
+              leftSeatPendingRef.current = false;
+              setPendingSeat(null);
+              seatedOptimistically = true;
+            }
             if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
-                const { data: existingSeat, error: seatPrecheckErr } = await supabase
-                  .from('table_seats')
-                  .select('seat_number')
-                  .eq('table_id', tableId)
-                  .eq('user_id', userId)
-                  .is('left_at', null)
-                  .maybeSingle();
-                /* ROUND 9 (2026-08-29): this pre-check exists only for the
-                   friendlier message - atomic_table_buyin is the authority
-                   and refuses a double seat itself, under the idempotency
-                   key. So a failed pre-check proceeds to the RPC (failing
-                   the buy-in on a cosmetic read would be worse), reported. */
-                if (seatPrecheckErr) {
-                  reportError(seatPrecheckErr, 'TablePage.buyin_seat_precheck_read_failed', {
-                    tableId,
-                  });
-                }
-                if (existingSeat) {
-                  toast.error(`You're already seated at seat ${existingSeat.seat_number}.`);
-                  revertSeat();
-                  setShowBuyInModal(false);
-                  return;
-                }
+                // atomic_table_buyin validates seat ownership atomically. A
+                // cosmetic seat read used to stall this purchase indefinitely.
                 // stableIdempotencyKey was minted once at the top of this
                 // callback and is held in buyInIdempotencyKeyRef. Do NOT mint
                 // a new UUID here — that would bypass the idempotency table on
@@ -25435,6 +25415,7 @@ export default function TablePage({
                     'Buy-in rejected: ' + (rpcResult.error || 'Unknown server error')
                   );
                 }
+                buyInCommitted = true;
                 // RPC committed — clear the key. The seat is taken; any future
                 // buy-in at this table is a distinct transaction.
                 buyInIdempotencyKeyRef.current = null;
@@ -25449,13 +25430,27 @@ export default function TablePage({
                 seatAcquiredAtRef.current = Date.now();
                 // A new seat is a clean slate: a later removal must be announced again.
                 bootNoticeShownRef.current = false;
-                HydraService.onRealPlayerJoined(tableId, userId);
-                await sendAction('player_seated', {
-                  seat: selectedSeat,
-                  userId,
-                  stack: amount,
-                  autoRebuy,
-                });
+                // These notifications do not own the debit. Neither a throw
+                // nor a stalled engine acknowledgement may revert a paid seat
+                // or hold the confirmation latch after Postgres has committed.
+                void Promise.resolve()
+                  .then(() => HydraService.onRealPlayerJoined(tableId, userId))
+                  .catch((error) =>
+                    reportError(error, 'TablePage.buyin_hydra_notification_failed')
+                  );
+                void Promise.resolve()
+                  .then(() =>
+                    sendAction('player_seated', {
+                      seat: optimisticSeat,
+                      userId,
+                      stack: amount,
+                      autoRebuy,
+                    })
+                  )
+                  .catch((error) => {
+                    reportError(error, 'TablePage.buyin_engine_notification_failed');
+                    toast.warning('Buy-In Confirmed. Reconnecting Your Seat To The Table.');
+                  });
 
                 // The game engine's 'player_seated' event will update table state globally.
                 // RoomService presence is no longer needed since TableWebSocket handles connection.
@@ -25473,6 +25468,7 @@ export default function TablePage({
                   setPostOrWaitOpen(true);
                 }
               } catch (error) {
+                if (buyInCommitted) throw error;
                 reportError(error, 'TablePage.Buyin_FAILED');
                 revertSeat();
                 /* NAME THE RULE THAT FIRED (2026-08-28). atomic_table_buyin
@@ -25496,7 +25492,11 @@ export default function TablePage({
           } catch (outerErr) {
             reportError(outerErr, 'TablePage.UNHANDLED_error_in_onConfirm');
             revertSeat();
-            toast.error('An unexpected error occurred. Please try again.');
+            if (buyInCommitted) {
+              toast.warning('Buy-In Confirmed. Your Table Display Is Catching Up.');
+            } else {
+              toast.error('Unable To Complete Buy-In. Please Try Again.');
+            }
             setShowBuyInModal(false);
           } finally {
             buyInProcessingRef.current = false;

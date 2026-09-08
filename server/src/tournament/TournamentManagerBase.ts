@@ -9,6 +9,7 @@
  */
 
 import nodeCrypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
@@ -2318,15 +2319,32 @@ export abstract class TournamentManagerBase {
   ): boolean {
     if (!row) return false;
     return Object.entries(patch).every(([key, expected]) => {
+      if (!Object.prototype.hasOwnProperty.call(row, key)) return false;
       const actual = row[key];
-      if (expected === null) return actual == null;
+      if (expected === null) return actual === null;
       if (typeof expected === 'number') {
+        if (typeof actual !== 'number' && (typeof actual !== 'string' || actual.trim() === ''))
+          return false;
         return Number.isFinite(Number(actual)) && Number(actual) === expected;
       }
       if (key.endsWith('_at') && typeof expected === 'string') {
         return this.launchTimestampMatches(actual, expected);
       }
-      if (typeof expected === 'object') return JSON.stringify(actual) === JSON.stringify(expected);
+      if (typeof expected === 'object') {
+        // The live blind/payout columns are TEXT; locked tiers are JSONB.
+        // Compare their values after decoding, preserving array order and
+        // every nested key. Storage encoding or JSONB key order is not a
+        // different draw, but malformed or different content still refuses it.
+        let decoded = actual;
+        if (typeof decoded === 'string') {
+          try {
+            decoded = JSON.parse(decoded);
+          } catch {
+            return false;
+          }
+        }
+        return isDeepStrictEqual(decoded, expected);
+      }
       return actual === expected;
     });
   }

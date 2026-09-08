@@ -31,7 +31,6 @@ import {
   persistTimeBanks,
   reconcileTableSeatCount,
   autoRebuyHorse,
-  markSeatAsLeft,
   processLeavePending,
   atomicCashoutVoluntary,
   logBBJCollection,
@@ -3002,20 +3001,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            * it. A nit gives up a buy-in earlier, a gambler one later.
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
-            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            /* One door out for a busted seat (releaseBustedSeat, 10.5): the
+               money path, then `seat_left`, then the trackers. This branch
+               used to call markSeatAsLeft by hand and emit nothing, so a
+               busted horse's chair cleared on clients only when a snapshot
+               happened to be diffed - a tell against the human exit. */
+            const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
             if (!this.lifecycleCanMutate()) return;
-            this.chipContinuity.forget(horse.user_id);
-            // Round 57: clear FSM tracking so the horse doesn't leave a ghost
-            // entry in disconnect_states.
-            this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-            // Round 64: same for TimeBankEngine.
-            this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-            // Round 66: same for StraddleEngine — symmetric cleanup.
-            this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-            this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+            if (!released) continue;
             this.horseRebuys.delete(horse.user_id);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
+              `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} reached the stop-loss and has been removed.`
             );
             continue;
           }
@@ -3057,16 +3053,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
             );
           } else {
-            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
             if (!this.lifecycleCanMutate()) return;
-            this.chipContinuity.forget(horse.user_id);
-            // Round 57: clear FSM tracking on insufficient-funds leave too.
-            this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-            // Round 64: same for TimeBankEngine.
-            this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-            // Round 66: same for StraddleEngine.
-            this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-            this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+            if (!released) continue;
             this.horseRebuys.delete(horse.user_id);
             console.log(
               `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left - insufficient funds`

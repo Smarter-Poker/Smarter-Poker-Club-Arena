@@ -83,10 +83,51 @@ code and retyping ninety lines to insert eight is how an unrelated line goes
 missing. It aborts if the anchor is not found exactly once and is a no-op on a
 second run.
 
-## Measured, in a rolled-back probe
+## Applied, and the first real capture taken
 
-The position covers **2,860 accounts and 925,662,528.55 chips** across twelve
-classes:
+Both migrations went in inside the **11:55 freeze** with zero hands in flight;
+the platform thawed at 12:00 with **zero lost hands**.
+
+`20260908115639` built it. `20260908115731` fixed something the probe found
+one minute later — see below. Both repo files are byte-identical to
+`schema_migrations.statements` (`eda87725`, `f3eb0553`); the reasoning lives
+here rather than in the migration headers, because the statements as sent
+carried none.
+
+**The first real closing position is recorded**: capture_ref
+`ae3e66b5-98e1-4c90-8191-7fff8313a558`, epoch `epoch-2-hardened-ledger`,
+**2,845 accounts, 925,663,283.49 chips**. It is now the oldest evidence on the
+platform of what every account held at a point in time, and nothing can edit
+it.
+
+### A guard that refused for the wrong reason
+
+The table was first given `fn_ca_journal_append_only`, the guard phase 8 put on
+the other journals. Probed one minute after applying, an `UPDATE` **was**
+refused — with `record "new" has no field "amount"`. That guard reads
+`NEW.amount`; this table's money column is `balance`.
+
+So the refusal was an accident of a missing field, not the guard's judgement.
+It worked, told an operator nothing, and would have stopped working the moment
+somebody added an `amount` column. `DELETE` was refused properly
+(`forbidden: financial`), and that asymmetry is what made it visible.
+
+A closing position is stricter than a journal anyway — a journal has legitimate
+movements, and a photograph of a moment that has passed has none. It now has
+its own guard, `fn_ca_closing_position_is_immutable`, refusing **both** verbs
+with `P0403` and a message that says why. Re-probed: both refused, both
+explained.
+
+**This is the session's recurring shape one more time** — a guard answering
+confidently about a scope nobody stated (CLAUDE.md 10.86). It was caught only
+because the probe checked _how_ it refused, not merely _that_ it refused.
+
+## Measured first, in a rolled-back probe
+
+The dry run covered **2,860 accounts and 925,662,528.55 chips** across twelve
+classes (the live capture, taken minutes later with play stopped, found 2,845
+and 925,663,283.49 — the difference is a quarter-hour of ordinary movement and
+seats that emptied):
 
 | class              | accounts | total          |
 | ------------------ | -------- | -------------- |

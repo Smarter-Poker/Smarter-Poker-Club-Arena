@@ -28,13 +28,14 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..');
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
 
-const closingMigration = (): string => {
-  const f = readdirSync(MIGRATIONS).find((n) => n.includes('the_closing_position_is_recorded'));
-  if (!f) throw new Error('the closing-position migration is missing from the repo');
+const migrationMatching = (needle: string): string => {
+  const f = readdirSync(MIGRATIONS).find((n) => n.includes(needle));
+  if (!f) throw new Error(`migration matching "${needle}" is missing from the repo`);
   return readFileSync(join(MIGRATIONS, f), 'utf8');
 };
 
-const SQL = closingMigration();
+const SQL = migrationMatching('the_closing_position_is_recorded');
+const GUARD_SQL = migrationMatching('the_closing_position_refuses_an_edit');
 // Comments explain the bug that was closed; they must not satisfy a pin about
 // the code, nor defeat one asserting a shape is absent.
 const CODE = SQL.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
@@ -46,9 +47,24 @@ describe('the closing position is its own record', () => {
     expect(CODE).toMatch(/CREATE TABLE IF NOT EXISTS public\.ca_epoch_closing_positions/);
   });
 
-  it('is append-only under the same guard as the other journals', () => {
-    expect(CODE).toMatch(
-      /CREATE TRIGGER trg_ca_append_only[\s\S]{0,200}ca_epoch_closing_positions[\s\S]{0,200}fn_ca_journal_append_only/
+  it('refuses every edit and every delete, on purpose and by its own guard', () => {
+    /* It was first given fn_ca_journal_append_only, the shared journal guard.
+       A probe found that an UPDATE was refused - but with `record "new" has no
+       field "amount"`, because that guard reads NEW.amount and this table's
+       money column is `balance`. A refusal by accident of a missing field is
+       not a guard: it says nothing to an operator and stops working the moment
+       an `amount` column appears. A closing position has no legitimate
+       movement at all, so it gets a guard that refuses both verbs outright. */
+    expect(GUARD_SQL).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_ca_closing_position_is_immutable/
+    );
+    expect(GUARD_SQL).toMatch(
+      /CREATE TRIGGER trg_ca_closing_position_immutable[\s\S]{0,200}BEFORE UPDATE OR DELETE ON public\.ca_epoch_closing_positions/
+    );
+    expect(GUARD_SQL).toMatch(/ERRCODE = 'P0403'/);
+    // and the shared guard is off it, so the accident cannot come back
+    expect(GUARD_SQL).toMatch(
+      /DROP TRIGGER IF EXISTS trg_ca_append_only ON public\.ca_epoch_closing_positions/
     );
   });
 

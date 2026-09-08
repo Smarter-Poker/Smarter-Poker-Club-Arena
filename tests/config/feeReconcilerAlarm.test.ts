@@ -71,7 +71,11 @@ describe('the queue insert survives a blip', () => {
   });
 
   it('treats a duplicate as success — it means the row is already queued', () => {
-    expect(code).toMatch(/if \(\/duplicate\|unique\/i\.test\(error\.message \|\| ''\)\) return;/);
+    // Moved into insertOnce() on 2026-09-08 so the inline ladder and the
+    // off-path retry share one attempt. Same guarantee, one caller more.
+    expect(code).toMatch(
+      /if \(\/duplicate\|unique\/i\.test\(error\.message \|\| ''\)\) return \{ done: true, error: '' \};/
+    );
   });
 
   it('does not retry an error that is not transient', () => {
@@ -91,7 +95,9 @@ describe('it asks whether the fee landed before calling the chips lost', () => {
   });
 
   it('returns without alarming when the fee is already queued or banked', () => {
-    expect(code).toMatch(/if \(await feeIsAccountedFor\(kind, fee\)\) \{[\s\S]{0,400}return;\s*\}/);
+    // Tri-state since 2026-09-08: only a definite 'yes' returns early.
+    expect(code).toMatch(/const verdict = await feeIsAccountedFor\(kind, fee\);/);
+    expect(code).toMatch(/if \(verdict === 'yes'\) \{[\s\S]{0,400}return;\s*\}/);
   });
 
   it('checks the QUEUE first — a timed-out insert usually committed', () => {
@@ -120,10 +126,29 @@ describe('it asks whether the fee landed before calling the chips lost', () => {
 
   it('fails CLOSED — anything unknown still raises the alarm', () => {
     const fn = code.slice(code.indexOf('async function feeIsAccountedFor'));
-    // A thrown query must not be read as "it was banked".
-    expect(fn).toMatch(/catch \{\s*return false;\s*\}/);
-    // And a missing hand number is not evidence of anything either.
-    expect(fn).toMatch(/if \(!\(Number\(fee\.handNumber\) > 0\)\) return false;/);
+    // A thrown query must not be read as "it was banked". Same guarantee as
+    // before 2026-09-08, expressed through the tri-state: the catch records
+    // that we could not ask and returns a non-affirmative answer. What it may
+    // NEVER do is return 'yes'.
+    expect(fn).toMatch(/catch \{\s*couldNotAsk = true;\s*return false;\s*\}/);
+    // 'unknown' is not 'yes': it never short-circuits as accounted-for.
+    expect(fn).toMatch(/return couldNotAsk \? 'unknown' : 'no';/);
+
+    // And the alarm still fires on it. Only a definite 'yes' returns early;
+    // 'unknown' falls through to raiseFinancialAlert exactly as 'no' does.
+    const alarm = code.slice(code.indexOf('async function alarmUnqueueableFee'));
+    expect(alarm).toMatch(/if \(verdict === 'yes'\)/);
+    expect(alarm).not.toMatch(/if \(verdict === 'unknown'\)\s*\{[\s\S]{0,400}?return;/);
+    expect(alarm).toContain("raiseFinancialAlert('critical', 'FeeReconciler.queue_failed'");
+  });
+
+  it('does not claim it verified something it could not check', () => {
+    // `verifiedUnbanked: true` used to be written unconditionally, including
+    // on the path where feeIsAccountedFor could not reach the database at all.
+    const alarm = code.slice(code.indexOf('async function alarmUnqueueableFee'));
+    expect(alarm).toMatch(/const verified = verdict === 'no';/);
+    expect(alarm).toMatch(/verifiedUnbanked: verified,/);
+    expect(alarm).not.toMatch(/verifiedUnbanked: true/);
   });
 
   it('uses .maybeSingle(), never .single()', () => {
@@ -170,9 +195,13 @@ describe('the alarm carries what it takes to put the chips back', () => {
 });
 
 describe('the alarm still fires when chips really are at risk', () => {
-  it('the critical alert is still raised, and says it was verified', () => {
+  it('the critical alert is still raised, and says whether it was verified', () => {
     expect(code).toMatch(/raiseFinancialAlert\('critical', 'FeeReconciler\.queue_failed'/);
-    expect(code).toMatch(/verifiedUnbanked: true/);
+    // Was a literal `true` until 2026-09-08, written on every path including
+    // the one where the check could not reach the database at all. It now
+    // carries the answer it actually got.
+    expect(code).toMatch(/verifiedUnbanked: verified,/);
+    expect(code).toMatch(/verificationUnavailable: !verified,/);
   });
 
   it('the wording that tells an operator what is at stake is unchanged', () => {

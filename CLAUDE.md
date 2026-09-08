@@ -69,8 +69,9 @@ platform plan wins.
 
 ## 1. DEPLOYMENT PIPELINE
 
-Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
-It deploys through the World Hub repo, NOT directly.
+Club Arena is a Vite + React SPA published to its own Hetzner static origin.
+The World Hub serves `/hub/club-arena/*` through a rewrite to that origin;
+Club Arena releases do not deploy through the World Hub repo. See section 1.1.
 
 ### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
 

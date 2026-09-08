@@ -9,6 +9,7 @@ import React, { useRef, useCallback, useState } from 'react';
 import { haptic } from '../../services/HapticService';
 import './AchievementShareCard.css';
 import { reportError } from '../../utils/errorReporter';
+import { isNativePlatform } from '../../lib/appBase';
 
 interface AchievementShareCardProps {
   icon: string;
@@ -169,6 +170,24 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
             onClose();
             return;
           }
+        }
+      }
+
+      // THE APP (2026-09-08): Android's webview has no navigator.share and
+      // neither webview honours <a download>. The system share sheet, via
+      // Filesystem + Share (src/lib/native/share.ts).
+      if (isNativePlatform()) {
+        const png = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, 'image/png')
+        );
+        if (png) {
+          const { nativeShareBlob } = await import('../../lib/native/share');
+          await nativeShareBlob(
+            png,
+            `achievement-${name.toLowerCase().replace(/\s+/g, '-')}.png`,
+            name
+          );
+          return;
         }
       }
 

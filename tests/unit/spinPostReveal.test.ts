@@ -121,7 +121,7 @@ describe('the stacks wait for the wheel', () => {
     // The negation matters: a non-spin table must not sit at zero chips
     // waiting for a wheel that will never turn.
     expect(MANAGER).toMatch(
-      /if \(!\(await this\.deferStacksForSpinReveal\(tournament\)\)\) \{\s*await this\.creditSeatStacks\(tournament\);/
+      /let stacksMayBeDeferred = await this\.deferStacksForSpinReveal\(tournament\);\s*if \(!stacksMayBeDeferred\) \{[\s\S]{0,160}?await this\.creditSeatStacks\(tournament\);/
     );
   });
 

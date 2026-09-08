@@ -12,6 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { InsuranceEngine } from './InsuranceEngine.js';
+import { insuranceEquity } from './InsuranceEquity.js';
 import type { Card } from '../types.js';
 
 const LEADER = 'leader-1';
@@ -45,7 +46,9 @@ function offer(e: InsuranceEngine, board: Card[], pot = 200) {
     ],
     board,
     pot,
-    'nlh'
+    'nlh',
+    false,
+    insuranceEquity(leaderCards, [oppCards], board, 'nlh')
   );
 }
 
@@ -121,7 +124,9 @@ describe('timeout finality follows the street', () => {
       ],
       board,
       200,
-      'nlh'
+      'nlh',
+      false,
+      insuranceEquity(leaderCards, [oppCards], board, 'nlh')
     );
     expect(fired).toHaveLength(1);
     fired[0]();

@@ -33,21 +33,22 @@ internals.
 
 ## What's in here
 
-| File                    | Status               | Purpose                                                                                                                                                                       |
-| ----------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TableRouter.ts`        | **working code now** | Pure `tableId → worker` mapping via weighted **rendezvous (HRW) hashing**. Minimal reassignment on worker add/remove.                                                         |
-| `ShardManager.ts`       | **working code now** | Control plane: worker pool, ownership, health, and **graceful DRAIN + handoff** (the zero-downtime primitive). In-process `worker_threads` impl + documented multi-node seam. |
-| `ShardWorkerRuntime.ts` | **working code now** | Worker-side brain: translates control messages ↔ a `TableHost`. Reused by both the real thread harness and tests.                                                             |
-| `scaleWorkerHarness.ts` | **working code now** | Real `worker_threads` entry point; engine-agnostic; loads a `TableHost` module (the engine seam).                                                                             |
-| `CrossNodeBus.ts`       | **working code now** | Cross-worker/node pub-sub. `InMemoryCrossNodeBus` (EventEmitter) today; Redis/NATS adapter seam documented.                                                                   |
-| `protocol.ts`           | **working code now** | The manager ↔ worker message contract (transport-neutral).                                                                                                                    |
-| `index.ts`              | barrel               | Public exports.                                                                                                                                                               |
-| `*.test.ts`             | **passing**          | Unit tests for router distribution/stability, bus fan-out, and drain/handoff.                                                                                                 |
+| File                    | Status               | Purpose                                                                                                                                        |
+| ----------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TableRouter.ts`        | **working code now** | Pure `tableId → worker` mapping via weighted **rendezvous (HRW) hashing**. Minimal reassignment on worker add/remove.                          |
+| `ShardManager.ts`       | **foundation only**  | Generation/epoch-fenced worker ownership, READY-only routing, health fencing, and verified **DRAIN + handoff**. Not wired to `GameServer` yet. |
+| `ShardWorkerRuntime.ts` | **working code now** | Worker-side brain: translates control messages ↔ a `TableHost`. Reused by both the real thread harness and tests.                              |
+| `scaleWorkerHarness.ts` | **working code now** | Real `worker_threads` entry point; engine-agnostic; loads a `TableHost` module (the engine seam).                                              |
+| `CrossNodeBus.ts`       | **working code now** | Cross-worker/node pub-sub. `InMemoryCrossNodeBus` (EventEmitter) today; Redis/NATS adapter seam documented.                                    |
+| `protocol.ts`           | **working code now** | The manager ↔ worker message contract (transport-neutral).                                                                                     |
+| `index.ts`              | barrel               | Public exports.                                                                                                                                |
+| `*.test.ts`             | **passing**          | Unit tests for router distribution/stability, bus fan-out, and drain/handoff.                                                                  |
 
-> **Working-code-now vs infra-dependent, in one line:** _everything in this
-> folder runs today in a single node with `worker_threads`._ Going **multi-node**
-> is the only part that needs provisioning (a coordination store + message bus +
-> a WS gateway tier). Those seams are already cut; see
+> **Release boundary:** this package runs and is unit-tested in isolation, but it
+> is not a production capacity fix until a real `TableHost`, gateway/hub bridge,
+> durable ownership store, and exact state/presentation replay are wired into
+> `GameServer`. Multi-node additionally needs a coordination store + message bus +
+> a WS gateway tier; see
 > [Path to multi-node](#path-to-multi-node).
 
 ---
@@ -133,16 +134,19 @@ action log — the module another agent is building) provides. The contract:
 
 1. Take the worker **out of routing** (`TableRouter.removeWorker`) so no new
    tables land on it.
-2. Send `DRAIN`; the worker **finishes each in-flight hand** (`pauseAfterHand()`
-   → hand boundary → `stop()`), emitting `TABLE_CLOSED` per table.
-3. For each closed table, route to a **surviving worker** and `ASSIGN` it
+2. Send an epoch-scoped `DRAIN`; the worker **finishes each in-flight hand**
+   (`pauseAfterHand()` → hand boundary → `stop()`), emitting `TABLE_CLOSED` per
+   exact table lease and a final close/failure manifest.
+3. Only tables with matching close evidence route to a **READY surviving
+   worker** and receive a new-epoch `ASSIGN`; failed tables stay fenced to the
+   old process and make the drain fail.
    (resume from the event log).
 4. Terminate the drained worker.
 
 **Rolling deploy:** spawn the new-generation workers, then `drainWorker()` the old
 ones one at a time. **Blue-green:** stand up a full green worker set, drain the
-entire blue set, cut over. Either way no player is dropped mid-hand — asserted by
-the "rolling deploy keeps every table owned throughout" test.
+entire blue set, cut over. The isolated control-plane tests assert that old
+generations cannot acknowledge new work and that unverified closes never move.
 
 ### 5. Cross-node event bus
 
@@ -285,4 +289,5 @@ npx vitest run src/scale
 Covered: rendezvous distribution (±10% over 20k keys), weighting, minimal
 reassignment on add/remove (and the "only moves onto the new worker" guarantee),
 bus exact/pattern/fan-out/error-isolation/unsubscribe, and the full drain +
-handoff flow including a simulated rolling deploy that proves no table is dropped.
+handoff flow, including stale generations/epochs, failed unassign, partial drain,
+unhealthy-worker fencing, worker exit, and simulated rolling deploy behavior.

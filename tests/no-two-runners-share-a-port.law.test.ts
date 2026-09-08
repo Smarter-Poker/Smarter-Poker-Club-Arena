@@ -54,7 +54,11 @@ const PLAYWRIGHT_CONFIGS = readdirSync(ROOT).filter((f) => /^playwright.*\.confi
  */
 function startsAServerInCI(code: string): boolean {
   if (!/webServer\s*:/.test(code)) return false;
-  return !/isCI\s*\?\s*\{\}/.test(code);
+  // The production-aware config also guards local startup with
+  // `isCI || !targetsLocalDevServer`. What matters is that every conditional
+  // containing `isCI` chooses the empty object on its true branch before the
+  // webServer block, not the exact spelling of the rest of that condition.
+  return !/\.\.\.\(\s*isCI[^?]*\?\s*\{\}\s*:\s*\{[\s\S]*?webServer\s*:/.test(code);
 }
 
 describe('no two runners share a port', () => {

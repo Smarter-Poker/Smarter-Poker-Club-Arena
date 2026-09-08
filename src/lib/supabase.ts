@@ -85,6 +85,14 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // retryable 503, so the entry bundle only pays for this shim (Track
     // Bundle Size sits within ~1kB of its 320kB budget).
     fetch: async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith(`${supabaseUrl?.replace(/\/+$/, '')}/auth/v1/`)) {
+        // A timed-out socket waiter does not release auth-js's lock. Bound
+        // the actual auth network/body operation, preserving the SDK as the
+        // only refresher and its retryable-error session retention.
+        const { fetchAuthWithDeadline } = await import('./authFetchDeadline');
+        return fetchAuthWithDeadline(input, init);
+      }
       const resp = await globalThis.fetch(input, init);
       if (resp.status !== 503) return resp;
       let code: unknown;

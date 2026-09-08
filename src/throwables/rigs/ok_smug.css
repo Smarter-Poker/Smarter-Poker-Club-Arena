@@ -1,0 +1,114 @@
+.thr-ok_smug__wink {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-ok_smug-wink calc(3.667s * var(--animation-speed, 1)) steps(1, end)
+    calc(0s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-ok_smug-wink {
+  0.0000% {
+    opacity: 0;
+  }
+  31.8244% {
+    opacity: 0;
+  }
+  31.8516% {
+    opacity: 1;
+  }
+  40.0055% {
+    opacity: 1;
+  }
+  40.0327% {
+    opacity: 0;
+  }
+  100.0000% {
+    opacity: 0;
+  }
+}
+.thr-ok_smug__hand-rise {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-ok_smug-hand-rise calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-ok_smug-hand-rise {
+  from {
+    opacity: 0;
+    transform: translate(0, 45px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-ok_smug__pulse {
+  transform-origin: 0 0;
+  animation: thr-ok_smug-pulse calc(0.8s * var(--animation-speed, 1)) ease-in-out
+    calc(0.567s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-ok_smug-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+.thr-ok_smug__sparkle {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-ok_smug-sparkle calc(0.5s * var(--animation-speed, 1)) linear
+    calc(1.167s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-ok_smug-sparkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.thr-ok_smug__pop {
+  transform-origin: 0 0;
+  animation: thr-ok_smug-pop calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0s * var(--animation-speed, 1)) both;
+}
+@keyframes thr-ok_smug-pop {
+  0% {
+    transform: scale(0.18);
+  }
+  45% {
+    transform: scale(1.3);
+  }
+  75% {
+    transform: scale(0.8);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-ok_smug__wink,
+  .thr-ok_smug__hand-rise,
+  .thr-ok_smug__pulse,
+  .thr-ok_smug__sparkle,
+  .thr-ok_smug__pop {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-ok_smug__wink {
+    opacity: 1;
+  }
+  .thr-ok_smug__hand-rise {
+    opacity: 1;
+  }
+  .thr-ok_smug__pulse {
+    opacity: 1;
+  }
+  .thr-ok_smug__sparkle {
+    opacity: 0;
+  }
+}

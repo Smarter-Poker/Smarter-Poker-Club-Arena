@@ -5,12 +5,9 @@ def verify_satellite(run, mode="fixed"):
     u="'30000000-0000-0000-0000-000000000003'"
     club="'40000000-0000-0000-0000-000000000004'"
     ddl="""
-ALTER TABLE tournaments ADD PRIMARY KEY(id), ADD name text, ADD club_id uuid,
- ADD status text, ADD buy_in_amount numeric, ADD buy_in_fee numeric,
- ADD max_players integer, ADD current_players integer DEFAULT 0, ADD current_level integer,
- ADD late_reg_levels integer, ADD rebuy_levels integer, ADD prize_pool_finalized boolean,
- ADD prize_pool numeric DEFAULT 0, ADD total_rake numeric DEFAULT 0, ADD tournament_type text;
-CREATE TABLE tournament_players(id uuid DEFAULT gen_random_uuid(), tournament_id uuid,user_id uuid,username text,chips numeric,status text,is_satellite_qualifier boolean,source_satellite_id uuid,UNIQUE(tournament_id,user_id));
+ALTER TABLE tournaments ADD PRIMARY KEY(id), ADD name text, ADD club_id uuid, ADD buy_in_amount numeric, ADD buy_in_fee numeric, ADD current_players integer DEFAULT 0,
+ ADD prize_pool numeric DEFAULT 0, ADD total_rake numeric DEFAULT 0, ADD tournament_type text,
+ ADD bounty_amount numeric DEFAULT 0, ADD bounty_pool numeric DEFAULT 0, ADD is_bounty boolean DEFAULT false, ADD is_pko boolean DEFAULT false, ADD is_mystery_bounty boolean DEFAULT false;
 CREATE TABLE profiles(id uuid,display_name text,username text);
 CREATE TABLE tournament_payouts(tournament_id uuid,user_id uuid,position integer,amount numeric,source text,idempotency_key text UNIQUE,paid_at timestamptz,tournament_type text,field_size integer,prize_pool numeric,recorded_by text,metadata jsonb);
 CREATE TABLE financial_alerts(severity text,source text,message text,context jsonb);

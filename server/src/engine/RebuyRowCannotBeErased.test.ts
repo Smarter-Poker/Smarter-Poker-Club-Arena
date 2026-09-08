@@ -77,6 +77,8 @@ function fromStub(rows: Record<string, unknown[]>, delayMs: Record<string, numbe
 
 function bareEngine() {
   const engine = new ServerTableEngine(TABLE) as any;
+  engine.running = true;
+  engine.isCurrentEngine = () => true;
   engine.tableInfo = { id: TABLE, tournament_id: null, club_id: 'club-1' };
   engine.isTournamentTable = () => false;
   engine.getMaxBuyIn = () => 1000;

@@ -41,22 +41,66 @@ export class HorseLifecycleManager {
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   /** Prevents overlapping maintenance cycles when the DB is slow. */
   private cycleRunning: boolean = false;
+  /**
+   * Clearing an interval does not join a callback which already crossed the
+   * timer boundary. Lifecycle passes cash seats out and rewrite horse state,
+   * so the old leader must retain ownership until every admitted pass (and any
+   * continuation it creates) has settled.
+   */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
 
   // ─────────────────────────────────────────────────────────────────────────
   // START / STOP
   // ─────────────────────────────────────────────────────────────────────────
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private launchMaintenanceCycle(generation: number): void {
+    if (!this.lifecycleIsCurrent(generation) || this.cycleRunning) return;
+    this.cycleRunning = true;
+    const cycle = this.performMaintenanceCycle().finally(() => {
+      this.cycleRunning = false;
+    });
+    void this.trackLifecycleJob(cycle).catch((error) =>
+      reportError(error, 'Lifecycle.detached_maintenance_cycle')
+    );
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    // A finishing pass may register child work before its finalizer runs. A
+    // single Promise.all snapshot can miss that child, so drain to a fixed
+    // point before allowing leadership to move elsewhere.
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
   start(): void {
+    if (this.stopOperation) {
+      console.warn('[Lifecycle] Start refused while the prior generation is stopping');
+      return;
+    }
     if (this.isRunning) {
       console.log('[Lifecycle] Already running');
       return;
     }
 
     this.isRunning = true;
+    const generation = ++this.lifecycleGeneration;
     console.log(`[Lifecycle] Starting monitoring (interval: ${MONITORING_INTERVAL}ms)`);
 
     // Initial check
-    this.performMaintenanceCycle();
+    this.launchMaintenanceCycle(generation);
 
     // Recurring checks
     // 2026-08-15: async setInterval callbacks with no overlap guard stack up
@@ -68,24 +112,31 @@ export class HorseLifecycleManager {
       // THE FREEZE (Dan 2026-09-01): the lifecycle pass stands horses up and
       // reaps seats. Nothing it does cannot wait out the break.
       if (isMaintenanceFrozen()) return;
-      if (this.cycleRunning) return;
-      this.cycleRunning = true;
-      void Promise.resolve(this.performMaintenanceCycle()).finally(() => {
-        this.cycleRunning = false;
-      });
+      this.launchMaintenanceCycle(generation);
     }, MONITORING_INTERVAL);
   }
 
-  stop(): void {
-    if (!this.isRunning) return;
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
 
+    // Synchronous ownership fence: no new callback may be admitted after
+    // this point. The asynchronous half only joins work already owned.
     this.isRunning = false;
+    this.lifecycleGeneration++;
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
     }
 
-    console.log('[Lifecycle] Stopped');
+    const drain = (async () => {
+      await this.drainLifecycleJobs();
+      console.log('[Lifecycle] Stopped');
+    })();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

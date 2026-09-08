@@ -25,6 +25,7 @@ PokerEngine accepts an explicit fixed-limit completion increment for its matchin
 - Client snapshot mapping: 10 passed, including distinct completion metadata and older snapshot fallback.
 - Server and client TypeScript commands completed without diagnostics.
 - Initial local production build compiled the bundle but provenance rejected it because main advanced by one commit. This is a failed build gate, not a build pass. Preserve it; merge current main normally and rebuild. No rebase/orphan-guard bypass.
+- After committing and normally merging current main, the second full local build passed, including provenance behind-main=0. SENTRY_AUTH_TOKEN was absent for the local build; no source-map upload was attempted.
 - Push gates, CI, automatic merge and deployed source adoption are pending when this evidence is authored. No live financial wager was submitted.
 
 ## Additional Stored-Card Review

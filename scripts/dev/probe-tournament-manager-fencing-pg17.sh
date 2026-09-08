@@ -44,7 +44,7 @@ if [[ "$stage_a_request_migration" > "$seat_first_atomic_migration" ]] ||
   [[ "$seat_first_atomic_migration" > "$post_commit_migration" ]] ||
   [[ "$post_commit_migration" > "$seat_first_retirement_migration" ]] ||
   [[ -n "$stage_b_migration" && "$seat_first_retirement_migration" > "$stage_b_migration" ]]; then
-  echo 'Migration order must be Stage A request authority, atomic seat-first creation, post-commit obligations, seat-first repair retirement, then Stage B.' >&2
+  echo 'Migration order must be Stage A request authority, atomic seat-first creation, post-commit obligations, cutover-only seat-first repair retirement, then Stage B.' >&2
   exit 1
 fi
 
@@ -130,18 +130,32 @@ if [[ "$("${psql_cmd[@]}" -Atc \
   exit 1
 fi
 
-"${psql_cmd[@]}" -f \
-  "$seat_first_retirement_migration" >/dev/null
-"${psql_cmd[@]}" -f \
-  "$seat_first_retirement_migration" >/dev/null
+early_retirement_log="${probe_root}/early-seat-first-retirement.log"
+if "${psql_cmd[@]}" -f "$seat_first_retirement_migration" \
+  >"$early_retirement_log" 2>&1; then
+  echo 'Seat-first repair retirement crossed a fresh protocol-1 manager lease.' >&2
+  exit 1
+fi
+if ! grep -q \
+  'a fresh protocol-1 tournament manager still owns a lease' \
+  "$early_retirement_log"; then
+  cat "$early_retirement_log" >&2
+  echo 'Early seat-first retirement failed for an unexpected reason.' >&2
+  exit 1
+fi
 if [[ "$("${psql_cmd[@]}" -Atc \
-  "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NULL AND to_regprocedure('public.fn_repair_seat_first_games_before_maintenance_gate(integer)') IS NULL")" != 't' ]]; then
-  echo 'Stage A left a timer-driven seat-first repair function installed.' >&2
+  "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NOT NULL")" != 't' ]]; then
+  echo 'Failed early retirement partially removed the protocol-1 repair RPC.' >&2
   exit 1
 fi
 
 if [[ -z "$stage_b_migration" ]]; then
-  echo 'PostgreSQL 17 Stage-A authority, capacity and seat-first retirement probes passed.'
+  if [[ "$("${psql_cmd[@]}" -Atc \
+    "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NOT NULL")" != 't' ]]; then
+    echo 'Stage A retired the repair RPC before the protocol-1 engine drained.' >&2
+    exit 1
+  fi
+  echo 'PostgreSQL 17 rolling Stage-A authority and capacity probes passed; repair retirement remains cutover-only.'
   exit 0
 fi
 
@@ -213,6 +227,21 @@ fi
 "${psql_cmd[@]}" -c \
   "DELETE FROM public.engine_tournament_leases WHERE protocol_version=1;" \
   >/dev/null
+
+# The production protocol-1 engine invokes this RPC. Retiring it during the
+# rolling Stage-A expand would turn the interval before the exact new engine
+# cutover into an error path. Once the protocol-1 lease is gone, run the
+# bounded final cleanup and remove both legacy doors before strict Stage B.
+"${psql_cmd[@]}" -f \
+  "$seat_first_retirement_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$seat_first_retirement_migration" >/dev/null
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NULL AND to_regprocedure('public.fn_repair_seat_first_games_before_maintenance_gate(integer)') IS NULL")" != 't' ]]; then
+  echo 'The cutover left a timer-driven seat-first repair function installed.' >&2
+  exit 1
+fi
+
 # The post-commit migration has a full money-path rehearsal of its own. This
 # minimal authority fixture declares its exact 12-argument settlement and
 # processor catalog doors; the ordering check above prevents Stage B from ever

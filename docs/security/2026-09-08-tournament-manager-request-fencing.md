@@ -345,6 +345,9 @@ to `service_role` through its private route.
    `*_post_commit_obligations_are_atomic_and_resumable.sql` as a
    database-first change. It adds the twelve-argument settlement function while
    temporarily retaining both older overloads for the rolling engine window.
+   Do not yet apply `*_seat_first_inventory_is_created_atomically.sql`: the
+   protocol-1 engine still calls that repair RPC, and the migration itself
+   refuses while a fresh protocol-1 manager lease exists.
 2. Deploy the Stage-A engine and its bound client/manager authority changes and
    prove its exact served SHA/artifact revision. Club Arena utility header
    changes should ship too, but unrelated estate clients do not block Stage B.
@@ -359,13 +362,17 @@ to `service_role` through its private route.
    sort between Stage A and Stage B, applies/reapplies the fencing
    prerequisites, and installs a catalog-compatible fixture for the
    obligations migration's exact twelve-argument and private-core signatures.
-   It then applies/reapplies Stage B, executes the surviving twelve-argument
-   fixture after the eleven-argument drop, runs the rollback authority and
-   parent-delete cascade matrix, and executes the real two-session
-   live-seat/roster race. The obligations migration's own full money-path
-   rehearsal remains separately required; this focused fixture does not
-   simulate rake, BBJ, promotion, insurance, or add-on settlement.
-5. Apply Stage B once, then reload both PostgREST configuration and schema.
+   It proves seat-first repair retirement refuses while protocol 1 remains,
+   retires that RPC only after the old lease is gone, then applies/reapplies
+   Stage B, executes the surviving twelve-argument fixture after the
+   eleven-argument drop, runs the rollback authority and parent-delete cascade
+   matrix, and executes the real two-session live-seat/roster race. The
+   obligations migration's own full money-path rehearsal remains separately
+   required; this focused fixture does not simulate rake, BBJ, promotion,
+   insurance, or add-on settlement.
+5. Apply `*_seat_first_inventory_is_created_atomically.sql`, verify both repair
+   functions are absent, then apply Stage B once and reload both PostgREST
+   configuration and schema.
 6. Verify that a Data API request targeting the `smarter_private` schema is
    rejected as unexposed and that the public OpenAPI surface contains no
    `fn_smarter_data_api_pre_request` RPC.

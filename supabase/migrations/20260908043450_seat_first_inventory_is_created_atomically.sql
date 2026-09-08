@@ -1,10 +1,12 @@
 -- Root retirement for the timer-driven seat-first repair path.
 --
 -- Migration 20260908043250 makes tournament plus table creation one database
--- transaction. Once the engine is drained for this release, the historical
--- repair RPC has no legitimate future writer. This transaction runs it once
--- through its idempotent bounded path, proves that no unjoinable legacy board
--- remains, then removes both the public wrapper and its private predecessor.
+-- transaction. Do not apply this contract step with the rolling Stage-A
+-- expand: the protocol-1 engine still invokes the historical repair RPC. Once
+-- the exact protocol-2 engine is the sole live build, this transaction runs
+-- the repair once through its idempotent bounded path, proves that no
+-- unjoinable legacy board remains, then removes both the public wrapper and
+-- its private predecessor.
 
 BEGIN;
 
@@ -15,6 +17,16 @@ DO $finish_and_retire_seat_first_repair$
 DECLARE
   v_cleanup_result jsonb;
 BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM public.engine_tournament_leases l
+     WHERE l.protocol_version = 1
+       AND l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+  ) THEN
+    RAISE EXCEPTION
+      'seat-first repair retirement refused: a fresh protocol-1 tournament manager still owns a lease';
+  END IF;
+
   IF to_regprocedure(
        'public.fn_create_seat_first_game_atomic(uuid,jsonb)'
      ) IS NULL THEN

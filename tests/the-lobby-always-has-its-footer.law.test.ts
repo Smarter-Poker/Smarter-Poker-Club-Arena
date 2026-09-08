@@ -31,6 +31,13 @@ describe('the lobby always has its footer', () => {
     expect(shouldShowClubFooterFor('/clubs/club-jaqk', false)).toBe(true);
   });
 
+  it('keeps chip navigation off every Diamond Arena route', () => {
+    expect(shouldShowClubFooter('/clubs/diamond-arena')).toBe(false);
+    expect(shouldShowClubFooter('/clubs/diamond-arena/finance')).toBe(false);
+    expect(shouldShowClubFooter('/clubs/002c2d27-9584-4e52-835a-bb2be148fc81/agents')).toBe(false);
+    expect(shouldShowClubFooterFor('/clubs/diamond-arena', true)).toBe(false);
+  });
+
   it('the app root reads both inputs', () => {
     const app = read('src/App.tsx');
     expect(app).toContain('useInTabLobbyActive()');

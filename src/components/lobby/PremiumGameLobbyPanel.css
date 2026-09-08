@@ -17,8 +17,8 @@
   overflow: hidden;
   color: #eef3f8;
   font-family: 'Roboto Condensed', 'Rajdhani', var(--font-sans, system-ui, sans-serif);
-  background: #000 url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png')
-    center / 100% 100% no-repeat;
+  background: #000 url('/assets/club-buttons/lobby/lobby-command-chassis-v2.png') center / 100% 100%
+    no-repeat;
   border: 0;
   box-shadow: -28px 0 70px rgb(0 0 0 / 88%);
 }
@@ -73,8 +73,7 @@
   font:
     800 14px/1 'Roboto Condensed',
     sans-serif;
-  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
-    no-repeat;
+  background: url('/assets/club-buttons/club-nav-shell.webp') center top / 100% 114% no-repeat;
   box-shadow: none;
   text-shadow: 0 2px 2px #000;
 }
@@ -156,12 +155,9 @@
   border: 0;
   border-radius: 0;
   background:
-    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto
-      no-repeat,
-    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100%
-      auto no-repeat,
-    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto
-      repeat-y;
+    url('/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto no-repeat,
+    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100% auto no-repeat,
+    url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto repeat-y;
   box-shadow: none;
 }
 
@@ -204,8 +200,7 @@
   gap: 0;
   padding: 0 9%;
   border: 0;
-  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
-    100% no-repeat;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
   box-shadow: none;
   clip-path: none;
 }
@@ -275,8 +270,7 @@
   justify-items: center;
   border: 0;
   border-radius: 0;
-  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
-    100% no-repeat;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
   box-shadow: none;
   clip-path: none;
 }
@@ -334,8 +328,7 @@
 
 .glp--cash .glp__seat.is-you {
   border: 0;
-  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
-    100% no-repeat;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
 }
 
 .glp--cash .glp__seat.is-you em {
@@ -395,8 +388,8 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
-  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-primary.png')
-    center / 100% 100% no-repeat;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
+    no-repeat;
   text-shadow:
     0 0 1cqw rgb(140 210 255 / 90%),
     0 0.25cqw 0 rgb(0 0 0 / 70%),
@@ -405,7 +398,7 @@
 
 .glp--cash .glp__deletebtn {
   color: #ffd0d2;
-  background-image: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   text-shadow:
     0 0 1cqw rgb(255 75 82 / 80%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);

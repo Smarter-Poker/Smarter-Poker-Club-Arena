@@ -68,6 +68,7 @@ interface WarmEntry {
   /** The roster read rejected; TablePage's prefetch makes its own. */
   seatsFailed: boolean;
   facade: MuxTableSocket | null;
+  socketPending: boolean;
   ttl: ReturnType<typeof setTimeout> | null;
 }
 
@@ -95,27 +96,29 @@ function dropEntry(tableId: string, entry: WarmEntry, closeFacade: boolean): voi
 }
 
 async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
-  if (!isMuxEnabled()) return;
+  if (!isMuxEnabled() || entry.socketPending) return;
+  if (entry.facade && entry.facade.readyState !== 3) return;
   if (engineSocketMux.isSubscribed(tableId)) return; // a live table owns it
-  let token: string | null = null;
+  entry.socketPending = true;
   try {
-    token = await getFreshAccessToken();
+    const token = await getFreshAccessToken();
+    if (!token) return;
+    // The entry may have expired or been claimed while the token resolved.
+    if (entries.get(tableId) !== entry) return;
+    if (engineSocketMux.isSubscribed(tableId)) return;
+    const facade = engineSocketMux.acquireWarm(engineBaseUrl(), tableId, token);
+    if (!facade) return;
+    entry.facade = facade;
+    // Retain bounded public state. Historical/private events are not replayed.
+    facade.onmessage = null;
+    facade.onclose = () => {
+      if (entry.facade === facade) entry.facade = null;
+    };
   } catch {
-    return;
+    // Preparation is best-effort; a later intent may retry the connection.
+  } finally {
+    entry.socketPending = false;
   }
-  if (!token) return;
-  // The entry may have expired or been claimed while the token resolved.
-  if (entries.get(tableId) !== entry) return;
-  if (engineSocketMux.isSubscribed(tableId)) return;
-  const facade = engineSocketMux.acquireWarm(engineBaseUrl(), tableId, token);
-  if (!facade) return;
-  entry.facade = facade;
-  // The facade retains a bounded snapshot/delta stream for the real client.
-  // No historical animations or private events are replayed on entry.
-  facade.onmessage = null;
-  facade.onclose = () => {
-    if (entry.facade === facade) entry.facade = null;
-  };
 }
 
 /**
@@ -126,7 +129,12 @@ export function warmTable(tableId: string | null | undefined): void {
   if (!tableId) return;
   preloadRoute(`/table/${tableId}`);
   const existing = entries.get(tableId);
-  if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) return;
+  if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) {
+    // Fresh seats do not imply a live stream: actual entry may have reclaimed
+    // this speculative slot, or all slots may have been occupied earlier.
+    void warmSocket(tableId, existing);
+    return;
+  }
   // Refresh roster data without tearing down a healthy speculative stream.
   // Otherwise every refresh pays another SUBSCRIBE just as the user enters.
   const entry: WarmEntry = existing ?? {
@@ -136,6 +144,7 @@ export function warmTable(tableId: string | null | undefined): void {
     promise: Promise.resolve([]),
     seatsFailed: false,
     facade: null,
+    socketPending: false,
     ttl: null,
   };
   if (entry.ttl !== null) clearTimeout(entry.ttl);

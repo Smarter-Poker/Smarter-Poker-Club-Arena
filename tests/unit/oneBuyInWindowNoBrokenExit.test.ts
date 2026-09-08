@@ -32,6 +32,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { routerBasenameFrom } from '../../src/lib/appBase';
 
 const root = join(__dirname, '..', '..');
 const RAW = readFileSync(join(root, 'src', 'pages', 'TablePage.tsx'), 'utf8');
@@ -42,7 +43,10 @@ const CODE = RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, ''
 
 describe('the duplicate buy-in timer is gone from executable code', () => {
   it('no longer navigates to a path that double-includes the basename', () => {
-    expect(MAIN).toContain('basename="/hub/club-arena"');
+    // 2026-09-07: the basename is derived (src/lib/appBase.ts) so the same
+    // tree can boot at the native root; on the web it is still '/hub/club-arena'.
+    expect(MAIN).toContain('basename={ROUTER_BASENAME}');
+    expect(routerBasenameFrom('/hub/club-arena/')).toBe('/hub/club-arena');
     expect(CODE).not.toMatch(/navigate\(\s*['"`]\/hub\/club-arena['"`]\s*\)/);
   });
 

@@ -782,6 +782,60 @@ it('ignores a detached table socket close while replacement auth is pending', as
   }
 });
 
+describe('channel account boundaries', () => {
+  it('discards old subscription intent and queued requests while signed out', async () => {
+    const getToken = vi.fn(async () => 'token');
+    const c = new EngineChannelClient({ baseUrl: 'https://engine.example', getToken });
+    try {
+      c.send({ type: 'JOIN_CLUB', clubId: 'old-club' });
+      c.send({ type: 'REQUEST_HAND_REPLAY', handId: 'old-hand', speed: 1 });
+      c.resetSession(false);
+      await flush();
+      const calls = getToken.mock.calls.length;
+      c.send({ type: 'JOIN_LOBBY' });
+      await c.connect();
+      expect(getToken).toHaveBeenCalledTimes(calls);
+      c.resetSession(true);
+      c.send({ type: 'JOIN_CLUB', clubId: 'new-club' });
+      await flush();
+      const ws = live();
+      ws._open();
+      expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+        { type: 'JOIN_CLUB', clubId: 'new-club' },
+      ]);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cannot deliver a queued financial frame to the next account listener', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'token',
+    });
+    const previous = vi.fn(),
+      current = vi.fn();
+    try {
+      c.onFinancialUpdate(previous);
+      await flush();
+      live()._open();
+      live()._frame({ type: 'FINANCIAL_UPDATE', userId: 'previous' });
+      c.resetSession(true);
+      c.onFinancialUpdate(current);
+      await flush();
+      expect(previous).not.toHaveBeenCalled();
+      expect(current).not.toHaveBeenCalled();
+      live()._open();
+      live()._frame({ type: 'FINANCIAL_UPDATE', userId: 'current' });
+      await flush();
+      expect(current).toHaveBeenCalledOnce();
+      expect(current.mock.calls[0][0].userId).toBe('current');
+    } finally {
+      c.disconnect();
+    }
+  });
+});
+
 describe('token acquisition cannot strand either connection type', () => {
   it.each(['table', 'channel'])(
     '%s retries a hung token request and ignores its late result',

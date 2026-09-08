@@ -1,0 +1,56 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "pizza_slice",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "pizza_slice",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "pizza_slice",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "pizza_slice",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "pizza_slice",
+          "count": 5
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "pizza_slice",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

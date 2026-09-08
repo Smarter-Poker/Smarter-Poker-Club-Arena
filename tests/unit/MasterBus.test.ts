@@ -44,7 +44,11 @@ vi.mock('../../src/stores/useUserStore', () => ({
   useUserStore: { getState: vi.fn(() => ({ user: null })), setState: vi.fn(), subscribe: vi.fn() },
 }));
 vi.mock('../../src/services/RealtimeChannelService', () => ({
-  realtimeChannelService: { subscribeToClub: vi.fn(), unsubscribeFromClub: vi.fn() },
+  realtimeChannelService: {
+    subscribeToClub: vi.fn(),
+    unsubscribeFromClub: vi.fn(),
+    handleIdentityChange: vi.fn(),
+  },
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {

@@ -521,3 +521,73 @@ describe.each(['table', 'channel'] as const)('%s delayed session check ownership
     }
   );
 });
+
+describe.each(['table', 'channel'] as const)('%s session-check deadline', (kind) => {
+  function makeClient() {
+    const statuses: string[] = [];
+    const opts = {
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'token',
+      onStatus: (status: string) => statuses.push(status),
+      initialDelay: 10,
+      maxDelay: 50,
+    };
+    const c =
+      kind === 'table'
+        ? new EngineStateClient({ ...opts, tableId: TABLE, onSnapshot: () => {} })
+        : new EngineChannelClient(opts);
+    return { c, statuses };
+  }
+
+  it('resumes reconnecting when the auth probe never answers', async () => {
+    verdict = new Promise<Verdict>(() => {});
+    const { c } = makeClient();
+    try {
+      await c.connect();
+      live()._serverClose(4401, 'auth:session_not_found');
+      await flush();
+      expect(rejections).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(14_000);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1_200);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cannot apply a late verdict to the recovered socket', async () => {
+    let finish!: (v: Verdict) => void;
+    verdict = new Promise<Verdict>((resolve) => {
+      finish = resolve;
+    });
+    const { c, statuses } = makeClient();
+    try {
+      await c.connect();
+      live()._serverClose(4401, 'auth:session_not_found');
+      await flush();
+      await vi.advanceTimersByTimeAsync(15_200);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+      live()._open();
+      expect(statuses.at(-1)).toBe('connected');
+      finish('revoked');
+      await flush();
+      expect(statuses.at(-1)).toBe('connected');
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    } finally {
+      finish('unknown');
+      c.disconnect();
+    }
+  });
+
+  it('does not resurrect an explicitly disconnected client when the deadline expires', async () => {
+    verdict = new Promise<Verdict>(() => {});
+    const { c } = makeClient();
+    await c.connect();
+    live()._serverClose(4401, 'auth:session_not_found');
+    await flush();
+    c.disconnect();
+    await vi.advanceTimersByTimeAsync(15_200);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});

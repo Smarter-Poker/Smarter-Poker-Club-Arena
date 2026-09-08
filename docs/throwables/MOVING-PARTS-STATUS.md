@@ -136,3 +136,9 @@ Bear/shark PR #3696 merged as b07947266fb79601a720d0a51d2588898de88f46. Anvil/gh
 ## Final original rig batch
 
 Skull, lightning and eight ball are integrated, and bear now has its sculpted anger mark. The successful use request ID travels in optional CHAT payload metadata and is passed to the rig; the legacy message string is unchanged. Receiver authorization is not supplied by an ID and remains pending. Full TypeScript and 165 focused checks passed; 44 new captures and 60 speed samples cover the four affected rigs. PR #3699 merged as 7fa4ddea203bdba3c605ee1e3025d97b73e48bb4. Final-original batch publication is not yet verified.
+
+## Expanded catalogue: fish
+
+Fish expands the enabled catalogue to 49 items: 48 original IDs including the separate glove plus one of the 32 additions. Its premium atlas and standalone still feed three fingerprinted thumbnails and the shared atlas URL pipeline. The performance has a silent impact, diagonal rest and alternating flop poses, two timed sweeps, a temporary red mark, and a rotating slide with a final fade. The existing allowance RPC applies; fish is free-tier access, not unlimited usage. Dedicated recorded flop audio remains pending.
+
+71 focused tests and full TypeScript passed. All 13 preview frames were visually reviewed, with 15 normalized speed samples, no reduced-motion animations and no page errors. Inventory tests now accept actual local delivery files alongside the historical storage listing, and require rig/CSS/audio registration for the expanded item rather than inventing a legacy signature. There are 31 additions still without integrated rigs. This is not 100 percent acceptance.

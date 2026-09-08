@@ -185,6 +185,8 @@ export default function BottomSheet({
             flex: 1,
             overflowY: 'auto',
             padding: '16px 20px',
+            // Home indicator (2026-09-08): 0 where there is no inset.
+            paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
             WebkitOverflowScrolling: 'touch',
           }}
         >

@@ -83,6 +83,7 @@
  */
 
 import { readLocalSession } from './authUtils';
+import { isNativePlatform } from './appBase';
 
 /* ═══════════════════════════════════════════════════════════════════════
    TIMEOUTS
@@ -135,13 +136,35 @@ function withTimeout<T2>(promise: Promise<T2> | T2, ms: number, label: string): 
    ═══════════════════════════════════════════════════════════════════════ */
 
 export function isWebPushSupported(): boolean {
+  // Inside the native app there is no Web Push - no push service behind the
+  // webview and no root service worker - but push IS supported: the OS hands
+  // the app a device token and src/lib/native/push.ts enrols it over the same
+  // /api/push/subscribe row (transport 'fcm'). Every caller of this function
+  // is asking "can this device receive our notifications", so the answer in
+  // the app is yes, and enablePush()/disablePush() below branch to the native
+  // transport themselves.
+  if (isNativePlatform()) return true;
   if (typeof window === 'undefined') return false;
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
 
 export type PushPermission = NotificationPermission | 'unsupported';
 
+/**
+ * The native permission state, read from the plugin (async) and cached so the
+ * synchronous callers below keep working unchanged. Primed by the native
+ * shell at boot and refreshed after every enable/disable.
+ */
+let nativePermission: NotificationPermission = 'default';
+
+export async function primeNativePushState(): Promise<void> {
+  if (!isNativePlatform()) return;
+  const { nativeNotificationPermission } = await import('./native/push');
+  nativePermission = await nativeNotificationPermission();
+}
+
 export function notificationPermission(): PushPermission {
+  if (isNativePlatform()) return nativePermission;
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
   return Notification.permission;
 }
@@ -152,6 +175,8 @@ export function notificationPermission(): PushPermission {
  * to the user is "install the app first", not "something went wrong".
  */
 export function isIosStandalonePwa(): boolean {
+  // The app store build IS the installed app; nothing to add to a Home Screen.
+  if (isNativePlatform()) return true;
   if (typeof window === 'undefined') return false;
   const nav = window.navigator as Navigator & { standalone?: boolean };
   return (
@@ -476,6 +501,13 @@ export interface PushResult {
  * may not await anything before this.
  */
 export async function enablePush(): Promise<PushResult> {
+  if (isNativePlatform()) {
+    const { enableNativePush } = await import('./native/push');
+    const result = await enableNativePush();
+    if (result.permission) nativePermission = result.permission;
+    if (result.ok) clearOptOut();
+    return result;
+  }
   if (!isWebPushSupported()) {
     if (isIos() && !isIosStandalonePwa()) {
       return {
@@ -587,6 +619,10 @@ export async function disablePush(): Promise<PushResult> {
   // Record the choice even if the unsubscribe below fails — the user asked for
   // off, and the repair loop must honour that regardless.
   setOptOut();
+  if (isNativePlatform()) {
+    const { disableNativePush } = await import('./native/push');
+    return disableNativePush();
+  }
   if (!isWebPushSupported()) return { ok: true };
   try {
     const registration = await withTimeout(
@@ -697,6 +733,10 @@ export async function sendTestPush(): Promise<TestPushResult> {
  * subscription was ever created or persisted.
  */
 export async function hasLocalSubscription(): Promise<boolean> {
+  if (isNativePlatform()) {
+    const { hasNativeSubscription } = await import('./native/push');
+    return hasNativeSubscription();
+  }
   if (!isWebPushSupported()) return false;
   try {
     const registration = await withTimeout(
@@ -715,6 +755,11 @@ export async function hasLocalSubscription(): Promise<boolean> {
     return false;
   }
 }
+
+/* Shared with the native transport (src/lib/native/push.ts) so a device token
+   row carries the same device identity and the same Bearer header a browser
+   subscription does. */
+export { deviceId as pushDeviceId, authHeaders as pushAuthHeaders };
 
 export default {
   enablePush,

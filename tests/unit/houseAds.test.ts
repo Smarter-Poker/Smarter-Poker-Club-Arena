@@ -600,7 +600,11 @@ describe('the referral funnel the ads point at does not drop the referral', () =
 
   it('does not hardcode the host, so a preview build shares itself', () => {
     // A hardcoded link in a preview build sends testers to production.
-    expect(DASH).toMatch(/window\.location\?\.origin/);
+    // 2026-09-07: through publicOrigin(), which IS window.location.origin on
+    // the web (and smarter.poker inside the native app, where the webview's
+    // origin is capacitor://localhost and nobody could open the link).
+    expect(DASH).toContain('const origin = publicOrigin();');
+    expect(read('src/lib/appBase.ts')).toMatch(/const o = window\.location\?\.origin;/);
   });
 
   it('the clipboard fallback carries the link too', () => {

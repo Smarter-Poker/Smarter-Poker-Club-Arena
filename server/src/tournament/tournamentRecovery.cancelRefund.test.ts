@@ -56,6 +56,8 @@ vi.mock('./settleObligation.js', () => ({
     return {
       ok: true,
       paid: input.amount,
+      amount_paid: input.amount,
+      fully_settled: true,
       already_paid: 0,
       refused_reason: null,
       obligation_id: 'ob-1',

@@ -1425,9 +1425,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       moneyCritical: boolean,
       fn: () => Promise<void>
     ): Promise<void> => {
+      const started = performance.now();
+      let outcome = 'returned';
       try {
         await fn();
       } catch (err) {
+        outcome = 'threw';
         reportError(err, `postHandTasks.step_failed.${stepName}`, {
           tableId: this.tableId,
           handNumber: snap.handNumber,
@@ -1443,6 +1446,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               error: err instanceof Error ? err.message : String(err),
             }
           );
+        }
+      } finally {
+        try {
+          const elapsed = Math.max(0, performance.now() - started);
+          const labels = {
+            step: stepName,
+            audience: this.humansSeated() > 0 ? 'human' : 'horse',
+            format: this.tableFormat(),
+            outcome,
+          };
+          EngineMetrics.settlementStepCount.inc(1, labels);
+          EngineMetrics.settlementStepDuration.inc(elapsed, labels);
+          EngineMetrics.settlementStepSlow.inc(elapsed >= 1000 ? 1 : 0, labels);
+        } catch {
+          /* Metrics must never interrupt settlement or error recovery. */
         }
       }
     };

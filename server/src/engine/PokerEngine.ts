@@ -714,6 +714,21 @@ export function validateAction(
   bettingState: BettingState
 ): { valid: boolean; error?: string } {
   const { currentBet, minRaise, toCall } = bettingState;
+
+  // Money enters the hand only as finite whole cents. Comparing an arbitrary
+  // fraction against cent-tolerant limits and rounding AFTER mutation can
+  // round the debit and pot independently. Strings also must not coerce into
+  // legal-looking wagers. Allow only IEEE representation noise, not sub-cents.
+  if (action === 'bet' || action === 'raise') {
+    if (
+      typeof amount !== 'number' ||
+      !Number.isFinite(amount) ||
+      !Number.isSafeInteger(Math.round(amount * 100)) ||
+      Math.abs(amount - Math.round(amount * 100) / 100) > 1e-9
+    ) {
+      return { valid: false, error: 'Wager must be a finite whole-cent amount' };
+    }
+  }
   // 2026-08-23: "Pot-limit max ..." was hardcoded into every ceiling message,
   // which would have read as a lie on a fixed-limit table. Name the structure
   // that actually produced the bound.
@@ -1065,7 +1080,16 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat, perPotOut, chipUnit);
+      distributePot(
+        winners,
+        loWinners,
+        loPotAmount,
+        'Low',
+        potIdx,
+        dealerSeat,
+        perPotOut,
+        chipUnit
+      );
     }
   }
 
@@ -1139,7 +1163,8 @@ function distributePot(
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);
     const winAmt =
-      ((shareUnits + (i < remainderUnits ? 1 : 0)) * unitCents + (i === 0 ? subUnitCents : 0)) / 100;
+      ((shareUnits + (i < remainderUnits ? 1 : 0)) * unitCents + (i === 0 ? subUnitCents : 0)) /
+      100;
     // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) record. For the
     // low half the winning "hand" is the qualifying low, whose name is its
     // own description ("Low: 8-6-4-3-2").

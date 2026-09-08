@@ -36,7 +36,9 @@ else
   trap '$SSH "rm -f -- $STAGED"' EXIT
   scp -q -i "$KEY" "$HERE/Caddyfile" "root@$HOST:$STAGED"
   $SSH "caddy validate --adapter caddyfile --config $STAGED >/dev/null" || { echo "[origin] REFUSING: staged config does not validate; live config untouched"; exit 2; }
-  $SSH "mv -- $STAGED /etc/caddy/Caddyfile && (systemctl reload caddy || systemctl restart caddy)"
+  # mktemp creates 0600 root-owned files; Caddy runs as the caddy user.
+  # Set the public configuration's final mode before installing it.
+  $SSH "chmod 0644 $STAGED && mv -- $STAGED /etc/caddy/Caddyfile && (systemctl reload caddy || systemctl restart caddy)"
   trap - EXIT
 fi
 

@@ -487,6 +487,15 @@ export class MaintenanceBreak {
   static readonly RESTORE_RETRY_MS = 1500;
 
   /**
+   * The longest freeze `fn_thaw_platform` will accept. Its own guard reads
+   * `p_frozen_seconds > 900 -> implausible_frozen_seconds`, on the reasoning
+   * that shifting every deadline on the platform by a wrong number is strictly
+   * worse than shifting by nothing. Checked here too so the refusal is a
+   * legible log line rather than a silent `ok: false` nobody reads.
+   */
+  static readonly MAX_THAWABLE_SECONDS = 900;
+
+  /**
    * Rotate a persisted row to this exact process generation.
    *
    * A lost HTTP response may hide a committed token rotation, just as it may
@@ -572,6 +581,72 @@ export class MaintenanceBreak {
       announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
     if (at < announcedAt || at >= endsAt) return null;
     return { announcedAt, endsAt };
+  }
+
+  /**
+   * Give back the frozen minutes of a break that ENDED while nobody was alive
+   * to end it (2026-09-08).
+   *
+   * `end()` is the only caller of the thaw, and `end()` only ever runs on a
+   * process still holding the break when its own timer fires. So when the
+   * engine that declared a break dies inside it and its replacement arrives
+   * after the hour, this path deleted the row, started dealing, and the frozen
+   * minutes were never handed back to anything.
+   *
+   * That is not a reporting gap. `fn_thaw_platform` is what moves every
+   * in-flight absolute deadline forward by the frozen duration - sit-out
+   * clocks, seat holds, rebuy prompts, blind levels, bomb-pot timers,
+   * reconnect windows. Skipping it burns all of them, for every player who was
+   * mid-decision at :55. On 2026-09-08 it was skipped three hours running:
+   * 14:00, 15:00 and 16:00 all recorded `thaw_ran: false`, and by 16:00 the
+   * break was otherwise perfect - zero hands in the window, the fleet held
+   * from 15:54 to 16:00 - with the missing thaw the only remaining fault.
+   *
+   * SAFE ON A BREAK SOMEBODY ELSE MAY ALREADY HAVE THAWED.
+   * `engine_maintenance_thaws` is keyed `PRIMARY KEY (freeze_started_at)`, and
+   * the function claims that row with `ON CONFLICT DO NOTHING`, returning
+   * `already_thawed` once it is complete. A second call for the same freeze
+   * therefore cannot shift the platform's clocks twice. This was read out of
+   * the deployed function before relying on it, not assumed.
+   *
+   * ONLY A COUNTDOWN IS EVIDENCE. A `last_hand` row that expired never began
+   * its five minutes, so there is no frozen interval to return and this
+   * declines. Inventing one would shift every deadline on the platform for a
+   * freeze that never ran.
+   */
+  private async thawAnAbandonedBreak(
+    abandoned: PersistedMaintenanceBreak,
+    endsAt: number
+  ): Promise<void> {
+    if (!this.deps.thaw) return;
+    if (abandoned.phase !== 'counting_down' || !abandoned.breakStartedAt) return;
+
+    const startedAt = abandoned.breakStartedAt;
+    const frozenSeconds = Math.round((endsAt - startedAt) / 1000);
+    if (frozenSeconds <= 0 || frozenSeconds > MaintenanceBreak.MAX_THAWABLE_SECONDS) {
+      console.warn(
+        `[MaintenanceBreak] an abandoned break claims ${frozenSeconds}s of freeze, outside what ` +
+          'fn_thaw_platform accepts. Leaving every clock alone rather than shifting the whole ' +
+          'platform by a number nobody can defend.'
+      );
+      return;
+    }
+
+    /* The same marker end() sets, so engines built during the rehydration that
+       follows still get their reconnect deadlines shifted. */
+    completeReconnectFreeze(startedAt, frozenSeconds * 1000);
+    try {
+      await this.deps.thaw(startedAt, frozenSeconds);
+      console.warn(
+        `[MaintenanceBreak] thawed a break nobody was alive to end (+${frozenSeconds}s) - the ` +
+          'engine that declared it did not survive to its own resume.'
+      );
+    } catch (err) {
+      /* end() makes the same call: a failed thaw costs the clocks their
+         minutes, but refusing to clear the row would leave the platform
+         frozen, which is strictly worse. */
+      console.error('[MaintenanceBreak] THAW FAILED for an abandoned break', err);
+    }
   }
 
   /**
@@ -783,6 +858,10 @@ export class MaintenanceBreak {
         );
         return;
       }
+      /* The break really ran and nobody ended it. Hand the frozen minutes back
+         BEFORE the row goes, so a thaw that throws still leaves the evidence
+         of what was frozen in place for the next boot to find. */
+      await this.thawAnAbandonedBreak(claimed, endsAt);
       await this.safeClear(claimed);
       await this.enterBreakFromTheClock(generation, 'the persisted break had already expired');
       return;

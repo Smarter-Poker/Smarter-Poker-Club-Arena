@@ -44,7 +44,15 @@
  *   3. it never holds the fleet outside [:53, :00), at any minute of the
  *      hour, including the boundaries;
  *   4. a row that CAN be adopted still wins - the clock is the last witness,
- *      not the first.
+ *      not the first;
+ *   5. a break that EXPIRED while nobody was alive to end it is thawed before
+ *      its row is cleared. `end()` is the only other caller of the thaw and it
+ *      only runs on a process still holding the break, so an engine that dies
+ *      inside its own break used to take the frozen minutes with it. All three
+ *      failed breaks on 2026-09-08 recorded `thaw_ran: false`, and by the
+ *      16:00 one that was the ONLY remaining fault - zero hands in the window,
+ *      the fleet held cleanly from 15:54 to 16:00, and every in-flight
+ *      deadline burned anyway.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -318,5 +326,104 @@ describe('and never freezes anything it should not', () => {
     expect(mb.remainingMs(), 'the derived window overrode an adoptable row').toBe(
       adoptedEnd - CUTOVER
     );
+  });
+});
+
+describe('a break nobody was alive to end', () => {
+  /** The engine that declared the 15:55 break died inside it; its replacement
+      took leadership at 16:00:08, eight seconds past the hour. */
+  const ABANDONED_START = AT('2026-09-08T15:55:00.001Z');
+  const ABANDONED_END = AT('2026-09-08T16:00:00.001Z');
+  const LATE_BOOT = AT('2026-09-08T16:00:08.484Z');
+
+  function expiredRow(
+    overrides: Partial<PersistedMaintenanceBreak> = {}
+  ): PersistedMaintenanceBreak {
+    return {
+      phase: 'counting_down',
+      announcedAt: AT('2026-09-08T15:53:00.001Z'),
+      breakStartedAt: ABANDONED_START,
+      breakEndsAt: ABANDONED_END,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-that-died-inside-its-own-break',
+      ...overrides,
+    } as PersistedMaintenanceBreak;
+  }
+
+  it('hands the frozen minutes back before clearing the row', async () => {
+    vi.setSystemTime(LATE_BOOT);
+    const { mb, engines, store, thaws } = build();
+    store.row = expiredRow();
+
+    await mb.start();
+
+    // The thaw ran at all - it did not for 14:00, 15:00 or 16:00.
+    expect(thaws, 'the frozen minutes were never handed back').toHaveLength(1);
+    // Measured from the row's own countdown start to its own end: the freeze
+    // that actually happened, not anything derived from this boot instant.
+    expect(thaws[0].breakStartedAt).toBe(ABANDONED_START);
+    expect(thaws[0].frozenSeconds).toBe(300);
+
+    // And the platform still comes back: the row goes, nothing stays parked.
+    expect(store.row, 'the expired row was left behind').toBeNull();
+    for (const [id, e] of engines) {
+      expect(e.paused, `${id} was held by a break that had already ended`).toBe(false);
+    }
+  });
+
+  it('still clears the row when the thaw itself fails', async () => {
+    vi.setSystemTime(LATE_BOOT);
+    const engines = new Map<string, FakeEngine>();
+    engines.set('t0', new FakeEngine());
+    const store = new FakeStore();
+    store.row = expiredRow();
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+      thaw: async () => {
+        throw new Error('PGRST002');
+      },
+      recordOutcome: async () => {},
+    } as any);
+
+    await mb.start();
+
+    /* end() makes the same call for the same reason: five minutes of clock
+       drift is a wrong that heals, a platform that stays frozen is not. */
+    expect(store.row, 'a failed thaw stranded the break row').toBeNull();
+    expect(engines.get('t0')!.paused).toBe(false);
+  });
+
+  it('does not invent a freeze for a last-hand row that never counted down', async () => {
+    vi.setSystemTime(AT('2026-09-08T16:00:30.000Z'));
+    const { mb, store, thaws } = build();
+    // Announced, then the engine died before :55. Nothing was ever frozen by a
+    // countdown, so there is nothing to give back.
+    store.row = expiredRow({ phase: 'last_hand', breakStartedAt: null, breakEndsAt: null });
+
+    await mb.start();
+
+    expect(
+      thaws,
+      'shifted every deadline on the platform for a freeze that never ran'
+    ).toHaveLength(0);
+    expect(store.row).toBeNull();
+  });
+
+  it('refuses a freeze longer than fn_thaw_platform will accept', async () => {
+    // A skewed clock, or a row from a break that was never bounded. The RPC
+    // answers `implausible_frozen_seconds` past 900s; this declines first so
+    // the refusal is a log line rather than a silent ok:false.
+    const absurdStart = ABANDONED_END - (MaintenanceBreak.MAX_THAWABLE_SECONDS + 60) * 1000;
+    vi.setSystemTime(LATE_BOOT);
+    const { mb, store, thaws } = build();
+    store.row = expiredRow({ breakStartedAt: absurdStart });
+
+    await mb.start();
+
+    expect(thaws).toHaveLength(0);
+    expect(store.row).toBeNull();
   });
 });

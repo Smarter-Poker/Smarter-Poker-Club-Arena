@@ -711,3 +711,17 @@ it('Spin cancellation reverses aggregate rake with its original attribution iden
     )
   ).toBe(true);
 });
+
+it('reconciliation displays only actual payment instead of its requested top-up', () => {
+  const sql = read(
+    'supabase/migrations/20260908000459_reconciliation_displays_only_actual_settlement.sql'
+  );
+  expect(sql).toContain('v_paid_eff + v_settle_paid');
+  expect(sql).not.toContain('v_paid_eff + CASE WHEN v_delta > 0.005 THEN v_delta ELSE 0 END');
+  expect(
+    has(
+      'scripts/ci/probes/reconciliation-actual-settlement.sql',
+      'FAIL partial credit was displayed as full prize'
+    )
+  ).toBe(true);
+});

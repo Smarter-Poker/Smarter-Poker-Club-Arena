@@ -1,0 +1,219 @@
+.thr-donkey__idle {
+  transform-origin: 0 0;
+  animation: thr-donkey-idle calc(4.034s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-donkey-idle {
+  0.00000% {
+    opacity: 0;
+  }
+  0.00000% {
+    opacity: 0;
+  }
+  0.02479% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  2.47893% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  4.95786% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  9.17204% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  13.38622% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  17.60040% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  21.81458% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  26.02876% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  29.72236% {
+    opacity: 1;
+    transform: none;
+  }
+  29.74715% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-donkey__inhale {
+  transform-origin: 0 0;
+  animation: thr-donkey-inhale calc(4.034s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-donkey-inhale {
+  0.00000% {
+    opacity: 0;
+  }
+  29.74715% {
+    opacity: 0;
+  }
+  29.77194% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  32.22608% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  34.70501% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  38.91919% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  41.29896% {
+    opacity: 1;
+    transform: none;
+  }
+  41.32375% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-donkey__bray {
+  transform-origin: 0 0;
+  animation: thr-donkey-bray calc(4.034s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-donkey-bray {
+  0.00000% {
+    opacity: 0;
+  }
+  41.32375% {
+    opacity: 0;
+  }
+  41.34854% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  43.80268% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  46.28161% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  50.49579% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  54.70997% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  58.92414% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  63.13832% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  67.35250% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  69.38523% {
+    opacity: 1;
+    transform: none;
+  }
+  69.41001% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-donkey__relax {
+  transform-origin: 0 0;
+  animation: thr-donkey-relax calc(4.034s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-donkey-relax {
+  0.00000% {
+    opacity: 0;
+  }
+  69.41001% {
+    opacity: 0;
+  }
+  69.43480% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  71.88894% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  74.36787% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  78.58205% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  82.79623% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  87.01041% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  91.22459% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+  95.43877% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  99.97521% {
+    opacity: 1;
+    transform: none;
+  }
+  100.00000% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-donkey__idle {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-donkey__inhale {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-donkey__bray {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-donkey__relax {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+}

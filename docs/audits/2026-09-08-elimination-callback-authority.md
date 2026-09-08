@@ -32,3 +32,18 @@ No production mutation or forced restart was used. Publication and normal
 engine adoption remain separate verification steps. This crash explains a
 concrete loss-of-engine path; it is not proof that every iPad connection or
 hand-delay issue is resolved.
+
+## Live reproduction at 16:31 UTC
+
+A reload of the published Club Arena in the existing spectator browser showed
+Reconnecting To The Table, with heartbeat fetch failure at 16:31:21 and the
+three-miss report at 16:31:31. Docker independently recorded the engine restarting
+at 16:31:23 on the older c3821317 image. Engine logs contained the authority
+exception through both the shared wake timer and manager unregister cleanup.
+The table subsequently resumed live play without a purchase or seat mutation.
+
+Two additional behavioral cases use real authority contexts and the actual
+scheduler: a real Node timer armed inside manager A dispatches B, and removing
+A while its physical sweep is still pending preserves capacity and later runs B.
+Neither test weakens the cross-manager data guard. This reproduces a server-side
+cause of the connection symptom; it does not certify every iPad/network path.

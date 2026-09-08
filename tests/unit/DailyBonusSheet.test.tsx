@@ -157,6 +157,17 @@ describe('DailyBonusSheet', () => {
     expect(screen.queryByText('Claimed')).toBeNull();
   });
 
+  it('the modal renders on <body>, outside any host container that could trap a fixed overlay', async () => {
+    render(
+      <div style={{ perspective: '1200px', overflow: 'hidden' }}>
+        <DailyBonusSheet mode="modal" open onClose={() => undefined} />
+      </div>
+    );
+    await screen.findByText('+5');
+    const overlay = document.querySelector('.dbs-overlay');
+    expect(overlay?.parentElement).toBe(document.body);
+  });
+
   it('says so when the account is not eligible instead of showing an empty sheet', async () => {
     mocks.getStatus.mockResolvedValue({ ...status, eligible: false, reason: 'fixture', tiles: [] });
     render(<DailyBonusSheet mode="inline" />);

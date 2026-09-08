@@ -23,6 +23,7 @@ import {
   resolveCosmetic,
   type AvatarCosmetic,
 } from '../cosmetics/avatarCosmetics';
+import { openInBrowser } from '../lib/openExternal';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -594,7 +595,7 @@ class AvatarServiceClass {
    */
   openAvatarSelector(): void {
     const url = this.getHubAvatarUrl();
-    window.open(url, '_blank', 'width=800,height=600');
+    openInBrowser(url, 'width=800,height=600');
   }
 
   /**

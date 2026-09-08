@@ -47,6 +47,7 @@ import { filterBySubjects, handSearchSubject, type HandQuery } from '../lib/hand
 import { handNotesService, type HandNote } from '../services/HandNotesService';
 import { handFlagService, type HandFlag } from '../services/HandFlagService';
 import { toPokerStarsFile } from '../utils/pokerStarsExport';
+import { openInBrowser } from '../lib/openExternal';
 
 /**
  * PHASE 5 (2026-09-06): the chips are a QUERY now, not four hard-coded
@@ -555,7 +556,7 @@ export default function HandHistoryPage() {
       if (Number(document.body?.dataset.caLiveTables ?? '0') > 0) {
         masterBus.emit('OPEN_HUB_TAB', { path, requestedBy: userId ?? undefined });
       } else {
-        window.open(`https://smarter.poker${path}`, '_blank', 'noopener');
+        openInBrowser(`https://smarter.poker${path}`, 'noopener');
       }
       toast.info('Opening Jarvis Analysis');
     } catch (err) {

@@ -76,6 +76,8 @@ import { useUserStore } from '../stores/useUserStore';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
 import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
+import { openInBrowser } from '../lib/openExternal';
+import { isNativePlatform } from '../lib/appBase';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -1871,7 +1873,7 @@ export default function MultiTablePage() {
         }
         case 'open-browser': {
           const t = tablesRef.current.find((x) => x.id === tabId);
-          if (t && isHubTab(t)) window.open(t.hubUrl ?? '/hub', '_blank', 'noopener,noreferrer');
+          if (t && isHubTab(t)) openInBrowser(t.hubUrl ?? '/hub');
           break;
         }
         case 'mute':
@@ -3031,6 +3033,12 @@ export default function MultiTablePage() {
    */
   const openHubTab = useCallback((path: string): boolean => {
     if (!isHubPath(path)) return false;
+    // In the app store build the webview's origin is the app itself, not
+    // smarter.poker: a frame of a Hub page would be cross-origin, HubFrame's
+    // same-origin listeners would throw, and the Hub session would not be
+    // there. Decline, and the header's fallback (leaveForHub) opens the page
+    // in the in-app browser over the running tables instead.
+    if (isNativePlatform()) return false;
     const prev = tablesRef.current;
     const idx = activeIndexRef.current;
     const cur = prev[idx];

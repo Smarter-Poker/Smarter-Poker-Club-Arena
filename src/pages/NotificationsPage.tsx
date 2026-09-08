@@ -63,6 +63,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import './NotificationsPage.css';
+import { leaveForHub, openInBrowser } from '../lib/openExternal';
 
 /** The WEB path Club Arena lives under. A notification's destination is
     written by the server as a web URL, so this is the prefix to strip before
@@ -509,7 +510,7 @@ export default function NotificationsPage() {
           if (url.hostname === window.location.hostname || url.hostname === 'smarter.poker') {
             path = url.pathname + url.search;
           } else {
-            window.open(raw, '_blank', 'noopener,noreferrer');
+            openInBrowser(raw);
             return;
           }
         } catch {
@@ -523,7 +524,7 @@ export default function NotificationsPage() {
         navigate(path.slice(CA_BASE.length) || '/');
         return;
       }
-      window.location.href = path;
+      leaveForHub(path);
     },
     [markAsRead, navigate]
   );

@@ -711,3 +711,29 @@ it('Spin cancellation reverses aggregate rake with its original attribution iden
     )
   ).toBe(true);
 });
+
+it('reconciliation displays only actual payment instead of its requested top-up', () => {
+  const sql = read(
+    'supabase/migrations/20260908000459_reconciliation_displays_only_actual_settlement.sql'
+  );
+  expect(sql).toContain('v_paid_eff + v_settle_paid');
+  expect(sql).not.toContain('v_paid_eff + CASE WHEN v_delta > 0.005 THEN v_delta ELSE 0 END');
+  expect(
+    has(
+      'scripts/ci/probes/reconciliation-actual-settlement.sql',
+      'FAIL partial credit was displayed as full prize'
+    )
+  ).toBe(true);
+});
+
+it('weekly invoice payment acknowledges every cent and rejects malformed amounts', () => {
+  const sql = read(
+    'supabase/migrations/20260907210210_union_statement_payments_require_exact_cents.sql'
+  );
+  expect(sql).toContain('v_total >= v_owed THEN');
+  expect(sql).not.toContain('v_owed - 0.01');
+  expect(sql).toContain('payment amount must be positive finite whole cents');
+  expect(
+    has('tests/sql/union-statement-payment-rollback-probe.sql', 'FAIL one cent short marked paid')
+  ).toBe(true);
+});

@@ -152,6 +152,55 @@ describe('pending add-ons are swept on an idle tick', () => {
   }, 15000);
 });
 
+describe('completed idle dealing sweeps are live work', () => {
+  it('keeps a short-handed engine alive across completed sweeps without dealing', async () => {
+    const { engine } = idleEngine();
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    engine.processPendingAddOns = vi.fn(async () => {});
+    engine.executePendingSeatMoves = vi.fn(async () => {});
+    engine.stopIfClusterTableClosed = vi.fn(async () => {});
+    engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+    const ages: number[] = [];
+    engine.sleep = async () => {
+      ages.push(engine.msSinceProgress());
+      now += 181_000;
+      if (ages.length === 2) engine.running = false;
+    };
+    engine.running = true;
+    await engine.dealingLoop();
+    expect(ages).toEqual([0, 0]);
+    expect(engine.executePendingSeatMoves).toHaveBeenCalledTimes(2);
+    expect(engine.handController).toBeFalsy();
+  });
+
+  it('does not stamp progress while idle seat-move work is unresolved', async () => {
+    const { engine } = idleEngine();
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    engine.processPendingAddOns = vi.fn(async () => {});
+    engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    engine.executePendingSeatMoves = vi.fn(() => pending);
+    const progress = vi.spyOn(engine, 'markProgress');
+    engine.running = true;
+    const loop = engine.dealingLoop();
+    try {
+      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled());
+      now += 181_000;
+      expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
+      expect(progress).not.toHaveBeenCalled();
+    } finally {
+      engine.running = false;
+      release();
+      await loop;
+    }
+  });
+});
+
 describe('processPendingAddOns resolves a busted player who is not in the hand', () => {
   it('resolves the ledger row even when the user is absent from `players`', async () => {
     const engine = new ServerTableEngine(TABLE) as any;

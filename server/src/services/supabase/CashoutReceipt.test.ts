@@ -39,6 +39,7 @@ const invalid = [
   { ...receipt, stack: null },
   { ...receipt, stack: 'garbage' },
   { ...receipt, stack: -1 },
+  { ...receipt, stack: 12.501 },
   { ...receipt, stack: Infinity },
   { ...receipt, seat_number: 3 },
   { ...receipt, idempotency_key: '' },

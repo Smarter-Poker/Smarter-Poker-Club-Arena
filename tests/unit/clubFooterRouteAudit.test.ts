@@ -38,6 +38,9 @@ describe('Club Arena global footer route audit', () => {
   it.each([
     '/',
     '',
+    '/clubs/diamond-arena',
+    '/clubs/diamond-arena/finance',
+    '/clubs/002c2d27-9584-4e52-835a-bb2be148fc81/agents',
     '/auth',
     '/share/hand/:handId',
     '/replay',

@@ -441,3 +441,22 @@ describe('Mini payouts retain the original durable jackpot operation', () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('unknown payout receipts cannot close the durable claim', () => {
+  it.each([
+    {},
+    { applied: false },
+    { applied: 'true', already_paid: false },
+    { applied: false, already_paid: 'true' },
+    { applied: true, already_paid: true },
+    [appliedRow(), appliedRow()],
+  ])('keeps malformed settlement response pending: %j', async (data) => {
+    const claim = vi.fn().mockResolvedValue(undefined);
+    const settle = vi.fn().mockResolvedValue(undefined);
+    setBBJPayoutQueue({ claim, settle });
+    rpc.mockResolvedValue({ data, error: null });
+    expect((await run()).status).toBe('queued');
+    expect(claim).toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
+  });
+});

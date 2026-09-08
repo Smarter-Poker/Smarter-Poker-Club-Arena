@@ -242,7 +242,7 @@ describe('the finance sub-workspace reads its own group', () => {
     mountWorkspace('finance');
     await waitFor(() => expect(screen.getByText('Cashier')).toBeTruthy());
     const cashier = screen.getByText('Cashier').closest('a');
-    expect(within(cashier as HTMLElement).getByText('9 Waiting')).toBeTruthy();
+    expect(await within(cashier as HTMLElement).findByText('9 Waiting')).toBeTruthy();
   });
 
   it('stops promising live systems when nothing could be read', async () => {

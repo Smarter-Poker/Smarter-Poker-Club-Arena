@@ -10,6 +10,8 @@
  * and joined by the worker lifecycle.
  */
 
+import { AsyncResource } from 'node:async_hooks';
+import { currentTournamentDataAuthority } from './dataActorContext.js';
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 
@@ -106,6 +108,7 @@ let drainPromise: Promise<HandProjectionDrainSummary> | null = null;
 let wakeAfterDrain = false;
 let stopping = false;
 let workerActive = false;
+let runOwnedDrain: (() => Promise<HandProjectionDrainSummary>) | null = null;
 let lifecycleEpoch = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryAttempt = 0;
@@ -236,12 +239,12 @@ function beginDrain(): Promise<HandProjectionDrainSummary> {
 
 /** Coalesce every transaction/Realtime work signal onto the active worker. */
 export function wakeHandProjection(): Promise<HandProjectionDrainSummary> {
-  if (!workerActive || stopping) return Promise.resolve(emptySummary());
+  if (!workerActive || stopping || !runOwnedDrain) return Promise.resolve(emptySummary());
   // A fresh causal signal supersedes a pending backoff and is permission to
   // try immediately. It also resets the backoff because the dependency state
   // may have changed since the preceding refusal.
   cancelCausalRetry(true);
-  return beginDrain();
+  return runOwnedDrain();
 }
 
 /**
@@ -251,6 +254,15 @@ export function wakeHandProjection(): Promise<HandProjectionDrainSummary> {
  */
 export function startHandProjectionWorker(): void {
   if (workerActive) return;
+  // Only process startup may establish this worker's authority. A manager
+  // can signal existing durable work, never create a service-context escape.
+  if (currentTournamentDataAuthority() !== null) {
+    throw new Error('Hand projection worker must start outside tournament authority');
+  }
+  // Capture the worker owner once. An idle drain woken by a tournament must
+  // not send global outbox requests under that tournament's lease. This
+  // private, zero-argument callback only drains server-owned durable claims.
+  runOwnedDrain = AsyncResource.bind(beginDrain, 'HandProjection.worker');
   workerActive = true;
   stopping = false;
   lifecycleEpoch++;
@@ -285,6 +297,7 @@ export function startHandProjectionWorker(): void {
 export async function stopHandProjectionWorker(): Promise<void> {
   workerActive = false;
   stopping = true;
+  runOwnedDrain = null;
   lifecycleEpoch++;
   wakeAfterDrain = false;
   cancelCausalRetry(true);

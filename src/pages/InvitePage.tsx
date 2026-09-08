@@ -107,7 +107,7 @@ export default function InvitePage() {
         let clubQuery = supabase
           .from('clubs')
           .select(
-            'id, club_id, slug, name, description, member_count, avatar_url, logo_url, is_public'
+            'id, club_id, slug, name, description, member_count, avatar_url, logo_url, is_public, asset'
           );
 
         if (inviteCode) {
@@ -133,6 +133,12 @@ export default function InvitePage() {
         if (clubError || !clubData) {
           setError('Club not found or invitation expired');
           setLoading(false);
+          return;
+        }
+
+        // Diamond access is automatic. The destination validates arena identity and auth.
+        if (clubData.asset === 'diamonds') {
+          enterClub(clubData.id);
           return;
         }
 

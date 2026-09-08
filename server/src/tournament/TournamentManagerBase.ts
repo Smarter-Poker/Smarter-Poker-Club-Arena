@@ -4600,7 +4600,11 @@ export abstract class TournamentManagerBase {
       // wait. Awaiting lifecycleOperation first formed a dependency cycle in
       // which neither side could ever complete.
       const enginesAtFence = [...this.tableEngines.values()];
-      const initialEngineStops = enginesAtFence.map((engine) => engine.stop());
+      // Observe rejections NOW, before any scheduler/startup drain can wait.
+      // A table may reject quickly after a failed settlement. Delaying this
+      // attachment until after the drains raised a process-wide unhandled
+      // rejection even though the manager later inspected that same failure.
+      const initialEngineStops = Promise.allSettled(enginesAtFence.map((engine) => engine.stop()));
 
       // Unregister aborts the scheduler signal synchronously. Keep this manager
       // quarantined until the physical promise actually unwinds; otherwise a
@@ -4623,7 +4627,7 @@ export abstract class TournamentManagerBase {
 
       const engines = [...this.tableEngines.entries()];
       const stopResults = await Promise.allSettled(engines.map(([, engine]) => engine.stop()));
-      await Promise.allSettled(initialEngineStops);
+      await initialEngineStops;
       await this.drainTableEngineRunJobs();
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {

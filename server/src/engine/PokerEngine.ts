@@ -1055,7 +1055,12 @@ export function determineWinners(
       // FIX 179: Use Math.round to avoid IEEE 754 floating-point truncation errors
       // e.g. Math.trunc(0.51 * 100) = 50 (wrong), Math.round(0.51 * 100) = 51 (correct)
       const potCents = Math.round(pot.amount * 100);
-      const loCents = Math.trunc(potCents / 2);
+      // Split high/low in the same indivisible unit used for tied winners.
+      // Splitting into cents first creates half-chip tournament awards even
+      // when distributePot correctly preserves whole chips within each half.
+      // The odd unit (and any pre-existing sub-unit residue) belongs to high.
+      const unitCents = Math.max(1, Math.round(chipUnit * 100));
+      const loCents = Math.floor(potCents / (2 * unitCents)) * unitCents;
       loPotAmount = loCents / 100;
       hiPotAmount = (potCents - loCents) / 100;
     }

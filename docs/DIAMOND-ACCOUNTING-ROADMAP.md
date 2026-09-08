@@ -1,5 +1,7 @@
 # DIAMOND ACCOUNTING ROADMAP - what is done, what is left, in phases
 
+> Current Diamond Arena authority: [Poker Arena Build Programme](./POKER-ARENA-DIAMOND-BUILD-PROGRAMME.md), updated by Dan on September 8, 2026. Earlier audit snapshots and decision lists below are historical where they conflict: transfers are allowed, membership is automatic, custody is diamond-only, all legacy Arena runtime and standalone routes must be removed. Preserve the approved original Diamond card artwork inside Poker Arena and remove the separate World Hub card. Existing shared wallet services and financial evidence are retained. This specification does not claim those runtime changes are already implemented.
+
 **Written 2026-09-03 ~01:20 UTC by Claude (Cowork), from the four read-only audits in `docs/audits/2026-09-02-diamond-economy/`, the six fix-lane changelogs `docs/changelog/2026-09-03-diamond-*.md`, and the phase 3 conflict audit `docs/audits/2026-09-02-diamond-economy/phase3-conflicts.md`. Every number below comes from a query run tonight; anything not measured is marked UNVERIFIED.**
 **Companion to `docs/DIAMOND-ACCOUNTING-STANDARD.md` (the standard) and `docs/changelog/2026-09-03-diamond-orchestrator.md` (what shipped tonight).**
 
@@ -71,7 +73,7 @@ gated on chip 4.2/4.3.
 **Phase 5.5 is part-closed.** The World Hub arena pages were showing invented
 players, invented personal win records and invented lifetime stats, plus a
 realtime subscription to `diamond_arena_scores`, a table that does not exist.
-All removed. Routing `/hub/diamond-arena` into the SPA is still open.
+All removed in that historical workstream. The later Poker Arena programme supersedes the routing proposal: delete the standalone route and its aliases, and use the Diamond selection inside Poker Arena.
 
 **Two open defects and two numbers for Dan** are in
 `docs/changelog/2026-09-08-phase-5-status-and-two-open-defects.md`. The first -
@@ -146,7 +148,7 @@ The current product build sequence is the 12-phase POKER-ARENA-DIAMOND-BUILD-PRO
 5.2 Dedicated diamond custody and atomic reserve/release from the platform wallet. The former deposit/withdraw into club_members.chip_balance is superseded; migrate proven existing obligations forward without erasing evidence. Preserve purchased-lot and settlement-window rules.
 5.3 Reporting learns `asset`: chip `fn_ca_trial_balance` and `fn_ca_supply_snapshot` exclude the platform club; the diamond trial balance includes `arena_wallets`, `table_stack`, `tournament_escrow`, `diamond_bbj`, `spin_reserve` for it.
 5.4 Guarantees and freerolls from the house (`fn_apply_prize_guarantee` bank_type `house`), rake to the house, one `bbj_pools` row for the platform club after chip roadmap 4.2 and 4.3 land, horses funded from the house by the Mint.
-5.5 One Poker Arena World Hub entrance; shared Club Arena SPA selector with Shark Club, Diamond Arena and joined clubs. Diamond membership is automatic, chip membership requires joining. Old Diamond links select the skin inside the same app; retire the iframe and independent app.
+5.5 One Poker Arena World Hub entrance; shared Club Arena SPA selector with Shark Club, Diamond Arena and joined clubs. Diamond membership is automatic, chip membership requires joining. Remove old standalone Diamond routes and aliases, update callers to the new Poker Arena selection, and delete the iframe and independent app. Preserve the approved original Diamond card artwork inside Poker Arena; remove its separate World Hub card.
 5.6 Trivia tournaments re-pointed at `tournament_obligations` or retired; no second payout engine.
 Entry condition: seven consecutive days of `fn_ca_diamond_trial_balance` at 0 on every account, suspense 0, and no open critical `ca_diamond_incidents`.
 
@@ -162,3 +164,83 @@ Entry condition: seven consecutive days of `fn_ca_diamond_trial_balance` at 0 on
 ## 4. How to read progress
 
 `SELECT * FROM fn_ca_diamond_trial_balance(now() - interval '24 hours')` names the account that drifted; `SELECT rule, severity, count(*) FROM ca_diamond_incidents WHERE resolved_at IS NULL GROUP BY 1, 2` counts the refusals the rules did not make; `SELECT fn_ca_mint_supply('diamonds'), SUM(diamonds) FROM profiles` must agree; `ca_diamond_dead_store_writes` is the delete gate; `ca_diamond_snapshots.unexplained` is the deploy gate. When the first three read zero for seven days and the fourth reads zero writes, Phase 3's deletions are due and Phase 5 may open.
+
+---
+
+## 0e. Status 2026-09-08, end of day: the review round
+
+An adversarial review of the day's diamond work returned seventeen findings.
+Nine were real, two were measured and found correct, and six were not live
+defects. All of it is settled or named. Shipped in Club Arena PR #3801 (merged)
+and World Hub PR #1605, plus the earlier #3750 and #3784.
+
+### Settled
+
+| #     | What                                                                                                                                                                                                                                                            | Where            |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| D3    | **759 earned horse rewards, 114 expiring in three hours.** 23 horses, 54,230 diamonds paid. A horse claims only on a new engine event; a human keeps a claim button for seven days.                                                                             | `20260908144747` |
+| D1    | **The cap I raised was not the cap that applies.** 849 horses are lifetime VIPs and the earn ledger substitutes the VIP column, so raising the standard cap to 4,000 and leaving VIP at 2,000 reached almost nobody. 4,547 refusals were queued for 2026-09-14. | `20260908144747` |
+| D2    | **The headroom report was blind to the VIP column** and called a cap healthy that the flip forecast said would refuse 4,547.                                                                                                                                    | `20260908144747` |
+| D4    | `%daily_cap%` silenced any error containing those characters, not just the cap.                                                                                                                                                                                 | `20260908144747` |
+| D16   | `fn_ca_is_cert_account` was INVOKER while its twin was DEFINER, so it answered differently by caller. Second time those two disagreed in one day.                                                                                                               | `20260908144801` |
+| D12   | A bigint-max sentinel was being **summed into the trial balance**, which printed 9,223,372,036,867,275,807 budgeted.                                                                                                                                            | `20260908144801` |
+| D8    | `ca_diamond_engine_spend` was not enforced append-only.                                                                                                                                                                                                         | `20260908144801` |
+| D11   | The flip forecast joined FROM the rule table, so **twelve** retired rules holding incidents were invisible rather than reported as retired.                                                                                                                     | `20260908144801` |
+| D6/D7 | **The admin liability page was wrong by a factor of 1,960** — 1,210 reported against 2,371,393 actual — because it read the frozen baseline column. It also called itself a circuit breaker that ruling 21 removed.                                             | WH #1605         |
+
+### Measured and found correct — no change made
+
+- `fn_ca_diamond_engine_spent` "drifts from the journal by 1,836,311": that is its
+  frozen baseline, exactly, on all 34 period-engine rows.
+- The RAISE in `fn_ca_diamond_offledger_float` is reachable and is the point of
+  the function.
+- The daily bonus **is** wired to an engine (`daily_bonus` -> `club_arena_daily`).
+- The arena has issued nothing in seven days, so its doors are a future concern,
+  not a live gap; `arena_deposit`/`arena_withdraw` are already excluded from the
+  earn ledger.
+- The `auth.role()` checks are redundant, not decorative: the REVOKE/GRANT is the
+  control, and `authenticated` and `anon` cannot execute any of the reporting
+  functions. Verified with `has_function_privilege`.
+
+### Still owed, and why it was not done today
+
+1. **The horse claim must run on the engine's own cadence.** The settlement paid
+   the 759, but the cause is that a horse claims only when a new challenge event
+   arrives. This is HorseLogic, in the Club Arena server, and it is the root fix
+   (10.11). The database half already exists. **Until it lands, this can recur** —
+   and if it does, that is the proof the cause was never fixed, not a reason to
+   schedule a repair job (10.12).
+2. **The two copies of the horse claim loop should be one function.** Not merged
+   because that path had just settled 759 rewards the same afternoon.
+   `fn_ca_normalise_claim_loop` pins their behaviour until then.
+3. **The October budget plans are fiction** — `daily_challenges` at 100,000
+   against a September actual of 1,836,311, `daily_missions` already at 4.3x.
+   These are what players will be offered, so they are Dan's (10.9).
+   `fn_ca_diamond_budget_reality` names them; it does not change them.
+4. **VIP is defined inline in 33 functions.** A real refactor, not an end-of-day
+   change.
+5. **`scripts/guard-merged-branch.sh` reads HEAD, not the push refspec.** It
+   refused two correct pushes today to brand-new branches created off
+   `origin/main`, because the worktree's HEAD happened to be a merged branch.
+   10.82 says the guard fails OPEN on anything it cannot read; this fails CLOSED
+   on something it read wrongly. Not fixed blind because Club Arena's
+   `.husky/pre-push` consumes the same stdin at line 77, and a guard that reads
+   it first would silently starve that loop — the fix needs the hook read once
+   and passed down.
+
+### Verified live at the end of the day
+
+```
+money identity                  true     players + float = register
+deploy gate unexplained         0.00
+horse claims owed               0        (was 759)
+horses flagged as harness       0        (was 468)
+caps where vip < std            0
+budget sentinels                0
+DR7 cap incidents since 14:33   0        the 2026-09-14 flip is now safe
+ledger_write_failed since 13:00 0        the serialisation fix holds
+```
+
+Every engine reads HEALTHY on `fn_ca_diamond_cap_headroom(14)` with zero
+would-refuse across 1,395 user-days, and the binding cap is now reported
+alongside both columns rather than guessed from one.

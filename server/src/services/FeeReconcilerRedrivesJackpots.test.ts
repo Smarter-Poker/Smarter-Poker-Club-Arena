@@ -63,7 +63,10 @@ const QUEUED_ROW = {
 };
 
 /** Minimal builder: every method chains; the terminal resolves to `result`. */
-function table(result: { data: unknown; error: unknown }, onUpdate?: (patch: unknown) => void) {
+function table(
+  result: { data: unknown; error: unknown; count?: number | null },
+  onUpdate?: (patch: unknown) => void
+) {
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'is', 'lt', 'order', 'limit', 'insert']) chain[m] = () => chain;
   chain.update = (patch: unknown) => {
@@ -71,7 +74,8 @@ function table(result: { data: unknown; error: unknown }, onUpdate?: (patch: unk
     return chain;
   };
   chain.maybeSingle = () => Promise.resolve(result);
-  chain.then = (res: (v: unknown) => void) => res(result);
+  chain.then = (res: (v: unknown) => void) =>
+    res({ ...result, count: 'count' in result ? result.count : 1 });
   return chain;
 }
 
@@ -178,6 +182,7 @@ it('preserves the Mini kind, tier and metadata when reconstructing a stored oper
                 contributions: {
                   ...PARAMS,
                   kind: 'mini',
+                  payoutTotalPercent: 0,
                   tierId: 'low',
                   metadata: { rule: 'near_miss' },
                 },
@@ -196,4 +201,101 @@ it('preserves the Mini kind, tier and metadata when reconstructing a stored oper
     tierId: 'low',
     metadata: { rule: 'near_miss' },
   });
+});
+
+it.each([
+  null,
+  [],
+  {},
+  { applied: false, already_processed: false, rake_record_id: null },
+  { applied: true, already_processed: true, rake_record_id: 'rake-1' },
+  { applied: 'true', already_processed: false, rake_record_id: 'rake-1' },
+  { applied: true, already_processed: false, rake_record_id: null },
+  [
+    { applied: true, already_processed: false, rake_record_id: 'rake-1' },
+    { applied: true, already_processed: false, rake_record_id: 'rake-2' },
+  ],
+])('does not resolve a queued rake without one explicit banking receipt: %j', async (receipt) => {
+  from.mockImplementation(() =>
+    table({ data: [{ ...QUEUED_ROW, kind: 'rake', rake: 4 }], error: null }, (p) => patches.push(p))
+  );
+  rpc.mockResolvedValue({ data: receipt, error: null });
+  const result = await reconcilePendingFees();
+  expect(result).toMatchObject({ resolved: 0, stillFailing: 1 });
+  expect((patches[0] as { resolved_at?: string }).resolved_at).toBeUndefined();
+});
+it.each([true, false])('accepts a confirmed rake receipt with applied=%j', async (applied) => {
+  from.mockImplementation(() =>
+    table({ data: [{ ...QUEUED_ROW, kind: 'rake', rake: 4 }], error: null }, (p) => patches.push(p))
+  );
+  rpc.mockResolvedValue({
+    data: [{ applied, already_processed: !applied, rake_record_id: 'rake-1' }],
+    error: null,
+  });
+  expect((await reconcilePendingFees()).resolved).toBe(1);
+});
+
+it.each([
+  { count: 0, error: null },
+  { count: null, error: null },
+  { count: 2, error: null },
+  { count: 1, error: { message: 'write rejected' } },
+])('does not report a resolved queue row when its write is unconfirmed: %j', async (receipt) => {
+  const original = from.getMockImplementation()!;
+  from.mockImplementation((name: string) => {
+    if (name !== 'pending_fee_distributions') return original(name);
+    return {
+      ...table({ data: [QUEUED_ROW], error: null }),
+      update: () => table({ data: null, ...receipt }),
+    };
+  });
+  processBBJPayout.mockResolvedValue({ status: 'already_paid' });
+  expect(await reconcilePendingFees()).toMatchObject({ scanned: 1, resolved: 0, stillFailing: 1 });
+});
+
+it.each([
+  { tableId: 'different-table' },
+  { clubId: 'different-club' },
+  { handNumber: 42 },
+  { handNumber: NaN },
+  { handNumber: 1.5 },
+  { payoutTotalPercent: NaN },
+  { payoutTotalPercent: Infinity },
+  { payoutTotalPercent: -1 },
+  { payoutTotalPercent: 101 },
+  { loserUserId: PARAMS.winnerUserId },
+  { dealtInPlayerIds: ['bb', 'hw', null] },
+])(
+  'does not execute a queued jackpot with mismatched identity or invalid parameters: %j',
+  async (override) => {
+    const original = from.getMockImplementation()!;
+    from.mockImplementation((name: string) =>
+      name === 'pending_fee_distributions'
+        ? table(
+            { data: [{ ...QUEUED_ROW, contributions: { ...PARAMS, ...override } }], error: null },
+            (p) => patches.push(p)
+          )
+        : original(name)
+    );
+    processBBJPayout.mockResolvedValue({ status: 'already_paid' });
+    const summary = await reconcilePendingFees();
+    expect(processBBJPayout).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ resolved: 0, stillFailing: 1 });
+    expect((patches[0] as { resolved_at?: string }).resolved_at).toBeUndefined();
+  }
+);
+
+it('retains the captured row hand number for a legacy payload without handNumber', async () => {
+  const original = from.getMockImplementation()!;
+  const { handNumber: _omitted, ...legacy } = PARAMS;
+  from.mockImplementation((name: string) =>
+    name === 'pending_fee_distributions'
+      ? table({ data: [{ ...QUEUED_ROW, contributions: legacy }], error: null }, (p) =>
+          patches.push(p)
+        )
+      : original(name)
+  );
+  processBBJPayout.mockResolvedValue({ status: 'already_paid' });
+  await reconcilePendingFees();
+  expect(processBBJPayout.mock.calls[0][0].handNumber).toBe(QUEUED_ROW.hand_number);
 });

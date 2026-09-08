@@ -350,5 +350,93 @@
     "checkpointSource": "art-source/static/party_face.png",
     "sha256": "7064770d4de9a78b0b61923e4cb1c597556450e6739de45509ca273558350f55",
     "status": "Transparent matching still and choreographed atlas integrated. Dedicated audio and end-to-end acceptance pending."
+  },
+  {
+    "id": "thinking",
+    "integrated": true,
+    "source": "art-source/animated/thinking.png",
+    "checkpointSource": "art-source/static/thinking.png",
+    "sha256": "72b76ff485c9c543c74c3782e8ee9c9201f225697bf235d4df98ac5e99bcd783",
+    "status": "Generated transparent artwork integrated with a separate animated hand and three expressions. Dedicated hmm audio and full end-to-end acceptance pending."
+  },
+  {
+    "id": "loser_hand",
+    "integrated": true,
+    "source": "art-source/animated/loser_hand.png",
+    "checkpointSource": "art-source/static/loser_hand.png",
+    "sha256": "4d1c7fbc3c55c5e8c5389d5f6ee243019cc1109384cf25bfe794d34ced1a7778",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "blush",
+    "integrated": true,
+    "source": "art-source/animated/blush.png",
+    "checkpointSource": "art-source/static/blush.png",
+    "sha256": "71ec1db5434bd7f1b20ebfed21a80a24961f7a772f16385633e09abf5bf52e26",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "ok_smug",
+    "integrated": true,
+    "source": "art-source/animated/ok_smug.png",
+    "checkpointSource": "art-source/static/ok_smug.png",
+    "sha256": "286df8f06065ea9566e320fb8b99d93e8309533c26d204e0cbd0bc72c02b6c9c",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "sleeping",
+    "integrated": true,
+    "source": "art-source/animated/sleeping.png",
+    "checkpointSource": "art-source/static/sleeping.png",
+    "sha256": "a6fbf9686eb1051e1a90566264c2e194b69d9df11bae8a9d225b23329f61c451",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "facepalm",
+    "integrated": true,
+    "source": "art-source/animated/facepalm.png",
+    "checkpointSource": "art-source/static/facepalm.png",
+    "sha256": "e80588b519b138e16c25d2a2b1da8e1bfdaaab7ffb87caf50c2e4e1ade9dc451",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "screaming",
+    "integrated": true,
+    "source": "art-source/animated/screaming.png",
+    "checkpointSource": "art-source/static/screaming.png",
+    "sha256": "d7a3425ebb5ca373f2e0f6b5a585dae6cbad90ab41957967b08ee300730296c4",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "vomit_rainbow",
+    "integrated": true,
+    "source": "art-source/animated/vomit_rainbow.png",
+    "checkpointSource": "art-source/static/vomit_rainbow.png",
+    "sha256": "62ce4841d6d27723fa7cc2cb8bda365006f6b865aad86d386670471bb06fa987",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "surrender",
+    "integrated": true,
+    "source": "art-source/animated/surrender.png",
+    "checkpointSource": "art-source/static/surrender.png",
+    "sha256": "0b8a4407783758ef6ae07a25234602f650236541f29c7608895cd99a12b5e0a9",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "energy_ball",
+    "integrated": true,
+    "source": "art-source/animated/energy_ball.png",
+    "checkpointSource": "art-source/static/energy_ball.png",
+    "sha256": "1b0f85c1a204289105c0c7fa73dafc3bd91946396faeb07dd60cc73bd208f111",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "sloth",
+    "integrated": true,
+    "source": "art-source/animated/sloth.png",
+    "checkpointSource": "art-source/static/sloth.png",
+    "sha256": "cf9150ad33281a8188322939325e063b223d5d578e1aa78b9c39596dbb586198",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
   }
 ]

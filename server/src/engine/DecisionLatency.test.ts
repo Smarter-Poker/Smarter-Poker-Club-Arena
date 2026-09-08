@@ -121,18 +121,17 @@ describe('percentiles read off the histogram', () => {
 });
 
 describe('the shipped wiring - an instrument nobody calls measures nothing', () => {
-  it('the ONE live call site times the decision', async () => {
+  it('the sole live worker times the complete decision', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(
-      new URL('./ServerTableEngineTurns.ts', import.meta.url).pathname,
+      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
       'utf8'
     );
-    // The clock must bracket HorseLogic.decide, which is where the entire
-    // read happens - hand strength, board, opponent model, equity, every
-    // version layer and the sizing.
-    const startAt = src.indexOf('const decideStartedAt = perfNow()');
-    const decideAt = src.indexOf('HorseLogic.decide(');
-    const noteAt = src.indexOf('noteDecisionMs(');
+    // The worker clock brackets its injected HorseLogic decision, including
+    // hand strength, board, opponent model, equity and final sizing.
+    const startAt = src.indexOf('const startedAt = this.deps.now()', src.indexOf('executeFast('));
+    const decideAt = src.indexOf('this.deps.decide(', startAt);
+    const noteAt = src.indexOf('this.deps.noteDecision(', decideAt);
     expect(startAt).toBeGreaterThan(0);
     expect(startAt).toBeLessThan(decideAt);
     expect(decideAt).toBeLessThan(noteAt);
@@ -140,8 +139,12 @@ describe('the shipped wiring - an instrument nobody calls measures nothing', () 
 
   it('the scope is the LIVE hand variant, never a guess off the snapshot', async () => {
     const { readFileSync } = await import('node:fs');
-    const src = readFileSync(
+    const turns = readFileSync(
       new URL('./ServerTableEngineTurns.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    const worker = readFileSync(
+      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
       'utf8'
     );
     // Production, first hour of the measurement (2026-08-29): all 14,326
@@ -150,8 +153,9 @@ describe('the shipped wiring - an instrument nobody calls measures nothing', () 
     // `(gameState as any)?.variant ?? 'nlh'` relabelled every decision and
     // made the plo6 15ms budget unverifiable. The scope must come from
     // activeHandVariant(), the accessor built for "read the live hand".
-    expect(src).toContain("noteDecisionMs(this.activeHandVariant() || 'nlh'");
-    expect(src).not.toContain('noteDecisionMs(String((gameState as any)?.variant');
+    expect(turns).toContain("gameVariant: (this.activeHandVariant() || 'nlh') as string");
+    expect(worker).toContain("request.gameState.gameVariant || 'nlh'");
+    expect(turns).not.toContain('(gameState as any)?.variant');
   });
 
   it('the flush drains latency separately from fires, so one outage cannot silently eat the other', async () => {

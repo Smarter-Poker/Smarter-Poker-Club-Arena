@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-horse-is-not-test-equipment",
+  "functions": ["fn_ca_is_cert_account", "fn_ca_daily_bonus_claim", "fn_ca_diamond_flip_forecast"]
+}

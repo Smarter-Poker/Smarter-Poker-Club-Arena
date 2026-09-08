@@ -24,6 +24,7 @@
  */
 import { readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const SINCE = (() => {
   const i = process.argv.indexOf('--since');
@@ -56,11 +57,7 @@ async function fetchApplied() {
   const url = `${SB_URL}/rest/v1/rpc/zz_backfill_migrations`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      apikey: SB_KEY,
-      authorization: `Bearer ${SB_KEY}`,
-      'content-type': 'application/json',
-    },
+    headers: supabaseServerHeaders(SB_KEY, { 'content-type': 'application/json' }),
     body: JSON.stringify({ p_since: SINCE }),
   });
   if (!res.ok) throw new Error(`REST ${res.status}: ${await res.text()}`);

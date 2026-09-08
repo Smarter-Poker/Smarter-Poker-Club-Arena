@@ -45,25 +45,39 @@ const sqlNamed = (needle: string) =>
     .join('\n');
 
 const seatFirstSql = sqlNamed('seat_first_games_that_can_never_be_joined');
+const atomicSeatFirstSql = sqlNamed('seat_first_board_creation_is_one_transaction');
+const seatFirstRetirementSql = sqlNamed('seat_first_inventory_is_created_atomically');
 const countsSql = sqlNamed('club_home_own_members_and_live_players');
 
 describe('a listing only counts if a player could sit at it', () => {
-  it('ships the repair migration', () => {
+  it('retains the historical damage record and ships the atomic creator', () => {
     expect(seatFirstSql.length).toBeGreaterThan(0);
+    expect(atomicSeatFirstSql.length).toBeGreaterThan(0);
   });
 
-  it('heals a husk rather than cancelling it', () => {
-    // Section 8 of the service: "TOURNAMENTS RUN. THEY DO NOT CANCEL."
-    expect(seatFirstSql).toMatch(/fn_repair_seat_first_games/);
-    expect(seatFirstSql).toMatch(/INSERT INTO public\.tables/);
-    expect(seatFirstSql).not.toMatch(/SET\s+status\s*=\s*'CANCELLED'/i);
+  it('creates each new listing and its table inside one transaction', () => {
+    const tournamentInsert = atomicSeatFirstSql.indexOf('INSERT INTO public.tournaments');
+    const tableInsert = atomicSeatFirstSql.indexOf('INSERT INTO public.tables');
+    expect(tournamentInsert).toBeGreaterThan(-1);
+    expect(tableInsert).toBeGreaterThan(tournamentInsert);
+    expect(atomicSeatFirstSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(atomicSeatFirstSql.match(/^COMMIT;$/gm)).toHaveLength(1);
   });
 
-  it('opens the repaired game at seats-1 and restarts the human window', () => {
-    // Two horses on a Spin, one on a heads-up; the last seat is the human's.
-    expect(seatFirstSql).toMatch(/GREATEST\(v_seats - 1, 0\)/);
-    // 60-180 seconds, randomised, so the board does not tick in lockstep.
-    expect(seatFirstSql).toMatch(/60 \+ floor\(random\(\) \* 121\)/);
+  it('retires the timer-driven repair after one bounded migration pass', () => {
+    expect(atomicSeatFirstSql).not.toContain(
+      'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer)'
+    );
+    expect(seatFirstRetirementSql).toContain('SELECT public.fn_repair_seat_first_games(1000)');
+    expect(seatFirstRetirementSql).toContain('unjoinable legacy listing remains');
+    expect(seatFirstRetirementSql).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer) RESTRICT'
+    );
+    expect(seatFirstRetirementSql).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games_before_maintenance_gate(integer)'
+    );
+    expect(service).not.toContain("supabase.rpc('fn_repair_seat_first_games'");
+    expect(service).toContain("supabase.rpc('fn_create_seat_first_game_atomic'");
   });
 
   it('makes the seating function maintain the count the lobby reads', () => {
@@ -71,13 +85,10 @@ describe('a listing only counts if a player could sit at it', () => {
     expect(seatFirstSql).toMatch(/SET current_players =/);
   });
 
-  it('repairs before the board decides what is missing', () => {
-    // Repairing after would be useless: the husk still covers its name.
-    const spinTick = service.indexOf("withBoardTick('spin'");
-    const repair = service.indexOf('this.repairSeatFirstGames()', spinTick);
-    const budget = service.indexOf('const share = boardBudgetShares(', spinTick);
-    expect(repair).toBeGreaterThan(spinTick);
-    expect(repair).toBeLessThan(budget);
+  it('keys ambiguous retries to the caller-generated tournament identity', () => {
+    expect(service).toMatch(/const tournamentId = nodeCrypto\.randomUUID\(\)/);
+    expect(atomicSeatFirstSql).toContain("'replayed', true");
+    expect(atomicSeatFirstSql).toContain('SEAT_FIRST_CREATE_IDEMPOTENCY_MISMATCH');
   });
 
   it('will not treat a seat-first game without a joinable table as covering its price point', () => {

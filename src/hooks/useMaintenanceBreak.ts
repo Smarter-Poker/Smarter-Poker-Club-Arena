@@ -35,7 +35,7 @@ import { serverNow } from '../utils/serverClock';
 export interface MaintenanceBreakState {
   active: boolean;
   phase: 'last_hand' | 'counting_down';
-  /** Absolute instant, epoch ms. Null during last_hand: no clock has started. */
+  /** Absolute resume instant, epoch ms, for both persisted phases. */
   breakEndsAtMs: number | null;
   reason: string;
 }
@@ -48,12 +48,12 @@ const IDLE: MaintenanceBreakState = {
 };
 
 /**
- * A `last_hand` phase has no end time to expire against, so it is bounded by
- * how long it can legitimately last: two minutes by design, and this is the
- * ceiling before we stop believing it. Mirrors the 4-minute window in
- * fn_maintenance_break_state so the two cannot disagree.
+ * The complete persisted window is announcement lead (two minutes) plus the
+ * five-minute break. This is only a compatibility fallback for an older event
+ * that lacks resume_expected_at; current engine events and the database both
+ * carry the exact announcement-anchored instant.
  */
-const LAST_HAND_MAX_MS = 4 * 60 * 1000;
+const MAINTENANCE_WINDOW_MS = 7 * 60 * 1000;
 
 // ───────────────────────────────────────────────────────────────────────────
 // Shared fetch. MultiTablePage mounts up to four TablePages, each with its own
@@ -83,14 +83,12 @@ async function fetchBreakState(): Promise<MaintenanceBreakState> {
         lastResult = {
           active: true,
           phase,
-          // Prefer the absolute instant the server sent. remaining_ms is a
-          // fallback for a clock we do not trust to agree with the server's.
-          breakEndsAtMs:
-            phase === 'counting_down'
-              ? row.break_ends_at
-                ? Date.parse(row.break_ends_at as string)
-                : serverNow() + Number(row.remaining_ms ?? 0)
-              : null,
+          // Prefer the absolute instant the server sent. The RPC derives it
+          // from announced_at for last_hand, so a browser loaded at :59 still
+          // expires at :00. remaining_ms is only a clock-skew fallback.
+          breakEndsAtMs: row.break_ends_at
+            ? Date.parse(row.break_ends_at as string)
+            : serverNow() + Number(row.remaining_ms ?? 0),
           reason: (row.reason as string) || 'Scheduled Engine Maintenance',
         };
       }
@@ -130,11 +128,24 @@ export function useMaintenanceBreak() {
     if (type !== 'MAINTENANCE_BREAK') return;
 
     const phase = data.phase === 'last_hand' ? ('last_hand' as const) : ('counting_down' as const);
-    const endsAtRaw = data.break_ends_at ?? (data as Record<string, unknown>).breakEndsAt;
+    const endsAtRaw =
+      data.break_ends_at ??
+      (data as Record<string, unknown>).breakEndsAt ??
+      data.resume_expected_at;
+    const eventAt = typeof data.timestamp === 'number' ? data.timestamp : serverNow();
+    const breakEndsAtMs =
+      typeof endsAtRaw === 'number'
+        ? endsAtRaw
+        : typeof endsAtRaw === 'string'
+          ? Date.parse(endsAtRaw)
+          : phase === 'last_hand'
+            ? eventAt + MAINTENANCE_WINDOW_MS
+            : null;
     setState({
       active: true,
       phase,
-      breakEndsAtMs: typeof endsAtRaw === 'number' ? endsAtRaw : null,
+      breakEndsAtMs:
+        typeof breakEndsAtMs === 'number' && Number.isFinite(breakEndsAtMs) ? breakEndsAtMs : null,
       reason: (data.reason as string) || 'Scheduled Engine Maintenance',
     });
   }, []);
@@ -166,33 +177,13 @@ export function useMaintenanceBreak() {
     const tick = () => {
       const s = stateRef.current;
       if (!s.active) return;
-      if (s.phase === 'counting_down' && s.breakEndsAtMs && serverNow() >= s.breakEndsAtMs) {
+      if (s.breakEndsAtMs && serverNow() >= s.breakEndsAtMs) {
         setState(IDLE);
-        return;
-      }
-      if (s.phase === 'last_hand' && !s.breakEndsAtMs) {
-        // Bounded even though it has no clock: a last_hand that never became a
-        // countdown means the engine died between :53 and :55, and the player
-        // must not be held on an announcement nothing will ever resolve.
-        // Tracked from when we first saw it, which is close enough.
-        return;
       }
     };
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [state.active, state.phase, state.breakEndsAtMs]);
-
-  /**
-   * The last_hand safety fuse, as its own effect so the timer is re-armed from
-   * the moment the phase was entered rather than on every render.
-   */
-  useEffect(() => {
-    if (!state.active || state.phase !== 'last_hand') return;
-    const t = setTimeout(() => {
-      if (stateRef.current.phase === 'last_hand') setState(IDLE);
-    }, LAST_HAND_MAX_MS);
-    return () => clearTimeout(t);
-  }, [state.active, state.phase]);
 
   return { maintenanceBreak: state, ingestMaintenanceEvent: ingestEvent, refreshFromDb };
 }

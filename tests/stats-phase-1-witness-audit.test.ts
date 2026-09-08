@@ -242,7 +242,10 @@ describe('phase 1 engine wiring', () => {
 
   it('starts with the clock-skew monitor, stops with the break, publishes on /health and /metrics', () => {
     expect(gameServer).toMatch(/this\.startClockSkewMonitor\(\);\s*this\.statsHealth\.start\(\);/);
-    expect(gameServer).toMatch(/this\.maintenanceBreak\.stop\(\);\s*this\.statsHealth\.stop\(\);/);
+    expect(gameServer).toMatch(/\['StatsHealthMonitor', \(\) => this\.statsHealth\.stop\(\)\]/);
+    expect(gameServer).toMatch(
+      /beginOwnedStop\('MaintenanceBreak', \(\) => this\.maintenanceBreak\.stop\(\)\)/
+    );
     expect(gameServer).toMatch(/stats: this\.statsHealth\.publish\(\),/);
     expect(gameServer).toMatch(/freeze\.push\(\.\.\.this\.statsHealth\.prometheusLines\(\)\);/);
   });

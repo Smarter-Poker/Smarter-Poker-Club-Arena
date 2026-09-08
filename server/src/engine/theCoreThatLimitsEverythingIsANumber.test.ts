@@ -106,14 +106,15 @@ describe('the number leaves the process', () => {
     expect(SERVER).toContain('eventLoopDelayP99.set(');
     expect(SERVER).toContain('equityGovernorScale.set(');
     // Non-finite readings render as a number, never as NaN.
-    expect(SERVER).toContain('Number.isFinite(g.p50Ms) ? g.p50Ms : 0');
+    expect(SERVER).toContain('Number.isFinite(main.p50Ms) ? main.p50Ms : 0');
+    expect(SERVER).toContain('Number.isFinite(workerGovernor.scale)');
   });
 
   it('the sampler starts at boot and stops with the server', () => {
     expect(SERVER).toContain('equityGovernor.startSampling();');
     expect(SERVER).toContain('equityGovernor.stopSampling();');
     const start = SERVER.indexOf('equityGovernor.startSampling();');
-    const stopFn = SERVER.indexOf('async stop(): Promise<void> {');
+    const stopFn = SERVER.indexOf('stop(): Promise<void> {');
     expect(start).toBeGreaterThan(0);
     expect(stopFn).toBeGreaterThan(0);
   });
@@ -237,10 +238,9 @@ describe('the alert thresholds are the governor own numbers', () => {
   });
 
   it('every one of them is guarded against the scheduled :55 break (CLAUDE.md 13 rule 6)', () => {
-    const group = RULES.slice(
-      RULES.indexOf('- name: engine-core'),
-      RULES.indexOf('- name: cluster')
-    );
+    const start = RULES.indexOf('- name: engine-core');
+    const nextGroup = RULES.indexOf('\n  - name:', start + 1);
+    const group = RULES.slice(start, nextGroup);
     const alerts = group.match(/- alert: /g) ?? [];
     const guards =
       group.match(/unless on\(\) max_over_time\(poker_maintenance_break_active\[6m\]\) == 1/g) ??

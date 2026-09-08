@@ -107,7 +107,9 @@ describe('GameServer wiring for the stall watchdog', () => {
     expect(start).toBeGreaterThan(-1);
     const block = GAME_SERVER.slice(start, GAME_SERVER.indexOf('Find RUNNING tournaments', start));
     expect(block).toMatch(/!held\.isRunning\(\)/);
-    expect(block).toContain('this.tournamentEngines.delete(id)');
+    expect(block).toContain('await this.stopTournamentManagerIfOwned(');
+    expect(block).toContain("'GameServer.seat_first_stalled_manager_stop_failed'");
+    expect(block).toContain('if (this.tournamentEngines.has(id)) continue;');
   });
 
   it('re-arms its clock after an attempt rather than retrying every pass', () => {

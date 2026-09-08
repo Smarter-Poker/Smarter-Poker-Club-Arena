@@ -15,6 +15,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
+import { dataActorHeaders } from './dataActorContext.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -22,7 +23,6 @@ import { reportError } from '../errorReporter.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 if (!SUPABASE_SERVICE_ROLE_KEY) {
   reportError(
@@ -59,84 +59,112 @@ const EFFECTIVE_SERVICE_ROLE_KEY =
  * catch can back off and retry on.
  */
 const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
+/* Maintenance boundary writers may legitimately wait behind a guarded entry
+ * transaction for up to 30 seconds. They use a dedicated client whose HTTP
+ * deadline is longer than the database function's 45-second hard ceiling;
+ * widening the ordinary game-data client would let a hung hand stall longer. */
+const MAINTENANCE_DB_TIMEOUT_MS = Number(process.env.MAINTENANCE_SUPABASE_TIMEOUT_MS ?? 50_000);
 
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-  global: {
-    /**
-     * Two layers here, both load-bearing:
-     * 1. Per-attempt hard deadline (2026-08-15 freeze fix above) — a hung
-     *    socket becomes a rejection the dealing loop can handle.
-     * 2. Pre-execution-503 retry (2026-08-31 PGRST002 outage) — PostgREST
-     *    returns 503 with code PGRST001/PGRST002/PGRST003 BEFORE the statement
-     *    executes (no connection / schema cache loading / pool acquisition
-     *    timed out). Replaying those is safe for any method, including the
-     *    dealing RPCs — the statement never ran. Any other 503, non-JSON 503,
-     *    or network throw is NOT retried here; the loop's existing catch and
-     *    backoff still own those. Retries are short (300ms/1.2s) so worst case
-     *    stays inside one dealing tick budget.
-     */
-    fetch: async (input: any, init: any = {}) => {
-      const attemptOnce = async () => {
-        const callerSignal: AbortSignal | undefined =
-          init.signal ??
-          (typeof Request !== 'undefined' && input instanceof Request ? input.signal : undefined);
-        // Cancellation may precede this attempt, including during retry backoff.
-        callerSignal?.throwIfAborted();
-        const ctl = new AbortController();
-        const onAbort = () => ctl.abort(callerSignal?.reason);
-        const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), DB_TIMEOUT_MS);
-        callerSignal?.addEventListener('abort', onAbort, { once: true });
-        try {
-          // Clone request bodies per attempt so safe pre-execution retries
-          // never replay a consumed stream.
+function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
+  return createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    global: {
+      /**
+       * Two layers here, both load-bearing:
+       * 1. Per-attempt hard deadline (2026-08-15 freeze fix above) - a hung
+       *    socket becomes a rejection the dealing loop can handle.
+       * 2. Pre-execution-503 retry (2026-08-31 PGRST002 outage) - PostgREST
+       *    returns 503 with code PGRST001/PGRST002/PGRST003 BEFORE the statement
+       *    executes (no connection / schema cache loading / pool acquisition
+       *    timed out). Replaying those is safe for any method, including the
+       *    dealing RPCs - the statement never ran. Any other 503, non-JSON 503,
+       *    or network throw is NOT retried here; the loop's existing catch and
+       *    backoff still own those. Retries are short (300ms/1.2s) so worst case
+       *    stays inside one dealing tick budget.
+       */
+      fetch: async (input: any, init: any = {}) => {
+        const attemptOnce = async () => {
+          const callerSignal: AbortSignal | undefined =
+            init.signal ??
+            (typeof Request !== 'undefined' && input instanceof Request ? input.signal : undefined);
+          // Cancellation may precede this attempt, including during retry backoff.
+          callerSignal?.throwIfAborted();
+          // A Request object's body stream is consumed by fetch - clone per
+          // attempt so a retry never replays a consumed stream. (supabase-js
+          // passes a URL string + init in practice; this is belt-and-braces.)
           const attemptInput =
             typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
-          const response = await fetch(attemptInput, { ...init, signal: ctl.signal });
-          // fetch resolves at HEADERS, not when the body has arrived. These
-          // database responses are consumed in full by the SDK. Drain a clone
-          // under the same deadline, leaving the original response readable and
-          // preserving its status, headers and URL. Discard chunks as we go.
-          const reader = response.clone().body?.getReader();
-          if (reader) {
-            try {
-              while (!(await reader.read()).done) {
-                /* drain to EOF */
+          const ctl = new AbortController();
+          const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), timeoutMs);
+          const onAbort = () => ctl.abort(callerSignal?.reason);
+          callerSignal?.addEventListener('abort', onAbort, { once: true });
+          const headers = new Headers(
+            typeof Request !== 'undefined' && attemptInput instanceof Request
+              ? attemptInput.headers
+              : undefined
+          );
+          // Preserve explicit fetch-init overrides, then stamp the immutable
+          // actor last.  This is repeated for every retry so neither a mutable
+          // Headers object nor a consumed Request can change authority.
+          new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+          const authoritativeHeaders = dataActorHeaders(headers);
+          try {
+            const response = await fetch(attemptInput, {
+              ...init,
+              headers: authoritativeHeaders,
+              signal: ctl.signal,
+            });
+            // fetch resolves when the response headers arrive, while
+            // supabase-js still has to consume the body. Drain a clone under
+            // the same deadline so a response that stalls mid-body cannot
+            // freeze a dealing or ownership loop indefinitely.
+            const reader = response.clone().body?.getReader();
+            if (reader) {
+              try {
+                while (!(await reader.read()).done) {
+                  /* drain to EOF */
+                }
+              } finally {
+                reader.releaseLock();
               }
-            } finally {
-              reader.releaseLock();
             }
+            ctl.signal.throwIfAborted();
+            return response;
+          } finally {
+            clearTimeout(t);
+            callerSignal?.removeEventListener('abort', onAbort);
           }
-          ctl.signal.throwIfAborted();
-          return response;
-        } finally {
-          clearTimeout(t);
-          callerSignal?.removeEventListener('abort', onAbort);
-        }
-      };
+        };
 
-      const RETRYABLE = new Set(['PGRST001', 'PGRST002', 'PGRST003']);
-      const DELAYS_MS = [300, 1200];
-      let attempt = 0;
-      for (;;) {
-        const resp = await attemptOnce();
-        if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
-        let code: unknown;
-        try {
-          code = ((await resp.clone().json()) as { code?: unknown } | null)?.code;
-        } catch {
-          return resp;
+        const RETRYABLE = new Set(['PGRST001', 'PGRST002', 'PGRST003']);
+        const DELAYS_MS = [300, 1200];
+        let attempt = 0;
+        for (;;) {
+          const resp = await attemptOnce();
+          if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
+          let code: unknown;
+          try {
+            code = ((await resp.clone().json()) as { code?: unknown } | null)?.code;
+          } catch {
+            return resp;
+          }
+          if (typeof code !== 'string' || !RETRYABLE.has(code)) return resp;
+          await new Promise((r) => setTimeout(r, DELAYS_MS[attempt] + Math.random() * 200));
+          attempt++;
         }
-        if (typeof code !== 'string' || !RETRYABLE.has(code)) return resp;
-        await new Promise((r) => setTimeout(r, DELAYS_MS[attempt] + Math.random() * 200));
-        attempt++;
-      }
+      },
     },
-  },
-});
+  });
+}
+
+export const supabase: SupabaseClient = createBoundedServiceClient(DB_TIMEOUT_MS);
+
+/** Only the serialized maintenance save/clear RPCs use this longer deadline. */
+export const maintenanceSupabase: SupabaseClient =
+  createBoundedServiceClient(MAINTENANCE_DB_TIMEOUT_MS);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REALTIME BROADCASTING — Push hand state to all connected clients

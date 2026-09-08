@@ -1,5 +1,7 @@
 # DIAMOND RULINGS - the twenty decisions, decided
 
+> Current Diamond Arena authority: [Poker Arena Build Programme](./POKER-ARENA-DIAMOND-BUILD-PROGRAMME.md), updated by Dan on September 8, 2026. Earlier audit snapshots and decision lists below are historical where they conflict: transfers are allowed, membership is automatic, custody is diamond-only, all legacy Arena runtime and standalone routes must be removed. Preserve the approved original Diamond card artwork inside Poker Arena and remove the separate World Hub card. Existing shared wallet services and financial evidence are retained. This specification does not claim those runtime changes are already implemented.
+
 **Dan, 2026-09-07, verbatim: "I'M NOT WORRIED ABOUT ANY RECONCILING OF CHIPS OR DIAMONDS... YOU CAN DECIDE WHAT'S GOING TO HAPPEN WITH the twenty decisions in roadmap section 3 ... I TRUST YOUR CHOICES."**
 
 These rulings are BINDING on every agent until Dan changes one. Each names the roadmap item it settles, the ruling, the reasoning in one paragraph, and where it is (or will be) built. Numbers follow `docs/DIAMOND-ACCOUNTING-ROADMAP.md` section 3. Written by Claude (Cowork) 2026-09-07 after the verification pass (`docs/audits/2026-09-02-diamond-economy/review1..3`).

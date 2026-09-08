@@ -5,8 +5,8 @@
  *
  * TournamentStartingTicker filtered the player's own entries with
  * `.in('status', ['REGISTERED'])`. tournament_players.status is written in
- * LOWER case by TournamentService ('registered' on entry, flipped to 'playing'
- * when the tournament starts), so that predicate matched zero rows and the
+ * LOWER case by the authoritative registration RPC ('registered' on entry,
+ * flipped to 'playing' when the tournament starts), so that predicate matched zero rows and the
  * badge could never render for anybody.
  *
  * Production, checked before the change rather than after:
@@ -51,10 +51,17 @@ describe('TournamentStartingTicker registration predicate', () => {
     expect(src).toMatch(/\.in\('status',\s*\['registered',\s*'playing'\]\)/);
   });
 
-  it('agrees with the value TournamentService writes on entry', () => {
-    // If the engine ever moves to a different vocabulary this test fails on
-    // BOTH files at once, which is the point: the two must not drift apart.
+  it('delegates entry to the authoritative RPC instead of writing another vocabulary', () => {
+    // TournamentService no longer owns the roster write. Pin the actual
+    // architecture: the browser calls the one registration RPC and never
+    // inserts a competing status value itself.
     const service = readFileSync(SERVICE, 'utf8');
-    expect(service).toMatch(/'registered'/);
+    const start = service.indexOf('async registerPlayer(');
+    const end = service.indexOf('async unregisterPlayer(', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const registration = service.slice(start, end);
+    expect(registration).toMatch(/\.rpc\(\s*'fn_register_for_tournament'/);
+    expect(registration).not.toMatch(/\.from\(\s*'tournament_players'\s*\)\s*\.insert\(/);
   });
 });

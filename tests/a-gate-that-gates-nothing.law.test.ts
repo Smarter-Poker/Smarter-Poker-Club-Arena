@@ -69,6 +69,11 @@ describe('LAW: the TOS guard actually asks', () => {
     expect(guard).toMatch(/state === 'not_accepted'/);
   });
 
+  it('publishes its decision before the inner profile gate can be queried', () => {
+    expect(guard).toContain('data-tos-gate-status=');
+    expect(guard).toContain("isHydrating || !user?.id ? 'checking' : state");
+  });
+
   it('sends the idempotency key the endpoint refuses to work without', () => {
     /* `checkIdempotency` runs first on every World Hub club-arena POST and
        answers a request with no `X-Idempotency-Key` with a 400 - before auth,

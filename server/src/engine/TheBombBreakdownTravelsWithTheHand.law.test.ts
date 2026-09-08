@@ -173,7 +173,9 @@ describe('the bomb breakdown travels with the hand', () => {
     // 173 cash hands a day their entire per-player attribution). What THIS law
     // pins is untouched and is the second half of the line: `wroteUnits: false`
     // on the recovery path, so the caller's award-unit fallback still runs.
-    expect(hist).toContain('return { id: existing ?? minted, wroteUnits: false };');
+    expect(hist).toContain(
+      'return { id: existing ?? minted, wroteUnits: false, settlementCommitted: true };'
+    );
     expect(hist).toContain('wroteAwardUnits: wroteUnitsAtomically');
     expect(hist).toContain('wroteUnits: true');
   });

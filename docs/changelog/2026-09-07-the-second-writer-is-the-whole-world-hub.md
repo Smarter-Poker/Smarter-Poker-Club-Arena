@@ -92,8 +92,12 @@ words were missing.
 
 `schema-manifest-refresh.yml` was dispatched by hand after #3565 merged so the
 `second-writer` job's App-token checkout of the World Hub and its RPC call ran
-once under CI before the next hourly cron. Its outcome is recorded below the
-line when this branch is pushed.
+once under CI before the next hourly cron. Result: run 34168001995 (22:50
+UTC), `second-writer` job green - App token minted, World Hub checked out,
+`fn_ca_second_writer_check` answered, "Close the alarm" step ran. The two
+hourly runs since (22:58, 01:21) did the same. The 01:21 run is red on the
+`definer-exposure` job, another lane's SECURITY DEFINER function, which raises
+its own issue.
 
 ## For a decision - not done here
 

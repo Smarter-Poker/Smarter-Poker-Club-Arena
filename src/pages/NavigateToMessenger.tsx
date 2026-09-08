@@ -20,6 +20,11 @@ export default function NavigateToMessenger() {
     // Path params take precedence if they exist
     const finalClubId = clubId || searchParams.get('club');
     if (finalClubId) params.set('clubId', finalClubId);
+    /* `params` is a copy of the incoming search, so a `?club=` arriving from
+       Club Arena navigation would ride along beside the `clubId` built from
+       it and hand the Hub the same fact under two names. Drop the Arena-side
+       spelling now that it has been translated. */
+    params.delete('club');
     if (conversationId) params.set('conversation', conversationId);
 
     const uid = searchParams.get('uid') || searchParams.get('compose');

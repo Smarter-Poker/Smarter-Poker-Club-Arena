@@ -13,7 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { parseJwtPayload, readLocalSession } from '../lib/authUtils';
+import { AUTH_STORAGE_KEY, parseJwtPayload, readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -49,12 +49,39 @@ async function waitForEngineAuth<T>(work: (stillWaiting: () => boolean) => Promi
   }
 }
 
+/** Identity survives token expiry, but never a sign-out or a new login. */
+function loginIdentity(token: string | null | undefined): string | null {
+  const claims = token ? parseJwtPayload(token) : null;
+  return typeof claims?.sub === 'string' &&
+    claims.sub &&
+    typeof claims.session_id === 'string' &&
+    claims.session_id
+    ? JSON.stringify([claims.sub, claims.session_id])
+    : null;
+}
+function storedLoginIdentity(): string | null {
+  try {
+    return loginIdentity(
+      JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) ?? 'null')?.access_token
+    );
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get JWT auth headers for server requests.
  * Bible V8 §1.3: All game server endpoints require Supabase JWT auth.
  * The server extracts userId from the token — prevents spoofing.
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
+  const owner = storedLoginIdentity();
+  const assertOwner = (token?: string | null) => {
+    if (!owner || storedLoginIdentity() !== owner || (token && loginIdentity(token) !== owner)) {
+      throw new Error('Engine request login changed');
+    }
+  };
+  assertOwner();
   return waitForEngineAuth<Record<string, string>>(
     async (stillWaiting): Promise<Record<string, string>> => {
       try {
@@ -77,11 +104,15 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
        waiting on, and the module is cached after the first. */
         const { getFreshAccessToken } = await import('../lib/authToken');
         if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+        assertOwner();
         let token = await getFreshAccessToken();
         if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+        assertOwner(token);
         if (!token) {
           const refreshed = await supabase.auth.refreshSession();
           token = refreshed.data.session?.access_token ?? null;
+          if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+          assertOwner(token);
         }
         if (token) {
           return {
@@ -91,7 +122,8 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
         }
       } catch (e) {
         reportError(e, 'GameServerAPI.getAuthHeaders');
-        // Silent — fall through to no-auth headers
+        assertOwner();
+        throw e;
       }
       return { 'Content-Type': 'application/json' };
     }
@@ -108,6 +140,13 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
  * surfaces it as before. Every engine call in this file goes through it.
  */
 async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const suppliedToken = new Headers(init.headers).get('Authorization')?.replace(/^Bearer\s+/i, '');
+  if (
+    suppliedToken &&
+    (!loginIdentity(suppliedToken) || loginIdentity(suppliedToken) !== storedLoginIdentity())
+  ) {
+    throw new Error('Engine request login changed');
+  }
   const resp = await fetch(url, init);
   if (resp.status !== 401) return resp;
   // A refusal belongs to the login that sent it. The SDK's current session

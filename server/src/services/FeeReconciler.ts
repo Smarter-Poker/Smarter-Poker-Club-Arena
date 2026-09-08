@@ -313,8 +313,12 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
         attempt: async () => {
           const res = await insertOnce();
           if (res.done) return { done: true };
-          // A non-transient rejection will not become transient by waiting.
-          if (!TRANSIENT_DB_ERROR.test(res.error)) return { done: true };
+          // A permanent rejection ends retrying only after the original fee
+          // is checked and any unconfirmed banking reaches the existing alarm.
+          if (!TRANSIENT_DB_ERROR.test(res.error)) {
+            await alarmUnqueueableFee(kind, fee, res.error);
+            return { done: true };
+          }
           return { done: false, error: res.error };
         },
         onGiveUp: async (finalError, elapsedMs, attempts) => {
@@ -675,13 +679,27 @@ export async function reconcilePendingFees(): Promise<{
           !p.clubId ||
           !p.loserUserId ||
           !p.winnerUserId ||
+          p.tableId !== row.table_id ||
+          p.clubId !== row.club_id ||
+          !Number.isSafeInteger(row.hand_number) ||
+          row.hand_number <= 0 ||
+          (p.handNumber != null && p.handNumber !== row.hand_number) ||
+          typeof p.loserUserId !== 'string' ||
+          typeof p.winnerUserId !== 'string' ||
+          p.loserUserId === p.winnerUserId ||
           !Array.isArray(p.dealtInPlayerIds) ||
+          p.dealtInPlayerIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
           typeof p.payoutTotalPercent !== 'number' ||
+          !Number.isFinite(p.payoutTotalPercent) ||
+          p.payoutTotalPercent < 0 ||
+          (p.kind !== 'mini' && p.payoutTotalPercent === 0) ||
+          p.payoutTotalPercent > 100 ||
           (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
           (p.kind === 'mini' && !p.tierId)
         ) {
           ok = false;
-          failureMessage = 'bbj_payout row is missing its parameters';
+          failureMessage =
+            'bbj_payout row is missing its parameters or has an invalid operation identity';
         } else {
           const { data: seats } = await supabase
             .from('table_seats')

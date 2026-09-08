@@ -1267,5 +1267,32 @@
     "width": 640,
     "height": 640,
     "sha256": "7c1b71198a5732086134f719fa347af6f0d06dce91bdd64de6d2cbe4fa16fc61"
+  },
+  {
+    "id": "fish",
+    "bucket": 192,
+    "filename": "fish-192-63554364be8f.webp",
+    "bytes": 12874,
+    "width": 192,
+    "height": 192,
+    "sha256": "63554364be8f5f335d768cb5e236f72f78b318c701867b3727ef04dbdabd7a26"
+  },
+  {
+    "id": "fish",
+    "bucket": 320,
+    "filename": "fish-320-77d5bbaae5f4.webp",
+    "bytes": 28088,
+    "width": 320,
+    "height": 320,
+    "sha256": "77d5bbaae5f4b5f54f26ec7d7fbaffcb928e93c464036836dd1aeccdb6117862"
+  },
+  {
+    "id": "fish",
+    "bucket": 640,
+    "filename": "fish-640-7272f3a71529.webp",
+    "bytes": 84054,
+    "width": 640,
+    "height": 640,
+    "sha256": "7272f3a71529b11d670afc2034e38ac24db642f6ac92581bbe2bfaa7a425f9df"
   }
 ]

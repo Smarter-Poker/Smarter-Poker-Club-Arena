@@ -6,6 +6,12 @@
 
 Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.
 
+## 2026-09-08: Ticket Escrow Keeps Its Identity
+
+New ticket funding and release now share the ticket escrow ID and restore ledger context.
+67 isolated database cases passed, including rollback and competing release requests.
+See docs/changelog/2026-09-08-ticket-escrow-keeps-its-identity.md.
+
 ## 2026-09-08: Cashouts Await The Complete Settlement Chain
 
 Voluntary and forced leave now follow appended settlement promises before cashout,

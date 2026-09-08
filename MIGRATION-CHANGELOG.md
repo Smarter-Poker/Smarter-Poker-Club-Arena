@@ -17084,3 +17084,7 @@ The audited private rebuy core is registered by migration 20260908133232 with ex
 ## 2026-09-08: Hand settlement retries retain their accepted facts
 
 The shared hand commit caller snapshots its entire request before awaiting and verifies a receipt against the requested hand UUID. Two reproduced failures now pass; 40 hand-history cases and server TypeScript pass. Details: docs/changelog/2026-09-08-hand-settlement-retries-retain-their-facts.md.
+
+## 2026-09-08: Wallet Transfer Receipts And Single History
+
+Transfers require finite amounts and positive matching receipts. Internal transfer history stays in the database transaction; the browser no longer duplicates it. The legacy unkeyed user transfer does not retry automatically. Thirty wallet/store tests and TypeScript pass. Details: docs/changelog/2026-09-08-wallet-transfer-receipts-and-single-history.md.

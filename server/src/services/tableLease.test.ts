@@ -323,7 +323,7 @@ describe('heartbeatTables', () => {
     });
     expect(lease.recentLeaseConflicts().map((c) => c.tableId)).toEqual([TABLE_2]);
     expect(lease.reclaimableLeaseCount()).toBe(1);
-    expect(rpc).toHaveBeenCalledWith('heartbeat_table_leases_v3', {
+    expect(rpc).toHaveBeenCalledWith('heartbeat_table_leases_v4', {
       p_instance_id: lease.INSTANCE_ID,
       p_claims: [
         { table_id: TABLE, lease_generation: GENERATION },
@@ -515,4 +515,67 @@ describe('releaseTables', () => {
       attempts: 2,
     });
   });
+});
+
+describe('table heartbeat lock isolation', () => {
+  it('renews an available generation while a busy one receives no proof', async () => {
+    const lease = await loadLease(true);
+    lease._setTableLeaseMonotonicNowForTests(() => 1000);
+    rpc.mockResolvedValue({
+      data: [
+        { table_id: TABLE, state: 'busy', lease_generation: GENERATION },
+        { table_id: TABLE_2, state: 'kept', lease_generation: GENERATION_2 },
+      ],
+      error: null,
+    });
+    const outcome = await lease.heartbeatTables([
+      { tableId: TABLE, leaseGeneration: GENERATION },
+      { tableId: TABLE_2, leaseGeneration: GENERATION_2 },
+    ]);
+    expect(outcome).toEqual({
+      status: 'answered',
+      proofs: [
+        { tableId: TABLE_2, leaseGeneration: GENERATION_2, proofDeadlineMonotonicMs: 21000 },
+      ],
+      lostTableIds: [],
+    });
+    expect(rpc.mock.calls[0][0]).toBe('heartbeat_table_leases_v4');
+  });
+
+  it('never renews from repeated busy replies, including after the prior deadline', async () => {
+    const lease = await loadLease(true);
+    let now = 0;
+    lease._setTableLeaseMonotonicNowForTests(() => now);
+    rpc.mockResolvedValue({
+      data: [{ table_id: TABLE, state: 'busy', lease_generation: GENERATION }],
+      error: null,
+    });
+    for (now of [0, 10000, 20000, 30000, 60000]) {
+      await expect(
+        lease.heartbeatTables([{ tableId: TABLE, leaseGeneration: GENERATION }])
+      ).resolves.toEqual({
+        status: 'answered',
+        proofs: [],
+        lostTableIds: [],
+      });
+    }
+  });
+
+  it.each([null, GENERATION_2, 'invalid-generation'])(
+    'fails closed on a busy reply with invalid authority %s',
+    async (returned) => {
+      const lease = await loadLease(true);
+      rpc.mockResolvedValue({
+        data: [{ table_id: TABLE, state: 'busy', lease_generation: returned }],
+        error: null,
+      });
+      await expect(
+        lease.heartbeatTables([{ tableId: TABLE, leaseGeneration: GENERATION }])
+      ).resolves.toEqual({
+        status: 'answered',
+        proofs: [],
+        lostTableIds: [TABLE],
+      });
+    }
+  );
 });

@@ -1272,24 +1272,21 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         />
       )}
 
-      {/* Tournament Break Screen */}
+      {/* Tournament Break Screen. The screen reads the level, the pool, the
+          field, the leaders and the hero's line from the tournament's own rows
+          (final sweep 2026-09-08). It used to be handed `currentLevel={0}`,
+          `topPlayers={[]}`, `prizePool={0}` and this ONE table's seats as
+          "players remaining" - four falsehoods on every break. */}
       {isTournament && (
         <TournamentBreakScreen
           isVisible={tournamentBreak.active}
           breakTimeRemaining={tournamentBreak.timeRemaining}
           tournamentName={tableName}
-          currentLevel={0}
+          tournamentId={tournamentId ?? null}
+          heroUserId={userId ?? null}
           nextLevel={
             tournamentBreak.nextLevel || { level: 1, smallBlind: 0, bigBlind: 0, duration: 0 }
           }
-          playersRemaining={players.filter(Boolean).length}
-          totalPlayers={maxPlayers}
-          averageStack={
-            players.filter(Boolean).reduce((s, p) => s + (p?.stack || 0), 0) /
-            Math.max(players.filter(Boolean).length, 1)
-          }
-          topPlayers={[]}
-          prizePool={0}
         />
       )}
 

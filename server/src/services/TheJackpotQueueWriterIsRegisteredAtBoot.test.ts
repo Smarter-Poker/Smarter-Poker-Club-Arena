@@ -42,7 +42,7 @@ vi.mock('./financialAlerts.js', () => ({
 
 // Importing FeeReconciler is what the engine's boot does. Its module body runs
 // setBBJPayoutQueueWriter. Nothing here calls that function by hand.
-import './FeeReconciler.js';
+import { queueUnpaidBBJPayout } from './FeeReconciler.js';
 import { processBBJPayout } from './supabase/bbj.js';
 
 const POOL = 'f9806a7f-e7a2-47d2-a676-36336e3a5337';
@@ -77,6 +77,7 @@ beforeEach(() => {
   noteRefreshes = [];
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return chain({ data: { union_id: 'union-1' }, error: null });
+    if (name === 'bbj_contributions') return chain({ data: { pool_id: POOL }, error: null });
     if (name === 'bbj_pools')
       return chain({ data: { id: POOL, main_balance: 100_000, backup_balance: 0 }, error: null });
     if (name === 'hand_history') return chain({ data: { id: 'hand-1' }, error: null });
@@ -165,5 +166,39 @@ describe('the engine boot path reaches that registration', () => {
     expect(src).toMatch(
       /^setBBJPayoutQueue\(\{ claim: queueUnpaidBBJPayout, settle: settleBBJPayoutClaim \}\);$/m
     );
+  });
+});
+
+describe('the real writer confirms an existing open claim', () => {
+  it.each([
+    { count: 1, error: null, confirmed: true },
+    { count: 0, error: null, confirmed: false },
+    { count: null, error: null, confirmed: false },
+    { count: 2, error: null, confirmed: false },
+    { count: 1, error: { message: 'write rejected' }, confirmed: false },
+  ])('requires a successful single-row acknowledgement %j', async (receipt) => {
+    const original = from.getMockImplementation()!;
+    from.mockImplementation((name: string) =>
+      name === 'pending_fee_distributions'
+        ? {
+            insert: async () => ({ error: { code: '23505', message: 'duplicate key value' } }),
+            update: (_patch: unknown, options: { count?: string }) => {
+              const q = {
+                eq: () => q,
+                is: async () => ({
+                  error: receipt.error,
+                  count: options?.count === 'exact' ? receipt.count : null,
+                }),
+              };
+              return q;
+            },
+          }
+        : original(name)
+    );
+    expect(await queueUnpaidBBJPayout(PARAMS, 'retry')).toBe(receipt.confirmed);
+  });
+  it('confirms a newly inserted claim', async () => {
+    expect(await queueUnpaidBBJPayout(PARAMS, 'detected')).toBe(true);
+    expect(queued).toHaveLength(1);
   });
 });

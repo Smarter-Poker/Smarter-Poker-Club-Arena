@@ -231,26 +231,48 @@ describe('HorseLogic V12 - end to end', () => {
     } as never;
 
     const RUNS = 50;
-    const meanMs = (v12: boolean): number => {
+
+    /* INTERLEAVED PER DECISION, NOT PER BATCH (2026-09-08).
+       This used to time all of `on`, then all of `off`, twice each, and take
+       the better batch per side. That still measures the runner whenever a
+       stall covers BOTH `on` batches and neither `off` batch - which is what
+       happened on 2026-09-08, where the ratio read 17.72 against 4.02 (4.4x,
+       over the 3x rule) on a box with 33 of 33 runners busy and 30 jobs
+       queued. Nothing in the conditioning path had changed.
+
+       Now the two sides alternate inside ONE loop, so any stall lands in
+       whichever side's turn it struck and, over 50 alternations, hits both
+       roughly equally. A ratio measured this way cannot be inflated by load
+       without inflating both halves; only a real regression separates them.
+       performance.now() replaces Date.now() because a per-decision sample
+       needs sub-millisecond resolution. */
+    const measure = (): { on: number; off: number } => {
       HorseMind.reset();
       // Warm-up: the first decisions pay for JIT and lazy table construction,
       // and charging those to whichever side ran first is its own flake.
-      for (let i = 0; i < 10; i++)
-        HorseLogic.decide(hero, gs, 'balanced', {}, v12 ? {} : { v12: false });
-      const t0 = Date.now();
-      for (let i = 0; i < RUNS; i++)
-        HorseLogic.decide(hero, gs, 'balanced', {}, v12 ? {} : { v12: false });
-      return (Date.now() - t0) / RUNS;
+      for (let i = 0; i < 10; i++) {
+        HorseLogic.decide(hero, gs, 'balanced', {}, {});
+        HorseLogic.decide(hero, gs, 'balanced', {}, { v12: false });
+      }
+      let onTotal = 0;
+      let offTotal = 0;
+      for (let i = 0; i < RUNS; i++) {
+        const a = performance.now();
+        HorseLogic.decide(hero, gs, 'balanced', {}, {});
+        const b = performance.now();
+        HorseLogic.decide(hero, gs, 'balanced', {}, { v12: false });
+        const c = performance.now();
+        onTotal += b - a;
+        offTotal += c - b;
+      }
+      return { on: onTotal / RUNS, off: offTotal / RUNS };
     };
 
-    // Interleaved: run each side twice and take the better of the two, so a
-    // single scheduling stall lands on neither side systematically.
-    const onA = meanMs(true);
-    const offA = meanMs(false);
-    const onB = meanMs(true);
-    const offB = meanMs(false);
-    const on = Math.min(onA, onB);
-    const off = Math.min(offA, offB);
+    // Two passes, better of each side, for the same reason as before.
+    const p1 = measure();
+    const p2 = measure();
+    const on = Math.min(p1.on, p2.on);
+    const off = Math.min(p1.off, p2.off);
 
     // THE RULE: conditioning may cost, but not multiply. The floor of 2 ms
     // keeps the ratio meaningful when both sides are sub-millisecond, where

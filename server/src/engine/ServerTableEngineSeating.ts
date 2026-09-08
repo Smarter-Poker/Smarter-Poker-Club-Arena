@@ -315,7 +315,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         const applied = Number(row.applied ?? 0);
         const refunded = Number(row.refunded ?? 0);
         if (typeof row.user_id === 'string') {
-          this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded);
+          this.tellPlayerAddOnAdjusted(
+            row.user_id,
+            row.kind ?? 'addon',
+            applied,
+            refunded,
+            typeof row.id === 'string' ? row.id : null
+          );
         }
         if (!(applied > 0) || !Number.isFinite(applied) || typeof row.user_id !== 'string') {
           continue;
@@ -401,7 +407,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       const refunded = Number(result?.refunded ?? 0);
       const wasResolvedByUs = result?.was_resolved !== false;
       if (wasResolvedByUs) {
-        this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded);
+        this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded, row.id);
       }
 
       // Mirror the DB's decision into the live in-memory stack. The RPC has
@@ -477,22 +483,137 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     userId: string,
     kind: string,
     applied: number,
-    refunded: number
+    refunded: number,
+    pendingId: string | null = null
   ): void {
-    // The hub type carries sendToUser; a test double that only stubs
-    // emitEvent must not turn a refund notice into a thrown settlement.
     if (!this.hub || typeof this.hub.sendToUser !== 'function' || !userId) return;
     if (!(refunded > 0) || !Number.isFinite(refunded)) return;
     const safeApplied = Number.isFinite(applied) && applied > 0 ? applied : 0;
-    this.hub.sendToUser(this.tableId, userId, {
+    const frame = {
       kind: 'add_on_adjusted',
       addon_kind: kind,
+      // The ledger row id: the client de-duplicates on it, so a RESYNC
+      // re-send (below) or a replayed settlement can never apply the same
+      // correction twice.
+      pending_id: pendingId,
       requested: Math.round((safeApplied + refunded) * 100) / 100,
       applied: Math.round(safeApplied * 100) / 100,
       refunded: Math.round(refunded * 100) / 100,
       max_buy_in: this.getMaxBuyIn(),
       hand_number: this.handCount,
-    });
+    };
+    /* Retained for the player's next RESYNC. Settlement is a likely moment to
+       be between reconnects, and sendToUser to a player with no open socket
+       delivers to nobody; without this the correction is simply lost and the
+       client's balance stays wrong until an absolute read. One frame per
+       player is enough: it is the newest adjustment that matters. */
+    this.lastAddOnAdjustedByUser.set(userId, frame);
+    this.hub.sendToUser(this.tableId, userId, frame);
+  }
+
+  /** The last add_on_adjusted frame per player, re-sent on RESYNC. */
+  protected lastAddOnAdjustedByUser = new Map<string, Record<string, unknown>>();
+
+  /** RESYNC / reconnect: re-send this player's last add-on adjustment. */
+  public rePushAddOnAdjusted(userId: string): void {
+    const frame = this.lastAddOnAdjustedByUser.get(userId);
+    if (!frame || !this.hub || typeof this.hub.sendToUser !== 'function') return;
+    this.hub.sendToUser(this.tableId, userId, frame);
+  }
+
+  /**
+   * ═══ THE ROWS THE HAND'S ENVELOPE RESOLVED ARE ANNOUNCED (2026-09-08) ══════
+   *
+   * On the verified lease path (every production cash engine) a mid-hand
+   * add-on is FROZEN into the hand's post-commit envelope at commit time and
+   * resolved inside `fn_ca_process_hand_post_commit_obligations`, which
+   * returns only a COUNT. `processPendingAddOns` - the one place that emits
+   * the table-wide `add_on_applied` bubble (Dan 2026-09-04, "HAS ADDED ON FOR
+   * XX.XX") and the private `add_on_adjusted` frame - runs on that path only
+   * for UNBOUND rows before the next deal. So for the very case those two
+   * exist for, the mid-hand add-on that lands with the pot, neither fired.
+   *
+   * This reads back what the envelope resolved and says it: the bubble for
+   * every row that landed chips, the private frame for every row that was
+   * reduced. Then the in-memory cap cache is rebuilt from the rows still
+   * unresolved, because the landed rows are now IN `player.stack` (settlement
+   * refreshed it from the seat) and counting them a second time from the map
+   * refused legitimate between-hands top-ups as "already at the maximum".
+   *
+   * Best effort and presentation only: the money moved in the RPC. A failed
+   * read here is reported, never thrown - a bubble is not worth a restart.
+   */
+  protected async announceEnvelopeResolvedAddOns(
+    handId: string,
+    players: SeatedPlayer[]
+  ): Promise<void> {
+    try {
+      const { data: commit, error: commitErr } = await supabase
+        .from('hand_atomic_commits')
+        .select('ids:post_commit_payload->pending_addons->ids')
+        .eq('hand_id', handId)
+        .maybeSingle();
+      if (commitErr) throw commitErr;
+      const rawIds = (commit as { ids?: unknown } | null)?.ids;
+      const ids = Array.isArray(rawIds)
+        ? (rawIds.filter((v): v is string => typeof v === 'string') as string[])
+        : [];
+      if (ids.length > 0) {
+        const { data: rows, error: rowsErr } = await supabase
+          .from('table_pending_addons')
+          .select('id, user_id, kind, amount, applied_to_stack, refunded, resolved_at')
+          .in('id', ids);
+        if (rowsErr) throw rowsErr;
+        for (const row of (rows ?? []) as Array<{
+          id: string;
+          user_id: string;
+          kind?: string | null;
+          amount: number | string;
+          applied_to_stack: number | string | null;
+          refunded: number | string | null;
+          resolved_at: string | null;
+        }>) {
+          if (!row.resolved_at) continue;
+          const applied = Number(row.applied_to_stack ?? 0);
+          const refunded = Number(row.refunded ?? 0);
+          const kind = row.kind ?? 'addon';
+          const player = players.find((p) => p.user_id === row.user_id);
+          if (applied > 0 && Number.isFinite(applied)) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'add_on_applied',
+              table_id: this.tableId,
+              seat: player?.seat_number ?? null,
+              user_id: row.user_id,
+              amount: applied,
+              stack: player?.stack ?? null,
+              kind,
+              timestamp: Date.now(),
+            });
+          }
+          this.tellPlayerAddOnAdjusted(row.user_id, kind, applied, refunded, row.id);
+        }
+      }
+      // Rebuild the cap cache from what is STILL owed: the frozen rows landed.
+      if (ids.length > 0 || this.pendingAddOns.size > 0) {
+        const { data: open, error: openErr } = await supabase
+          .from('table_pending_addons')
+          .select('user_id, amount')
+          .eq('table_id', this.tableId)
+          .is('resolved_at', null);
+        if (openErr) throw openErr;
+        this.pendingAddOns.clear();
+        for (const row of (open ?? []) as Array<{ user_id: string; amount: number | string }>) {
+          const amt = Number(row.amount);
+          if (!(amt > 0)) continue;
+          this.pendingAddOns.set(row.user_id, (this.pendingAddOns.get(row.user_id) || 0) + amt);
+        }
+        if (this.pendingAddOns.size > 0) this.requestPendingAddOnSweep();
+      }
+    } catch (err) {
+      reportError(err, `ServerTableEngine.${this.tableId}.envelope_addon_announce_failed`, {
+        handId,
+      });
+    }
   }
 
   /**

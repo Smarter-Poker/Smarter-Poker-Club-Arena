@@ -202,11 +202,28 @@ describe('THE BAR DOES NOT BLINK BETWEEN ACTORS (Dan 2026-09-07)', () => {
     expect(PAGE).toMatch(
       /isActive=\{\s*\n\s*seatNumber === tableState\.currentPlayerSeat &&[\s\S]{0,700}!\(displayPlayer\?\.isHero && suppressPanelForPreAction\)/
     );
-    // the bell and the buzz defer while a pre-action is armed
+    // the bell and the buzz defer while a pre-action is armed - through STATE,
+    // because the snapshot lands before the discrete turn_change and a ref
+    // write would not re-run the effect (2026-09-08 sweep)
     expect(PAGE).toMatch(
-      /if \(preActionArmedRef\.current !== null\) \{\s*\n\s*deferredTurnAlertRef\.current = true;/
+      /if \(preActionArmedRef\.current !== null\) \{\s*\n\s*setTurnAlertDeferred\(true\);/
     );
-    expect(PAGE).toMatch(/if \(heroPromptedToAct && deferredTurnAlertRef\.current\) \{/);
+    expect(PAGE).toMatch(/if \(heroPromptedToAct && turnAlertDeferred\) \{/);
+    expect(PAGE).not.toMatch(/deferredTurnAlertRef/);
+    // the multi-table surfaces (tab badge, soft ping, dock countdown) read it too
+    const reportAt = PAGE.indexOf('isMyTurn: isHeroTurn,');
+    expect(reportAt).toBeGreaterThan(-1);
+    const isHeroTurnDecl = PAGE.lastIndexOf('const isHeroTurn =', reportAt);
+    expect(PAGE.slice(isHeroTurnDecl, reportAt)).toContain('heroPromptedToAct');
+    // and the gate is declared ABOVE that effect, or it would be a TDZ read
+    expect(PAGE.indexOf('const heroPromptedToAct =')).toBeLessThan(isHeroTurnDecl);
+    // the bottom-bar reserve holds 'waiting' through the beat, never 'none'
+    const stateAt2 = PAGE.indexOf("const heroActionState: 'none' | 'waiting' | 'active'");
+    const waitingArm = PAGE.slice(
+      PAGE.indexOf("return 'active'", stateAt2),
+      PAGE.indexOf("return 'waiting'", stateAt2)
+    );
+    expect(waitingArm).toContain('suppressPanelForPreAction');
   });
 });
 

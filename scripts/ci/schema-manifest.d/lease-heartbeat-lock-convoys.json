@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/lease-heartbeat-lock-convoys",
+  "_comment": "Versioned nonblocking exact-generation heartbeat RPCs. Busy replies grant no authority.",
+  "functions": ["heartbeat_table_leases_v4", "heartbeat_tournament_leases_v4"]
+}

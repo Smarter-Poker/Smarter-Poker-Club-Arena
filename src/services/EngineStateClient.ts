@@ -349,7 +349,8 @@ export class EngineStateClient {
    * reconnect — two live sockets, one orphaned OPEN forever (which also
    * defeated the server's last-socket disconnect detection).
    */
-  private opening = false;
+  private connectionGeneration = 0;
+  private openingGeneration: number | null = null;
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
@@ -420,6 +421,7 @@ export class EngineStateClient {
 
   /** Close the connection permanently. */
   disconnect(): void {
+    this.connectionGeneration++;
     this.intentionalClose = true;
     // Review fix 2026-08-25: no queued frame may fire onSnapshot/onEvent
     // against a page that has moved on (the CA-22 class).
@@ -468,19 +470,21 @@ export class EngineStateClient {
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private async openOnce(): Promise<void> {
-    // Single-flight + live-socket guard (see `opening`). scheduleReconnect's
+    // Single-flight + live-socket guard (see `openingGeneration`). scheduleReconnect's
     // timer, the online handler and connect() can all race into here.
-    if (this.opening) return;
+    const generation = this.connectionGeneration;
+    if (this.openingGeneration === generation) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
-    this.opening = true;
+    this.openingGeneration = generation;
     try {
-      await this.openOnceInner();
+      await this.openOnceInner(generation);
     } finally {
-      this.opening = false;
+      // A disconnected attempt must not release its replacement's guard.
+      if (this.openingGeneration === generation) this.openingGeneration = null;
     }
   }
 
-  private async openOnceInner(): Promise<void> {
+  private async openOnceInner(generation: number): Promise<void> {
     if (!this.tableMissing) {
       this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     }
@@ -494,7 +498,9 @@ export class EngineStateClient {
     try {
       token = await this.opts.getToken();
     } catch {
-      if (!this.intentionalClose) this.scheduleReconnect();
+      if (!this.intentionalClose && generation === this.connectionGeneration) {
+        this.scheduleReconnect();
+      }
       return;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight
@@ -502,7 +508,7 @@ export class EngineStateClient {
     // creating the socket — opening one now would spawn a zombie WS the owning
     // hook's cleanup can never reach (clientRef already points at a new client),
     // leaking a server table-slot and flip-flopping cross-table snapshots.
-    if (this.intentionalClose) return;
+    if (this.intentionalClose || generation !== this.connectionGeneration) return;
     if (!token) {
       // No token available. Retry on backoff — the auth layer may be warming up.
       this.scheduleReconnect();
@@ -611,7 +617,7 @@ export class EngineStateClient {
       // Stale-socket guard: only the CURRENT socket's close drives recovery.
       // Without this, a superseded socket's late close could schedule a
       // second reconnect against a live connection.
-      if (this.ws !== null && this.ws !== ws) return;
+      if (this.ws !== ws) return;
       this.clearHandshakeTimer();
       // Clean intentional close
       if (this.intentionalClose) return;
@@ -1103,10 +1109,14 @@ export class EngineStateClient {
    * a player whose session is fine and whose link is not.
    */
   private checkSessionThenReconnect(source: string): void {
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
-        if (this.intentionalClose) return;
+        // A recovery that already replaced this socket owns its own status.
+        if (this.intentionalClose || generation !== this.connectionGeneration || socket !== this.ws)
+          return;
         if (verdict === 'revoked') {
           this.setStatus('auth_failed');
           return;
@@ -1561,6 +1571,7 @@ export class EngineChannelClient {
 
   /** Close the channel connection permanently. */
   disconnect(): void {
+    this.connectionGeneration++;
     this.intentionalClose = true;
     this.clearHandshakeTimer();
     this.stopWatchdog();
@@ -1684,23 +1695,26 @@ export class EngineChannelClient {
 
   // ─── Internal ─────────────────────────────────────────────────────────────
 
-  private opening = false;
+  private connectionGeneration = 0;
+  private openingGeneration: number | null = null;
 
   private async openOnce(): Promise<void> {
     // Single-flight + live-socket guard — same race as EngineStateClient:
     // openOnce awaits getToken before assigning this.ws, so overlapping
     // invocations would create a second socket and orphan one.
-    if (this.opening) return;
+    const generation = this.connectionGeneration;
+    if (this.openingGeneration === generation) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
-    this.opening = true;
+    this.openingGeneration = generation;
     try {
-      await this.openOnceInner();
+      await this.openOnceInner(generation);
     } finally {
-      this.opening = false;
+      // A disconnected attempt must not release its replacement's guard.
+      if (this.openingGeneration === generation) this.openingGeneration = null;
     }
   }
 
-  private async openOnceInner(): Promise<void> {
+  private async openOnceInner(generation: number): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     // 2026-08-22: a getToken rejection must be a retry, not the permanent end
     // of the reconnect ladder (same fix as EngineStateClient.openOnce).
@@ -1708,12 +1722,14 @@ export class EngineChannelClient {
     try {
       token = await this.opts.getToken();
     } catch {
-      if (!this.intentionalClose) this.scheduleReconnect();
+      if (!this.intentionalClose && generation === this.connectionGeneration) {
+        this.scheduleReconnect();
+      }
       return;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight. Abort
     // before creating the socket to avoid leaking a zombie channel connection.
-    if (this.intentionalClose) return;
+    if (this.intentionalClose || generation !== this.connectionGeneration) return;
     if (!token) {
       this.scheduleReconnect();
       return;
@@ -1945,10 +1961,14 @@ export class EngineChannelClient {
 
   /** 2026-09-04: see EngineStateClient.checkSessionThenReconnect. */
   private checkSessionThenReconnect(source: string): void {
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
-        if (this.intentionalClose) return;
+        // A recovery that already replaced this socket owns its own status.
+        if (this.intentionalClose || generation !== this.connectionGeneration || socket !== this.ws)
+          return;
         if (verdict === 'revoked') {
           this.setStatus('auth_failed');
           return;

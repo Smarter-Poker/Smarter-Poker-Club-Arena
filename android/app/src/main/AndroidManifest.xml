@@ -15,11 +15,30 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
             android:exported="true">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep links (2026-09-07). clubarena://... needs nothing else.
+                 The https app link is verified against assetlinks.json on
+                 smarter.poker, which needs the release signing certificate's
+                 SHA-256 - phase 6. Until it is served, the https filter still
+                 offers the app as a choice. Handled by src/lib/native/deepLinks.ts. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="clubarena" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="smarter.poker" android:pathPrefix="/hub/club-arena" />
             </intent-filter>
 
         </activity>

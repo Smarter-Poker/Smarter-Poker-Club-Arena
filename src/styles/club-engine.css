@@ -1501,3 +1501,34 @@ input:checked + .toggle-slider.small::after {
     filter: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE APP (2026-09-08). Rules that apply ONLY inside the Capacitor shell,
+   keyed on html.ca-native, which index.html sets before any stylesheet
+   applies. The web is untouched: a browser tab keeps its pull-to-refresh,
+   its rubber band and its long-press menus, because on the web those are
+   the platform behaving normally. In an app they are the loudest "this is a
+   website" tell (audit tier 2).
+   ═══════════════════════════════════════════════════════════════════════════ */
+html.ca-native,
+html.ca-native body {
+  /* No document rubber-band on iOS, no pull-to-refresh glow on Android. */
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  /* No iOS long-press "Copy / Look Up" callout on the chrome of the app. */
+  -webkit-touch-callout: none;
+}
+/* Inputs and chat keep selection and the callout: a player pastes into them. */
+html.ca-native input,
+html.ca-native textarea,
+html.ca-native [contenteditable='true'] {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* The felt is a game surface, not a document. */
+html.ca-native .table-page,
+html.ca-native .table-scaler {
+  -webkit-user-select: none;
+  user-select: none;
+}

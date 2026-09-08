@@ -49,6 +49,7 @@ vi.mock('../services/supabase.js', () => ({
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 const { ServerTableEngineSettlement } = await import('./ServerTableEngineSettlement.js');
+const { reportError } = await import('../services/errorReporter.js');
 
 const HERO = 'hero-user-id';
 const VILLAIN = 'villain-user-id';
@@ -97,6 +98,7 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(reportError).mockClear();
   rpc.mockReset();
   revealInsert.mockReset();
   revealInsert.mockResolvedValue({ error: null });
@@ -319,4 +321,53 @@ describe('an offer goes stale', () => {
       Date.now() - 1000;
     expect((await reveal()).success).toBe(true);
   });
+});
+
+describe('metadata latency cannot hold paid cards', () => {
+  it('returns the paid reveal while metadata is still pending, without a second charge', async () => {
+    let finishMetadata!: (value: { error: null }) => void;
+    revealInsert.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishMetadata = resolve;
+        })
+    );
+    const { reveal } = makeEngine();
+    let result: Reveal | undefined;
+    const pending = reveal().then((value) => {
+      result = value;
+    });
+    try {
+      // Flush promise continuations without completing the metadata request.
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      expect(result?.success).toBe(true);
+      expect(result?.cards).toHaveLength(5);
+      expect((await reveal()).source).toBe('already_revealed');
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(revealInsert).toHaveBeenCalledTimes(1);
+    } finally {
+      finishMetadata({ error: null });
+      await pending;
+    }
+  });
+
+  it.each(['returned error', 'rejection', 'synchronous throw'])(
+    'reports a metadata %s without failing a paid reveal',
+    async (failure) => {
+      const error = new Error('metadata unavailable');
+      if (failure === 'returned error') revealInsert.mockResolvedValue({ error });
+      else if (failure === 'rejection') revealInsert.mockRejectedValue(error);
+      else
+        revealInsert.mockImplementation(() => {
+          throw error;
+        });
+      const result = await makeEngine().reveal();
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      expect(result.success).toBe(true);
+      expect(reportError).toHaveBeenCalledWith(
+        error,
+        'ServerTableEngine.rabbit_hunt_reveal_log_error'
+      );
+    }
+  );
 });

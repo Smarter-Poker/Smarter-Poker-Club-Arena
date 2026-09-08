@@ -12,8 +12,9 @@ describe('activation telemetry never blocks the first paint', () => {
   });
 
   it('recovers stale tracker chunks before reporting a non-blocking error', () => {
-    expect(main).toContain(
-      ".catch((err) => reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking'))"
+    // 2026-09-07: tolerates Prettier's line break (see the membership pin below).
+    expect(main).toMatch(
+      /\.catch\(\(err\) =>\s*reportDeferredImportFailure\(err, 'main\.FunnelTracker_init_error_non_blocking'\)/
     );
     expect(main).toContain('installVitePreloadErrorRecovery();');
   });
@@ -28,8 +29,11 @@ describe('membership warming starts without entering the critical graph', () => 
   });
 
   it('recovers stale membership chunks before reporting a non-blocking error', () => {
-    expect(main).toContain(
-      ".catch((err) => reportDeferredImportFailure(err, 'main.Membership_warm_start_non_blocking'))"
+    // 2026-09-07: the boot sequence gained one level of nesting for the
+    // native session restore, and Prettier now wraps this call across lines.
+    // Same handler, same argument; the pin tolerates the line break.
+    expect(main).toMatch(
+      /\.catch\(\(err\) =>\s*reportDeferredImportFailure\(err, 'main\.Membership_warm_start_non_blocking'\)/
     );
     expect(main).toContain('installVitePreloadErrorRecovery();');
   });

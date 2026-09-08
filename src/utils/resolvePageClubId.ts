@@ -98,7 +98,9 @@ export async function resolvePageClubId({
 
   // 3 + 4 — last visited, then the first eligible club, both from the shared
   // rule in clubQuickLink rather than a fresh unordered query.
-  const cached = resolveTargetClub(readCachedQuickLinkClubs());
+  // The cache is per account: without the user id it answers [] by design, so
+  // an argument-less call here was a network round trip on every resolution.
+  const cached = resolveTargetClub(readCachedQuickLinkClubs(userId));
   if (cached?.id) return cached.id;
 
   const clubs = await fetchQuickLinkClubs(userId);

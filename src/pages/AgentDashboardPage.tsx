@@ -375,6 +375,16 @@ export default function AgentDashboardPage() {
         ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
         : null;
 
+      /* Named and unresolvable is a bad link. Do not answer it with a
+         different club's commission book; say so. */
+      if (qClub && !targetClub) {
+        if (!cancelled) {
+          setError('That Club Could Not Be Found.');
+          setLoading(false);
+        }
+        return;
+      }
+
       if (!targetClub) {
         const { data: mems } = await retryFetch(
           () =>

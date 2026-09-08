@@ -27,6 +27,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   CLUB_CONTEXT_PARAM,
   CLUB_SCOPED_GLOBAL_ROUTES,
@@ -34,6 +36,7 @@ import {
   isClubScopedGlobalRoute,
   matchesClubParam,
   readClubContextParam,
+  switchClubTarget,
   withClubContext,
 } from '../src/utils/clubScopedPath';
 import { getClubArenaNavigation } from '../src/config/clubArenaNavigation';
@@ -136,30 +139,65 @@ describe('LAW: the hamburger is linked to the club you are inside', () => {
 });
 
 describe('LAW: switching club keeps the page you are on', () => {
-  /* Mirrors HamburgerMenu.handleSwitchClub. The drawer's club switcher used
-     to be reachable only from a `/clubs/…` path, where "go to that club's
-     lobby" was the whole of switching. Now that the drawer holds its club
-     across `?club=`-scoped pages, answering "show me this in the other club"
-     by throwing the page away is the same fault as dropping the club, just
+  /* `switchClubTarget` IS what HamburgerMenu.handleSwitchClub calls - this
+     test used to carry its own copy of the logic and so could not go red
+     when the menu changed. The drawer's club switcher used to be reachable
+     only from a `/clubs/...` path, where "go to that club's lobby" was the
+     whole of switching. Now that the drawer holds its club across
+     `?club=`-scoped pages, answering "show me this in the other club" by
+     throwing the page away is the same fault as dropping the club, just
      pointed the other way. */
-  const switchTarget = (pathname: string, search: string, nextClub: string) => {
-    if (isClubScopedGlobalRoute(pathname)) {
-      const params = new URLSearchParams(search);
-      params.set(CLUB_CONTEXT_PARAM, nextClub);
-      return `${pathname}?${params.toString()}`;
-    }
-    return `/clubs/${nextClub}`;
-  };
+  const NEXT = { id: '22222222-2222-4222-8222-222222222222', slug: CLUB };
 
-  it('stays on a club-scoped page and swaps the club', () => {
-    expect(switchTarget('/leaderboard', '?club=club-jaqk&period=week', CLUB)).toBe(
-      `/leaderboard?club=${CLUB}&period=week`
+  it('stays on a club-scoped page, swaps the club, keeps every other param and the hash', () => {
+    expect(
+      switchClubTarget(
+        { pathname: '/leaderboard', search: '?club=club-jaqk&period=week', hash: '#top' },
+        NEXT
+      )
+    ).toBe(`/leaderboard?club=${CLUB}&period=week#top`);
+  });
+
+  it('writes the slug - the form SlugEnforcer shows - and the id only when there is no slug', () => {
+    expect(switchClubTarget({ pathname: '/wallet', search: '' }, NEXT)).toBe(
+      `/wallet?club=${CLUB}`
+    );
+    expect(switchClubTarget({ pathname: '/wallet', search: '' }, { id: NEXT.id })).toBe(
+      `/wallet?club=${NEXT.id}`
+    );
+  });
+
+  it('opens the same sub-page of the new club from a club path made of plain words', () => {
+    expect(switchClubTarget({ pathname: '/clubs/club-jaqk/members', search: '' }, NEXT)).toBe(
+      `/clubs/${CLUB}/members`
+    );
+    expect(
+      switchClubTarget({ pathname: '/clubs/club-jaqk/operations/rake', search: '?tab=x' }, NEXT)
+    ).toBe(`/clubs/${CLUB}/operations/rake?tab=x`);
+  });
+
+  it('goes to the lobby when the path carries an id that belongs to the old club', () => {
+    expect(
+      switchClubTarget(
+        { pathname: '/clubs/club-jaqk/tables/9f1c2a4e-1111-4111-8111-111111111111', search: '' },
+        NEXT
+      )
+    ).toBe(`/clubs/${CLUB}`);
+    expect(switchClubTarget({ pathname: '/clubs/club-jaqk', search: '' }, NEXT)).toBe(
+      `/clubs/${CLUB}`
     );
   });
 
   it('still goes to the lobby from anywhere that is not club-scoped', () => {
-    expect(switchTarget('/profile', '', CLUB)).toBe(`/clubs/${CLUB}`);
-    expect(switchTarget('/clubs/club-jaqk/members', '', CLUB)).toBe(`/clubs/${CLUB}`);
+    expect(switchClubTarget({ pathname: '/profile', search: '' }, NEXT)).toBe(`/clubs/${CLUB}`);
+  });
+
+  it('is what the hamburger actually calls', () => {
+    const menu = readFileSync(
+      join(__dirname, '../src/components/navigation/HamburgerMenu.tsx'),
+      'utf8'
+    );
+    expect(menu).toContain('handleNavigate(switchClubTarget(location, ');
   });
 });
 
@@ -197,4 +235,26 @@ describe('LAW: a page resolves the club the URL actually names', () => {
     expect(readClubContextParam('?period=week')).toBeNull();
     expect(readClubContextParam('')).toBeNull();
   });
+});
+
+describe('LAW: the pages the menu stamps read what it stamped', () => {
+  /* A stamp nobody reads is decoration. Each of these opened on "whatever
+     club the page last remembered" - the store, a bare useParams, the last
+     club visited - while the URL named a different one. */
+  const reads = (rel: string) => readFileSync(join(__dirname, '..', rel), 'utf8');
+  for (const [page, needle] of [
+    ['src/pages/PlayerWalletPage.tsx', 'readClubContextParam(location.search)'],
+    ['src/pages/PromotionsPage.tsx', 'readClubContextParam(location.search)'],
+    ['src/pages/tournament/TournamentLobbyPage.tsx', 'readClubContextParam(searchParams)'],
+    [
+      'src/pages/LeaderboardPage.tsx',
+      'findClubByParam(userClubs, readClubContextParam(location.search))',
+    ],
+    ['src/components/club/ClubBottomNav.tsx', 'readClubContextParam(location.search)'],
+    ['src/components/navigation/GlobalHeader.tsx', "withClubContext('/wallet', routeClubId)"],
+  ] as const) {
+    it(`${page} honours ?club=`, () => {
+      expect(reads(page)).toContain(needle);
+    });
+  }
 });

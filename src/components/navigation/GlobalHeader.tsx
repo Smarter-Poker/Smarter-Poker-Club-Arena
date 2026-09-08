@@ -14,6 +14,8 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { withClubContext } from '../../utils/clubScopedPath';
 import type { InTabLobbyNav } from '../../context/InTabLobbyContext';
 
 import styles from './GlobalHeader.module.css';
@@ -75,6 +77,9 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
   const navigate = useNavigate();
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
+  // The club the page is inside (path or ?club=), so Wallet and Messages open
+  // on it rather than on whichever club the destination last remembered.
+  const { routeClubId } = useClubWorkspace();
   const headerRef = useRef<HTMLElement>(null);
   const inTabHub = inTab;
 
@@ -303,8 +308,8 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
       masterBus.emit('OPEN_HUB_TAB', { path: '/hub/messenger', requestedBy: authUser?.id });
       return;
     }
-    navigate('/messages');
-  }, [authUser?.id, clearUnreadMessages, navigate, inTabHub]);
+    navigate(withClubContext('/messages', routeClubId));
+  }, [authUser?.id, clearUnreadMessages, navigate, inTabHub, routeClubId]);
 
   const handleNotificationsClick = useCallback(async () => {
     if (authUser?.id) await clearUnreadNotifications(authUser.id);
@@ -419,7 +424,7 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
              */}
             <button
               className={`${styles.artButton} ${styles.walletBtn}`}
-              onClick={() => navigate('/wallet')}
+              onClick={() => navigate(withClubContext('/wallet', routeClubId))}
               aria-label="My Wallet"
               title="My Wallet"
             >

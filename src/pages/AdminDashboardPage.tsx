@@ -2591,6 +2591,16 @@ export default function AdminDashboardPage() {
           ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
           : null;
 
+        /* A club that was NAMED and could not be resolved is a bad link, not
+           an invitation to pick a different club. Falling into the discovery
+           below would render another club's operations centre under the URL
+           of the one that was asked for - the substitution the resolver
+           exists to end. */
+        if (qClub && !targetClub) {
+          if (!cancelled) setError('That Club Could Not Be Found.');
+          return;
+        }
+
         if (!targetClub) {
           const { data: mems } = await supabase
             .from('club_members')

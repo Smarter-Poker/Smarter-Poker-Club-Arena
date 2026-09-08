@@ -36,7 +36,7 @@ import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibration
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
-import { CLUB_CONTEXT_PARAM, isClubScopedGlobalRoute } from '../../utils/clubScopedPath';
+import { switchClubTarget } from '../../utils/clubScopedPath';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { capture } from '../../lib/analytics';
 import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
@@ -665,13 +665,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
    */
   const handleSwitchClub = (nextClubUUID: string) => {
     if (!nextClubUUID) return;
-    if (isClubScopedGlobalRoute(location.pathname)) {
-      const params = new URLSearchParams(location.search);
-      params.set(CLUB_CONTEXT_PARAM, nextClubUUID);
-      handleNavigate(`${location.pathname}?${params.toString()}`);
-      return;
-    }
-    handleNavigate(`/clubs/${nextClubUUID}`);
+    const club = clubChoices.find((candidate) => candidate.id === nextClubUUID);
+    handleNavigate(switchClubTarget(location, club ?? { id: nextClubUUID }));
   };
 
   // Table Studio is a modal destination, not content inside the command

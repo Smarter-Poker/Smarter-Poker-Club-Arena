@@ -29,7 +29,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { readClubContextParam } from '../utils/clubScopedPath';
+import { resolvePageClubId } from '../utils/resolvePageClubId';
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { useWalletStore } from '../stores/useWalletStore';
@@ -356,7 +358,30 @@ export default function PlayerWalletPage() {
    * at all there is nothing to dispute against, and the button says so instead
    * of opening. The same context decides where Add Chips and Cash Out go.
    */
-  const currentClubId = useUserStore((s) => s.currentClubId);
+  const lastEnteredClubId = useUserStore((s) => s.currentClubId);
+  /* ...unless the URL names one. The hamburger stamps `?club=` on the Wallet
+     link from inside a club, and a player who opened the wallet from Deep
+     Stack Society expects Add Chips, Cash Out and Raise A Dispute to mean
+     Deep Stack Society - not whichever club the store last remembered. The
+     param is resolved (slug or code -> UUID) and never falls back on its own:
+     an unresolvable club yields null here and the store's answer stands. */
+  const location = useLocation();
+  const [urlClubId, setUrlClubId] = useState<string | null>(null);
+  useEffect(() => {
+    const requested = readClubContextParam(location.search);
+    if (!requested) {
+      setUrlClubId(null);
+      return;
+    }
+    let cancelled = false;
+    void resolvePageClubId({ routeClubId: requested, allowFallback: false }).then((id) => {
+      if (!cancelled) setUrlClubId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search]);
+  const currentClubId = urlClubId ?? lastEnteredClubId;
   const playerNumber = useUserStore((s) => s.user?.player_number ?? null);
   // force: the tab has been hidden and is now back. The freshness window exists
   // to make navigation free, not to serve a number that may be minutes old to

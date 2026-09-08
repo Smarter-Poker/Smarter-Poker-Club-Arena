@@ -61,6 +61,7 @@
  */
 export const CLUB_SCOPED_GLOBAL_ROUTES: readonly string[] = [
   '/achievements',
+  '/admin',
   '/agent-dashboard',
   '/bonuses',
   '/cashier',
@@ -156,13 +157,52 @@ export function readClubContextParam(
 ): string | null {
   if (!search) return null;
   const params = typeof search === 'string' ? new URLSearchParams(search) : search;
-  const raw = params.get(CLUB_CONTEXT_PARAM);
-  if (!raw) return null;
-  try {
-    return decodeURIComponent(raw) || null;
-  } catch {
-    return raw;
+  // `URLSearchParams.get` already percent-decodes; decoding again would turn
+  // a literal `%25` into `%` and a slug carrying one into a different club.
+  return params.get(CLUB_CONTEXT_PARAM) || null;
+}
+
+/**
+ * Where "switch to this club" goes from the page the player is on.
+ *
+ * The hamburger's club selector used to send every switch to the new club's
+ * lobby, which threw away the page. Dan's rule is that the menu is linked to
+ * the club you are inside, and switching clubs is the same rule read the
+ * other way: the page stays, the club changes.
+ *
+ *   - On a club-scoped GLOBAL route (`/leaderboard?club=a`) the `?club=`
+ *     param is rewritten, every other param and the fragment are kept, and
+ *     the SLUG is written when the club has one - the address bar shows what
+ *     `SlugEnforcer` would show, and a shared link matches by slug or id.
+ *   - On a club PATH (`/clubs/a/members`) the same sub-page opens in the new
+ *     club when every remaining segment is a plain word. A segment that is
+ *     an id (a table, a tournament, a hand) belongs to the OLD club, and the
+ *     lobby is the honest destination.
+ *   - Anywhere else, the new club's lobby.
+ *
+ * Pure so the law can call it with the same inputs the menu does.
+ */
+export function switchClubTarget(
+  location: { pathname: string; search?: string; hash?: string },
+  club: { id: string; slug?: string | null }
+): string {
+  const ident = club.slug || club.id;
+  const hash = location.hash || '';
+  if (isClubScopedGlobalRoute(location.pathname)) {
+    const params = new URLSearchParams(location.search || '');
+    params.set(CLUB_CONTEXT_PARAM, ident);
+    return `${location.pathname}?${params.toString()}${hash}`;
   }
+  const clubPath = location.pathname.match(/^\/clubs\/[^/]+\/(.+)$/);
+  if (clubPath) {
+    const rest = clubPath[1].replace(/\/+$/, '');
+    const segments = rest.split('/');
+    const isPlainWord = (segment: string) => /^[a-z][a-z-]*$/i.test(segment);
+    if (segments.length > 0 && segments.every(isPlainWord)) {
+      return `/clubs/${ident}/${rest}${location.search || ''}${hash}`;
+    }
+  }
+  return `/clubs/${ident}`;
 }
 
 /**

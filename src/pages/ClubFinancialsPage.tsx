@@ -35,6 +35,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -442,7 +443,7 @@ export default function ClubFinancialsPage() {
           // Dan 2026-08-23: role decides the rows. Club Bank, and the cashier
           // behind it, are owner / co-owner / admin / super agent only.
           role={userRole || 'player'}
-          onBuyDiamonds={() => navigate('/vip')}
+          onBuyDiamonds={() => navigate(withClubContext('/vip', clubId))}
           onOpenPlayerWallet={() => setShowPlayerWallet(true)}
           onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
           onOpenAgentWallet={() => setActiveCashier('agent_wallet')}

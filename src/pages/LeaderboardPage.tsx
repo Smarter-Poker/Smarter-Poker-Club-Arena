@@ -619,6 +619,14 @@ export default function LeaderboardPage() {
          would have hidden it, which is worse: hidden, not absent. */
       if (requestedClubId && !requestedClub) {
         toast.error('That Club Leaderboard Is Not Available To You. Showing Your Clubs Instead.');
+        /* And take the bad club OUT of the URL. Left there, the hamburger, the
+           section rail and the footer keep stamping it onto every link, and
+           the workspace keeps trying to load a club this viewer is not in,
+           while the page shows a different one - the address bar would be
+           lying about what is on screen. */
+        const params = new URLSearchParams(location.search);
+        params.delete(CLUB_CONTEXT_PARAM);
+        navigate({ search: params.toString() }, { replace: true });
       }
 
       setSelectedClubId((currentClubId) => {
@@ -654,6 +662,20 @@ export default function LeaderboardPage() {
    * button meaning "the page before this one" rather than replaying every
    * club the player skimmed through.
    */
+  /* The URL can change while this page stays mounted: the hamburger's club
+     selector rewrites `?club=` on a scoped page, the section rail's
+     Leaderboards link is clicked while already here, or the back button moves
+     between two clubs. `/leaderboard` has no route key, so nothing remounts,
+     and `loadUserClubs` reads the param only once per account. Follow the
+     param whenever it names a club this viewer is in; an unmatched one was
+     already reported and cleared by `loadUserClubs`. `selectClub` below writes
+     the same club it selects, so this cannot loop. */
+  useEffect(() => {
+    if (userClubs.length === 0) return;
+    const requested = findClubByParam(userClubs, readClubContextParam(location.search));
+    if (requested && requested.id !== selectedClubId) setSelectedClubId(requested.id);
+  }, [location.search, userClubs, selectedClubId]);
+
   const selectClub = (clubId: string) => {
     setSelectedClubId(clubId);
     const club = userClubs.find((candidate) => candidate.id === clubId);

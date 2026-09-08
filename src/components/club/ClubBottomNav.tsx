@@ -14,7 +14,7 @@ import {
   readCachedQuickLinkClubs,
   resolveTargetClub,
 } from '../../utils/clubQuickLink';
-import { withClubContext } from '../../utils/clubScopedPath';
+import { readClubContextParam, withClubContext } from '../../utils/clubScopedPath';
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import { useHideFooterOnScroll } from './useHideFooterOnScroll';
@@ -124,7 +124,16 @@ function usePublishBottomChromeHeight(ref: React.RefObject<HTMLElement | null>, 
 
 export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   const location = useLocation();
-  const routeClubId = useMemo(() => clubIdFromPath(location.pathname), [location.pathname]);
+  /* The club in the URL, whichever of its two legal homes it is in: the path
+     (`/clubs/x/...`) or the `?club=` param a scoped global page carries
+     (`/leaderboard?club=x`). The footer renders on both, and on the second it
+     used to read the path only, fall through to "last club visited", and hand
+     the player Settings / Players / Cashier links for a club other than the
+     one the page and the hamburger were showing. */
+  const routeClubId = useMemo(
+    () => clubIdFromPath(location.pathname) ?? readClubContextParam(location.search),
+    [location.pathname, location.search]
+  );
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
   const { hidden, reveal } = useHideFooterOnScroll(location.pathname);

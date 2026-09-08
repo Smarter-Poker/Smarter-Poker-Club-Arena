@@ -2239,6 +2239,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         },
       });
 
+      if (outcome.status === 'queued') {
+        EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+        this.hub?.emitEvent(this.tableId, {
+          type: 'bbj_payout_pending',
+          kind: 'mini',
+          table_id: this.tableId,
+          hand_number: snap.handNumber,
+          emitted_at: Date.now(),
+          replay_until: Date.now() + 60_000,
+          loser: { userId: mini.loserUserId },
+          winner: { userId: mini.winnerUserId },
+          tablePlayerIds: [...new Set(mini.dealtInPlayerIds || [])].filter(
+            (id) => id !== mini.loserUserId && id !== mini.winnerUserId
+          ),
+        });
+      }
+
       if (outcome.status !== 'paid') {
         console.warn(
           `[ServerTableEngine:${this.tableId}] mini jackpot not paid for hand #${snap.handNumber}: ${outcome.reason}`
@@ -2262,11 +2279,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       };
       bump(mini.loserUserId, outcome.loser);
       bump(mini.winnerUserId, outcome.winner);
-      for (const uid of mini.dealtInPlayerIds || []) {
+      for (const uid of new Set(mini.dealtInPlayerIds || [])) {
         if (uid !== mini.loserUserId && uid !== mini.winnerUserId) bump(uid, outcome.perPlayer);
       }
 
-      const tableOnlyMini = (mini.dealtInPlayerIds || []).filter(
+      const tableOnlyMini = [...new Set(mini.dealtInPlayerIds || [])].filter(
         (id) => id !== mini.loserUserId && id !== mini.winnerUserId
       );
       this.hub?.emitEvent(this.tableId, {
@@ -2376,7 +2393,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
 
           // TABLE SHARE: remaining 25% split equally among dealt-in players (excluding loser/winner)
-          const tableOnlyPlayers = (bbjHit.dealtInPlayerIds || []).filter(
+          const tableOnlyPlayers = [...new Set(bbjHit.dealtInPlayerIds || [])].filter(
             (id) => id !== bbjHit.loserUserId && id !== bbjHit.winnerUserId
           );
           for (const playerId of tableOnlyPlayers) {

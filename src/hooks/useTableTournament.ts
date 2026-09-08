@@ -54,6 +54,12 @@ export interface AddOnPeriodState {
   addOnFee: number;
   addOnChips: number;
   walletBalance: number;
+  /**
+   * Absolute close of the persisted offer. The client recomputes its display
+   * from this deadline so a delayed broadcast or backgrounded tab cannot
+   * silently turn a one-minute or Free Buy window into a fresh 60 seconds.
+   */
+  endsAtMs: number | null;
   timeRemaining: number;
 }
 
@@ -132,7 +138,8 @@ export function useTableTournament(): UseTableTournamentReturn {
     addOnFee: 0,
     addOnChips: 0,
     walletBalance: 0,
-    timeRemaining: 60,
+    endsAtMs: null,
+    timeRemaining: 0,
   });
   const addOnChannelRef = useRef<any>(null);
   const bountyChannelRef = useRef<any>(null);

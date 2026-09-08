@@ -21,6 +21,7 @@
  * unreadable" is still a digest, and a red daily job becomes wallpaper.
  */
 import { execFileSync } from 'node:child_process';
+import { supabaseServerHeaders } from '../../scripts/ci/supabase-auth-headers.mjs';
 
 const REPO = process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena';
 const WH_REPO = process.env.WH_REPO || 'Smarter-Poker/Smarter-Poker-World-Hub';
@@ -54,13 +55,11 @@ const ghIssues = ghWith(TOKEN_ISSUES);
 const sb = async (pathAndQuery, init = {}) => {
   const res = await fetch(`${SB_URL}${pathAndQuery}`, {
     ...init,
-    headers: {
-      apikey: SB_KEY,
-      authorization: `Bearer ${SB_KEY}`,
+    headers: supabaseServerHeaders(SB_KEY, {
       ...(init.body ? { 'content-type': 'application/json' } : {}),
       prefer: 'count=exact',
       ...init.headers,
-    },
+    }),
   });
   return res;
 };

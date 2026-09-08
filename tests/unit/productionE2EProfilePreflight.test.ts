@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { evaluateAcrossDocumentReplacement } from '../e2e/support/evaluateAcrossDocumentReplacement';
 import { ensureClubMembership } from '../e2e/support/ensureClubMembership';
+import { ensureAcceptedTerms } from '../e2e/support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
 
 const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
@@ -59,6 +60,40 @@ function playablePage(
   return { page, gate, decision, selectAvatar, freeAvatar, apply, gallery, enterArena };
 }
 
+function termsPage(statuses: Array<'accepted' | 'not_accepted' | 'unknown'>, responseStatus = 200) {
+  const remainingStatuses = [...statuses];
+  const decision = {
+    waitFor: vi.fn().mockResolvedValue(undefined),
+    getAttribute: vi.fn().mockImplementation(async () => remainingStatuses.shift() ?? null),
+  };
+  const acceptedMarker = { waitFor: vi.fn().mockResolvedValue(undefined) };
+  const heading = { waitFor: vi.fn().mockResolvedValue(undefined) };
+  const agreement = { check: vi.fn().mockResolvedValue(undefined) };
+  const accept = { click: vi.fn().mockResolvedValue(undefined) };
+  const response = {
+    request: () => ({ method: () => 'POST' }),
+    url: () => 'https://smarter.poker/api/club-arena/accept-tos',
+    ok: () => responseStatus >= 200 && responseStatus < 300,
+    status: () => responseStatus,
+  };
+  const page = {
+    locator: vi.fn((selector: string) =>
+      selector === '[data-tos-gate-status="accepted"]' ? acceptedMarker : decision
+    ),
+    getByRole: vi.fn((role: string) => {
+      if (role === 'heading') return heading;
+      if (role === 'checkbox') return agreement;
+      return accept;
+    }),
+    waitForResponse: vi.fn(async (predicate: (candidate: typeof response) => boolean) => {
+      expect(predicate(response)).toBe(true);
+      return response;
+    }),
+    reload: vi.fn().mockResolvedValue(undefined),
+  };
+  return { page, decision, acceptedMarker, heading, agreement, accept };
+}
+
 describe('authenticated production account preflight', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -66,6 +101,62 @@ describe('authenticated production account preflight', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('leaves an account with durably accepted Terms untouched', async () => {
+    const fixture = termsPage(['accepted']);
+
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).resolves.toBe(false);
+    expect(fixture.decision.waitFor).toHaveBeenCalledWith({
+      state: 'attached',
+      timeout: 60_000,
+    });
+    expect(fixture.agreement.check).not.toHaveBeenCalled();
+    expect(fixture.page.reload).not.toHaveBeenCalled();
+  });
+
+  it('accepts Terms through the public endpoint before proving the canonical read persists', async () => {
+    const fixture = termsPage(['not_accepted', 'accepted']);
+
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).resolves.toBe(true);
+    expect(fixture.heading.waitFor).toHaveBeenCalledWith({
+      state: 'visible',
+      timeout: 30_000,
+    });
+    expect(fixture.agreement.check).toHaveBeenCalledOnce();
+    expect(fixture.page.waitForResponse).toHaveBeenCalledOnce();
+    expect(fixture.accept.click).toHaveBeenCalledOnce();
+    expect(fixture.acceptedMarker.waitFor).toHaveBeenCalledWith({
+      state: 'attached',
+      timeout: 30_000,
+    });
+    expect(fixture.page.reload).toHaveBeenCalledWith({
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    expect(fixture.decision.getAttribute).toHaveBeenCalledTimes(2);
+    expect(fixture.acceptedMarker.waitFor.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.page.reload.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('does not call a failed Terms write accepted or persist a client-only decision', async () => {
+    const fixture = termsPage(['not_accepted'], 500);
+
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).rejects.toThrow(
+      'Terms Of Service acceptance failed in production (500).'
+    );
+    expect(fixture.acceptedMarker.waitFor).not.toHaveBeenCalled();
+    expect(fixture.page.reload).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly when the canonical Terms decision is unavailable', async () => {
+    const fixture = termsPage(['unknown']);
+
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).rejects.toThrow(
+      'The production Terms Of Service query did not answer; acceptance is unknown.'
+    );
+    expect(fixture.agreement.check).not.toHaveBeenCalled();
   });
 
   it('leaves an already complete account untouched', async () => {
@@ -113,6 +204,10 @@ describe('authenticated production account preflight', () => {
   it('probes a protected layout route and exposes the server-backed decision', () => {
     const setup = source('tests/e2e/global-setup.ts');
     expect(setup).toContain("new URL('notifications', baseURL)");
+    expect(setup).toContain('ensureAcceptedTerms(page)');
+    expect(setup.indexOf('ensureAcceptedTerms(page)')).toBeLessThan(
+      setup.indexOf('ensurePlayableProfile(page)')
+    );
     expect(setup).toContain("const AUTH_STORAGE_KEY = 'smarter-poker-auth'");
     expect(setup).toContain('client.auth.signInWithPassword({ email, password })');
     expect(setup).toContain('localStorage.setItem(authKey, JSON.stringify(session))');
@@ -124,6 +219,9 @@ describe('authenticated production account preflight', () => {
     );
     expect(source('src/components/layouts/AppLayout.tsx')).toContain(
       'data-profile-gate-status={profileStatus}'
+    );
+    expect(source('src/components/legal/TOSGuard.tsx')).toContain(
+      "data-tos-gate-status={isHydrating || !user?.id ? 'checking' : state}"
     );
   });
 

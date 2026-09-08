@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
@@ -14,12 +15,10 @@ const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
 
 function headers(key, hasBody = false) {
-  return {
-    apikey: key,
-    ...(key.startsWith('sb_secret_') ? {} : { Authorization: `Bearer ${key}` }),
+  return supabaseServerHeaders(key, {
     Accept: 'application/json',
     ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-  };
+  });
 }
 
 function requireEnvironment(environment) {

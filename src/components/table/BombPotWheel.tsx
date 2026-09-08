@@ -175,7 +175,6 @@ export function BombPotWheel({
     // `onDoneRef` above. See the block on that ref: an inline arrow from the
     // parent made this effect re-run on every snapshot and cancel its own
     // timers without rescheduling them.
-     
   }, [handsAway, clearTimers]);
 
   if (phase === 'idle' || handsAway == null) return null;

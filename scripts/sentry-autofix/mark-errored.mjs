@@ -10,7 +10,15 @@ if (!attemptId) process.exit(0);
 const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) { console.log('Supabase env missing; skipping'); process.exit(0); }
 
-const s = createClient(url, key, { auth: { persistSession: false } });
+const s = createClient(url, key, {
+  auth: { persistSession: false },
+  global: {
+    headers: {
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
+  },
+});
 const { error } = await s.from('autofix_attempts')
   .update({
     status: 'errored',

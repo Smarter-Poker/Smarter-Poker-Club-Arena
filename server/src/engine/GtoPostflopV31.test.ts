@@ -379,12 +379,16 @@ describe('the V31 layer is inert when empty, and is wired at boot', () => {
     if (!r.hit) expect(r.miss).toBe('empty_store');
   });
 
-  it('the V31 loader and the V31 driver are both started at boot', async () => {
+  it('the V31 loader is worker-owned and the V31 driver stays in the leader bootstrap', async () => {
     const { readFileSync } = await import('node:fs');
     const idx = readFileSync(new URL('../index.ts', import.meta.url).pathname, 'utf8');
-    // imported AND invoked — an import alone is a layer that never runs
-    expect(idx).toContain("from './services/GtoPostflopV31Loader.js'");
-    expect(idx).toContain('startGtoPostflopV31Loader()');
+    const worker = readFileSync(
+      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    // Imported and invoked: an import alone is a layer that never runs.
+    expect(worker).toContain("from '../../services/GtoPostflopV31Loader.js'");
+    expect(worker).toContain('startGtoPostflopV31Loader()');
     expect(idx).toContain("from './services/GtoAggregationDriverV31.js'");
     expect(idx).toContain('startGtoAggregationDriverV31()');
   });

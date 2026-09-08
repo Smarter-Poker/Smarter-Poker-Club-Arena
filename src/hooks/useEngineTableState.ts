@@ -10,7 +10,7 @@
  * Protocol contract: see /docs/phase-1.1-server-authoritative-state.md §4.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getFreshAccessToken } from '../lib/authToken';
 import EngineStateClient, {
   type EngineConnectionStatus,
@@ -27,6 +27,7 @@ const GAME_SERVER_URL =
     : 'http://localhost:8080');
 
 export interface UseEngineTableStateResult {
+  requestSnapshot: () => void;
   snapshot: EngineSnapshot | null;
   seq: number;
   status: EngineConnectionStatus;
@@ -123,7 +124,8 @@ export function useEngineTableState(
     };
   }, [tableId, enabled]);
 
-  return { snapshot, seq, status, lastError, lastEvent, lastUserEvent };
+  const requestSnapshot = useCallback(() => clientRef.current?.requestSnapshot(), []);
+  return { snapshot, seq, status, lastError, lastEvent, lastUserEvent, requestSnapshot };
 }
 
 export default useEngineTableState;

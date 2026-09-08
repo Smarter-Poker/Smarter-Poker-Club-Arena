@@ -47,7 +47,7 @@ describe('the closing position is its own record', () => {
     expect(CODE).toMatch(/CREATE TABLE IF NOT EXISTS public\.ca_epoch_closing_positions/);
   });
 
-  it('refuses every edit and every delete, on purpose and by its own guard', () => {
+  it('refuses every edit, delete and truncate, on purpose and by its own guard', () => {
     /* It was first given fn_ca_journal_append_only, the shared journal guard.
        A probe found that an UPDATE was refused - but with `record "new" has no
        field "amount"`, because that guard reads NEW.amount and this table's
@@ -59,7 +59,7 @@ describe('the closing position is its own record', () => {
       /CREATE OR REPLACE FUNCTION public\.fn_ca_closing_position_is_immutable/
     );
     expect(GUARD_SQL).toMatch(
-      /CREATE TRIGGER trg_ca_closing_position_immutable[\s\S]{0,200}BEFORE UPDATE OR DELETE ON public\.ca_epoch_closing_positions/
+      /CREATE TRIGGER trg_ca_closing_position_immutable[\s\S]{0,200}BEFORE UPDATE OR DELETE OR TRUNCATE ON public\.ca_epoch_closing_positions[\s\S]{0,100}FOR EACH STATEMENT/
     );
     expect(GUARD_SQL).toMatch(/ERRCODE = 'P0403'/);
     // and the shared guard is off it, so the accident cannot come back
@@ -77,6 +77,15 @@ describe('the closing position is its own record', () => {
   it('is service-role only, both by grant and by RLS', () => {
     expect(CODE).toMatch(/ENABLE ROW LEVEL SECURITY/);
     expect(CODE).toMatch(/ca_epoch_closing_positions_service_only/);
+    expect(CODE).toContain(
+      'REVOKE ALL ON TABLE public.ca_epoch_closing_positions\n  FROM PUBLIC, anon, authenticated, service_role'
+    );
+    expect(CODE).toContain(
+      'GRANT SELECT ON TABLE public.ca_epoch_closing_positions TO service_role'
+    );
+    expect(CODE).toContain(
+      'REVOKE ALL ON SEQUENCE public.ca_epoch_closing_positions_id_seq\n  FROM PUBLIC, anon, authenticated, service_role'
+    );
     expect(CODE).toContain(
       'REVOKE ALL ON FUNCTION public.fn_ca_capture_closing_position(text, boolean)\n  FROM PUBLIC, anon, authenticated'
     );

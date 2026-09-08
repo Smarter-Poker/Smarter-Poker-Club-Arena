@@ -14,7 +14,8 @@
    A closing position is stricter than a journal anyway: a journal has
    legitimate movements (a settled_at stamped once, a payout's own bookkeeping),
    and this has none. It is a photograph of a moment that has passed. So it gets
-   its own guard that refuses BOTH verbs outright, on purpose, and says why. */
+   its own guard that refuses UPDATE, DELETE and TRUNCATE outright, on purpose,
+   and says why. */
 
 CREATE OR REPLACE FUNCTION public.fn_ca_closing_position_is_immutable()
 RETURNS trigger
@@ -31,10 +32,13 @@ END;
 $fn$;
 
 COMMENT ON FUNCTION public.fn_ca_closing_position_is_immutable() IS
-  'Refuses every UPDATE and DELETE on ca_epoch_closing_positions with a message that says why. Replaces fn_ca_journal_append_only there, which refused an UPDATE only by accident - it reads NEW.amount and that table names its money column balance.';
+  'Refuses every UPDATE, DELETE and TRUNCATE on ca_epoch_closing_positions with a message that says why. Replaces fn_ca_journal_append_only there, which refused an UPDATE only by accident - it reads NEW.amount and that table names its money column balance.';
 
 DROP TRIGGER IF EXISTS trg_ca_append_only ON public.ca_epoch_closing_positions;
 DROP TRIGGER IF EXISTS trg_ca_closing_position_immutable ON public.ca_epoch_closing_positions;
 CREATE TRIGGER trg_ca_closing_position_immutable
-  BEFORE UPDATE OR DELETE ON public.ca_epoch_closing_positions
-  FOR EACH ROW EXECUTE FUNCTION public.fn_ca_closing_position_is_immutable();
+  BEFORE UPDATE OR DELETE OR TRUNCATE ON public.ca_epoch_closing_positions
+  FOR EACH STATEMENT EXECUTE FUNCTION public.fn_ca_closing_position_is_immutable();
+
+REVOKE ALL ON FUNCTION public.fn_ca_closing_position_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;

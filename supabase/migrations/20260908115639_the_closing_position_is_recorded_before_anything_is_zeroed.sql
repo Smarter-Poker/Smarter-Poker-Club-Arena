@@ -29,6 +29,16 @@ CREATE POLICY ca_epoch_closing_positions_service_only
   ON public.ca_epoch_closing_positions FOR ALL TO service_role
   USING (true) WITH CHECK (true);
 
+-- Supabase's public-schema defaults grant every new table and sequence to the
+-- browser roles directly.  RLS is one layer, not the ownership boundary.
+-- service_role reads the evidence; only the SECURITY DEFINER capture function
+-- writes it, and nobody except the postgres owner may advance its sequence.
+REVOKE ALL ON TABLE public.ca_epoch_closing_positions
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.ca_epoch_closing_positions TO service_role;
+REVOKE ALL ON SEQUENCE public.ca_epoch_closing_positions_id_seq
+  FROM PUBLIC, anon, authenticated, service_role;
+
 DROP TRIGGER IF EXISTS trg_ca_append_only ON public.ca_epoch_closing_positions;
 CREATE TRIGGER trg_ca_append_only
   BEFORE UPDATE OR DELETE ON public.ca_epoch_closing_positions

@@ -22,6 +22,7 @@ import { resolve } from 'path';
 import {
   boardForRabbitReveal,
   retainedBoardShows,
+  retainedGhostsShow,
   RABBIT_REVEAL_MIN_VISIBLE_MS,
   type RetainedRabbitBoard,
 } from '../../src/components/table/retainedRabbitBoard';
@@ -58,19 +59,26 @@ describe('which board the felt shows', () => {
   it('on the finished hand with its board still up: the live path (same picture, no remount)', () => {
     expect(retainedBoardShows(retained, { handNumber: 41, cardCount: 3 })).toBe(false);
   });
-  it('the finished hand cleared, or the next hand preflop: the retained copy', () => {
+  it('the finished hand cleared: the retained copy', () => {
     expect(retainedBoardShows(retained, { handNumber: 41, cardCount: 0 })).toBe(true);
-    expect(retainedBoardShows(retained, { handNumber: 42, cardCount: 0 })).toBe(true);
   });
-  it('a NEWER hand with cards of its own: the live board, immediately', () => {
+  it('a NEWER hand, preflop or not: the live board, immediately (Dan 2026-09-07, "display and move on")', () => {
+    expect(retainedBoardShows(retained, { handNumber: 42, cardCount: 0 })).toBe(false);
     expect(retainedBoardShows(retained, { handNumber: 42, cardCount: 3 })).toBe(false);
     expect(retainedBoardShows(retained, { handNumber: 43, cardCount: 5 })).toBe(false);
   });
-  it('a preflop-fold reveal (empty board) shows across the boundary too', () => {
+  it('only the ghost cards ride the newer hand, and only while it is preflop', () => {
+    expect(retainedGhostsShow(retained, { handNumber: 42, cardCount: 0 })).toBe(true);
+    expect(retainedGhostsShow(retained, { handNumber: 42, cardCount: 3 })).toBe(false);
+    expect(retainedGhostsShow(retained, { handNumber: 41, cardCount: 0 })).toBe(false);
+    expect(retainedGhostsShow(null, { handNumber: 42, cardCount: 0 })).toBe(false);
+  });
+  it('a preflop-fold reveal (empty board) follows the same rule', () => {
     const pre: RetainedRabbitBoard = { ...retained, cards: [], stage: 'preflop' };
     expect(retainedBoardShows(pre, { handNumber: 41, cardCount: 0 })).toBe(true);
-    expect(retainedBoardShows(pre, { handNumber: 42, cardCount: 0 })).toBe(true);
-    expect(retainedBoardShows(pre, { handNumber: 42, cardCount: 3 })).toBe(false);
+    expect(retainedBoardShows(pre, { handNumber: 42, cardCount: 0 })).toBe(false);
+    expect(retainedGhostsShow(pre, { handNumber: 42, cardCount: 0 })).toBe(true);
+    expect(retainedGhostsShow(pre, { handNumber: 42, cardCount: 3 })).toBe(false);
   });
 });
 
@@ -115,8 +123,12 @@ describe('the page', () => {
     expect(squashedPage).toContain(
       squash('cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}')
     );
+    // 2026-09-07: the ghost cards also ride the NEXT hand's empty preflop
+    // slots (retainedGhostsShow), while the board itself yields at once.
     expect(squashedPage).toContain(
-      squash('rabbitCards={showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards}')
+      squash(
+        'rabbitCards={showRetainedRabbitBoard || showRetainedRabbitGhosts ? retainedRabbitCards : liveRabbitCards}'
+      )
     );
     // The HAND_STARTED event clears the live ghost cards before the snapshot
     // moves the hand number; the live path borrows the retained copy's for

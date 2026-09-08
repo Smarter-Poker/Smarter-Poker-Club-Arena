@@ -203,8 +203,39 @@ export const HAND_COMPLETION = {
    * hand had ended early. The same reasoning as the rebuy pause under
    * CLAUDE.md 10.5: a beat that happens sometimes is a tell. It is also why
    * the per-user "hide the button" setting does not shorten it.
+   *
+   * ── 2026-09-07: THE REST IS THE WHOLE GAP, AND IT IS TWO SECONDS ──
+   *
+   * Dan, verbatim: "LOTS OF HANDS ARE NOT STARTING THE NEXT HAND 2 SECONDS
+   * AFTER THE HAND IS COMPLETED, MOST ARE TAKING MORE THAN 2 SECONDS, SOME UP
+   * TO 10 SECONDS+ TO GET THE NEXT HAND STARTED."
+   *
+   * Measured on production the same evening (hand_history, cash tables, 40
+   * minutes, 6,470 hands): the gap from one hand's ended_at to the next
+   * hand's started_at was p50 11.2s, p90 20.6s; the /health loop phases put
+   * the time in await_post_hand_tasks (5.9s mean), load_next_hand_inputs
+   * (2.8s) and two more one-round-trip steps (1.5s each) - every one of them
+   * a PostgREST call at the 250-700ms the transport actually costs from the
+   * engine box, and every one of them slept AFTER the rest instead of inside
+   * it. The old schedule was hold -> board clear -> rest -> then all of that.
+   *
+   * NEXT_HAND_REST_MS is now the ONE number between "the hand is completed"
+   * (the end of handCompletionHoldMs - the winning hand shown, the pot pushed
+   * with its total, the cards mucked; Dan 2026-08-21) and the next deal. The
+   * board clear, the rabbit-hunt window and the next hand's bookkeeping all
+   * live inside it: the engine arms the deadline at the hand-free broadcast
+   * and awaits it immediately before dealHand, so the settlement barrier, the
+   * roster read and the hand-number allocation overlap the rest instead of
+   * following it. The five-second rebuy pause (Dan 2026-08-24) is the one
+   * beat that still runs on its own, only when a dealt player busted.
+   *
+   * RABBIT_HUNT_WINDOW_MS is the same number, kept under its own name because
+   * that is what the button's window IS: the rest. A law pins them equal, and
+   * pins the rest at or above the client's RABBIT_MIN_VISIBLE_MS floor and
+   * above both boardClearMs values, so the clear can never outlive the rest.
    */
-  RABBIT_HUNT_WINDOW_MS: 1750,
+  NEXT_HAND_REST_MS: 2000,
+  RABBIT_HUNT_WINDOW_MS: 2000,
   /**
    * ── THE DISCARD IS AN ACT, AND IT NEEDS A BEAT (Phase 3, 2026-08-31) ──
    *

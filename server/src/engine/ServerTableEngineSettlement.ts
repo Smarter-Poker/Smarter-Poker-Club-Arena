@@ -47,6 +47,7 @@ import {
 } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
+import { v5 as uuidv5 } from 'uuid';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
@@ -179,10 +180,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       return { success: true, cards, board_length: offer.boardLength, source: 'already_revealed' };
     }
     if (this.rabbitHuntInFlight.has(userId)) {
-      // Two taps that race the RPC would both pass the `revealed` check above,
-      // because that set is only written after the charge returns. The advisory
-      // lock in fn_consume_rabbit_hunt serialises them, so they would not
-      // corrupt the pool — they would just both succeed, and bill twice.
+      // Keep concurrent taps from duplicating work while the first RPC runs.
+      // The durable request ID below also protects payment if its response is
+      // lost and a later tap retries after this in-memory guard is released.
       return { success: false, error: 'Rabbit Hunt Is Already Loading' };
     }
     this.rabbitHuntInFlight.add(userId);
@@ -192,8 +192,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // simply not calling it.
     let charge: Record<string, unknown> | null = null;
     try {
-      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt', {
+      // A timeout can follow a committed charge. Reuse the durable receipt for
+      // this player/table/hand, including after an engine instance changes.
+      const requestId = uuidv5(
+        JSON.stringify([
+          'club-arena.rabbit-hunt.v1',
+          this.tableId.toLowerCase(),
+          hand,
+          userId.toLowerCase(),
+        ]),
+        uuidv5.URL
+      );
+      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt_v2', {
         p_user_id: userId,
+        p_request_id: requestId,
       });
       if (error) throw error;
       charge = (data ?? null) as Record<string, unknown> | null;
@@ -1420,49 +1432,134 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // (and, for money steps, raised as a durable CRITICAL financial alert)
     // and the remaining steps still run. Order is unchanged; steps still run
     // sequentially because later steps read state earlier steps produce.
+    /* ═══ TWO LANES UNDER THE HOLD (Dan 2026-09-07) ═══════════════════════
+       "LOTS OF HANDS ARE NOT STARTING THE NEXT HAND 2 SECONDS AFTER THE HAND
+       IS COMPLETED ... SOME UP TO 10 SECONDS+."
+
+       The dealing loop waits on this chain before it will reload the roster
+       (the settlement barrier, top of dealingLoop), and the chain ran every
+       step in one file order: record, rake, jackpot, then add-ons, horses,
+       leavers, table status. On the engine box a PostgREST round trip is
+       250-700ms, so a plain cash hand paid seven or eight of them in a row -
+       3-5s - against a completion hold of 2.1-3.5s. The felt sat in
+       await_post_hand_tasks for a mean 5.9s per hand (measured 2026-09-07
+       from /health's loop phases).
+
+       The steps fall into two lanes with no dependency between them:
+
+         THE RECORD  hand_history -> rake_distribution -> bbj_contribution ->
+                     promo_playthrough -> insurance_ledger -> bbj_mini_payout
+                     -> bbj_payout -> tournament_chip_sync
+         THE SEATS   pending_addons -> horse_rebuys -> chip_continuity ->
+                     horse_cashouts -> deferred_sitouts -> leave_pending ->
+                     table_unlock
+
+       runStep files each step by NAME into its lane (STEP_LANE) and returns
+       at once; a step is run after the previous step of its own lane, in
+       file order, and the loop's barrier waits for both lanes at the end.
+       The step bodies and every `await runStep('...')` line keep their
+       shape, which is also what the ordering laws pin. A step with no lane
+       entry - sync_stacks, or anything added later without one - is run
+       and awaited in place, before anything that follows it in the file,
+       exactly as every step used to be. Both lanes therefore start AFTER
+       sync_stacks (the seats lane cashes out and rebuys against the stacks
+       it wrote; the record lane's conservation check reads them). Nothing
+       in the seats lane reads `v_handHistoryId`, and nothing in the record
+       lane reads a seat the other lane changed - the hand row is written
+       from `playersForRecord`, copied synchronously before either lane
+       starts.
+
+       ONE exception keeps the old serial order, and it is the money one: a
+       jackpot or insurance hand. bbj_mini_payout and bbj_payout write
+       `updatedStacks` onto the very `players` the seats lane reads for
+       "who busted", "who cashes out" and the add-on cap ("must run AFTER
+       BBJ payouts", step 8e), so on those hands every seats step waits for
+       the whole record lane exactly as before. Every other hand pays the
+       longer lane instead of the sum. `snap` is the only hand state read in
+       either lane (StaleContinuationSweep law). */
+    const STEP_LANE: Record<string, 'record' | 'seats'> = {
+      hand_history: 'record',
+      rake_distribution: 'record',
+      bbj_contribution: 'record',
+      promo_playthrough: 'record',
+      insurance_ledger: 'record',
+      bbj_mini_payout: 'record',
+      bbj_payout: 'record',
+      tournament_chip_sync: 'record',
+      pending_addons: 'seats',
+      horse_rebuys: 'seats',
+      chip_continuity: 'seats',
+      horse_cashouts: 'seats',
+      deferred_sitouts: 'seats',
+      leave_pending: 'seats',
+      table_unlock: 'seats',
+    };
+    const lanesCanOverlap =
+      !snap.bbjHit?.hit && !snap.miniBbjHit && snap.insuranceSettlements.length === 0;
+    const lanes: Record<'record' | 'seats', Promise<void>> = {
+      record: Promise.resolve(),
+      seats: Promise.resolve(),
+    };
+    /* The record is written from the stacks the hand ENDED with. Copied here,
+       synchronously, so a rebuy or an add-on the seats lane credits while the
+       record lane is still on its first round trip can never reach the row. */
+    const playersForRecord = players.map((p) => ({ ...p }));
+
     const runStep = async (
       stepName: string,
       moneyCritical: boolean,
       fn: () => Promise<void>
     ): Promise<void> => {
-      const started = performance.now();
-      let outcome = 'returned';
-      try {
-        await fn();
-      } catch (err) {
-        outcome = 'threw';
-        reportError(err, `postHandTasks.step_failed.${stepName}`, {
-          tableId: this.tableId,
-          handNumber: snap.handNumber,
-        });
-        if (moneyCritical) {
-          await raiseFinancialAlert(
-            'critical',
-            `postHandTasks.${stepName}_failed`,
-            `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
-            {
-              table_id: this.tableId,
-              hand_number: snap.handNumber,
-              error: err instanceof Error ? err.message : String(err),
-            }
-          );
-        }
-      } finally {
+      const exec = async (): Promise<void> => {
+        const started = performance.now();
+        let outcome = 'returned';
         try {
-          const elapsed = Math.max(0, performance.now() - started);
-          const labels = {
-            step: stepName,
-            audience: this.humansSeated() > 0 ? 'human' : 'horse',
-            format: this.tableFormat(),
-            outcome,
-          };
-          EngineMetrics.settlementStepCount.inc(1, labels);
-          EngineMetrics.settlementStepDuration.inc(elapsed, labels);
-          EngineMetrics.settlementStepSlow.inc(elapsed >= 1000 ? 1 : 0, labels);
-        } catch {
-          /* Metrics must never interrupt settlement or error recovery. */
+          await fn();
+        } catch (err) {
+          outcome = 'threw';
+          reportError(err, `postHandTasks.step_failed.${stepName}`, {
+            tableId: this.tableId,
+            handNumber: snap.handNumber,
+          });
+          if (moneyCritical) {
+            await raiseFinancialAlert(
+              'critical',
+              `postHandTasks.${stepName}_failed`,
+              `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
+              {
+                table_id: this.tableId,
+                hand_number: snap.handNumber,
+                error: err instanceof Error ? err.message : String(err),
+              }
+            );
+          }
+        } finally {
+          try {
+            const elapsed = Math.max(0, performance.now() - started);
+            const labels = {
+              step: stepName,
+              audience: this.humansSeated() > 0 ? 'human' : 'horse',
+              format: this.tableFormat(),
+              outcome,
+            };
+            EngineMetrics.settlementStepCount.inc(1, labels);
+            EngineMetrics.settlementStepDuration.inc(elapsed, labels);
+            EngineMetrics.settlementStepSlow.inc(elapsed >= 1000 ? 1 : 0, labels);
+          } catch {
+            /* Metrics must never interrupt settlement or error recovery. */
+          }
         }
+      };
+      const lane = STEP_LANE[stepName];
+      if (!lane) {
+        await exec();
+        return;
       }
+      const after =
+        lane === 'seats' && !lanesCanOverlap
+          ? Promise.all([lanes.record, lanes.seats]).then(() => undefined)
+          : lanes[lane];
+      lanes[lane] = after.then(exec);
     };
 
     /* ═══ TOURNAMENT CHIPS ARE CONSERVED HAND BY HAND (chip-std Lane F, 2026-09-02)
@@ -1805,7 +1902,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              dealt cards or who was paid, the hand was still played - write
              the union, and say so loudly, rather than lose it. */
           players: (() => {
-            const roster = players.map((p) => ({
+            const roster = playersForRecord.map((p) => ({
               userId: p.user_id,
               username: p.username,
               seat: p.seat_number,
@@ -2006,7 +2103,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               started_at: snap.startedAt || Date.now(),
               ended_at: Date.now(),
               winners: snap.winners.map((w) => ({ userId: w.userId, amount: w.amount })),
-              players: players.map((pp) => ({
+              players: playersForRecord.map((pp) => ({
                 userId: pp.user_id,
                 seat: pp.seat_number,
                 stack: pp.stack,
@@ -2817,6 +2914,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         timestamp: Date.now(),
       });
     });
+
+    // Both lanes must land before the barrier releases the next deal.
+    await Promise.all([lanes.record, lanes.seats]);
 
     // Settlement pipeline complete - table unlocked for next hand.
     // A HAND ENDED (2026-09-05): leavers cashed out, announced moves landed,

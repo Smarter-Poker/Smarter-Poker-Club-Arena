@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 // [MIGRATION] flashPoolEngine removed — server-authoritative (join via Supabase RPC)
@@ -21,6 +21,7 @@ import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
+import { resolvePageClubId } from '../utils/resolvePageClubId';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -44,6 +45,11 @@ interface PoolDisplay {
 
 export default function FlashPoolPage() {
   const navigate = useNavigate();
+  /* Explicit, because `location.search` without this resolves to the GLOBAL
+     `window.location` — which type-checks, reads correctly on first paint, and
+     is not part of React's render cycle, so the dependency below would be
+     lying about what it tracks. */
+  const location = useLocation();
   const { user } = useAuthUser();
   const toast = useToast();
   useVisibilityRefresh(() => loadPools());
@@ -101,49 +107,50 @@ export default function FlashPoolPage() {
     loadPools();
   }, [loadPools]);
 
+  /* ── THE BALANCE ON THIS PAGE BELONGS TO A CLUB ───────────────────────────
+     `club_members.chip_balance` is PER CLUB. This read it with `.limit(1)`
+     and no `.order()`, twice — once on mount and again on every
+     BALANCE_UPDATED — so a player in more than one club saw an arbitrary
+     club's chips, and the two copies could even disagree with each other
+     after a refresh. On a page where those chips get spent, showing the wrong
+     club's number is a money-facing bug, not a cosmetic one.
+
+     Both copies are now one function that names the club first, through the
+     same resolver every other global page uses: `?club=` if the URL carries
+     it, else the club the player was last in. */
+  const loadBalance = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const clubId = await resolvePageClubId({ search: location.search, userId: user.id });
+      if (!clubId) {
+        setUserBalance(0);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('user_id', user.id)
+        .eq('club_id', clubId)
+        .maybeSingle();
+      if (error) throw error;
+      setUserBalance(data?.chip_balance || 0);
+    } catch (e) {
+      reportError(e, 'FlashPoolPage.loadBalance');
+      /* best effort */
+    }
+  }, [user?.id, location.search]);
+
   // ── Load user's chip balance ──
   useEffect(() => {
-    if (!user?.id) return;
-    const loadBalance = async () => {
-      try {
-        const { data } = await supabase
-          .from('club_members')
-          .select('chip_balance')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle();
-        if (data) setUserBalance(data.chip_balance || 0);
-      } catch (e) {
-        reportError(e, 'FlashPoolPage.loadBalance');
-        /* best effort */
-      }
-    };
-    loadBalance();
-  }, [user?.id]);
+    void loadBalance();
+  }, [loadBalance]);
 
   // ── Bus listener: keep balance in sync when chips change on other pages ──
   useEffect(() => {
     if (!user?.id) return;
-    const unsub = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      async () => {
-        try {
-          const { data } = await supabase
-            .from('club_members')
-            .select('chip_balance')
-            .eq('user_id', user.id)
-            .limit(1)
-            .maybeSingle();
-          if (data) setUserBalance(data.chip_balance || 0);
-        } catch (e) {
-          reportError(e, 'FlashPoolPage.async');
-          /* best effort */
-        }
-      },
-      500
-    );
+    const unsub = masterBus.subscribeDebounced('BALANCE_UPDATED', () => void loadBalance(), 500);
     return () => unsub();
-  }, [user?.id]);
+  }, [user?.id, loadBalance]);
 
   // GAME_STATE_UPDATED listener removed 2026-08-28: nothing emits it on the
   // client bus, so this pool-stats patch never ran. The Supabase realtime

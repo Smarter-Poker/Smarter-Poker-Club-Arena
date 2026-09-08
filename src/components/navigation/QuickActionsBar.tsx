@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { withClubContext } from '../../utils/clubScopedPath';
 import styles from './QuickActionsBar.module.css';
 
 interface QuickAction {
@@ -38,6 +39,14 @@ export default function QuickActionsBar({
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
+  /* Dan 2026-09-02: a shortcut opened from inside a club stays inside that
+     club. Messages, Wallet and Leaderboard used to navigate to bare global
+     paths while Tournaments and Tables (right beside them, from the same
+     `clubId` prop) were club-aware — so the same bar both kept and dropped
+     the club depending on which button you pressed. `go` closes that gap for
+     every entry at once and is a no-op when there is no club. */
+  const go = (path: string) => navigate(withClubContext(path, clubId));
+
   const actions: QuickAction[] = [];
 
   if (showMessages) {
@@ -45,7 +54,7 @@ export default function QuickActionsBar({
       id: 'messages',
       icon: '',
       label: 'Messages',
-      action: onMessageClick || (() => navigate('/messages')),
+      action: onMessageClick || (() => go('/messages')),
       badge: unreadMessages,
       color: '#3b82f6',
     });
@@ -56,7 +65,7 @@ export default function QuickActionsBar({
       id: 'wallet',
       icon: '',
       label: 'Wallet',
-      action: () => navigate('/wallet'),
+      action: () => go('/wallet'),
       color: '#10b981',
     });
   }
@@ -85,7 +94,7 @@ export default function QuickActionsBar({
     id: 'leaderboard',
     icon: '',
     label: 'Leaderboard',
-    action: () => navigate('/leaderboard'),
+    action: () => go('/leaderboard'),
     color: '#f59e0b',
   });
 

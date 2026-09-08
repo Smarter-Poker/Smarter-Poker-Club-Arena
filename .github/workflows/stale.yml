@@ -11,12 +11,35 @@ on:
 permissions:
   issues: write
   pull-requests: write
+  # The queued-label step reads each pull request's CHECK RUNS and compares its
+  # head against main. Without `checks: read` that read is a 403, the step
+  # reports every pull request as "could not tell", changes nothing, and the
+  # exemption silently protects no one - which is worse than not having it,
+  # because the workflow still looks like it is doing the job.
+  checks: read
+  contents: read
 
 jobs:
   stale:
     name: Close Stale PRs
     runs-on: ubuntu-latest
     steps:
+      # A pull request that is GREEN and AHEAD of main is waiting on the merge
+      # queue, not on its author. Closing those is what cost a whole session on
+      # 2026-09-04: six finished, green pull requests were closed, and `main`
+      # had moved ~800 pull requests by the time they were recovered, so every
+      # one had to be cherry-picked onto a new base and re-run against guards
+      # that had landed meanwhile. This labels that kind `queued`; the close
+      # step below exempts it. The label is recomputed from scratch here every
+      # run and removed the moment a pull request stops qualifying, so it can
+      # never become permanent armour.
+      - uses: actions/checkout@v4
+      - name: Label the queued pull requests (they are not stale)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node .github/scripts/label-queued-pull-requests.mjs
+
       - uses: actions/stale@v9
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,7 +54,10 @@ jobs:
             commits are still on the branch and a fresh PR from it will merge in
             minutes rather than fighting days of drift against `main`.
 
-            To keep one alive, add the `pinned` or `do-not-close` label.
+            To keep one alive, add the `pinned` or `do-not-close` label. A pull request
+            that is green and ahead of `main` is labelled `queued` automatically and is
+            never closed by this rule - if this one was closed, it was red, behind, or
+            its checks could not be read.
           # Dan, 2026-09-04: "I WILL NEVER LEAVE ANYTHING UNFINISHED FOR MORE
           # THAN 48 HOURS. ANYTHING OLDER THEN 48 HOURS IS TRASH."
           #
@@ -45,7 +71,8 @@ jobs:
           days-before-stale: 1
           days-before-close: 1
           stale-pr-label: 'stale'
-          exempt-pr-labels: 'pinned,do-not-close'
+          # `queued` is written by the step above, never by a person.
+          exempt-pr-labels: 'pinned,do-not-close,queued'
           operations-per-run: 120
           # Don't touch issues
           days-before-issue-stale: -1

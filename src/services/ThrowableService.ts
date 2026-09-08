@@ -129,6 +129,141 @@ const T = (
 });
 
 const THROWABLES: Throwable[] = [
+  T(
+    'rat_card',
+    'Cheating Rat',
+    'premium',
+    'fastball',
+    'thud',
+    'card_slap',
+    'light',
+    false,
+    '#929CA8',
+    0
+  ),
+  T(
+    'party_face',
+    'Party Face',
+    'reactions',
+    'fastball',
+    'burst',
+    'party_toot',
+    'light',
+    false,
+    '#E7AF34',
+    0
+  ),
+  T(
+    'thinking',
+    'Thinking Face',
+    'reactions',
+    'fastball',
+    'thud',
+    'thinking_pop',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'loser_hand',
+    'Loser Hand',
+    'reactions',
+    'fastball',
+    'thud',
+    'loser_hand_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T('blush', 'Blush', 'reactions', 'fastball', 'thud', 'blush_cue', 'light', false, '#FFD93D', 0),
+  T(
+    'ok_smug',
+    'Smug OK',
+    'reactions',
+    'fastball',
+    'thud',
+    'ok_smug_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'sleeping',
+    'Sleeping',
+    'reactions',
+    'fastball',
+    'thud',
+    'sleeping_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'facepalm',
+    'Facepalm',
+    'reactions',
+    'fastball',
+    'thud',
+    'facepalm_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'screaming',
+    'Screaming',
+    'reactions',
+    'fastball',
+    'thud',
+    'screaming_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'vomit_rainbow',
+    'Rainbow Reaction',
+    'reactions',
+    'fastball',
+    'thud',
+    'vomit_rainbow_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'surrender',
+    'Surrender',
+    'reactions',
+    'fastball',
+    'thud',
+    'surrender_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'energy_ball',
+    'Energy Ball',
+    'premium',
+    'fastball',
+    'thud',
+    'energy_ball_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T('sloth', 'Sloth', 'premium', 'fastball', 'thud', 'sloth_cue', 'light', false, '#FFD93D', 0),
+  T('fish', 'Fish', 'throws', 'fastball', 'splash', 'fish_flop', 'light', false, '#58BDEB', 0),
   // ── REACTIONS (8) — floaty emoji, sparkle finishes ────────────────────────────
   T(
     'thumbs_up',

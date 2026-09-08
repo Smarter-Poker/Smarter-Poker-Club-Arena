@@ -28,10 +28,10 @@
  * attempt — writes neither. These tests pin that no prize, bounty or refund
  * path drifts back to the two-call shape.
  *
- * 2026-09-08: the live finish and recovery call one terminal database door.
- * That transaction derives and settles cash, bounty, rake, escrow, standings,
- * and COMPLETED together. Runtime code cannot call the generic obligation
- * payer or manufacture an idempotency key.
+ * 2026-09-07: ordinary place prizes are prepared and committed by the same
+ * atomic batch RPC from finish and recovery. Other tournament money kinds
+ * still use `settleTournamentObligation`. The database remains the sole owner
+ * of idempotency keys and ledger writes in both cases.
  *
  * Source-level, like spinEngineWiring: exercising the real thing needs a live
  * Postgres, three seated players and a race.
@@ -47,8 +47,6 @@ const tsCode = (src: string) =>
 const sqlCode = (src: string) => src.replace(/^[ \t]*--.*$/gm, '');
 
 const MIGRATION = 'supabase/migrations/20260822190000_credit_player_wallet_once.sql';
-const ATOMIC_CASH_MIGRATION =
-  'supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql';
 
 /** Every engine file that pays a player for a tournament outcome. */
 const PAYOUT_SOURCES = [
@@ -56,6 +54,7 @@ const PAYOUT_SOURCES = [
   'server/src/tournament/TournamentManager.ts',
   'server/src/tournament/tournamentRecovery.ts',
 ] as const;
+const SINGLE_OBLIGATION_SOURCES = ['server/src/tournament/tournamentRecovery.ts'] as const;
 
 describe('prize ledger idempotency — the engine side', () => {
   for (const path of PAYOUT_SOURCES) {
@@ -68,45 +67,65 @@ describe('prize ledger idempotency — the engine side', () => {
       expect(code).not.toMatch(/rpc\(\s*'log_wallet_transaction'/);
     });
 
-    it(`${path} never calls a generic credit primitive`, () => {
+    it(`${path} pays through a database-owned settlement path, never a credit primitive`, () => {
+      // Normal place money is one atomic batch; remaining money kinds use the
+      // single-obligation helper. Both keep keys and ledger writes in Postgres.
       // The three primitives are banned from the engine (server-side law:
       // server/src/tournament/OneSettlePathForTournamentMoney.law.test.ts).
       expect(code).not.toMatch(/rpc\(\s*'credit_player_wallet'/);
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_and_log'/);
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_player_wallet_once'/);
+      if (path === 'server/src/tournament/TournamentManagerEliminations.ts') {
+        expect(code).toMatch(/settleTournamentPlacesAtomically\(/);
+        expect(code).not.toMatch(/settleTournamentObligation\(/);
+      } else if (path === 'server/src/tournament/TournamentManager.ts') {
+        expect(code).toMatch(/fn_settle_satellite_finish_atomic/);
+        expect(code).not.toMatch(/settleTournamentObligation\(/);
+      } else {
+        expect(code).toMatch(/settleTournamentObligation\(/);
+      }
     });
   }
 
-  it('runtime tournament code has no generic per-obligation payment helper', () => {
-    let totalCalls = 0;
-    for (const path of PAYOUT_SOURCES) {
+  it('every settleTournamentObligation call supplies a kind, a source and a memo', () => {
+    for (const path of SINGLE_OBLIGATION_SOURCES) {
       const code = tsCode(read(path));
       // Each call site, from the opening brace of its input to the closing `}`.
       const calls =
         code.match(/settleTournamentObligation\(\s*supabase\s*,\s*\{[\s\S]*?\n\s*\}/g) ?? [];
-      totalCalls += calls.length;
-      expect(calls, `${path}: generic per-obligation payment call`).toEqual([]);
+      expect(calls.length, `${path} should pay through settleTournamentObligation`).toBeGreaterThan(
+        0
+      );
+      for (const call of calls) {
+        expect(call, `${path}: missing kind`).toMatch(/\bkind:/);
+        expect(call, `${path}: missing source`).toMatch(/\bsource:/);
+        // `memo` is the wallet_transactions description (see settleObligation.ts
+        // for why it is not called `description`).
+        expect(call, `${path}: missing memo`).toMatch(/\bmemo:/);
+        expect(call, `${path}: missing userId`).toMatch(/\buserId\b/);
+        expect(call, `${path}: missing amount`).toMatch(/\bamount\b/);
+      }
     }
-    expect(totalCalls).toBe(0);
   });
 
-  it('live finish and recovery delegate the whole ladder to the same atomic database payer', () => {
+  it('the recovery watchdog and finish path invoke the SAME atomic place batch', () => {
+    // If these two ever diverge the credit stops deduping and the double
+    // PAYMENT of 2026-07-28 comes back — which is worse than the double entry.
+    //
+    // 2026-08-28 made the shared key PLACE-scoped after Union PKO Afternoon
+    // (PLO4) 4f42d847 paid place 2 twice to two players (720.00 against a
+    // 600.00 pool). 2026-09-02 moved that place-scoping into the database:
+    // (tournament_id, 'place', N) is UNIQUE on tournament_obligations, and
+    // both paths settle that row. No engine file builds a `tourney:` key any
+    // more, so there is no format left to drift.
     const recovery = tsCode(read('server/src/tournament/tournamentRecovery.ts'));
-    const cashRecovery = recovery.slice(
-      recovery.indexOf('export async function recoverStuckCompletingTournaments')
-    );
     const eliminations = tsCode(read('server/src/tournament/TournamentManagerEliminations.ts'));
-    const terminalRpc = tsCode(read('server/src/tournament/terminalSettlementRpc.ts'));
-    expect(cashRecovery).toMatch(/requestTournamentTerminalReceipt\(/);
-    expect(cashRecovery).not.toMatch(/settleTournamentObligation\(/);
-    expect(eliminations).toMatch(/requestTournamentTerminalReceipt\(/);
-    expect(terminalRpc).toMatch(/fn_complete_tournament_terminal/);
-    expect(terminalRpc).toMatch(/p_observed_winner_id:\s*observedWinnerId/);
-    const finish = eliminations.slice(eliminations.indexOf('protected async finishTournament'));
-    expect(finish).not.toMatch(/kind:\s*'place'/);
+    for (const src of [recovery, eliminations]) {
+      expect(src).toMatch(/settleTournamentPlacesAtomically\(/);
+    }
 
     for (const [name, src] of [
-      ['recovery', cashRecovery],
+      ['recovery', recovery],
       ['eliminations', eliminations],
       ['manager', tsCode(read('server/src/tournament/TournamentManager.ts'))],
     ] as const) {
@@ -118,7 +137,6 @@ describe('prize ledger idempotency — the engine side', () => {
 
 describe('prize ledger idempotency — the database side', () => {
   const migration = sqlCode(read(MIGRATION));
-  const atomicCashMigration = sqlCode(read(ATOMIC_CASH_MIGRATION));
 
   it('fn_credit_player_wallet_once returns boolean, not void', () => {
     expect(migration).toMatch(
@@ -143,9 +161,9 @@ describe('prize ledger idempotency — the database side', () => {
   });
 
   it('fn_credit_and_log logs ONLY when it was the one that credited', () => {
-    const start = atomicCashMigration.indexOf('FUNCTION public.fn_credit_and_log(');
+    const start = migration.indexOf('FUNCTION public.fn_credit_and_log(');
     expect(start).toBeGreaterThan(-1);
-    const body = atomicCashMigration.slice(start);
+    const body = migration.slice(start);
     const guard = body.indexOf('IF NOT v_credited THEN');
     const log = body.indexOf('PERFORM public.log_wallet_transaction');
     expect(guard, 'fn_credit_and_log must check whether it credited').toBeGreaterThan(-1);
@@ -154,54 +172,21 @@ describe('prize ledger idempotency — the database side', () => {
     expect(guard).toBeLessThan(log);
   });
 
-  it('an exact concurrent replay re-reads the key after losing the insert race', () => {
-    const start = atomicCashMigration.indexOf('FUNCTION public.fn_credit_and_log(');
-    const end = atomicCashMigration.indexOf(
-      'REVOKE ALL ON FUNCTION public.fn_credit_and_log',
-      start
-    );
-    const body = atomicCashMigration.slice(start, end);
-    const falseCredit = body.indexOf('IF NOT v_credited THEN');
-    const postRaceRead = body.indexOf('FROM public.wallet_credit_idempotency k', falseCredit);
-    const missingKeyRefusal = body.indexOf('IF NOT FOUND THEN', postRaceRead);
-    const mismatchedKeyRefusal = body.indexOf(
-      'v_existing_key.user_id IS DISTINCT FROM p_user_id',
-      postRaceRead
-    );
-
-    expect(falseCredit).toBeGreaterThan(-1);
-    expect(postRaceRead).toBeGreaterThan(falseCredit);
-    expect(missingKeyRefusal).toBeGreaterThan(postRaceRead);
-    expect(mismatchedKeyRefusal).toBeGreaterThan(missingKeyRefusal);
-    expect(body.slice(postRaceRead, missingKeyRefusal)).toMatch(/FOR SHARE/);
-    expect(body.indexOf('RETURN false;', mismatchedKeyRefusal)).toBeGreaterThan(
-      mismatchedKeyRefusal
-    );
-  });
-
   it('fn_credit_and_log refuses to run without an idempotency key', () => {
-    expect(atomicCashMigration).toMatch(/fn_credit_and_log requires an idempotency key/);
+    expect(migration).toMatch(/fn_credit_and_log requires an idempotency key/);
   });
 
-  it('the raw credit remains server-only and the evidence writer is now owner-only', () => {
-    expect(migration).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_credit_player_wallet_once\([^)]*\) FROM anon/
-    );
-    expect(migration).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_credit_player_wallet_once\([^)]*\) FROM authenticated/
-    );
-    expect(migration).toMatch(
-      /GRANT EXECUTE ON FUNCTION public\.fn_credit_player_wallet_once\([^)]*\) TO service_role/
-    );
-
-    // The atomic cash cutover narrows fn_credit_and_log one step further:
-    // service_role receives only fn_settle_tournament_places and cannot call
-    // the payout-evidence writer directly.
-    expect(atomicCashMigration).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_credit_and_log\([\s\S]*?FROM PUBLIC, anon, authenticated, service_role;/
-    );
-    expect(atomicCashMigration).toMatch(
-      /has_function_privilege\('service_role',[\s\S]{0,180}?public\.fn_credit_and_log[\s\S]{0,180}?'EXECUTE'\)/
-    );
+  it('neither new function is reachable by a player role', () => {
+    for (const fn of ['fn_credit_player_wallet_once', 'fn_credit_and_log']) {
+      expect(migration).toMatch(
+        new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\) FROM anon`)
+      );
+      expect(migration).toMatch(
+        new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\) FROM authenticated`)
+      );
+      expect(migration).toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\) TO service_role`)
+      );
+    }
   });
 });

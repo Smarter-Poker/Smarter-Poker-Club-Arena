@@ -25,9 +25,11 @@
  * legal hand and should have scooped. Three more hands in the same twelve
  * hours reached showdown with three cards.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { HandController } from './HandController.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
+
+vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 function mkPlayers(n: number, stack = 200): SeatPlayer[] {
   return Array.from(
@@ -80,6 +82,14 @@ const holdings = (st: () => any): number[] =>
     .players.filter((p: SeatPlayer) => !p.is_folded)
     .map((p: SeatPlayer) => p.cards.length);
 
+function prepareWorkerResult(hc: HandController, cardIndex = 2) {
+  const snapshot = hc.getPineappleRunoutDiscardSnapshot();
+  expect(snapshot).not.toBeNull();
+  const decisions = new Map(snapshot!.players.map((player) => [player.seat, cardIndex]));
+  expect(hc.preparePineappleRunoutDiscards(snapshot!.flop, decisions)).toBe(true);
+  return snapshot!;
+}
+
 describe('pineapple: nobody reaches showdown holding three cards', () => {
   it('deals three to start (otherwise the rest of this file proves nothing)', () => {
     const { st } = dealt();
@@ -92,10 +102,12 @@ describe('pineapple: nobody reaches showdown holding three cards', () => {
     // No discard STAGE is opened here on purpose: this is the all-in case,
     // where betting never reaches the discard round. The resolve has to happen
     // on the deal itself, which is the bug.
+    const priced = prepareWorkerResult(hc);
     const r = hc.dealNextStreet();
 
     expect(r.stage).toBe('flop');
     expect(r.board.length).toBe(3);
+    expect(r.board).toEqual(priced.flop);
     expect(
       holdings(st),
       'a seat still holding 3 after the flop is the best-5-of-8 bug that paid ' +
@@ -105,6 +117,7 @@ describe('pineapple: nobody reaches showdown holding three cards', () => {
 
   it('stays at two through the turn and the river', () => {
     const { hc, st } = dealt();
+    prepareWorkerResult(hc);
     hc.dealNextStreet(); // flop
     expect(holdings(st)).toEqual([2, 2, 2]);
     hc.dealNextStreet(); // turn
@@ -115,12 +128,47 @@ describe('pineapple: nobody reaches showdown holding three cards', () => {
 
   it('leaves every card accounted for - one discard per seat, no duplicates', () => {
     const { hc, st } = dealt();
+    prepareWorkerResult(hc);
     hc.dealNextStreet();
     const all = st()
       .players.flatMap((p: SeatPlayer) => p.cards)
       .concat(st().communityCards)
       .map((c: { rank: string; suit: string }) => `${c.rank}${c.suit}`);
     expect(new Set(all).size, 'a duplicated card means the resolve spliced wrong').toBe(all.length);
+  });
+
+  it('parks at the flop and cannot settle when no worker result was prepared', () => {
+    const { hc, st } = dealt();
+    const flop = hc.dealNextStreet();
+    expect(flop.board).toHaveLength(3);
+    expect(holdings(st)).toEqual([3, 3, 3]);
+
+    const stillFlop = hc.dealNextStreet();
+    expect(stillFlop.board).toEqual(flop.board);
+    expect(stillFlop.complete).toBe(false);
+    expect(st().stage).toBe('flop');
+  });
+
+  it('rejects partial and wrong-flop result sets atomically', () => {
+    const { hc, st } = dealt();
+    const snapshot = hc.getPineappleRunoutDiscardSnapshot()!;
+    expect(
+      hc.preparePineappleRunoutDiscards(snapshot.flop, new Map([[snapshot.players[0].seat, 1]]))
+    ).toBe(false);
+    expect(
+      hc.preparePineappleRunoutDiscards(
+        [...snapshot.flop].reverse(),
+        new Map(snapshot.players.map((player) => [player.seat, 1]))
+      )
+    ).toBe(false);
+    expect(holdings(st)).toEqual([3, 3, 3]);
+  });
+
+  it('commits a prepared result against an externally-built RIT flop', () => {
+    const { hc, st } = dealt();
+    const snapshot = prepareWorkerResult(hc, 1);
+    expect(hc.commitPreparedPineappleRunoutDiscards(snapshot.flop)).toBe(true);
+    expect(holdings(st)).toEqual([2, 2, 2]);
   });
 
   it('a NON-pineapple variant is untouched by the resolve', () => {

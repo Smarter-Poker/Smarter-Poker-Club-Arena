@@ -307,36 +307,87 @@ export class RakebackSettlerService {
    * CATCH_UP_DELAY_MS. Same work, same batch semantics, just sooner.
    */
   private catchUpHandle: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Timer handles only describe future work. Settlement, financial-close and
+   * conservation passes which already started keep mutating shared ledgers
+   * after clearInterval/clearTimeout. Keep explicit ownership until every
+   * admitted promise and continuation has settled.
+   */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
+  /**
+   * Direct runSettlement() calls are supported by diagnostics before start,
+   * but once stop fences this instance they stay refused until start opens a
+   * new generation. That closes the small post-stop admission race where an
+   * external caller could otherwise register work after an empty drain.
+   */
+  private acceptingSettlements = true;
+
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private openLifecycleScope(): () => void {
+    let release!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void this.trackLifecycleJob(completion);
+    return release;
+  }
+
+  private launchSettlement(generation: number, context: string): void {
+    if (!this.lifecycleIsCurrent(generation)) return;
+    void this.trackLifecycleJob(this.runSettlement()).catch((e: any) =>
+      reportError(new Error(e?.message || JSON.stringify(e) || String(e)), context)
+    );
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
 
   start(): void {
+    if (this.stopOperation) {
+      console.warn('[RakebackSettler] Start refused while the prior generation is stopping');
+      return;
+    }
     if (this.isRunning) {
       console.log('[RakebackSettler] Already running');
       return;
     }
     this.isRunning = true;
+    this.acceptingSettlements = true;
+    const generation = ++this.lifecycleGeneration;
     console.log(`[RakebackSettler] Starting (interval: ${SETTLEMENT_INTERVAL_MS / 60000}m)`);
     // Run once immediately on startup, then every 30 min
-    this.runSettlement().catch((e: any) =>
-      reportError(
-        new Error(e?.message || JSON.stringify(e) || String(e)),
-        'RakebackSettler.startup_run'
-      )
-    );
+    this.launchSettlement(generation, 'RakebackSettler.startup_run');
     this.intervalHandle = setInterval(() => {
       // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
       // rakeback - chip movement by definition. A 30-minute cadence loses
       // nothing to a 5-minute wait.
       if (isMaintenanceFrozen()) return;
-      this.runSettlement().catch((e: any) =>
-        reportError(
-          new Error(e?.message || JSON.stringify(e) || String(e)),
-          'RakebackSettler.interval_run'
-        )
-      );
+      this.launchSettlement(generation, 'RakebackSettler.interval_run');
     }, SETTLEMENT_INTERVAL_MS);
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
+
+    // Fence admission synchronously. GameServer can invoke every producer's
+    // stop first, then await the returned promises before releasing leadership.
+    this.isRunning = false;
+    this.acceptingSettlements = false;
+    this.lifecycleGeneration++;
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
@@ -345,8 +396,16 @@ export class RakebackSettlerService {
       clearTimeout(this.catchUpHandle);
       this.catchUpHandle = null;
     }
-    this.isRunning = false;
-    console.log('[RakebackSettler] Stopped');
+
+    const drain = (async () => {
+      await this.drainLifecycleJobs();
+      console.log('[RakebackSettler] Stopped');
+    })();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   /**
@@ -358,21 +417,17 @@ export class RakebackSettlerService {
    * interval tick — so this cannot double-process or stack timers. The regular
    * 30-minute interval keeps running underneath as the floor.
    */
-  private scheduleCatchUp(backlogRemains: boolean): void {
+  private scheduleCatchUp(backlogRemains: boolean, generation: number | null): void {
     if (this.catchUpHandle) {
       clearTimeout(this.catchUpHandle);
       this.catchUpHandle = null;
     }
-    if (!backlogRemains || !this.isRunning) return;
+    if (!backlogRemains || generation === null || !this.lifecycleIsCurrent(generation)) {
+      return;
+    }
     this.catchUpHandle = setTimeout(() => {
       this.catchUpHandle = null;
-      if (!this.isRunning) return;
-      this.runSettlement().catch((e: any) =>
-        reportError(
-          new Error(e?.message || JSON.stringify(e) || String(e)),
-          'RakebackSettler.catch_up_run'
-        )
-      );
+      this.launchSettlement(generation, 'RakebackSettler.catch_up_run');
     }, CATCH_UP_DELAY_MS);
     // Never hold the process open for a catch-up tick.
     (this.catchUpHandle as unknown as { unref?: () => void }).unref?.();
@@ -451,93 +506,106 @@ export class RakebackSettlerService {
    * run) into per-player rakeback_periods rows. Idempotent.
    */
   async runSettlement(): Promise<void> {
-    // SWEEP #4: skip if a previous run is still in flight (prevents the double-credit
-    // described on the isSettling field). The guard wraps the whole run in try/finally
-    // so the flag always clears even on a thrown error.
-    if (this.isSettling) {
-      console.warn('[RakebackSettler] settlement already in progress - skipping overlapping run');
+    if (!this.acceptingSettlements) {
+      console.warn('[RakebackSettler] Settlement refused after service stop');
       return;
     }
-    this.isSettling = true;
+    // Public acceptance probes and any future direct caller must be part of
+    // the same stop proof as timer-launched runs. The launcher also tracks its
+    // returned promise; this scope owns the continuation from method entry.
+    const releaseLifecycle = this.openLifecycleScope();
+    const generation = this.isRunning ? this.lifecycleGeneration : null;
     try {
-      // AUDIT M6: drain the backlog instead of processing one batch and then
-      // sleeping 30 minutes. `_runSettlementInner` advances the durable cursor
-      // before returning 'more', so each pass through this loop starts strictly
-      // after the last row of the previous one — an interruption anywhere in
-      // the loop resumes correctly rather than replaying.
-      let backlogRemains = false;
-      for (let batch = 1; ; batch++) {
-        const result = await this._runSettlementInner();
-        if (result !== 'more') break;
-        if (batch >= MAX_DRAIN_BATCHES) {
-          backlogRemains = true;
-          console.warn(
-            `[RakebackSettler] drain cap reached after ${batch} full batches ` +
-              `(${batch * FETCH_LIMIT} records) - backlog REMAINS, resuming in ` +
-              `${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
-          );
-          break;
-        }
+      // SWEEP #4: skip if a previous run is still in flight (prevents the double-credit
+      // described on the isSettling field). The guard wraps the whole run in try/finally
+      // so the flag always clears even on a thrown error.
+      if (this.isSettling) {
+        console.warn('[RakebackSettler] settlement already in progress - skipping overlapping run');
+        return;
       }
-      this.scheduleCatchUp(backlogRemains);
-      // RAKE-AUDIT 2026-07-24: weekly financial close now runs SERVER-SIDE.
-      // Previously the weekly rakeback settlement + credit-invoice generation
-      // lived only in the browser (FinancialCronService/SettlementCronService
-      // setInterval), so they fired ONLY while an admin had a tab open.
-      // AUDIT PASS 3 [ORDER + CADENCE]: the union's weekly 90% must land BEFORE
-      // runWeeklyFinancialClose() pays player rakeback, because player rakeback
-      // is now funded from clubs.chip_treasury and the union payback is what
-      // replenishes it — running them the other way round deferred every
-      // player payout by a week on the first close. It also runs EVERY cycle
-      // rather than inside the once-a-week gate: the RPC is idempotent and
-      // no-ops mid-week, so a close that fails (or an engine outage spanning a
-      // Monday) is retried within 30 minutes instead of 7 days.
-      await this.runUnionWeeklyRakeback();
-      // Player rakeback, every cycle. See runRakebackDrain: settle_club_rakeback
-      // is bounded, so it must be drained in a loop rather than called once a
-      // week. Ordered after the union 90% because that is what funds it.
-      await this.runRakebackDrain();
-      await this.runWeeklyFinancialClose();
-      // SWEEP #6: post-tournament money-conservation sentinel. Scans every
-      // tournament that reached COMPLETED since the last cycle and asserts the
-      // invariants that the whole rake/payout audit is meant to guarantee, so a
-      // future regression that mints chips, strands players, or wrongly rakes a
-      // tournament hand is caught within one settler cycle instead of silently
-      // corrupting the ledger. Never mutates game state — reportError only.
-      await this.runTournamentSentinel();
-      // AUDIT 2026-08-19: union treasury conservation sentinel — one cheap RPC
-      // per cycle; breaches land in financial_alerts (deduped) and telemetry.
-      await this.runUnionTreasurySentinel();
-      // P3-1 2026-08-20: governance + settlement-conservation invariants now
-      // run every settler cycle instead of only inside Monday's PHASE 8 on
-      // the workers. Every rule they enforce fails silently as data drift; a
-      // weekly-only check means up to seven days of unnoticed breakage.
-      // reportError only — never mutates state. Monday's PHASE 8 still
-      // notifies the union owner/admins for critical breaks.
-      await this.runUnionGovernanceSentinel();
-      // 2026-08-20: keep the union rake rollup warm OUTSIDE the money
-      // transaction. The rollup is filled lazily by its first caller, and on
-      // Monday that caller is fn_union_settle_player_pnl while it holds
-      // FOR UPDATE locks on union_wallets and clubs.chip_treasury — the same
-      // rows live horse funding writes to. Measured 2026-08-20: 4 unrolled
-      // days would have added ~12s of scan inside that lock window. This
-      // also RE-ROLLS days whose inputs changed retroactively (the union
-      // migration keeps setting tables.union_id on existing tables, which
-      // pulls historical rake_records into scope after a day was finalized).
-      await this.runUnionRakeRollupCatchup();
-      // 2026-08-20: persist this week's ECO (union win tax / loss rebate) so an
-      // invoice issued today can be reproduced tomorrow after live data moves
-      // on. Idempotent per (union, club, week) and a complete no-op while ECO
-      // is disabled, which it is by default. Deliberately NOT inside the
-      // settlement transaction: it reads the reconciliation report (~7s over a
-      // week) and that must never run while FOR UPDATE locks are held on
-      // union_wallets and clubs.chip_treasury.
-      await this.runUnionEcoRecord();
-      // PAYOUT-INTEGRITY 2026-08-20: a live tournament must hold exactly the
-      // chips it issued. Nothing verified this before.
-      await this.runTournamentChipConservation();
+      this.isSettling = true;
+      try {
+        // AUDIT M6: drain the backlog instead of processing one batch and then
+        // sleeping 30 minutes. `_runSettlementInner` advances the durable cursor
+        // before returning 'more', so each pass through this loop starts strictly
+        // after the last row of the previous one - an interruption anywhere in
+        // the loop resumes correctly rather than replaying.
+        let backlogRemains = false;
+        for (let batch = 1; ; batch++) {
+          const result = await this._runSettlementInner();
+          if (result !== 'more') break;
+          if (batch >= MAX_DRAIN_BATCHES) {
+            backlogRemains = true;
+            console.warn(
+              `[RakebackSettler] drain cap reached after ${batch} full batches ` +
+                `(${batch * FETCH_LIMIT} records) - backlog REMAINS, resuming in ` +
+                `${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
+            );
+            break;
+          }
+        }
+        this.scheduleCatchUp(backlogRemains, generation);
+        // RAKE-AUDIT 2026-07-24: weekly financial close now runs SERVER-SIDE.
+        // Previously the weekly rakeback settlement + credit-invoice generation
+        // lived only in the browser (FinancialCronService/SettlementCronService
+        // setInterval), so they fired ONLY while an admin had a tab open.
+        // AUDIT PASS 3 [ORDER + CADENCE]: the union's weekly 90% must land BEFORE
+        // runWeeklyFinancialClose() pays player rakeback, because player rakeback
+        // is now funded from clubs.chip_treasury and the union payback is what
+        // replenishes it - running them the other way round deferred every
+        // player payout by a week on the first close. It also runs EVERY cycle
+        // rather than inside the once-a-week gate: the RPC is idempotent and
+        // no-ops mid-week, so a close that fails (or an engine outage spanning a
+        // Monday) is retried within 30 minutes instead of 7 days.
+        await this.runUnionWeeklyRakeback();
+        // Player rakeback, every cycle. See runRakebackDrain: settle_club_rakeback
+        // is bounded, so it must be drained in a loop rather than called once a
+        // week. Ordered after the union 90% because that is what funds it.
+        await this.runRakebackDrain();
+        await this.runWeeklyFinancialClose();
+        // SWEEP #6: post-tournament money-conservation sentinel. Scans every
+        // tournament that reached COMPLETED since the last cycle and asserts the
+        // invariants that the whole rake/payout audit is meant to guarantee, so a
+        // future regression that mints chips, strands players, or wrongly rakes a
+        // tournament hand is caught within one settler cycle instead of silently
+        // corrupting the ledger. Never mutates game state - reportError only.
+        await this.runTournamentSentinel();
+        // AUDIT 2026-08-19: union treasury conservation sentinel - one cheap RPC
+        // per cycle; breaches land in financial_alerts (deduped) and telemetry.
+        await this.runUnionTreasurySentinel();
+        // P3-1 2026-08-20: governance + settlement-conservation invariants now
+        // run every settler cycle instead of only inside Monday's PHASE 8 on
+        // the workers. Every rule they enforce fails silently as data drift; a
+        // weekly-only check means up to seven days of unnoticed breakage.
+        // reportError only - never mutates state. Monday's PHASE 8 still
+        // notifies the union owner/admins for critical breaks.
+        await this.runUnionGovernanceSentinel();
+        // 2026-08-20: keep the union rake rollup warm OUTSIDE the money
+        // transaction. The rollup is filled lazily by its first caller, and on
+        // Monday that caller is fn_union_settle_player_pnl while it holds
+        // FOR UPDATE locks on union_wallets and clubs.chip_treasury - the same
+        // rows live horse funding writes to. Measured 2026-08-20: 4 unrolled
+        // days would have added ~12s of scan inside that lock window. This
+        // also RE-ROLLS days whose inputs changed retroactively (the union
+        // migration keeps setting tables.union_id on existing tables, which
+        // pulls historical rake_records into scope after a day was finalized).
+        await this.runUnionRakeRollupCatchup();
+        // 2026-08-20: persist this week's ECO (union win tax / loss rebate) so an
+        // invoice issued today can be reproduced tomorrow after live data moves
+        // on. Idempotent per (union, club, week) and a complete no-op while ECO
+        // is disabled, which it is by default. Deliberately NOT inside the
+        // settlement transaction: it reads the reconciliation report (~7s over a
+        // week) and that must never run while FOR UPDATE locks are held on
+        // union_wallets and clubs.chip_treasury.
+        await this.runUnionEcoRecord();
+        // PAYOUT-INTEGRITY 2026-08-20: a live tournament must hold exactly the
+        // chips it issued. Nothing verified this before.
+        await this.runTournamentChipConservation();
+      } finally {
+        this.isSettling = false;
+      }
     } finally {
-      this.isSettling = false;
+      releaseLifecycle();
     }
   }
 
@@ -566,9 +634,8 @@ export class RakebackSettlerService {
    * Idempotent and cheap: bounded batch per cycle, advances the watermark to the
    * newest processed ended_at so each tournament is checked once.
    *
-   * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the payout
-   * sweep's was until 2026-08-29 (see the long note on payoutSweepCycles, and
-   * `20260829125035_payout_sweep_window_means_finished_not_created`). This scan
+   * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the retired
+   * payout sweep's was until 2026-08-29. This scan
    * filtered, ordered and watermarked on `tournaments.updated_at`, which NOTHING
    * maintains — no trigger, no engine write. Measured on 2026-08-31: 2,286 of
    * 2,286 tournaments created in 24 hours had `updated_at = created_at`, and
@@ -1196,12 +1263,19 @@ export class RakebackSettlerService {
 
       // 2. Weekly agent credit invoices
       {
-        const { error } = await this.supabaseRpc('fn_generate_all_credit_invoices', {});
-        if (error) {
+        const { data, error } = await supabase.rpc('fn_generate_all_credit_invoices', {
+          p_period_end: `${currentWeekStart}T00:00:00Z`,
+        });
+        if (error || data?.success !== true || data?.failed !== 0) {
           reportError(
-            new Error(`fn_generate_all_credit_invoices failed: ${JSON.stringify(error)}`),
+            new Error(
+              error
+                ? `fn_generate_all_credit_invoices failed: ${JSON.stringify(error)}`
+                : 'fn_generate_all_credit_invoices did not confirm zero failed invoices'
+            ),
             'RakebackSettler.weekly_invoices'
           );
+          return;
         }
       }
 
@@ -1216,11 +1290,13 @@ export class RakebackSettlerService {
             new Error(`weekly_rake_generated reset failed: ${error.message}`),
             'RakebackSettler.weekly_rake_reset'
           );
+          return;
         }
       }
 
-      // 4. Mark this week closed
-      await supabase.from('daemon_state').upsert(
+      // 4. Mark this week closed. Reset and latch are still separate writes;
+      // a lost latch receipt must be reported, never logged as confirmed completion.
+      const { error: closeError } = await supabase.from('daemon_state').upsert(
         {
           daemon: WEEKLY_KEY,
           high_water_mark: new Date(`${currentWeekStart}T00:00:00Z`).toISOString(),
@@ -1228,6 +1304,13 @@ export class RakebackSettlerService {
         },
         { onConflict: 'daemon' }
       );
+      if (closeError) {
+        reportError(
+          new Error(`weekly-close latch failed: ${closeError.message}`),
+          'RakebackSettler.weekly_close'
+        );
+        return;
+      }
       console.log(
         '[RakebackSettler] Weekly financial close done: invoices generated, weekly counters reset'
       );

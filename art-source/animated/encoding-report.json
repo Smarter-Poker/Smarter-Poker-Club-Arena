@@ -318,5 +318,93 @@
     "sourceBytes": 1108754,
     "runtimeBytes": 872202,
     "visiblePixelsIdentical": true
+  },
+  {
+    "file": "thinking.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 722382,
+    "runtimeBytes": 457974,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "loser_hand.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1027105,
+    "runtimeBytes": 670452,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "blush.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 649866,
+    "runtimeBytes": 408648,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "ok_smug.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 771557,
+    "runtimeBytes": 513800,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "sleeping.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1031155,
+    "runtimeBytes": 720694,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "facepalm.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1105132,
+    "runtimeBytes": 741378,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "screaming.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 957497,
+    "runtimeBytes": 640568,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "vomit_rainbow.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1101699,
+    "runtimeBytes": 753914,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "surrender.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 682329,
+    "runtimeBytes": 444246,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "energy_ball.png",
+    "width": 1327,
+    "height": 1186,
+    "sourceBytes": 736883,
+    "runtimeBytes": 565936,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "sloth.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 2335812,
+    "runtimeBytes": 1517164,
+    "visiblePixelsIdentical": true
   }
 ]

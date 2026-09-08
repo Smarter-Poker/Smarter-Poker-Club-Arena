@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/the-books-survive-the-arena",
+  "functions": [
+    "fn_ca_diamond_offledger_float",
+    "fn_ca_diamond_trial_balance",
+    "fn_ca_diamond_snapshot",
+    "fn_ca_diamond_economy"
+  ]
+}

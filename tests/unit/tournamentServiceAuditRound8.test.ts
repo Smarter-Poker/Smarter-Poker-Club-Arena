@@ -87,24 +87,27 @@ describe('round 8: creation paths', () => {
   });
 });
 
-describe('round 8: the start path cannot cancel a tournament off a failed read', () => {
+describe('round 8: the browser start path delegates to the authoritative engine', () => {
   const start = sliceMethod(SRC, 'async startTournament(');
 
-  it('binds and reports the roster read error before any player-count logic', () => {
-    const gate = sliceBetween(
-      start,
-      'error: rosterErr',
-      "throw new Error('No players registered')"
-    );
-    expect(gate).toContain('if (rosterErr)');
-    expect(gate).toContain('start_roster_read_failed');
-    expect(gate).toContain('Could not load the player list. Please try again.');
+  it('requests an early start through the owner RPC and reports transport failures', () => {
+    expect(start).toContain("supabase.rpc('fn_owner_start_tournament_now'");
+    expect(start).toContain('p_tournament_id: tournamentId');
+    expect(start).toContain('start_request_failed');
   });
 
-  it('a short field waits without cancelling registered players', () => {
-    expect(start).toContain('players.length < 3');
+  it('does not mutate tournament, table, seat, or roster rows in the browser', () => {
+    expect(start).not.toContain(".from('tournaments')");
+    expect(start).not.toContain(".from('tables')");
+    expect(start).not.toContain(".from('table_seats')");
+    expect(start).not.toContain(".from('tournament_players')");
     expect(start).not.toContain('await this.cancelTournament(');
-    expect(start).toContain('Tournament Needs At Least 3 Players To Start');
+  });
+
+  it('rejects an ordinary RPC refusal and returns a freshly loaded lobby row on success', () => {
+    expect(start).toContain('if (!result?.ok)');
+    expect(start).toContain('const tournament = await this.getTournament(tournamentId)');
+    expect(start).toContain('return tournament');
   });
 });
 
@@ -187,9 +190,11 @@ describe('round 8: silent under-reports and confident zeros now leave a trace', 
     expect(bounties).toContain('player_bounties_read_failed');
   });
 
-  it('the browser service exposes no privileged tournament completion bypass', () => {
-    expect(SRC).not.toContain('async finalizeTournament(');
-    expect(SRC).not.toMatch(/update\(\{[\s\S]{0,160}?status:\s*'COMPLETED'/);
+  it('the obsolete browser finalizer refuses instead of writing a partial completion', () => {
+    const finalize = sliceMethod(SRC, 'async finalizeTournament(');
+    expect(finalize).toContain('TournamentService.client_finalize_refused');
+    expect(finalize).toContain('return { success: false }');
+    expect(finalize).not.toContain("status: 'COMPLETED'");
   });
 
   it('the balance and merge checks report a failed read behind their safe false', () => {

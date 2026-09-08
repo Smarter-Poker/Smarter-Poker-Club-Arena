@@ -86,15 +86,12 @@ describe('synchronized breaks run :55 -> :00', () => {
     expect(sched).toMatch(/setHours\(nextBreak\.getHours\(\)\s*\+\s*1\)/);
   });
 
-  it('the liveness sweep does not rebuild engines during a break', () => {
-    const revive = sliceMethod(BASE, 'protected async reviveDeadTableEngines');
-    // Paused is not dead: the sweep must bail out before the dead check.
-    expect(revive).toMatch(/if \(this\.onBreak\) return;/);
-    const guardAt = revive.indexOf('this.onBreak');
-    const deadAt = revive.indexOf('msSinceProgress() > 180_000');
-    expect(guardAt).toBeGreaterThan(-1);
-    expect(deadAt).toBeGreaterThan(-1);
-    expect(guardAt).toBeLessThan(deadAt);
+  it('a causal replacement inherits the active break before it can deal', () => {
+    const prepare = sliceMethod(BASE, 'private prepareManagedTableEngineForPlay');
+    expect(prepare).toMatch(/if \(this\.onBreak\)/);
+    expect(prepare).toMatch(
+      /pauseAfterHand\(TournamentManagerBase\.MAX_HEALTHY_PAUSE_MS,\s*\{\s*beforeNextHand:\s*true/
+    );
   });
 
   it('break state is persisted so it is observable and survives a restart', () => {
@@ -193,13 +190,12 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     );
   });
 
-  it("the tournament manager's sweep also respects a by-design pause", () => {
-    const revive = BASE.slice(
-      BASE.indexOf('protected async reviveDeadTableEngines'),
-      BASE.indexOf('protected async reviveDeadTableEngines') + 2200
-    );
-    expect(revive).toMatch(/engine\.isPausedByDesign\(\)/);
-    expect(revive).toMatch(/!parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/);
+  it("the tournament manager's causal recovery prepares a replacement before admission", () => {
+    const recovery = sliceMethod(BASE, 'private async performManagedTableEngineRecovery');
+    const prepareAt = recovery.indexOf('this.prepareManagedTableEngineForPlay(fresh)');
+    const replaceAt = recovery.indexOf('this.gameServer.replaceTableEngine');
+    expect(prepareAt).toBeGreaterThan(-1);
+    expect(replaceAt).toBeGreaterThan(prepareAt);
   });
 
   it('a pause is only healthy for as long as a real break could last', () => {
@@ -208,7 +204,7 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     expect(GAME_SERVER).toMatch(/MAX_HEALTHY_PAUSE_MS = 10 \* 60 \* 1000/);
     expect(BASE).toMatch(/MAX_HEALTHY_PAUSE_MS = 10 \* 60 \* 1000/);
     expect(GAME_SERVER).toMatch(/msPaused\(\) > GameServer\.MAX_HEALTHY_PAUSE_MS/);
-    expect(BASE).toMatch(/msPaused\(\) <= TournamentManagerBase\.MAX_HEALTHY_PAUSE_MS/);
+    expect(BASE).toMatch(/pauseAfterHand\(TournamentManagerBase\.MAX_HEALTHY_PAUSE_MS/);
   });
 
   it('the ceiling exceeds a full break plus the last-hand grace', () => {
@@ -294,7 +290,7 @@ describe('a restart mid-break does not resume play', () => {
 
   it('re-arms the resume for the remainder', () => {
     expect(resumeFn).toMatch(
-      /setTimeout\([\s\S]{0,80}resumeFromBreak\(\)[\s\S]{0,40}remainingMs\)/
+      /setLifecycleTimeout\([\s\S]{0,100}resumeFromBreak\(\)[\s\S]{0,40}remainingMs\)/
     );
   });
 
@@ -348,9 +344,11 @@ describe('the engine pause outlasts the break', () => {
     // the gate go live in `releasePauseGate`. The budget must still be
     // dropped there — a break's multi-minute window inherited by the next
     // hand-for-hand pause is the 2026-08-19 bug in reverse.
-    const release = sliceMethod(ENGINE, 'private releasePauseGate(): void');
+    const release = ENGINE.slice(ENGINE.indexOf('private releasePauseGate()'));
     expect(release).toMatch(/pauseMaxWaitMs = null/);
-    expect(sliceMethod(ENGINE, 'resumeDealing(): void')).toMatch(/this\.releasePauseGate\(\)/);
+    expect(ENGINE.slice(ENGINE.indexOf('resumeDealing(): void {'))).toMatch(
+      /this\.releasePauseGate\(\)/
+    );
   });
 });
 
@@ -588,12 +586,11 @@ describe('a paused table parks whatever it was doing', () => {
     // The top-of-loop park must be conditional on holdBeforeNextHand.
     expect(loopSrc.slice(0, gateAt)).toMatch(/this\.handForHandPaused && this\.holdBeforeNextHand/);
     // The bubble sync's re-pause must NOT claim it.
-    const sync = BASE.slice(
-      BASE.indexOf('protected startHandForHandSync'),
-      BASE.indexOf('protected startHandForHandSync') + 2200
-    );
-    expect(sync).toMatch(/engine\.pauseAfterHand\(\);/);
-    expect(sync).not.toMatch(/beforeNextHand/);
+    const sync = sliceMethod(BASE, 'protected startHandForHandSync');
+    const advance = sliceMethod(BASE, 'private advanceHandForHandBarrier');
+    expect(sync).toMatch(/this\.advanceHandForHandBarrier\(\)/);
+    expect(advance).toMatch(/engine\.pauseAfterHand\(\)/);
+    expect(advance).not.toMatch(/beforeNextHand/);
   });
 
   it('every STOP caller asks for the hold, so nothing is dealt into a break', () => {
@@ -620,11 +617,11 @@ describe('a paused table parks whatever it was doing', () => {
      * step that publishes the bundle, so a cosmetic red here stops every
      * deploy on the platform.
      */
-    const release = sliceMethod(ENGINE_BASE, 'private releasePauseGate(): void');
+    const release = sliceMethod(ENGINE_BASE, 'releasePauseGate()');
     expect(release).toMatch(/this\.holdBeforeNextHand = false/);
     expect(release).toMatch(/this\.pauseMaxWaitMs = null/);
     // And resumeDealing must still route through it rather than half-resuming.
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
     expect(resume).toMatch(/this\.releasePauseGate\(\)/);
   });
 
@@ -637,14 +634,12 @@ describe('a paused table parks whatever it was doing', () => {
      * hand inside the break AND destroyed the break's pause budget on the way
      * through, so the table self-resumed two minutes into a five minute break.
      */
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
-    expect(resume).toMatch(/if \(this\.maintenancePaused \|\| this\.terminalCloseoutPaused\)/);
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    expect(resume).toMatch(/if \(this\.maintenancePaused \|\| this\.finalTableDealPaused\)/);
     // The maintenance resume is the mirror image: it must not lift a
     // hand-for-hand pause it did not set.
-    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance(): void');
-    expect(maint).toMatch(
-      /if \(this\.handForHandPaused \|\| this\.terminalCloseoutPaused\) return/
-    );
+    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance()');
+    expect(maint).toMatch(/if \(this\.handForHandPaused \|\| this\.finalTableDealPaused\) return/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

@@ -35,7 +35,6 @@ import {
   FLIP_CEILING_MS,
   flipMs,
 } from '../../src/presentation/cardPresentation/profiles';
-import { sliceBlockAfter } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const stripComments = (src: string) =>
@@ -81,20 +80,12 @@ describe('the hand rests before the next one', () => {
     expect(arm, 'the rest is not armed after the broadcast').toBeGreaterThan(broadcast);
     expect(awaited, 'the rest is not awaited in the dealing loop').toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-
-    // Terminal settlement is allowed to seize the table during this await,
-    // but no ordinary work may consume time after the player's rest or run
-    // before the last no-more-cards gate.
-    const afterRest = DEALING_CODE.slice(awaited + 'await this.awaitNextHandRest();'.length);
-    const terminalGate = sliceBlockAfter(afterRest, 'if (this.terminalCloseoutPaused)');
-    const beforeDeal = DEALING_CODE.slice(
-      awaited + 'await this.awaitNextHandRest();'.length,
-      deal
-    ).trim();
-    expect(beforeDeal).toBe(terminalGate.trim());
-    expect(terminalGate).toMatch(/this\.setLoopPhase\('parked_for_terminal_closeout'\)/);
-    expect(terminalGate).toMatch(/await this\.awaitPauseGate\(\)/);
-    expect(terminalGate).toMatch(/if \(!this\.running\) break;[\s\S]*continue;/);
+    // The sole permitted statement between the rest and the deal is the
+    // authority re-proof. A dealer whose lease expired while awaiting the
+    // rest must not start one final hand.
+    expect(
+      DEALING_CODE.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()
+    ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 
   it('it happens on EVERY hand, with nothing to branch on', () => {

@@ -171,16 +171,14 @@ describe('the alert rules are wired and reference only real gauges', () => {
 });
 
 describe('a failed tournament payout escalates as money, not just as an error', () => {
-  it('an incomplete atomic finish receipt raises a critical financial alert', () => {
+  it('the all-places atomic failure path raises a critical financial alert', () => {
     const src = read('../tournament/TournamentManagerEliminations.ts');
     expect(src).toContain("from '../services/financialAlerts.js'");
-    expect(src).toContain('Tournament.atomic_terminal_settlement_failed');
+    expect(src).toContain('Tournament.atomic_place_settlement_failed');
 
     // Awaited, so the alert is on disk before the process can be recycled.
     expect(src).toMatch(
-      /await raiseFinancialAlert\(\s*'critical',\s*outcomeUnknown\s*\?\s*'Tournament\.atomic_terminal_settlement_outcome_unknown'\s*:\s*'Tournament\.atomic_terminal_settlement_failed'/
+      /await raiseFinancialAlert\(\s*'critical',\s*'Tournament\.atomic_place_settlement_failed'/
     );
-    expect(src).toMatch(/if \(!outcomeUnknown\) releaseFinishGuard\(\);/);
-    expect(src).toMatch(/if \(outcomeUnknown\) await this\.stopAndWait\(\);/);
   });
 });

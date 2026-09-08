@@ -25,10 +25,10 @@ import { fieldIsStillLive } from './recoveryFieldGuard.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const SERVER = readFileSync(join(here, '..', 'GameServer.ts'), 'utf8');
 
-/** The sweep, from its own comment block to the claim it guards. */
+/** The sweep, bounded before the existing COMPLETING recovery pass. */
 const sweep = SERVER.slice(
   SERVER.indexOf('const twelveHoursAgo ='),
-  SERVER.indexOf("await recoverStuckCompletingTournaments('startup-stale-12h-settle'")
+  SERVER.indexOf('// 7. Recover stuck COMPLETING tournaments')
 );
 
 describe('the sweep refuses a row recovery has no authority to decide', () => {
@@ -42,18 +42,17 @@ describe('the sweep refuses a row recovery has no authority to decide', () => {
     expect(sweep).toContain(".eq('status', 'playing')");
   });
 
-  it('the guard sits BEFORE the COMPLETING claim, not after it', () => {
+  it('elapsed time never creates a COMPLETING claim', () => {
     const guard = sweep.indexOf('fieldIsStillLive({');
-    const claim = sweep.indexOf("update({ status: 'COMPLETING' })");
     expect(guard).toBeGreaterThan(0);
-    expect(claim).toBeGreaterThan(0);
-    expect(guard).toBeLessThan(claim);
+    expect(sweep).not.toContain("update({ status: 'COMPLETING' })");
+    expect(sweep).not.toContain('recoverStuckCompletingTournaments(');
   });
 
   it('a live field is LEFT RUNNING and reported, never flipped', () => {
     const branch = sweep.slice(
       sweep.indexOf('fieldIsStillLive({'),
-      sweep.indexOf("update({ status: 'COMPLETING' })")
+      sweep.indexOf('// Silence is not a terminal result.')
     );
     expect(branch).toContain('LEFT RUNNING');
     expect(branch).toContain("'GameServer.stale_sweep_left_live_field_running'");

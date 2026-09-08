@@ -21,17 +21,17 @@
  *     heads-up rows claimed nine seats and every duel resolved to 'mtt'. The
  *     horses played two-handed poker with ICM and bubble ranges.
  *
- *  3. THE PAYOUT SWEEP COULD NOT REACH ITS BACKLOG. It ran at `p_days: 1`, so
- *     169 underpaid tournaments from May to August were permanently outside the
- *     window — and widening it alone fixes nothing, because
- *     fn_tournament_payout_sweep applies `LIMIT GREATEST(p_limit,1)` to the
- *     SCAN, ordered updated_at DESC, not to the report.
+ *  3. THE PAYOUT SWEEP COULD NOT REACH ITS BACKLOG. That applying repair has
+ *     since been retired by the atomic place-settlement cutover. The root path
+ *     now pays the complete frozen plan or none, so a daemon must never restore
+ *     this second writer.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { HEADS_UP_SEATS, HEADS_UP_STACKS } from '../../src/config/headsUpSpec';
+import { sliceCall } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const stripComments = (src: string) =>
@@ -185,7 +185,7 @@ describe('3. one rate decides the fee, and every writer asks it', () => {
       const calls = [...src.matchAll(/splitBuyIn\(/g)];
       expect(calls.length, `${path} has no splitBuyIn calls left to check`).toBeGreaterThan(0);
       for (const m of calls) {
-        const tail = src.slice(m.index ?? 0, (m.index ?? 0) + 140);
+        const tail = sliceCall(src.slice(m.index ?? 0), 'splitBuyIn(');
         expect(tail, `${path}: splitBuyIn without a rate -> ${tail.split('\n')[0]}`).toMatch(
           /[rR]akeRate/
         );
@@ -194,10 +194,16 @@ describe('3. one rate decides the fee, and every writer asks it', () => {
   });
 });
 
-describe('4. payout repair does not survive the atomic cash cutover', () => {
-  it('the settler has no repair cycle, limits, or applying RPC call', () => {
-    expect(settler).not.toMatch(/runTournamentPayoutSweep|payoutSweepPass|PAYOUT_SWEEP_/);
-    expect(settler).not.toMatch(/fn_tournament_payout_sweep/);
-    expect(settler).not.toMatch(/p_apply:\s*true/);
+describe('4. the applying payout sweep stays retired after the root fix', () => {
+  it('the daemon has no applying tournament-payout path left', () => {
+    expect(settler).not.toContain('fn_tournament_payout_sweep');
+    expect(settler).not.toContain('runTournamentPayoutSweep');
+    expect(settler).not.toContain('payoutSweepPass');
+    expect(settler).not.toContain('PAYOUT_SWEEP_');
+  });
+
+  it('keeps the read-only conservation detectors', () => {
+    expect(settler).toContain('runTournamentSentinel');
+    expect(settler).toContain('runTournamentChipConservation');
   });
 });

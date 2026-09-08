@@ -1,115 +1,43 @@
 /**
- * A busted tournament seat and its standings zero are one hand transaction.
+ * THE VACATED BUST MUST STAY VISIBLE TO THE ELIMINATION SWEEP (2026-08-30).
  *
- * The old runtime vacated table_seats, then separately zeroed
- * tournament_players, while a later elimination sweep tried to repair either
- * half. A crash or race between those writers stranded a player or overwrote
- * a newer stack. The hand-stack authority now owns all three results: settled
- * seat stacks, the standings mirror, and zero-stack seat release.
+ * Regression pinned: the bust-vacates-the-seat rule removed the 0-stack seat
+ * row before the sweep's chip sync (which reads OPEN seats only) could run,
+ * so `tournament_players.chips` froze at a stale positive value, the player
+ * never matched `chips <= 0`, remainingCount never reached 1, and the
+ * tournament never finished. Live impact on 2026-08-30: 10 of 16 RUNNING
+ * MTTs stranded heads-up-won, blinds escalating past level 100, first prize
+ * never paid.
+ *
+ * The dealing engine persists zero and emits an event wake. The sweep is
+ * deliberately forbidden from guessing that an absent seat is a knockout:
+ * a legitimate player can be seatless while a table move is in flight.
+ *
+ * If you deliberately replace either mechanism, move the pin to the new one
+ * IN THE SAME COMMIT.
  */
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { sliceBlockAfter, sliceSqlStatement } from '../testHelpers/sourceWindow.js';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-const dealing = readFileSync(join(__dirname, '../engine/ServerTableEngineDealing.ts'), 'utf8');
-const migrations = join(__dirname, '../../../supabase/migrations');
-const terminalMigration = readFileSync(
-  join(
-    __dirname,
-    '../../../supabase/migrations/20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
-  ),
-  'utf8'
-);
+const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/** Select only literal full definitions, never ACL/signature/hardener mentions. */
-function newestFullDefinition(fn: string): string {
-  const create = new RegExp(
-    `^[\\t ]*CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${escapeRegExp(fn)}\\s*\\(`,
-    'gim'
-  );
-  const definitions: string[] = [];
-
-  for (const filename of readdirSync(migrations)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()) {
-    const migration = readFileSync(join(migrations, filename), 'utf8');
-    for (const match of migration.matchAll(create)) {
-      const start = match.index;
-      const tail = migration.slice(start);
-      const opener = /\bAS\s+(\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)/i.exec(tail);
-      if (!opener) throw new Error(`${filename}: ${fn} has no dollar-quoted function body`);
-
-      const delimiter = opener[1];
-      const bodyStart = start + opener.index + opener[0].length;
-      const bodyEnd = migration.indexOf(delimiter, bodyStart);
-      if (bodyEnd === -1) throw new Error(`${filename}: ${fn} has no closing ${delimiter}`);
-
-      definitions.push(migration.slice(start, bodyEnd + delimiter.length));
-    }
-  }
-
-  if (definitions.length === 0) throw new Error(`No full definition found for public.${fn}`);
-  return definitions[definitions.length - 1];
-}
-
-function delimitedBlock(source: string, delimiter: string): string {
-  const start = source.indexOf(delimiter);
-  const end = source.indexOf(delimiter, start + delimiter.length);
-  if (start === -1 || end === -1) throw new Error(`Missing ${delimiter} block`);
-  return source.slice(start + delimiter.length, end);
-}
-
-function dollarAssignment(source: string, variable: string): string {
-  const assignment = new RegExp(
-    `\\b${escapeRegExp(variable)}\\s+(?:constant\\s+)?text\\s*:=\\s*(\\$[A-Za-z_][A-Za-z0-9_]*\\$|\\$\\$)`,
-    'i'
-  ).exec(source);
-  if (!assignment) throw new Error(`Missing ${variable} dollar-quoted assignment`);
-
-  const delimiter = assignment[1];
-  const start = assignment.index + assignment[0].length;
-  const end = source.indexOf(delimiter, start);
-  if (end === -1) throw new Error(`Missing ${variable} closing ${delimiter}`);
-  return source.slice(start, end);
-}
-
-function handStackBodyAfterTerminalHardening(): { body: string; hardener: string } {
-  const hardener = delimitedBlock(terminalMigration, '$harden_hand_stack_lock_order$');
-  const needle = dollarAssignment(hardener, 'v_sync_needle');
-  const replacement = dollarAssignment(hardener, 'v_sync_replacement');
-  const authoritative = newestFullDefinition('fn_ca_settle_hand_stacks_absolute');
-  const occurrences = authoritative.split(needle).length - 1;
-  if (occurrences !== 1) {
-    throw new Error(
-      `Hand-stack hardener needle occurs ${occurrences} times in its full definition`
-    );
-  }
-  return { body: authoritative.replace(needle, replacement), hardener };
-}
-
-describe('busted tournament seats close at the stack authority', () => {
-  it('has no process-side standings or seat writer after a bust', () => {
-    const block = sliceBlockAfter(dealing, 'for (const player of justBustedPlayers)');
-    expect(block).toContain("reason: 'busted_awaiting_rebuy_decision'");
-    expect(block).not.toContain(".from('table_seats')");
-    expect(block).not.toContain(".from('tournament_players')");
-    expect(block).not.toContain('.update({ chips: 0 })');
+describe('busted-vacate stays visible to the elimination sweep', () => {
+  it('the dealing engine zeroes tournament_players.chips when it vacates a busted seat', () => {
+    const src = read('../engine/ServerTableEngineDealing.ts');
+    const vacateAt = src.indexOf("reason: 'busted_awaiting_rebuy_decision'");
+    expect(vacateAt).toBeGreaterThan(-1);
+    // The chips-zero write lives in the same successful-vacate branch.
+    const branch = src.slice(Math.max(0, vacateAt - 4000), vacateAt);
+    expect(branch).toContain('.update({ chips: 0 })');
+    expect(branch).toContain(".eq('status', 'playing')");
   });
 
-  it('mirrors standings before atomically releasing named zero-stack seats', () => {
-    const { body, hardener } = handStackBodyAfterTerminalHardening();
-    const mirror = body.indexOf('UPDATE public.tournament_players');
-    const vacate = body.indexOf('UPDATE public.table_seats', mirror + 1);
-    expect(mirror).toBeGreaterThan(-1);
-    expect(vacate).toBeGreaterThan(mirror);
-    const vacateStatement = sliceSqlStatement(body.slice(mirror), 'UPDATE public.table_seats');
-    expect(vacateStatement).toMatch(/left_at[\s\S]*stack\s*=\s*0/);
-    expect(hardener).toMatch(
-      /v_hardened\s*:=\s*replace\(v_hardened,v_sync_needle,v_sync_replacement\)/
-    );
-    expect(hardener).toMatch(/EXECUTE\s+v_hardened/);
+  it('the sweep never manufactures a bust from elapsed seatlessness', () => {
+    const src = read('./TournamentManagerEliminations.ts');
+    expect(src).not.toContain('SEATLESS_PHANTOM_MS');
+    expect(src).not.toContain('seatlessPlayingSince');
+    expect(src).toContain('Never infer a knockout from a player');
+    expect(src).toContain('accepted hand-settlement record');
   });
 });

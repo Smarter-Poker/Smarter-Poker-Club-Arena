@@ -6,7 +6,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(
     'https://kuklfnapbkmacvwxktbh.supabase.co',
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false } }
+    {
+        auth: { persistSession: false },
+        global: {
+            headers: {
+                'x-smarter-data-actor': 'service',
+                'x-smarter-data-protocol': '1'
+            }
+        }
+    }
 );
 
 // Tables that returned empty or had errors — need column discovery
@@ -30,6 +38,8 @@ async function inspectEmpty() {
                 headers: {
                     'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
                     'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    'x-smarter-data-actor': 'service',
+                    'x-smarter-data-protocol': '1',
                     'Accept': 'application/json',
                     'Prefer': 'return=representation'
                 }
@@ -42,6 +52,8 @@ async function inspectEmpty() {
             const specResp = await fetch(`https://kuklfnapbkmacvwxktbh.supabase.co/rest/v1/?select`, {
                 headers: {
                     'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                    'x-smarter-data-actor': 'service',
+                    'x-smarter-data-protocol': '1',
                     'Accept': 'application/openapi+json'
                 }
             });

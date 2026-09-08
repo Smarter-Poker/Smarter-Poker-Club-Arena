@@ -10,9 +10,10 @@ try {
  await b.query('BEGIN');
  const pid=(await b.query('SELECT pg_backend_pid() pid')).rows[0].pid;
  await a.query(input.actor);
- await b.query(input.actor);
+ await b.query(input.secondActor ?? input.actor);
  const first=(await a.query('SELECT '+input.first+' receipt')).rows[0].receipt;
- if(input.compositeReceipt) assert.ok(first.id);
+ if(input.numericReceipt) assert.ok(Number.isFinite(Number(first)));
+ else if(input.compositeReceipt) assert.ok(first.id);
  else assert.equal(first.success,true);
  let settled=false;
  const pending=b.query('SELECT '+input.second+' receipt')
@@ -35,10 +36,27 @@ try {
  } else if(input.conflict){
   assert.equal(second.error?.code,'22023','Conflicting cashout must fail without moving money');
   await b.query('ROLLBACK');
+ } else if(input.numericReceipt){
+  assert.equal(second.error,undefined);
+  assert.equal(second.receipt,first);
+  await b.query('COMMIT');
  } else if(input.compositeReceipt){
   assert.equal(second.error,undefined);
   if(input.expectDistinctReceipts) assert.notEqual(second.receipt?.id,first.id);
   else assert.equal(second.receipt?.id,first.id);
+  await b.query('COMMIT');
+ } else if(input.fundingReceipt){
+  assert.equal(second.error,undefined);
+  assert.equal(second.receipt?.success,true);
+  assert.equal(second.receipt?.replayed,true);
+  assert.equal(second.receipt?.op_id,first.op_id);
+  assert.equal(second.receipt?.new_stack,first.new_stack);
+  await b.query('COMMIT');
+ } else if(input.ticketReceipt){
+  assert.equal(second.error,undefined);
+  assert.equal(second.receipt?.success,true);
+  assert.equal(second.receipt?.replayed,true);
+  assert.equal(second.receipt?.transaction_id,first.transaction_id);
   await b.query('COMMIT');
  } else {
   assert.equal(second.receipt?.success,true);

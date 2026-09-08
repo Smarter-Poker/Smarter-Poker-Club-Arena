@@ -1,0 +1,119 @@
+.thr-blush__base {
+  transform-origin: 0 0;
+  animation: thr-blush-base calc(0.4s * var(--animation-speed, 1)) linear
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-blush-base {
+  to {
+    opacity: 0;
+  }
+}
+.thr-blush__pink {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-blush-pink calc(0.4s * var(--animation-speed, 1)) linear
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-blush-pink {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.thr-blush__sway {
+  transform-origin: 0 0;
+  animation: thr-blush-sway calc(1.6s * var(--animation-speed, 1)) ease-in-out
+    calc(0.667s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-blush-sway {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+.thr-blush__heart {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-blush-heart calc(2.2s * var(--animation-speed, 1)) ease-out
+    calc(1.167s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-blush-heart {
+  0% {
+    opacity: 0;
+    transform: translate(0, 18px) scale(0.2);
+  }
+  15% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(12px, -65px) scale(1.1);
+  }
+}
+.thr-blush__sparkle {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-blush-sparkle calc(0.7s * var(--animation-speed, 1)) ease-in-out
+    calc(1.167s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-blush-sparkle {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.thr-blush__pop {
+  transform-origin: 0 0;
+  animation: thr-blush-pop calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0s * var(--animation-speed, 1)) both;
+}
+@keyframes thr-blush-pop {
+  0% {
+    transform: scale(0.18);
+  }
+  45% {
+    transform: scale(1.3);
+  }
+  75% {
+    transform: scale(0.8);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-blush__base,
+  .thr-blush__pink,
+  .thr-blush__sway,
+  .thr-blush__heart,
+  .thr-blush__sparkle,
+  .thr-blush__pop {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-blush__base {
+    opacity: 0;
+  }
+  .thr-blush__pink {
+    opacity: 1;
+  }
+  .thr-blush__heart {
+    opacity: 1;
+  }
+  .thr-blush__sparkle {
+    opacity: 0;
+  }
+}

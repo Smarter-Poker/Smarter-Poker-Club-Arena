@@ -63,6 +63,8 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 let EngineStateClient: typeof import('../src/services/EngineStateClient').EngineStateClient;
 let EngineChannelClient: typeof import('../src/services/EngineStateClient').EngineChannelClient;
+let shouldRecoverMissedHandStartPresentation: typeof import('../src/services/EngineStateClient').shouldRecoverMissedHandStartPresentation;
+let HAND_START_GAP_RECOVERY_WINDOW_MS: number;
 let CLOSE_MUX_SUPERSEDED: number;
 
 beforeEach(async () => {
@@ -93,6 +95,8 @@ beforeEach(async () => {
   const mod = await import('../src/services/EngineStateClient');
   EngineStateClient = mod.EngineStateClient;
   EngineChannelClient = mod.EngineChannelClient;
+  shouldRecoverMissedHandStartPresentation = mod.shouldRecoverMissedHandStartPresentation;
+  HAND_START_GAP_RECOVERY_WINDOW_MS = mod.HAND_START_GAP_RECOVERY_WINDOW_MS;
   // 4901 is owned by EngineSocketMux; EngineStateClient imports it rather
   // than re-exporting it, so read it from its actual home.
   CLOSE_MUX_SUPERSEDED = (await import('../src/services/EngineSocketMux')).CLOSE_MUX_SUPERSEDED;
@@ -354,6 +358,155 @@ describe('EngineStateClient — a token that will not load', () => {
     expect(calls).toBeGreaterThan(1);
     expect(statuses).not.toEqual(['connecting']);
     c.disconnect();
+  });
+});
+
+describe('EngineStateClient - transient event continuity', () => {
+  it('reports an EVENT sequence gap, resyncs, then delivers the real event separately', async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const { c } = client({ onEvent: (event: Record<string, unknown>) => events.push(event) });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    await flush();
+
+    ws._frame({
+      type: 'EVENT',
+      tableId: TABLE,
+      seq: 1,
+      payload: { type: 'first_event' },
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    ws._frame({
+      type: 'EVENT',
+      tableId: TABLE,
+      seq: 3,
+      payload: { type: 'third_event' },
+    });
+    await vi.advanceTimersByTimeAsync(2);
+
+    expect(events.map((event) => event.type)).toEqual([
+      'first_event',
+      'engine_event_gap',
+      'third_event',
+    ]);
+    expect(events[1]).toMatchObject({
+      reason: 'event_sequence_gap',
+      expected_event_seq: 2,
+      received_event_seq: 3,
+    });
+    expect(ws.sent.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'RESYNC',
+      tableId: TABLE,
+    });
+    c.disconnect();
+  });
+
+  it('reports a reconnect boundary only after a table had authoritative state', async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const { c } = client({ onEvent: (event: Record<string, unknown>) => events.push(event) });
+    void c.connect();
+    await flush();
+    const first = live();
+    first._open();
+    await flush();
+    first._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    first._frame({
+      type: 'SNAPSHOT',
+      tableId: TABLE,
+      seq: 7,
+      state: { handNumber: 41 },
+    });
+    await flush();
+
+    // First-connect hydration never emits a continuity notice.
+    expect(events).toEqual([]);
+    first._serverClose(1001);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const second = live();
+    expect(second).not.toBe(first);
+    second._open();
+    await flush();
+    second._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    await flush();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'engine_event_gap', reason: 'reconnect' })
+    );
+    expect(second.sent.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'RESYNC',
+      tableId: TABLE,
+    });
+    c.disconnect();
+  });
+});
+
+describe('missed HAND_STARTED presentation recovery', () => {
+  type RecoveryEvidence =
+    import('../src/services/EngineStateClient').MissedHandStartPresentationEvidence;
+  const openingSnapshot = (overrides: Partial<RecoveryEvidence> = {}): RecoveryEvidence => ({
+    previousHandNumber: 40,
+    handNumber: 41,
+    continuityReportedAt: 1_000,
+    transitionObservedAt: 1_050,
+    now: 1_100,
+    engineStage: 'preflop',
+    communityCards: [],
+    communityCards2: [],
+    communityCards3: [],
+    lastActions: [null, null, null],
+    ...overrides,
+  });
+
+  it('permits only a fresh in-session opening snapshot with no action yet', () => {
+    expect(shouldRecoverMissedHandStartPresentation(openingSnapshot())).toBe(true);
+  });
+
+  it('never rewinds a reconnect that lands mid-flop into the deal animation', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(
+        openingSnapshot({
+          engineStage: 'flop',
+          communityCards: [
+            { rank: 'A', suit: 's' },
+            { rank: 'K', suit: 'h' },
+            { rank: '2', suit: 'd' },
+          ],
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('never starts a late deal after preflop action has already happened', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(openingSnapshot({ lastActions: ['call', null] }))
+    ).toBe(false);
+  });
+
+  it('keeps first hydration still even when it looks like an untouched preflop', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(openingSnapshot({ previousHandNumber: 0 }))
+    ).toBe(false);
+  });
+
+  it('expires either side of a stale continuity boundary', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(
+        openingSnapshot({ now: 1_000 + HAND_START_GAP_RECOVERY_WINDOW_MS + 1 })
+      )
+    ).toBe(false);
+    expect(
+      shouldRecoverMissedHandStartPresentation(
+        openingSnapshot({
+          transitionObservedAt: 1_050,
+          now: 1_050 + HAND_START_GAP_RECOVERY_WINDOW_MS + 1,
+          continuityReportedAt: 1_049,
+        })
+      )
+    ).toBe(false);
   });
 });
 

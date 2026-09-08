@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -49,19 +50,17 @@ const tournamentService = code(tournamentServiceRaw);
 
 /**
  * The insert object for the Spin, bounded by where it actually ends. This
- * used to be `.slice(0, 1600)` — a guess about block length that broke the
+ * used to be `.slice(0, 1600)`, a guess about block length that broke the
  * SpinSeatCount guard the day comments were added above the line it checked.
  * A test that fails when a comment is added is a test people learn to ignore.
  */
 function spinInsertBlock(src: string): string {
   const i = src.indexOf("tournament_type: 'SPIN',");
   expect(i, 'expected a Spin insert').toBeGreaterThan(-1);
-  const end = src.indexOf('.select()', i);
-  expect(end, 'Spin insert does not end in .select()').toBeGreaterThan(i);
-  // Walk back to the start of the insert object so buy_in_fee (written above
-  // tournament_type) is inside the window.
-  const start = src.lastIndexOf('.insert(', i);
-  expect(start, 'no .insert( above the Spin marker').toBeGreaterThan(-1);
+  const end = src.indexOf("createSeatFirstGameAtomic(spinRow, 'spin')", i);
+  expect(end, 'Spin config does not reach the atomic seat-first creator').toBeGreaterThan(i);
+  const start = src.lastIndexOf('const spinRow = {', i);
+  expect(start, 'no spinRow object above the Spin marker').toBeGreaterThan(-1);
   return src.slice(start, end);
 }
 
@@ -118,18 +117,16 @@ describe('one multiplier table, in one place: the spec', () => {
 });
 
 describe('the draw happens at START, nowhere else', () => {
-  it('the engine start path calls the combined reserve authority', () => {
-    expect(engine).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle'/);
-    expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_draw_multiplier'/);
-    expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_settle_game'/);
+  it('the engine start path calls the reserve-gated RPC', () => {
+    expect(engine).toMatch(/fn_spin_draw_multiplier/);
   });
 
   it('creation does NOT draw — not the recurring service, not the orchestrator', () => {
     // A creation-time multiplier is readable for a minute before start, and
     // prize_pool = buyIn x multiplier leaks it arithmetically even when
     // every label is hidden. See guard file header, mistake 5.
-    expect(recurring).not.toMatch(/fn_spin_draw_and_settle/);
-    expect(orchestrator).not.toMatch(/fn_spin_draw_and_settle/);
+    expect(recurring).not.toMatch(/fn_spin_draw_multiplier/);
+    expect(orchestrator).not.toMatch(/fn_spin_draw_multiplier/);
   });
 
   it('creation writes a NULL multiplier for the start path to key on', () => {
@@ -186,29 +183,26 @@ describe('the draw happens at START, nowhere else', () => {
   it('the engine never substitutes a tier for a draw it could not read', () => {
     expect(engine).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
     // ...and the failure is explicit and retryable instead.
-    expect(engine).toMatch(/atomicFailure/);
-    expect(engine).toMatch(/\{ data, error \}/);
-    expect(engine).toMatch(/parseSpinSettlementReceipt\(data/);
+    expect(engine).toMatch(/drawFailure/);
+    expect(engine).toMatch(/error:\s*drawErr/);
   });
 });
 
 describe('every game is booked', () => {
-  it('draws and settles through one combined RPC', () => {
-    expect(engine.match(/supabase\.rpc\('fn_spin_draw_and_settle'/g) ?? []).toHaveLength(1);
+  it('settles through the ledger RPC', () => {
+    expect(engine).toMatch(/fn_spin_settle_game/);
   });
 
-  it('reports loudly and stands down if the exact receipt is unavailable', () => {
-    expect(engine).toMatch(/spin_atomic_settlement_unavailable/);
-    expect(engine).toMatch(/if \(!atomicReceipt\)[\s\S]*?this\.running = false;[\s\S]*?return;/);
+  it('reports loudly rather than swallowing a failed settlement', () => {
+    const i = engine.indexOf("supabase.rpc('fn_spin_settle_game'");
+    expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
+    const block = sliceEnclosingBlock(engine, "supabase.rpc('fn_spin_settle_game'", 0, 2);
+    expect(block).toMatch(/reportError/);
+    expect(block).toMatch(/spin_settle_failed/);
   });
 
-  it('validates the receipt at the rake rate the stake actually implies', () => {
-    expect(engine).toMatch(/rakeRate:\s*spinRakeRate\(buyIn\)/);
-  });
-
-  it('has no background payout or row-repair dependency', () => {
-    expect(engine).not.toMatch(/fn_spin_sweep_unbooked/);
-    expect(engine).not.toMatch(/scheduleSpinRowRepair/);
+  it('books the rake at the rate the stake actually implies', () => {
+    expect(engine).toMatch(/p_rake_rate:\s*spinRakeRate\(buyIn\)/);
   });
 });
 

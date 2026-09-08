@@ -290,7 +290,6 @@ export type BusEventType =
   | 'DATA_MUTATED'
   | 'CHAT_MESSAGE_RECEIVED'
   | 'TOURNAMENT_REGISTERED'
-  | 'TOURNAMENT_STARTED'
   | 'ANTI_CHEAT_FLAG_CREATED'
   | 'ANNOUNCEMENT_CREATED' // @deprecated: no emitters or subscribers — reserved for future use
   | 'CREDIT_UPDATED'
@@ -1119,7 +1118,6 @@ export interface BusPayloadMap {
     unionId?: string;
     userId?: string;
   };
-  TOURNAMENT_STARTED: { tournamentId: string; clubId?: string };
   ANTI_CHEAT_FLAG_CREATED: { clubId: string; flagId?: string; severity?: string };
   ANNOUNCEMENT_CREATED: { clubId: string; action?: string };
   // Phase 4: Remaining native page event payloads

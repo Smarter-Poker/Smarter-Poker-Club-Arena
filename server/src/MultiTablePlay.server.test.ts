@@ -256,9 +256,11 @@ describe('horse decision interleaving across 4 tables', () => {
   it('shipped source pin: the think timer is per-engine state, armed per table', () => {
     const src = readFileSync(join(process.cwd(), 'src/engine/ServerTableEngineTurns.ts'), 'utf8');
     expect(src).toContain('this.horseActionTimer = setTimeout(');
-    // The stale-controller identity check that keeps a slow timer from firing
-    // into the NEXT hand:
-    expect(src).toContain('if (handControllerRef !== this.handController) return;');
+    // The asynchronous worker result and timer carry controller, hand and
+    // lease identity, so a slow answer cannot fire into a successor hand.
+    expect(src).toContain('handControllerRef !== this.handController');
+    expect(src).toContain('this.handCount !== handNumber');
+    expect(src).toContain('currentLease.generation === leaseGeneration');
   });
 });
 
@@ -366,22 +368,20 @@ describe('satellite award current_players write', () => {
     expect(oldWrite(snapshot, 2)).toBe(12); // CONTROL: erases the 3 humans
   });
 
-  it('shipped source pin: the atomic database authority owns target registration counts', () => {
+  it('shipped source pin: the satellite path recounts and the stale formula is gone', () => {
     const src = readFileSync(join(process.cwd(), 'src/tournament/TournamentManager.ts'), 'utf8');
-    const settlementRpc = readFileSync(
-      join(process.cwd(), 'src/tournament/satelliteSettlementRpc.ts'),
+    const atomic = readFileSync(
+      join(
+        process.cwd(),
+        '..',
+        'supabase/migrations/20260908042300_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
+      ),
       'utf8'
     );
-    expect(src).toContain(
-      "import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js'"
+    expect(src).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(atomic).toMatch(
+      /UPDATE public\.tournaments target SET current_players=\(\s*SELECT count\(\*\) FROM public\.tournament_players tp\s*WHERE tp\.tournament_id=target\.id\)/
     );
-    expect(src).toContain('await requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
-    expect(src).not.toContain("rpc('fn_settle_satellite_tournament'");
-    expect(settlementRpc).toContain("rpc('fn_settle_satellite_tournament'");
-    expect(settlementRpc).toContain(
-      'verifySatelliteSettlementReceipt(data, tournamentId, observedWinnerId)'
-    );
-    expect(settlementRpc).toContain("rpc('fn_resolve_satellite_settlement_outcome'");
     // Strip comments first — the fix documents the old formula in prose, and a
     // naive substring check would match its own documentation.
     const code = src
@@ -392,6 +392,6 @@ describe('satellite award current_players write', () => {
       })
       .join('\n');
     expect(code).not.toContain('Number(target.current_players || 0) + awardCount');
-    expect(code).not.toMatch(/\.from\('tournaments'\)[\s\S]{0,240}?current_players:/);
+    expect(atomic).not.toContain('Number(target.current_players || 0) + awardCount');
   });
 });

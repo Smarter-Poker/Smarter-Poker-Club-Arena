@@ -276,20 +276,22 @@ export default function DetailOverviewTab({
     if (!currentUserId || !tournament?.id || votingDeal) return;
     setVotingDeal(true);
     try {
-      const { error } = await supabase
-        .from('tournament_deal_votes')
-        .insert({ tournament_id: tournament.id, user_id: currentUserId });
+      const { data, error } = await supabase.rpc('fn_cast_tournament_deal_vote', {
+        p_tournament_id: tournament.id,
+      });
       if (error) {
-        // 23505 = unique violation: the vote is already in, which is fine.
-        if ((error as { code?: string }).code === '23505') {
-          setHasVotedDeal(true);
-        } else {
-          throw error;
-        }
-      } else {
-        setHasVotedDeal(true);
+        throw error;
+      }
+      const result = (data ?? {}) as { ok?: boolean; voted?: boolean; reason?: string };
+      if (result.ok !== true || result.voted !== true) {
+        throw new Error(result.reason || 'The deal vote was refused');
+      }
+      setHasVotedDeal(true);
+      if ((result as { already?: boolean }).already !== true) {
         setDealVoteCount((n) => n + 1);
         toast.success('Your deal vote is in.');
+      } else {
+        toast.success('Your deal vote is already in.');
       }
     } catch (e) {
       reportError(e, 'DetailOverviewTab.voteForDeal');

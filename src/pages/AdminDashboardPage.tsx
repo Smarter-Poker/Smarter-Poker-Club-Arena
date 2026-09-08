@@ -407,7 +407,6 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', load, 1500),
       masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', load, 1500),
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', load, 1500),
-      masterBus.subscribeDebounced('TOURNAMENT_STARTED', load, 1500),
       // High-frequency: longer debounce (2000ms) — fires on every hand
       masterBus.subscribeDebounced('BALANCE_UPDATED', load, 2000),
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', load, 2000),

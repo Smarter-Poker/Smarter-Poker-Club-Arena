@@ -2,10 +2,10 @@ import { createServer } from 'node:http';
 const nativeFetch = globalThis.fetch;
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const captured = vi.hoisted(() => ({ fetch: undefined as undefined | typeof fetch }));
+const captured = vi.hoisted(() => ({ fetches: [] as Array<typeof fetch> }));
 vi.mock('@supabase/supabase-js', () => ({
   createClient: (_url: string, _key: string, options: { global: { fetch: typeof fetch } }) => {
-    captured.fetch = options.global.fetch;
+    captured.fetches.push(options.global.fetch);
     return {};
   },
 }));
@@ -14,8 +14,10 @@ vi.mock('../errorReporter.js', () => ({ reportError: vi.fn() }));
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.resetModules();
+  captured.fetches.length = 0;
   vi.stubEnv('SUPABASE_TIMEOUT_MS', '100');
   await import('./client.js');
+  expect(captured.fetches).toHaveLength(2);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -38,11 +40,17 @@ function stalledBody(status = 200) {
   });
 }
 
+const ordinaryDatabaseFetch = (): typeof fetch => {
+  const boundedFetch = captured.fetches[0];
+  if (!boundedFetch) throw new Error('ordinary database client fetch was not captured');
+  return boundedFetch;
+};
+
 describe('database deadline includes response body and caller cancellation', () => {
   it.each([200, 503])('aborts a stalled %s body without replaying a mutation', async (status) => {
     const transport = stalledBody(status);
     vi.stubGlobal('fetch', transport);
-    const outcome = captured.fetch!('https://example.test/rpc', { method: 'POST' }).then(
+    const outcome = ordinaryDatabaseFetch()('https://example.test/rpc', { method: 'POST' }).then(
       () => 'unexpected success',
       (error: Error) => error.message
     );
@@ -58,7 +66,7 @@ describe('database deadline includes response body and caller cancellation', () 
     const controller = new AbortController();
     controller.abort(new Error('caller_cancelled'));
     await expect(
-      captured.fetch!('https://example.test', { signal: controller.signal })
+      ordinaryDatabaseFetch()('https://example.test', { signal: controller.signal })
     ).rejects.toThrow('caller_cancelled');
     expect(transport).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
@@ -70,7 +78,7 @@ describe('database deadline includes response body and caller cancellation', () 
     const controller = new AbortController();
     const request = new Request('https://example.test', { signal: controller.signal });
     controller.abort(new Error('request_cancelled'));
-    await expect(captured.fetch!(request)).rejects.toThrow('request_cancelled');
+    await expect(ordinaryDatabaseFetch()(request)).rejects.toThrow('request_cancelled');
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -81,7 +89,9 @@ describe('database deadline includes response body and caller cancellation', () 
     );
     const controller = new AbortController();
     const remove = vi.spyOn(controller.signal, 'removeEventListener');
-    const response = await captured.fetch!('https://example.test', { signal: controller.signal });
+    const response = await ordinaryDatabaseFetch()('https://example.test', {
+      signal: controller.signal,
+    });
     expect(await response.json()).toEqual({ ok: true });
     expect(response.headers.get('x-test')).toBe('preserved');
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
@@ -96,7 +106,10 @@ describe('database transport compatibility', () => {
       .mockResolvedValueOnce(new Response('{"code":"PGRST002"}', { status: 503 }))
       .mockResolvedValueOnce(new Response('{"ok":true}'));
     vi.stubGlobal('fetch', transport);
-    const pending = captured.fetch!('https://example.test/rpc', { method: 'POST', body: '{}' });
+    const pending = ordinaryDatabaseFetch()('https://example.test/rpc', {
+      method: 'POST',
+      body: '{}',
+    });
     await vi.advanceTimersByTimeAsync(600);
     expect(await (await pending).json()).toEqual({ ok: true });
     expect(transport).toHaveBeenCalledTimes(2);
@@ -105,16 +118,16 @@ describe('database transport compatibility', () => {
   it('does not retry an ambiguous write failure', async () => {
     const transport = vi.fn().mockRejectedValue(new Error('lost acknowledgement'));
     vi.stubGlobal('fetch', transport);
-    await expect(captured.fetch!('https://example.test/rpc', { method: 'POST' })).rejects.toThrow(
-      'lost acknowledgement'
-    );
+    await expect(
+      ordinaryDatabaseFetch()('https://example.test/rpc', { method: 'POST' })
+    ).rejects.toThrow('lost acknowledgement');
     expect(transport).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it('preserves a bodyless success', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
-    const response = await captured.fetch!('https://example.test');
+    const response = await ordinaryDatabaseFetch()('https://example.test');
     expect(response.status).toBe(204);
     expect(await response.text()).toBe('');
     expect(vi.getTimerCount()).toBe(0);
@@ -122,6 +135,25 @@ describe('database transport compatibility', () => {
 
   it('bounds a real SDK query whose HTTP body stops after headers', async () => {
     vi.useRealTimers();
+
+    /* A REAL SOCKET NEEDS MORE THAN 100ms OF HEADROOM (2026-09-08).
+       Every other test in this file drives the wrapper with fake timers, so
+       the 100ms deadline from beforeEach costs nothing. This one is real: a
+       real loopback server, a real connect, real time. On 2026-09-08 it failed
+       CI with `expected +0 to be 1` - the server's handler had never run,
+       because the 100ms deadline fired before Node finished connecting to
+       127.0.0.1 on a box with 33 of 33 runners busy and 30 jobs queued.
+
+       Re-importing with a 2s deadline removes the race without touching what
+       is being proved: the body below still never completes, so the deadline
+       still fires and still produces the error asserted at the end. The
+       `requests` count stays a real assertion - it is what separates "the
+       deadline bounded a request that was SENT and stalled" from "the request
+       was cancelled before it left", which the test above this one covers. */
+    vi.resetModules();
+    vi.stubEnv('SUPABASE_TIMEOUT_MS', '2000');
+    await import('./client.js');
+
     vi.stubGlobal('fetch', nativeFetch);
     let requests = 0;
     const server = createServer((_request, response) => {
@@ -136,7 +168,7 @@ describe('database transport compatibility', () => {
         await vi.importActual<typeof import('@supabase/supabase-js')>('@supabase/supabase-js');
       const client = actual.createClient(`http://127.0.0.1:${address.port}`, 'test-key', {
         auth: { persistSession: false, autoRefreshToken: false },
-        global: { fetch: captured.fetch },
+        global: { fetch: ordinaryDatabaseFetch() },
       });
       const { data, error } = await client.from('deadline_probe').select('id');
       expect(data).toBeNull();
@@ -146,5 +178,5 @@ describe('database transport compatibility', () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  }, 5000);
+  }, 15000);
 });

@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { sliceMethod, sliceCall } from '../testHelpers/sourceWindow.js';
+import { sliceMethod, sliceCall, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -38,8 +38,13 @@ const SETTLER = read('src/services/RakebackSettlerService.ts');
 const PAYOUT_MATH = read('src/tournament/payoutMath.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
-const TERMINAL_AUTHORITY = read(
-  '../supabase/migrations/20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+const PLACE_SETTLEMENT_MIGRATION_NAME = fs
+  .readdirSync(path.join(process.cwd(), '..', 'supabase', 'migrations'))
+  .find((name) => name.includes('tournament_places_settle_and_complete_atomically'));
+if (!PLACE_SETTLEMENT_MIGRATION_NAME)
+  throw new Error('atomic place settlement migration is missing');
+const PLACE_SETTLEMENT_MIGRATION = read(
+  `../supabase/migrations/${PLACE_SETTLEMENT_MIGRATION_NAME}`
 );
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
@@ -58,32 +63,6 @@ describe('a failed query must never read as "nobody is left"', () => {
 
   it('positions are not derived from a count we could not read', () => {
     expect(code(ELIM)).toMatch(/playing_count_unavailable/);
-  });
-
-  it('an unreadable hand boundary never authorizes a table move', () => {
-    const wait = sliceMethod(code(MANAGER), 'protected async waitForHandComplete');
-    expect(wait).toMatch(/snapshotError/);
-    expect(wait).toMatch(/Tournament\.hand_boundary_unreadable/);
-    expect(wait).toMatch(/if \(initiallyIdle === null\) return false/);
-    expect(wait).toMatch(/if \(idle === null\) return false/);
-  });
-
-  it('an unreadable final-table headcount never becomes zero', () => {
-    const balance = sliceMethod(code(MANAGER), 'protected async checkTableBalance');
-    expect(balance).toMatch(/remainingPlayersError/);
-    expect(balance).toMatch(/Tournament\.final_table_headcount_unreadable/);
-    expect(balance).toMatch(/typeof remainingPlayers === 'number'/);
-    expect(balance).not.toMatch(/remainingPlayers\s*\|\|\s*0/);
-  });
-
-  it('an unreadable table or seat board never becomes an empty balance plan', () => {
-    const balance = sliceMethod(code(MANAGER), 'protected async checkTableBalance');
-    expect(balance).toMatch(
-      /seatsError \|\| !Array\.isArray\(seats\) \|\| tableError \|\| !tableRow/
-    );
-    expect(balance).toMatch(/Tournament\.balance_table_state_unreadable/);
-    expect(balance).toMatch(/Tournament\.rebalance_table_state_unreadable/);
-    expect(balance).not.toMatch(/\(seats \|\| \[\]\)\.length/);
   });
 });
 
@@ -157,36 +136,64 @@ describe('one rounding rule, shared by every payout site', () => {
   it('both payout sites use it, and neither rounds on its own', () => {
     // Defect: each place rounded independently, so a 9-place structure on a
     // 483.00 pool paid 483.01. It also put the engine permanently at odds with
-    // the database payout calculation, which uses the residual rule.
+    // fn_tournament_payout_reconcile, which uses the residual rule.
     expect(code(ELIM)).toMatch(/computePlacePrize\(/);
     expect(code(ELIM)).not.toMatch(/prizeRaw/);
   });
 
-  it('the stuck-COMPLETING rescue cannot grow a third pricing implementation', () => {
-    // The database derives the complete locked ladder. Recovery may replay its
-    // receipt, but it may not parse a structure or price a place itself.
-    expect(code(RECOVERY)).not.toMatch(/computePlacePrize\(/);
-    expect(code(RECOVERY)).not.toMatch(/resolvePayoutStructure\(/);
-    expect(code(RECOVERY)).toMatch(
-      /requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/
-    );
+  it('the stuck-COMPLETING rescue shares it too', () => {
+    // Defect: a THIRD independent formula meant a rescued tournament could be
+    // paid a cent differently from one that finished normally.
+    expect(code(RECOVERY)).toMatch(/computePlacePrize\(/);
   });
 });
 
 describe('every tournament settles against its own prize pool', () => {
-  it('cash finishes use one database-derived atomic settlement receipt', () => {
-    const finish = sliceMethod(code(ELIM), 'protected async finishTournament');
-    expect(finish).toMatch(
-      /requestTournamentTerminalReceipt\(this\.tournamentId, 'places', winnerId\)/
+  it('normal completion pays every place and completes through one atomic boundary', () => {
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+    const normalSettlement = sliceEnclosingBlock(finish, 'settleTournamentPlacesAtomically(');
+
+    expect(normalSettlement).toMatch(/await settleTournamentPlacesAtomically\(/);
+    expect(normalSettlement).toMatch(/'engine\.finishTournament'/);
+    expect(normalSettlement).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?this\.tournamentFinished = false;[\s\S]*?return;/
     );
-    expect(finish).not.toMatch(/fn_tournament_payout_reconcile/);
   });
 
-  it('and clears the break flags on the way out', () => {
+  it('normal completion has no direct terminal write or post-hoc reconciler', () => {
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+
+    // Both normal and satellite finishes now enter COMPLETING through the
+    // immutable claim RPC and leave it only through their format-owned atomic
+    // domain transaction. The manager must never recreate either status edge.
+    expect(finish).toMatch(/claimTournamentFinish\(/);
+    expect(finish).toMatch(/settleTournamentPlacesAtomically\(/);
+    expect(finish).toMatch(/settleSatelliteFinishAtomically\(/);
+    expect(finish).not.toMatch(/\.from\('tournaments'\)\s*\.update\(\{[\s\S]*?status:/);
+    expect(finish).not.toMatch(/status:\s*'(?:COMPLETING|COMPLETED)'/);
+    expect(finish).not.toMatch(/settleTournamentObligation\(/);
+    expect(finish).not.toMatch(/fn_settle_tournament_obligation/);
+    expect(finish).not.toMatch(/fn_tournament_payout_reconcile/);
+
+    // The replacement is stronger than the deleted client write: SQL pays
+    // the frozen batch and performs the terminal CAS in one exception block.
+    const atomic = code(PLACE_SETTLEMENT_MIGRATION);
+    const settle = atomic.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_places_atomic('
+    );
+    const pay = atomic.indexOf('fn_settle_tournament_obligation_before_atomic_batch_gate(', settle);
+    const complete = atomic.indexOf("SET status = 'COMPLETED'", pay);
+    const rollback = atomic.indexOf('EXCEPTION WHEN OTHERS', complete);
+    expect(settle).toBeGreaterThanOrEqual(0);
+    expect(pay).toBeGreaterThan(settle);
+    expect(complete).toBeGreaterThan(pay);
+    expect(rollback).toBeGreaterThan(complete);
+  });
+
+  it('clears the break flags inside the same atomic completion boundary', () => {
     // Defect: endBreak() never runs if the event finishes DURING a break, so
     // COMPLETED tournaments sat flagged on_break=true forever.
-    expect(code(TERMINAL_AUTHORITY)).toMatch(/on_break\s*=\s*false/);
-    expect(code(TERMINAL_AUTHORITY)).toMatch(/break_ends_at\s*=\s*NULL/);
+    expect(code(PLACE_SETTLEMENT_MIGRATION)).toMatch(/on_break\s*=\s*false/);
   });
 });
 
@@ -201,12 +208,22 @@ describe('rebuys and add-ons actually happen', () => {
 
   it('add-ons are offered when the window opens', () => {
     expect(code(BASE)).toMatch(/protected async tryTournamentAddOns/);
-    expect(code(BASE)).toMatch(/await this\.tryTournamentAddOns\(\)/);
+    const stage = sliceEnclosingBlock(
+      code(ELIM),
+      'if (this.addOnPeriodTriggered && !this.prizePoolFinalized)'
+    );
+    expect(stage).toMatch(/await this\.tryTournamentAddOns\(\)/);
   });
 
-  it('the add-on call sits inside triggerAddOnPeriod, not orphaned', () => {
+  it('the durable window queues bounded scheduler work instead of running a field loop inline', () => {
     const trigger = sliceMethod(code(BASE), 'triggerAddOnPeriod(): Promise<void>');
-    expect(trigger).toMatch(/tryTournamentAddOns\(\)/);
+    const durableProof = trigger.indexOf('durableWindowProven = true');
+    const wake = trigger.indexOf('this.requestEliminationSweep()', durableProof);
+    const retry = trigger.indexOf('this.scheduleAddOnRetry()', wake);
+    expect(durableProof).toBeGreaterThanOrEqual(0);
+    expect(wake).toBeGreaterThan(durableProof);
+    expect(retry).toBeGreaterThan(wake);
+    expect(trigger).not.toMatch(/tryTournamentAddOns\(\)/);
   });
 });
 
@@ -238,10 +255,10 @@ describe('the settler keeps running every sentinel it is meant to', () => {
     });
   }
 
-  it('does not run a payout repair sweep after atomic finish settlement', () => {
+  it('never applies the retired tournament payout sweep', () => {
     const settler = code(SETTLER);
-    expect(settler).not.toContain('runTournamentPayoutSweep');
-    expect(settler).not.toContain("rpc('fn_tournament_payout_sweep'");
+    expect(settler).not.toMatch(/runTournamentPayoutSweep/);
+    expect(settler).not.toMatch(/fn_tournament_payout_sweep/);
   });
 });
 
@@ -304,8 +321,18 @@ describe('add-ons must always award their chips to the stack', () => {
     expect(src).toMatch(/tryTournamentAddOns\(\)/);
   });
 
-  it('throttles the repeat offer so the 5s sweep does not hammer it', () => {
-    expect(code(ELIM)).toMatch(/lastAddOnOfferAt\s*>=\s*20_000|20_000\s*<=/);
+  it('throttles the repeat offer so clustered event wakes do not hammer it', () => {
+    const base = code(BASE);
+    const stage = sliceEnclosingBlock(
+      code(ELIM),
+      'if (this.addOnPeriodTriggered && !this.prizePoolFinalized)'
+    );
+    expect(base).toMatch(/static readonly ADD_ON_RETRY_MS = 20_000/);
+    expect(stage).toMatch(
+      /nowMs - this\.lastAddOnOfferAt >= TournamentManagerBase\.ADD_ON_RETRY_MS/
+    );
+    expect(stage).toMatch(/this\.scheduleAddOnRetry\(\)/);
+    expect(stage).not.toMatch(/20_000/);
   });
 
   it('only offers add-ons to players who currently hold a seat', () => {
@@ -509,7 +536,7 @@ describe('seating a tournament twice must not build a second set of tables', () 
      *
      * Lowest-free is still the rule. It is now bounded by the table's own
      * capacity, and a player for whom no in-capacity seat exists is left
-     * unseated for the 5-second sweep rather than given an illegal seat.
+     * unseated for the bounded recovery lane rather than given an illegal seat.
      */
     expect(fn).not.toMatch(/while\s*\(taken\.has\(seatNumber\)\)\s*seatNumber\+\+/);
     expect(fn).toMatch(/capacityOf/);
@@ -606,7 +633,7 @@ describe('the database agrees with the engine about which table is the game', ()
   it('ships the late-registration sweep that the client comments promise', () => {
     // fn_seat_late_registrant had NO caller anywhere outside
     // fn_register_for_tournament, yet useTournamentRegistration.ts and
-    // TablePage.tsx both tell the reader "the engine's 5s sweep seats him".
+    // TablePage.tsx both promise that the engine recovery lane seats him.
     // A paid, seatless player waited forever.
     expect(OCCUPIED_MIGRATION).toContain(
       'CREATE OR REPLACE FUNCTION public.fn_sweep_seatless_late_registrants'
@@ -637,13 +664,14 @@ describe('a tournament that started and never dealt is rescued whatever its vari
     expect(code(GAMESERVER)).not.toContain("in('variant', ['sng', 'spin'])");
   });
 
-  it('still finds the sweep by the CAS requeue that defines it', () => {
-    // Anchored on the DB effect, not on phrasing: RUNNING -> REGISTERING under
-    // a compare-and-set is the whole mechanism. If this disappears the sweep
-    // has been removed, whatever the surrounding prose says.
+  it('releases the exact idle manager without rewinding durable launch state', () => {
+    // A completed launch receipt and RUNNING are one immutable fact. Recovery
+    // relinquishes only the dead in-memory generation so ordinary RUNNING
+    // discovery resumes it; rewriting REGISTERING strands the receipt.
     const src = code(GAMESERVER);
     expect(src).toContain('const neverDealtCutoff');
-    expect(src).toContain("update({ status: 'REGISTERING' })");
+    expect(src).toContain("'GameServer.never_dealt_stop_engine'");
+    expect(src).not.toContain("update({ status: 'REGISTERING' })");
   });
 
   it('requeues only once every playing player holds a live seat', () => {

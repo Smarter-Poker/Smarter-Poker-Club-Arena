@@ -18,7 +18,7 @@ import {
   substituteOnCappedStreet,
   type BettingStructure,
 } from './BettingStructure.js';
-import type { HandStage, ActionType } from '../types.js';
+import type { HandStage, ActionType, HorseDecision } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
@@ -35,23 +35,13 @@ import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 // Static watchdog thresholds live on the Base class (single source of truth).
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
-import { noteDecisionMs, noteFire } from './BrainTelemetry.js';
-import { saveFastRandom, restoreFastRandom } from './HorseEval.js';
-import { equityGovernor } from './EquityLoadGovernor.js';
-
-/**
- * A monotonic millisecond clock that cannot throw.
- *
- * `performance` is global in every Node this runs on, but the measurement must
- * never be able to break a hand — a horse failing to act because a timer was
- * unavailable would be an absurd way to lose a table. Date.now() is the
- * fallback and is accurate enough for a millisecond-scale budget.
- */
-function perfNow(): number {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
-}
+import { noteFire } from './BrainTelemetry.js';
+import {
+  getLiveHorseDecisionWorker,
+  HorseDecisionAbortedError,
+  type FastHorseDecisionResult,
+  type LiveHorseDecisionSnapshot,
+} from './horseDecision/index.js';
 
 /**
  * Why a decision did NOT earn a V44 second look (2026-09-06).
@@ -96,6 +86,18 @@ export function noteSecondLookDecline(reason: SecondLookDecline): void {
 }
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
+  /**
+   * True only after an externally-computed runout payout may have touched the
+   * HandController and before that controller has emitted HAND_COMPLETE.
+   *
+   * The no-seat watchdog normally calls continueRunout as a recovery. That is
+   * safe while a runout is only parked, but it would distribute the pot again
+   * after Run It Twice has already credited its winners. The runout layer owns
+   * this fence; the turn layer reads it because the watchdog is the only
+   * lower-layer continuation that can bypass the runout error boundary.
+   */
+  protected runoutPayoutMutationUnsafe = false;
+
   /**
    * Dan 2026-08-20: a queued pre-action (auto-check / auto-fold / auto-call)
    * used to fire synchronously at 0ms the instant the turn arrived — the seat
@@ -151,16 +153,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const hadClock = player ? this.preciseTimer.hasTimer(this.tableId, player.user_id) : false;
     const hadHorseTimer = !!this.horseActionTimer;
 
+    // Provenance travels with the engine state, not the free-form detail. The
+    // next watchdog recovery may be a re-arm, forced action or full rebuild;
+    // whichever path actually runs must be recorded as a drill.
+    this.pendingRecoveryEventClass = 'fault_injection';
+
     // 1. Kill the clock — this is what every real freeze had in common.
     this.preciseTimer.clearTable(this.tableId);
     // 1b. Suppress the pending horse action too. Removing only the enforcement
     //     clock is NOT a freeze: the horse's think-time timer still fires and
     //     the table carries on, which is exactly what the first drill showed.
     //     A real freeze is "nobody is going to act AND no clock will force it".
-    if (this.horseActionTimer) {
-      clearTimeout(this.horseActionTimer);
-      this.horseActionTimer = null;
-    }
+    this.cancelHorseDecisionWork();
     // 2. Backdate progress past the stall threshold so the next heartbeat trips
     //    the watchdog immediately rather than after a 45s wait.
     this.lastProgressAtMs = Date.now() - (ServerTableEngineBase.WATCHDOG_STALL_MS + 5_000);
@@ -271,10 +275,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // there, so a think timer armed before the pause could fire an action INTO
     // the paused window — the same class of bug this function was written to
     // fix, reintroduced for the other timer.
-    if (this.horseActionTimer) {
-      clearTimeout(this.horseActionTimer);
-      this.horseActionTimer = null;
-    }
+    this.cancelHorseDecisionWork();
   }
 
   /**
@@ -309,6 +310,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * Runs on the 10s heartbeat tick.
    */
   protected override runTableWatchdog(): void {
+    if (!this.lifecycleCanMutate()) return;
     const idleMs = this.msSinceProgress();
 
     // A table paused ON PURPOSE (hand-for-hand / FSM 'paused') is healthy no
@@ -435,6 +437,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         ),
         'ServerTableEngine.' + this.tableId + '.watchdog_no_seat'
       );
+      if (this.runoutPayoutMutationUnsafe) {
+        // An external runout resolver has already started applying its payout.
+        // continueRunout would execute the ordinary distribution and can pay
+        // the same pot twice. This generation must be recovered from its
+        // authoritative hand snapshot instead.
+        this.killForRestart('runout_stalled_after_payout_mutation');
+        return;
+      }
       try {
         (this.handController as any).continueRunout?.();
       } catch {
@@ -509,6 +519,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const toCall = Math.max(0, (state.currentBet || 0) - (p.bet || 0));
       const forced = toCall === 0 ? 'check' : 'fold';
       let applied = false;
+      // A watchdog action supersedes every speculative unit owned by the
+      // current horse turn. Cancel before performAction because it emits the
+      // next TURN_CHANGE synchronously; cancelling afterwards could retire the
+      // next seat's freshly scheduled work instead.
+      this.cancelHorseDecisionWork();
       try {
         applied = this.handController.performAction(seat, forced as any);
         if (!applied) applied = this.handController.performAction(seat, 'fold' as any);
@@ -556,7 +571,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * be reintroduced one call site at a time.
    */
   protected forceResolveSeat(seat: number, preferCheck: boolean): boolean {
-    if (!this.handController) return false;
+    if (!this.lifecycleCanMutate() || !this.handController) return false;
+    // Expiry/disconnect recovery is authoritative and supersedes any pending
+    // horse computation or delayed horse action for this turn. This must be
+    // before performAction: that call synchronously emits the next turn.
+    this.cancelHorseDecisionWork();
     const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
     for (const a of order) {
       try {
@@ -646,7 +665,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     this.preciseTimer.startTimer(this.tableId, userId, totalDurationMs, () => {
       // === onExpiry callback — fires when DeadlineScheduler tick reaches deadline ===
-      if (!this.running || !this.handController) return;
+      if (!this.lifecycleCanMutate() || !this.handController) return;
 
       const state = this.handController.getState();
       if (state.currentPlayerSeat !== seat) return;
@@ -684,7 +703,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // Seat identity is checked FIRST and is authoritative; the FSM is
             // advisory. A seat that is still the current player when its time
             // bank expires MUST be resolved, whatever the FSM says.
-            if (!this.running || !this.handController) return;
+            if (!this.lifecycleCanMutate() || !this.handController) return;
             const tbState = this.handController.getState();
             if (tbState.currentPlayerSeat !== seat) return;
             if (this.armRemainingReconnectProtection(userId)) return;
@@ -894,6 +913,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
     // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
     // so they are Title Case with no em dashes.
+    if (!this.lifecycleCanMutate()) {
+      return { success: false, error: 'Table Ownership Changed. Please Reconnect.' };
+    }
     if (!this.handController || !this.tableInfo) {
       return { success: false, error: 'No Active Hand At This Table' };
     }
@@ -977,7 +999,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       userId,
       () => {
         // This callback fires when the manual time bank expires
-        if (!this.running || !this.handController) return;
+        if (!this.lifecycleCanMutate() || !this.handController) return;
         const tbState = this.handController.getState();
         if (tbState.currentPlayerSeat !== player.seat) return;
         if (this.armRemainingReconnectProtection(userId)) return;
@@ -1364,6 +1386,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     action: string,
     amount?: number
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (!this.lifecycleCanMutate()) {
+      return {
+        success: false,
+        error: 'Table ownership changed - reconnect',
+        code: 'TABLE_LEASE_EXPIRED',
+      };
+    }
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
     if (this.actionLock) {
       return { success: false, error: 'Action already being processed - try again' };
@@ -1975,7 +2004,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * existing try/catch + forceArmTurnTimer fallback for a synchronous throw.
    */
   protected async handleTurnChange(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
-    if (event.type !== 'TURN_CHANGE' || !this.handController) return;
+    if (event.type !== 'TURN_CHANGE' || !this.lifecycleCanMutate() || !this.handController) return;
 
     const seat = event.seat;
     const player = players.find((p) => p.seat_number === seat);
@@ -1989,6 +2018,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // check in ServerTableEngineHandEvents: never arm a clock or run
     // disconnect/pre-action logic for a seat that is no longer on the clock.
     if (state.currentPlayerSeat !== seat) return;
+
+    // This accepted TURN_CHANGE is the ownership boundary for asynchronous
+    // horse work. Retire the previous turn before any pre-action await or an
+    // early disconnected-player return. Stale TURN_CHANGE events are rejected
+    // above and therefore cannot cancel work belonging to the current seat.
+    this.cancelHorseDecisionWork();
 
     // ═══════════════════════════════════════════════════════════════════════
     // UNIFIED TURN HANDLING — Horses and real players follow the EXACT same flow.
@@ -2046,7 +2081,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const controllerAtBeat = this.handController;
       await this.sleep(this.preActionVisibleMs);
       // The hand can be replaced while we hold that beat.
-      if (!this.running || this.handController !== controllerAtBeat || !controllerAtBeat) return;
+      if (
+        !this.lifecycleCanMutate() ||
+        this.handController !== controllerAtBeat ||
+        !controllerAtBeat
+      )
+        return;
       {
         const st = controllerAtBeat.getState();
         if (st.currentPlayerSeat !== seat) return;
@@ -2190,9 +2230,50 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       pot: number;
       communityCards: any[];
       players: any[];
-      stage: string;
+      stage: HandStage;
     }
   ): void {
+    // One turn owns one worker request, optional deep replay and action timer.
+    // Cancel the previous set as a unit before publishing a new local fence.
+    this.cancelHorseDecisionWork();
+    const turnToken = this.horseTurnToken;
+    const abortController = new AbortController();
+    this.horseDecisionAbortController = abortController;
+    const decisionTimeMs = Date.now();
+    const handNumber = this.handCount;
+    const handControllerRef = this.handController;
+    const leaseAtRequest = this.getEngineLeaseAuthority();
+    const leaseGeneration = leaseAtRequest?.verified ? leaseAtRequest.generation : null;
+    const fence = [this.tableId, handNumber, seat, leaseGeneration ?? 'unverified', turnToken].join(
+      ':'
+    );
+
+    const fenceIsCurrent = (): boolean => {
+      if (
+        abortController.signal.aborted ||
+        this.horseDecisionAbortController !== abortController ||
+        this.horseTurnToken !== turnToken ||
+        !handControllerRef ||
+        handControllerRef !== this.handController ||
+        this.handCount !== handNumber ||
+        !this.lifecycleCanMutate() ||
+        handControllerRef.getState().currentPlayerSeat !== seat
+      ) {
+        return false;
+      }
+      const currentLease = this.getEngineLeaseAuthority();
+      return (
+        leaseGeneration !== null &&
+        currentLease?.verified === true &&
+        currentLease.generation === leaseGeneration
+      );
+    };
+
+    if (!fenceIsCurrent()) {
+      this.cancelHorseDecisionWork();
+      return;
+    }
+
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
 
     // AUDIT V2 (2026-07-23): horse_profile is a jsonb column — in production it
@@ -2284,400 +2365,470 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       ...this.horseTournamentContext(),
     };
 
-    // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
-    // PROOF OF RECEIPT: telemetry is set HERE and only here — this is the
-    // one call site that is a real horse at a real table.
-    //
-    // AND NOW MEASURED (Dan 2026-08-29). That "<15ms" was a comment, not a
-    // fact: nothing in the engine had ever timed a decision. The whole read —
-    // hand strength, board texture, the opponent model, blockers, ICM, the
-    // Monte Carlo equity run, every version layer and the final sizing —
-    // happens inside this one synchronous call, so one clock around it is the
-    // complete answer to how long a horse takes to think.
-    //
-    // The clock is deliberately OUTSIDE HorseLogic: this is the only call site
-    // that is a live horse, and the league and the nightly self-tuner must not
-    // pollute the number with self-play bursts on an idle box.
-    const decideStartedAt = perfNow();
-    // V44 SECOND LOOK: the strategy dice the fast decision rolls are replayed
-    // by the deep one, so the only thing that can differ between them is
-    // the equity sample. Snapshot the stream before the first roll.
-    const rngBeforeDecide = saveFastRandom();
-    let decision = HorseLogic.decide(enginePlayer as any, gameState as any, horseStyle, horseMods, {
-      telemetry: true,
-    });
-    // Scoped by variant family, because a 6-card PLO decision runs the most
-    // expensive equity simulation on the platform and averaging it into a
-    // heads-up NLH decision would hide both.
-    //
-    // FOUND IN PRODUCTION 2026-08-29, first hour of the measurement: every one
-    // of the 14,326 samples landed in scope 'nlh' while 58 of 91 running
-    // tables were dealing PLO variants. The horse snapshot built above carries
-    // no `variant` field, so `(gameState as any)?.variant` was undefined on
-    // EVERY decision and the ?? fallback relabelled them all — the exact
-    // averaging-plo6-into-nlh failure this scope exists to prevent, with the
-    // 15ms plo6 budget unverifiable in production as the result. Read
-    // `activeHandVariant()` instead: it is the accessor the 2026-08-28 variant
-    // override work introduced for precisely "read the live hand, not a guess",
-    // and the same one the pot-limit clamp above already uses.
-    noteDecisionMs(this.activeHandVariant() || 'nlh', perfNow() - decideStartedAt);
+    const decisionSnapshot: LiveHorseDecisionSnapshot = {
+      generation: turnToken,
+      fence,
+      decisionTimeMs,
+      player: enginePlayer,
+      gameState,
+      style: horseStyle,
+      mods: horseMods,
+    };
 
-    // Humanlike think time comes from the decision engine itself (style- and
-    // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
-    //
-    // ── Dan 2026-08-20: "it doesn't matter if it's all horses at the table,
-    //    every action, every animation, every feature and detail needs to play
-    //    out in full. Each turn to check/bet/call/fold, every action needs
-    //    time, nothing can EVER be skipped." ──
-    //
-    // HISTORY, kept because it explains what replaced it: this used to impose
-    // a hard think-time floor so that no action could be fast enough to clip
-    // its own animation. The animation concern was real, but the floor was the
-    // wrong instrument — the settle beat in the TURN_CHANGE handler is what
-    // actually guarantees an action gets airtime, and it applies to human
-    // actions too. The floor only flattened the horses' timing, which is what
-    // Dan reported on 2026-08-23.
-    // Dan 2026-08-20: "THE GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL.
-    // Focus more on the user experience rather than getting more hands dealt."
-    // Raised 1800 -> 2200. A live dealer's table does not fire an action every
-    // second and a half; the extra beat is what makes a horse read as a person
-    // thinking rather than a script executing. This is ON TOP of the 650ms
-    // settle every action now gets in the TURN_CHANGE handler, so the slowest
-    // visible cadence per seat is ~2.85s and the fastest is never instant.
-    // ── V14 TEMPO (Dan 2026-08-23, binding) ────────────────────────────────
-    // "TIMING ON STREETS MUST BE MORE RANDOM... completely random, from
-    //  instant, to full 15 seconds or even using time banks."
-    //
-    // The 2200ms floor above was the single biggest reason the fleet felt
-    // scripted. HorseLogic already produced a spread, and this clamped the
-    // whole fast half of it onto ONE NUMBER — so seat after seat acted at
-    // exactly 2.2 seconds. Removing it is the point of this change; the
-    // 650ms settle in the TURN_CHANGE handler still keeps a snap from being
-    // literally instantaneous.
-    //
-    // This supersedes the 2026-08-20 note above it. That instruction was
-    // "slow the game down so it feels real"; this one is "make the timing
-    // genuinely random", and a uniform slow cadence is just a slower script.
-    const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
-    const requested = decision.thinkTime || 2500;
-    let thinkTimeMs: number;
-    // V28 AUDIT FIX (2026-08-29): the sentinel path scheduled the action PAST
-    // the turn clock with no check that a bank existed to catch it. A horse's
-    // bank is 2 uses per session, never refilled — after both were spent,
-    // primary-timer expiry auto-folded the seat, the real decision fired into
-    // currentPlayerSeat !== seat and was silently discarded. The horse that
-    // decided to CALL a big river bet visibly timed out and folded — the one
-    // behaviour a human at the table cannot fail to notice. Bank mode fires
-    // on 1-6% of decisions, weighted toward exactly those big river spots.
-    // Same shape when time_bank is disabled table-wide, and when the last
-    // bank has fewer seconds left than the planned burn. So: burn the bank
-    // ONLY when a full activation is genuinely available; otherwise the tank
-    // stays inside the ordinary clock.
-    const bank = this.timeBankEngine?.getPlayerBank?.(this.tableId, player.user_id);
-    const bankUsable =
-      this.tableInfo?.time_bank_enabled !== false &&
-      bank != null &&
-      (bank as { usesRemaining?: number }).usesRemaining !== 0 &&
-      ((bank as { remainingSeconds?: number }).remainingSeconds ?? 0) * 1000 >
-        ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS + 2000;
-    if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL && bankUsable) {
-      // A deliberate TIME BANK burn. Let the turn clock expire — the engine
-      // auto-activates the bank on primary-timer expiry (Bible V8 6.2) — then
-      // act a few seconds into it. Bounded well inside the granted bank so a
-      // tank can never become an auto-fold.
-      const intoBank = 2000 + (requested - HorseLogic.THINK_TIMEBANK_SENTINEL) * 0.55;
-      thinkTimeMs = Math.round(
-        actionTimeMs + Math.min(intoBank, ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS)
+    // ROOT-CAUSE CAPACITY FIX (2026-09-08). HorseLogic is CPU-heavy and owns
+    // process-global RNG, opponent memory and solver stores. Running it in
+    // every table's turn callback pinned the authoritative event loop at the
+    // governor floor, delaying broadcasts, timers and subsequent hands. The
+    // one process-wide worker FIFO is now the sole live owner of those mutable
+    // resources. There is deliberately no synchronous HorseLogic fallback.
+    let fastDecision: Promise<FastHorseDecisionResult>;
+    try {
+      fastDecision = getLiveHorseDecisionWorker().decideFast(
+        decisionSnapshot,
+        abortController.signal
       );
-    } else if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL) {
-      // Bank mode chosen but no bank to burn: the longest legal ordinary tank.
-      thinkTimeMs = Math.round(Math.max(2000, actionTimeMs - 1500));
-    } else {
-      // Everything else must land inside the ordinary clock, with a small
-      // margin so a genuine tank still acts rather than timing out.
-      //
-      // V35 SOFT CAP (2026-09-02): this was `Math.min(requested, cap)`, the
-      // mirror of the floor clamp fixed in HorseLogic's computeThinkTime, and
-      // it fingerprints the same way at the other end. TANK draws run to
-      // ~10.8s before shaping and past 14.8s at p95 after it, while the cap on
-      // a 15s clock is 13,800ms - so every one of those long tanks landed on
-      // EXACTLY 13800. A recurring exact maximum is as identifying as a
-      // recurring exact minimum, and it is concentrated in precisely the big
-      // river spots a suspicious opponent is already watching.
-      //
-      // A tank that wants more time than the clock allows now backs off the
-      // cap by a short exponential instead of sitting on it. Still inside the
-      // clock, still visibly a tank, no longer the same number every time.
-      const cap = Math.max(2000, actionTimeMs - 1200);
-      if (requested <= cap) {
-        thinkTimeMs = Math.round(Math.max(250, requested));
-      } else {
-        const u = Math.max(1e-6, 1 - Math.random());
-        const backoff = Math.min(-Math.log(u) * 900, Math.max(0, cap - 2500));
-        thinkTimeMs = Math.round(Math.max(250, cap - backoff));
-      }
+    } catch (error) {
+      fastDecision = Promise.reject(error);
     }
 
-    const handControllerRef = this.handController;
-
-    // ═══ V44 SECOND LOOK (2026-09-05) ═══════════════════════════════════════
-    // The fast decision above ran its Monte Carlo at 120-450 iterations to
-    // stay under 15 ms, and the horse is now going to sit for `thinkTimeMs`
-    // doing nothing. On a CLOSE spot - facing a bet in a pot worth reading,
-    // with time to think - the same decision is replayed at six times the
-    // sample, from the same strategy dice, a few hundred milliseconds into
-    // the think time. If the deeper read lands on a different call/fold/
-    // all-in, the deeper read acts. Sizing decisions and checks are left
-    // alone: the sample is not what decides them.
-    //
-    // Cost: PLO6 at 6x is ~40 ms of CPU, on perhaps one decision in twenty.
-    // The equity governor still applies inside the replay, so a saturated
-    // loop runs the second look at whatever the floor allows; and it is
-    // skipped outright when the governor is already scaling down.
-    const secondLook = ServerTableEngineTurns.secondLookPlan(
-      decision,
-      toCall,
-      state.pot,
-      this.tableInfo?.big_blind || 2,
-      thinkTimeMs,
-      equityGovernor.current()
-    );
-    if (!secondLook.ok) {
-      // One receipt per declined decision, naming the gate that closed. See
-      // secondLookPlan for why a bare null was not good enough.
-      noteSecondLookDecline(secondLook.reason);
-    }
-    if (secondLook.ok) {
-      const deepTimer = setTimeout(() => {
-        try {
-          if (!handControllerRef || handControllerRef !== this.handController || !this.running)
-            return;
-          if (handControllerRef.getState().currentPlayerSeat !== seat) return;
-          const t0 = perfNow();
-          const rngAfterFast = saveFastRandom();
-          restoreFastRandom(rngBeforeDecide);
-          let deep: typeof decision;
-          try {
-            deep = HorseLogic.decide(enginePlayer as any, gameState as any, horseStyle, horseMods, {
-              telemetry: false,
-              deepEquity: ServerTableEngineTurns.SECOND_LOOK_DEPTH,
-            });
-          } finally {
-            // The fast decision's stream position is the live one; the
-            // replay must not leave the fleet on a rewound, predictable
-            // stream (the V12.3 league bracket, same reason).
-            restoreFastRandom(rngAfterFast);
-          }
-          noteDecisionMs(`deep:${this.activeHandVariant() || 'nlh'}`, perfNow() - t0);
-          noteFire('v44_second_look');
-          const verdict = ServerTableEngineTurns.secondLookVerdict(decision, deep);
-          if (verdict) {
-            noteFire('v44_second_look_flipped');
-            decision = {
-              ...decision,
-              action: verdict.action as ActionType,
-              amount: verdict.amount,
-            };
-          }
-        } catch (err) {
-          reportError(err, 'ServerTableEngineTurns.secondLook');
+    void fastDecision
+      .catch((error): FastHorseDecisionResult => {
+        if (error instanceof HorseDecisionAbortedError || abortController.signal.aborted) {
+          throw error;
         }
-      }, secondLook.afterMs);
-      deepTimer.unref?.();
-    }
+        reportError(error, 'ServerTableEngine.' + this.tableId + '.horse_decision_worker_failed');
+        if (!fenceIsCurrent()) throw new HorseDecisionAbortedError();
 
-    // 2026-08-22: clear any prior think-timer before overwriting the handle —
-    // re-entry used to orphan the previous setTimeout (it still fired; only
-    // the identity guards below kept it harmless).
-    if (this.horseActionTimer) {
-      clearTimeout(this.horseActionTimer);
-      this.horseActionTimer = null;
-    }
-    this.horseActionTimer = setTimeout(() => {
-      this.horseActionTimer = null;
-      if (!handControllerRef || !this.running) return;
-
-      // AUDIT V2 FIX: if a NEW hand started, this.handController was replaced.
-      // Without this identity check a stale think-timer could fire an action
-      // into the wrong hand's controller (same seat, next hand).
-      if (handControllerRef !== this.handController) return;
-
-      // Verify it's still this player's turn (timer might have expired)
-      const currentState = handControllerRef.getState();
-      if (currentState.currentPlayerSeat !== seat) return;
-
-      let action = decision.action as string;
-      let amount = decision.amount;
-
-      // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
-      // At an AoF table the preflop menu is fold or shove, and HandController
-      // rejects everything else. The horse brain does not know about AoF, so
-      // its decision is coerced here: any non-fold intent becomes the all-in.
-      // (A fold with nothing owed still normalizes to the legal check below.)
-      if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
-        if (action !== 'fold') {
-          action = 'all_in';
-          amount = undefined;
+        // A single failed job must not strand a live seat. This is only the
+        // legal liveness action for the already-authoritative turn; it does not
+        // compute poker strategy and cannot hide a dead worker. Terminal worker
+        // failure is separately process-fatal at the GameServer lifecycle.
+        const safeDecision: HorseDecision = {
+          action: toCall > 0 ? 'fold' : 'check',
+          thinkTime: 0,
+        };
+        return {
+          type: 'FAST_RESULT',
+          requestId: -1,
+          generation: turnToken,
+          fence,
+          decision: safeDecision,
+          rngBefore: 0,
+          rngAfter: 0,
+          computeMs: 0,
+          governorScale: 0,
+          effects: [],
+        };
+      })
+      .then((fastResult) => {
+        if (
+          fastResult.generation !== turnToken ||
+          fastResult.fence !== fence ||
+          !fenceIsCurrent()
+        ) {
+          return;
         }
-      }
+        let decision = fastResult.decision;
 
-      // Normalize actions
-      if (action === 'allin') action = 'all_in';
-      if (action === 'check' && toCall > 0) action = 'call';
-      if (action === 'call' && toCall === 0) action = 'check';
-      if (action === 'call') amount = toCall;
-      if (action === 'fold' && toCall === 0) action = 'check';
-      if (action === 'raise' && state.currentBet === 0) action = 'bet';
-      if (action === 'bet' && state.currentBet > 0) action = 'raise';
+        // Humanlike think time comes from the decision engine itself (style- and
+        // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
+        //
+        // ── Dan 2026-08-20: "it doesn't matter if it's all horses at the table,
+        //    every action, every animation, every feature and detail needs to play
+        //    out in full. Each turn to check/bet/call/fold, every action needs
+        //    time, nothing can EVER be skipped." ──
+        //
+        // HISTORY, kept because it explains what replaced it: this used to impose
+        // a hard think-time floor so that no action could be fast enough to clip
+        // its own animation. The animation concern was real, but the floor was the
+        // wrong instrument - the settle beat in the TURN_CHANGE handler is what
+        // actually guarantees an action gets airtime, and it applies to human
+        // actions too. The floor only flattened the horses' timing, which is what
+        // Dan reported on 2026-08-23.
+        // Dan 2026-08-20: "THE GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL.
+        // Focus more on the user experience rather than getting more hands dealt."
+        // Raised 1800 -> 2200. A live dealer's table does not fire an action every
+        // second and a half; the extra beat is what makes a horse read as a person
+        // thinking rather than a script executing. This is ON TOP of the 650ms
+        // settle every action now gets in the TURN_CHANGE handler, so the slowest
+        // visible cadence per seat is ~2.85s and the fastest is never instant.
+        // ── V14 TEMPO (Dan 2026-08-23, binding) ────────────────────────────────
+        // "TIMING ON STREETS MUST BE MORE RANDOM... completely random, from
+        //  instant, to full 15 seconds or even using time banks."
+        //
+        // The 2200ms floor above was the single biggest reason the fleet felt
+        // scripted. HorseLogic already produced a spread, and this clamped the
+        // whole fast half of it onto ONE NUMBER - so seat after seat acted at
+        // exactly 2.2 seconds. Removing it is the point of this change; the
+        // 650ms settle in the TURN_CHANGE handler still keeps a snap from being
+        // literally instantaneous.
+        //
+        // This supersedes the 2026-08-20 note above it. That instruction was
+        // "slow the game down so it feels real"; this one is "make the timing
+        // genuinely random", and a uniform slow cadence is just a slower script.
+        const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
+        const requested = decision.thinkTime || 2500;
+        let thinkTimeMs: number;
+        // V28 AUDIT FIX (2026-08-29): the sentinel path scheduled the action PAST
+        // the turn clock with no check that a bank existed to catch it. A horse's
+        // bank is 2 uses per session, never refilled - after both were spent,
+        // primary-timer expiry auto-folded the seat, the real decision fired into
+        // currentPlayerSeat !== seat and was silently discarded. The horse that
+        // decided to CALL a big river bet visibly timed out and folded - the one
+        // behaviour a human at the table cannot fail to notice. Bank mode fires
+        // on 1-6% of decisions, weighted toward exactly those big river spots.
+        // Same shape when time_bank is disabled table-wide, and when the last
+        // bank has fewer seconds left than the planned burn. So: burn the bank
+        // ONLY when a full activation is genuinely available; otherwise the tank
+        // stays inside the ordinary clock.
+        const bank = this.timeBankEngine?.getPlayerBank?.(this.tableId, player.user_id);
+        const bankUsable =
+          this.tableInfo?.time_bank_enabled !== false &&
+          bank != null &&
+          (bank as { usesRemaining?: number }).usesRemaining !== 0 &&
+          ((bank as { remainingSeconds?: number }).remainingSeconds ?? 0) * 1000 >
+            ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS + 2000;
+        if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL && bankUsable) {
+          // A deliberate TIME BANK burn. Let the turn clock expire - the engine
+          // auto-activates the bank on primary-timer expiry (Bible V8 6.2) - then
+          // act a few seconds into it. Bounded well inside the granted bank so a
+          // tank can never become an auto-fold.
+          const intoBank = 2000 + (requested - HorseLogic.THINK_TIMEBANK_SENTINEL) * 0.55;
+          thinkTimeMs = Math.round(
+            actionTimeMs + Math.min(intoBank, ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS)
+          );
+        } else if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL) {
+          // Bank mode chosen but no bank to burn: the longest legal ordinary tank.
+          thinkTimeMs = Math.round(Math.max(2000, actionTimeMs - 1500));
+        } else {
+          // Everything else must land inside the ordinary clock, with a small
+          // margin so a genuine tank still acts rather than timing out.
+          //
+          // V35 SOFT CAP (2026-09-02): this was `Math.min(requested, cap)`, the
+          // mirror of the floor clamp fixed in HorseLogic's computeThinkTime, and
+          // it fingerprints the same way at the other end. TANK draws run to
+          // ~10.8s before shaping and past 14.8s at p95 after it, while the cap on
+          // a 15s clock is 13,800ms - so every one of those long tanks landed on
+          // EXACTLY 13800. A recurring exact maximum is as identifying as a
+          // recurring exact minimum, and it is concentrated in precisely the big
+          // river spots a suspicious opponent is already watching.
+          //
+          // A tank that wants more time than the clock allows now backs off the
+          // cap by a short exponential instead of sitting on it. Still inside the
+          // clock, still visibly a tank, no longer the same number every time.
+          const cap = Math.max(2000, actionTimeMs - 1200);
+          if (requested <= cap) {
+            thinkTimeMs = Math.round(Math.max(250, requested));
+          } else {
+            const u = Math.max(1e-6, 1 - Math.random());
+            const backoff = Math.min(-Math.log(u) * 900, Math.max(0, cap - 2500));
+            thinkTimeMs = Math.round(Math.max(250, cap - backoff));
+          }
+        }
 
-      // Clamp amounts
-      //
-      // 2026-08-23: the horses size their bets no-limit style (HorseLogic reads
-      // only `isPotLimit`). On a fixed-limit table every one of those sizings is
-      // illegal, so without this snap each horse decision would be rejected and
-      // fall through to the check/fold degradation below — a limit table full of
-      // bots that never bet. Snap to the street's legal wager instead, exactly
-      // as the human path does.
-      // Same 2026-08-28 override correction as the human clamp above: the
-      // hand's variant, not the table's.
-      const horseFlBetSize = isFixedLimitVariant(this.activeHandVariant())
-        ? // The horse snapshot types `stage` as a bare string; the values are
-          // the same HandStage literals the controller emits.
-          fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)
-        : 0;
-      /* CAP FIX 2026-08-27: the horse path is a parallel implementation of the
+        // Worker queue/computation is part of the horse's visible think time.
+        // A loaded process must never add compute delay on top of the selected
+        // cadence or let a stale answer fire after the authoritative clock.
+        const remainingThinkMs = Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs));
+
+        // ═══ V44 SECOND LOOK (2026-09-05) ═══════════════════════════════════════
+        // The fast decision above ran its Monte Carlo at 120-450 iterations to
+        // stay under 15 ms, and the horse is now going to sit for `thinkTimeMs`
+        // doing nothing. On a CLOSE spot - facing a bet in a pot worth reading,
+        // with time to think - the same decision is replayed at six times the
+        // sample, from the same strategy dice, a few hundred milliseconds into
+        // the think time. If the deeper read lands on a different call/fold/
+        // all-in, the deeper read acts. Sizing decisions and checks are left
+        // alone: the sample is not what decides them.
+        //
+        // Cost: PLO6 at 6x is ~40 ms of CPU, on perhaps one decision in twenty.
+        // The equity governor still applies inside the replay, so a saturated
+        // loop runs the second look at whatever the floor allows; and it is
+        // skipped outright when the governor is already scaling down.
+        const secondLook = ServerTableEngineTurns.secondLookPlan(
+          decision,
+          toCall,
+          state.pot,
+          this.tableInfo?.big_blind || 2,
+          remainingThinkMs,
+          fastResult.governorScale
+        );
+        if (!secondLook.ok) {
+          // One receipt per declined decision, naming the gate that closed. See
+          // secondLookPlan for why a bare null was not good enough.
+          noteSecondLookDecline(secondLook.reason);
+        }
+        if (secondLook.ok) {
+          this.horseSecondLookTimer = setTimeout(() => {
+            this.horseSecondLookTimer = null;
+            if (!fenceIsCurrent()) return;
+            void getLiveHorseDecisionWorker()
+              .decideDeep(
+                {
+                  ...decisionSnapshot,
+                  rngBefore: fastResult.rngBefore,
+                  deepEquity: ServerTableEngineTurns.SECOND_LOOK_DEPTH,
+                },
+                abortController.signal
+              )
+              .then((deepResult) => {
+                if (
+                  deepResult.generation !== turnToken ||
+                  deepResult.fence !== fence ||
+                  !fenceIsCurrent()
+                ) {
+                  return;
+                }
+                const verdict = ServerTableEngineTurns.secondLookVerdict(
+                  decision,
+                  deepResult.decision
+                );
+                if (verdict) {
+                  noteFire('v44_second_look_flipped');
+                  decision = {
+                    ...decision,
+                    action: verdict.action as ActionType,
+                    amount: verdict.amount,
+                  };
+                }
+              })
+              .catch((error) => {
+                if (
+                  !(error instanceof HorseDecisionAbortedError) &&
+                  !abortController.signal.aborted
+                ) {
+                  reportError(error, 'ServerTableEngineTurns.secondLook');
+                }
+              });
+          }, secondLook.afterMs);
+          this.horseSecondLookTimer.unref?.();
+        }
+
+        // 2026-08-22: clear any prior think-timer before overwriting the handle -
+        // re-entry used to orphan the previous setTimeout (it still fired; only
+        // the identity guards below kept it harmless).
+        if (this.horseActionTimer) {
+          clearTimeout(this.horseActionTimer);
+          this.horseActionTimer = null;
+        }
+        this.horseActionTimer = setTimeout(() => {
+          this.horseActionTimer = null;
+          if (!fenceIsCurrent()) return;
+          if (!handControllerRef) return;
+          // The action is now authoritative. Cancel a queued/running deep read
+          // before it can race the mutation below; this also retires the local
+          // turn token so no later continuation can become current again.
+          this.cancelHorseDecisionWork();
+
+          // Verify it's still this player's turn (timer might have expired)
+          const currentState = handControllerRef.getState();
+          if (currentState.currentPlayerSeat !== seat) return;
+
+          let action = decision.action as string;
+          let amount = decision.amount;
+
+          // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
+          // At an AoF table the preflop menu is fold or shove, and HandController
+          // rejects everything else. The horse brain does not know about AoF, so
+          // its decision is coerced here: any non-fold intent becomes the all-in.
+          // (A fold with nothing owed still normalizes to the legal check below.)
+          if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
+            if (action !== 'fold') {
+              action = 'all_in';
+              amount = undefined;
+            }
+          }
+
+          // Normalize actions
+          if (action === 'allin') action = 'all_in';
+          if (action === 'check' && toCall > 0) action = 'call';
+          if (action === 'call' && toCall === 0) action = 'check';
+          if (action === 'call') amount = toCall;
+          if (action === 'fold' && toCall === 0) action = 'check';
+          if (action === 'raise' && state.currentBet === 0) action = 'bet';
+          if (action === 'bet' && state.currentBet > 0) action = 'raise';
+
+          // Clamp amounts
+          //
+          // 2026-08-23: the horses size their bets no-limit style (HorseLogic reads
+          // only `isPotLimit`). On a fixed-limit table every one of those sizings is
+          // illegal, so without this snap each horse decision would be rejected and
+          // fall through to the check/fold degradation below - a limit table full of
+          // bots that never bet. Snap to the street's legal wager instead, exactly
+          // as the human path does.
+          // Same 2026-08-28 override correction as the human clamp above: the
+          // hand's variant, not the table's.
+          const horseFlBetSize = isFixedLimitVariant(this.activeHandVariant())
+            ? // The horse snapshot types `stage` as a bare string; the values are
+              // the same HandStage literals the controller emits.
+              fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)
+            : 0;
+          /* CAP FIX 2026-08-27: the horse path is a parallel implementation of the
          human clamp chain and carried NO cap term at all — `cap_enabled` /
          `cap_bb` were read only in _handlePlayerActionInner, so a horse at a
          capped table sized and shoved against its raw stack, straight past the
          ceiling the host set. Same arithmetic as the human path. */
-      const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
-      const horseCapChips =
-        this.tableInfo?.cap_enabled === true && horseCapBB > 0
-          ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
-          : 0;
-      const horseCapRemaining =
-        horseCapChips > 0
-          ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
-          : Infinity;
-      if (action === 'bet' && amount !== undefined) {
-        amount = horseFlBetSize > 0 ? horseFlBetSize : Math.max(state.minRaise, amount);
-        amount = Math.min(amount, horseCapRemaining);
-        // Only the STACK promotes to all_in; a cap-bounded wager stays sized.
-        if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
-          action = 'all_in';
-          amount = undefined;
-        }
-      } else if (action === 'raise' && amount !== undefined) {
-        const minRaiseTo = state.currentBet + state.minRaise;
-        amount =
-          horseFlBetSize > 0 ? state.currentBet + horseFlBetSize : Math.max(minRaiseTo, amount);
-        const horseCapRaiseTo =
-          horseCapRemaining === Infinity ? Infinity : enginePlayer.bet + horseCapRemaining;
-        amount = Math.min(amount, horseCapRaiseTo);
-        const horseStackRaiseTo = enginePlayer.stack + enginePlayer.bet;
-        const maxRaiseTo = Math.min(horseStackRaiseTo, horseCapRaiseTo);
-        if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
-          action = 'all_in';
-          amount = undefined;
-        }
-      }
+          const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
+          const horseCapChips =
+            this.tableInfo?.cap_enabled === true && horseCapBB > 0
+              ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
+              : 0;
+          const horseCapRemaining =
+            horseCapChips > 0
+              ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
+              : Infinity;
+          if (action === 'bet' && amount !== undefined) {
+            amount = horseFlBetSize > 0 ? horseFlBetSize : Math.max(state.minRaise, amount);
+            amount = Math.min(amount, horseCapRemaining);
+            // Only the STACK promotes to all_in; a cap-bounded wager stays sized.
+            if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
+              action = 'all_in';
+              amount = undefined;
+            }
+          } else if (action === 'raise' && amount !== undefined) {
+            const minRaiseTo = state.currentBet + state.minRaise;
+            amount =
+              horseFlBetSize > 0 ? state.currentBet + horseFlBetSize : Math.max(minRaiseTo, amount);
+            const horseCapRaiseTo =
+              horseCapRemaining === Infinity ? Infinity : enginePlayer.bet + horseCapRemaining;
+            amount = Math.min(amount, horseCapRaiseTo);
+            const horseStackRaiseTo = enginePlayer.stack + enginePlayer.bet;
+            const maxRaiseTo = Math.min(horseStackRaiseTo, horseCapRaiseTo);
+            if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
+              action = 'all_in';
+              amount = undefined;
+            }
+          }
 
-      // 2026-08-24: a capped fixed-limit street takes no further wager, and
-      // validateAction refuses one whatever the amount. The degradation below is
-      // `check() || fold()`, and on a capped street facing a bet `check` is
-      // illegal too — so a horse that wanted to RAISE folded the hand it had
-      // just decided to raise with. Substitute the closest legal intent instead
-      // (call when money is owed, check when none is), which cannot be refused.
-      // The horse snapshot is a reduced shape with no actionHistory, so the cap
-      // is read from the controller's own state — the same list validateAction
-      // will be judged against a few lines below.
-      const liveState = handControllerRef.getState();
-      if (
-        horseFlBetSize > 0 &&
-        isFixedLimitCapped(liveState.actionHistory ?? [], liveState.stage)
-      ) {
-        const substituted = substituteOnCappedStreet(action as ActionType, toCall);
-        if (substituted !== action) {
-          action = substituted as typeof action;
-          amount = substituted === 'call' ? toCall : undefined;
-        }
-      }
+          // 2026-08-24: a capped fixed-limit street takes no further wager, and
+          // validateAction refuses one whatever the amount. The degradation below is
+          // `check() || fold()`, and on a capped street facing a bet `check` is
+          // illegal too - so a horse that wanted to RAISE folded the hand it had
+          // just decided to raise with. Substitute the closest legal intent instead
+          // (call when money is owed, check when none is), which cannot be refused.
+          // The horse snapshot is a reduced shape with no actionHistory, so the cap
+          // is read from the controller's own state - the same list validateAction
+          // will be judged against a few lines below.
+          const liveState = handControllerRef.getState();
+          if (
+            horseFlBetSize > 0 &&
+            isFixedLimitCapped(liveState.actionHistory ?? [], liveState.stage)
+          ) {
+            const substituted = substituteOnCappedStreet(action as ActionType, toCall);
+            if (substituted !== action) {
+              action = substituted as typeof action;
+              amount = substituted === 'call' ? toCall : undefined;
+            }
+          }
 
-      // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
-      // illegal action — it does not throw (HandController.ts:416/430/437). So
-      // this catch never fired, and a horse whose decision the engine rejected
-      // (stale raise amount, re-open rule, min-raise floor) simply never acted.
-      // The human path was already fixed for exactly this in July ("the table
-      // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
-      // Check the boolean and degrade the same way a rejected human action does:
-      // check if free, else fold. A seat must never be left unacted.
-      // Same clock rule as the human path (2026-09-05): armed BEFORE the
-      // action, because the broadcast happens inside performAction.
-      let applied = false;
-      const horseClockWasArmed = this.lastActionAcceptedAtMs;
-      this.lastActionAcceptedAtMs = Date.now();
-      try {
-        applied = handControllerRef.performAction(seat, action as any, amount);
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
-      }
-      if (!applied) {
-        console.warn(
-          '[ServerTableEngine:' +
-            this.tableId +
-            '] Horse action ' +
-            action +
-            ' rejected at seat ' +
-            seat +
-            ' - falling back to check/fold'
-        );
-        try {
-          // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
-          // above produced no broadcast, so the clock must start again for
-          // whichever of these two lands.
+          // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
+          // illegal action - it does not throw (HandController.ts:416/430/437). So
+          // this catch never fired, and a horse whose decision the engine rejected
+          // (stale raise amount, re-open rule, min-raise floor) simply never acted.
+          // The human path was already fixed for exactly this in July ("the table
+          // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
+          // Check the boolean and degrade the same way a rejected human action does:
+          // check if free, else fold. A seat must never be left unacted.
+          // Same clock rule as the human path (2026-09-05): armed BEFORE the
+          // action, because the broadcast happens inside performAction.
+          let applied = false;
+          let intendedApplied = false;
+          const horseClockWasArmed = this.lastActionAcceptedAtMs;
           this.lastActionAcceptedAtMs = Date.now();
-          applied =
-            handControllerRef.performAction(seat, 'check' as any) ||
-            handControllerRef.performAction(seat, 'fold' as any);
-        } catch {
-          /* Hand already resolved. */
-        }
-      }
-      // Unconditional markProgress() here reset watchdogTrips even when all
-      // three actions were rejected, hiding a genuine stall for a full window.
-      if (applied) {
-        // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
-        // exactly like a human's. This path bypasses _handlePlayerActionInner,
-        // so before this the act-to-broadcast clock started only for HTTP
-        // actions and the horse series could never fill - which also meant the
-        // engine's own baseline latency was invisible whenever no human sat.
-        // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
-        //
-        // AUDIT FIX (2026-09-05): this sat above the check/fold fallback, so a
-        // horse whose intended action was REJECTED still reached the felt via
-        // the degrade and was neither counted nor timed. It now keys on the
-        // same `applied` that markProgress() does - the one place that already
-        // means "this seat acted", whichever of the three attempts landed.
-        try {
-          EngineMetrics.actionsFleetTotal.inc(1, {
-            audience: this.humansSeated() > 0 ? 'human' : 'horse',
-            format: this.tableFormat(),
+          const worker = getLiveHorseDecisionWorker();
+          worker.runWithDispatchBarrier(() => {
+            try {
+              applied = handControllerRef.performAction(seat, action as any, amount);
+              intendedApplied = applied;
+            } catch (err) {
+              reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
+            }
+            if (
+              intendedApplied &&
+              fastResult.effects.length > 0 &&
+              (action === 'bet' || action === 'raise')
+            ) {
+              // HorseMind intent is speculative until this exact wager lands.
+              // performAction emits TURN_CHANGE synchronously, so the client
+              // dispatch barrier inserts this commit after older FIFO work and
+              // before any decision that event enqueued. Rejected or degraded
+              // actions never alter future-street plans.
+              void worker
+                .commitDecisionEffects(
+                  { generation: fastResult.generation, fence: fastResult.fence },
+                  fastResult.effects
+                )
+                .catch((error) => {
+                  reportError(
+                    error,
+                    'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
+                  );
+                });
+            }
+            if (!applied) {
+              console.warn(
+                '[ServerTableEngine:' +
+                  this.tableId +
+                  '] Horse action ' +
+                  action +
+                  ' rejected at seat ' +
+                  seat +
+                  ' - falling back to check/fold'
+              );
+              try {
+                // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
+                // above produced no broadcast, so the clock must start again for
+                // whichever of these two lands.
+                this.lastActionAcceptedAtMs = Date.now();
+                applied =
+                  handControllerRef.performAction(seat, 'check' as any) ||
+                  handControllerRef.performAction(seat, 'fold' as any);
+              } catch {
+                /* Hand already resolved. */
+              }
+            }
           });
-        } catch {
-          /* metrics must never affect gameplay */
+          // Unconditional markProgress() here reset watchdogTrips even when all
+          // three actions were rejected, hiding a genuine stall for a full window.
+          if (applied) {
+            // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
+            // exactly like a human's. This path bypasses _handlePlayerActionInner,
+            // so before this the act-to-broadcast clock started only for HTTP
+            // actions and the horse series could never fill - which also meant the
+            // engine's own baseline latency was invisible whenever no human sat.
+            // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
+            //
+            // AUDIT FIX (2026-09-05): this sat above the check/fold fallback, so a
+            // horse whose intended action was REJECTED still reached the felt via
+            // the degrade and was neither counted nor timed. It now keys on the
+            // same `applied` that markProgress() does - the one place that already
+            // means "this seat acted", whichever of the three attempts landed.
+            try {
+              EngineMetrics.actionsFleetTotal.inc(1, {
+                audience: this.humansSeated() > 0 ? 'human' : 'horse',
+                format: this.tableFormat(),
+              });
+            } catch {
+              /* metrics must never affect gameplay */
+            }
+            this.markProgress();
+          } else {
+            // Nothing landed, so no broadcast carries this clock. Put back what
+            // was pending; a dead attempt must not become the next sample.
+            this.lastActionAcceptedAtMs = horseClockWasArmed;
+            reportError(
+              new Error(
+                'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'
+              ),
+              'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
+            );
+          }
+        }, remainingThinkMs);
+      })
+      .catch((error) => {
+        if (!(error instanceof HorseDecisionAbortedError) && !abortController.signal.aborted) {
+          reportError(error, 'ServerTableEngineTurns.horse_decision_continuation');
         }
-        this.markProgress();
-      } else {
-        // Nothing landed, so no broadcast carries this clock. Put back what
-        // was pending; a dead attempt must not become the next sample.
-        this.lastActionAcceptedAtMs = horseClockWasArmed;
-        reportError(
-          new Error(
-            'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'
-          ),
-          'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
-        );
-      }
-    }, thinkTimeMs);
+      });
   }
 }

@@ -12,6 +12,7 @@
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
+import { drainPendingWrites, enqueuePendingWrite } from './pendingWrites.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -160,6 +161,10 @@ function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
     horse_profile: (profile.horse_profile ?? undefined) as string | undefined,
     time_bank_remaining: seat.time_bank_remaining || 0,
     time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
+    persisted_time_bank: {
+      remainingSeconds: seat.time_bank_remaining,
+      usesRemaining: seat.time_bank_uses_remaining,
+    },
     is_sitting_out: seat.is_sitting_out === true,
     sit_out_at: seat.sit_out_at ?? null,
     entry_hold: seat.entry_hold ?? null,
@@ -210,88 +215,28 @@ export interface StackWriteOptions {
   ref?: string | null;
   /** Chips that arrived on the felt from a declared pool this write (a BBJ payout). */
   inflow?: number | null;
-  /**
-   * When present, require proof that this same transaction mirrored every
-   * resulting seat stack into the tournament standings source.
-   */
-  expectedTournamentId?: string | null;
-}
-
-export interface TournamentStackProof {
-  written?: unknown;
-  tournament_id?: unknown;
-  tournament_players_synced?: unknown;
-  tournament_player_count?: unknown;
-  tournament_player_user_ids?: unknown;
-  tournament_player_chips?: unknown;
-}
-
-/** Validate the exact tournament-standing proof returned by the hand RPC. */
-export function tournamentStackProofIsExact(
-  proof: TournamentStackProof,
-  expectedTournamentId: string,
-  expectedPlayerIds: readonly string[]
-): boolean {
-  const expectedUsers = [...new Set(expectedPlayerIds)].sort();
-  if (expectedUsers.length !== expectedPlayerIds.length) return false;
-  const returnedUsers = Array.isArray(proof.tournament_player_user_ids)
-    ? proof.tournament_player_user_ids.filter(
-        (userId): userId is string => typeof userId === 'string'
-      )
-    : [];
-  const returnedChips = Array.isArray(proof.tournament_player_chips)
-    ? proof.tournament_player_chips
-    : [];
-  const written =
-    proof.written && typeof proof.written === 'object' && !Array.isArray(proof.written)
-      ? (proof.written as Record<string, unknown>)
-      : null;
-  const writtenUsers = written ? Object.keys(written).sort() : [];
-  const chipUsers = returnedChips.map((row) =>
-    row && typeof row === 'object' && typeof (row as { user_id?: unknown }).user_id === 'string'
-      ? String((row as { user_id: string }).user_id)
-      : null
-  );
-  const chipAmountsAreExact = returnedChips.every((row) => {
-    if (!row || typeof row !== 'object') return false;
-    const userId = (row as { user_id?: unknown }).user_id;
-    const amount = Number((row as { chips?: unknown }).chips);
-    return (
-      typeof userId === 'string' &&
-      Number.isFinite(amount) &&
-      amount >= 0 &&
-      Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-7 &&
-      written !== null &&
-      Number(written[userId]) === amount
-    );
-  });
-  return (
-    proof.tournament_id === expectedTournamentId &&
-    proof.tournament_players_synced === true &&
-    Number(proof.tournament_player_count) === expectedUsers.length &&
-    returnedUsers.length === expectedUsers.length &&
-    returnedUsers.every((userId, index) => userId === expectedUsers[index]) &&
-    chipUsers.length === expectedUsers.length &&
-    chipUsers.every((userId, index) => userId === expectedUsers[index]) &&
-    writtenUsers.length === expectedUsers.length &&
-    writtenUsers.every((userId, index) => userId === expectedUsers[index]) &&
-    chipAmountsAreExact
-  );
 }
 
 /**
- * The same settlement promise owns every retry. The measured PostgREST schema
- * reload is about 28 seconds, so the retry schedule reaches 41 seconds while
- * remaining inside the dealing loop's five-minute settlement barrier even if
- * every RPC consumes its full 15-second database deadline.
+ * The INLINE ladder, and it is deliberately short.
  *
- * This is intentionally an exported value rather than an off-path scheduler:
- * the law test can prove the budget, and stop/drain/terminal closeout continue
- * to see the exact promise that owns the exact hand payload.
+ * The dealing loop awaits postHandTasks (and so this write) before dealing the
+ * next hand, under a 20s DEAL_STEP_BUDGET_MS. Five attempts over ~11.5s is what
+ * fits there. It survives a blip; it CANNOT survive a PostgREST schema-cache
+ * reload, which takes ~28s on this database and happens on every migration -
+ * measured, and the reason eighteen hands were lost on 2026-09-08.
+ *
+ * The patience for that lives off this path, in pendingWrites.ts. Do not grow
+ * these two numbers to cover a reload: that parks the table for the length of
+ * the reload. `tests/a-reload-window-cannot-lose-a-hand.law.test.ts` pins both
+ * halves - this ladder stays inside the dealing budget, and the off-path budget
+ * stays longer than a reload.
  */
-export const STACK_WRITE_RETRY_DELAYS_MS: readonly number[] = Object.freeze([
-  200, 400, 800, 1_600, 3_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000,
-]);
+const STACK_WRITE_ATTEMPTS = 5;
+const STACK_WRITE_BACKOFF_MS = (attempt: number): number => 200 * 2 ** (attempt - 1);
+/** Key prefix for this table's off-path pending stack writes. */
+const stackWriteKey = (tableId: string, handNumber: number): string =>
+  `stack:${tableId}:${handNumber}`;
 
 export async function syncStacks(
   tableId: string,
@@ -311,11 +256,12 @@ export async function syncStacks(
     stack_before?: number;
     time_bank_uses_remaining?: number;
     time_bank_remaining?: number;
+    persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
 ): Promise<boolean> {
-  if (players.length === 0) return false;
+  if (players.length === 0) return true;
   if (handNumber === undefined || handNumber === null) {
     /* Every hand result names its hand (settlement step 8 reads the snapshot).
        A write with no hand number used to take the unchecked per-seat loop -
@@ -342,9 +288,17 @@ export async function syncStacks(
      more than a quarter of all cash hands (the no-op trigger made the RPC
      report "seat write failed" for any hand in which one stack did not move).
      It is exactly the write that erased credits. A refusal from the database
-     is final. An unreachable database or incomplete tournament receipt keeps
-     this SAME promise alive through the schema-reload window. No timer queue,
-     watcher, reconciler, or successor engine ever owns this payload. */
+     is final; a transport failure is retried, bounded, and then reported with
+     the whole payload so the hand can be re-driven by hand. Time banks are
+     not money and keep their own writes. */
+  /* THE NEXT WRITE FOR THIS TABLE IS THE BEST MOMENT TO RETRY THE LAST ONE.
+     Reaching here means the dealing loop is running again, so any hand this
+     table still owes is retried now, ahead of this one, while the database has
+     just shown it is answering. Deltas commute, so the order is cosmetic; what
+     matters is that a quiet table's lost hand does not sit waiting on a timer
+     tick. Failures inside are swallowed by the queue - this never blocks the
+     hand in hand. */
+  await drainPendingWrites(`stack:${tableId}:`);
 
   const rounded = (n: number): number => Math.round(n * 100) / 100;
   const deltaMode = players.every(
@@ -383,22 +337,17 @@ export async function syncStacks(
     reason?: string;
     error?: unknown;
     rebased?: Record<string, number>;
-    written?: Record<string, number>;
-    tournament_id?: unknown;
-    tournament_players_synced?: unknown;
-    tournament_player_count?: unknown;
-    tournament_player_user_ids?: unknown;
-    tournament_player_chips?: unknown;
   };
-  /* The immutable payload above is closed over by every attempt. Reusing the
-     same object is intentional: (table, hand) is the RPC's idempotency key, and
-     a retry must never be rebuilt from newer in-memory stacks. */
+  /* ONE ATTEMPT, SHARED BY BOTH LADDERS. The inline loop below runs it inside
+     the dealing budget; pendingWrites.ts runs the very same closure off the
+     dealing path afterwards, for as long as a schema reload can last. Returning
+     a verdict rather than a boolean is what lets the off-path retry tell a
+     refusal (final - stop) from an unreachable database (keep trying). */
   type Verdict =
     | { kind: 'landed' }
     | { kind: 'refused'; detail: string }
-    | { kind: 'unconfirmed'; error: string };
+    | { kind: 'unreachable'; error: string };
 
-  let invalidTournamentProofReported = false;
   const attemptStackWrite = async (): Promise<Verdict> => {
     let data: SettleResult | null = null;
     let error: { message?: string } | null = null;
@@ -414,30 +363,6 @@ export async function syncStacks(
     }
 
     if (!error && data?.success === true) {
-      const expectedTournamentId = options.expectedTournamentId ?? null;
-      if (expectedTournamentId !== null) {
-        if (
-          !tournamentStackProofIsExact(
-            data,
-            expectedTournamentId,
-            players.map((player) => player.user_id)
-          )
-        ) {
-          if (!invalidTournamentProofReported) {
-            invalidTournamentProofReported = true;
-            reportError(
-              new Error(
-                `[DB] tournament hand-stack settle for table ${tableId} hand ${handNumber} returned incomplete standings proof`
-              ),
-              'DB.settle_hand_stacks_tournament_proof_invalid'
-            );
-          }
-          return {
-            kind: 'unconfirmed',
-            error: 'the RPC returned success without the exact tournament standings receipt',
-          };
-        }
-      }
       const rebased =
         data.rebased && typeof data.rebased === 'object' ? Object.keys(data.rebased) : [];
       if (rebased.length > 0) {
@@ -483,115 +408,201 @@ export async function syncStacks(
     }
 
     return {
-      kind: 'unconfirmed',
+      kind: 'unreachable',
       error: error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`,
     };
   };
 
   let lastError = '';
-  for (let attempt = 0; attempt <= STACK_WRITE_RETRY_DELAYS_MS.length; attempt++) {
+  for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
     const verdict = await attemptStackWrite();
     if (verdict.kind === 'landed') return true;
     if (verdict.kind === 'refused') return false;
     lastError = verdict.error;
-    const delayMs = STACK_WRITE_RETRY_DELAYS_MS[attempt];
-    if (delayMs !== undefined) {
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    if (attempt < STACK_WRITE_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, STACK_WRITE_BACKOFF_MS(attempt)));
     }
   }
 
-  const attempts = STACK_WRITE_RETRY_DELAYS_MS.length + 1;
-  const retryWindowMs = STACK_WRITE_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
-  reportError(
-    new Error(
-      `[DB] hand-stack write UNCONFIRMED for table ${tableId} hand ${handNumber} after ` +
-        `${attempts} attempts over at least ${Math.round(retryWindowMs / 1000)}s - ${lastError} - ` +
-        `payload ${JSON.stringify(payload)}`
-    ),
-    'DB.settle_hand_stacks_unconfirmed'
-  );
-  try {
-    const { raiseFinancialAlert } = await import('../financialAlerts.js');
-    await raiseFinancialAlert(
-      'critical',
-      'DB.settle_hand_stacks_unconfirmed',
-      `Hand #${handNumber} at table ${tableId}: exact stack receipt remained unconfirmed after ${attempts} attempts`,
-      {
-        table_id: tableId,
-        hand_number: handNumber,
-        attempts,
-        retry_window_ms: retryWindowMs,
-        last_error: lastError,
-        payload,
+  /* THE DEALING PATH IS OUT OF BUDGET; THE HAND IS NOT LOST (2026-09-08).
+     This used to alarm here and stop, and the alarm's own words - "recoverable
+     only by hand" - were true: eighteen hands died exactly this way when two
+     migrations made PostgREST reload its schema cache for ~28s while this
+     ladder could only wait ~11.5s.
+
+     The next hand at this table cannot wait for a reload, but nothing else has
+     to stop for it either. Hand the payload to the off-path retry, which owns a
+     budget six reloads long, and let the loop deal on. The RPC is idempotent on
+     (table, hand), so a retry that arrives after a silent commit writes nothing,
+     and the write applies DIFFERENCES, so landing late is still landing right. */
+  const enqueued = enqueuePendingWrite({
+    key: stackWriteKey(tableId, handNumber),
+    describedAs: `hand-stack write for table ${tableId} hand ${handNumber}`,
+    attempt: async () => {
+      const verdict = await attemptStackWrite();
+      // A refusal is the database's final word, not a transport failure: it has
+      // already been reported above. Stop retrying it.
+      if (verdict.kind === 'landed') return { done: true };
+      if (verdict.kind === 'refused') return { done: true, refused: true };
+      return { done: false, error: verdict.error };
+    },
+    onGiveUp: async (finalError, elapsedMs, attempts) => {
+      reportError(
+        new Error(
+          `[DB] hand-stack write UNREACHABLE for table ${tableId} hand ${handNumber} after ` +
+            `${STACK_WRITE_ATTEMPTS} inline + ${attempts} off-path attempts over ` +
+            `${Math.round(elapsedMs / 1000)}s - ${finalError} - payload ${JSON.stringify(payload)}`
+        ),
+        'DB.settle_hand_stacks_unreachable'
+      );
+      try {
+        const { raiseFinancialAlert } = await import('../financialAlerts.js');
+        await raiseFinancialAlert(
+          'critical',
+          'DB.settle_hand_stacks_unreachable',
+          `Hand #${handNumber} at table ${tableId}: stack write unreachable after ${STACK_WRITE_ATTEMPTS} inline and ${attempts} off-path attempts over ${Math.round(elapsedMs / 1000)}s; re-drive fn_ca_settle_hand_stacks_absolute with the attached payload`,
+          {
+            table_id: tableId,
+            hand_number: handNumber,
+            last_error: finalError,
+            off_path_attempts: attempts,
+            elapsed_ms: elapsedMs,
+            payload,
+          }
+        );
+      } catch (err) {
+        reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
       }
+    },
+  });
+  if (!enqueued) {
+    // Already owed for this exact hand; the queued entry is still trying.
+    console.warn(
+      `[DB] hand-stack write for table ${tableId} hand ${handNumber} is already queued off-path`
     );
-  } catch (err) {
-    reportError(err, 'DB.settle_hand_stacks_unconfirmed_alert_failed');
   }
   return false;
 }
 
-async function persistTimeBanks(
+/**
+ * Compare against this hand's raw roster read, not a process-wide cache or an
+ * assumed successful write. Unchanged banks need no HTTP request. Unknown and
+ * null baselines still write, including a real zero; the database filter below
+ * remains the final no-op/WAL guard. Do not mark a failed write as persisted.
+ */
+function timeBankWritePayload(p: {
+  time_bank_uses_remaining?: number;
+  time_bank_remaining?: number;
+  persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
+}): { time_bank_uses_remaining?: number; time_bank_remaining?: number } {
+  const payload: { time_bank_uses_remaining?: number; time_bank_remaining?: number } = {};
+  if (
+    p.time_bank_uses_remaining !== undefined &&
+    p.time_bank_uses_remaining !== p.persisted_time_bank?.usesRemaining
+  )
+    payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
+  if (
+    p.time_bank_remaining !== undefined &&
+    p.time_bank_remaining !== p.persisted_time_bank?.remainingSeconds
+  )
+    payload.time_bank_remaining = p.time_bank_remaining;
+  return payload;
+}
+
+export async function persistTimeBanks(
   tableId: string,
-  players: { user_id: string; time_bank_uses_remaining?: number; time_bank_remaining?: number }[]
+  players: {
+    user_id: string;
+    time_bank_uses_remaining?: number;
+    time_bank_remaining?: number;
+    persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
+  }[]
 ): Promise<void> {
-  // Stacks are settled atomically; persist the non-money seat fields.
+  // Stacks are already settled atomically. Keep genuine bank changes inside
+  // the settlement barrier, but do not pay a round trip for every idle bank.
   await Promise.all(
-    players
-      .filter(
-        (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
-      )
-      .map(async (p) => {
-        const payload: Record<string, unknown> = {};
-        if (p.time_bank_uses_remaining !== undefined)
-          payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
-        if (p.time_bank_remaining !== undefined)
-          payload.time_bank_remaining = p.time_bank_remaining;
-        await supabase
-          .from('table_seats')
-          .update(payload)
-          .eq('table_id', tableId)
-          .eq('user_id', p.user_id)
-          .is('left_at', null)
-          // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
-          //
-          // This ran for EVERY seated player after EVERY hand, and a
-          // time bank almost never moves - it only changes on the hands
-          // where somebody actually burns it. So the overwhelming
-          // majority of these were an UPDATE that set a column to the
-          // value it already held.
-          //
-          // Postgres does not care much; Realtime does. `table_seats` is
-          // in the `supabase_realtime` publication, so every one of these
-          // no-op writes produced a WAL record that `realtime.apply_rls`
-          // then decoded and RLS-filtered for every subscriber on the
-          // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
-          // all table_seats writes, on a table that is 36% of everything
-          // Realtime decodes - and `realtime.list_changes` was the single
-          // largest consumer of the whole database at 17.5% of total time
-          // with a 460 ms mean, which is felt at the table as lag.
-          //
-          // The guard is a FILTER, not a diff we track in memory: if
-          // neither column differs from what is stored, zero rows match,
-          // Postgres writes nothing, and no WAL record is produced. There
-          // is no cache to go stale, it is correct across an engine
-          // restart and against any concurrent writer, and a genuine
-          // change still writes exactly as before.
-          //
-          // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
-          // three-valued logic, so a NULL column would NOT match `neq`
-          // and the row would be filtered out - silently skipping a write
-          // that IS needed. Both columns are NOT NULL with defaults today
-          // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
-          // clause is what keeps the guard correct if that ever changes.
-          .or(
-            timeBankChangedFilter({
-              time_bank_remaining: p.time_bank_remaining,
-              time_bank_uses_remaining: p.time_bank_uses_remaining,
-            })
-          );
-      })
+    players.map(async (p) => {
+      const payload = timeBankWritePayload(p);
+      if (Object.keys(payload).length === 0) return;
+      const { error } = await supabase
+        .from('table_seats')
+        .update(payload)
+        .eq('table_id', tableId)
+        .eq('user_id', p.user_id)
+        .is('left_at', null)
+        .or(timeBankChangedFilter(payload));
+      // PostgREST resolves SQL failures; they must not masquerade as success.
+      // The next fresh roster still differs and retries the remaining change.
+      if (error) reportError(error, 'DB.persist_time_banks_failed');
+    })
   );
+}
+
+/**
+ * Sync tournament player chips from table_seats to tournament_players
+ */
+export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<boolean> {
+  const { data: seats, error: seatsError } = await supabase
+    .from('table_seats')
+    .select('user_id, stack')
+    .eq('table_id', tableId)
+    .is('left_at', null);
+
+  /* This result gates the tournament elimination wake. Unknown input must not
+     be reported as a successful mirror: otherwise a sweep can run while
+     tournament_players still carries the pre-hand positive chip count and
+     miss a bust until the safety pass. */
+  if (seatsError) {
+    reportError(seatsError, 'supabase.syncTournamentChips.seats_read');
+    return false;
+  }
+  if (!seats || seats.length === 0) {
+    reportError(
+      new Error(`[DB] tournament chip sync for ${tournamentId}/${tableId} found no active seats`),
+      'supabase.syncTournamentChips.empty_seats'
+    );
+    return false;
+  }
+
+  // ONE bulk statement, not one UPDATE per seat.
+  //
+  // This function was the last surviving caller of the N+1 that
+  // TournamentManagerEliminations.ts:30-63 already replaced with
+  // fn_sync_tournament_chips. Measured on production 2026-08-25 it was still
+  // issuing 27,206 single-row PostgREST UPDATEs - a 9-handed table cost nine
+  // separate round trips every settlement - and tournament_players is in the
+  // supabase_realtime publication, so every one of those also paid a logical
+  // decode plus an RLS evaluation per subscriber. tournament_players was 48%
+  // of all writes to published tables while realtime decoding was the single
+  // largest consumer of database time.
+  //
+  // The RPC additionally skips rows whose chip count is already correct
+  // (migration 20260825_perf_sync_tournament_chips_skip_noop_writes), which a
+  // per-row UPDATE could never do, and scopes the write to status='playing' so
+  // an already-eliminated player's final stack cannot be overwritten.
+  const chipUpdates = seats.map((seat) => ({
+    user_id: seat.user_id,
+    // Guard against corrupted stack values (NaN, negative, undefined), matching
+    // the guard in TournamentManagerEliminations.
+    // Math.floor — tournament_players.chips is INTEGER. An earlier version
+    // computed 2-decimal cents (e.g. 80511.97) which Postgres rejected at
+    // PostgREST cast time, flooding postgres logs with thousands of
+    // "invalid input syntax for type integer" errors per minute.
+    // Verified in Smarter-Poker-World-Hub/.agent/POSTGRES_INTEGER_CAST_FLOOD.md
+    chips: Math.floor(
+      typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0 ? seat.stack : 0
+    ),
+  }));
+
+  const { error } = await supabase.rpc('fn_sync_tournament_chips', {
+    p_tournament_id: tournamentId,
+    p_updates: chipUpdates,
+  });
+  if (error) {
+    reportError(error, 'supabase.syncTournamentChips');
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -665,16 +676,52 @@ export async function updateTableStatus(
   playerCount: number,
   status: string = 'running'
 ): Promise<void> {
-  const { error } = await supabase
+  await supabase
     .from('tables')
     .update({ current_players: playerCount, status })
     .eq('id', tableId)
-    // A hand that began before tournament completion may reach this recount
-    // after the terminal transaction has closed the table. The compare-and-set
-    // makes that delayed writer a no-op instead of reopening a completed game.
-    .neq('status', 'closed')
     .or(tableCountChangedFilter({ current_players: playerCount, status }));
-  if (error) {
-    throw new Error(`table ${tableId} status recount failed: ${error.message}`);
+}
+
+/**
+ * Read the active seats and stored summary in one database snapshot. A stable
+ * table needs no second HTTP request. Changed summaries still use the database
+ * comparison filter; missing/failed reads never manufacture an empty table.
+ */
+export async function reconcileTableSeatCount(
+  tableId: string,
+  canMutate: () => boolean = () => true
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('current_players,status,seats:table_seats!table_seats_table_id_fkey(user_id)')
+    .eq('id', tableId)
+    .is('seats.left_at', null)
+    .maybeSingle();
+  if (error || !data || !Array.isArray(data.seats)) {
+    reportError(
+      new Error(
+        `table_unlock: seat count unavailable (${error?.message ?? 'missing seat relation'}); table status left unchanged`
+      ),
+      'ServerTableEngine.table_unlock_count_unavailable'
+    );
+    return null;
   }
+  const count = data.seats.length;
+  const status = count >= 2 ? 'running' : 'waiting';
+  if (data.current_players !== count || data.status !== status) {
+    if (!canMutate()) return null;
+    const { error: updateError } = await supabase
+      .from('tables')
+      .update({ current_players: count, status })
+      .eq('id', tableId)
+      .or(tableCountChangedFilter({ current_players: count, status }));
+    if (updateError) {
+      reportError(
+        new Error(`table_unlock: summary update failed (${updateError.message})`),
+        'ServerTableEngine.table_unlock_update_failed'
+      );
+    }
+  }
+  return count;
 }

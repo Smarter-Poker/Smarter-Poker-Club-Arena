@@ -29,6 +29,7 @@ import { createClient, type Session } from '@supabase/supabase-js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ensureClubMembership } from './support/ensureClubMembership';
+import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
@@ -321,6 +322,10 @@ export default async function globalSetup(config: FullConfig) {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
+    // TOSGuard wraps the router; AppLayout owns the profile gate inside it.
+    // Honor that real nesting order so a definite TOS refusal is resolved
+    // before asking for a profile marker the outer guard correctly unmounts.
+    await ensureAcceptedTerms(page);
     await ensurePlayableProfile(page);
 
     // The lobby suite exercises a real club route. A valid authenticated

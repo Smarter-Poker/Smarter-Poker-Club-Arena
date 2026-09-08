@@ -1,11 +1,15 @@
 /**
- * A STUCK SATELLITE REPLAYS THE SAME WHOLE-EVENT AUTHORITY.
+ * A COMPLETING satellite has one immutable finish owner.
  *
- * Recovery used to infer success from any payout row or target seat, then
- * close the tournament even when the rest of the locked pool was missing.
- * New satellite finishes are atomic, so recovery has no second calculator or
- * observer: it may repair a historical undecided status, or replay the exact
- * database authority from one durable winner and validate its v2 receipt.
+ * Recovery used to relabel both undecided and one-survivor satellites RUNNING.
+ * That became corrupting once fn_claim_tournament_finish persisted an immutable
+ * winner receipt: the receipt survived the relabel, discovery dealt again, and
+ * the next finish correctly refused the impossible receipt + RUNNING pair.
+ *
+ * These source laws pin the recovery boundary. Multi-survivor fields fail
+ * closed without a lifecycle write. A sole survivor is accepted only with hand
+ * evidence and an exact already-eliminated 2..N field, resumes the database
+ * claim, and reaches only the format-owned atomic finalizer.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -13,83 +17,144 @@ import path from 'node:path';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const RECOVERY = fs.readFileSync(path.join(HERE, 'tournamentRecovery.ts'), 'utf8');
-
-function executable(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-}
-
-const branchStart = RECOVERY.indexOf(
+const SATELLITE_START = RECOVERY.indexOf(
   "String((t as { variant?: string }).variant ?? '').toLowerCase() === 'satellite'"
 );
-const branchEnd = RECOVERY.indexOf('// A COMPLETING cash event is resumable', branchStart);
-const BRANCH = executable(RECOVERY.slice(branchStart, branchEnd));
+const NEXT_BRANCH_COMMENT = RECOVERY.indexOf(
+  'A CHOPPED EVENT HAS ALREADY AGREED ITS OWN PAYOUTS',
+  SATELLITE_START
+);
+const SATELLITE_END = RECOVERY.lastIndexOf('/**', NEXT_BRANCH_COMMENT);
 
-describe('a stuck satellite has no observer-based completion path', () => {
-  it('finds the satellite branch and keeps it outside cash-place recovery', () => {
-    expect(branchStart).toBeGreaterThan(-1);
-    expect(branchEnd).toBeGreaterThan(branchStart);
-    expect(BRANCH).not.toMatch(/fn_settle_tournament_places|computePlacePrize/);
-    expect(BRANCH).toMatch(/continue;/);
-  });
+/** Remove prose so comments cannot satisfy a behavioral assertion. */
+function executable(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n');
+}
 
-  it('never treats one payout or target seat as proof the whole pool settled', () => {
-    expect(BRANCH).not.toMatch(/from\('tournament_payouts'\)/);
-    expect(BRANCH).not.toMatch(/\.eq\('source_satellite_id'|alreadyAwarded|recordCount/);
-    expect(BRANCH).not.toMatch(/status:\s*'COMPLETED'/);
-  });
-});
+const CODE = executable(RECOVERY.slice(SATELLITE_START, SATELLITE_END));
 
-describe('only durable roster evidence can select the observed winner', () => {
-  it('fails closed when the roster read is unknown', () => {
-    expect(BRANCH).toMatch(/from\('tournament_players'\)/);
-    expect(BRANCH).toMatch(/select\(['"]user_id, status, position['"]\)/);
-    expect(BRANCH).toMatch(/satellitePlayersErr|rosterErr/);
-    expect(BRANCH).toMatch(/Array\.isArray/);
-  });
-
-  it('does not rank a replacement from chips, timestamps, or array order', () => {
-    expect(BRANCH).not.toMatch(/\.chips|created_at|updated_at|elimination_sequence|\.sort\(/);
-    expect(BRANCH).toMatch(/position\) === 1|position === 1/);
-    expect(BRANCH).toMatch(/\.length !== 1|\.length === 1/);
-  });
-
-  it('alerts and changes nothing when no single durable winner exists', () => {
-    expect(BRANCH).toMatch(/Satellite\.stuck_completing_winner_absent/);
-    expect(BRANCH).toMatch(/await raiseFinancialAlert\(\s*['"]critical['"]/);
-  });
-});
-
-describe('the only historical state repair is an exact undecided CAS', () => {
-  it('returns registered or multi-live legacy rows to RUNNING with one-row proof', () => {
-    expect(BRANCH).toContain("'registered'");
-    expect(BRANCH).toMatch(/durableResultPlayers\.length === 0/);
-    expect(BRANCH).toMatch(/playingPlayers\.length >= 2/);
-    expect(BRANCH).toMatch(/\.update\(\{ status: 'RUNNING' \}/);
-    expect(BRANCH).toMatch(/\{ count: 'exact' \}/);
-    expect(BRANCH).toMatch(/\.eq\('status', 'COMPLETING'\)/);
-    expect(BRANCH).toMatch(/count !== 1/);
-  });
-
-  it('never reopens a field after a durable winner or place 1 exists', () => {
-    const resultGate = BRANCH.indexOf('durableResultPlayers.length === 0');
-    const revive = BRANCH.indexOf(".update({ status: 'RUNNING' }", resultGate);
-    expect(BRANCH).toMatch(/statusOf\(player\) === 'winner' \|\| Number\(player\.position\) === 1/);
-    expect(resultGate).toBeGreaterThan(-1);
-    expect(revive).toBeGreaterThan(resultGate);
-  });
-});
-
-describe('decided recovery replays one atomic satellite receipt', () => {
-  it('requests the whole-event receipt with the durable winner', () => {
-    expect(BRANCH).toContain('requestSatelliteSettlementReceipt(t.id, winnerId)');
-    expect(RECOVERY).toMatch(
-      /import \{ requestSatelliteSettlementReceipt \} from '\.\/satelliteSettlementRpc\.js'/
+describe('a COMPLETING satellite never loses its immutable finish owner', () => {
+  it('reads the finish receipt and never relabels the tournament RUNNING', () => {
+    expect(CODE).toContain("from('tournament_finish_receipts')");
+    expect(CODE).not.toMatch(
+      /\.from\('tournaments'\)[\s\S]{0,240}\.update\(\{ status: 'RUNNING' \}\)/
     );
+    expect(CODE).not.toContain('recoverStuckCompleting_satellite_revived');
   });
 
-  it('awaits a critical outcome-unconfirmed alert on transport or receipt ambiguity', () => {
-    expect(BRANCH).toContain('Satellite.seat_outcome_unconfirmed');
-    expect(BRANCH).toMatch(/await raiseFinancialAlert\(\s*['"]critical['"]/);
-    expect(BRANCH).not.toMatch(/fn_settle_tournament_rake|fn_credit_and_log/);
+  it('leaves an undecided live field unchanged and raises the invariant breach', () => {
+    const start = CODE.indexOf('if (liveRows.length >= 2)');
+    const end = CODE.indexOf('let proposedWinnerId', start);
+    const branch = CODE.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(branch).toContain('Satellite.completing_with_live_field');
+    expect(branch).toContain('recoverStuckCompleting_satellite_live_field_conflict');
+    expect(branch).toContain('continue;');
+    expect(branch).not.toMatch(/\.update\(/);
+    expect(branch).not.toMatch(/\.rpc\(/);
+  });
+
+  it('refuses a receipt whose champion conflicts with the durable field', () => {
+    const conflict = CODE.slice(
+      CODE.indexOf('finishReceipt?.winner_user_id &&'),
+      CODE.indexOf('const satClaim = await claimTournamentFinish')
+    );
+    expect(conflict).toContain('Satellite.finish_receipt_winner_conflict');
+    expect(conflict).toContain('recoverStuckCompleting_satellite_winner_claim_conflict');
+    expect(conflict).toContain('continue;');
+  });
+});
+
+describe('one survivor resumes the same proven atomic finish', () => {
+  it('requires a playing survivor, real hand evidence, and exact eliminated places 2..N', () => {
+    const start = CODE.indexOf('if (liveRows.length === 1)');
+    const end = CODE.indexOf('} else {', start);
+    const branch = CODE.slice(start, end);
+
+    expect(branch).toContain("survivor.status !== 'playing'");
+    expect(branch).toContain("from('hand_history')");
+    expect(branch).toContain('noHandWasEverDealt({');
+    expect(branch).toContain("row.status === 'eliminated'");
+    expect(branch).toContain('row.eliminated_at');
+    expect(branch).toContain('index + 2');
+    expect(branch).toContain('recoverStuckCompleting_satellite_standings_unproved');
+  });
+
+  it('claims before stamping and compare-and-sets only the proven survivor', () => {
+    const claim = CODE.indexOf('const satClaim = await claimTournamentFinish');
+    const stamp = CODE.indexOf(".update({ status: 'winner', position: 1 })");
+    const stampWindow = CODE.slice(stamp, CODE.indexOf('const { data: terminalRows', stamp));
+
+    expect(claim).toBeGreaterThan(-1);
+    expect(stamp).toBeGreaterThan(claim);
+    expect(stampWindow).toContain(".eq('id', survivorToStamp.id)");
+    expect(stampWindow).toContain(".eq('user_id', proposedWinnerId)");
+    expect(stampWindow).toContain(".eq('status', 'playing')");
+    expect(stampWindow).toContain(".eq('status', 'winner')");
+    expect(stampWindow).toContain(".eq('position', 1)");
+    expect(stampWindow).toContain('exactWinnerPersisted');
+  });
+
+  it('re-proves a unique, contiguous terminal field before any money RPC', () => {
+    const proof = CODE.indexOf('const exactTerminalField');
+    const bounty = CODE.indexOf('drainTournamentBountyObligations', proof);
+    const rake = CODE.indexOf("supabase.rpc('fn_settle_tournament_rake'", proof);
+    const settle = CODE.indexOf("'fn_settle_satellite_finish_atomic'", proof);
+
+    expect(proof).toBeGreaterThan(-1);
+    expect(bounty).toBeGreaterThan(proof);
+    expect(rake).toBeGreaterThan(bounty);
+    expect(settle).toBeGreaterThan(rake);
+    expect(CODE.slice(proof, bounty)).toContain('position === index + 1');
+    expect(CODE.slice(proof, bounty)).toContain('proposedWinnerId');
+  });
+});
+
+describe('zero survivors never authorizes a guessed champion', () => {
+  it('accepts only an existing unique winner at position one', () => {
+    const start = CODE.indexOf('const { data: canonicalWinner, error: winnerErr }');
+    const end = CODE.indexOf('if (!proposedWinnerId)', start);
+    const branch = CODE.slice(start, end);
+
+    expect(branch).toContain(".eq('status', 'winner')");
+    expect(branch).toContain(".eq('position', 1)");
+    expect(branch).toContain('.maybeSingle()');
+    expect(branch).not.toMatch(/lastEliminated|eliminated_at.*desc/i);
+  });
+
+  it('raises a critical alert and enters no payout path without that winner', () => {
+    const start = CODE.indexOf('if (!proposedWinnerId)');
+    const end = CODE.indexOf('finishReceipt?.winner_user_id &&', start);
+    const branch = CODE.slice(start, end);
+
+    expect(branch).toContain('Satellite.stuck_completing_unawarded');
+    expect(branch).toContain("'critical'");
+    expect(branch).toContain('recoverStuckCompleting_satellite_skipped');
+    expect(branch).toContain('continue;');
+    expect(branch).not.toMatch(/fn_credit_and_log|fn_settle_satellite_finish_atomic/);
+  });
+});
+
+describe('the satellite branch has one terminal money door', () => {
+  it('uses the atomic satellite finalizer and accepts a lost receipt only from COMPLETED', () => {
+    expect(CODE).toContain("'fn_settle_satellite_finish_atomic'");
+    const failed = CODE.slice(
+      CODE.indexOf('satelliteSettlement?.ok !== true'),
+      CODE.indexOf('acceptedDurableCompletion = true')
+    );
+    expect(failed).toContain("committed?.status !== 'COMPLETED'");
+    expect(failed).toContain('satellite_completion_failed');
+  });
+
+  it('does not certify, directly complete, or fall through to structure cash', () => {
+    expect(CODE).not.toContain('certifyTournamentFinish(');
+    expect(CODE).not.toMatch(/\.from\('tournaments'\)[\s\S]{0,240}\.update\(/);
+    expect(CODE).not.toContain('computePlacePrize');
+    expect(CODE.trimEnd()).toMatch(/continue;\s*}\s*$/);
   });
 });

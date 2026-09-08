@@ -510,10 +510,14 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
     }
   });
 
-  it('the loader and the V30 driver are wired at boot', async () => {
+  it('the loader is worker-owned and the V30 driver stays in the leader bootstrap', async () => {
     const { readFileSync } = await import('node:fs');
     const idx = readFileSync(new URL('../index.ts', import.meta.url).pathname, 'utf8');
-    expect(idx).toContain('startGtoPostflopLoader()');
+    const worker = readFileSync(
+      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    expect(worker).toContain('startGtoPostflopLoader()');
     expect(idx).toContain('startGtoAggregationDriver()');
   });
 });

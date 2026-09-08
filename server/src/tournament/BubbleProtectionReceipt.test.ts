@@ -1,47 +1,122 @@
-/**
- * Bubble Protection is one prize-pool-funded base buy-in. The database owns
- * the transfer; the manager may announce it only from an exact receipt for
- * the observed user, place, and configured buy-in amount.
- */
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
-const SOURCE = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8');
-const ELIMINATE = sliceMethod(SOURCE, 'protected async eliminatePlayer');
+const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
+const eliminations = read('src/tournament/TournamentManagerEliminations.ts');
+const atomicElimination = read(
+  '../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+);
+const terminalSettlement = read(
+  '../supabase/migrations/20260908042400_tournament_places_settle_and_complete_atomically.sql'
+);
 
-function executable(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-}
+const sqlFunction = (source: string, name: string): string => {
+  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
+  if (start < 0) throw new Error(`SQL function ${name} is missing`);
+  const bodyStart = source.indexOf('AS $function$', start);
+  const end = source.indexOf('$function$;', bodyStart);
+  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
+  return source.slice(start, end + '$function$;'.length);
+};
 
-const CODE = executable(ELIMINATE);
+describe('Bubble Protection is paid only by the finalized tournament batch', () => {
+  const eliminate = sliceMethod(
+    eliminations,
+    'eliminatePlayer(\n    userId: string,\n    position: number,\n    allowCompletingClaim = false\n  ): Promise<boolean>'
+  );
+  const ordinary = sqlFunction(atomicElimination, 'fn_eliminate_tournament_player_atomic');
+  const bounty = sqlFunction(atomicElimination, 'fn_claim_tournament_bounty_elimination');
+  const prepare = sqlFunction(terminalSettlement, 'fn_prepare_tournament_place_obligations');
+  const settle = sqlFunction(terminalSettlement, 'fn_settle_tournament_places_atomic');
 
-describe('bubble protection presentation requires its exact atomic receipt', () => {
-  it('uses the dedicated database authority and never a process-side payer', () => {
-    expect(CODE).toContain("'fn_settle_tournament_bubble_protection'");
-    expect(CODE).toContain('p_observed_bubble_user_id: userId');
-    expect(CODE).not.toMatch(/settleTournamentObligation|fn_credit_and_log|credit_player_wallet/);
-  });
-
-  it('matches the receipt to the observed user, finishing place, and one base buy-in', () => {
-    expect(CODE).toContain('bubble.user_id === userId');
-    expect(CODE).toContain('bubblePosition === position');
-    expect(CODE).toContain('expectedBubbleAmount = Number((tournament as any).buy_in_amount)');
-    expect(CODE).toContain(
-      'Math.round(bubbleAmount * 100) === Math.round(expectedBubbleAmount * 100)'
+  it('submits zero to both provisional elimination paths and has no side payer', () => {
+    expect(eliminate).toContain('const bubbleRefund = 0;');
+    expect(eliminate.match(/p_bubble_refund: bubbleRefund/g)).toHaveLength(2);
+    expect(eliminate).not.toMatch(/bubble_protection === true|configuredRefund|paidPlaces \+ 1/);
+    expect(eliminate).not.toMatch(
+      /settleTournamentObligation|fn_settle_tournament_obligation|bubble_protection_paid/
     );
-    expect(CODE).toContain('bubble.fully_settled === true');
   });
 
-  it('does not mark or announce Bubble Protection after any malformed receipt', () => {
-    const validation = CODE.indexOf('const exactReceipt =');
-    const refusal = CODE.indexOf('if (!exactReceipt)', validation);
-    const announce = CODE.indexOf("await this.broadcast('bubble_protection_paid'", refusal);
-    const mark = CODE.indexOf('this.bubbleProtectionPaid = true', announce);
-    expect(validation).toBeGreaterThan(-1);
-    expect(refusal).toBeGreaterThan(validation);
-    expect(announce).toBeGreaterThan(refusal);
-    expect(mark).toBeGreaterThan(announce);
+  it('accepts a lost bounty response only when the durable row preserves zero', () => {
+    expect(eliminate).toMatch(
+      /\.select\(\s*'id,table_id,hand_id,hand_number,mode,state,knocker_user_id,claimants,position,prize,bubble_refund'/
+    );
+    expect(eliminate).toContain(
+      'Math.round(Number(row.bubble_refund) * 100) === Math.round(bubbleRefund * 100)'
+    );
+    expect(bounty).toContain('v_existing.bubble_refund<>round(p_bubble_refund,2)');
+  });
+
+  it('replays an ordinary elimination only after transport ambiguity and requires an exact receipt', () => {
+    const request = eliminate.indexOf('const eliminationRequest = {');
+    const firstCall = eliminate.indexOf(
+      "let eliminationResponse = await supabase.rpc(\n        'fn_eliminate_tournament_player_atomic'",
+      request
+    );
+    const transportOnly = eliminate.indexOf('if (eliminationResponse.error)', firstCall);
+    const exactReplay = eliminate.indexOf(
+      "eliminationResponse = await supabase.rpc(\n          'fn_eliminate_tournament_player_atomic'",
+      transportOnly
+    );
+    const receipt = eliminate.indexOf('const eliminationReceiptAccepted', exactReplay);
+
+    expect(request).toBeGreaterThan(-1);
+    expect(firstCall).toBeGreaterThan(request);
+    expect(transportOnly).toBeGreaterThan(firstCall);
+    expect(exactReplay).toBeGreaterThan(transportOnly);
+    expect(receipt).toBeGreaterThan(exactReplay);
+    expect(eliminate).toMatch(
+      /update\.ok === true && \(update\.claimed === true \|\| update\.already === true\)/
+    );
+  });
+
+  it.each([
+    ['ordinary', ordinary],
+    ['bounty', bounty],
+  ])(
+    '%s elimination rejects money proposals and cannot touch place or Bubble money',
+    (_kind, fn) => {
+      expect(fn).toMatch(
+        /IF p_bubble_refund <> 0 THEN[\s\S]*?'bubble_refund_requires_finalized_batch'/
+      );
+      expect(fn).not.toMatch(
+        /fn_settle_tournament_obligation|public\.tournament_obligations|public\.tournament_payouts/
+      );
+    }
+  );
+
+  it('derives the sole stone-bubble holder and exact refund after finalization', () => {
+    expect(prepare).toMatch(
+      /IF NOT v_t\.prize_pool_finalized[\s\S]*?'prize_pool_is_not_funded_and_finalized'/
+    );
+    expect(prepare).toMatch(
+      /v_bubble_contract_required := v_bubble_required[\s\S]*?v_field_count > v_expected_count/
+    );
+    expect(prepare).toMatch(
+      /INTO v_bubble_holders, v_bubble_user[\s\S]*?tp\.position = v_expected_count \+ 1/
+    );
+    expect(prepare).toMatch(
+      /v_bubble_source := 'engine\.atomicPlaceSettlement'[\s\S]*?v_bubble_owed := v_t\.buy_in_amount/
+    );
+    expect(prepare).toMatch(
+      /INSERT INTO public\.tournament_obligations[\s\S]*?'bubble_protection'[\s\S]*?v_bubble_user, v_bubble_owed/
+    );
+  });
+
+  it('pays Bubble and every place inside the same rollback boundary before COMPLETED', () => {
+    const boundary = settle.indexOf('BEGIN', settle.indexOf('BEGIN') + 1);
+    const bubble = settle.indexOf("p_tournament_id, 'bubble_protection'", boundary);
+    const places = settle.indexOf("o.kind = 'place'", bubble);
+    const completed = settle.indexOf("SET status = 'COMPLETED'", places);
+    const rollback = settle.indexOf('EXCEPTION WHEN OTHERS', completed);
+
+    expect(boundary).toBeGreaterThan(-1);
+    expect(bubble).toBeGreaterThan(boundary);
+    expect(places).toBeGreaterThan(bubble);
+    expect(completed).toBeGreaterThan(places);
+    expect(rollback).toBeGreaterThan(completed);
   });
 });

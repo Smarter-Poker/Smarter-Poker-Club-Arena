@@ -2,14 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
-import {
-  spinTier,
-  spinRakeRate,
-  spinBlindsForLevel,
-  SPIN_SEATS,
-  SPIN_TIERS,
-} from '../config/spinSpec.js';
-import { parseSpinSettlementReceipt } from './spinSettlementReceipt.js';
+import { spinTier, spinRakeRate, spinBlindsForLevel, SPIN_SEATS } from '../config/spinSpec.js';
 
 // Execute the real start fragment, including the RPC loop and row patch.
 // Only external I/O is stubbed; the payout transformation is production code.
@@ -23,6 +16,7 @@ const compiled = ts.transpileModule(
     '\nreturn spinRowPatch; }\nreturn run.call(this);',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
+class TestTournamentLifecycleAbortedError extends Error {}
 const execute = new Function(
   'tournament',
   'spinMultiplier',
@@ -34,8 +28,8 @@ const execute = new Function(
   'reportError',
   'console',
   'redrawnLockedTiers',
-  'SPIN_TIERS',
-  'parseSpinSettlementReceipt',
+  'lifecycle',
+  'TournamentLifecycleAbortedError',
   compiled
 );
 
@@ -47,43 +41,24 @@ describe('the booked Spin tier determines the start patch', () => {
     [25, 10, [80, 20]],
     [10, 10, [80, 20]],
   ])('draw %s and booked %s produce the booked payout', async (drawn, booked, percentages) => {
-    const tournamentId = '11111111-2222-4333-8444-555555555555';
-    const collected = 3;
-    const houseRake = Math.round(collected * spinRakeRate(1) * 100) / 100;
-    const reserveIn = Math.round((collected - houseRake) * 100) / 100;
     const rpc = vi.fn(async () => ({
       data: {
         ok: true,
-        money_path: 'fn_spin_draw_and_settle',
-        tournament_id: tournamentId,
-        seats: 3,
-        paid_users: 3,
+        reason: 'already_settled',
         multiplier: booked,
-        prize_pool: booked,
-        pool_covered: booked,
-        draw_amount: booked,
-        tournament_prize_pool: booked,
-        reserve_in: reserveIn,
-        entry_amount: reserveIn,
-        escrow_reserve_out: reserveIn,
-        escrow_reserve_in: booked,
-        escrow_prize_balance: booked,
-        house_rake: houseRake,
-        operator_shortfall: 0,
-        tournament_multiplier: booked,
-        reserve_balance: 100,
-        owner_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        pool_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee1',
-        entry_reserve_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee2',
-        entry_journal_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee3',
-        draw_reserve_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee4',
-        draw_journal_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee5',
-        locked: [],
+        house_rake: 0.24,
+        balance: 100,
       },
       error: null,
     }));
     const patch = await execute.call(
-      { tournamentId, seatFirstTableIds: [], spinRevealLagMs: 0, spinRevealAt: 0 },
+      {
+        tournamentId: 'test-spin',
+        seatFirstTableIds: [],
+        spinRevealLagMs: 0,
+        spinRevealAt: 0,
+        assertLifecycleCurrent: vi.fn(),
+      },
       { buy_in_amount: 1, club_id: 'club', starting_chips: 1000 },
       drawn,
       { rpc },
@@ -94,8 +69,8 @@ describe('the booked Spin tier determines the start patch', () => {
       vi.fn(),
       { log: vi.fn() },
       null,
-      SPIN_TIERS,
-      parseSpinSettlementReceipt
+      { generation: 1 },
+      TestTournamentLifecycleAbortedError
     );
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(patch.spin_multiplier).toBe(booked);

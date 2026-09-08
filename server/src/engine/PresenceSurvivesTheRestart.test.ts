@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceBlockAfter, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const savePresenceAtPark = vi.fn().mockResolvedValue(true);
 const loadPresenceFromPark = vi.fn().mockResolvedValue(null);
@@ -127,12 +127,13 @@ describe('the break writes the FSM, the boot reads it', () => {
     expect(noCrash).toMatch(/restoreFsmStates\(this\.tableId, parked\)/);
     const dealing = readFileSync(resolve(__dirname, 'ServerTableEngineDealing.ts'), 'utf8');
     // The gate that parks the loop for the break.
-    const park = sliceEnclosingBlock(
+    const park = sliceBlockAfter(
       dealing,
-      "if (this.maintenancePaused) await this.persistPresenceForRestart('parked');"
-    );
-    expect(dealing).toMatch(
-      /if \(\s*this\.terminalCloseoutPaused\s*\|\|\s*this\.maintenancePaused\s*\|\|\s*\(this\.handForHandPaused && this\.holdBeforeNextHand\)\s*\) \{[\s\S]{0,500}if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);/
+      `if (
+          this.maintenancePaused ||
+          this.finalTableDealPaused ||
+          (this.handForHandPaused && this.holdBeforeNextHand)
+        ) {`
     );
     expect(park).toMatch(
       /if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);/

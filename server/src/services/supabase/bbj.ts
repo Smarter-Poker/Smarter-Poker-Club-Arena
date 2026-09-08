@@ -176,7 +176,7 @@ export type BBJPayoutOutcome =
   | { status: 'already_paid' }
   /** Nothing will ever be paid for this hand: no pool, an empty pool, a refused argument. */
   | { status: 'nothing_to_pay'; reason: string }
-  /** Detected, NOT paid, and durably recorded for the reconciler to re-drive. */
+  /** Payment remains pending. See the critical alert's queued flag for confirmed persistence. */
   | { status: 'queued'; lastError: string };
 
 /**
@@ -193,8 +193,8 @@ export type BBJPayoutOutcome =
  * closes it the moment the outcome is known.
  */
 export interface BBJPayoutQueue {
-  /** Record the intent to pay, before trying. Idempotent; never throws. */
-  claim(params: BBJPayoutParams, note: string): Promise<void>;
+  /** Record intent before trying. Only true confirms a durable claim; void is unconfirmed. */
+  claim(params: BBJPayoutParams, note: string): Promise<boolean | void>;
   /** Close the claim: the money landed, or nothing will ever be owed. Never throws. */
   settle(params: BBJPayoutParams, note: string): Promise<void>;
 }
@@ -205,12 +205,13 @@ export function setBBJPayoutQueue(queue: BBJPayoutQueue | null): void {
 }
 
 /** Never let bookkeeping about the money stop the money. */
-async function queueSafely(fn: () => Promise<void>, what: string): Promise<void> {
-  if (!bbjPayoutQueue) return;
+async function queueSafely(fn: () => Promise<boolean | void>, what: string): Promise<boolean> {
+  if (!bbjPayoutQueue) return false;
   try {
-    await fn();
+    return (await fn()) === true;
   } catch (e) {
     reportError(e, `processBBJPayout.queue_${what}_failed`);
+    return false;
   }
 }
 
@@ -277,8 +278,9 @@ export async function processBBJPayout(
      database is unreachable the payout is attempted anyway (it may be the
      Realtime side that is unwell, not Postgres), and the post-failure claim
      below is the second chance. */
+  let claimConfirmed = options.fromQueue === true;
   if (owned) {
-    await queueSafely(
+    claimConfirmed = await queueSafely(
       () => bbjPayoutQueue!.claim(params, 'write-ahead: detected, payout not yet attempted'),
       'claim'
     );
@@ -331,9 +333,12 @@ export async function processBBJPayout(
     }
   }
 
-  // Every attempt failed. The hit is real (the engine detected it from a
-  // showdown it witnessed) and the money is still in the pool. Make the
-  // failure durable and loud, in that order.
+  // Confirm the second queue attempt before describing its durability.
+  if (owned) {
+    claimConfirmed =
+      (await queueSafely(() => bbjPayoutQueue!.claim(params, lastError), 'claim')) ||
+      claimConfirmed;
+  }
   const detail =
     `[BBJ] Jackpot payout FAILED for table ${params.tableId} hand #${params.handNumber} ` +
     `(club ${params.clubId}, bad beat ${params.loserUserId} with ${params.loserHandName} ` +
@@ -341,19 +346,18 @@ export async function processBBJPayout(
     `${params.kind === 'mini' ? `Mini tier ${params.tierId}` : `${params.payoutTotalPercent}% of main`}): ${lastError}. ` +
     (options.fromQueue
       ? 'Re-drive from the queue failed again; the row stays open.'
-      : 'Queued in pending_fee_distributions (kind bbj_payout) for the reconciler to re-drive; ') +
+      : claimConfirmed
+        ? 'Queued in pending_fee_distributions (kind bbj_payout) for the reconciler to re-drive; '
+        : 'Durable queue write not confirmed; recovery requires attention; ') +
     `The jackpot RPC is idempotent on (pool, table, hand).`;
   reportError(new Error(detail), 'processBBJPayout.exhausted');
 
   if (owned) {
-    // The claim above normally already exists; this refreshes its note with
-    // the error, and is the second chance if the write-ahead insert failed.
-    await queueSafely(() => bbjPayoutQueue!.claim(params, lastError), 'claim');
     await raiseFinancialAlert('critical', 'processBBJPayout.exhausted', detail, {
       ...params,
       attempts: BBJ_PAYOUT_ATTEMPTS,
       lastError,
-      queued: bbjPayoutQueue !== null,
+      queued: claimConfirmed,
     });
   }
   return { status: 'queued', lastError };
@@ -368,39 +372,39 @@ async function attemptBBJPayoutOnce(
   params: BBJPayoutParams,
   fromQueue: boolean
 ): Promise<{ status: 'paid'; result: BBJPayoutResult } | { status: 'already_paid' }> {
-  // 1. Find the club's union (if any). A read error is a transport failure,
-  //    not "club not found" - the two used to be indistinguishable here, and
-  //    the second one silently ended the payout.
-  const { data: club, error: clubErr } = await supabase
-    .from('clubs')
-    .select('union_id')
-    .eq('id', params.clubId)
+  // Replay the recorded award before considering a new allocation. A club
+  // can move unions or retire its pool while an unpaid share is still owed.
+  const { data: prior, error: priorErr } = await supabase
+    .from('bbj_payouts')
+    .select('pool_id')
+    .eq('table_id', params.tableId)
+    .eq('hand_number', params.handNumber)
     .maybeSingle();
-  if (clubErr) throw new Error(`clubs read failed: ${clubErr.message}`);
-  if (!club) {
-    throw new BBJPayoutFinal(`Club ${params.clubId} not found`, 'club_not_found');
+  if (priorErr) throw new Error(`bbj_payouts destination read failed: ${priorErr.message}`);
+  let poolId = prior?.pool_id;
+  if (!prior) {
+    // Contribution posting owns private/union routing. Never substitute the
+    // club's current pool when the original receipt is missing or unreadable.
+    const { data: contribution, error: contributionErr } = await supabase
+      .from('bbj_contributions')
+      .select('pool_id')
+      .eq('table_id', params.tableId)
+      .eq('hand_number', params.handNumber)
+      .maybeSingle();
+    if (contributionErr) {
+      throw new Error(`bbj_contributions destination read failed: ${contributionErr.message}`);
+    }
+    poolId = contribution?.pool_id;
   }
+  if (!poolId) throw new Error('BBJ hand has no confirmed payout destination');
 
-  // 2. Find the BBJ pool (union-level first, then club-level)
-  // HARDEN 2026-08-18: only an active pool can pay (matches collection path).
-  let poolQuery = supabase
-    .from('bbj_pools')
-    .select('id, main_balance, backup_balance')
-    .eq('status', 'active');
-  if (club.union_id) {
-    poolQuery = poolQuery.eq('union_id', club.union_id);
-  } else {
-    poolQuery = poolQuery.eq('club_id', params.clubId);
-  }
+  let poolQuery = supabase.from('bbj_pools').select('id').eq('id', poolId);
+  // New allocations require an active bank. Existing obligations must remain
+  // redeemable from their original retired pool, which retains parked funding.
+  if (!prior) poolQuery = poolQuery.eq('status', 'active');
   const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
   if (poolErr) throw new Error(`bbj_pools read failed: ${poolErr.message}`);
-
-  if (!pool) {
-    throw new BBJPayoutFinal(
-      `No BBJ pool or zero balance for club ${params.clubId}`,
-      'no_pool_or_empty'
-    );
-  }
+  if (!pool) throw new Error('BBJ original payout destination is unavailable');
 
   // 3-5. FIX-A4 2026-07-19: atomic + idempotent payout via RPC. The RPC locks
   // the pool row, computes the payout from the LOCKED balance (no stale-read
@@ -443,8 +447,17 @@ async function attemptBBJPayoutOnce(
     throw new Error(`${rpcName} failed: ${rpcErr.message}`);
   }
 
-  const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-  if (!rpc) throw new Error(`${rpcName} returned no settlement result`);
+  const rpc = Array.isArray(rpcRows) ? (rpcRows.length === 1 ? rpcRows[0] : null) : rpcRows;
+  if (!rpc) throw new Error(`${rpcName} returned no single settlement result`);
+  // Only the database's explicit boolean outcome can close a pending claim.
+  // Unknown, contradictory or partial receipts must remain eligible for re-drive.
+  if (
+    typeof rpc.applied !== 'boolean' ||
+    typeof rpc.already_paid !== 'boolean' ||
+    (rpc.applied && rpc.already_paid)
+  ) {
+    throw new Error(`${rpcName} returned an invalid settlement outcome`);
+  }
   if (!rpc.applied) {
     // already_paid (retry / concurrent / restart) or empty/zero pool. v2 has
     // already RE-DRIVEN any missing recipient credit inside the RPC (money is
@@ -474,6 +487,35 @@ async function attemptBBJPayoutOnce(
       `pool ${pool.id} had nothing to pay when the RPC locked it`,
       'no_pool_or_empty'
     );
+  }
+
+  // Validate the receipt before publishing amounts or closing its claim.
+  // PostgreSQL numeric values may arrive as numbers or decimal strings.
+  const amounts = [
+    rpc.total_payout,
+    rpc.loser_share,
+    rpc.winner_share,
+    rpc.table_share,
+    rpc.per_player_share,
+  ];
+  const cents = amounts.map((raw) => {
+    if (
+      (typeof raw !== 'number' && typeof raw !== 'string') ||
+      (typeof raw === 'string' && !/^\d+(?:\.\d+)?$/.test(raw))
+    )
+      throw new Error(`${rpcName} returned an invalid payout amount`);
+    const amount = Number(raw);
+    const value = Math.round(amount * 100);
+    if (!Number.isSafeInteger(value) || value < 0 || amount !== value / 100) {
+      throw new Error(`${rpcName} returned an invalid cent amount`);
+    }
+    return value;
+  });
+  if (cents[0] !== cents[1] + cents[2] + cents[3]) {
+    throw new Error(`${rpcName} payout shares do not equal its total`);
+  }
+  if (typeof rpc.payout_id !== 'string' || !rpc.payout_id.trim()) {
+    throw new Error(`${rpcName} returned no applied payout identity`);
   }
 
   const totalPayout = Number(rpc.total_payout);
@@ -507,13 +549,18 @@ async function attemptBBJPayoutOnce(
      nothing is missing, but somebody is still OWED that money and a debt
      nobody is told about is the failure this whole phase is against. One
      indexed read on the rare jackpot path. */
+  let pendingShares: Array<{ user_id: string; amount: unknown }> | null = null;
   try {
-    const { data: parked } = await supabase
+    const { data: parked, error: parkedError } = await supabase
       .from('bbj_unclaimed_shares')
       .select('user_id, amount')
       .eq('payout_id', rpc.payout_id)
       .is('paid_at', null);
-    if (parked && parked.length > 0) {
+    if (parkedError || !Array.isArray(parked)) {
+      throw new Error('Unpaid jackpot shares could not be confirmed');
+    }
+    pendingShares = parked;
+    if (parked.length > 0) {
       const total = parked.reduce((n, r) => n + Number(r.amount || 0), 0);
       /* COUNTED WHERE IT HAPPENS (BBJ phase 2.4). This counter was declared
          beside detected/paid/queued and incremented nowhere, which is the
@@ -537,7 +584,7 @@ async function attemptBBJPayoutOnce(
       );
     }
   } catch (parkErr) {
-    console.warn('[processBBJPayout] could not read parked shares (money is placed):', parkErr);
+    reportError(parkErr, 'processBBJPayout.parked_share_read_failed');
   }
 
   // EVERY RECIPIENT IS TOLD (BBJ build plan phase 1, 2026-09-05).
@@ -551,12 +598,10 @@ async function attemptBBJPayoutOnce(
   // cash-out later), and the overlay is gone in ten seconds. A player who was
   // reconnecting, backgrounded, or simply looking away had nothing.
   //
-  // Now every recipient gets one durable notification saying what they won
-  // and where it went - "added to your stack at the table" for a seated
-  // player, "credited to your wallet" for one who had left. Non-fatal: the
-  // money is already durably placed by the RPC; a failed insert only costs
-  // the note. A payout re-driven from the queue (fromQueue) says which hand,
-  // because by then the table has long moved on.
+  // Credit rows and unpaid-share records decide what a notification can say.
+  // The engine's old seat snapshot cannot establish where a credit landed.
+  // Missing or contradictory records suppress notices and report the failure;
+  // they never authorize another payment.
   try {
     const shareFor = (id: string): number =>
       id === params.loserUserId
@@ -564,10 +609,42 @@ async function attemptBBJPayoutOnce(
         : id === params.winnerUserId
           ? winnerShare
           : perPlayerShare;
+    const { data: credits, error: creditError } = await supabase
+      .from('bbj_payout_recipients')
+      .select('user_id, amount')
+      .eq('payout_id', rpc.payout_id);
+    if (creditError || !Array.isArray(credits) || pendingShares === null) {
+      throw new Error('Jackpot recipient delivery records could not be confirmed');
+    }
+    const recipients = [
+      ...new Set([params.loserUserId, params.winnerUserId, ...params.dealtInPlayerIds]),
+    ];
+    const delivery = new Map<string, { amount: number; pending: boolean }>();
+    for (const [records, pending] of [
+      [credits, false],
+      [pendingShares, true],
+    ] as const) {
+      for (const record of records) {
+        const amount = Number(record.amount);
+        if (
+          !recipients.includes(record.user_id) ||
+          delivery.has(record.user_id) ||
+          !Number.isFinite(amount) ||
+          amount <= 0 ||
+          amount !== shareFor(record.user_id)
+        ) {
+          throw new Error('Jackpot recipient delivery records disagree with the award');
+        }
+        delivery.set(record.user_id, { amount, pending });
+      }
+    }
+    if (recipients.some((id) => shareFor(id) > 0 && !delivery.has(id))) {
+      throw new Error('Jackpot recipient delivery records are incomplete');
+    }
     const money = (n: number): string =>
       n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const rows = params.dealtInPlayerIds
-      .map((id) => ({ id, share: shareFor(id), seated: params.seatedUserIds.includes(id) }))
+    const rows = recipients
+      .map((id) => ({ id, share: shareFor(id), pending: delivery.get(id)?.pending === true }))
       .filter((r) => r.share > 0)
       .map((r) => {
         const role =
@@ -576,25 +653,24 @@ async function attemptBBJPayoutOnce(
             : r.id === params.winnerUserId
               ? 'You won the hand'
               : 'You were dealt in';
-        const where = r.seated
-          ? 'was added to your stack at the table.'
-          : 'was credited to your wallet.';
-        const which = fromQueue
-          ? `on hand #${params.handNumber}`
-          : r.seated
-            ? 'on the hand that just finished'
-            : 'on a hand you were dealt into after you left the table';
+        const where = r.pending
+          ? 'is still owed to you and is pending delivery.'
+          : 'has a confirmed jackpot credit.';
+        const which = `on hand #${params.handNumber}`;
         return {
           user_id: r.id,
           type: 'bonus',
-          title: 'Bad Beat Jackpot - You Got Paid!',
+          title: r.pending
+            ? 'Bad Beat Jackpot - Payment Pending'
+            : 'Bad Beat Jackpot - You Got Paid!',
           message: `A Bad Beat Jackpot hit ${which}. ${role}, and your share of $${money(r.share)} ${where}`,
           metadata: {
             tableId: params.tableId,
             handNumber: params.handNumber,
             amount: r.share,
             poolId: pool.id,
-            placed: r.seated ? 'table_stack' : 'club_wallet',
+            placed: r.pending ? 'pending' : 'credited',
+            payoutId: rpc.payout_id,
             role:
               r.id === params.loserUserId
                 ? 'bad_beat'
@@ -608,16 +684,13 @@ async function attemptBBJPayoutOnce(
     if (rows.length > 0) {
       const { error: notifyErr } = await supabase.from('notifications').insert(rows);
       if (notifyErr) {
-        console.warn(
-          `[processBBJPayout] recipient notifications failed (money already placed):`,
-          notifyErr.message
-        );
+        throw new Error(`Jackpot recipient notifications failed: ${notifyErr.message}`);
       } else {
         console.log(`[processBBJPayout] Notified ${rows.length} recipient(s) of their credit`);
       }
     }
   } catch (notifyEx) {
-    console.warn('[processBBJPayout] recipient notification error:', notifyEx);
+    reportError(notifyEx, 'processBBJPayout.recipient_notification_failed');
   }
 
   return {

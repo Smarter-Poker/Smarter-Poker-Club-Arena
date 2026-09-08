@@ -2,6 +2,28 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
+
+Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.
+
+## 2026-09-08: Agent Wallet Ledger Context Is Scoped
+
+Agent sends and take-backs now restore the surrounding transaction ledger settings.
+82 isolated database cases pass after reproducing the original context leak.
+See docs/changelog/2026-09-08-agent-wallet-ledger-context-is-scoped.md.
+
+## 2026-09-08: Ticket Escrow Keeps Its Identity
+
+New ticket funding and release now share the ticket escrow ID and restore ledger context.
+67 isolated database cases passed, including rollback and competing release requests.
+See docs/changelog/2026-09-08-ticket-escrow-keeps-its-identity.md.
+
+## 2026-09-08: Cashouts Await The Complete Settlement Chain
+
+Voluntary and forced leave now follow appended settlement promises before cashout,
+and propagate a rejected barrier. Two races were reproduced before the fix.
+See docs/changelog/2026-09-08-cashouts-await-the-complete-settlement-chain.md.
+
 ## Cowork session 2026-09-01 - ONE UNPAYABLE PLAYER STOPPED EVERY PAYOUT IN THE PASS
 
 `fn_tournament_payout_sweep` loops over completed tournaments calling
@@ -17052,3 +17074,17 @@ Applied: service-only table-scoped pool resolution and contribution commit; regi
 ## 20260908052322: Insurance Payment Scope And Journal Identity
 
 Applied: game-scoped insurance bank, canonical cents, bound replay, explicit journal, service-only access. Forty-one PostgreSQL cases pass; see docs/changelog/2026-09-08-insurance-payment-identity.md.
+
+## 2026-09-08: Rebuy Shared Receipt Validation
+
+Rebuy amounts and keys are validated before the shared receipt claim; the private core restores ledger context. The browser requires a confirmed numeric result. 46 isolated database cases pass against the shared path, with 395 earlier cases passing. Details: docs/changelog/2026-09-08-rebuy-shared-receipt-validation.md.
+
+The audited private rebuy core is registered by migration 20260908133232 with exact-definition and owner-only permission guards. Linked BBJ evidence and remaining audit boundaries are recorded in docs/audits/2026-09-08-chip-audit-checkpoint.md.
+
+## 2026-09-08: Hand settlement retries retain their accepted facts
+
+The shared hand commit caller snapshots its entire request before awaiting and verifies a receipt against the requested hand UUID. Two reproduced failures now pass; 40 hand-history cases and server TypeScript pass. Details: docs/changelog/2026-09-08-hand-settlement-retries-retain-their-facts.md.
+
+## 2026-09-08: Wallet Transfer Receipts And Single History
+
+Transfers require finite amounts and positive matching receipts. Internal transfer history stays in the database transaction; the browser no longer duplicates it. The legacy unkeyed user transfer does not retry automatically. Thirty wallet/store tests and TypeScript pass. Details: docs/changelog/2026-09-08-wallet-transfer-receipts-and-single-history.md.

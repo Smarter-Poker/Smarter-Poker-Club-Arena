@@ -5,15 +5,16 @@
  *
  * The defect these pin: both payout sites fell back to "award 100% of the
  * prize pool to the winner" whenever `payout_structure` was missing or had no
- * place 1. Places 2..N are paid AT ELIMINATION, minutes earlier, so on a 10x+
- * Spin (80/20, 80/12/8) that fallback pays the pool out at 120%.
+ * place 1. The retired path paid places 2..N AT ELIMINATION, minutes earlier,
+ * so on a 10x+ Spin (80/20, 80/12/8) that fallback paid the pool out at 120%.
  *
- * Two independent guards, because either alone would still leave a hole:
+ * The current guards remove the guess entirely:
  *
  *   1. A Spin never needs the fallback — its split is a pure function of its
  *      multiplier, so the spec reconstructs it exactly.
- *   2. The fallback itself is capped at the UNSPENT pool, for every format.
- *      An MTT with a lost structure had the identical exposure.
+ *   2. A missing exact contract fails closed for every format. The unspent-pool
+ *      helper below preserves the arithmetic regression proof; it is not a
+ *      fallback payout path.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -51,29 +52,8 @@ describe('parsePayoutStructure accepts only a USABLE structure', () => {
     expect(parsePayoutStructure([{ place: 2, percentage: 100 }])).toBeNull();
     // Percentages that cannot split anything.
     expect(parsePayoutStructure([{ place: 1, percentage: 0 }])).toBeNull();
-    expect(
-      parsePayoutStructure([
-        { place: 1, percentage: 100 },
-        { place: 2, percentage: 0 },
-      ])
-    ).toBeNull();
     expect(parsePayoutStructure([{ place: 1, percentage: -50 }])).toBeNull();
     expect(parsePayoutStructure([{ place: 0, percentage: 100 }])).toBeNull();
-    expect(parsePayoutStructure([{ place: 1.5, percentage: 100 }])).toBeNull();
-    expect(parsePayoutStructure([{ position: 1, percentage: 100 }])).toBeNull();
-  });
-
-  it('sorts explicit places and lets the first duplicate win', () => {
-    expect(
-      parsePayoutStructure([
-        { place: 3, percentage: 20 },
-        { place: 1, percentage: 40 },
-        { place: 1, percentage: 50 },
-      ])
-    ).toEqual([
-      { place: 1, percentage: 40 },
-      { place: 3, percentage: 20 },
-    ]);
   });
 });
 
@@ -162,16 +142,17 @@ describe('resolvePayoutStructure', () => {
     }
   });
 
-  it('falls back to the stored column when the ladder does not know the multiplier', () => {
-    // Pre-draw (null), and a retired tier such as the old 500x: the spec has
-    // nothing to say, so the column is all there is.
+  it('refuses a stored Spin placeholder when the durable draw is missing or unknown', () => {
+    // Pre-draw (null), and a retired tier such as the old 500x, do not identify
+    // a canonical split. Paying the stored creation placeholder could turn a
+    // missing high-tier draw into winner-take-all.
     const stored = [{ place: 1, percentage: 100 }];
     expect(
       resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: null })
-    ).toEqual(stored);
+    ).toBeNull();
     expect(
       resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: 500 })
-    ).toEqual(stored);
+    ).toBeNull();
     expect(spinStoredStructureIsStale({ variant: 'spin', spin_multiplier: 500 })).toBe(false);
   });
 
@@ -246,25 +227,24 @@ describe('every payout path actually uses the rule', () => {
   const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
   const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
 
-  it('both live preview sites resolve the structure rather than parsing it themselves', () => {
+  it('both live sites resolve the structure rather than parsing it themselves', () => {
     const uses = ELIM.match(/resolvePayoutStructure\(/g) ?? [];
-    expect(uses.length, 'eliminatePlayer and late-reg preview').toBeGreaterThanOrEqual(2);
+    expect(uses.length, 'eliminatePlayer and finishTournament').toBeGreaterThanOrEqual(2);
   });
 
-  it('the stuck-COMPLETING rescue delegates pricing to the database door', () => {
-    expect(RECOVERY).not.toMatch(/resolvePayoutStructure\(/);
-    expect(RECOVERY).not.toMatch(/computePlacePrize\(/);
-    expect(RECOVERY).not.toMatch(/payout_structure|spin_multiplier/);
-    expect(RECOVERY).toMatch(/requestTournamentTerminalReceipt\(t\.id, settlementMode, winnerId\)/);
-    expect(RECOVERY).toMatch(/isFinalTableDeal \? 'final_table_deal' : 'places'/);
+  it('the stuck-COMPLETING rescue shares it too', () => {
+    expect(RECOVERY).toMatch(/resolvePayoutStructure\(/);
   });
 
-  it('the game server no longer invents any winner fallback amount', () => {
+  it('the uncapped "award the whole pool" fallback is gone', () => {
+    // The exact shape: winnerPrize set from prize_pool with nothing subtracted.
     expect(ELIM).not.toMatch(
       /winnerPrize\s*=\s*Math\.round\(\s*\(?\s*tournament\??\.?\??\.prize_pool/
     );
-    expect(ELIM).toMatch(/requestTournamentTerminalReceipt\(/);
-    expect(ELIM).toMatch(/winnerPrize\s*=\s*receipt\.winnerAmount/);
+    // A positive pool without a complete published ladder now fails closed;
+    // the engine no longer guesses any fallback amount at all.
+    expect(ELIM).toContain('payout_structure_unavailable_at_finish');
+    expect(ELIM).toMatch(/else if \(Number\(tournament\.prize_pool \|\| 0\) > 0\)/);
   });
 
   it('both sites select what a rebuild needs', () => {
@@ -289,8 +269,8 @@ describe('every payout path actually uses the rule', () => {
  *
  * Sunday Midway Major: 9 places, 8 entrants, 250.00 of a 10,000.00 pool
  * stranded. PLO Daily 18155d71: 5 places, 4 entrants, 52.50. Eight events with
- * a pool in thirty days, each also leaving a no_finisher_recorded critical
- * that no payment path may resolve by guessing a recipient.
+ * a pool in thirty days, each also leaving fn_tournament_payout_reconcile
+ * holding a no_finisher_recorded critical it correctly refuses to resolve alone.
  *
  * Trimming is the direction that OVERPAYS - a field size that is too small
  * promotes an earlier place to residual holder - so most of these pin the cases

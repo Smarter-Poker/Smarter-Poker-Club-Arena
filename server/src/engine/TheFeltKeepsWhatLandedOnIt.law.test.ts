@@ -43,6 +43,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { blankNonCode, sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string): string => readFileSync(resolve(HERE, rel), 'utf8');
@@ -57,6 +58,7 @@ vi.mock('../services/supabase.js', () => ({
   supabase: { rpc: vi.fn(), from: vi.fn() },
   loadTable: vi.fn(),
   syncStacks: vi.fn(),
+  syncTournamentChips: vi.fn(),
   updateTableStatus: vi.fn(),
   autoRebuyHorse: vi.fn(),
   markSeatAsLeft: vi.fn(),
@@ -168,39 +170,36 @@ describe('LAW 1: the settlement barrier covers postHandTasks', () => {
 describe('LAW 2: the hand write is a difference, declared, and written once', () => {
   const settle = read('./ServerTableEngineSettlement.ts');
   const settleCode = code(settle);
+  const postHandTasks = sliceMethod(settle, 'protected async postHandTasks(');
+  const acceptedHandCall = sliceCall(postHandTasks, 'logHandHistory(');
 
   it('every seat carries the stack it was dealt from', () => {
-    const step = settleCode.slice(
-      settleCode.indexOf("await runStep('sync_stacks'"),
-      settleCode.indexOf("await runStep('hand_history'")
+    expect(acceptedHandCall).toMatch(
+      /stack_before:\s*snap\.dealtStacks\.get\(p\.user_id\)\s*\?\?\s*p\.stack/
     );
-    expect(step).toMatch(/stack_before:\s*snap\.dealtStacks\.get\(p\.user_id\)\s*\?\?\s*p\.stack/);
   });
 
   it('rake and BBJ are declared to the write', () => {
-    const step = settleCode.slice(
-      settleCode.indexOf("await runStep('sync_stacks'"),
-      settleCode.indexOf("await runStep('hand_history'")
+    expect(acceptedHandCall).toMatch(
+      /rake:\s*this\.isTournamentTable\(\)\s*\?\s*0\s*:\s*snap\.rake/
     );
-    expect(step).toMatch(/rake:\s*this\.isTournamentTable\(\)\s*\?\s*0\s*:\s*snap\.rake/);
-    expect(step).toMatch(/bbj:\s*this\.isTournamentTable\(\)\s*\?\s*0\s*:\s*snap\.bbjFee/);
+    expect(acceptedHandCall).toMatch(
+      /bbj:\s*this\.isTournamentTable\(\)\s*\?\s*0\s*:\s*snap\.bbjFee/
+    );
     // Insurance payouts and premiums move chips between the bank and the
     // seats before the write; the net is declared as inflow or every insured
     // hand fails the identity.
-    expect(step).toMatch(/inflow:\s*snap\.insuranceNet/);
+    expect(acceptedHandCall).toMatch(/inflow:\s*snap\.insuranceNet/);
     expect(settleCode).toMatch(
       /this\.currentHandInsuranceNet = Math\.round\(insuranceNet \* 100\) \/ 100;/
     );
   });
 
-  it('there is exactly one stack write per hand - no absolute re-sync after the BBJ payout', () => {
-    const calls = settleCode.match(/await syncStacks\(/g) ?? [];
-    expect(calls.length).toBe(1);
-    const bbj = settleCode.slice(
-      settleCode.indexOf("await runStep('bbj_payout'"),
-      settleCode.indexOf("await runStep('pending_addons'")
-    );
-    expect(bbj).not.toMatch(/syncStacks\(/);
+  it('there is one accepted-hand transaction and no separate stack or tournament mirror', () => {
+    expect(acceptedHandCall.match(/atomicCommit\s*:/g)).toHaveLength(1);
+    const executable = blankNonCode(postHandTasks);
+    expect(executable).not.toMatch(/\bsyncStacks\s*\(/);
+    expect(executable).not.toMatch(/\bsyncTournamentChips\s*\(/);
   });
 
   it('the dealt stacks are captured for every table, cash included', () => {
@@ -226,8 +225,8 @@ describe('LAW 3: the write is atomic, in delta mode, with no absolute fallback',
   it('a refusal is final and a transport failure is retried, bounded, then named', () => {
     expect(fn).toContain("'DB.settle_hand_stacks_conservation_refused'");
     expect(fn).toContain("'DB.settle_hand_stacks_declined'");
-    expect(fn).toContain("'DB.settle_hand_stacks_unconfirmed'");
-    expect(fn).toMatch(/attempt <= STACK_WRITE_RETRY_DELAYS_MS\.length/);
+    expect(fn).toContain("'DB.settle_hand_stacks_unreachable'");
+    expect(fn).toMatch(/attempt <= STACK_WRITE_ATTEMPTS/);
     expect(fn).toMatch(/JSON\.stringify\(payload\)/);
   });
 
@@ -237,22 +236,6 @@ describe('LAW 3: the write is atomic, in delta mode, with no absolute fallback',
     expect(fn).not.toContain("'DB.settle_hand_stacks_fallback'");
     // A write with no hand number is refused, not routed to a per-seat loop.
     expect(fn).toContain("'DB.sync_stacks_without_hand'");
-  });
-
-  it('a tournament hand requires the same transaction to prove its standings mirror', () => {
-    expect(fn).toContain('const expectedTournamentId = options.expectedTournamentId ?? null;');
-    expect(fn).toContain('tournamentStackProofIsExact(');
-    expect(fn).toContain("'DB.settle_hand_stacks_tournament_proof_invalid'");
-    const settlement = code(read('./ServerTableEngineSettlement.ts'));
-    const write = settlement.slice(
-      settlement.indexOf("await runStep('sync_stacks'"),
-      settlement.indexOf("await runStep('hand_history'")
-    );
-    expect(write).toMatch(
-      /expectedTournamentId:\s*this\.isTournamentTable\(\)\s*\?\s*\(this\.tableInfo\?\.tournament_id\s*\?\?\s*null\)\s*:\s*null/
-    );
-    expect(settlement).not.toContain('syncTournamentChips');
-    expect(tables).not.toContain('export async function syncTournamentChips');
   });
 });
 

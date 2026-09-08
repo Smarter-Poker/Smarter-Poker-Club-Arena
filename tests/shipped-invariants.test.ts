@@ -559,20 +559,15 @@ it('union financial overview uses complete recorded statements and explicit paym
   ).toContain('AS snapshot_complete');
 });
 
-it('tournament payment completion uses durable outstanding debt rather than RPC success', () => {
+it('tournament payment completion requires durable debt or terminal batch proof', () => {
   const sql = read(
     'supabase/migrations/20260907215613_tournament_settlement_reports_remaining_debt.sql'
   );
   expect(sql).toContain("'remaining', GREATEST(0, v_ob.amount_owed - v_ob.amount_paid - v_pay)");
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain(
-    "'fn_settle_tournament_bubble_protection'"
-  );
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain(
-    'bubble.fully_settled === true'
-  );
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).not.toContain(
-    "this.broadcast('bubble_protection_pending'"
-  );
+  const manager = read('server/src/tournament/TournamentManagerEliminations.ts');
+  expect(manager).toContain('const settlement = await settleTournamentPlacesAtomically(');
+  expect(manager).toContain('if (!settlement.ok || !settlement.completed)');
+  expect(manager).toContain('Tournament.atomic_place_settlement_failed');
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain(
     'FAIL stale smaller replay hides debt'
   );
@@ -715,17 +710,16 @@ it('Spin cancellation reverses aggregate rake with its original attribution iden
   ).toBe(true);
 });
 
-it('stage one installs atomic cash authority without retiring rolling compatibility', () => {
-  const core = read(
-    'supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
+it('reconciliation displays only actual payment instead of its requested top-up', () => {
+  const sql = read(
+    'supabase/migrations/20260908000459_reconciliation_displays_only_actual_settlement.sql'
   );
-  expect(core).toContain('fn_ca_tournament_place_amounts');
-  expect(core).not.toContain('CREATE OR REPLACE FUNCTION public.fn_tournament_payout_reconcile');
-  expect(core).not.toContain('DROP FUNCTION IF EXISTS public.fn_tournament_payout_reconcile');
+  expect(sql).toContain('v_paid_eff + v_settle_paid');
+  expect(sql).not.toContain('v_paid_eff + CASE WHEN v_delta > 0.005 THEN v_delta ELSE 0 END');
   expect(
     has(
       'scripts/ci/probes/reconciliation-actual-settlement.sql',
-      'AUDIT_TEST_PASS: stage-one atomic cash authority and rolling compatibility pass'
+      'FAIL partial credit was displayed as full prize'
     )
   ).toBe(true);
 });

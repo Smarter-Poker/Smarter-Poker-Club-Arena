@@ -36,7 +36,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectSeatsToFund } from '../tournament/seatStackCredit.js';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { blankNonCode, sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -138,23 +138,29 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
     expect(v.delta).toBe(1);
   });
 
-  it('postHandTasks gates the one atomic stack write on the verdict and raises the CRITICAL alert', () => {
-    const src = code(read('./ServerTableEngineSettlement.ts'));
-    const fn = src.slice(src.indexOf('protected async postHandTasks('));
+  it('postHandTasks gates the one accepted-hand transaction on the verdict and raises the CRITICAL alert', () => {
+    const src = read('./ServerTableEngineSettlement.ts');
+    const raw = sliceMethod(src, 'protected async postHandTasks(');
+    const fn = code(raw);
     const gate = fn.indexOf('checkTournamentChipConservation(');
-    const sync = fn.indexOf("runStep('sync_stacks'");
+    const refusal = fn.indexOf('if (!tournamentHandConserved)');
+    const commit = fn.indexOf('atomicCommit: {');
     expect(gate).toBeGreaterThan(-1);
-    expect(sync).toBeGreaterThan(gate);
+    expect(refusal).toBeGreaterThan(gate);
+    expect(commit).toBeGreaterThan(refusal);
     // the verdict is taken from the synchronous snapshot, never the live field
     expect(fn.slice(gate - 400, gate + 400)).toMatch(/dealt:\s*snap\.dealtStacks/);
     // the alert names the law and is critical
-    expect(fn.slice(gate, sync)).toMatch(
+    expect(fn.slice(gate, refusal)).toMatch(
       /raiseFinancialAlert\(\s*'critical',\s*'Tournament\.chip_conservation_broken'/
     );
-    // The one write is a no-op on a refusal. There is no second writer.
-    const syncBody = fn.slice(sync, fn.indexOf('});', sync));
-    expect(syncBody).toMatch(/if \(!tournamentHandConserved\) return;/);
-    expect(fn).not.toContain("runStep('tournament_chip_sync'");
+    // A refusal parks the live table behind the settlement barrier and then
+    // returns on explicit stop; it cannot reach the accepted-hand RPC.
+    const refusalBody = sliceEnclosingBlock(raw, 'if (!tournamentHandConserved)');
+    expect(refusalBody).toContain("this.setLoopPhase('settlement_fault_conservation')");
+    expect(refusalBody).toMatch(/while \(this\.running\)[\s\S]*?return;/);
+    expect(blankNonCode(raw)).not.toMatch(/\bsyncStacks\s*\(/);
+    expect(blankNonCode(raw)).not.toMatch(/\bsyncTournamentChips\s*\(/);
   });
 
   it('the dealt stacks are captured when the HandController is built and carried in the snapshot', () => {
@@ -178,7 +184,7 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
 });
 
 describe('LAW 3: a conservation refusal from the database is never written around', () => {
-  it('syncStacks returns on a conservation refusal, and there is no per-seat fallback at all', () => {
+  it('the rolling-compatibility stack RPC returns false on a refusal, with no per-seat fallback', () => {
     // 2026-09-04 (chip standard, felt erasure): the per-seat fallback this
     // pin used to bound is gone - it was the absolute write that erased
     // credits. The refusal is still recognised and still returns; what
@@ -190,8 +196,9 @@ describe('LAW 3: a conservation refusal from the database is never written aroun
     expect(refusal).toBeGreaterThan(-1);
     const after = fn.slice(refusal);
     expect(after).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
-    expect(after).toMatch(/return \{ kind: 'refused'/);
-    expect(after).toMatch(/if \(verdict\.kind === 'refused'\) return false;/);
+    expect(
+      after.slice(0, after.indexOf("'DB.settle_hand_stacks_conservation_refused'") + 900)
+    ).toMatch(/return false;/);
     expect(fn).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
     expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
   });

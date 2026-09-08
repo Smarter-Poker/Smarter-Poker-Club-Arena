@@ -152,7 +152,7 @@ describe('the hold never strands a board that already has players', () => {
    * Six Spins and five Heads-Up games were in exactly that state.
    */
   it('the gate only applies to a board with nobody in it', () => {
-    const gateAt = SRC.indexOf('seatFirstHeldEmpty(\n          tournamentId');
+    const gateAt = SRC.lastIndexOf('seatFirstHeldEmpty(');
     expect(gateAt).toBeGreaterThan(-1);
     const gate = SRC.slice(gateAt - 400, gateAt);
     expect(gate).toMatch(/liveCount === 0/);

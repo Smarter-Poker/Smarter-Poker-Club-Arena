@@ -41,7 +41,10 @@ const HYDRATE_LIMIT_PAIRS = 20_000;
 const HYDRATE_PAGE = 1000;
 
 let flushTimer: NodeJS.Timeout | null = null;
-let inFlight: Promise<void> | null = null;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightFlushes = new Set<Promise<void>>();
 
 type DbRow = {
   user_id: string;
@@ -180,16 +183,14 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
     const chunk = rows.slice(i, i + FLUSH_CHUNK);
     try {
       const { error } = await supabase.rpc('upsert_horse_mind_pairs', {
-        rows: chunk.map(
-          (r): DbPairRow => ({
-            attacker_id: r.attacker_id,
-            victim_id: r.victim_id,
-            n3: r.n3,
-            opp3: r.opp3,
-            n_r: r.nR,
-            opp_r: r.oppR,
-          })
-        ),
+        rows: chunk.map((r): DbPairRow => ({
+          attacker_id: r.attacker_id,
+          victim_id: r.victim_id,
+          n3: r.n3,
+          opp3: r.opp3,
+          n_r: r.nR,
+          opp_r: r.oppR,
+        })),
       });
       if (error) throw new Error(error.message || 'upsert_horse_mind_pairs failed');
       flushed += chunk.length;
@@ -467,17 +468,24 @@ export async function hydrateHorseMindScopedFromDb(): Promise<number> {
 /** Start the periodic flush loop. Idempotent. */
 export function startHorseMindPersistence(): void {
   if (flushTimer) return;
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
   flushTimer = setInterval(() => {
     // V12.3: track the in-flight flush. exportDirty() CLEARS the dirty set
     // before the network call, so a shutdown that lands mid-flush used to find
     // an empty set, flush nothing, and exit — losing up to five minutes of
     // learning. stopHorseMindPersistence() now awaits this first.
-    inFlight = (async () => {
+    const generation = lifecycleGeneration;
+    if (!lifecycleActive || inFlightFlushes.size > 0) return;
+    let tracked!: Promise<void>;
+    tracked = (async () => {
+      if (!lifecycleActive || lifecycleGeneration !== generation) return;
       await Promise.all([flushHorseMind(), flushHorseMindPairs(), flushHorseMindScoped()]);
     })().finally(() => {
-      inFlight = null;
+      inFlightFlushes.delete(tracked);
     });
-    void inFlight;
+    inFlightFlushes.add(tracked);
   }, FLUSH_INTERVAL_MS);
   // Never keep the process alive just to flush horse memory.
   flushTimer.unref?.();
@@ -485,20 +493,22 @@ export function startHorseMindPersistence(): void {
 
 /** Final best-effort flush for graceful shutdown (bounded by caller's race). */
 export async function stopHorseMindPersistence(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (flushTimer) {
     clearInterval(flushTimer);
     flushTimer = null;
   }
   // Let any in-flight cycle finish before draining, or its already-cleared
   // dirty entries are lost.
-  if (inFlight) {
-    try {
-      await inFlight;
-    } catch {
-      /* the flush reports its own errors */
+  stopOperation = (async () => {
+    while (inFlightFlushes.size > 0) {
+      await Promise.allSettled([...inFlightFlushes]);
     }
-  }
-  // Run both together: sequential awaits inside the caller's 20s shutdown race
-  // meant the pair flush was always the first thing sacrificed.
-  await Promise.all([flushHorseMind(), flushHorseMindPairs(), flushHorseMindScoped()]);
+    // Run all three together: sequential awaits inside the caller's old
+    // shutdown race meant the pair flush was always the first sacrificed.
+    await Promise.all([flushHorseMind(), flushHorseMindPairs(), flushHorseMindScoped()]);
+  })();
+  return stopOperation;
 }

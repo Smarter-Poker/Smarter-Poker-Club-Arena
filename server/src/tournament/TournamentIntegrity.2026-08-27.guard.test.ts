@@ -71,7 +71,7 @@ describe('A1: the cached blind structure is never mutated', () => {
     //
     // Same defect as A1 above — a restart freezing blind escalation — which
     // had been fixed everywhere except here.
-    const fn = sliceMethod(BASE, 'async resume(');
+    const fn = sliceMethod(BASE, 'private async resumeLifecycle(');
     expect(fn).not.toMatch(/blind_structure\s*\|\|\s*\[\]\s*\)\s*\[\s*this\.currentLevel\s*\]/);
     expect(fn).toMatch(/this\.resolveBlindLevel\(\s*tournament\.blind_structure/);
   });
@@ -195,7 +195,11 @@ describe('A5: overlays move real chips', () => {
   it('all three sites call the funding RPC', () => {
     expect(BASE).toMatch(/protected async applyPrizeGuarantee\(/);
     expect(BASE).toMatch(/fn_apply_prize_guarantee/);
-    expect((BASE.match(/this\.applyPrizeGuarantee\(/g) ?? []).length).toBe(3);
+    const paths = BASE + ELIM;
+    expect((paths.match(/this\.applyPrizeGuarantee\(/g) ?? []).length).toBe(2);
+    // The add-on close is one database transaction that funds and freezes the
+    // pool; it no longer calls the funding RPC in a separate application step.
+    expect(BASE).toContain("supabase.rpc('fn_close_tournament_addon_period'");
   });
 
   it('uses the pool the RPC returns rather than one computed beside it', () => {
@@ -232,10 +236,10 @@ describe('A6: a headcount is not a final table', () => {
     expect(window).not.toMatch(/<= finalTableSize\)\s*\{\s*this\.isFinalTable = true/);
   });
 
-  it('the deal poll requires it too, before terminal settlement can run', () => {
+  it('the deal poll requires it too, before atomic final-table settlement can run', () => {
     const fn = ELIM.slice(ELIM.indexOf('protected async checkFinalTableDeal('));
     const gate = fn.indexOf('countLiveTablesWithPlayers()');
-    const deal = fn.indexOf('requestTournamentTerminalReceipt(');
+    const deal = fn.indexOf('settleFinalTableDealAtomically(');
     expect(gate).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(deal);

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), token: vi.fn(), probe: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({ supabase: { auth: { refreshSession: mocks.refresh } } }));
@@ -103,5 +103,150 @@ describe('engine HTTP retry belongs to the original login', () => {
     expect((await act()).success).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('engine HTTP authentication has a deadline', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it.each([null, jwt()])(
+    'does not send a late action when a timed-out token read returns %s',
+    async (lateToken) => {
+      const pending = deferred<string | null>();
+      mocks.token.mockReturnValueOnce(pending.promise);
+      let finished = false;
+      const result = act().then((value) => {
+        finished = true;
+        return value;
+      });
+      await vi.waitFor(() => expect(mocks.token).toHaveBeenCalledTimes(1));
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect((await result).success).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+      pending.resolve(lateToken);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mocks.refresh).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  );
+
+  it('bounds the fallback refresh before sending a request', async () => {
+    mocks.token.mockResolvedValueOnce(null);
+    mocks.refresh.mockReturnValueOnce(new Promise(() => {}));
+    const result = act();
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect((await result).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('returns the original 401 when refresh hangs and never retries after its late success', async () => {
+    const pending = deferred<ReturnType<typeof session>>();
+    mocks.refresh.mockReturnValueOnce(pending.promise);
+    fetchMock.mockResolvedValueOnce(denied());
+    const result = act();
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect((await result).success).toBe(false);
+    pending.resolve(session(jwt('player-a', 'login-a', 2)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears both successful auth deadlines when a normal retry completes', async () => {
+    fetchMock.mockResolvedValueOnce(denied()).mockResolvedValueOnce(accepted());
+    expect((await act()).success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('the initial HTTP request belongs to the initiating login', () => {
+  it.each([
+    ['another account', jwt('player-b', 'login-b')],
+    ['a new login for the same account', jwt('player-a', 'login-new')],
+    ['logout', null],
+  ])('does not send after token lookup crosses %s', async (_label, replacement) => {
+    const pending = deferred<string | null>();
+    mocks.token.mockReturnValueOnce(pending.promise);
+    const result = act();
+    await vi.waitFor(() => expect(mocks.token).toHaveBeenCalledTimes(1));
+    if (replacement) login(replacement);
+    else localStorage.removeItem(AUTH_STORAGE_KEY);
+    pending.resolve(replacement);
+    expect((await result).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+
+  it('rejects a foreign cached token even when storage still belongs to the initiating login', async () => {
+    mocks.token.mockResolvedValueOnce(jwt('player-b', 'login-b'));
+    expect((await act()).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not send after the fallback refresh crosses a login switch', async () => {
+    const pending = deferred<ReturnType<typeof session>>();
+    mocks.token.mockResolvedValueOnce(null);
+    mocks.refresh.mockReturnValueOnce(pending.promise);
+    const result = act();
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    login(jwt('player-b', 'login-b'));
+    pending.resolve(session(jwt('player-b', 'login-b')));
+    expect((await result).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows an expired stored token to refresh within the same login', async () => {
+    login(
+      `e30.${btoa(JSON.stringify({ sub: 'player-a', session_id: 'login-a', exp: 1 }))}.signature`
+    );
+    mocks.token.mockImplementationOnce(async () => {
+      login(jwt());
+      return jwt();
+    });
+    fetchMock.mockResolvedValueOnce(accepted());
+    expect((await act()).success).toBe(true);
+  });
+
+  it('does not borrow a login when no initiating session exists', async () => {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    expect((await act()).success).toBe(false);
+    expect(mocks.token).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stops before token lookup if the login changes during lazy module loading', async () => {
+    const result = act();
+    login(jwt('player-b', 'login-b'));
+    expect((await result).success).toBe(false);
+    expect(mocks.token).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stops an action already waiting for the same-table spacing window', async () => {
+    const id = `spacing-owner-${++table}`;
+    fetchMock.mockResolvedValueOnce(accepted());
+    expect((await submitAction(id, 'player-a', 'check')).success).toBe(true);
+    const result = submitAction(id, 'player-a', 'raise', 100);
+    await vi.waitFor(() => expect(mocks.token).toHaveBeenCalledTimes(2));
+    login(jwt('player-b', 'login-b'));
+    expect((await result).success).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a rate-limit retry after logout', async () => {
+    fetchMock.mockImplementationOnce(async () => {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return new Response('{}', { status: 429 });
+    });
+    expect((await act()).success).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

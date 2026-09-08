@@ -157,23 +157,66 @@ export default function TOSGuard({ children }: TOSGuardProps) {
     setState('accepted');
   }, []);
 
+  /*
+   * AUTHENTICATED BOOT HAS TWO SERVER-BACKED GATES, IN THIS ORDER.
+   *
+   * TOSGuard owns the outside of the router while CompleteProfileModal lives
+   * inside AppLayout. Once this guard gives a definite `not_accepted`, the
+   * layout (and therefore its profile-gate status marker) does not exist. The
+   * production preflight used to wait for that impossible inner marker and
+   * every authenticated post-deploy spec died in global setup without running
+   * a single assertion.
+   *
+   * Publish this decision directly from its owner. It is hidden metadata, not
+   * another source of truth: `state` is still populated only by
+   * ProfileService.getTOSStatus and moves to accepted only after the public
+   * acceptance endpoint confirms its durable write. Automation can now obey
+   * the same outer-to-inner order as a player without guessing from a modal's
+   * temporary absence while the status query is still in flight.
+   */
+  const statusMarker = (
+    <span hidden data-tos-gate-status={isHydrating || !user?.id ? 'checking' : state} />
+  );
+
   // Sign-in is AuthGuard's job, not this one's. A signed-out visitor has
   // nothing to accept and no row to write it to.
-  if (isHydrating || !user?.id) return <>{children}</>;
+  if (isHydrating || !user?.id) {
+    return (
+      <>
+        {statusMarker}
+        {children}
+      </>
+    );
+  }
 
-  if (isAlwaysReachable(location.pathname)) return <>{children}</>;
+  if (isAlwaysReachable(location.pathname)) {
+    return (
+      <>
+        {statusMarker}
+        {children}
+      </>
+    );
+  }
 
   if (state === 'not_accepted') {
     /* No fallback UI: an empty frame for the ~100ms the chunk takes is
        preferable to a spinner that implies the app is loading normally, and
        to rendering the app underneath a gate that has already said no. */
     return (
-      <Suspense fallback={null}>
-        <TOSAcceptanceModal onAccept={handleAccept} />
-      </Suspense>
+      <>
+        {statusMarker}
+        <Suspense fallback={null}>
+          <TOSAcceptanceModal onAccept={handleAccept} />
+        </Suspense>
+      </>
     );
   }
 
   // 'accepted', 'checking' and 'unknown' all render the app — see the header.
-  return <>{children}</>;
+  return (
+    <>
+      {statusMarker}
+      {children}
+    </>
+  );
 }

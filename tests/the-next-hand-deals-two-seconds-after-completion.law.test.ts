@@ -68,12 +68,12 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     expect(arm).toBeGreaterThan(broadcast);
     expect(DEALING.slice(broadcast, arm)).not.toMatch(/\bif\s*\(|await /);
     const awaited = DEALING.indexOf('await this.awaitNextHandRest();');
-    const terminalGate = DEALING.indexOf('if (this.terminalCloseoutPaused)', awaited);
     const deal = DEALING.indexOf("this.setLoopPhase('dealing');");
     expect(awaited).toBeGreaterThan(-1);
-    expect(terminalGate).toBeGreaterThan(awaited);
-    expect(deal).toBeGreaterThan(terminalGate);
-    expect(DEALING.slice(awaited, deal)).toContain('await this.awaitPauseGate()');
+    expect(deal).toBeGreaterThan(awaited);
+    expect(DEALING.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()).toBe(
+      'if (!this.lifecycleCanMutate()) return;'
+    );
   });
 
   it('the old separate sleeps are gone - the clear and the window live inside the rest', () => {
@@ -125,6 +125,7 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
       'insurance_ledger',
       'bbj_mini_payout',
       'bbj_payout',
+      'tournament_chip_sync',
     ]) {
       expect(laneTable, `${step} is not in the record lane`).toMatch(
         new RegExp(`${step}: 'record'`)

@@ -63,13 +63,14 @@ export async function refundAndCloseCancelledTournament(
     // gates the fee reversal below. A discarded error read as "no club_id", so
     // a transient failure here silently kept every entry fee on a CANCELLED
     // event instead of reversing it, with nothing logged to say so.
-    if (fullTErr) {
+    if (fullTErr || !fullT) {
       reportError(
         new Error(
-          `[GameServer] Cancel refund: tournament row unreadable for ${tournamentId.slice(0, 8)}: ${fullTErr.message}`
+          `[GameServer] Cancel refund: tournament row unreadable for ${tournamentId.slice(0, 8)}: ${fullTErr?.message ?? 'missing tournament'}`
         ),
         'GameServer.cancel_refund_tournament_unreadable'
       );
+      return;
     }
     // AUDIT 2026-08-19 (rake/BBJ pass 2): refunds are EVIDENCE-BASED. The old
     // rule "horses paid nothing" became false the day
@@ -131,7 +132,7 @@ export async function refundAndCloseCancelledTournament(
           ),
           'GameServer.cancel_refund_evidence_failed'
         );
-        continue;
+        return;
       }
       // PAYOUT-INTEGRITY 2026-08-20: rebuys and add-ons count as money paid
       // for THIS tournament and must come back on a cancellation. The filter
@@ -155,7 +156,6 @@ export async function refundAndCloseCancelledTournament(
       gross = Math.round(gross * 100) / 100;
       refunded = Math.round(refunded * 100) / 100;
       if (gross <= 0) continue; // never paid (legacy free entry)
-      if (gross - refunded <= 0) continue; // already refunded in full
 
       // ONE SETTLE PATH (2026-09-02): a user-keyed 'refund' obligation,
       // UNIQUE on (tournament, 'refund', user). Every cancel-refund path
@@ -172,22 +172,35 @@ export async function refundAndCloseCancelledTournament(
       // partial refund twice: gross 20, refunded 5 -> total 15, seeded paid 5
       // -> it paid 10, and the player was 5 short. The total is what the
       // player paid; the function already knows what came back.
-      const refund = await settleTournamentObligation(supabase, {
-        tournamentId,
-        kind: 'refund',
-        userId: row.user_id,
-        amount: gross,
-        source: 'engine.refundAndCloseCancelledTournament',
-        memo: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
-      });
-      if (!refund.ok) {
-        reportError(
-          new Error(
-            `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refund.refused_reason}${refund.transport_error ? ` (${refund.transport_error})` : ''}`
-          ),
-          'GameServer.cancel_refund_failed'
-        );
-        continue;
+      // An already refunded player can still have unfinished fee work.
+      if (gross - refunded > 0) {
+        const refund = await settleTournamentObligation(supabase, {
+          tournamentId,
+          kind: 'refund',
+          userId: row.user_id,
+          amount: gross,
+          source: 'engine.refundAndCloseCancelledTournament',
+          memo: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
+        });
+        if (!refund.ok) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refund.refused_reason}${refund.transport_error ? ` (${refund.transport_error})` : ''}`
+            ),
+            'GameServer.cancel_refund_failed'
+          );
+          return;
+        }
+
+        if (refund.fully_settled !== true || (refund.amount_paid ?? 0) < gross) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund incomplete or unconfirmed for ${row.user_id} (${tournamentId.slice(0, 8)})`
+            ),
+            'GameServer.cancel_refund_failed'
+          );
+          return;
+        }
       }
 
       // Reverse this player's un-reversed fee rows (registration + rebuy fees
@@ -211,7 +224,7 @@ export async function refundAndCloseCancelledTournament(
             ),
             'GameServer.cancel_refund_fee_read_failed'
           );
-          continue;
+          return;
         }
         const feePaid =
           Math.round((feeRows ?? []).reduce((s, r) => s + Number(r.rake_amount || 0), 0) * 100) /
@@ -243,6 +256,7 @@ export async function refundAndCloseCancelledTournament(
               ),
               'GameServer.cancel_refund_fee_reversal_failed'
             );
+            return;
           }
         }
       }
@@ -264,6 +278,7 @@ export async function refundAndCloseCancelledTournament(
         ),
         'GameServer.cancel_refund_close_rows_failed'
       );
+      return;
     }
 
     // Close the tournament's tables

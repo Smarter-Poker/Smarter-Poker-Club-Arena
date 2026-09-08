@@ -234,19 +234,24 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // created for this path and never wired. Do not use the obsolete
     // `rabbit_hunt_offers` table: it has a `cards` column, and persisting the
     // unseen runout would recreate the private-card leak this endpoint removed.
-    // A ledger outage must not strand a player after a successful charge, so
-    // report it and still return the cards they bought.
-    try {
-      const { error: revealLogError } = await supabase.from('rabbit_hunt_reveals').insert({
-        user_id: userId,
-        table_id: this.tableId,
-        hand_number: hand,
-        charged: Number(charge.diamonds_spent ?? 0),
-      });
-      if (revealLogError) throw revealLogError;
-    } catch (err) {
-      reportError(err, 'ServerTableEngine.rabbit_hunt_reveal_log_error');
-    }
+    // Payment has already committed its durable receipt in the consumption
+    // RPC. This metadata write is not a payment gate: even a stalled insert
+    // must not hold back cards the player has bought. Start it immediately,
+    // capture this hand's fields before yielding, and report both returned
+    // errors and rejected requests. It never joins the next-hand barrier.
+    void (async () => {
+      try {
+        const { error: revealLogError } = await supabase.from('rabbit_hunt_reveals').insert({
+          user_id: userId,
+          table_id: this.tableId,
+          hand_number: hand,
+          charged: Number(charge.diamonds_spent ?? 0),
+        });
+        if (revealLogError) throw revealLogError;
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.rabbit_hunt_reveal_log_error');
+      }
+    })();
 
     return {
       success: true,
@@ -1420,9 +1425,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       moneyCritical: boolean,
       fn: () => Promise<void>
     ): Promise<void> => {
+      const started = performance.now();
+      let outcome = 'returned';
       try {
         await fn();
       } catch (err) {
+        outcome = 'threw';
         reportError(err, `postHandTasks.step_failed.${stepName}`, {
           tableId: this.tableId,
           handNumber: snap.handNumber,
@@ -1438,6 +1446,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               error: err instanceof Error ? err.message : String(err),
             }
           );
+        }
+      } finally {
+        try {
+          const elapsed = Math.max(0, performance.now() - started);
+          const labels = {
+            step: stepName,
+            audience: this.humansSeated() > 0 ? 'human' : 'horse',
+            format: this.tableFormat(),
+            outcome,
+          };
+          EngineMetrics.settlementStepCount.inc(1, labels);
+          EngineMetrics.settlementStepDuration.inc(elapsed, labels);
+          EngineMetrics.settlementStepSlow.inc(elapsed >= 1000 ? 1 : 0, labels);
+        } catch {
+          /* Metrics must never interrupt settlement or error recovery. */
         }
       }
     };
@@ -2239,6 +2262,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         },
       });
 
+      if (outcome.status === 'queued') {
+        EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+        this.hub?.emitEvent(this.tableId, {
+          type: 'bbj_payout_pending',
+          kind: 'mini',
+          table_id: this.tableId,
+          hand_number: snap.handNumber,
+          emitted_at: Date.now(),
+          replay_until: Date.now() + 60_000,
+          loser: { userId: mini.loserUserId },
+          winner: { userId: mini.winnerUserId },
+          tablePlayerIds: [...new Set(mini.dealtInPlayerIds || [])].filter(
+            (id) => id !== mini.loserUserId && id !== mini.winnerUserId
+          ),
+        });
+      }
+
       if (outcome.status !== 'paid') {
         console.warn(
           `[ServerTableEngine:${this.tableId}] mini jackpot not paid for hand #${snap.handNumber}: ${outcome.reason}`
@@ -2262,11 +2302,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       };
       bump(mini.loserUserId, outcome.loser);
       bump(mini.winnerUserId, outcome.winner);
-      for (const uid of mini.dealtInPlayerIds || []) {
+      for (const uid of new Set(mini.dealtInPlayerIds || [])) {
         if (uid !== mini.loserUserId && uid !== mini.winnerUserId) bump(uid, outcome.perPlayer);
       }
 
-      const tableOnlyMini = (mini.dealtInPlayerIds || []).filter(
+      const tableOnlyMini = [...new Set(mini.dealtInPlayerIds || [])].filter(
         (id) => id !== mini.loserUserId && id !== mini.winnerUserId
       );
       this.hub?.emitEvent(this.tableId, {
@@ -2376,7 +2416,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
 
           // TABLE SHARE: remaining 25% split equally among dealt-in players (excluding loser/winner)
-          const tableOnlyPlayers = (bbjHit.dealtInPlayerIds || []).filter(
+          const tableOnlyPlayers = [...new Set(bbjHit.dealtInPlayerIds || [])].filter(
             (id) => id !== bbjHit.loserUserId && id !== bbjHit.winnerUserId
           );
           for (const playerId of tableOnlyPlayers) {

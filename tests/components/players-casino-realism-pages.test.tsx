@@ -193,7 +193,11 @@ describe('Players detail surfaces', () => {
     expect(await screen.findByRole('heading', { name: 'Player Performance' })).toBeVisible();
     expect(screen.getByText('Measured From Verified Hands')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Instrument Controls' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    // The hero and the controls paint at once; the cards paint only after the
+    // statistics resolve. Under runner load that gap was long enough for a
+    // synchronous read to miss (CI run 34176461133, 2026-09-08), so wait for
+    // the first card the way the header is waited for.
+    expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Volume' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Club Result' })).toBeVisible();
     expect(document.querySelector<HTMLImageElement>('.ps-hero__art')?.src).toContain(

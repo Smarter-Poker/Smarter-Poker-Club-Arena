@@ -127,7 +127,10 @@ export function fixedLimitWagerCount(actions: ActionRecord[], stage: HandStage):
   let n = 0;
   for (const a of actions) {
     if (a.stage !== stage) continue;
-    if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise)) {
+    if (
+      ((a.action === 'bet' || a.action === 'raise') && a.isFullRaise !== false) ||
+      (a.action === 'all_in' && a.isFullRaise)
+    ) {
       n++;
     }
   }

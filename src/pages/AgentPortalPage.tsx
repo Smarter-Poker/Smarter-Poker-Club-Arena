@@ -21,6 +21,8 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import AgentInvoicesPanel from '../components/agent/AgentInvoicesPanel';
 import { reportError } from '../utils/errorReporter';
+import { useUserStore } from '../stores/useUserStore';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 interface AgentWallet {
   agentBal: number;
@@ -39,6 +41,10 @@ export default function AgentPortalPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  const currentClubId = useUserStore((state) => state.currentClubId);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const walletScope = useRef('');
+  walletScope.current = JSON.stringify([user?.id, currentClubId]);
 
   const [wallet, setWallet] = useState<AgentWallet>({
     agentBal: 0,
@@ -52,6 +58,7 @@ export default function AgentPortalPage() {
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState('');
   const [isTransferring, setIsTransferring] = useState(false);
+  const transferInFlight = useRef(false);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
   const [agentClubId, setAgentClubId] = useState<string | null>(null);
   const [agentPkId, setAgentPkId] = useState<string | null>(null); // agents.id PK (different from auth.uid)
@@ -68,7 +75,7 @@ export default function AgentPortalPage() {
       }, i * 80)
     );
     return () => timers.forEach(clearTimeout);
-  }, [user?.id]);
+  }, [user?.id, currentClubId]);
 
   // Bus listeners
   useEffect(() => {
@@ -80,7 +87,7 @@ export default function AgentPortalPage() {
       unsub2();
       unsub3();
     };
-  }, []);
+  }, [user?.id, currentClubId]);
 
   // RT subscription: auto-refresh when agent wallet changes in Supabase
   useEffect(() => {
@@ -121,36 +128,48 @@ export default function AgentPortalPage() {
     };
   }, [user?.id, agentPkId]);
 
-  const loadingRef = useRef(false);
+  const loadingRef = useRef<string | null>(null);
 
   const loadData = async () => {
     if (!user?.id) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    const scope = walletScope.current;
+    if (loadingRef.current === scope) return;
+    loadingRef.current = scope;
     setLoading(true);
     try {
       // loadWallet FIRST — it resolves the agents.id PK needed by AgentInvoicesPanel
       await loadWallet();
       await loadCommissionHistory();
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (loadingRef.current === scope) loadingRef.current = null;
+      if (isMounted.current && walletScope.current === scope) setLoading(false);
     }
   };
 
   const loadWallet = async (): Promise<string | null> => {
     if (!user?.id) return null;
+    const scope = walletScope.current;
+    setAgentClubId(null);
     try {
-      const { data, error } = await supabase
+      const resolvedClub = currentClubId ? await resolveClubUUID(currentClubId) : null;
+      if (currentClubId && !resolvedClub)
+        throw new Error('Choose A Valid Club Before Using Your Wallet');
+      let query = supabase
         .from('agents')
-        .select(
-          'id, club_id, agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit'
-        )
+        .select('id, club_id, agent_wallet_balance, promo_wallet_balance, credit_limit')
         // user.id is auth.users.id, NOT agents.id (PK) — query by user_id
+        .eq('user_id', user.id);
+      if (resolvedClub) query = query.eq('club_id', resolvedClub);
+      const { data, error } = await query.maybeSingle();
+
+      if (error || !data) throw new Error('Open Your Club Before Using The Agent Wallet');
+      const { data: member, error: memberError } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('club_id', data.club_id)
         .eq('user_id', user.id)
         .maybeSingle();
-
-      if (error || !data) return null;
+      if (memberError || !member) throw memberError || new Error('Player Wallet Not Found');
 
       let debt = 0;
       try {
@@ -161,18 +180,23 @@ export default function AgentPortalPage() {
         console.warn('[AgentPortal] Debt calculation skipped:', err);
       }
 
-      if (!isMounted.current) return data.id;
+      if (!isMounted.current || scope !== walletScope.current) return null;
+      setWalletError(null);
       setAgentPkId(data.id); // Triggers RT subscription re-creation with correct filter
       if (data.club_id) setAgentClubId(data.club_id);
       setWallet({
         agentBal: data.agent_wallet_balance || 0,
-        playerBal: data.player_wallet_balance || 0,
+        playerBal: Number(member.chip_balance) || 0,
         promoBal: data.promo_wallet_balance || 0,
         creditLimit: data.credit_limit || 0,
         debt,
       });
       return data.id;
     } catch (err) {
+      if (isMounted.current && scope === walletScope.current) {
+        setWalletError((err as Error).message);
+        setAgentClubId(null);
+      }
       reportError(err, 'AgentPortalPage.loadWallet_error');
       return null;
     }
@@ -212,22 +236,28 @@ export default function AgentPortalPage() {
 
   const handleTransfer = async () => {
     const amount = parseFloat(transferAmount);
-    if (!amount || amount <= 0 || !user?.id) {
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !user?.id ||
+      !agentClubId ||
+      transferInFlight.current
+    ) {
       if (isMounted.current) toast.error('Enter a valid amount');
       return;
     }
-    if (amount > wallet.agentBal) {
-      if (isMounted.current) toast.error('Insufficient balance in Business Wallet');
-      return;
-    }
+    // A committed request may already have reduced this display. The RPC must
+    // decide insufficiency after replay lookup, so the same intent can recover.
+    transferInFlight.current = true;
     setIsTransferring(true);
     try {
-      const success = await WalletService.agentSelfTransfer(user.id, amount);
+      const success = await WalletService.agentSelfTransfer(agentClubId!, amount);
       if (success) {
         if (isMounted.current)
           toast.success(`Transferred ${amount.toLocaleString()} chips to Play Wallet`);
         setTransferModalOpen(false);
         setTransferAmount('');
+        await loadWallet();
         masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer', userId: user.id });
       } else {
         if (isMounted.current) toast.error('Transfer failed');
@@ -235,6 +265,7 @@ export default function AgentPortalPage() {
     } catch (err) {
       if (isMounted.current) toast.error('Transfer failed: ' + (err as Error).message);
     }
+    transferInFlight.current = false;
     setIsTransferring(false);
   };
 
@@ -256,6 +287,12 @@ export default function AgentPortalPage() {
 
   return (
     <div style={{ padding: '16px', maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>
+      {walletError && (
+        <div role="alert">
+          {walletError}
+          <button onClick={() => navigate('/clubs')}>Open Clubs</button>
+        </div>
+      )}
       {/* Header */}
       <div style={{ marginBottom: '24px', ...sectionStyle(0) }}>
         <button
@@ -342,6 +379,7 @@ export default function AgentPortalPage() {
           </div>
           <button
             onClick={() => setTransferModalOpen(true)}
+            disabled={!agentClubId || isTransferring}
             style={{
               marginTop: '6px',
               width: '100%',
@@ -614,7 +652,7 @@ export default function AgentPortalPage() {
               </button>
               <button
                 onClick={handleTransfer}
-                disabled={isTransferring || !transferAmount}
+                disabled={isTransferring || !transferAmount || !agentClubId}
                 style={{
                   flex: 1,
                   padding: '10px',

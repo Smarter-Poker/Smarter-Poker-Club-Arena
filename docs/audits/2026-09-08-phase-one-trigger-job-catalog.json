@@ -1,0 +1,6600 @@
+{
+  "jobs": [
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_suspense_regression_check"],
+      "command_hash": "2f5024d4345dcf493d1df6d78b257758",
+      "id": 177,
+      "name": "ca-suspense-regression-15m",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_settlement_correctness_check"],
+      "command_hash": "dee952583cd01bc7bb499a1e4bb217ec",
+      "id": 178,
+      "name": "ca-settlement-correctness-30m",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_drain_daily_challenge_event_outbox"],
+      "command_hash": "703d885aa28ca5dfae1c453578b91c52",
+      "id": 317,
+      "name": "daily-missions-outbox-minute-s1",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "5fd8157c0a14e3a720caff785eb1259d",
+      "id": 179,
+      "name": "ca-hand-facts-prune-daily",
+      "schedule": "40 5 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_pgrst_reload_if_stale"],
+      "command_hash": "2449f9475b425a8756cf3d50760a85a1",
+      "id": 182,
+      "name": "ca-pgrst-reload-if-stale",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_spin_fairness_check"],
+      "command_hash": "1bcdd7a3a06eea6ee92ca28a9a024d5d",
+      "id": 184,
+      "name": "spin_fairness_check_hourly",
+      "schedule": "44 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_refresh_player_stats"],
+      "command_hash": "7cafa62b9c36f7384e4ff8a83b781aff",
+      "id": 76,
+      "name": "refresh-player-stats-hourly",
+      "schedule": "17 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_send_home_game_reminders"],
+      "command_hash": "5a0923021176efd6c9da48b71dd92bee",
+      "id": 12,
+      "name": "home-game-reminders-6h-1h",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_home_game_auto_complete"],
+      "command_hash": "7cb55f2aa658559e4acb695b1b6d50eb",
+      "id": 14,
+      "name": "home-game-auto-complete",
+      "schedule": "17 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_home_host_pending_nudge"],
+      "command_hash": "66420a9cb415f473e104a286f4c81368",
+      "id": 15,
+      "name": "home-host-pending-nudge",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_home_game_recap_prompt"],
+      "command_hash": "6ed540501399321c7b9027d8f3cd3879",
+      "id": 16,
+      "name": "home-game-recap-prompt",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_refresh_trending_home_groups"],
+      "command_hash": "59a5b2413fef93fb973500b1bf71b34d",
+      "id": 17,
+      "name": "home-trending-refresh",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_generate_recurring_home_games"],
+      "command_hash": "db8d71ee0f5ef487ab1de2ac08663f87",
+      "id": 18,
+      "name": "home-games-recurring-generate",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_capture_home_weekly_snapshots"],
+      "command_hash": "9006389933ba04ad591c7767c51758ee",
+      "id": 19,
+      "name": "home-weekly-snapshots",
+      "schedule": "30 0 * * 1"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_refresh_active_poker_locations"],
+      "command_hash": "31f4d2011ee8485b5a961a00476fc527",
+      "id": 20,
+      "name": "pnm-locations-refresh",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_flag_garbage_tournaments"],
+      "command_hash": "e9a0d2b80a55b6552058c5cd5c6b9756",
+      "id": 21,
+      "name": "flag-garbage-tournaments",
+      "schedule": "15 3 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_refresh_all_home_group_quality_scores"],
+      "command_hash": "44f04a89b1f7674a2d53989a3ac09bdb",
+      "id": 22,
+      "name": "home-groups-quality-refresh",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_refresh_all_vitality_scores"],
+      "command_hash": "baed585bd4faabc0258f849e646d0a6b",
+      "id": 24,
+      "name": "home-groups-vitality-refresh",
+      "schedule": "15 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_decay_home_member_strikes"],
+      "command_hash": "847f4056f9d6151a7f817b138cdcf0e6",
+      "id": 26,
+      "name": "home-member-strike-decay",
+      "schedule": "30 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_burnin_gate_tick"],
+      "command_hash": "1743a2215218816faeef5ceea4f378ea",
+      "id": 195,
+      "name": "ca-burnin-gate-hourly",
+      "schedule": "58 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "8f3f140cf9b3704bfa802a73d5c3246f",
+      "id": 33,
+      "name": "training_leaderboard_refresh_every_5m",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_snapshot_player_stats"],
+      "command_hash": "ed5b2cc5d36d538dec6cd0b04350b47f",
+      "id": 40,
+      "name": "snapshot-player-stats",
+      "schedule": "5 0 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_resolve_expired_friend_challenges"],
+      "command_hash": "c3e1ae1265aab0f68e3d6475ad2f9700",
+      "id": 41,
+      "name": "resolve-friend-challenges",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["refresh_pending_families"],
+      "command_hash": "99961679d62261038bdd47a06c302bcd",
+      "id": 39,
+      "name": "sp_refresh_pending_families",
+      "schedule": "17 9 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_union_law_selftest"],
+      "command_hash": "b53611922d8a022b2ac45424dc5046ac",
+      "id": 121,
+      "name": "union-law-selftest",
+      "schedule": "20 0 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_heal_seat_provenance"],
+      "command_hash": "8172c6977e14f99bbaf8f85d52d0f456",
+      "id": 122,
+      "name": "union-seat-provenance-heal",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "9600d08f40a126df3ee6ed689932d3ae",
+      "id": 9,
+      "name": "cleanup-hole-cards",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_reconcile_club_table_counts"],
+      "command_hash": "64ff8d1c311838d8c283225181388e90",
+      "id": 124,
+      "name": "reconcile-club-table-counts-nightly",
+      "schedule": "40 3 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_club_rake_rollup_catchup"],
+      "command_hash": "9ea4f11e77cee5945fc48e6d7ac0947b",
+      "id": 128,
+      "name": "club-rake-rollup-catchup",
+      "schedule": "25 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_home_group_stale_sweep"],
+      "command_hash": "e48f2baee3169900548f430fc2dea808",
+      "id": 13,
+      "name": "home-group-stale-sweep",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "96244362bf46b39e75ef1100b1372203",
+      "id": 117,
+      "name": "sp_prune_hand_history_10m",
+      "schedule": "3,13,23,33,43,53 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "df869de5ce1adf822ddcede7d4750dd0",
+      "id": 25,
+      "name": "home-view-log-prune",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_db_saturation_selftest"],
+      "command_hash": "b822b76e1a072fdcdebead2f731ce21a",
+      "id": 129,
+      "name": "db-saturation-selftest",
+      "schedule": "7,37 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_prune_stale_rate_limits"],
+      "command_hash": "64f8753c7281d427721da8f4fd8642eb",
+      "id": 27,
+      "name": "rate-limit-prune",
+      "schedule": "17 3 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_union_integrity_sweep_all"],
+      "command_hash": "6c32b866fb883e51d00cbf879fb15aad",
+      "id": 123,
+      "name": "union-integrity-sweep",
+      "schedule": "35 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_daily_attestation"],
+      "command_hash": "81e68d4bcaaff593da9f5e32e9d8ea17",
+      "id": 180,
+      "name": "ca-daily-attestation",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "0687b8d0dc1ee205b8c6203d17627478",
+      "id": 131,
+      "name": "sp-prune-rabbit-hunt-offers",
+      "schedule": "9,39 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_credit_stalled_seat_first_stacks"],
+      "command_hash": "9fd6e854f780b291937da644f9b33da5",
+      "id": 132,
+      "name": "credit-stalled-seat-first-stacks",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_reconcile_tournament_denormals"],
+      "command_hash": "81a5d6be9faf4e6f4db011607bb409d3",
+      "id": 133,
+      "name": "reconcile-tournament-denormals",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_bbj_rollup_catchup"],
+      "command_hash": "eb840644d4eaeb026c6a859a09977ab5",
+      "id": 134,
+      "name": "bbj-rollup-catchup",
+      "schedule": "45 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "269e9129206cf2d9022d8835838438d7",
+      "id": 119,
+      "name": "sp_prune_hand_state_snapshots_2m",
+      "schedule": "1-59/2 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "03fe376da09e858f9561566f9acd4ad5",
+      "id": 137,
+      "name": "hand-history-compact",
+      "schedule": "0,5,10,15,20,25,30,35,40,45,50,55 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "f3e1859d89c5697686d60016175320ea",
+      "id": 138,
+      "name": "hand-history-compact-vacuum",
+      "schedule": "2,12,22,32,42,52 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_spin_sweep_unbooked"],
+      "command_hash": "aa35ec17926ca9c234a380f2c1e1e7a5",
+      "id": 141,
+      "name": "spin_sweep_unbooked",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_spin_repair_missing_multiplier"],
+      "command_hash": "a4ecf7ae2e873cabfd3d348a0accd34c",
+      "id": 142,
+      "name": "spin_repair_missing_multiplier",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_spin_unpaid_check"],
+      "command_hash": "23d62e114ab47e66d31e5e9288380ae7",
+      "id": 143,
+      "name": "spin_unpaid_check",
+      "schedule": "50 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_tournament_money_conservation"],
+      "command_hash": "10fd8722586b13e1aff69cce36917c30",
+      "id": 144,
+      "name": "tourney_money_conservation_hourly",
+      "schedule": "12 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_drain_daily_challenge_event_outbox"],
+      "command_hash": "cf3317468ee6e638afa57a9406678059",
+      "id": 318,
+      "name": "daily-missions-outbox-minute-s2",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_snapshot_index_usage"],
+      "command_hash": "7becc2fc8fd42011a0db94ff06041191",
+      "id": 140,
+      "name": "index-usage-snapshot-daily",
+      "schedule": "41 */2 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "c065509eb76e63573fbe4dbfbec58363",
+      "id": 139,
+      "name": "prune_idempotency_keys",
+      "schedule": "0 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_retry_promo_accruals"],
+      "command_hash": "b80e33fb91753b9903a1420767bd926b",
+      "id": 183,
+      "name": "ca-promo-accrual-retry-10m",
+      "schedule": "4,14,24,34,44,54 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_cron_failure_watch"],
+      "command_hash": "820a09e8ca320f3e0337a1e58f12d642",
+      "id": 192,
+      "name": "ca-cron-health-30m",
+      "schedule": "7,37 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_tournament_rake_settlement_check"],
+      "command_hash": "e99d45d743ff5401a875da98a08d2e15",
+      "id": 197,
+      "name": "tournament_rake_settlement_check_hourly",
+      "schedule": "19 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_diamond_economy_watch"],
+      "command_hash": "36cdeb1dabd6938a5b5bf3944a9d7d1e",
+      "id": 332,
+      "name": "ca-diamond-economy-watch-daily",
+      "schedule": "25 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_drain_daily_challenge_event_outbox"],
+      "command_hash": "de5e495e206da07e63cfd734b2f0b29a",
+      "id": 176,
+      "name": "daily-missions-outbox-minute",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_check_ungated_money_rpcs"],
+      "command_hash": "39c11f5400961784687e73a2dc34cd03",
+      "id": 150,
+      "name": "ungated-money-rpc-check",
+      "schedule": "15 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["check_upcoming_tournament_pushes"],
+      "command_hash": "b0fcdc121dc50ee848cfa731f2790976",
+      "id": 151,
+      "name": "sp_upcoming_tournament_pushes",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_evict_sitting_out_cash_players"],
+      "command_hash": "15dc42a6b265c27c80d87178795aab52",
+      "id": 152,
+      "name": "sp_evict_sitting_out_cash_players",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_settle_due_leaderboards"],
+      "command_hash": "8dc6e27f4c8ef8e506317a6dc635c657",
+      "id": 190,
+      "name": "leaderboard-payout-waterfall-daily",
+      "schedule": "20 0 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [
+        "fn_ca_ledger_day_manifest",
+        "fn_ca_ledger_day_manifest_backfill",
+        "fn_ca_ledger_day_manifest_verify_all"
+      ],
+      "command_hash": "ca98c4c9649a7eba2c1a4e37279c519a",
+      "id": 181,
+      "name": "ca-ledger-day-manifest",
+      "schedule": "25 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_rake_bbj_audit"],
+      "command_hash": "c811b1ecd24b849856105d2562753366",
+      "id": 155,
+      "name": "rake-bbj-invariant-audit-hourly",
+      "schedule": "38 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_rake_attribution_drift_audit"],
+      "command_hash": "2a46c64f44895232c5ed15ec80d32b41",
+      "id": 156,
+      "name": "rake-attribution-drift-audit-hourly",
+      "schedule": "47 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["reconcile_ledger_nightly"],
+      "command_hash": "b136b924214e26920dc37e503e3eb1cc",
+      "id": 157,
+      "name": "reconcile-ledger-integrity-6h",
+      "schedule": "55 */6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_diamond_prune_history"],
+      "command_hash": "c08183405b50446792224a6dc31f8bb2",
+      "id": 333,
+      "name": "ca-diamond-prune-history-daily",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_prune_index_usage_snapshots"],
+      "command_hash": "77b104a1701979bf26e05b9e72d31cd3",
+      "id": 159,
+      "name": "index-usage-snapshot-prune-daily",
+      "schedule": "17 5 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_rake_law_check"],
+      "command_hash": "5b1b1448a73af3b77b7f76be2dfac31f",
+      "id": 161,
+      "name": "rake-law-adherence-hourly",
+      "schedule": "40 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_incident_escalation_tick"],
+      "command_hash": "2579493ce5abe026934ca827cd90daa3",
+      "id": 162,
+      "name": "ca-incident-escalation-tick",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_quick_reconcile"],
+      "command_hash": "33bfaf615072b08762780584d0a8dc42",
+      "id": 163,
+      "name": "ca-quick-reconcile-5m",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_auto_reconcile_tick"],
+      "command_hash": "8b79d68cc23e75ac0299f978b6b128de",
+      "id": 164,
+      "name": "ca-auto-reconcile-tick",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_supply_snapshot"],
+      "command_hash": "b99f80d5559ddc482f013342f4032e3c",
+      "id": 165,
+      "name": "ca-supply-snapshot-hourly",
+      "schedule": "5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_verify_ledger_chain"],
+      "command_hash": "754afaf6e1520fb7a5ec808d652df1b6",
+      "id": 166,
+      "name": "ca-ledger-chain-verify-daily",
+      "schedule": "35 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_bbj_repair_unbanked"],
+      "command_hash": "146a2c9b89730e3aef2e2f9c49dc6984",
+      "id": 167,
+      "name": "ca-bbj-repair-unbanked-15m",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_money_rpc_drift"],
+      "command_hash": "05e9a902ea8a29245353dbdee21828e1",
+      "id": 170,
+      "name": "ca-money-rpc-drift-daily",
+      "schedule": "25 5 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_escrow_ttl_sweep"],
+      "command_hash": "a4af29fc767d1622e2a370e6ec59a050",
+      "id": 171,
+      "name": "ca-escrow-ttl-sweep-10m",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_pgrst_reload_watchdog"],
+      "command_hash": "eb5a1659e8f44d82a2c770ab23abf90c",
+      "id": 172,
+      "name": "pgrst-reload-watchdog",
+      "schedule": "6,21,36,51 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_guard_integrity_check"],
+      "command_hash": "7994119e08aa9ff96d0d670e9897544c",
+      "id": 169,
+      "name": "ca-guard-integrity-daily",
+      "schedule": "15 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_spin_chip_conservation_check"],
+      "command_hash": "f2e43da68e4e5b8fb2c7d2c45e790bfd",
+      "id": 198,
+      "name": "spin_chip_conservation_hourly",
+      "schedule": "49 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_prune_daily_mission_operations"],
+      "command_hash": "a27a208cd14dddeeeecddfc688117270",
+      "id": 175,
+      "name": "daily-missions-retention-daily",
+      "schedule": "23 5 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "b0986ded1aaa834043934c27b6ab751d",
+      "id": 199,
+      "name": "ca-op-claims-prune-daily",
+      "schedule": "45 5 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_diamond_snapshot"],
+      "command_hash": "979d17af8ec4f22ddbbdaa611f7e31b0",
+      "id": 201,
+      "name": "ca-diamond-snapshot-hourly",
+      "schedule": "10 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_drain_daily_challenge_event_outbox"],
+      "command_hash": "de5bc9170635b1d8dc4efd982f411d4a",
+      "id": 319,
+      "name": "daily-missions-outbox-minute-s3",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_diamond_health_watch"],
+      "command_hash": "4e043f7d24066fc780ce11ae09aeba1e",
+      "id": 347,
+      "name": "ca-diamond-health-watch-hourly",
+      "schedule": "35 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_collusion_scan"],
+      "command_hash": "244e898fe76bda478cb3471d86d2e5e1",
+      "id": 202,
+      "name": "ca-collusion-daily",
+      "schedule": "20 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_weekly_revenue_digest"],
+      "command_hash": "b78fad2e2c9ffc94daa1712b6a4732fe",
+      "id": 203,
+      "name": "ca-revenue-digest-weekly",
+      "schedule": "0 13 * * 1"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_negative_balance_watch"],
+      "command_hash": "ea8696f00a00952bb4a4269f9b271b9f",
+      "id": 204,
+      "name": "ca-negative-balance-watch-10m",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_mint_velocity_watch"],
+      "command_hash": "c0500f1a32f91378fcc89a9a589419b5",
+      "id": 205,
+      "name": "ca-mint-velocity-5m",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_guard_defs_watch"],
+      "command_hash": "932076a11705ce580c59eb1911e65f3f",
+      "id": 206,
+      "name": "ca-guard-defs-hourly",
+      "schedule": "25 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_alarm_drill"],
+      "command_hash": "d1668ca6575238802105f1abc7e118af",
+      "id": 207,
+      "name": "ca-alarm-drill-weekly",
+      "schedule": "0 11 * * 1"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_expire_daily_challenge_rewards"],
+      "command_hash": "4cb6d30490f96aec3fdeb14a1840e10b",
+      "id": 327,
+      "name": "daily-missions-reward-expiry",
+      "schedule": "7 0 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_duplicate_structure_payout_check"],
+      "command_hash": "b44007e87ac7021250f7b79bf8b4eade",
+      "id": 210,
+      "name": "ca-duplicate-structure-payout-hourly",
+      "schedule": "37 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_engine_deploy_truth_watch"],
+      "command_hash": "9cac53d67297357f1db7c839c2cc3994",
+      "id": 212,
+      "name": "ca-engine-deploy-truth-1m",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_duel_pairing_scan"],
+      "command_hash": "a77449e16c8f34a2ddd88f6a656a5ae3",
+      "id": 213,
+      "name": "ca-duel-pairing-daily",
+      "schedule": "35 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_ratchet_watch"],
+      "command_hash": "763c2a61b94d3dfa6c21c3337d703993",
+      "id": 214,
+      "name": "ca-ratchet-watch-hourly",
+      "schedule": "35 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_tournament_conservation_confirm"],
+      "command_hash": "547b44d072488dfc9c276e1aea72772a",
+      "id": 216,
+      "name": "ca-tournament-conservation-10m",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_redrive_unbanked_rake"],
+      "command_hash": "747567d4d7a546e9ae53c3e8bfa97935",
+      "id": 217,
+      "name": "ca-redrive-unbanked-rake-15m",
+      "schedule": "7,22,37,52 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "e38f7c2e79de47684c5bd67ff44421ba",
+      "id": 218,
+      "name": "sp-prune-hand-discards",
+      "schedule": "7,37 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_run_due_managed_game_schedules"],
+      "command_hash": "4afcc4a42c8a2fedc96802f446687357",
+      "id": 223,
+      "name": "managed-game-schedules-minute",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_prune_game_management_events"],
+      "command_hash": "9c3f0d91e001defece31b6fc7bdbed58",
+      "id": 224,
+      "name": "game-management-events-retention",
+      "schedule": "17 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_backpay_unfinalised_bounty_pools"],
+      "command_hash": "97aa3fc3a2060760482241f120b6bd27",
+      "id": 225,
+      "name": "ca-bounty-backpay-hourly",
+      "schedule": "12 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_escalate_reconcile_criticals"],
+      "command_hash": "634c96aa2cfa18d5de41426223b465d4",
+      "id": 226,
+      "name": "ca-escalate-reconcile-criticals-hourly",
+      "schedule": "52 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_detect_results_without_a_hand"],
+      "command_hash": "25b16c53f7780534fdd348eeaad3ec98",
+      "id": 230,
+      "name": "ca-results-without-a-hand-6h",
+      "schedule": "46 */6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_pay_backed_payout_shortfalls"],
+      "command_hash": "d6fa2741f871baa9196876c39a59a1ce",
+      "id": 231,
+      "name": "ca-pay-backed-payout-shortfalls-hourly",
+      "schedule": "26 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_uncollected_entry_check"],
+      "command_hash": "6b6b91165286407fec67910cb04fd897",
+      "id": 232,
+      "name": "ca-uncollected-entry-check-hourly",
+      "schedule": "47 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_conservation_sweep"],
+      "command_hash": "26976d5fd9ae07f91668a55bfc8d5594",
+      "id": 233,
+      "name": "ca-conservation-sweep-hourly",
+      "schedule": "52 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_orphaned_checks_watch"],
+      "command_hash": "1c1280967a94b03380939b4d039771e4",
+      "id": 234,
+      "name": "ca-orphaned-checks-daily",
+      "schedule": "18 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_trial_balance_watch"],
+      "command_hash": "0dbad04a246b23ae86ce901b10031914",
+      "id": 235,
+      "name": "ca-trial-balance-hourly",
+      "schedule": "20 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_diamond_trial_balance_watch"],
+      "command_hash": "46c11d966eedac387cbfb230d8be0ac3",
+      "id": 247,
+      "name": "ca-diamond-trial-balance-hourly",
+      "schedule": "20 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_capture_freeze_mark"],
+      "command_hash": "3bfdadb8b3f80a9bff70ef96cc74c78b",
+      "id": 242,
+      "name": "ca-freeze-mark-pre",
+      "schedule": "55 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_capture_freeze_mark"],
+      "command_hash": "79ed3d78fceade183bbdb8c136034eca",
+      "id": 243,
+      "name": "ca-freeze-mark-post",
+      "schedule": "0 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_record_break_scorecard"],
+      "command_hash": "71a33e1b5c30aa1ff3fc9a65cef848bb",
+      "id": 244,
+      "name": "ca-break-scorecard",
+      "schedule": "12 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_deploy_dispatch_tick"],
+      "command_hash": "374f82ac17b9d63109cb2e9f08de7e2d",
+      "id": 245,
+      "name": "ca-deploy-dispatch",
+      "schedule": "41 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_prune_deploy_run_markers"],
+      "command_hash": "e0e5c788f1324260a7e5515f668024ec",
+      "id": 246,
+      "name": "ca-deploy-run-marker-prune",
+      "schedule": "23 4 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_payout_guarantee_check", "fn_resolve_settled_financial_alerts"],
+      "command_hash": "b9391fb1d408dd7b19a2eb5dadba287b",
+      "id": 227,
+      "name": "ca-payout-guarantee-check-hourly",
+      "schedule": "18 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_escrow_balance_drift"],
+      "command_hash": "b7f0cddd57155ca9cd2290e2a1c38b9b",
+      "id": 236,
+      "name": "ca-escrow-shadow-hourly",
+      "schedule": "35 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_rake_repair_unbanked"],
+      "command_hash": "936e41c13155e1b4a3d446e39310f15c",
+      "id": 268,
+      "name": "rake-repair-unbanked-hourly",
+      "schedule": "2,17,32,47 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_attribute_union_rake"],
+      "command_hash": "5ba08b7f1471f751085341dee86cf997",
+      "id": 254,
+      "name": "ca-union-rake-attribution-hourly",
+      "schedule": "20 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_ledger_replay", "fn_ca_currency_meter"],
+      "command_hash": "12b1a4fb66380fb2d6e9b80d55bed439",
+      "id": 286,
+      "name": "ca-ledger-replay-nightly",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_cash_pot_conservation_check"],
+      "command_hash": "72b3dc33b68f7354a0282c676315bc84",
+      "id": 259,
+      "name": "ca-cash-pot-conservation-hourly",
+      "schedule": "34 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_rake_law_check"],
+      "command_hash": "be2c658122cfdc472fa0e457db949c5e",
+      "id": 261,
+      "name": "rake-law-wide-daily",
+      "schedule": "50 7 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_diamond_rule_flip_due"],
+      "command_hash": "63c41a8f81c8e14e97377bcbcd336ea6",
+      "id": 336,
+      "name": "ca-diamond-rule-flip-daily",
+      "schedule": "50 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "b3e2c5167860528042acbd53ac36d56e",
+      "id": 263,
+      "name": "ca-stats-witness-audit-15m",
+      "schedule": "9,24,39,54 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_horse_claim_due"],
+      "command_hash": "d3dd3c3b0f09437dee12da65511f4a56",
+      "id": 346,
+      "name": "ca-horse-claim-due-minute",
+      "schedule": "* * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "3200e3f53699753143a9da830ca1f1fa",
+      "id": 266,
+      "name": "sp_prune_ca_settlements_10m",
+      "schedule": "7,17,27,37,47 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_reconcile_club_member_daily_profit"],
+      "command_hash": "28593afe24255d48ead28bc43ed4d843",
+      "id": 273,
+      "name": "reconcile-club-member-daily-profit",
+      "schedule": "35 0 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_tournament_money_conservation"],
+      "command_hash": "29e154ce84bd0dd84e5297b45a41c157",
+      "id": 274,
+      "name": "tourney_money_conservation_deep_daily",
+      "schedule": "25 3 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_tournament_payout_sweep"],
+      "command_hash": "72257231d07aee6d43b6031b604ddb2e",
+      "id": 275,
+      "name": "tourney_payout_sweep_detect_daily",
+      "schedule": "40 2 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_tournament_payout_sweep"],
+      "command_hash": "9a7d0c453f3ba873c579eadf60222e6c",
+      "id": 276,
+      "name": "ca-payout-sweep-hourly",
+      "schedule": "52 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_resolve_settled_prize_alerts"],
+      "command_hash": "1e551eda2ff5eea1a5ab8e26093d88aa",
+      "id": 278,
+      "name": "sp_resolve_settled_prize_alerts_15m",
+      "schedule": "9,24,39 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_prune_ca_hand_facts"],
+      "command_hash": "61d51bffe3eb5e1b94b35fb1516f1f82",
+      "id": 279,
+      "name": "prune-ca-hand-facts",
+      "schedule": "17 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": [],
+      "command_hash": "6d0a08bd81614a68372b4c2d3f94d9bb",
+      "id": 280,
+      "name": "cron-history-retention-daily",
+      "schedule": "35 6 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_drain_daily_mission_reset_notifications"],
+      "command_hash": "9780380abab00d66fadd4171dca784da",
+      "id": 290,
+      "name": "daily-missions-reset-alerts-0002-utc",
+      "schedule": "2 0 * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_bbj_notify_thresholds"],
+      "command_hash": "52fd75e45c06d4563e9f446989a4f53a",
+      "id": 301,
+      "name": "ca-bbj-threshold-notify-5m",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_rakeback_recompute_all_clubs"],
+      "command_hash": "b1ee2410251e8cb897ddaa37b58f2056",
+      "id": 271,
+      "name": "union-weekly-rakeback-recompute",
+      "schedule": "45 6,7 * * 1"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_ca_tournament_finished_but_not_completed"],
+      "command_hash": "d9406f84ace57e98d2e6ffe5c8713297",
+      "id": 304,
+      "name": "ca-tournament-finished-not-completed-5m",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "active": true,
+      "callee_candidates": ["fn_union_settlement_cascade_due"],
+      "command_hash": "a7ab68713a6d91059011ffb5f885b5c4",
+      "id": 272,
+      "name": "union-weekly-rakeback-close",
+      "schedule": "5,35 * * * *"
+    }
+  ],
+  "observed_at": "2026-09-08T17:23:55.818816+00:00",
+  "triggers": [
+    {
+      "enabled": "O",
+      "function": "trgfn_award_follow",
+      "relation": "social_follows",
+      "schema": "public",
+      "trigger": "trg_award_follow"
+    },
+    {
+      "enabled": "O",
+      "function": "trgfn_award_strategy_comment",
+      "relation": "social_comments",
+      "schema": "public",
+      "trigger": "trg_award_strategy_comment"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_post_comment",
+      "relation": "social_comments",
+      "schema": "public",
+      "trigger": "trg_notify_post_comment"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_post_comment_count",
+      "relation": "social_comments",
+      "schema": "public",
+      "trigger": "trig_update_post_comment_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_reel_comment_count",
+      "relation": "social_comments",
+      "schema": "public",
+      "trigger": "trig_update_reel_comment_count"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_comment_post_id",
+      "relation": "social_comments",
+      "schema": "public",
+      "trigger": "validate_post_id_before_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_comment_post_id",
+      "relation": "social_comments",
+      "schema": "public",
+      "trigger": "validate_post_id_before_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "rakeback_daily_user",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_scrape_provenance",
+      "relation": "poker_tour_series_events",
+      "schema": "public",
+      "trigger": "ensure_provenance_ptse"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_scrape_provenance",
+      "relation": "charity_events_schedule",
+      "schema": "public",
+      "trigger": "ensure_provenance_ces"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_live_streams_guard_update",
+      "relation": "live_streams",
+      "schema": "public",
+      "trigger": "trg_live_streams_guard_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "rakeback_daily_state",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_ban_appeals",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_serialize_entry_statement",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "aa_serialize_tournament_player_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_lock_tournament_player_launch_proof",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "aa_tournament_player_launch_proof_lock"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_seed_bounty_head",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "seed_bounty_head"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournament_place_collision",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "tournament_place_collision_watch"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournament_player_name",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "tournament_player_name"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "tournament_roster_cannot_orphan_live_seat"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "tournament_roster_update_cannot_orphan_live_seat"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_tournament_entry_gate",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_ca_tournament_entry_gate"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_daily_missions_tournament_registered_updated",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_daily_missions_tournament_registered"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_daily_missions_tournament_registered_inserted",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_daily_missions_tournament_registered_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_booking_game_cap",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_enforce_booking_game_cap"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_tournament_capacity",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_enforce_tournament_capacity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_reentry_with_pending_bounty",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_refuse_reentry_with_pending_bounty"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_zero_chip_field_elimination",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_refuse_zero_chip_field_elimination"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_tournament_current_players",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_sync_tournament_current_players"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_tournament_players_human_user_club_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_stamp_entry_club",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "trg_tournament_players_stamp_club"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_new_entries_while_frozen",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "zz_freeze_entry_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_refuse_restricted_entry",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "zz_restriction_tourney_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_batched_tournament_result",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "zzzz_freeze_batched_tournament_result"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_refuse_finalized_tournament_entry",
+      "relation": "tournament_players",
+      "schema": "public",
+      "trigger": "zzzz_refuse_finalized_tournament_entry"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_home_post_likes_count",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_home_post_likes_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_home_post_likes_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_post_like",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_notify_home_post_like"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_post_likes",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_post_comments_integrity",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_enforce_home_post_comments_integrity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_trg_bump_activity_via_post",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_hg_bump_on_comment"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_home_post_comments_count",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_home_post_comments_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_home_post_comments_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_post_comment",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_notify_home_post_comment"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_rate_limit_comments",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_rate_limit_home_comments"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_post_comments",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_poll_field_permissions",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_enforce_home_poll_field_permissions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_polls_lifecycle",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_enforce_home_polls_lifecycle"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_home_polls_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_polls",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "poker_arena_union_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_club_enters_union_empty",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_club_enters_a_union_empty"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_recompute_union_level_on_club_change",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_recompute_union_level_on_club_change"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_access_event",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_union_clubs_emit_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_access_event",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_union_clubs_reassignment_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_club_union_mirror",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_union_clubs_sync_mirror"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_union_membership_table_counts",
+      "relation": "union_clubs",
+      "schema": "public",
+      "trigger": "trg_union_clubs_sync_table_counts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_poll_vote_integrity",
+      "relation": "commander_home_poll_votes",
+      "schema": "public",
+      "trigger": "trg_enforce_home_poll_vote_integrity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_poll_votes",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_poll_votes",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_poll_votes",
+      "schema": "public",
+      "trigger": "trg_home_poll_votes_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_poll_votes",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_poll_votes",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "generate_club_codes",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "home_group_codes_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "auto_add_group_owner",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "home_group_owner_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_autocreate_home_group_social_page",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_autocreate_home_group_social_page"
+    },
+    {
+      "enabled": "O",
+      "function": "autogeocode_home_group",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_autogeocode_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_cleanup_home_group_polymorphic_refs",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_cleanup_home_group_polymorphic_refs"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_create_home_group_conversation",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_create_home_group_conversation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_group_activity_and_views",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_enforce_home_group_activity_and_views"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_group_field_permissions",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_enforce_home_group_field_permissions"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_home_group_logo_on_insert",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_enforce_home_group_logo"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_group_stat_lockdown",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_enforce_home_group_stat_lockdown"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_enforce_quotas_on_write",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_hg_enforce_quotas"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_group_refresh_geog",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_home_group_location_geog"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_group_refresh_search_vector",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_home_group_search_vector"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_group_self_activity_bump",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_home_group_self_activity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "protect_home_group_owner_id",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_protect_home_group_owner_id"
+    },
+    {
+      "enabled": "O",
+      "function": "sync_home_group_to_social_page",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_sync_home_group_to_social_page"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_group_timezone",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_validate_home_group_timezone"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_url_fields",
+      "relation": "commander_home_groups",
+      "schema": "public",
+      "trigger": "trg_validate_home_url_fields"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_test_account_audit_archive",
+      "relation": "ca_test_account_audit_archive",
+      "schema": "public",
+      "trigger": "trg_ca_test_account_audit_archive_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_enforce_quotas_on_write",
+      "relation": "commander_home_invite_tokens",
+      "schema": "public",
+      "trigger": "trg_hg_enforce_quotas"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_invite_tokens",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_invite_tokens",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_audit_privileged_write",
+      "relation": "commander_home_invite_tokens",
+      "schema": "public",
+      "trigger": "trg_home_invite_tokens_audit"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_invite_tokens",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_rate_limit_invites",
+      "relation": "commander_home_invite_tokens",
+      "schema": "public",
+      "trigger": "trg_rate_limit_home_invites"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_restatement_is_append_only",
+      "relation": "ca_ledger_day_manifest_restatements",
+      "schema": "public",
+      "trigger": "zz_ca_restatement_is_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_rake_settlement",
+      "relation": "tournament_rake_settlements",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_rake_settlement"
+    },
+    {
+      "enabled": "O",
+      "function": "guard_wallet_balance_write",
+      "relation": "wallets",
+      "schema": "public",
+      "trigger": "trg_guard_wallets_balance_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "guard_wallet_balance_write",
+      "relation": "wallets",
+      "schema": "public",
+      "trigger": "trg_guard_wallets_balance_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_record_frozen_pool_deletion",
+      "relation": "wallets",
+      "schema": "public",
+      "trigger": "zz_ca_record_frozen_pool_deletion"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "wallets",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_profile_total_hands",
+      "relation": "player_stats",
+      "schema": "public",
+      "trigger": "trg_sync_profile_total_hands"
+    },
+    {
+      "enabled": "O",
+      "function": "update_player_stats_from_session",
+      "relation": "commander_player_sessions",
+      "schema": "public",
+      "trigger": "player_stats_session_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "auto_calculate_session_comps",
+      "relation": "commander_player_sessions",
+      "schema": "public",
+      "trigger": "session_comps_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "calculate_session_duration",
+      "relation": "commander_player_sessions",
+      "schema": "public",
+      "trigger": "session_duration_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "update_home_group_member_count",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "home_member_count_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_add_member_to_group_conversation",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_add_member_to_group_conversation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_home_member_ban_evasion",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_block_home_member_ban_evasion"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_member_field_permissions",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_enforce_home_member_field_permissions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_members_delete",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_enforce_home_members_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_members_self_insert",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_enforce_home_members_self_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_trg_bump_activity",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_hg_bump_on_member"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_clear_ineligible_member_rsvps",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_hg_clear_ineligible_member_rsvps"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_members_bump_activity",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_home_members_bump_activity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_friends_of_home_join",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_notify_friends_of_home_join"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_member_status",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_notify_home_member_status"
+    },
+    {
+      "enabled": "O",
+      "function": "protect_home_group_owner_membership",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_protect_home_group_owner_membership_del"
+    },
+    {
+      "enabled": "O",
+      "function": "protect_home_group_owner_membership",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_protect_home_group_owner_membership_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_rate_limit_members",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_rate_limit_home_members"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_remove_member_from_group_conversation",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_remove_member_from_group_conversation"
+    },
+    {
+      "enabled": "O",
+      "function": "verify_home_group_owner_consistency",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_verify_home_group_owner_consistency"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_welcome_new_approved_member",
+      "relation": "commander_home_members",
+      "schema": "public",
+      "trigger": "trg_welcome_new_approved_member"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "agent_commissions",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_agent_commission_rollup_change",
+      "relation": "agent_commissions",
+      "schema": "public",
+      "trigger": "trg_agent_commission_rollup_del"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_agent_commission_rollup_insert",
+      "relation": "agent_commissions",
+      "schema": "public",
+      "trigger": "trg_agent_commission_rollup_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_agent_commission_rollup_change",
+      "relation": "agent_commissions",
+      "schema": "public",
+      "trigger": "trg_agent_commission_rollup_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "agent_commissions",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "promo_vault_inventory",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_home_post_bump_activity",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_bump_activity_on_home_post"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_post_field_permissions",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_enforce_home_post_field_permissions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_posts_edit_integrity",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_enforce_home_posts_edit_integrity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_trg_bump_activity",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_hg_bump_on_post"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_home_posts_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_posts_touch_updated_at",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_home_posts_touch_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_post_created",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_notify_home_post_created"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_rate_limit_posts",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_rate_limit_home_posts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_url_fields",
+      "relation": "commander_home_posts",
+      "schema": "public",
+      "trigger": "trg_validate_home_url_fields"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "club_diamond_wallets",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_delete",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_field_permissions",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_field_permissions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_insert_and_cancel_meta",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_insert_and_cancel_meta"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_lifecycle_transitions",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_lifecycle_transitions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_trg_bump_activity",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_hg_bump_on_game"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_enforce_quotas_on_write",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_hg_enforce_quotas"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_validate_game_scheduled_date",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_hg_validate_game_scheduled_date"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_home_games_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "link_home_game_to_social_page",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_link_home_game_to_social_page"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_game_cancelled",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_notify_home_game_cancelled"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_game_created",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_notify_home_game_created"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_home_game_social_page_link",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_validate_home_game_social_page_link"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_game_timezone",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_validate_home_game_timezone"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_url_fields",
+      "relation": "commander_home_games",
+      "schema": "public",
+      "trigger": "trg_validate_home_url_fields"
+    },
+    {
+      "enabled": "O",
+      "function": "update_live_help_updated_at",
+      "relation": "live_help_conversations",
+      "schema": "public",
+      "trigger": "update_live_help_conversations_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_scrape_provenance",
+      "relation": "tournament_series",
+      "schema": "public",
+      "trigger": "trg_enforce_provenance"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_daily_question_seal_immutable_v1",
+      "relation": "training_daily_question_seals",
+      "schema": "public",
+      "trigger": "training_daily_question_seals_immutable_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_daily_question_seal_validate_v1",
+      "relation": "training_daily_question_seals",
+      "schema": "public",
+      "trigger": "training_daily_question_seals_validate_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_daily_question_seal_immutable_v1",
+      "relation": "training_daily_question_conflicts",
+      "schema": "public",
+      "trigger": "training_daily_question_conflicts_immutable_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_promotion_request_insert",
+      "relation": "commander_home_group_promotion_requests",
+      "schema": "public",
+      "trigger": "trg_enforce_home_promotion_request_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_group_promotion_requests",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity_with_ts",
+      "relation": "commander_home_group_promotion_requests",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_game_table_identity_immutable",
+      "relation": "commander_home_game_tables",
+      "schema": "public",
+      "trigger": "trg_enforce_game_table_identity_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_game_table_immutability",
+      "relation": "commander_home_game_tables",
+      "schema": "public",
+      "trigger": "trg_enforce_game_table_immutability"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_game_tables",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_game_tables",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_protect_default_table",
+      "relation": "commander_home_game_tables",
+      "schema": "public",
+      "trigger": "trg_protect_default_table"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_touch_updated_at",
+      "relation": "commander_home_game_tables",
+      "schema": "public",
+      "trigger": "trg_touch_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_batched_tournament_place",
+      "relation": "tournament_obligations",
+      "schema": "public",
+      "trigger": "zzzz_freeze_batched_tournament_place"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_atomic_final_table_deal_obligation",
+      "relation": "tournament_obligations",
+      "schema": "public",
+      "trigger": "zzzzz_freeze_atomic_final_table_deal_obligation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_bump_group_activity_on_reservation",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_bump_group_activity_on_reservation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_seat_reservation_deadline",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_enforce_seat_reservation_deadline"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_seat_reservation_immutability",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_enforce_seat_reservation_immutability"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_bump_group_activity_on_reservation",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_hg_bump_on_reservation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_touch_updated_at",
+      "relation": "commander_home_seat_reservations",
+      "schema": "public",
+      "trigger": "trg_touch_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_direct_home_seat_update",
+      "relation": "commander_home_seats",
+      "schema": "public",
+      "trigger": "trg_block_direct_home_seat_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_audit_privileged_write",
+      "relation": "commander_home_seats",
+      "schema": "public",
+      "trigger": "trg_home_seats_audit"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "settlement_periods",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "zz_closed_period_is_immutable",
+      "relation": "settlement_periods",
+      "schema": "public",
+      "trigger": "zz_closed_period_is_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_catalog_history",
+      "relation": "diamond_reward_catalog",
+      "schema": "public",
+      "trigger": "trg_ca_diamond_reward_catalog_history"
+    },
+    {
+      "enabled": "O",
+      "function": "set_subscription_tier_features",
+      "relation": "commander_subscriptions",
+      "schema": "public",
+      "trigger": "set_tier_features_on_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "set_subscription_tier_features",
+      "relation": "commander_subscriptions",
+      "schema": "public",
+      "trigger": "set_tier_features_on_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_game_contract_version",
+      "relation": "managed_game_contract_versions",
+      "schema": "public",
+      "trigger": "trg_managed_game_contract_version_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_require_solver_write_provenance",
+      "relation": "solved_spots_gold",
+      "schema": "public",
+      "trigger": "solved_spots_gold_require_provenance"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_pending_family_tg",
+      "relation": "solved_spots_gold",
+      "schema": "public",
+      "trigger": "sp_pending_family_del"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_pending_family_tg",
+      "relation": "solved_spots_gold",
+      "schema": "public",
+      "trigger": "sp_pending_family_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_pending_family_tg",
+      "relation": "solved_spots_gold",
+      "schema": "public",
+      "trigger": "sp_pending_family_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_solver_artifact_catalog_sync_v1",
+      "relation": "solved_spots_gold",
+      "schema": "public",
+      "trigger": "training_solver_artifact_catalog_sync_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_sync_matrix",
+      "relation": "solved_spots_gold",
+      "schema": "public",
+      "trigger": "trg_sp_sync_matrix"
+    },
+    {
+      "enabled": "O",
+      "function": "update_preferences_timestamp",
+      "relation": "commander_player_preferences",
+      "schema": "public",
+      "trigger": "preferences_timestamp_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_templates_integrity",
+      "relation": "commander_home_game_templates",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_templates_integrity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_game_templates",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_game_templates",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_game_templates",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_audit_privileged_write",
+      "relation": "commander_home_game_templates",
+      "schema": "public",
+      "trigger": "trg_home_templates_audit"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "ca_club_commission_daily",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_reviews_edit_integrity",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_reviews_edit_integrity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_game_reviews_bump_activity",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_home_game_reviews_bump_activity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_home_game_reviews_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_game_reviews_touch_updated_at",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_home_game_reviews_touch_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_game_reviews",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_closing_position_is_immutable",
+      "relation": "ca_epoch_closing_positions",
+      "schema": "public",
+      "trigger": "trg_ca_closing_position_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_warn_promotion_has_no_payout_path",
+      "relation": "promotions",
+      "schema": "public",
+      "trigger": "trg_promotion_prize_has_no_payout_path"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_group_follow_immutability",
+      "relation": "commander_home_group_follows",
+      "schema": "public",
+      "trigger": "trg_enforce_home_group_follow_immutability"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_group_follows_immutability",
+      "relation": "commander_home_group_follows",
+      "schema": "public",
+      "trigger": "trg_enforce_home_group_follows_immutability"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_group_follows",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_group_follows",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_group_follows",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_user_delete",
+      "relation": "rake_attributions",
+      "schema": "public",
+      "trigger": "trg_ca_club_rake_daily_user_del"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_user_insert",
+      "relation": "rake_attributions",
+      "schema": "public",
+      "trigger": "trg_ca_club_rake_daily_user_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_user_change",
+      "relation": "rake_attributions",
+      "schema": "public",
+      "trigger": "trg_ca_club_rake_daily_user_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "union_wallets",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "union_wallets",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_block_browser_money_table",
+      "relation": "union_wallets",
+      "schema": "public",
+      "trigger": "trg_ca_block_browser"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_incidents_stay_in_midway",
+      "relation": "ca_drift_incidents",
+      "schema": "public",
+      "trigger": "trg_ca_incidents_stay_in_midway"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_resolution_needs_a_cause",
+      "relation": "ca_drift_incidents",
+      "schema": "public",
+      "trigger": "trg_ca_resolution_needs_a_cause"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_incident_resolution_reaches_the_alerts",
+      "relation": "ca_drift_incidents",
+      "schema": "public",
+      "trigger": "zz_ca_incident_resolution_reaches_the_alerts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_incident_events_append_only",
+      "relation": "ca_incident_events",
+      "schema": "public",
+      "trigger": "trg_ca_incident_events_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_manifest_is_restated_not_edited",
+      "relation": "ca_ledger_day_manifests",
+      "schema": "public",
+      "trigger": "zz_ca_manifest_is_restated_not_edited"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_hand_notes_touch",
+      "relation": "ca_hand_notes",
+      "schema": "public",
+      "trigger": "trg_ca_hand_notes_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_manager_wake_for_settled_bounty",
+      "relation": "tournament_bounty_obligations",
+      "schema": "public",
+      "trigger": "trg_emit_manager_wake_for_settled_bounty"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ack_bounty_obligation_from_award",
+      "relation": "tournament_bounty_awards",
+      "schema": "public",
+      "trigger": "trg_ack_bounty_obligation_from_award"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_attach_bounty_award_obligation",
+      "relation": "tournament_bounty_awards",
+      "schema": "public",
+      "trigger": "trg_attach_bounty_award_obligation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_assert_bounty_award_has_recipients",
+      "relation": "tournament_bounty_awards",
+      "schema": "public",
+      "trigger": "trg_bounty_award_has_recipients"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "agent_commission_settlements",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "update_home_game_rsvp_counts",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "home_rsvp_count_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_auto_promote_waitlist",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_auto_promote_waitlist"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_rsvp_field_permissions",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_enforce_home_rsvp_field_permissions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_rsvp_deadline",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_enforce_rsvp_deadline"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_trg_bump_activity_via_game",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_hg_bump_on_rsvp"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_enforce_rsvp_capacity",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_hg_enforce_rsvp_capacity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_enforce_rsvp_membership_state",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_hg_enforce_rsvp_membership_state"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity_with_ts",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_rsvps_bump_activity",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_home_rsvps_bump_activity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_home_rsvps_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_home_rsvp",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_notify_home_rsvp"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_rate_limit_rsvps",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_rate_limit_home_rsvps"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_track_flake_strike",
+      "relation": "commander_home_rsvps",
+      "schema": "public",
+      "trigger": "trg_track_flake_strike"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_bridge_rate_history",
+      "relation": "ca_bridge_rate",
+      "schema": "public",
+      "trigger": "trg_ca_bridge_rate_history"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_content_report_insert",
+      "relation": "commander_home_content_reports",
+      "schema": "public",
+      "trigger": "trg_enforce_home_content_report_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_content_reports",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_auto_hide_on_report_threshold",
+      "relation": "commander_home_content_reports",
+      "schema": "public",
+      "trigger": "trg_home_auto_hide_on_report_threshold"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_content_reports",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_content_reports",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "trgfn_award_share_content",
+      "relation": "share_events",
+      "schema": "public",
+      "trigger": "trg_award_share_content"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_finish_hand_post_commit_obligations",
+      "relation": "hand_projection_outbox",
+      "schema": "public",
+      "trigger": "a0_finish_hand_post_commit_obligations"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_catalog_history",
+      "relation": "daily_challenge_catalog",
+      "schema": "public",
+      "trigger": "trg_ca_daily_challenge_catalog_history"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_home_game_vouch_count",
+      "relation": "home_game_vouches",
+      "schema": "public",
+      "trigger": "trg_sync_home_game_vouch_count"
+    },
+    {
+      "enabled": "O",
+      "function": "update_updated_at_column",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "club_members_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "lock_club_cashier_hierarchy_mutation",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "lock_cashier_hierarchy_insert_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "lock_club_cashier_hierarchy_mutation",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "lock_cashier_hierarchy_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "poker_arena_membership_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_admin_holds_no_player_wallet",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_admin_holds_no_player_wallet"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_membership_approval_gate",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_approval_gate_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_membership_approval_gate",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_approval_gate_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_entry_mutation",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_audit_club_join"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_member_change",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_audit_club_member_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_member_change",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_audit_club_member_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_browser_balance_inserts",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_block_browser_balance_inserts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_browser_balance_writes",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_block_browser_balance_writes"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_member_notes_guard",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_member_notes_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_members_ledger_writer",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_audit_chip_movement"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_members_bot_follows_horse",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_bot_follows_horse"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_access_event",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_emit_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_membership_lifecycle_write",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_guard_lifecycle_write"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_human_user_club_only"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_auto_recompute_club_level",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_level_sync"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_members_no_agent_cycle",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_no_agent_cycle_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_members_no_agent_cycle",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_no_agent_cycle_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_explicit_club_membership_source",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_require_explicit_join"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_members_role_guard",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_role_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_members_staff_earn_no_rakeback",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_club_members_staff_earn_no_rakeback"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_deep_stack_society_cannot_be_deleted_by_accident",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_deep_stack_members_are_protected"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_four_club_limit",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_four_club_limit_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_four_club_limit",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_four_club_limit_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_membership_starts_with_zero_chips",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_membership_starts_with_zero_chips"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_recompute_club_level_on_member_change",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_recompute_club_level_on_member_change"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_agent_player_counts",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_sync_agent_player_counts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_club_member_count",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_sync_club_member_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_mfa_required_on_club_role",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "trg_sync_mfa_required_on_club_role"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "club_members",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "auto_audit_log",
+      "relation": "venue_daily_tournaments",
+      "schema": "public",
+      "trigger": "trg_auto_audit"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_vdt_scrape_provenance_truth",
+      "relation": "venue_daily_tournaments",
+      "schema": "public",
+      "trigger": "trg_enforce_scrape_provenance_tournaments"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_wheel_append_only",
+      "relation": "wheel_config_history",
+      "schema": "public",
+      "trigger": "trg_wheel_config_history_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_wheel_append_only",
+      "relation": "wheel_spins",
+      "schema": "public",
+      "trigger": "trg_wheel_spins_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "calculate_streak_multiplier",
+      "relation": "user_progress",
+      "schema": "public",
+      "trigger": "trigger_streak_multiplier"
+    },
+    {
+      "enabled": "O",
+      "function": "update_user_progress_timestamp",
+      "relation": "user_progress",
+      "schema": "public",
+      "trigger": "trigger_user_progress_updated"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_wheel_pool_seed",
+      "relation": "wheel_pools",
+      "schema": "public",
+      "trigger": "trg_wheel_pool_seed"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_wheel_config_history",
+      "relation": "wheel_configs",
+      "schema": "public",
+      "trigger": "trg_wheel_config_history"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_photos_is_featured",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_photos_is_featured"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_game_photos_is_featured_on_insert",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_enforce_home_game_photos_is_featured_on_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_hg_require_onboarded_on_write",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_hg_require_onboarded"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_force_insert_origin_ts",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_home_force_insert_origin_ts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_identity_fields",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_home_game_photos_protect_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_home_protect_row_identity",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_home_protect_row_identity"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_require_active_home_group",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_require_active_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_url_fields",
+      "relation": "commander_home_game_photos",
+      "schema": "public",
+      "trigger": "trg_validate_home_url_fields"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_achievement_unlocked",
+      "relation": "training_user_achievements",
+      "schema": "public",
+      "trigger": "trg_notify_achievement_unlocked"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_cache_stamp_row",
+      "relation": "training_question_cache",
+      "schema": "public",
+      "trigger": "training_question_cache_truth_stamp"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_cache_mark_contract_dirty",
+      "relation": "training_question_cache",
+      "schema": "public",
+      "trigger": "zy_training_question_cache_contract_dirty"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_cache_reject_invalid_write",
+      "relation": "training_question_cache",
+      "schema": "public",
+      "trigger": "zz_training_question_cache_truth_reject"
+    },
+    {
+      "enabled": "O",
+      "function": "trgfn_award_reaction_like",
+      "relation": "social_likes",
+      "schema": "public",
+      "trigger": "trg_award_reaction_like"
+    },
+    {
+      "enabled": "O",
+      "function": "trig_sync_like_count",
+      "relation": "social_likes",
+      "schema": "public",
+      "trigger": "trg_sync_like_count"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_like_post_id",
+      "relation": "social_likes",
+      "schema": "public",
+      "trigger": "validate_like_post_id_before_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_like_post_id",
+      "relation": "social_likes",
+      "schema": "public",
+      "trigger": "validate_like_post_id_before_update"
+    },
+    {
+      "enabled": "O",
+      "function": "poker_news_search_update",
+      "relation": "poker_news",
+      "schema": "public",
+      "trigger": "poker_news_search_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "update_poker_news_updated_at",
+      "relation": "poker_news",
+      "schema": "public",
+      "trigger": "poker_news_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_user_storage_quota",
+      "relation": "social_media",
+      "schema": "public",
+      "trigger": "trig_update_storage_quota"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_media_post_id",
+      "relation": "social_media",
+      "schema": "public",
+      "trigger": "validate_social_media_post_id_before_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_media_post_id",
+      "relation": "social_media",
+      "schema": "public",
+      "trigger": "validate_social_media_post_id_before_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_managed_command_event",
+      "relation": "managed_game_command_receipts",
+      "schema": "public",
+      "trigger": "trg_managed_command_emit_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_game_command_receipt",
+      "relation": "managed_game_command_receipts",
+      "schema": "public",
+      "trigger": "trg_managed_game_command_receipt_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "update_updated_at",
+      "relation": "god_mode_user_session",
+      "schema": "public",
+      "trigger": "god_mode_session_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_game_management_event",
+      "relation": "game_management_events",
+      "schema": "public",
+      "trigger": "trg_game_management_events_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "generate_referral_code",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "tr_generate_referral_code"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_a_benched_horse_stays_benched",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_a_benched_horse_stays_benched"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_diamond_balance_mirrors_canonical",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_aa_diamond_balance_mirrors_canonical"
+    },
+    {
+      "enabled": "O",
+      "function": "auto_connect_to_dan_bekavac",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_auto_connect_dan"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_profile_deletion",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_ca_profile_deletion_journal"
+    },
+    {
+      "enabled": "O",
+      "function": "bump_daily_challenge_dashboard_revision",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_daily_challenge_revision_from_diamonds"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_diamond_side_tables_follow_profiles",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_diamond_side_tables_follow_profiles"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_horse_avatar",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_guard_horse_avatar"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_profile_privileged_columns",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_guard_profile_privileged_columns"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_mirror_profile_into_legacy_users",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_mirror_profile_into_legacy_users"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_normalize_username",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_normalize_username"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_profiles_assign_player_number",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_profiles_assign_player_number"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_guard_avatar_cosmetics",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_profiles_cosmetics_ownership"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_horse_is_born_social",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_profiles_horse_is_born_social"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_protect_profile_username_and_gate",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_protect_profile_username_and_gate"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_reject_horse_name_on_human",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_reject_horse_name_on_human"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_mfa_required_on_role_change",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_sync_mfa_required_on_role_change"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_home_url_fields",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "trg_validate_home_url_fields"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_audit_diamond_change",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "zz_ca_audit_diamond_change"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_born_with_balance",
+      "relation": "profiles",
+      "schema": "public",
+      "trigger": "zz_ca_diamond_born_with_balance"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_hand_flags_touch",
+      "relation": "ca_hand_flags",
+      "schema": "public",
+      "trigger": "trg_ca_hand_flags_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_merch_set_updated_at",
+      "relation": "merchandise_items",
+      "schema": "public",
+      "trigger": "trg_merchandise_items_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_merch_set_updated_at",
+      "relation": "merchandise_item_variants",
+      "schema": "public",
+      "trigger": "trg_merchandise_item_variants_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_reject_decision_slot_update_v1",
+      "relation": "training_attempt_decision_slots",
+      "schema": "public",
+      "trigger": "training_attempt_decision_slots_immutable_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_reject_delivery_cutover_mutation_v1",
+      "relation": "training_delivery_authority_cutover",
+      "schema": "public",
+      "trigger": "training_delivery_authority_cutover_immutable_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "guard_agent_wallet_direct_update",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "guard_agent_wallet_direct_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_agent_commission_bounds",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_agents_commission_bounds"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_agents_human_user_club_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_agents_staff_earn_no_rakeback",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_agents_staff_earn_no_rakeback"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_deep_stack_society_cannot_be_deleted_by_accident",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_deep_stack_agents_are_protected"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "sync_agent_wallet_columns",
+      "relation": "agents",
+      "schema": "public",
+      "trigger": "trg_sync_agent_wallets"
+    },
+    {
+      "enabled": "O",
+      "function": "update_page_post_count",
+      "relation": "social_page_posts",
+      "schema": "public",
+      "trigger": "trg_page_post_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_page_posts_bump_home_group",
+      "relation": "social_page_posts",
+      "schema": "public",
+      "trigger": "trg_social_page_posts_bump_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "update_page_follower_count",
+      "relation": "social_page_followers",
+      "schema": "public",
+      "trigger": "trg_page_follower_count"
+    },
+    {
+      "enabled": "O",
+      "function": "update_page_post_like_count",
+      "relation": "social_page_post_likes",
+      "schema": "public",
+      "trigger": "trg_page_post_like_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_mention",
+      "relation": "mentions",
+      "schema": "public",
+      "trigger": "trg_notify_mention"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_mentions_post_id",
+      "relation": "mentions",
+      "schema": "public",
+      "trigger": "validate_mentions_post_id_before_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_mentions_post_id",
+      "relation": "mentions",
+      "schema": "public",
+      "trigger": "validate_mentions_post_id_before_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_vip_points_move_only_with_a_leg",
+      "relation": "vip_points",
+      "schema": "public",
+      "trigger": "zz_vip_points_move_only_with_a_leg"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_deliver_card_back_entitlement",
+      "relation": "feature_purchases",
+      "schema": "public",
+      "trigger": "trg_deliver_card_back_entitlement"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_deliver_table_studio_entitlement",
+      "relation": "feature_purchases",
+      "schema": "public",
+      "trigger": "trg_deliver_table_studio_entitlement"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_managed_schedule_event",
+      "relation": "managed_game_schedules",
+      "schema": "public",
+      "trigger": "trg_managed_game_schedules_emit"
+    },
+    {
+      "enabled": "O",
+      "function": "increment_clawbot_run_count",
+      "relation": "clawbot_task_state",
+      "schema": "public",
+      "trigger": "clawbot_run_count_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_reject_delivery_cutover_mutation_v1",
+      "relation": "training_delivery_authority_attestations",
+      "schema": "public",
+      "trigger": "training_delivery_authority_attestations_immutable_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "vip_points_ledger",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "update_updated_at",
+      "relation": "game_registry",
+      "schema": "public",
+      "trigger": "game_registry_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "trgfn_award_daily_trivia",
+      "relation": "daily_trivia_plays",
+      "schema": "public",
+      "trigger": "trg_award_daily_trivia"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_competitive_evidence_mutation",
+      "relation": "trivia_tournament_rounds",
+      "schema": "public",
+      "trigger": "trg_00_guard_quarantined_tournament_round"
+    },
+    {
+      "enabled": "O",
+      "function": "sp_guard_avatar_cosmetics",
+      "relation": "user_avatars",
+      "schema": "public",
+      "trigger": "trg_user_avatars_cosmetics_ownership"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_frozen_baseline_needs_a_reason",
+      "relation": "ca_frozen_pool_baseline",
+      "schema": "public",
+      "trigger": "zz_ca_frozen_baseline_needs_a_reason"
+    },
+    {
+      "enabled": "O",
+      "function": "update_promotion_totals",
+      "relation": "commander_promotion_awards",
+      "schema": "public",
+      "trigger": "promotion_totals_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_reporting_repair_changed_day",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "ca_reporting_rake_change"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_reporting_rake_insert",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "ca_reporting_rake_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_award_vip_points_from_rake",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "trg_award_vip_points_from_rake"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_change",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "trg_ca_club_rake_daily_del"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_insert",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "trg_ca_club_rake_daily_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_change",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "trg_ca_club_rake_daily_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_rake_belongs_to_club",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "trg_guard_rake_belongs_to_club"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tournament_fee_names_its_player",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "trg_tournament_fee_names_its_player"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_rake_record",
+      "relation": "rake_records",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_rake_record"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "rakeback_periods",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_engine_spend_append_only",
+      "relation": "ca_diamond_engine_spend",
+      "schema": "public",
+      "trigger": "zz_engine_spend_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_engine_spend_append_only",
+      "relation": "ca_diamond_engine_spend",
+      "schema": "public",
+      "trigger": "zz_engine_spend_no_truncate"
+    },
+    {
+      "enabled": "O",
+      "function": "autofix_attempts_touch_updated_at",
+      "relation": "autofix_attempts",
+      "schema": "public",
+      "trigger": "autofix_attempts_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_message_field_reassignment",
+      "relation": "social_messages",
+      "schema": "public",
+      "trigger": "trg_block_message_field_reassignment"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_live_invite_notification",
+      "relation": "social_messages",
+      "schema": "public",
+      "trigger": "trg_live_invite_notification"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_conversation_last_message",
+      "relation": "social_messages",
+      "schema": "public",
+      "trigger": "trg_update_conversation_last_message"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_mirror_notification_to_push_outbox",
+      "relation": "notifications",
+      "schema": "public",
+      "trigger": "trg_mirror_notification_to_push_outbox"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notification_fill_action_url",
+      "relation": "notifications",
+      "schema": "public",
+      "trigger": "trg_notification_fill_action_url"
+    },
+    {
+      "enabled": "O",
+      "function": "sync_notification_read_state",
+      "relation": "notifications",
+      "schema": "public",
+      "trigger": "trg_sync_notification_read_state"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_check_club_message_permission",
+      "relation": "messages",
+      "schema": "public",
+      "trigger": "tr_check_club_message_permission"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_scrape_provenance",
+      "relation": "poker_series",
+      "schema": "public",
+      "trigger": "trg_enforce_provenance"
+    },
+    {
+      "enabled": "O",
+      "function": "update_tour_next_check",
+      "relation": "tour_source_registry",
+      "schema": "public",
+      "trigger": "tour_registry_check_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_touch_updated_at",
+      "relation": "commander_streams",
+      "schema": "public",
+      "trigger": "trg_commander_streams_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "update_question_usage",
+      "relation": "trivia_user_question_history",
+      "schema": "public",
+      "trigger": "trigger_update_question_usage"
+    },
+    {
+      "enabled": "O",
+      "function": "update_question_usage",
+      "relation": "trivia_user_question_history",
+      "schema": "public",
+      "trigger": "trigger_update_question_usage_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "touch_chip_escrow_holds",
+      "relation": "chip_escrow_holds",
+      "schema": "public",
+      "trigger": "trg_chip_escrow_holds_updated"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "chip_escrow_holds",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_require_satellite_economics_at_entry_close",
+      "relation": "tournament_entry_close_receipts",
+      "schema": "public",
+      "trigger": "aaa_require_satellite_economics_at_entry_close"
+    },
+    {
+      "enabled": "O",
+      "function": "commander_entries_sync_reentry_marker",
+      "relation": "commander_tournament_entries",
+      "schema": "public",
+      "trigger": "commander_entries_reentry_marker_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "calculate_entry_investment",
+      "relation": "commander_tournament_entries",
+      "schema": "public",
+      "trigger": "entry_investment_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "update_tournament_stats",
+      "relation": "commander_tournament_entries",
+      "schema": "public",
+      "trigger": "tournament_stats_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "update_venue_follower_count",
+      "relation": "commander_venue_followers",
+      "schema": "public",
+      "trigger": "trigger_venue_follower_count"
+    },
+    {
+      "enabled": "O",
+      "function": "update_post_comments_count",
+      "relation": "commander_post_comments",
+      "schema": "public",
+      "trigger": "trigger_post_comments_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "club_wallets",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "club_wallets",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_block_browser_money_table",
+      "relation": "club_wallets",
+      "schema": "public",
+      "trigger": "trg_ca_block_browser"
+    },
+    {
+      "enabled": "O",
+      "function": "touch_club_wallets",
+      "relation": "club_wallets",
+      "schema": "public",
+      "trigger": "trg_club_wallets_updated"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "club_wallets",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_touch_updated_at",
+      "relation": "commander_table_displays",
+      "schema": "public",
+      "trigger": "trg_commander_table_displays_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "club_wallet_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_tour_scrape_provenance",
+      "relation": "tour_stop_events",
+      "schema": "public",
+      "trigger": "enforce_tour_scrape_provenance"
+    },
+    {
+      "enabled": "O",
+      "function": "update_tour_stop_events_updated_at",
+      "relation": "tour_stop_events",
+      "schema": "public",
+      "trigger": "set_tour_stop_events_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "sub_agents",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "touch_sub_agents",
+      "relation": "sub_agents",
+      "schema": "public",
+      "trigger": "trg_sub_agents_updated"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_bbj_ledger_delete_guard",
+      "relation": "bbj_winners",
+      "schema": "public",
+      "trigger": "trg_bbj_winners_delete_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "player_agent_assignments",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_page_reviews_bump_home_group",
+      "relation": "social_page_reviews",
+      "schema": "public",
+      "trigger": "trg_social_page_reviews_bump_home_group"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "rakeback_period_payouts",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "rakeback_period_payouts",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_satellite_economic_snapshot",
+      "relation": "tournament_satellite_economic_snapshots",
+      "schema": "public",
+      "trigger": "zzzz_freeze_satellite_economic_snapshot"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_satellite_entitlement",
+      "relation": "tournament_satellite_entitlements",
+      "schema": "public",
+      "trigger": "zzzz_freeze_satellite_entitlement"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_claim_notification",
+      "relation": "venue_claims",
+      "schema": "public",
+      "trigger": "trg_emit_claim_notification"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_satellite_settlement_batch",
+      "relation": "tournament_satellite_settlement_batches",
+      "schema": "public",
+      "trigger": "zzzz_freeze_satellite_settlement_batch"
+    },
+    {
+      "enabled": "O",
+      "function": "recalculate_waitlist_positions",
+      "relation": "commander_waitlist",
+      "schema": "public",
+      "trigger": "waitlist_position_trigger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_club_announcement_insert",
+      "relation": "commander_club_announcements",
+      "schema": "public",
+      "trigger": "trg_enforce_home_club_announcement_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_home_club_announcement_update",
+      "relation": "commander_club_announcements",
+      "schema": "public",
+      "trigger": "trg_enforce_home_club_announcement_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_reconcile_log_to_incident",
+      "relation": "ledger_reconcile_log",
+      "schema": "public",
+      "trigger": "trg_ca_reconcile_log_incident"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tournament_payouts_are_append_only",
+      "relation": "tournament_payouts",
+      "schema": "public",
+      "trigger": "trg_tournament_payouts_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "zz_a_payout_row_carries_its_key",
+      "relation": "tournament_payouts",
+      "schema": "public",
+      "trigger": "zz_a_payout_row_carries_its_key"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_seat_payout",
+      "relation": "tournament_payouts",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_seat_payout"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "credit_invoices",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_deliver_shop_purchase",
+      "relation": "club_shop_purchases",
+      "schema": "public",
+      "trigger": "trg_deliver_shop_purchase"
+    },
+    {
+      "enabled": "O",
+      "function": "auto_audit_log",
+      "relation": "poker_events",
+      "schema": "public",
+      "trigger": "trg_auto_audit"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_scrape_provenance",
+      "relation": "poker_events",
+      "schema": "public",
+      "trigger": "trg_enforce_provenance"
+    },
+    {
+      "enabled": "O",
+      "function": "update_updated_at_column",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "clubs_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "poker_arena_identity_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_entry_mutation",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_audit_club_created"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_delete",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_audit_club_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_settings_change",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_audit_club_settings"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_autocreate_club_social_page",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_autocreate_club_social_page"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_browser_balance_writes",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_block_browser_treasury_writes"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_club_gets_a_baseline",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_ca_club_gets_a_baseline"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_content_event",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_club_identity_emit_management_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_club_union_access_event",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_club_owner_emit_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_club_owner_has_a_player_wallet",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_club_owner_has_a_player_wallet"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_club_union_access_event",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_club_union_emit_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_club_lifecycle_write",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_clubs_guard_lifecycle_write"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_clubs_lobby_message_keeps_its_own_books",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_clubs_lobby_message_keeps_its_own_books"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_protect_club_level_columns",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_clubs_protect_level_columns"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_delete_club_social_page",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_delete_club_social_page"
+    },
+    {
+      "enabled": "O",
+      "function": "guard_wallet_balance_write",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_guard_clubs_chip_pool_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "guard_wallet_balance_write",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_guard_clubs_chip_pool_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_mark_new_club_opening_checklist",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_mark_new_club_opening_checklist"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_new_club_gets_the_ladder",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_new_club_gets_the_ladder"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_record_new_club_opening_bank",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_record_new_club_opening_bank"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_seed_new_club_opening_bank",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_seed_new_club_opening_bank"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_spin_pool_follows_union_membership",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_spin_pool_follows_union_membership"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_mfa_required_on_club_owner",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_sync_mfa_required_on_club_owner"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_union_totals_follow_club_counts",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "trg_union_totals_follow_club_counts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "clubs",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_validate_shop_theme_preset",
+      "relation": "club_shop_items",
+      "schema": "public",
+      "trigger": "trg_validate_shop_theme_preset"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_authority_snapshot_immutable_v2",
+      "relation": "training_streaks",
+      "schema": "public",
+      "trigger": "training_streaks_authority_snapshot_immutable_v2"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_authority_snapshot_immutable_v2",
+      "relation": "training_progress",
+      "schema": "public",
+      "trigger": "training_progress_authority_snapshot_immutable_v2"
+    },
+    {
+      "enabled": "O",
+      "function": "update_training_progress_timestamp",
+      "relation": "training_progress",
+      "schema": "public",
+      "trigger": "training_progress_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_session_cache_completion",
+      "relation": "training_sessions",
+      "schema": "public",
+      "trigger": "training_session_cache_completion"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_snapshot_immutable_v2",
+      "relation": "training_question_snapshots",
+      "schema": "public",
+      "trigger": "training_question_snapshots_immutable_v2"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "chip_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "chip_transactions",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_operator_move_while_settling",
+      "relation": "chip_transactions",
+      "schema": "public",
+      "trigger": "zz_settlement_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "bbj_pools",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "bbj_pools",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_block_browser_money_table",
+      "relation": "bbj_pools",
+      "schema": "public",
+      "trigger": "trg_ca_block_browser"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "bbj_pools",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_spin_shortfall_funds_the_escrow",
+      "relation": "spin_reserve_ledger",
+      "schema": "public",
+      "trigger": "zz_spin_shortfall_funds_escrow"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_capture_streak_activity_v1",
+      "relation": "training_attempts",
+      "schema": "public",
+      "trigger": "training_attempts_capture_streak_activity_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_user_training_leak_quota",
+      "relation": "user_training_leaks",
+      "schema": "public",
+      "trigger": "user_training_leaks_quota_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_daily_attempt_hand_seal_v1",
+      "relation": "training_attempt_hands",
+      "schema": "public",
+      "trigger": "training_attempt_hands_daily_seal_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_training_attempt_hand_v2",
+      "relation": "training_attempt_hands",
+      "schema": "public",
+      "trigger": "training_attempt_hands_validate_v2"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_answer_cache_event",
+      "relation": "training_answers",
+      "schema": "public",
+      "trigger": "training_answer_cache_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_answer_reject_mutation",
+      "relation": "training_answers",
+      "schema": "public",
+      "trigger": "training_answer_reject_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_lock_answer_attempt_v1",
+      "relation": "training_answers",
+      "schema": "public",
+      "trigger": "training_answers_00_lock_attempt_delivery_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_reject_training_answer_delete_v2",
+      "relation": "training_answers",
+      "schema": "public",
+      "trigger": "training_answers_reject_v2_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_score_training_attempt_hand_v2",
+      "relation": "training_answers",
+      "schema": "public",
+      "trigger": "training_answers_score_hand_v2"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_validate_training_answer_v2",
+      "relation": "training_answers",
+      "schema": "public",
+      "trigger": "training_answers_validate_v2"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_new_union_gets_the_ladder",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_new_union_gets_the_ladder"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_union_creation",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_union_creation_is_allowlisted"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_union_owner_access_event",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_union_owner_emit_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_unions_set_slug",
+      "relation": "unions",
+      "schema": "public",
+      "trigger": "trg_unions_set_slug"
+    },
+    {
+      "enabled": "O",
+      "function": "tup_revert_session",
+      "relation": "jarvis_training_sessions",
+      "schema": "public",
+      "trigger": "tup_after_session_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "tup_apply_session",
+      "relation": "jarvis_training_sessions",
+      "schema": "public",
+      "trigger": "tup_after_session_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_review_helpful_count",
+      "relation": "commander_venue_review_helpful",
+      "schema": "public",
+      "trigger": "trg_sync_review_helpful_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger",
+      "relation": "spin_bonus_pools",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete",
+      "relation": "spin_bonus_pools",
+      "schema": "public",
+      "trigger": "trg_ca_autoledger_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_block_browser_money_table",
+      "relation": "spin_bonus_pools",
+      "schema": "public",
+      "trigger": "trg_ca_block_browser"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "spin_bonus_pools",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_blacklists_audit",
+      "relation": "blacklists",
+      "schema": "public",
+      "trigger": "trg_blacklists_audit"
+    },
+    {
+      "enabled": "O",
+      "function": "update_cache_rating_stats",
+      "relation": "geeves_answer_ratings",
+      "schema": "public",
+      "trigger": "trg_update_cache_rating"
+    },
+    {
+      "enabled": "O",
+      "function": "update_clip_updated_at",
+      "relation": "clip_library",
+      "schema": "public",
+      "trigger": "clip_library_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "trgfn_award_reaction_interaction",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "trg_award_reaction_interaction"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_post_like",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "trg_notify_interaction_like"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_interaction_share",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "trg_notify_interaction_share"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_post_like",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "trg_notify_post_like"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_post_like_count",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "trig_update_post_like_count"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_interaction_post_id",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "validate_interaction_post_id_before_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_social_interaction_post_id",
+      "relation": "social_interactions",
+      "schema": "public",
+      "trigger": "validate_interaction_post_id_before_update"
+    },
+    {
+      "enabled": "O",
+      "function": "update_user_table_settings_timestamp",
+      "relation": "user_table_settings",
+      "schema": "public",
+      "trigger": "trg_user_table_settings_updated"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_bbj_ledger_delete_guard",
+      "relation": "bbj_payouts",
+      "schema": "public",
+      "trigger": "trg_bbj_payouts_delete_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_log_jackpot_payout_without_hand",
+      "relation": "bbj_payouts",
+      "schema": "public",
+      "trigger": "trg_log_jackpot_payout_without_hand"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_bbj_ledger_delete_guard",
+      "relation": "bbj_payout_recipients",
+      "schema": "public",
+      "trigger": "trg_bbj_recipients_delete_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_survival_progress_monotonic",
+      "relation": "survival_progress",
+      "schema": "public",
+      "trigger": "trg_survival_progress_monotonic"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_access_event",
+      "relation": "union_admins",
+      "schema": "public",
+      "trigger": "trg_union_admins_emit_management_access"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "chip_escrow",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_mint_register_append_only",
+      "relation": "ca_mint_ledger",
+      "schema": "public",
+      "trigger": "trg_ca_mint_register_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_commander_staff_hash_pin",
+      "relation": "commander_staff",
+      "schema": "public",
+      "trigger": "trg_commander_staff_hash_pin"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ack_bounty_obligation_from_ledger",
+      "relation": "tournament_bounties",
+      "schema": "public",
+      "trigger": "trg_ack_bounty_obligation_from_ledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_attach_bounty_ledger_obligation",
+      "relation": "tournament_bounties",
+      "schema": "public",
+      "trigger": "trg_attach_bounty_ledger_obligation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_reject_diamond_hierarchy",
+      "relation": "rakeback_distributions",
+      "schema": "public",
+      "trigger": "poker_arena_no_hierarchy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_content_event",
+      "relation": "club_announcements",
+      "schema": "public",
+      "trigger": "trg_announcements_emit_management_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_club_announcement_message",
+      "relation": "club_announcements",
+      "schema": "public",
+      "trigger": "trg_sync_club_announcement_message"
+    },
+    {
+      "enabled": "O",
+      "function": "update_live_help_updated_at",
+      "relation": "live_help_tickets",
+      "schema": "public",
+      "trigger": "update_live_help_tickets_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_agent_on_cashout",
+      "relation": "cashout_requests",
+      "schema": "public",
+      "trigger": "tr_notify_agent_on_cashout"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "cashout_requests",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_user_leak_lifecycle",
+      "relation": "user_leaks",
+      "schema": "public",
+      "trigger": "user_leaks_lifecycle_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_lock_and_validate_tournament_live_seat",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "aa_tournament_live_seat_proof_lock"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_refuse_live_seat_on_closed_tournament_table",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "ab_refuse_live_seat_on_closed_tournament_table"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_guard_chip_seat",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "poker_arena_chip_seat_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "tournament_live_seat_has_active_roster"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "tournament_live_seat_update_has_active_roster"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_arena_seat_is_same_asset",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_ca_arena_seat_is_same_asset"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_guard_seat_creation",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_ca_guard_seat_creation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_cash_game_roster_track",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_cash_game_roster_track"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_clear_sitout_on_turnover",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_clear_sitout_on_turnover"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_four_table_limit",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_enforce_four_table_limit"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_log_seat_stack_exit",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_log_seat_stack_exit"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_new_seat_clear_sitout",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_new_seat_clear_sitout"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_no_live_seat_on_finished_game",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_no_live_seat_on_finished_game"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_blinding_off",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_notify_blinding_off"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_one_live_tournament_seat",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_one_live_seat_per_tournament"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_seat_on_closed_cluster_table",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_refuse_seat_on_closed_cluster_table"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_seat_on_closed_cluster_table",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_refuse_seat_revive_on_closed_cluster_table"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_seat_change_syncs_seat_first_count",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_seat_change_syncs_seat_first_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_seat_insert_cancel_waitlist",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_seat_insert_cancel_waitlist"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_stamp_seat_horse_id",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_stamp_seat_horse_id"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_stamp_sit_out_at",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_stamp_sit_out_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_table_seats_human_user_club_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_stamp_seat_club",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "trg_table_seats_stamp_club"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_new_entries_while_frozen",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "zz_freeze_entry_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_refuse_restricted_entry",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "zz_restriction_seat_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_refuse_restricted_entry",
+      "relation": "table_seats",
+      "schema": "public",
+      "trigger": "zz_restriction_seat_revive_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "update_page_post_comment_count",
+      "relation": "social_page_post_comments",
+      "schema": "public",
+      "trigger": "trg_page_post_comment_count"
+    },
+    {
+      "enabled": "O",
+      "function": "update_updated_at_column",
+      "relation": "table_templates",
+      "schema": "public",
+      "trigger": "table_templates_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_entry_purchase_receipt_is_immutable",
+      "relation": "entry_purchase_idempotency_receipts",
+      "schema": "public",
+      "trigger": "z_entry_purchase_receipt_is_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_venue_provenance",
+      "relation": "poker_venues",
+      "schema": "public",
+      "trigger": "trg_enforce_venue_provenance"
+    },
+    {
+      "enabled": "O",
+      "function": "pnm_bump_venue_directory_revision",
+      "relation": "poker_venues",
+      "schema": "public",
+      "trigger": "trg_pnm_bump_venue_directory_revision"
+    },
+    {
+      "enabled": "O",
+      "function": "pnm_sync_venue_integrity_state",
+      "relation": "poker_venues",
+      "schema": "public",
+      "trigger": "trg_pnm_sync_venue_integrity_state"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_poker_venue_search_vector",
+      "relation": "poker_venues",
+      "schema": "public",
+      "trigger": "trg_update_poker_venue_search_vector"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_fn_venue_claim_wiring",
+      "relation": "poker_venues",
+      "schema": "public",
+      "trigger": "trg_venue_claim_wiring"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_update_messenger_conversation_last_message",
+      "relation": "messenger_messages",
+      "schema": "public",
+      "trigger": "trg_update_messenger_conversation_last_message"
+    },
+    {
+      "enabled": "O",
+      "function": "bump_daily_challenge_dashboard_revision",
+      "relation": "user_daily_challenges",
+      "schema": "public",
+      "trigger": "trg_daily_challenge_revision_from_contract"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_daily_missions_claimed_milestone",
+      "relation": "user_daily_challenges",
+      "schema": "public",
+      "trigger": "trg_daily_missions_claimed_milestone"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_snapshot_daily_challenge_contract",
+      "relation": "user_daily_challenges",
+      "schema": "public",
+      "trigger": "trg_snapshot_daily_challenge_contract_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_snapshot_daily_challenge_contract",
+      "relation": "user_daily_challenges",
+      "schema": "public",
+      "trigger": "trg_snapshot_daily_challenge_contract_update"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_user_theme_settings_entitlement",
+      "relation": "user_theme_settings",
+      "schema": "public",
+      "trigger": "trg_user_theme_settings_entitlement"
+    },
+    {
+      "enabled": "O",
+      "function": "update_user_theme_settings_timestamp",
+      "relation": "user_theme_settings",
+      "schema": "public",
+      "trigger": "trg_user_theme_settings_updated"
+    },
+    {
+      "enabled": "O",
+      "function": "cleanup_expired_deploy_alerts",
+      "relation": "deploy_alerts",
+      "schema": "public",
+      "trigger": "trg_cleanup_expired_deploy_alerts"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_financial_alert_to_incident",
+      "relation": "financial_alerts",
+      "schema": "public",
+      "trigger": "trg_ca_financial_alert_incident"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_alert_resolution_reaches_the_incident",
+      "relation": "financial_alerts",
+      "schema": "public",
+      "trigger": "zz_ca_alert_resolution_reaches_the_incident"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_live_comment_author_name",
+      "relation": "live_comments",
+      "schema": "public",
+      "trigger": "trig_enforce_live_comment_author_name"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournament_launch_receipt_is_immutable",
+      "relation": "tournament_launch_receipts",
+      "schema": "public",
+      "trigger": "tournament_launch_receipt_is_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_promotion_claim_takes_the_promotions_word",
+      "relation": "promotion_claims",
+      "schema": "public",
+      "trigger": "zz_promotion_claim_server_decides"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_credit_request",
+      "relation": "credit_requests",
+      "schema": "public",
+      "trigger": "trg_notify_credit_request"
+    },
+    {
+      "enabled": "O",
+      "function": "handle_tournament_leaderboard_points",
+      "relation": "tournament_registrations",
+      "schema": "public",
+      "trigger": "on_tournament_registration_complete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_dispute",
+      "relation": "disputes",
+      "schema": "public",
+      "trigger": "trg_notify_dispute"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_integrity_case_item_immutable",
+      "relation": "ca_integrity_case_items",
+      "schema": "public",
+      "trigger": "ca_integrity_case_items_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_hand_history_club_member_stats",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "hand_history_club_member_stats"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_fold_hand_winnings",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "hand_history_fold_stats"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_hand_history_position_stats",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "hand_history_position_stats"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_capture_hand_facts",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "trg_ca_capture_hand_facts"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_stats_live_from_hand",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "trg_ca_stats_live_from_hand"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enqueue_hand_daily_missions",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "trg_enqueue_hand_daily_missions"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_log_jackpot_hand_deleted",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "trg_log_jackpot_hand_deleted"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_bomb_hand_keeps_its_award_units",
+      "relation": "hand_history",
+      "schema": "public",
+      "trigger": "zz_ca_bomb_hand_keeps_its_award_units"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_competitive_evidence_mutation",
+      "relation": "trivia_tournament_entries",
+      "schema": "public",
+      "trigger": "trg_00_guard_quarantined_tournament_entry"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_trivia_tournament_sync_player_count",
+      "relation": "trivia_tournament_entries",
+      "schema": "public",
+      "trigger": "trg_trivia_tournament_player_count"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_classify_engine_recovery_event",
+      "relation": "engine_recovery_events",
+      "schema": "public",
+      "trigger": "classify_engine_recovery_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_catalog_history",
+      "relation": "trivia_diamond_award_limits",
+      "schema": "public",
+      "trigger": "trg_ca_trivia_diamond_award_limits_history"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_linked_trivia_session_identity_change",
+      "relation": "trivia_sessions",
+      "schema": "public",
+      "trigger": "trg_prevent_linked_trivia_session_identity_change"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_finalize_trivia_session_stats_v3",
+      "relation": "trivia_sessions",
+      "schema": "public",
+      "trigger": "trg_trivia_session_stats_v3"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournament_table_origin_is_immutable",
+      "relation": "tournament_table_origins",
+      "schema": "public",
+      "trigger": "tournament_table_origin_is_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_validate_tournament_table_origin",
+      "relation": "tournament_table_origins",
+      "schema": "public",
+      "trigger": "tournament_table_origin_is_proven"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_touch_updated_at",
+      "relation": "ca_diamond_rule_modes",
+      "schema": "public",
+      "trigger": "zz_touch_updated_at"
+    },
+    {
+      "enabled": "D",
+      "function": "fn_guard_tournament_completing_claim",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "aa_guard_tournament_completing_claim"
+    },
+    {
+      "enabled": "D",
+      "function": "trg_guard_atomic_satellite_completion",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "aaa_guard_atomic_satellite_completion"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "poker_arena_tournament_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournament_completed_stats",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournament_completed_stats"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_lock_tournament_start_time_during_launch",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournament_start_time_locked_during_launch"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournaments_cancel_must_refund",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_cancel_must_refund"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tournaments_creation_guard",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_creation_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournaments_guarantee_affordable",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_guarantee_affordable_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournaments_guarantee_affordable",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_guarantee_affordable_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournaments_rank_before_complete",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_rank_before_complete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_short_formats_never_break",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_short_formats_never_break"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_spin_completed_guard",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "tournaments_spin_completed_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_clear_seats_on_game_end",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_clear_seats_on_game_end"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_receipt_mystery_activation",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_receipt_mystery_activation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_completed_with_pending_bounties",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_refuse_completed_with_pending_bounties"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_mystery_activation_with_pending_heads",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_refuse_mystery_activation_with_pending_heads"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_release_seats_on_tournament_finish",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_release_seats_on_tournament_finish"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_retire_manager_wakes_after_terminal_status",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_retire_manager_wakes_after_terminal_status"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_capture_managed_game_contract",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_capture_management_contract"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_managed_game_row_event",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_emit_game_management_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_game_delete",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_managed_delete_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_game_lifecycle",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_managed_lifecycle_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_tournament_publish_readiness",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_publish_readiness"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tournaments_refuse_unbuilt_multi_day",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_refuse_unbuilt_multi_day"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_registered_tournament_contract",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_registered_contract_lock"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_tournament_start_readiness",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_start_readiness"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_stamp_tournament_union_ownership",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_union_ownership"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_tournament_union_ownership_update",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_tournaments_union_ownership_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_whole_dollar_buyin",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "trg_whole_dollar_buyin"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_close",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_close"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_fund_overlay_on_lock",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zz_ca_fund_overlay_on_lock"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_spin_cancel_returns_draw",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zz_ca_spin_cancel_returns_draw"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_freerolls_are_free_buy",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zz_freerolls_are_free_buy"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_new_entries_while_frozen",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zz_freeze_launch_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_spin_ladder_is_the_drawn_one",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzz_spin_ladder_is_the_drawn_one"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_lock_atomic_place_tournament_status",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzy_lock_atomic_place_tournament_status"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_capture_satellite_economics_on_start",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzz_capture_satellite_economics_on_start"
+    },
+    {
+      "enabled": "D",
+      "function": "trg_freeze_finalized_tournament_prize_pool",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzz_freeze_finalized_tournament_prize_pool"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_freeze_registered_tournament_settlement_contract",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzz_freeze_registered_tournament_settlement_contract"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_refuse_normal_tournament_completed_insert",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzz_refuse_normal_tournament_completed_insert"
+    },
+    {
+      "enabled": "D",
+      "function": "trg_tournament_pool_finalization_window_guard",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzz_tournament_pool_finalization_window_guard"
+    },
+    {
+      "enabled": "D",
+      "function": "trg_tournament_atomic_place_completion_guard",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzz_tournaments_atomic_place_completion_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_lock_atomic_final_table_deal_status",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzzy_lock_atomic_final_table_deal_status"
+    },
+    {
+      "enabled": "D",
+      "function": "trg_atomic_final_table_deal_completion_guard",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzzz_tournaments_atomic_final_table_deal_completion_guard"
+    },
+    {
+      "enabled": "D",
+      "function": "fn_guard_tournament_completed_certificate",
+      "relation": "tournaments",
+      "schema": "public",
+      "trigger": "zzzzzz_tournaments_financial_certificate"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "union_wallet_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_union_rake_weekly",
+      "relation": "union_wallet_transactions",
+      "schema": "public",
+      "trigger": "union_rake_weekly_maintain"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_hand_facts_strip_unpaid_holding",
+      "relation": "ca_hand_facts",
+      "schema": "public",
+      "trigger": "trg_ca_hand_facts_strip_unpaid_holding"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_filtered_too_long_delete_reel",
+      "relation": "video_transcode_jobs",
+      "schema": "public",
+      "trigger": "trg_filtered_too_long_delete_reel"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_youtube_native_transcode_job",
+      "relation": "video_transcode_jobs",
+      "schema": "public",
+      "trigger": "trg_guard_youtube_native_transcode_job"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_reel_falls_back_when_job_dies",
+      "relation": "video_transcode_jobs",
+      "schema": "public",
+      "trigger": "trg_reel_falls_back_when_job_dies"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_video_transcode_jobs_touch_updated_at",
+      "relation": "video_transcode_jobs",
+      "schema": "public",
+      "trigger": "trg_video_transcode_jobs_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_video_reels_pipeline_controls_touch",
+      "relation": "video_reels_pipeline_controls",
+      "schema": "public",
+      "trigger": "trg_video_reels_pipeline_controls_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_video_reels_pipeline_controls_touch",
+      "relation": "video_reels_pipeline_config",
+      "schema": "public",
+      "trigger": "trg_video_reels_pipeline_config_touch"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_queue_video_transcode",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "tr_queue_video_transcode"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_auto_create_story_from_post",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_auto_story_on_post"
+    },
+    {
+      "enabled": "O",
+      "function": "trgfn_award_social_post",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_award_social_post"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_post_reward",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_reward_social_post"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_legacy_transition_marker",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_social_posts_legacy_transition_marker_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_video_lineage",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_social_posts_managed_lineage_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_video_provenance",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_social_posts_managed_provenance_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_post_visibility",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_social_posts_managed_visibility_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_posts_video_contract_defaults",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_social_posts_video_contract_defaults"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_posts_video_to_reel_mirror",
+      "relation": "social_posts",
+      "schema": "public",
+      "trigger": "trg_social_posts_video_to_reel_mirror"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_cancel_revoked_youtube_transcode_jobs",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_cancel_revoked_youtube_transcode_jobs"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_reels_block_too_long",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_block_too_long"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_legacy_transition_marker",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_legacy_transition_marker_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_video_lineage",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_managed_lineage_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_video_provenance",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_managed_provenance_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_reel_visibility",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_managed_visibility_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_set_updated_at",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_reels_yt_intercept",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_yt_intercept"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_social_reels_yt_queue_job",
+      "relation": "social_reels",
+      "schema": "public",
+      "trigger": "trg_social_reels_yt_queue_job"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_touch_table_studio_preferences",
+      "relation": "user_table_studio_preferences",
+      "schema": "public",
+      "trigger": "trg_touch_table_studio_preferences"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_lock_and_classify_tournament_table",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "aa_tournament_table_launch_proof_lock"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_tournament_table_close_requires_empty",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "ab_tournament_table_close_requires_empty"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "poker_arena_table_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "update_updated_at_column",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "tables_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_on_table_status_change",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_on_table_status_change"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_auto_cashout_on_table_close",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_auto_cashout_on_close"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tables_autostart_guard",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_autostart_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_block_deleted_table_revival",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_block_deleted_revival"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_capture_managed_game_contract",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_capture_management_contract"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_closed_cluster_main_releases_index",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_closed_main_releases_index"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_cluster_table_ceiling",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_cluster_table_ceiling"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tables_creation_guard",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_creation_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_managed_game_row_event",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_emit_game_management_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_game_delete",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_managed_delete_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_managed_game_lifecycle",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_managed_lifecycle_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_club_table_counts",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_sync_club_counts_del"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_club_table_counts",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_sync_club_counts_ins"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_sync_club_table_counts",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_sync_club_counts_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_tables_sync_rit",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_sync_rit"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_stamp_table_union_ownership",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_union_ownership"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_table_union_ownership_update",
+      "relation": "tables",
+      "schema": "public",
+      "trigger": "trg_tables_union_ownership_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_chip_ledger_enrich",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "trg_ca_chip_ledger_enrich"
+    },
+    {
+      "enabled": "O",
+      "function": "enforce_chip_ledger_performed_by",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "trg_chip_ledger_performed_by"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_attested_day_is_restated",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_ca_attested_day_is_restated_del"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_attested_day_is_restated",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_ca_attested_day_is_restated_upd"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_overlay_leg",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_overlay_leg"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_reserve_leg",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_reserve_leg"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_seat_transfer_leg",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_seat_transfer_leg"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_issuance_leg_is_registered",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_ca_issuance_leg_is_registered"
+    },
+    {
+      "enabled": "O",
+      "function": "zz_chip_ledger_key_is_claimed_once",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_chip_ledger_key_is_claimed_once"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "chip_ledger",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_streak_activity_immutable_v1",
+      "relation": "training_streak_activity_days",
+      "schema": "public",
+      "trigger": "training_streak_activity_days_immutable_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_training_solver_provenance_authority_invalidate_v1",
+      "relation": "training_solver_provenance_authority",
+      "schema": "public",
+      "trigger": "training_solver_provenance_authority_invalidate_v1"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_merch_set_updated_at",
+      "relation": "merchandise_orders",
+      "schema": "public",
+      "trigger": "trg_merchandise_orders_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_member_fee_lifetime_after_delete",
+      "relation": "member_fee_rollup",
+      "schema": "public",
+      "trigger": "trg_member_fee_lifetime_after_delete"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_member_fee_lifetime_after_insert",
+      "relation": "member_fee_rollup",
+      "schema": "public",
+      "trigger": "trg_member_fee_lifetime_after_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_member_fee_lifetime_after_update",
+      "relation": "member_fee_rollup",
+      "schema": "public",
+      "trigger": "trg_member_fee_lifetime_after_update"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_leaderboard_program_funding",
+      "relation": "leaderboard_reward_program_versions",
+      "schema": "public",
+      "trigger": "leaderboard_program_funding_gate"
+    },
+    {
+      "enabled": "O",
+      "function": "leaderboard_reward_program_versions_are_immutable",
+      "relation": "leaderboard_reward_program_versions",
+      "schema": "public",
+      "trigger": "leaderboard_reward_program_versions_are_immutable"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_competitive_evidence_mutation",
+      "relation": "trivia_tournaments",
+      "schema": "public",
+      "trigger": "trg_00_guard_quarantined_tournament"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_competitive_evidence_mutation",
+      "relation": "trivia_pvp_matches",
+      "schema": "public",
+      "trigger": "trg_00_guard_quarantined_pvp_match"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_linked_trivia_pvp_identity_change",
+      "relation": "trivia_pvp_matches",
+      "schema": "public",
+      "trigger": "trg_prevent_linked_trivia_pvp_identity_change"
+    },
+    {
+      "enabled": "O",
+      "function": "sync_trivia_pvp_active_seats",
+      "relation": "trivia_pvp_matches",
+      "schema": "public",
+      "trigger": "trg_sync_trivia_pvp_active_seats"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_trivia_pvp_match_sync_columns",
+      "relation": "trivia_pvp_matches",
+      "schema": "public",
+      "trigger": "trg_trivia_pvp_match_sync"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_serialize_engine_maintenance_break_write",
+      "relation": "engine_maintenance_break",
+      "schema": "public",
+      "trigger": "aa_serialize_maintenance_break_write"
+    },
+    {
+      "enabled": "O",
+      "function": "validate_trivia_pvp_session_link",
+      "relation": "trivia_pvp_session_links",
+      "schema": "public",
+      "trigger": "trg_validate_trivia_pvp_session_link"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_competitive_evidence_mutation",
+      "relation": "trivia_pvp_settlement_decisions",
+      "schema": "public",
+      "trigger": "trg_00_freeze_pvp_settlement_decision"
+    },
+    {
+      "enabled": "O",
+      "function": "prevent_competitive_evidence_mutation",
+      "relation": "competitive_quarantine",
+      "schema": "public",
+      "trigger": "trg_00_freeze_competitive_quarantine"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_cash_seat_move_set_window",
+      "relation": "cash_seat_moves",
+      "schema": "public",
+      "trigger": "zz_cash_seat_move_window"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_reporting_repair_changed_day",
+      "relation": "wallet_transactions",
+      "schema": "public",
+      "trigger": "ca_reporting_wallet_change"
+    },
+    {
+      "enabled": "O",
+      "function": "trg_ca_reporting_wallet_insert",
+      "relation": "wallet_transactions",
+      "schema": "public",
+      "trigger": "ca_reporting_wallet_insert"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "wallet_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_money_path_log",
+      "relation": "wallet_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_money_path_log"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_wallet_tx",
+      "relation": "wallet_transactions",
+      "schema": "public",
+      "trigger": "zz_ca_escrow_wallet_tx"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen",
+      "relation": "wallet_transactions",
+      "schema": "public",
+      "trigger": "zz_freeze_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_settlement_transition_guard",
+      "relation": "ca_settlements",
+      "schema": "public",
+      "trigger": "trg_ca_settlement_guard"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "tournament_escrow",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_spin_escrow_is_enforced",
+      "relation": "tournament_escrow",
+      "schema": "public",
+      "trigger": "zz_spin_escrow_is_enforced"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_video_library_asset_fail_closed",
+      "relation": "video_library_videos",
+      "schema": "public",
+      "trigger": "trg_video_library_asset_fail_closed"
+    },
+    {
+      "enabled": "O",
+      "function": "set_vlv_updated_at",
+      "relation": "video_library_videos",
+      "schema": "public",
+      "trigger": "trg_vlv_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_diamond_game_config_history",
+      "relation": "diamond_game_configs",
+      "schema": "public",
+      "trigger": "trg_diamond_game_config_history"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_diamond_game_append_only",
+      "relation": "diamond_game_config_history",
+      "schema": "public",
+      "trigger": "trg_diamond_game_config_history_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_diamond_game_append_only",
+      "relation": "plinko_drops",
+      "schema": "public",
+      "trigger": "trg_plinko_drops_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_diamond_game_append_only",
+      "relation": "crash_rounds",
+      "schema": "public",
+      "trigger": "trg_crash_rounds_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "club_opening_setups",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "tournament_tickets",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation",
+      "relation": "chip_requests",
+      "schema": "public",
+      "trigger": "trg_guard_retired_club_mutation"
+    },
+    {
+      "enabled": "O",
+      "function": "bump_daily_challenge_dashboard_revision",
+      "relation": "challenge_streak_state",
+      "schema": "public",
+      "trigger": "trg_daily_challenge_revision_from_streak"
+    },
+    {
+      "enabled": "O",
+      "function": "bump_daily_challenge_dashboard_revision",
+      "relation": "challenge_streak_state",
+      "schema": "public",
+      "trigger": "trg_daily_challenge_revision_from_streak_lifecycle"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_emit_management_content_event",
+      "relation": "game_ticker_settings",
+      "schema": "public",
+      "trigger": "trg_ticker_emit_management_event"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_daily_missions_friend_accepted",
+      "relation": "friendships",
+      "schema": "public",
+      "trigger": "trg_daily_missions_friend_accepted"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_notify_friend_request",
+      "relation": "friendships",
+      "schema": "public",
+      "trigger": "trg_notify_friend_request"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_cash_game_floor_from_template",
+      "relation": "cash_games",
+      "schema": "public",
+      "trigger": "zz_cash_game_floor_from_template"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_guard_one_game_per_blind_category",
+      "relation": "cash_games",
+      "schema": "public",
+      "trigger": "zz_one_game_per_blind_category"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_daily_bonus_calendar_history",
+      "relation": "ca_daily_bonus_calendar",
+      "schema": "public",
+      "trigger": "trg_ca_daily_bonus_calendar_history"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_daily_bonus_claims_append_only",
+      "relation": "ca_daily_bonus_claims",
+      "schema": "public",
+      "trigger": "trg_ca_daily_bonus_claims_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_journal_classifier",
+      "relation": "diamond_transactions",
+      "schema": "public",
+      "trigger": "aa_ca_diamond_journal_classifier"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only",
+      "relation": "diamond_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_append_only"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_earn_ledger",
+      "relation": "diamond_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_diamond_earn_ledger"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_diamond_register_follows_journal",
+      "relation": "diamond_transactions",
+      "schema": "public",
+      "trigger": "trg_ca_diamond_register_follows_journal"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_enforce_anti_farming_caps",
+      "relation": "diamond_transactions",
+      "schema": "public",
+      "trigger": "trg_enforce_anti_farming_caps"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_ca_touch_updated_at",
+      "relation": "diamond_engine_daily_caps",
+      "schema": "public",
+      "trigger": "zz_touch_updated_at"
+    },
+    {
+      "enabled": "O",
+      "function": "fn_audit_club_entry_mutation",
+      "relation": "player_search_preferences",
+      "schema": "public",
+      "trigger": "trg_audit_player_search_privacy"
+    }
+  ]
+}

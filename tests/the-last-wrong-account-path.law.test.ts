@@ -72,9 +72,15 @@ describe('the one live path now spends the agent wallet', () => {
     expect(SUPER_AGENT).toMatch(/transferToPlayer\(transferPlayerId, clubId!, amount\)/);
   });
 
-  it('carries a retry key and checks the result', () => {
-    expect(AGENT_SERVICE).toMatch(/p_op_id: uuid\(\)/);
-    expect(AGENT_SERVICE).toMatch(/The Cashier Refused That Transfer/);
+  it('reuses a durable retry identity and requires a confirmed receipt', () => {
+    const transfer = AGENT_SERVICE.slice(
+      AGENT_SERVICE.indexOf('async transferToPlayer('),
+      AGENT_SERVICE.indexOf('async getAgentHierarchy(')
+    );
+    expect(transfer).toMatch(/runAgentWalletOperation\(/);
+    expect(transfer).toMatch(/p_op_id: operation.operationId/);
+    expect(transfer).toMatch(/confirmedAgentWalletReceipt\(/);
+    expect(transfer).not.toMatch(/p_op_id:\s*uuid\(/);
   });
 });
 

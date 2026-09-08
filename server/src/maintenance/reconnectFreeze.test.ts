@@ -102,3 +102,27 @@ describe('maintenance preserves reconnect time without refilling it', () => {
     expect(e.getFsmState('t', 'u')!.graceDeadlineMs).toBe(now + 30_000);
   });
 });
+
+describe('incremental compensation follows the recorded interval', () => {
+  it('adds only a late resume extension even after the original shifted deadline passed', () => {
+    const clock = { reconnectDeadlineMs: 101_000, reconnectGrantedAtMs: 71_000 };
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 400_000 });
+    expect(clock.reconnectDeadlineMs).toBe(401_000);
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 410_500 });
+    expect(clock.reconnectDeadlineMs).toBe(411_500);
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 410_500 });
+    expect(clock.reconnectDeadlineMs).toBe(411_500);
+  });
+  it('never revives a grant exhausted before maintenance, including on a later wave', () => {
+    const clock = { reconnectDeadlineMs: 100_000, reconnectGrantedAtMs: 70_000 };
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 400_000 });
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 410_500 });
+    expect(clock.reconnectDeadlineMs).toBe(100_000);
+  });
+  it('credits a new grant only for its own overlap with a later wave', () => {
+    const clock = { reconnectDeadlineMs: 435_000, reconnectGrantedAtMs: 405_000 };
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 400_000 });
+    thawReconnectClock(clock, { startMs: 100_000, endMs: 410_500 });
+    expect(clock.reconnectDeadlineMs).toBe(440_500);
+  });
+});

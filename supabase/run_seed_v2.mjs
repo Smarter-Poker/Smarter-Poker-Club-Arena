@@ -5,7 +5,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(
     'https://kuklfnapbkmacvwxktbh.supabase.co',
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false } }
+    {
+        auth: { persistSession: false },
+        global: {
+            headers: {
+                'x-smarter-data-actor': 'service',
+                'x-smarter-data-protocol': '1'
+            }
+        }
+    }
 );
 const D = 86400000, H = 3600000, M = 60000, NOW = Date.now();
 const ago = ms => new Date(NOW - ms).toISOString();

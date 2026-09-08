@@ -1,142 +1,141 @@
-import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import ts from 'typescript';
-const source = readFileSync('src/tournament/TournamentManagerEliminations.ts', 'utf8');
-const ast = ts.createSourceFile('manager.ts', source, ts.ScriptTarget.Latest, true);
-let method: ts.MethodDeclaration | undefined;
-function visit(n: ts.Node) {
-  if (ts.isMethodDeclaration(n) && n.name.getText(ast) === 'settleFinalTableDeal') method = n;
-  ts.forEachChild(n, visit);
-}
-visit(ast);
-if (!method?.body) throw new Error('Actual deal method missing');
-const compiled = ts.transpileModule('return async function(alive) ' + method.body.getText(ast), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-}).outputText;
-const build = new Function(
-  'supabase',
-  'reportError',
-  'settleTournamentObligation',
-  'raiseFinancialAlert',
-  compiled
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
+import { settleFinalTableDealAtomically } from './atomicFinalTableDeal.js';
+
+const eliminations = readFileSync(
+  join(process.cwd(), 'src/tournament/TournamentManagerEliminations.ts'),
+  'utf8'
 );
-async function run(
-  receipt: Record<string, unknown>,
-  rows: Array<{ user_id: string; amount: unknown }> = [
-    { user_id: 'first', amount: 100 },
-    { user_id: 'second', amount: 100 },
-  ]
-) {
-  const updates: Array<{ table: string; value: any }> = [];
-  const report = vi.fn();
-  const alert = vi.fn(async () => undefined);
-  const settle = vi.fn(async (_db, input) =>
-    input.userId === 'first'
-      ? receipt
-      : { ok: true, fully_settled: true, amount_paid: 100, paid: 100 }
-  );
-  const db = {
-    from(table: string) {
-      let update = false;
-      const q = {
-        select() {
-          return q;
-        },
-        eq() {
-          return q;
-        },
-        update(value: unknown) {
-          update = true;
-          updates.push({ table, value });
-          return q;
-        },
-        then(resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) {
-          return Promise.resolve(
-            update
-              ? { error: null }
-              : {
-                  data: rows,
-                  error: null,
-                }
-          ).then(resolve, reject);
-        },
-      };
-      return q;
-    },
-  };
-  const owner = {
-    tournamentId: 'event',
-    tournamentFinished: false,
-    tournamentCache: {},
-    tableEngines: new Map(),
-    broadcast: vi.fn(),
-    settleTournamentRake: vi.fn(),
-    cleanupBroadcastChannel: vi.fn(),
-    stop: vi.fn(),
-  };
-  await build(db, report, settle, alert).call(owner, [
-    { user_id: 'first', chips: 200 },
-    { user_id: 'second', chips: 100 },
-  ]);
-  return { updates, owner, settle, report, alert };
+const migration = readFileSync(
+  join(
+    process.cwd(),
+    '../supabase/migrations/20260908042500_a_final_table_deal_pays_every_share_or_none.sql'
+  ),
+  'utf8'
+);
+const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
+const dealTail = sliceMethod(
+  eliminations,
+  'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<boolean>'
+);
+
+function sqlFunction(source: string, name: string): string {
+  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
+  if (start < 0) throw new Error(`SQL function ${name} is missing`);
+  const bodyStart = source.indexOf('AS $function$', start);
+  const end = source.indexOf('$function$;', bodyStart);
+  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
+  return source.slice(start, end + '$function$;'.length);
 }
-describe('a final table deal completes only after every share settles', () => {
+
+const atomicDeal = sqlFunction(migration, 'fn_settle_final_table_deal_atomic(');
+
+describe('a final-table deal completes only after the atomic receipt proves completion', () => {
   it.each([
-    { ok: false, refused_reason: 'escrow_short', paid: 0 },
-    { ok: true, fully_settled: false, amount_paid: 40, paid: 40 },
-    { ok: true, fully_settled: true, amount_paid: 80, paid: 80 },
-    { ok: true, paid: 0, already_paid: 40 },
-  ])('does not complete or stop the manager on %j', async (receipt) => {
-    const r = await run(receipt);
-    expect(r.updates).toEqual([]);
-    expect(r.owner.tournamentFinished).toBe(false);
-    expect(r.owner.stop).not.toHaveBeenCalled();
-    expect(r.report).toHaveBeenCalled();
-    expect(r.settle).toHaveBeenCalledTimes(2);
+    { ok: false, completed: false, reason: 'escrow_short', retryable: false },
+    { ok: true, completed: false, paid: 40, retryable: false },
+  ])('rejects an incomplete database receipt: %j', async (receipt) => {
+    const rpc = vi.fn(async () => ({ data: receipt, error: null }));
+
+    const result = await settleFinalTableDealAtomically({ rpc }, 'event', {
+      maxAttempts: 1,
+      retryDelayMs: () => 0,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.completed).toBe(false);
   });
-  it.each([0, 100])('completes a fully settled receipt with %s newly paid', async (paid) => {
-    const r = await run({ ok: true, fully_settled: true, amount_paid: 100, paid });
-    expect(r.updates.some((x) => x.table === 'tournaments' && x.value.status === 'COMPLETED')).toBe(
-      true
+
+  it.each([0, 100])(
+    'accepts explicit COMPLETED, including a replay that moves %s now',
+    async (paid) => {
+      const rpc = vi.fn(async () => ({
+        data: {
+          ok: true,
+          completed: true,
+          already_completed: paid === 0,
+          paid,
+          players: 2,
+          chip_leader: 'first',
+          payouts: [
+            { user_id: 'first', amount: 100, rank: 1 },
+            { user_id: 'second', amount: 100, rank: 2 },
+          ],
+        },
+        error: null,
+      }));
+
+      const result = await settleFinalTableDealAtomically({ rpc }, 'event');
+
+      expect(result).toMatchObject({ ok: true, completed: true, paid, players: 2 });
+    }
+  );
+
+  it('keeps the operational tail behind the explicit receipt guard', () => {
+    const atomic = checkDeal.indexOf('settleFinalTableDealAtomically(supabase, this.tournamentId)');
+    const proof = checkDeal.indexOf('if (!deal.ok || !deal.completed)', atomic);
+    const tail = checkDeal.indexOf('return this.settleFinalTableDeal(deal)', proof);
+
+    expect(atomic).toBeGreaterThanOrEqual(0);
+    expect(proof).toBeGreaterThan(atomic);
+    expect(tail).toBeGreaterThan(proof);
+  });
+
+  it('keeps the post-commit tail free of payment and terminal-state writes', () => {
+    const code = blankNonCode(dealTail);
+
+    expect(code).not.toMatch(/settleTournamentObligation|settleFinalTableDealAtomically|\.rpc\(/);
+    expect(dealTail).not.toMatch(
+      /\.from\('tournaments'\)[\s\S]{0,300}?\.update\(\{[\s\S]{0,200}?status:\s*'COMPLETED'/
     );
-    expect(r.owner.stop).toHaveBeenCalledOnce();
+    expect(dealTail).toContain('cleanupCommittedTablesAndManager()');
   });
 });
 
-describe('deal payout roster validation before any settlement', () => {
-  it.each([
-    [{ user_id: 'first', amount: 100 }],
-    [
-      { user_id: 'first', amount: 100 },
-      { user_id: 'first', amount: 100 },
-    ],
-    [
-      { user_id: 'first', amount: 100 },
-      { user_id: 'stranger', amount: 100 },
-    ],
-    ...[null, '', 'bad', '0x10', '1e2', -1, Infinity, NaN, 0.001, 0.0000000001].map((amount) => [
-      { user_id: 'first', amount: 100 },
-      { user_id: 'second', amount },
-    ]),
-  ])('rejects invalid roster %# without paying or completing', async (...rows) => {
-    const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, rows);
-    expect(r.settle).not.toHaveBeenCalled();
-    expect(r.alert).toHaveBeenCalledWith(
-      'critical',
-      'Tournament.final_table_deal_payout_roster_invalid',
-      expect.stringContaining('previous payment status is unconfirmed'),
-      expect.objectContaining({ tournament_id: 'event' })
+describe('deal payout roster validation happens before any settlement', () => {
+  it('requires one exact physical table, unique live users and matching seat stacks', () => {
+    const tableProof = atomicDeal.indexOf('v_seated_active_tables <> 1');
+    const seatCount = atomicDeal.indexOf('v_all_live_seats <> v_live_count', tableProof);
+    const uniqueUsers = atomicDeal.indexOf('v_distinct_seat_users <> v_live_count', tableProof);
+    const matchingUsers = atomicDeal.indexOf('v_matching_live_users <> v_live_count', tableProof);
+    const stackProof = atomicDeal.indexOf('v_seat_stack_mismatches > 0', tableProof);
+    const firstPayment = atomicDeal.indexOf(
+      'fn_settle_tournament_obligation_before_atomic_batch_gate(',
+      stackProof
     );
-    expect(r.updates).toEqual([]);
-    expect(r.owner.stop).not.toHaveBeenCalled();
-    expect(r.report).toHaveBeenCalled();
+
+    expect(tableProof).toBeGreaterThanOrEqual(0);
+    expect(seatCount).toBeGreaterThan(tableProof);
+    expect(uniqueUsers).toBeGreaterThan(tableProof);
+    expect(matchingUsers).toBeGreaterThan(tableProof);
+    expect(stackProof).toBeGreaterThan(tableProof);
+    expect(firstPayment).toBeGreaterThan(stackProof);
   });
-  it('accepts numeric database strings and a legitimate zero share', async () => {
-    const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, [
-      { user_id: 'first', amount: '100.00' },
-      { user_id: 'second', amount: 0 },
-    ]);
-    expect(r.settle).toHaveBeenCalledOnce();
-    expect(r.owner.stop).toHaveBeenCalledOnce();
+
+  it('allocates exact cents and rolls every leg back if any share is incomplete', () => {
+    const planProof = atomicDeal.indexOf(
+      'v_place_total_cents + v_deal_total_cents <> v_pool_cents'
+    );
+    const transaction = atomicDeal.indexOf('\n  BEGIN', planProof);
+    const firstPayment = atomicDeal.indexOf(
+      'fn_settle_tournament_obligation_before_atomic_batch_gate(',
+      transaction
+    );
+    const partialProof = atomicDeal.indexOf(
+      'atomic final-table-deal leg partially settled',
+      firstPayment
+    );
+    const complete = atomicDeal.indexOf("SET status = 'COMPLETED'", partialProof);
+    const rollback = atomicDeal.indexOf('EXCEPTION WHEN OTHERS', complete);
+
+    expect(planProof).toBeGreaterThanOrEqual(0);
+    expect(transaction).toBeGreaterThan(planProof);
+    expect(firstPayment).toBeGreaterThan(transaction);
+    expect(partialProof).toBeGreaterThan(firstPayment);
+    expect(complete).toBeGreaterThan(partialProof);
+    expect(rollback).toBeGreaterThan(complete);
+    expect(atomicDeal.slice(rollback)).toContain("'paid', 0, 'completed', false");
   });
 });

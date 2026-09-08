@@ -36,4 +36,5 @@ KEY=$(grep -m1 '^SUPABASE_SERVICE_ROLE_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d 
 
 curl -fsS --max-time 20 "$SUPABASE_URL/rest/v1/rpc/fn_maintenance_week_report" \
   -X POST -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+  -H 'x-smarter-data-actor: service' -H 'x-smarter-data-protocol: 1' \
   -H 'Content-Type: application/json' -d "{\"p_days\": $DAYS}" | python3 -m json.tool

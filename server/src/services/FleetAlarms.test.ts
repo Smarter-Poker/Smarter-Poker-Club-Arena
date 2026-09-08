@@ -29,7 +29,7 @@ vi.mock('./engineAlerts.js', () => ({
 
 const builder = { select: vi.fn(), in: vi.fn(), gt: vi.fn() };
 const handHistory = { select: vi.fn(), in: vi.fn(), gt: vi.fn() };
-const recovery = { select: vi.fn(), gt: vi.fn() };
+const recovery = { select: vi.fn(), eq: vi.fn(), gt: vi.fn() };
 vi.mock('./supabase.js', () => ({
   supabase: {
     from: (table: string) => (table === 'engine_recovery_events' ? recovery : handHistory),
@@ -45,6 +45,7 @@ function hands(count: number | null, error: unknown = null) {
 }
 function kills(count: number, error: unknown = null) {
   recovery.select.mockReturnValue(recovery);
+  recovery.eq.mockReturnValue(recovery);
   recovery.gt.mockResolvedValue({ count, error });
 }
 const tables = (n: number) => Array.from({ length: n }, (_, i) => `t-${i}`);
@@ -170,6 +171,22 @@ describe('the kill storm that nobody was told about', () => {
     await v.check();
     expect(raised.map((r) => r.alertname)).toContain('ClubArenaEngineKillStorm');
     expect(v.snapshot().killsInWindow).toBe(120);
+  });
+
+  it('counts only automatic watchdog kills, never drills or other recovery actions', async () => {
+    const v = new DealRateVerifier(() => tables(40));
+    hands(50);
+    // The database applies these exact positive filters before returning this
+    // count. A `.neq(fault_injection)` filter would fail open for any future
+    // class; the two `.eq` predicates deliberately do not.
+    kills(4);
+    await v.check();
+    expect(recovery.eq.mock.calls).toEqual([
+      ['event', 'watchdog_kill_rebuild'],
+      ['event_class', 'automatic_recovery'],
+    ]);
+    expect(v.snapshot().killsInWindow).toBe(4);
+    expect(raised.map((r) => r.alertname)).not.toContain('ClubArenaEngineKillStorm');
   });
 
   it('does not fire on a single table recovering itself', async () => {

@@ -1,0 +1,51 @@
+{
+  "_owner": "agent/codex-live-realtime/fix/live-table-realtime-continuity",
+  "tables": [
+    "tournament_bounty_obligations",
+    "tournament_bounty_completion_receipts",
+    "tournament_capacity_table_receipts",
+    "tournament_entry_close_receipts",
+    "tournament_final_table_deal_receipts",
+    "tournament_manager_wakes",
+    "tournament_mystery_activation_receipts",
+    "tournament_pko_settlement_watermarks"
+  ],
+  "functions": [
+    "fn_sync_tournament_live_seat_chips",
+    "fn_eliminate_tournament_player_atomic",
+    "fn_close_tournament_addon_period",
+    "fn_tournament_late_registration_open",
+    "fn_resolve_tournament_blinds",
+    "fn_tournament_current_blinds",
+    "fn_ensure_late_registration_capacity",
+    "fn_ack_tournament_capacity_tables",
+    "fn_tournament_place_prize_exact",
+    "fn_finalize_tournament_entry_pool_locked",
+    "fn_close_tournament_entry_window",
+    "fn_complete_tournament_entry_reprice",
+    "fn_exact_tournament_knockout_claimants",
+    "fn_claim_tournament_bounty_elimination",
+    "fn_bounty_obligation_has_complete_marker",
+    "fn_collect_bounty_obligation",
+    "fn_attach_bounty_ledger_obligation",
+    "fn_attach_bounty_award_obligation",
+    "fn_ack_bounty_obligation_from_ledger",
+    "fn_ack_bounty_obligation_from_award",
+    "fn_refuse_reentry_with_pending_bounty",
+    "fn_sweep_pending_tournament_bounties",
+    "fn_tournament_has_unsettled_bounties",
+    "fn_refuse_completed_with_pending_bounties",
+    "fn_refuse_mystery_activation_with_pending_heads",
+    "fn_receipt_mystery_activation",
+    "fn_emit_tournament_manager_wake",
+    "fn_ack_tournament_manager_wakes",
+    "fn_emit_manager_wake_for_settled_bounty",
+    "fn_retire_manager_wakes_after_terminal_status",
+    "fn_cast_tournament_deal_vote"
+  ],
+  "columns": {
+    "tournament_bounties": ["bounty_obligation_id"],
+    "tournament_bounty_awards": ["bounty_obligation_id", "activation_generation"],
+    "tournaments": ["mystery_bounty_activation_generation"]
+  }
+}

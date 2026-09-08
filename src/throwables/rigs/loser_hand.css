@@ -1,0 +1,144 @@
+.thr-loser_hand__base {
+  transform-origin: 0 0;
+  animation: thr-loser_hand-base calc(0.001s * var(--animation-speed, 1)) linear
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-loser_hand-base {
+  to {
+    opacity: 0;
+  }
+}
+.thr-loser_hand__oooh {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-loser_hand-oooh calc(0.001s * var(--animation-speed, 1)) linear
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-loser_hand-oooh {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.thr-loser_hand__oooh-end {
+  transform-origin: 0 0;
+  animation: thr-loser_hand-oooh-end calc(0.001s * var(--animation-speed, 1)) linear
+    calc(1.467s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-loser_hand-oooh-end {
+  to {
+    opacity: 0;
+  }
+}
+.thr-loser_hand__talk {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-loser_hand-talk calc(0.001s * var(--animation-speed, 1)) linear
+    calc(1.467s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-loser_hand-talk {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.thr-loser_hand__mouth {
+  transform-origin: 0 0;
+  animation: thr-loser_hand-mouth calc(0.8s * var(--animation-speed, 1)) steps(1, end)
+    calc(0s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-loser_hand-mouth {
+  0%,
+  45%,
+  100% {
+    opacity: 1;
+  }
+  50%,
+  90% {
+    opacity: 0;
+  }
+}
+.thr-loser_hand__rock {
+  transform-origin: 0 0;
+  animation: thr-loser_hand-rock calc(0.8s * var(--animation-speed, 1)) ease-in-out
+    calc(1.467s * var(--animation-speed, 1)) infinite;
+}
+@keyframes thr-loser_hand-rock {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  45% {
+    transform: rotate(4deg);
+  }
+}
+.thr-loser_hand__hand {
+  transform-origin: 0 0;
+  opacity: 0;
+  animation: thr-loser_hand-hand calc(0.333s * var(--animation-speed, 1)) ease-out
+    calc(0.134s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-loser_hand-hand {
+  from {
+    opacity: 0;
+    transform: translate(-35px, 60px) rotate(-25deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-loser_hand__pop {
+  transform-origin: 0 0;
+  animation: thr-loser_hand-pop calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0s * var(--animation-speed, 1)) both;
+}
+@keyframes thr-loser_hand-pop {
+  0% {
+    transform: scale(0.18);
+  }
+  45% {
+    transform: scale(1.3);
+  }
+  75% {
+    transform: scale(0.8);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-loser_hand__base,
+  .thr-loser_hand__oooh,
+  .thr-loser_hand__oooh-end,
+  .thr-loser_hand__talk,
+  .thr-loser_hand__mouth,
+  .thr-loser_hand__rock,
+  .thr-loser_hand__hand,
+  .thr-loser_hand__pop {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-loser_hand__base {
+    opacity: 0;
+  }
+  .thr-loser_hand__oooh {
+    opacity: 0;
+  }
+  .thr-loser_hand__oooh-end {
+    opacity: 0;
+  }
+  .thr-loser_hand__talk {
+    opacity: 1;
+  }
+  .thr-loser_hand__mouth {
+    opacity: 1;
+  }
+  .thr-loser_hand__hand {
+    opacity: 1;
+  }
+}

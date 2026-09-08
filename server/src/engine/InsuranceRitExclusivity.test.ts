@@ -14,6 +14,16 @@
  * Pinned against the REAL handleAllInRunout dispatch.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+const equityWorker = vi.hoisted(() => ({
+  estimateEquity: vi.fn(),
+  estimateInsurance: vi.fn(),
+}));
+
+vi.mock('./equity/EquityWorkerPool.js', () => ({
+  getEquityPool: () => equityWorker,
+}));
+
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
@@ -25,6 +35,20 @@ const runoutEngines = new Set<ServerTableEngine>();
 
 beforeEach(() => {
   TABLE = 'eeeeeeee-eeee-eeee-eeee-' + String(++tableSequence).padStart(12, '0');
+  equityWorker.estimateEquity.mockReset();
+  equityWorker.estimateInsurance.mockReset();
+  equityWorker.estimateEquity.mockImplementation(async (hands: unknown[][]) =>
+    hands.map(() => 1 / hands.length)
+  );
+  equityWorker.estimateInsurance.mockImplementation(async (hands: unknown[][]) =>
+    hands.map((_, index) => ({
+      equity: index === 0 ? 82 : 18,
+      strictLossPct: index === 0 ? 18 : 82,
+      pushPct: 0,
+      exact: false,
+      runouts: 6000,
+    }))
+  );
 });
 
 afterEach(async () => {
@@ -117,6 +141,7 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   engine.running = true;
   engine.handCount = 1;
   engine.handController = hc;
+  engine.lifecycleCanMutate = () => true;
   /* The table ROW is the source of truth, not the engine's configure() call.
      Since 2026-08-27 handleAllInRunout re-reads it through
      applyRunItTwiceConfig() on every all-in — that is the fix for production

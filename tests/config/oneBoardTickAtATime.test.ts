@@ -82,19 +82,13 @@ describe('a board refills one tick at a time', () => {
 
   it('keeps the cadence that made the guard necessary', () => {
     expect(code).toMatch(/const\s+BOARD_REFILL_INTERVAL_MS\s*=\s*30\s*\*\s*1000\s*;/);
-    /* RESHAPED 2026-09-01 (freeze phase C): every launcher tick is now
-       wrapped in the maintenance-freeze gate -
-         () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchX())
-       - because launching a game registers and seats horses, which is chip
-       movement during a break players were told nothing moves in. The pins
-       below now REQUIRE the gate as well as the cadence: dropping either one
-       re-ships a real bug (the ten-minute board drought, or chips moving
-       mid-break). */
+    /* The launcher now enters a generation-owned lifecycle job. Keep the
+       maintenance gate, owned launch, and refill cadence together. */
     expect(code).toMatch(
-      /isMaintenanceFrozen\(\) \? undefined : this\.checkAndLaunchSpins\(\)\),\s*BOARD_REFILL_INTERVAL_MS/
+      /this\.spinInterval\s*=\s*setInterval\(\(\)\s*=>\s*\{\s*if\s*\(isMaintenanceFrozen\(\)\)\s*return;\s*this\.launchLifecycleJob\(\s*generation,\s*\(\)\s*=>\s*this\.checkAndLaunchSpins\(\),\s*'TournamentRecurring\.spin_tick_failed'\s*\);\s*\},\s*BOARD_REFILL_INTERVAL_MS\s*\)/
     );
     expect(code).toMatch(
-      /isMaintenanceFrozen\(\) \? undefined : this\.checkAndLaunchSNGs\(\)\),\s*BOARD_REFILL_INTERVAL_MS/
+      /this\.sngInterval\s*=\s*setInterval\(\(\)\s*=>\s*\{\s*if\s*\(isMaintenanceFrozen\(\)\)\s*return;\s*this\.launchLifecycleJob\(\s*generation,\s*\(\)\s*=>\s*this\.checkAndLaunchSNGs\(\),\s*'TournamentRecurring\.sng_tick_failed'\s*\);\s*\},\s*BOARD_REFILL_INTERVAL_MS\s*\)/
     );
   });
 

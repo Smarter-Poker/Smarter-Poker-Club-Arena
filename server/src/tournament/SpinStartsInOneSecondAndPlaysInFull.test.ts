@@ -235,7 +235,8 @@ describe('the spin start does not read its own roster twice', () => {
        unreadable roster must stand the start down, not fall through to a
        gate that then verifies zero payments and passes. Moving the read
        earlier must not weaken that, so the stand-down moved with it. */
-    const block = blockAfter(BASE_CODE, 'if (rosterErr)');
+    const startCode = BASE_CODE.slice(BASE_CODE.indexOf('private async startLifecycle('));
+    const block = blockAfter(startCode, 'if (rosterErr)');
     expect(block).toContain('Tournament.spin_paid_roster_unreadable');
     expect(block).toContain('this.running = false;');
   });

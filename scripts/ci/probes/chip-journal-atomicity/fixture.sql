@@ -6,16 +6,38 @@ CREATE TABLE ca_ledger_write_failures(club_id uuid,user_id uuid,delta numeric,sq
 CREATE TABLE clubs(id uuid PRIMARY KEY,name text,union_id uuid,chip_treasury numeric DEFAULT 100,total_rake numeric DEFAULT 0,updated_at timestamptz);
 CREATE TABLE bbj_pools(id uuid PRIMARY KEY,club_id uuid,main_balance numeric DEFAULT 100,backup_balance numeric DEFAULT 10,promo_balance numeric DEFAULT 5);
 CREATE TABLE club_members(id uuid PRIMARY KEY,user_id uuid,club_id uuid,chip_balance numeric DEFAULT 100);
-CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid,min_buy_in numeric,max_buy_in numeric,is_private boolean DEFAULT true,union_id uuid);
+CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid,min_buy_in numeric,max_buy_in numeric,is_private boolean DEFAULT true,union_id uuid,tournament_id uuid,is_template boolean DEFAULT false);
 CREATE TABLE table_seats(table_id uuid,user_id uuid,seat_number int,stack numeric,is_sitting_out boolean,left_at timestamptz,UNIQUE(table_id,user_id),UNIQUE(table_id,seat_number));
 CREATE TABLE chip_transactions(id uuid,club_id uuid,from_user_id uuid,to_user_id uuid,amount numeric,transaction_type text,notes text,balance_after numeric,created_at timestamptz);
 CREATE TABLE cash_baselines(user_id uuid,table_id uuid,amount numeric);
+CREATE TABLE engine_maintenance_break(
+ id boolean PRIMARY KEY DEFAULT true,
+ phase text NOT NULL,
+ announced_at timestamptz NOT NULL,
+ break_ends_at timestamptz,
+ enforce_freeze boolean NOT NULL DEFAULT true
+);
+CREATE TABLE entry_purchase_idempotency_receipts(
+ key_domain text NOT NULL,
+ idempotency_key text NOT NULL,
+ request jsonb NOT NULL,
+ response jsonb,
+ claimed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+ completed_at timestamptz,
+ CONSTRAINT entry_purchase_idempotency_receipts_pkey
+  PRIMARY KEY(key_domain,idempotency_key),
+ CONSTRAINT entry_purchase_idempotency_receipts_domain_nonempty
+  CHECK (length(btrim(key_domain)) > 0),
+ CONSTRAINT entry_purchase_idempotency_receipts_key_nonempty
+  CHECK (length(btrim(idempotency_key)) > 0)
+);
 CREATE FUNCTION fn_actor_can_manage_club_treasury(uuid) RETURNS boolean LANGUAGE sql AS 'SELECT true';
 CREATE FUNCTION fn_cash_rejoin_floor(uuid,uuid) RETURNS numeric LANGUAGE sql AS 'SELECT NULL::numeric';
 CREATE FUNCTION fn_cash_session_open(uuid,uuid,numeric) RETURNS void LANGUAGE sql AS 'INSERT INTO cash_baselines VALUES($1,$2,$3)';
 CREATE FUNCTION fn_cash_session_add_baseline(uuid,uuid,numeric) RETURNS void LANGUAGE sql AS 'INSERT INTO cash_baselines VALUES($1,$2,$3)';
 CREATE TABLE hand_history(id uuid,table_id uuid,hand_number int,created_at timestamptz);
-CREATE TABLE tournaments(id uuid,is_private boolean,union_id uuid);
+CREATE TABLE tournaments(id uuid,is_private boolean,union_id uuid,status text,prize_pool_finalized boolean,current_level integer,late_reg_levels integer,rebuy_levels integer,late_reg_mins integer,started_at timestamptz,max_players integer);
+CREATE TABLE tournament_players(id uuid DEFAULT gen_random_uuid(), tournament_id uuid,user_id uuid,username text,chips numeric,status text,is_satellite_qualifier boolean,source_satellite_id uuid,current_bounty numeric DEFAULT 0,UNIQUE(tournament_id,user_id));
 CREATE TABLE rake_records(id uuid DEFAULT gen_random_uuid(),hand_id uuid,table_id uuid,club_id uuid,rake_amount numeric,bbj_contribution numeric,pot_size numeric,num_players int,player_contributions jsonb,is_tournament boolean,tournament_id uuid,source text,metadata jsonb,rake_method text,returned_uncalled jsonb,created_at timestamptz DEFAULT now());
 CREATE UNIQUE INDEX rake_hand ON rake_records(hand_id) WHERE hand_id IS NOT NULL;
 CREATE TABLE rake_distribution_legs(leg_key uuid,leg text,club_id uuid,union_id uuid,amount numeric,UNIQUE(leg_key,leg));
@@ -30,3 +52,11 @@ BEGIN
  RETURN NEW;
 END $$;
 CREATE TRIGGER fault BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION injected_journal_failure();
+
+-- Journal-only fixtures omit escrow; test_satellite_split.py exercises the real escrow.
+CREATE OR REPLACE FUNCTION public.fn_ca_escrow_apply(p_tournament_id uuid, p_what text, p_gross_in numeric DEFAULT 0, p_fee_entries_in numeric DEFAULT 0, p_satellite_fee_in numeric DEFAULT 0, p_bounty_in numeric DEFAULT 0, p_overlay_in numeric DEFAULT 0, p_satellite_in numeric DEFAULT 0, p_prize_out numeric DEFAULT 0, p_bounty_out numeric DEFAULT 0, p_fee_out numeric DEFAULT 0, p_refund numeric DEFAULT 0, p_reserve_out numeric DEFAULT 0, p_reserve_in numeric DEFAULT 0)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ BEGIN RETURN; END; $function$;

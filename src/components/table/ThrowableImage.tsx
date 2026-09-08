@@ -1,10 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE IMAGE — 3D renders from Supabase storage
+ *  THROWABLE IMAGE — approved premium artwork
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * The 49 renders live in the `images` bucket as `throwables/<id>.jpg`, drawn on
- * a black background.
+ * The 47 redesigned non-glove stills ship as local, versioned thumbnails.
+ * The original glove retains its existing Storage source. Both paths use
+ * real alpha cutouts at runtime for their opaque source backgrounds.
  *
  * BACKGROUND HANDLING (rewritten 2026-08-21 — Dan: "it throws it + background,
  * looks like trash")
@@ -24,7 +25,9 @@
  * or CORS is unavailable — the component falls back to the raw image with the
  * old screen blend, which is what shipped before. Nothing regresses.
  *
- * Error ladder: cutout -> sized transform URL -> raw full-size URL -> glyph.
+ * Delivery uses approved local premium thumbnails for the 47 non-glove items.
+ * The supplied glove artwork retains its existing source.
+ * Error ladder: cutout -> thumbnail -> larger source -> unavailable marker.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -43,7 +46,14 @@ interface ThrowableImageProps {
   loading?: 'eager' | 'lazy';
 }
 
-export function ThrowableImage({
+export function ThrowableImage(props: ThrowableImageProps) {
+  // Both the fallback ladder and asynchronous cutout belong to one asset.
+  // Remount synchronously so reused selector cells cannot paint the previous
+  // item's cutout or retain its exhausted error state for a new item/size.
+  return <ThrowableImageForAsset key={`${props.throwableId}:${props.size}`} {...props} />;
+}
+
+function ThrowableImageForAsset({
   throwableId,
   size,
   className = '',
@@ -82,15 +92,14 @@ export function ThrowableImage({
   const url = cutout || fallbackUrl;
 
   if (!url || (!cutout && errorStep >= 2)) {
-    // Storage unreachable — keep the layout, show a neutral chip glyph.
+    // Preserve layout without substituting a generic glyph for missing artwork.
     return (
       <span
         className={`throwable-img throwable-img--fallback ${className}`}
-        style={{ width: size, height: size, fontSize: size * 0.6, lineHeight: `${size}px` }}
-        aria-hidden
-      >
-        ◎
-      </span>
+        style={{ width: size, height: size }}
+        role="img"
+        aria-label="Artwork Unavailable"
+      />
     );
   }
 

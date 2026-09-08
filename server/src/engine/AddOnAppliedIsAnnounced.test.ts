@@ -24,6 +24,8 @@ type Resolve = { applied: number; refunded: number; was_resolved: boolean };
 
 function engineWith(rows: Row[], resolve: (id: string) => Resolve) {
   const engine = new ServerTableEngine(TABLE) as any;
+  engine.running = true;
+  engine.isCurrentEngine = () => true;
   engine.tableInfo = { id: TABLE, tournament_id: null };
   engine.getMaxBuyIn = () => 500;
   engine.broadcastCurrentState = vi.fn();

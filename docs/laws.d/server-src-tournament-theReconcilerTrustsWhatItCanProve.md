@@ -1,3 +1,3 @@
 # server/src/tournament/theReconcilerTrustsWhatItCanProve.law.test.ts
 
-The reconciler asks the authoritative record rather than the log, which is what stops a double-pay when the paperwork is incomplete
+During rolling Stage A, deferred reconciler RPCs exist only for old-engine compatibility and no current engine, client or operator path can dispatch them

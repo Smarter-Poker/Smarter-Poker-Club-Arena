@@ -559,17 +559,15 @@ it('union financial overview uses complete recorded statements and explicit paym
   ).toContain('AS snapshot_complete');
 });
 
-it('tournament payment completion uses durable outstanding debt rather than RPC success', () => {
+it('tournament payment completion requires durable debt or terminal batch proof', () => {
   const sql = read(
     'supabase/migrations/20260907215613_tournament_settlement_reports_remaining_debt.sql'
   );
   expect(sql).toContain("'remaining', GREATEST(0, v_ob.amount_owed - v_ob.amount_paid - v_pay)");
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain(
-    'if (bp.ok && bp.fully_settled === true && (bp.amount_paid ?? 0) >= refund)'
-  );
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain(
-    "this.broadcast('bubble_protection_pending'"
-  );
+  const manager = read('server/src/tournament/TournamentManagerEliminations.ts');
+  expect(manager).toContain('const settlement = await settleTournamentPlacesAtomically(');
+  expect(manager).toContain('if (!settlement.ok || !settlement.completed)');
+  expect(manager).toContain('Tournament.atomic_place_settlement_failed');
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain(
     'FAIL stale smaller replay hides debt'
   );

@@ -16,16 +16,16 @@ The current requirement covers the picker, flight, impact, residue and fallback 
 | `cool_sunglasses_emoji` | Legacy   | Pending bespoke replacement                                             | Pending            |
 | `heart`                 | Legacy   | Pending bespoke replacement                                             | Pending            |
 | `star`                  | Legacy   | Pending bespoke replacement                                             | Pending            |
-| `tomato`                | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
-| `cracked_egg`           | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
-| `banana_peel`           | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
+| `tomato`                | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
+| `cracked_egg`           | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
+| `banana_peel`           | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
 | `pizza_slice`           | Legacy   | Pending bespoke replacement                                             | Pending            |
 | `cake`                  | Rig      | This patch: 24 combined beat/size frames, zoom review                   | Pending            |
-| `poop`                  | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
-| `water_gun`             | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
+| `poop`                  | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
+| `water_gun`             | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
 | `boxing_glove`          | Legacy   | Pending bespoke replacement                                             | Pending            |
 | `anvil`                 | Legacy   | Pending bespoke replacement                                             | Pending            |
-| `trash_can`             | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
+| `trash_can`             | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
 | `snowman`               | Rig      | Fourth material pass: 36 combined beat/rung frames and 3x detail review | Pending            |
 | `magnet`                | Legacy   | Pending bespoke replacement                                             | Pending            |
 | `basketball`            | Legacy   | Pending bespoke replacement                                             | Pending            |
@@ -42,7 +42,7 @@ The current requirement covers the picker, flight, impact, residue and fallback 
 | `diamond`               | Legacy   | Pending bespoke replacement                                             | Pending            |
 | `rose`                  | Rig      | Second material pass, PR #3494                                          | Pending            |
 | `trophy`                | Rig      | First material pass, PR #3490                                           | Pending            |
-| `fireworks`             | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks                                               | Pending            |
+| `fireworks`             | Rig      | Fifth pass: 79 beat/rung frames, 3x holds and closure checks            | Pending            |
 | `bomb`                  | Rig      | Second material pass, PR #3494                                          | Pending            |
 | `rocket`                | Rig      | First material pass, PR #3490                                           | Pending            |
 | `ufo`                   | Legacy   | Pending bespoke replacement                                             | Pending            |

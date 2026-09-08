@@ -272,9 +272,12 @@ describe('the wiring - the brain actually plays the chart', () => {
     expect(d.action).not.toBe('all_in');
   });
 
-  it('the loader is wired at boot', async () => {
+  it('the loader is wired inside the sole live decision worker', async () => {
     const { readFileSync } = await import('node:fs');
-    const idx = readFileSync(new URL('../index.ts', import.meta.url).pathname, 'utf8');
-    expect(idx).toContain('startGtoChartLoader()');
+    const worker = readFileSync(
+      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    expect(worker).toContain('startGtoChartLoader()');
   });
 });

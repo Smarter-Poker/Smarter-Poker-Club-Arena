@@ -39,35 +39,33 @@ describe('the engine drains itself before stopping', () => {
     expect(src).toMatch(/Date\.now\(\) < deadline/);
   });
 
-  it('shutdown drains before it stops, inside the hard cap', () => {
+  it('shutdown delegates the drain to GameServer.stop and has one ownership deadline', () => {
     const src = read('server/src/index.ts');
-    const shutdown = src.slice(src.indexOf('const shutdown'), src.indexOf("process.on('SIGINT'"));
-    expect(shutdown).toMatch(/drainHands\(/);
-    // The drain must sit INSIDE the hard race, not before it.
-    // 2026-08-28: the cap moved 20s -> 30s when the drain budget went 8s ->
-    // 18s (8s expired with most tables still mid-hand, so the drain stopped
-    // exactly the hands it exists to protect). Asserted as "there is a cap
-    // and the drain is inside it" rather than pinning the literal, so the
-    // ORDER — the thing that matters — survives future tuning.
-    const drainAt = shutdown.indexOf('drainHands(');
-    const raceAt = shutdown.indexOf('Promise.race');
-    const capMatch = shutdown.match(/setTimeout\(r, (\d+)_?(\d*)\)/);
-    expect(capMatch).toBeTruthy();
-    const capAt = shutdown.indexOf(capMatch![0]);
-    expect(raceAt).toBeGreaterThan(-1);
-    expect(drainAt).toBeGreaterThan(raceAt);
-    expect(capAt).toBeGreaterThan(drainAt);
+    const shutdown = src.slice(
+      src.indexOf('async function performShutdown'),
+      src.indexOf("process.on('SIGINT'")
+    );
+    const stopAt = shutdown.indexOf('await gameServer.stop()');
+    const successAt = shutdown.indexOf('process.exit(shutdownMustFail ? 1 : 0)');
+    expect(stopAt).toBeGreaterThan(-1);
+    expect(successAt).toBeGreaterThan(stopAt);
 
-    // The budget must fit inside the cap, and the cap inside Docker's grace
-    // (`docker stop -t 45` in server/scripts/engine-up.sh) — otherwise the
-    // supervisor SIGKILLs the engine mid-flush and the drain buys nothing.
-    const budget = Number(read('server/src/index.ts').match(/drainHands\((\d+)\)/)![1]);
-    const cap = Number(`${capMatch![1]}${capMatch![2]}`);
-    expect(budget).toBeLessThan(cap);
-    expect(cap).toBeLessThan(45_000);
-    // And the budget must actually outlast a hand (~20s), or it expires with
-    // tables still mid-hand and stops them anyway — the 2026-08-28 finding.
-    expect(budget).toBeGreaterThanOrEqual(15_000);
+    // GameServer.stop() owns the drain, lifecycle joins, and lease release as
+    // one protocol. A second index drain/race can finish first and falsely
+    // report success while the authoritative owner is still tearing down.
+    expect(shutdown).not.toMatch(/drainHands\(/);
+    expect(shutdown).not.toMatch(/Promise\.race/);
+    expect(shutdown).toMatch(/SHUTDOWN_DEADLINE_MS/);
+    expect(shutdown).toMatch(/process\.exit\(1\)/);
+
+    // The one deadline must fit inside Docker's actual stop grace.
+    const deadline = Number(
+      src
+        .match(/SHUTDOWN_DEADLINE_MS = (\d+)_?(\d*)/)!
+        .slice(1)
+        .join('')
+    );
+    expect(deadline).toBeLessThan(45_000);
   });
 });
 

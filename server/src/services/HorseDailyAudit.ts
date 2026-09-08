@@ -35,6 +35,10 @@ const BOOT_DELAY_MS = 2 * 60 * 1000;
 let timer: NodeJS.Timeout | null = null;
 let bootTimer: NodeJS.Timeout | null = null;
 let running = false;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightRuns = new Set<Promise<void>>();
 let lastAuditedDay = '';
 /*
  * ── 2026-09-02: the memo that ate the retry ──
@@ -109,7 +113,11 @@ export async function runDailyAudit(day?: string): Promise<boolean> {
   }
 }
 
-async function maybeRun(): Promise<void> {
+const lifecycleIsCurrent = (generation: number): boolean =>
+  lifecycleActive && lifecycleGeneration === generation;
+
+async function maybeRun(generation: number): Promise<void> {
+  if (!lifecycleIsCurrent(generation)) return;
   const now = new Date();
   const hour = now.getUTCHours();
   const target = yesterdayUTC();
@@ -121,12 +129,16 @@ async function maybeRun(): Promise<void> {
   // indistinguishable from the service not being deployed. The house rule is
   // that a job must never look the same whether or not it worked; this file
   // was violating the rule it was written to enforce.
-  if (await alreadyRan(target)) {
+  const alreadyAudited = await alreadyRan(target);
+  if (!lifecycleIsCurrent(generation)) return;
+  if (alreadyAudited) {
     lastAuditedDay = target;
     console.log(`[HorseDailyAudit] ${target} already audited after the day closed - nothing to do`);
     return;
   }
-  if (!(await claimNightlyJob('daily_audit', target))) {
+  const claimed = await claimNightlyJob('daily_audit', target);
+  if (!lifecycleIsCurrent(generation)) return;
+  if (!claimed) {
     // Say it once, then keep ticking. The claim holder may still die, and
     // claimNightlyJob is the only thing allowed to decide whether this
     // instance may take the day over.
@@ -136,7 +148,9 @@ async function maybeRun(): Promise<void> {
     }
     return;
   }
-  if (await runDailyAudit(target)) {
+  const completed = await runDailyAudit(target);
+  if (!lifecycleIsCurrent(generation)) return;
+  if (completed) {
     lastAuditedDay = target;
     return;
   }
@@ -146,15 +160,38 @@ async function maybeRun(): Promise<void> {
   );
 }
 
+function launchMaybeRun(): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightRuns.size > 0) return;
+  let tracked!: Promise<void>;
+  tracked = maybeRun(generation)
+    .catch((err) => reportError(err, 'HorseDailyAudit.tick'))
+    .finally(() => inFlightRuns.delete(tracked));
+  inFlightRuns.add(tracked);
+}
+
+async function drainRuns(): Promise<void> {
+  while (inFlightRuns.size > 0) await Promise.allSettled([...inFlightRuns]);
+}
+
 export function startHorseDailyAudit(): void {
   if (timer) return;
-  timer = setInterval(() => void maybeRun(), CHECK_MS);
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
+  timer = setInterval(launchMaybeRun, CHECK_MS);
   timer.unref?.();
-  bootTimer = setTimeout(() => void maybeRun(), BOOT_DELAY_MS);
+  bootTimer = setTimeout(() => {
+    bootTimer = null;
+    launchMaybeRun();
+  }, BOOT_DELAY_MS);
   bootTimer.unref?.();
 }
 
-export function stopHorseDailyAudit(): void {
+export function stopHorseDailyAudit(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (timer) {
     clearInterval(timer);
     timer = null;
@@ -163,4 +200,6 @@ export function stopHorseDailyAudit(): void {
     clearTimeout(bootTimer);
     bootTimer = null;
   }
+  stopOperation = drainRuns();
+  return stopOperation;
 }

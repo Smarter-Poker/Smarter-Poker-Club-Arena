@@ -154,6 +154,7 @@ describe(
       expect(loadTable).toHaveBeenCalledTimes(2);
       expect(killed).toEqual([]);
       expect(engine.tableInfo).toMatchObject({ id: TABLE });
+      await engine.stop();
     });
 
     it('gives up after a bounded number of attempts, naming the stage it died in', async () => {
@@ -161,12 +162,13 @@ describe(
       loadTable.mockRejectedValue(transient());
       loadSeatedPlayers.mockResolvedValue([seat(1), seat(2)]);
 
-      await engine.start();
+      await expect(engine.start()).rejects.toThrow('fetch failed');
 
       expect(loadTable).toHaveBeenCalledTimes(5);
       // Not a bare `start_failed`: a kill reason that is the same string for
       // every possible cause is how 1,603 rows produced no diagnosis at all.
       expect(killed).toEqual(['start_failed:start_load_table']);
+      await engine.stop();
     });
 
     it('does not retry a real bug - that would just delay the rebuild', async () => {
@@ -174,10 +176,11 @@ describe(
       loadTable.mockRejectedValue(new TypeError('loadTable is not a function'));
       loadSeatedPlayers.mockResolvedValue([seat(1), seat(2)]);
 
-      await engine.start();
+      await expect(engine.start()).rejects.toThrow('loadTable is not a function');
 
       expect(loadTable).toHaveBeenCalledTimes(1);
       expect(killed).toEqual(['start_failed:start_load_table']);
+      await engine.stop();
     });
 
     it('a failed seat sweep costs one sweep, not the engine', async () => {
@@ -191,6 +194,7 @@ describe(
 
       expect(loadSeatedPlayers).toHaveBeenCalledTimes(2);
       expect(killed).toEqual([]);
+      await engine.stop();
     });
   }
 );

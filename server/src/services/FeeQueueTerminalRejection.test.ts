@@ -57,7 +57,7 @@ async function deferFee() {
 it('checks and reports a permanently rejected deferred fee before ending its attempt', async () => {
   await deferFee();
   insertError = 'permission denied';
-  expect(await write.attempt()).toEqual({ done: true });
+  expect(await write.attempt()).toEqual({ done: true, refused: true });
   expect(mocks.alert).toHaveBeenCalledWith(
     'critical',
     'FeeReconciler.queue_failed',
@@ -69,7 +69,7 @@ it('does not raise a money alarm if the terminal rejection belongs to an already
   await deferFee();
   insertError = 'permission denied';
   banked = true;
-  expect(await write.attempt()).toEqual({ done: true });
+  expect(await write.attempt()).toEqual({ done: true, refused: true });
   expect(mocks.from).toHaveBeenCalledWith('rake_records');
   expect(mocks.alert).not.toHaveBeenCalled();
 });

@@ -29,8 +29,16 @@ const REASSIGN_THRESHOLD = 25;
 
 let timer: NodeJS.Timeout | null = null;
 let bootTimer: NodeJS.Timeout | null = null;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightLoads = new Set<Promise<void>>();
 
-export async function loadHorseLanes(): Promise<number> {
+const lifecycleIsCurrent = (generation?: number): boolean =>
+  generation === undefined || (lifecycleActive && lifecycleGeneration === generation);
+
+export async function loadHorseLanes(generation?: number): Promise<number> {
+  if (!lifecycleIsCurrent(generation)) return 0;
   try {
     const rows: Array<{ id: string; lane: string | null }> = [];
     // Stake bands ride along on the SAME page scan. They are stored in the same
@@ -46,6 +54,7 @@ export async function loadHorseLanes(): Promise<number> {
         .eq('is_horse', true)
         .order('id', { ascending: true })
         .range(offset, offset + 999);
+      if (!lifecycleIsCurrent(generation)) return 0;
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
       for (const row of data as Array<{ id: string; horse_profile: unknown }>) {
@@ -66,13 +75,14 @@ export async function loadHorseLanes(): Promise<number> {
     // assignment is re-run rather than left drifting toward the hash's skew.
     if (missingBand >= REASSIGN_THRESHOLD) {
       const { error: bandErr } = await supabase.rpc('fn_assign_horse_stake_bands');
+      if (!lifecycleIsCurrent(generation)) return 0;
       if (bandErr) {
         reportError(new Error(bandErr.message), 'HorseLaneLoader.reassign_stake_bands');
       } else {
         console.log(
           `[HorseLaneLoader] ${missingBand} horses had no stake band - re-ran the exact assignment`
         );
-        return loadHorseLanes();
+        return loadHorseLanes(generation);
       }
     }
 
@@ -80,13 +90,14 @@ export async function loadHorseLanes(): Promise<number> {
     // split stays exact instead of drifting toward the fallback hash's skew.
     if (missing >= REASSIGN_THRESHOLD) {
       const { error: assignErr } = await supabase.rpc('fn_assign_horse_lanes');
+      if (!lifecycleIsCurrent(generation)) return 0;
       if (assignErr) {
         reportError(new Error(assignErr.message), 'HorseLaneLoader.reassign');
       } else {
         console.log(
           `[HorseLaneLoader] ${missing} horses had no lane - re-ran the exact assignment`
         );
-        return loadHorseLanes();
+        return loadHorseLanes(generation);
       }
     }
 
@@ -108,15 +119,38 @@ export async function loadHorseLanes(): Promise<number> {
   }
 }
 
+function launchLoad(): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightLoads.size > 0) return;
+  let tracked!: Promise<void>;
+  tracked = loadHorseLanes(generation)
+    .then(() => undefined)
+    .finally(() => inFlightLoads.delete(tracked));
+  inFlightLoads.add(tracked);
+}
+
+async function drainLoads(): Promise<void> {
+  while (inFlightLoads.size > 0) await Promise.allSettled([...inFlightLoads]);
+}
+
 export function startHorseLaneLoader(): void {
-  if (timer) return;
-  bootTimer = setTimeout(() => void loadHorseLanes(), BOOT_DELAY_MS);
+  if (timer || bootTimer || lifecycleActive) return;
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
+  bootTimer = setTimeout(() => {
+    bootTimer = null;
+    launchLoad();
+  }, BOOT_DELAY_MS);
   bootTimer.unref?.();
-  timer = setInterval(() => void loadHorseLanes(), REFRESH_MS);
+  timer = setInterval(launchLoad, REFRESH_MS);
   timer.unref?.();
 }
 
-export function stopHorseLaneLoader(): void {
+export function stopHorseLaneLoader(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (timer) {
     clearInterval(timer);
     timer = null;
@@ -125,4 +159,6 @@ export function stopHorseLaneLoader(): void {
     clearTimeout(bootTimer);
     bootTimer = null;
   }
+  stopOperation = drainLoads();
+  return stopOperation;
 }

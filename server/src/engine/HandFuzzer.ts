@@ -656,6 +656,22 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
 
     if (runoutPending) {
       runoutPending = false;
+      // Production all-in Pineapple runouts obtain these choices from the
+      // live horse-decision worker before HandController is allowed to cross
+      // the flop. This synchronous property harness deliberately has no
+      // worker/runtime, so install a complete seeded result set through the
+      // same public hand/fence boundary. Choosing an arbitrary legal discard
+      // is enough here: the property under test is chip conservation, while
+      // worker strategy and ownership are covered by their focused suites.
+      const pineappleSnapshot = hc.getPineappleRunoutDiscardSnapshot();
+      if (pineappleSnapshot) {
+        const decisions = new Map(
+          pineappleSnapshot.players.map((player) => [player.seat, Math.floor(rnd() * 3)])
+        );
+        if (!hc.preparePineappleRunoutDiscards(pineappleSnapshot.flop, decisions)) {
+          fail(ctx, 'LIVENESS', 'worker-equivalent Pineapple discard preparation was rejected');
+        }
+      }
       ctx.log.push('continueRunout()');
       hc.continueRunout();
       // completeHand() runs inside; conservation is checked below on exit.

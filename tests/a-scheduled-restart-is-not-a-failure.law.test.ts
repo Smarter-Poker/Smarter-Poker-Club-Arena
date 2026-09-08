@@ -138,13 +138,11 @@ describe('LAW 4 - it does not ask GoTrue about a restart it was told about', () 
   });
 });
 
-describe('LAW 5 - the page refuses to reload during a break, with no socket needed', () => {
-  it('the failsafe checks the break before it reloads', () => {
-    const block = sliceEnclosingBlock(TABLE_PAGE, "const KEY = 'ca_ws_autoreload_at'");
-    const guard = block.indexOf('maintenanceBreakRef.current.active');
-    const reload = block.indexOf('window.location.reload()');
-    expect(guard, 'the break guard is gone from the failsafe').toBeGreaterThan(-1);
-    expect(reload).toBeGreaterThan(guard);
+describe('LAW 5 - no outage or break can trigger a generic page reload', () => {
+  it('TablePage does not own a generic reload failsafe', () => {
+    const code = blankNonCode(TABLE_PAGE);
+    expect(code).not.toContain('window.location.reload()');
+    expect(code).not.toContain('ca_ws_autoreload_at');
   });
 
   it('that guard reads the DATABASE-backed break, not the socket frame', () => {

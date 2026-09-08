@@ -21,7 +21,7 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 
 ┌──────────────────────────────────────────────────────────────────────┐
 │  TIER 2 — PLAYER FRONTEND  (this repo, src/)                          │
-│  Vite build → Vercel project `club-arena`                             │
+│  Vite build → Hetzner static origin                                   │
 │  URLs: club.smarter.poker  +  smarter.poker/hub/club-arena/*          │
 │  Features: lobby, table view, chat, hand history viewer, settings     │
 └──────────────────────────────────────────────────────────────────────┘
@@ -61,8 +61,8 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 | Hetzner server       | id `125093929`, `ash-dc1` (Ashburn VA), IP `178.156.160.206`, CPX11                                              |
 | Hostname             | `engine.smarter.poker`                                                                                           |
 | Process manager      | systemd + Docker container `club-arena-engine`                                                                   |
-| Auto-deploy on push? | **No** — manual SSH-based deploy                                                                                 |
-| How to deploy        | `bash server/deploy-hetzner.sh` (runs on Mac, SSHs to Hetzner)                                                   |
+| Auto-deploy on push? | **YES**: automatic workflow, with cutover gated on scheduled maintenance                                         |
+| How to deploy        | Push an agent branch; autopilot merges; `auto-deploy-hetzner.yml` stages and verifies the engine                 |
 | Protocol             | WebSocket: `wss://engine.smarter.poker/ws/table/:tableId`, Bearer JWT auth                                       |
 | Bible governance     | V8 Bible Law 1.16 — discrete named events only, no snapshot-diffs, no polling. Latency budget < 100ms broadcast. |
 
@@ -114,7 +114,7 @@ run a sync script, that document is stale; this table is the current truth.
 
 **The desync warning is smaller than it was (2026-09-03).** Tier 2 now deploys
 itself on merge, and Tier 1 deploys itself on merge as well
-(`auto-deploy-hetzner.yml`, hourly `:45` cutover). Only Tier 3 still rides the
+(`auto-deploy-hetzner.yml`, preparation scheduled at `:35`, cutover gated on the `:55` break). Only Tier 3 still rides the
 World Hub's own Vercel build, which happens on a push to that repo's `main`. A
 fix touching Tier 3 therefore needs a World Hub pull request; a fix touching
 Tier 1 or 2 needs nothing but a merged branch in this repo.
@@ -126,7 +126,7 @@ Tier 1 or 2 needs nothing but a merged branch in this repo.
 ```
 ┌─ Is the change about real-time gameplay (action validation, hand flow,
 │  rake calc, RIT, insurance, disconnects, timer)?
-│      → THIS repo, server/src/, then `bash server/deploy-hetzner.sh`
+│      → THIS repo, server/src/, then push the agent branch through the normal checks
 │
 ├─ Is the change about the player-facing UI (lobby, table view, chat UI,
 │  card animations, sound, mobile layout)?
@@ -147,7 +147,7 @@ Tier 1 or 2 needs nothing but a merged branch in this repo.
 3. No client-side PIN-gate regression (server-side cookie + HMAC only).
 4. No `supabase.auth.getUser()` outside `src/lib/auth/*`.
 
-Bypass with `git push --no-verify` only in genuine emergencies.
+Do not bypass the push gates. A failed gate requires a source correction, not `--no-verify`.
 
 ---
 
@@ -188,3 +188,9 @@ Bypass with `git push --no-verify` only in genuine emergencies.
 - URL push-path matrix: `Smarter-Poker-World-Hub/.agent/architecture/url-map.md`.
 - Agent Rulebook: `Smarter-Poker-World-Hub/.agent/architecture/ONE-SOURCE-OF-TRUTH.md`.
 - Operations API inventory: `Smarter-Poker-World-Hub/.agent/architecture/club-arena-operations-api.md`.
+
+## Engine Verification And Credential Locations (2026-09-08)
+
+The active workflow uses `/opt/club-arena` on the engine host, with runtime configuration in `/opt/club-arena/server/.env`. Its canonical Actions secret is `HETZNER_SSH_PRIVATE_KEY`, with `HETZNER_SSH_KEY` as the legacy fallback; `HETZNER_HOST` and pinned `HETZNER_HOST_KEY` select and authenticate the host. Frontend publishing separately uses `CA_ORIGIN_HOST`, `CA_ORIGIN_SSH_KEY` and `CA_ORIGIN_HOST_KEY`. Never print or commit their values. Verify these names against the current workflow before using them.
+
+A green engine workflow does not prove cutover: a deferred run can finish green with Cut over, Verify and runtime-write proof skipped. Read those job steps and fetch cache-busted `https://engine.smarter.poker/health`; verify the running version contains the intended merged commits. Verify both frontend build-info endpoints independently. The frontend SHA does not prove engine adoption. Do not force a restart to close deployment lag.

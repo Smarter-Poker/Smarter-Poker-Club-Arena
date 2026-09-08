@@ -1,0 +1,319 @@
+/**
+ * ROCKET (AIRSTRIKE) - keyframes. Every delay is from LANDING (launch + 333
+ * ms, the reticle's own arrival); the comment on each stop gives the
+ * catalogue's ms from launch, never the delay. Every duration and delay
+ * multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 2's target
+ * avatar was ~40 px wide, so measured pixel offsets are scaled by 100/40.
+ *
+ * SEVEN THREADS, each on its own clock from the moment it appears:
+ *   the reticle    333 -> 1833   wanders through lock-on, scales up, fades
+ *   the missile   2267 -> 2633   dives from the top edge, grows, hits, gone
+ *   the hit glow  2567 -> 2733   a dull red bloom behind the missile
+ *   the flame     2633 -> 2733   three small tongues, growing
+ *   the fireball  2733 -> 2900   the full yellow burst, wavy spiky top
+ *   the ember     2867 -> 3033   orange-red with dark blotches, shrinking
+ *   the smoke     3033 -> 3733   the mushroom cloud, swells, drifts, pops
+ *
+ * THE IDIOM: an element that APPEARS at a beat carries `opacity: 0` in its
+ * own rule, runs `forwards` (NOT `both`), and its 0% frame is the VISIBLE
+ * opening frame. The reticle is on screen FROM LANDING (the Payload's own
+ * mount, delay 0), so it is the one element here that uses `both` - every
+ * other element here is born mid-throw and uses the born-and-dies idiom.
+ */
+
+/* == THE RETICLE: on screen from LANDING (333, delay 0), wanders through the
+   whole lock-on phase, scales up at the LOCK beat (1633, +1300) and fades
+   out by 1833 (+1500). One continuous life so the wander, the lock and the
+   fade cannot drift apart into separate delays that could disagree. ====== */
+.thr-missile__reticle {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-missile-reticle calc(1.5s * var(--animation-speed, 1)) ease-in-out both;
+}
+
+@keyframes thr-missile-reticle {
+  0% {
+    /* 333: ARRIVES, centred on the face */
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  24.47% {
+    /* 700: drifted left (x 108 -> 104) */
+    opacity: 1;
+    transform: translate(-12.5px, -2.5px) scale(1);
+  }
+  37.8% {
+    /* 900: swept right (x -> 113) */
+    opacity: 1;
+    transform: translate(10px, 5px) scale(1);
+  }
+  53.33% {
+    /* 1133: back to centre (x -> 109) */
+    opacity: 1;
+    transform: translate(0, -5px) scale(1);
+  }
+  68.93% {
+    /* 1367: the hunt continues - a second, smaller sweep (chosen; see the
+       file header, the reference gives no waypoint past f480) */
+    opacity: 1;
+    transform: translate(-7.5px, 2.5px) scale(1);
+  }
+  86.67% {
+    /* 1633: LOCK begins, settled back at centre */
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  91.13% {
+    /* 1700: scaled up ~2x */
+    opacity: 1;
+    transform: translate(0, 0) scale(2);
+  }
+  93.33% {
+    /* 1733: still growing, starting to fade */
+    opacity: 0.65;
+    transform: translate(0, 0) scale(2.6);
+  }
+  97.8% {
+    /* 1800: near 3.5x, nearly gone */
+    opacity: 0.2;
+    transform: translate(0, 0) scale(3.3);
+  }
+  100% {
+    /* 1833: gone; the target sits clean for 434 ms before the missile */
+    opacity: 0;
+    transform: translate(0, 0) scale(3.5);
+  }
+}
+
+/* == THE MISSILE: born tiny at the top edge (2267, +1934), dives straight
+   down growing with perspective, and is gone the instant the flame appears
+   (2633, +2300). transform-origin sits at the NOSE (the shape's own local
+   origin), so translateY IS the nose's absolute y - scaling never moves it,
+   only the tail and the exhaust grow out behind it. =====================  */
+.thr-missile__missile {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-missile-missile calc(0.366s * var(--animation-speed, 1)) linear
+    calc(1.934s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-missile-missile {
+  0% {
+    /* 2267: appears at the very top edge, tiny */
+    opacity: 1;
+    transform: translate(0, -145px) scale(0.16);
+  }
+  72.68% {
+    /* 2533: dive complete, nearly full size */
+    opacity: 1;
+    transform: translate(0, -3px) scale(0.95);
+  }
+  81.97% {
+    /* 2567: HIT - nose at the avatar centre */
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  90.98% {
+    /* 2600: holds through the hit frame, still drawn on top of the glow */
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    /* 2633: gone; the flame takes over */
+    opacity: 0;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* == THE HIT GLOW: born dull red at the HIT beat (2567, +2234), behind the
+   missile in paint order, fading out as the flame and fireball take over by
+   2733 (+2400). ============================================================ */
+.thr-missile__hitglow {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-missile-hitglow calc(0.166s * var(--animation-speed, 1)) ease-out
+    calc(2.234s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-missile-hitglow {
+  0% {
+    /* 2567: HIT - already visible, dull red */
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+  39.76% {
+    /* 2633: spreading as the flame appears over it */
+    opacity: 0.5;
+    transform: scale(1.05);
+  }
+  100% {
+    /* 2733: gone; the fireball covers everything */
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+
+/* == THE FLAME: born small at 2633 (+2300) the instant the missile is gone,
+   grows through 2667 (25 px) to 2700 (35 px), handed off to the fireball by
+   2733 (+2400). ============================================================ */
+.thr-missile__flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-missile-flame calc(0.1s * var(--animation-speed, 1)) ease-out
+    calc(2.3s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-missile-flame {
+  0% {
+    /* 2633: small yellow flame, already visible */
+    opacity: 1;
+    transform: scale(0.55);
+  }
+  34% {
+    /* 2667: grown to ~25 px */
+    opacity: 1;
+    transform: scale(0.72);
+  }
+  67% {
+    /* 2700: grown to ~35 px */
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 2733: gone; the fireball is already on screen in the same frame */
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+/* == THE FIREBALL: born already at full size at 2733 (+2400) - "avatar
+   completely covered" from its very first frame - holds to the ORANGE beat
+   (2867, +2534) and fades out as the ember stage takes over by 2900 (+2567). */
+.thr-missile__fireball {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-missile-fireball calc(0.167s * var(--animation-speed, 1)) ease-out
+    calc(2.4s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-missile-fireball {
+  0% {
+    /* 2733: FULL FIREBALL, already visible and already large */
+    opacity: 1;
+    transform: scale(1);
+  }
+  80.24% {
+    /* 2867: still full; the ember stage is about to take over */
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    /* 2900: gone under the ember stage */
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+/* == THE EMBER: born orange with a dark core at 2867 (+2534), shrinks a
+   little through 2900-3000, fades out as the smoke takes over by 3033
+   (+2700). ================================================================= */
+.thr-missile__ember {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-missile-ember calc(0.166s * var(--animation-speed, 1)) ease-out
+    calc(2.534s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-missile-ember {
+  0% {
+    /* 2867: orange, dark core, already visible */
+    opacity: 1;
+    transform: scale(1);
+  }
+  19.88% {
+    /* 2900: shrinking a little begins */
+    opacity: 1;
+    transform: scale(0.97);
+  }
+  80.12% {
+    /* 3000: orange-red, dimming */
+    opacity: 0.9;
+    transform: scale(0.9);
+  }
+  100% {
+    /* 3033: gone; the smoke takes over */
+    opacity: 0;
+    transform: scale(0.88);
+  }
+}
+
+/* == THE SMOKE: born at 3033 (+2700) as the ember fades, swells and drifts
+   left then back through 3667, pops out in one frame at 3700 (+3367,
+   ~40% alpha) and is gone by 3733 (+3400) - exactly the payload's own life,
+   so the cut and the smoke's last frame are the same moment. ============= */
+.thr-missile__smoke {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-missile-smoke calc(0.7s * var(--animation-speed, 1)) ease-out
+    calc(2.7s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-missile-smoke {
+  0% {
+    /* 3033: the puff forming, already visible */
+    opacity: 0.8;
+    transform: translate(0, 0) scale(0.8);
+  }
+  45.29% {
+    /* 3350: swelling, drifted left ~4 px */
+    opacity: 0.95;
+    transform: translate(-10px, 0) scale(0.98);
+  }
+  90.57% {
+    /* 3667: fully swelled, drifted back, avatar hidden */
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1.05);
+  }
+  95.29% {
+    /* 3700: pops out in one frame, ~40% alpha */
+    opacity: 0.4;
+    transform: translate(0, 0) scale(1.05);
+  }
+  100% {
+    /* 3733: gone; seat CLEAN, no residue */
+    opacity: 0;
+    transform: translate(0, 0) scale(1.05);
+  }
+}
+
+/* == REDUCED MOTION: the one frame this item is "about" - the FULL FIREBALL,
+   static - stands in for the whole airstrike. Everything before it (the
+   reticle's hunt and lock, the missile's dive, the hit glow, the small
+   flame) and after it (the ember shrink, the mushroom cloud) is pure motion
+   and goes; there is no residue to keep, so - like bomb.css - the arrived
+   state shown here is the loudest moment, not the last frame. =========== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-missile__reticle,
+  .thr-missile__missile,
+  .thr-missile__hitglow,
+  .thr-missile__flame,
+  .thr-missile__ember,
+  .thr-missile__smoke {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-missile__fireball {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+}

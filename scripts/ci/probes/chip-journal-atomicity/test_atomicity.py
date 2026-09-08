@@ -148,3 +148,7 @@ if mode=="fixed":
 if mode=="fixed":
  from test_insurance import verify_insurance
  verify_insurance(run)
+
+if mode=='fixed':
+ from test_agent_context import verify_agent_context
+ verify_agent_context(run)

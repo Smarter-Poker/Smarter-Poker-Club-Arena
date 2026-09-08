@@ -2,6 +2,12 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: Agent Wallet Ledger Context Is Scoped
+
+Agent sends and take-backs now restore the surrounding transaction ledger settings.
+82 isolated database cases pass after reproducing the original context leak.
+See docs/changelog/2026-09-08-agent-wallet-ledger-context-is-scoped.md.
+
 ## 2026-09-08: Cashouts Await The Complete Settlement Chain
 
 Voluntary and forced leave now follow appended settlement promises before cashout,

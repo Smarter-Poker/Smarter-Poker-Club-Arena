@@ -384,11 +384,6 @@ export function BuyInModal({
                   Confirmation. We Will Check It Before Retrying The Same Buy-In.
                 </p>
               )}
-              {cappedCashoutRestriction > 0 && cappedCashoutRestriction > minBuyIn && (
-                <span className="sc-label sc-ink--gold buy-in-modal__restriction-notice">
-                  Cashed Out Here: Min {formatAmount(cappedCashoutRestriction)} For 2 Hours
-                </span>
-              )}
               {confirmError && !recovery && (
                 <p role="alert" className="sc-copy sc-copy--center sc-ink--red buy-in-modal__error">
                   {confirmError}

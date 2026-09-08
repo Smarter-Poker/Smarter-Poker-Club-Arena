@@ -128,11 +128,6 @@
   font-size: 3.2cqw;
 }
 
-.buy-in-modal__restriction-notice {
-  font-size: 2.5cqw;
-  white-space: normal;
-}
-
 /* A lit word on the glass, for the one retry the master has no plate for. */
 .buy-in-modal__balance-retry {
   appearance: none;

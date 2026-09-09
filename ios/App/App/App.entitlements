@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push (src/lib/native/push.ts). Xcode swaps 'development' for
+	     'production' at archive time under automatic signing. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- Universal links: https://smarter.poker/hub/club-arena/... opens the
+	     app. Verified against /.well-known/apple-app-site-association, which
+	     the World Hub serves from APPLE_TEAM_ID (src/lib/app-links.js there). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:smarter.poker</string>
+		<string>webcredentials:smarter.poker</string>
+	</array>
+</dict>
+</plist>

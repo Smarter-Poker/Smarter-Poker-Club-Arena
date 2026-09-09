@@ -24,11 +24,27 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Permission strings (2026-09-09). iOS terminates an app that asks for
+	     a protected resource without the matching string. Voice chat at the
+	     table calls getUserMedia (src/services/VoiceSignalService.ts); the
+	     club-logo and avatar pickers are <input type="file"> and may open the
+	     camera. Apple reads these at review, so they say what the feature is. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Club Arena Uses The Microphone For Voice Chat At The Table When You Turn It On.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Club Arena Uses The Camera When You Choose To Take A Photo For Your Avatar Or Club Logo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Club Arena Opens Your Photo Library When You Choose A Picture For Your Avatar Or Club Logo.</string>
+	<!-- Apple's privacy manifest for the app target lives beside this file
+	     (PrivacyInfo.xcprivacy); the entitlements (push, associated domains)
+	     in App.entitlements. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- Deep links (2026-09-07): clubarena://... opens the app with no store
 	     account needed. Universal links (https://smarter.poker/hub/club-arena/...)
-	     are the Associated Domains entitlement + apple-app-site-association on
-	     smarter.poker, which need the Apple Team ID - phase 6. Handled by
-	     src/lib/native/deepLinks.ts. -->
+	     are the Associated Domains entitlement (App.entitlements) plus the
+	     apple-app-site-association the World Hub serves once APPLE_TEAM_ID is
+	     set on Vercel. Handled by src/lib/native/deepLinks.ts. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

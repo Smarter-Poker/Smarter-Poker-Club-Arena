@@ -17,16 +17,15 @@
   /* The rails in mid.png end at x 86 and 926 of the master: the glass between
      them is what the game gets, with a little air either side. */
   padding: 0 9.4% 2.4cqw;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
-    center / 100% auto repeat-y;
+  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
+    repeat-y;
 }
 
 .dk__deck {
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 627;
-  background: url('/hub/club-arena/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100%
-    auto no-repeat;
+  background: url('/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100% auto no-repeat;
 }
 
 .dk__bay-label {

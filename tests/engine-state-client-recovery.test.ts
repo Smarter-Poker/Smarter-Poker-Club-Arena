@@ -239,7 +239,7 @@ describe('EngineStateClient — heartbeats cannot acknowledge missing game state
       await heartbeats(ws, 120);
       visibility.mockReturnValue('visible');
       document.dispatchEvent(new Event('visibilitychange'));
-      await heartbeats(ws, 5);
+      await vi.advanceTimersByTimeAsync(4000);
       expect(statuses).not.toContain('reconnecting');
       ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 1, state: { pot: 0 } });
       await heartbeats(ws, 90);
@@ -1140,4 +1140,183 @@ describe('foreground recovery does not wait for an online event', () => {
       }
     });
   }
+});
+
+describe('foreground table state proves an open socket is usable', () => {
+  async function openExistingTable(mux: boolean) {
+    localStorage.setItem('ca_ws_mux', mux ? '1' : '0');
+    const result = client();
+    await result.c.connect();
+    const ws = live();
+    ws._open();
+    if (mux) ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 0 } });
+    return { ...result, ws };
+  }
+
+  for (const mux of [false, true]) {
+    for (const event of ['pageshow', 'online', 'visibilitychange']) {
+      it(`replaces a half-open ${mux ? 'mux' : 'dedicated'} socket within the wake budget on ${event}`, async () => {
+        const { c, ws, statuses } = await openExistingTable(mux);
+        try {
+          await vi.advanceTimersByTimeAsync(100);
+          (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+          expect(
+            ws.sent.map((raw) => JSON.parse(raw)).some((frame) => frame.type === 'RESYNC')
+          ).toBe(true);
+          await vi.advanceTimersByTimeAsync(6500);
+          expect(statuses).toContain('reconnecting');
+          expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+          expect(FakeWebSocket.instances).toHaveLength(2);
+          expect(live()).not.toBe(ws);
+        } finally {
+          c.disconnect();
+          localStorage.removeItem('ca_ws_mux');
+        }
+      });
+    }
+  }
+
+  it('accepts an unchanged authoritative snapshot without replacing the connection', async () => {
+    const { c, ws, statuses } = await openExistingTable(true);
+    try {
+      window.dispatchEvent(new Event('pageshow'));
+      await vi.advanceTimersByTimeAsync(4000);
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 0 } });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(statuses).not.toContain('reconnecting');
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('does not let repeated wake events or pings postpone a missing snapshot', async () => {
+    const { c, ws, statuses } = await openExistingTable(true);
+    try {
+      window.dispatchEvent(new Event('pageshow'));
+      for (let i = 0; i < 5; i++) {
+        await vi.advanceTimersByTimeAsync(1000);
+        window.dispatchEvent(new Event('pageshow'));
+        ws._frame({ type: 'PING', ts: Date.now() });
+      }
+      expect(statuses).toContain('reconnecting');
+      // PING proves the shared transport is alive, so only the table re-subscribes.
+      expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('does not replace a socket after the page hides or disconnects', async () => {
+    const { c, ws } = await openExistingTable(true);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    try {
+      window.dispatchEvent(new Event('pageshow'));
+      visibility.mockReturnValue('hidden');
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(ws.closedWith).toHaveLength(0);
+      visibility.mockReturnValue('visible');
+      window.dispatchEvent(new Event('pageshow'));
+      c.disconnect();
+      await vi.advanceTimersByTimeAsync(6500);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    } finally {
+      c.disconnect();
+      visibility.mockRestore();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('preserves the announced restart window', async () => {
+    const { c, ws, statuses } = await openExistingTable(true);
+    try {
+      c.noteScheduledRestart(Date.now() + 300000);
+      window.dispatchEvent(new Event('pageshow'));
+      await vi.advanceTimersByTimeAsync(6500);
+      expect(ws.closedWith).toHaveLength(0);
+      expect(statuses).not.toContain('reconnecting');
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+});
+
+describe('foreground channel liveness probe', () => {
+  async function openChannel() {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    c.send({ type: 'JOIN_CLUB', clubId: 'c1' });
+    c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    const ws = live();
+    ws._open();
+    return { c, ws };
+  }
+
+  it.each(['online', 'pageshow', 'visibilitychange'])(
+    'recovers a half-open channel on %s',
+    async (event) => {
+      const { c, ws } = await openChannel();
+      try {
+        (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+        expect(ws.sent.map((raw) => JSON.parse(raw).type)).toContain('CHANNEL_PING');
+        await vi.advanceTimersByTimeAsync(6500);
+        expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+        expect(live()).not.toBe(ws);
+        live()._open();
+        expect(live().sent.map((raw) => JSON.parse(raw).type)).toEqual(['JOIN_CLUB', 'JOIN_LOBBY']);
+      } finally {
+        c.disconnect();
+      }
+    }
+  );
+
+  it('keeps a responsive channel and reasserts current subscriptions once', async () => {
+    const { c, ws } = await openChannel();
+    try {
+      ws.sent = [];
+      window.dispatchEvent(new Event('pageshow'));
+      window.dispatchEvent(new Event('pageshow'));
+      expect(ws.sent.map((raw) => JSON.parse(raw).type)).toEqual([
+        'CHANNEL_PING',
+        'JOIN_CLUB',
+        'JOIN_LOBBY',
+      ]);
+      await vi.advanceTimersByTimeAsync(4000);
+      ws._frame({ type: 'CHANNEL_PONG' });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(ws.closedWith).toHaveLength(0);
+      expect(c.getStatus()).toBe('connected');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cannot extend the first probe by repeated wake events', async () => {
+    const { c, ws } = await openChannel();
+    try {
+      for (let i = 0; i < 5; i++) {
+        window.dispatchEvent(new Event('pageshow'));
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cancels a stale probe when the client is disposed', async () => {
+    const { c } = await openChannel();
+    window.dispatchEvent(new Event('online'));
+    c.disconnect();
+    await vi.advanceTimersByTimeAsync(6500);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(c.getStatus()).toBe('idle');
+  });
 });

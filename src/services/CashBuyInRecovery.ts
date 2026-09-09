@@ -1,6 +1,6 @@
 import { uuid } from '../utils/uuid';
 import { supabase } from '../lib/supabase';
-import { cashBuyInRefusalText } from '../lib/cashBuyIn';
+import { cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 
 export interface CashBuyInIntent {
   p_user_id: string;
@@ -335,7 +335,11 @@ export async function executeCashBuyIn(
         ['P0001', '23514', '55006'].includes(error.code ?? '') &&
         (cashBuyInRefusalText(error) !== null ||
           (error.code === '55006' && error.message?.includes('PLATFORM_FROZEN')));
-      if (afterClaimRefusal) return { kind: 'rejected', error };
+      // The canonical cash RPC claims/replays its receipt before inserting a
+      // seat. These exact seat-index refusals therefore roll back this attempt;
+      // a prior same-key commit would have replayed before reaching the insert.
+      if (afterClaimRefusal || cashBuyInSeatConflictText(error) !== null)
+        return { kind: 'rejected', error };
       throw error;
     }
     if (data && typeof data === 'object' && (data as { success?: boolean }).success === false)

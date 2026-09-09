@@ -1439,40 +1439,63 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * settle on their own and are consumed where they always were.
    */
   protected async prepareNextHand(): Promise<SeatedPlayer[]> {
-    const leaveSweepCanRace =
-      !this.isTournamentTable() &&
-      !this.pendingAddOnSweepNeeded &&
-      this.pendingAddOns.size === 0 &&
-      this.preparedLeavePending === null;
-    if (leaveSweepCanRace) {
-      const sweep = this.withStepBudget(
-        'leave_pending',
-        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-        processLeavePending(
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      const leaveSweepCanRace =
+        !this.isTournamentTable() &&
+        !this.pendingAddOnSweepNeeded &&
+        this.pendingAddOns.size === 0 &&
+        this.preparedLeavePending === null;
+      let rawSweep: ReturnType<typeof processLeavePending> | null = null;
+      let budgetedSweep: ReturnType<typeof processLeavePending> | null = null;
+      if (leaveSweepCanRace) {
+        rawSweep = processLeavePending(
           this.tableId,
           this.tableInfo?.club_id || '',
           (lockedUserId, stayRemainingMs, occupancyId) =>
             this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
-        )
-      );
-      // Consumed by takePreparedLeavePending, which surfaces a rejection in
-      // the step that always owned it; this only keeps it from being unhandled.
-      sweep.catch(() => undefined);
-      this.preparedLeavePending = sweep;
-    }
-    if (this.preparedHandNumber === null) {
-      this.preparedHandNumber = this.allocateGlobalHandNumber()
-        .then((n) => ({ n, at: Date.now() }))
-        .catch((err: unknown) => {
-          // dealHand allocates again itself; this only loses the overlap.
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
-            err instanceof Error ? err.message : err
+        );
+        budgetedSweep = this.withStepBudget(
+          'leave_pending',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          rawSweep
+        );
+        this.preparedLeavePending = budgetedSweep;
+      }
+      if (this.preparedHandNumber === null) {
+        this.preparedHandNumber = this.allocateGlobalHandNumber()
+          .then((n) => ({ n, at: Date.now() }))
+          .catch((err: unknown) => {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
+              err instanceof Error ? err.message : err
+            );
+            return null;
+          });
+      }
+      // A failed sibling read or elapsed step budget does not cancel a
+      // transaction. Join the raw cashout before releasing engine ownership.
+      // Read and cashout still start together; no new polling is introduced.
+      const [roster, departure, budget] = await Promise.allSettled([
+        this.readNextHandInputs(),
+        rawSweep ?? Promise.resolve([]),
+        budgetedSweep ?? Promise.resolve([]),
+      ]);
+      if (departure.status === 'fulfilled' && departure.value.length > 0) {
+        const stillSeated = (seat: SeatedPlayer) =>
+          !departure.value.some(
+            (left) => left.userId === seat.user_id && left.occupancyId === seat.occupancy_id
           );
-          return null;
-        });
+        this.seatedPlayers = this.seatedPlayers.filter(stillSeated);
+        if (roster.status === 'fulfilled') roster.value = roster.value.filter(stillSeated);
+      }
+      if (roster.status === 'rejected') throw roster.reason;
+      if (departure.status === 'rejected') throw departure.reason;
+      if (budget.status === 'rejected') throw budget.reason;
+      return roster.value;
+    } finally {
+      releaseSeatBoundary();
     }
-    return this.readNextHandInputs();
   }
 
   private preparedLeavePending: ReturnType<typeof processLeavePending> | null = null;

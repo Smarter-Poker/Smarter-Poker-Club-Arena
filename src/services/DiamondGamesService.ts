@@ -240,6 +240,32 @@ export interface GameMetrics {
   }>;
 }
 
+/** One win on the club's floor: who, which game, what it paid. Never a user id. */
+export interface FloorWin {
+  game: 'wheel' | 'plinko' | 'crash';
+  at: string;
+  kind: 'chips' | 'diamonds';
+  amount: number;
+  value_chips: number;
+  multiplier_cents: number | null;
+  name: string;
+  avatar: string | null;
+  mine: boolean;
+}
+
+export interface FloorCrashPoint {
+  crash_cents: number;
+  cashed: boolean;
+  at: string;
+}
+
+export interface GameFloor {
+  ok: boolean;
+  error?: string;
+  wins: FloorWin[];
+  crash_points: FloorCrashPoint[];
+}
+
 export interface GameConfigFull {
   enabled: boolean;
   min_bet_diamonds: number;
@@ -620,6 +646,43 @@ const DiamondGamesService = {
             activated_at: t.activated_at ? String(t.activated_at) : null,
           }))
         : [],
+    };
+  },
+
+  /**
+   * The floor: the host's recent wins across all three games and its last
+   * twenty crash points, named the way the club names a winner. No ids.
+   */
+  async floor(clubId: string, limit = 20): Promise<GameFloor> {
+    const { data, error } = await supabase.rpc('fn_diamond_game_floor', {
+      p_club_id: clubId,
+      p_limit: limit,
+    });
+    if (error) throw error;
+    const raw = rec(data);
+    const wins = Array.isArray(raw.wins) ? (raw.wins as Record<string, unknown>[]) : [];
+    const points = Array.isArray(raw.crash_points)
+      ? (raw.crash_points as Record<string, unknown>[])
+      : [];
+    return {
+      ok: Boolean(raw.ok),
+      error: raw.error ? String(raw.error) : undefined,
+      wins: wins.map((w) => ({
+        game: (w.game as FloorWin['game']) ?? 'wheel',
+        at: String(w.at ?? ''),
+        kind: (w.kind as FloorWin['kind']) ?? 'chips',
+        amount: num(w.amount),
+        value_chips: num(w.value_chips),
+        multiplier_cents: intOrNull(w.multiplier_cents),
+        name: String(w.name ?? 'Player'),
+        avatar: w.avatar ? String(w.avatar) : null,
+        mine: Boolean(w.mine),
+      })),
+      crash_points: points.map((p) => ({
+        crash_cents: num(p.crash_cents),
+        cashed: Boolean(p.cashed),
+        at: String(p.at ?? ''),
+      })),
     };
   },
 

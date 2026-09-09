@@ -85,10 +85,14 @@ interface MarkProps {
   className: string;
 }
 
-function DiamondMark({ uid, className }: MarkProps) {
+/**
+ * The stone itself (defs and facets, no <svg>), so the wheel's hub can carry
+ * the same cut inside its own drawing. Every id is namespaced by `uid`.
+ */
+export function DiamondMarkArt({ uid }: { uid: string }) {
   const id = (k: string) => `${uid}-${k}`;
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+    <>
       <defs>
         {/* The crown catches the light; the pavilion holds the club's blue. */}
         <linearGradient id={id('cl')} x1="0" y1="0" x2="0.6" y2="1">
@@ -153,6 +157,14 @@ function DiamondMark({ uid, className }: MarkProps) {
         <path d="M6 23 H58" stroke={`url(#${id('gd')})`} strokeWidth="1.7" fill="none" />
         <path d="M20.6 13.4 L29.6 13.4 L23.4 21 Z" fill="#ffffff" opacity="0.55" />
       </g>
+    </>
+  );
+}
+
+function DiamondMark({ uid, className }: MarkProps) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <DiamondMarkArt uid={uid} />
     </svg>
   );
 }

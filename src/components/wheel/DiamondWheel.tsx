@@ -3,12 +3,15 @@
  *  DIAMOND WHEEL - the wheel itself
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * A machined casino wheel drawn in SVG: a brushed-gold rim set with lamps, an
- * inner bevel, eleven equal segments cut from three materials (gold for chips,
- * arena cyan for diamonds, gunmetal for nothing), a jewelled hub and a gold
- * pointer at twelve o'clock. Depth comes from gradients and layered shadows, not
- * from a flat fill, per Dan's standing rule that nothing on smarter.poker looks
- * flat.
+ * A machined casino wheel drawn in SVG, cut from the console's own material
+ * (#ClubArenaConsole, Dan 2026-09-09): a brushed-steel rim set with blue lamps,
+ * an inner bevel, eleven equal segments in the master's inks (gold for the top
+ * chip prizes, steel-blue glass for the rest of the chips, the club's blue for
+ * diamonds, gunmetal for nothing), chrome spokes between them, the cut stone
+ * from the Diamond Games mark set in a chrome hub, and a chrome pointer with a
+ * lit blue tip at twelve o'clock. The gold-and-cyan wheel this replaces was
+ * the one drawn thing on the page that did not belong to the chassis around
+ * it. Depth comes from gradients and layered shadows, not from a flat fill.
  *
  * THE WHEEL DOES NOT CHOOSE. It receives the winning segment from the server
  * (fn_wheel_spin) and rotates so that segment stops under the pointer. Equal
@@ -22,7 +25,8 @@
  * --animation-speed like every other animation in the app (CLAUDE.md 10.6).
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { DiamondMarkArt } from '../club-buttons/ClubButtons';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { soundService } from '../../services/SoundService';
@@ -83,9 +87,10 @@ export function arrangeForDisplay(segments: WheelSegment[]): WheelSegment[] {
   return out;
 }
 
+/** Gold is the top ink and stays rare: the two biggest chip prizes wear it. */
 function materialClass(seg: WheelSegment): string {
-  if (seg.kind === 'chips') return seg.value_chips >= 20 ? styles.segGoldHot : styles.segGold;
-  if (seg.kind === 'diamonds') return styles.segCyan;
+  if (seg.kind === 'chips') return seg.value_chips >= 20 ? styles.segGoldHot : styles.segGlass;
+  if (seg.kind === 'diamonds') return styles.segBlue;
   return styles.segDark;
 }
 
@@ -114,6 +119,7 @@ export default function DiamondWheel({
   const rotationRef = useRef(0);
   const fallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const landedRef = useRef(false);
+  const hubId = useId().replace(/:/g, '');
 
   useEffect(() => {
     if (!spinning || landingOrd === null) return;
@@ -191,32 +197,34 @@ export default function DiamondWheel({
         aria-label="Diamond Wheel"
       >
         <defs>
+          {/* The rim is the console's chrome: a bright turn at the top left,
+              a dark turn at the bottom right, the way the master's rails go. */}
           <linearGradient id="dw-rim" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#f6e2a0" />
-            <stop offset="0.28" stopColor="#c99a2e" />
-            <stop offset="0.52" stopColor="#f3d27a" />
-            <stop offset="0.76" stopColor="#9c6f16" />
-            <stop offset="1" stopColor="#e8c463" />
+            <stop offset="0" stopColor="#f4f6f9" />
+            <stop offset="0.24" stopColor="#a9b2bc" />
+            <stop offset="0.5" stopColor="#e6eaef" />
+            <stop offset="0.74" stopColor="#4a545f" />
+            <stop offset="1" stopColor="#c9d0d8" />
+          </linearGradient>
+          <linearGradient id="dw-glass" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#3f6790" />
+            <stop offset="0.55" stopColor="#1e3652" />
+            <stop offset="1" stopColor="#0c1a2b" />
           </linearGradient>
           <radialGradient id="dw-face" cx="0.5" cy="0.45" r="0.6">
             <stop offset="0" stopColor="rgba(255,255,255,0.10)" />
             <stop offset="0.7" stopColor="rgba(255,255,255,0)" />
             <stop offset="1" stopColor="rgba(0,0,0,0.35)" />
           </radialGradient>
-          <linearGradient id="dw-gold" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#ffd97a" />
-            <stop offset="0.55" stopColor="#d9a32c" />
-            <stop offset="1" stopColor="#8a5f10" />
-          </linearGradient>
           <linearGradient id="dw-gold-hot" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#fff2b8" />
             <stop offset="0.5" stopColor="#ffc93c" />
             <stop offset="1" stopColor="#b57a12" />
           </linearGradient>
-          <linearGradient id="dw-cyan" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#8fe9ff" />
-            <stop offset="0.55" stopColor="#00b8e0" />
-            <stop offset="1" stopColor="#065f7a" />
+          <linearGradient id="dw-blue" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#8fd4ff" />
+            <stop offset="0.55" stopColor="#3a9be6" />
+            <stop offset="1" stopColor="#164f86" />
           </linearGradient>
           <linearGradient id="dw-dark" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#3a4756" />
@@ -228,11 +236,16 @@ export default function DiamondWheel({
             <stop offset="0.55" stopColor="#1c2531" />
             <stop offset="1" stopColor="#070a0f" />
           </radialGradient>
-          <linearGradient id="dw-pointer" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#fff0b0" />
-            <stop offset="0.5" stopColor="#f0c040" />
-            <stop offset="1" stopColor="#9a6a12" />
+          <linearGradient id="dw-pointer" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#f4f6f9" />
+            <stop offset="0.45" stopColor="#9aa3ad" />
+            <stop offset="1" stopColor="#3d4650" />
           </linearGradient>
+          <radialGradient id="dw-led" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.35" stopColor="#8fd4ff" />
+            <stop offset="1" stopColor="#45adff" stopOpacity="0" />
+          </radialGradient>
           <filter id="dw-drop" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#000" floodOpacity="0.55" />
           </filter>
@@ -277,8 +290,8 @@ export default function DiamondWheel({
                 <path
                   d={arcPath(cx, cy, rOuter, rInner, a0, a1)}
                   className={materialClass(seg)}
-                  stroke="rgba(0,0,0,0.55)"
-                  strokeWidth="1.2"
+                  stroke="rgba(226,232,238,0.42)"
+                  strokeWidth="1.1"
                 />
                 <path
                   d={arcPath(cx, cy, rOuter, rInner, a0, a1)}
@@ -301,11 +314,12 @@ export default function DiamondWheel({
           {/* Separator studs on the inner ring. */}
           {arranged.map((_, i) => {
             const [sx, sy] = polar(cx, cy, rInner + 4, i * step);
-            return <circle key={`stud-${i}`} cx={sx} cy={sy} r={2} fill="#f3d27a" opacity="0.8" />;
+            return <circle key={`stud-${i}`} cx={sx} cy={sy} r={2} fill="#d5dbe2" opacity="0.85" />;
           })}
         </g>
 
-        {/* The hub. */}
+        {/* The hub: a chrome bezel, a dark well, and the same cut stone the
+            Diamond Games mark carries, so the wheel and its door agree. */}
         <circle cx={cx} cy={cy} r={rInner - 2} fill="url(#dw-rim)" />
         <circle
           cx={cx}
@@ -314,19 +328,20 @@ export default function DiamondWheel({
           fill="url(#dw-hub)"
           stroke="rgba(255,255,255,0.12)"
         />
-        <text x={cx} y={cy + 9} textAnchor="middle" className={styles.hubGlyph}>
-          ◆
-        </text>
+        <svg x={cx - 24} y={cy - 24} width="48" height="48" viewBox="0 0 64 64" aria-hidden="true">
+          <DiamondMarkArt uid={`dw-${hubId}`} />
+        </svg>
 
         {/* The pointer at twelve o'clock. */}
         <g filter="url(#dw-drop)">
           <path
             d="M 200 18 L 216 46 L 200 60 L 184 46 Z"
             fill="url(#dw-pointer)"
-            stroke="#5a3d08"
+            stroke="#1a2028"
             strokeWidth="1.2"
           />
-          <circle cx="200" cy="30" r="3" fill="#fff8d6" />
+          <circle cx="200" cy="32" r="7" fill="url(#dw-led)" />
+          <circle cx="200" cy="32" r="2.6" fill="#dff2ff" />
         </g>
       </svg>
     </div>

@@ -26,6 +26,8 @@ import DiamondWheelService, { type WheelState } from '../services/DiamondWheelSe
 import DiamondGamesService, { type GameState } from '../services/DiamondGamesService';
 import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
+import FloorFeed from '../components/games/FloorFeed';
+import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import styles from './diamondGames.module.css';
@@ -79,6 +81,8 @@ export default function DiamondGamesPage() {
   const [plinko, setPlinko] = useState<GameState | null>(null);
   const [crash, setCrash] = useState<GameState | null>(null);
   const [explained, setExplained] = useState<GameKey | null>(null);
+  const [clubUuid, setClubUuid] = useState<string | null>(null);
+  const { floor } = useGameFloor(clubUuid, 20);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +93,7 @@ export default function DiamondGamesPage() {
       try {
         const uuid = await resolveClubUUID(routeClubId);
         if (cancelled || !live()) return;
+        setClubUuid(uuid);
         const [w, p, c] = await Promise.all([
           DiamondWheelService.getState(uuid).catch((err) => {
             reportError(err, 'DiamondGamesPage.wheel');
@@ -188,6 +193,8 @@ export default function DiamondGamesPage() {
           Never Pays Out More Than It Has Taken In.
         </p>
       </SpadeConsole>
+
+      <FloorFeed wins={floor?.wins ?? []} limit={8} />
 
       <SpadeConsole
         eyebrow="Spin"

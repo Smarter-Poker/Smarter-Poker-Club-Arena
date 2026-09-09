@@ -54,6 +54,9 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
 import { soundService } from '../services/SoundService';
+import FloorFeed from '../components/games/FloorFeed';
+import CrashPointsStrip from '../components/games/CrashPointsStrip';
+import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
@@ -62,9 +65,9 @@ const POLL_MS = 320;
 const TARGETS = [150, 200, 300, 500, 1000, 2000, 5000, 10000, 100000] as const;
 const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
 
-/** Chips as the player reads them: whole figures compact, sub-chip payouts exact. */
+/** Chips as the player reads them: whole figures compact, a fractional prize exact (it IS the prize). */
 function chipsLabel(v: number): string {
-  return v >= 1 ? compactChips(v) : v.toFixed(2);
+  return Number.isInteger(v) ? compactChips(v) : v.toFixed(2);
 }
 
 function reachChance(cents: number): string {
@@ -104,6 +107,7 @@ export default function DiamondCrashPage() {
   roundRef.current = round;
   const oddsRef = useRef<HTMLDivElement | null>(null);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
+  const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
   const loadState = useCallback(
     async (uuid: string) => {
@@ -164,10 +168,11 @@ export default function DiamondCrashPage() {
       if (clubUuid) {
         void loadState(clubUuid).catch((err) => reportError(err, 'DiamondCrashPage.reload'));
         void loadHistory(clubUuid);
+        void refreshFloor();
       }
       void freshCommit();
     },
-    [stopPolling, toast, clubUuid, loadState, loadHistory, freshCommit]
+    [stopPolling, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]
   );
 
   /** Adopt an open round (fresh or resumed) and start asking the server about it. */
@@ -507,6 +512,7 @@ export default function DiamondCrashPage() {
         }
       >
         <div className={styles.stage} ref={stageRef}>
+          <CrashPointsStrip points={floor?.crash_points ?? []} />
           <div className={styles.board}>
             <CrashCurve
               phase={phase}
@@ -667,6 +673,14 @@ export default function DiamondCrashPage() {
           </p>
         )}
       </SpadeConsole>
+
+      <FloorFeed
+        wins={floor?.wins ?? []}
+        game="crash"
+        eyebrow="The Floor"
+        title="Recent Wins"
+        limit={8}
+      />
 
       <SpadeConsole eyebrow="Your Rounds" title="History" foot="foot">
         {history.length === 0 ? (

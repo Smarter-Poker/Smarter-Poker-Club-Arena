@@ -49,6 +49,8 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
 import { soundService } from '../services/SoundService';
+import FloorFeed from '../components/games/FloorFeed';
+import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
 
 function odds(probability: number): string {
@@ -61,7 +63,7 @@ function odds(probability: number): string {
 function prizeLabel(seg: { kind: string; amount: number; label: string }): string {
   if (seg.kind === 'nothing') return 'Nothing';
   if (seg.kind === 'diamonds') return `${seg.amount.toLocaleString()} Diamonds`;
-  const chips = seg.amount >= 1 ? compactChips(seg.amount) : seg.amount.toFixed(2);
+  const chips = Number.isInteger(seg.amount) ? compactChips(seg.amount) : seg.amount.toFixed(2);
   return `${chips} ${seg.amount === 1 ? 'Chip' : 'Chips'}`;
 }
 
@@ -98,6 +100,7 @@ export default function DiamondWheelPage() {
   const busyRef = useRef(false);
   const oddsRef = useRef<HTMLDivElement | null>(null);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
+  const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
   const loadState = useCallback(
     async (uuid: string) => {
@@ -232,9 +235,10 @@ export default function DiamondWheelPage() {
     if (clubUuid) {
       void loadState(clubUuid).catch((err) => reportError(err, 'DiamondWheelPage.reload'));
       void loadHistory(clubUuid);
+      void refreshFloor();
     }
     void freshCommit();
-  }, [pending, toast, clubUuid, loadState, loadHistory, freshCommit]);
+  }, [pending, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]);
 
   const handleVerify = useCallback(
     async (result: WheelSpinResult) => {
@@ -492,6 +496,14 @@ export default function DiamondWheelPage() {
           </p>
         )}
       </SpadeConsole>
+
+      <FloorFeed
+        wins={floor?.wins ?? []}
+        game="wheel"
+        eyebrow="The Floor"
+        title="Recent Wins"
+        limit={8}
+      />
 
       <SpadeConsole eyebrow="Your Spins" title="History" foot="foot">
         {history.length === 0 ? (

@@ -294,6 +294,48 @@
   outline-offset: 2px;
 }
 
+/* ── The floor: an avatar beside a name, printed rows like every other ──── */
+
+.rowAvatar {
+  display: inline-block;
+  width: 5.6cqw;
+  height: 5.6cqw;
+  margin-right: 1.6cqw;
+  vertical-align: -1.4cqw;
+  border-radius: 50%;
+  object-fit: cover;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+/* ── The last twenty crash points: a printed strip, newest first ─────────── */
+
+.strip {
+  display: flex;
+  align-items: baseline;
+  gap: 2.6cqw;
+  width: 100%;
+  overflow-x: auto;
+  padding: 0.4cqw 0 1.2cqw;
+  scrollbar-width: none;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.stripLabel {
+  flex: none;
+}
+
+.stripItem {
+  flex: none;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .back:active,
   .rowButton:active .rowValue {

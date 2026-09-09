@@ -33,7 +33,8 @@
     "fn_diamond_game_history",
     "fn_diamond_game_set_config",
     "fn_diamond_game_metrics",
-    "fn_wheel_pool_seed"
+    "fn_wheel_pool_seed",
+    "fn_diamond_game_floor"
   ],
   "columns": {
     "wheel_configs": ["diamond_seed"],

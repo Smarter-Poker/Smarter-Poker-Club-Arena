@@ -50,6 +50,8 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
 import { soundService } from '../services/SoundService';
+import FloorFeed from '../components/games/FloorFeed';
+import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
@@ -59,9 +61,9 @@ function odds(weight: number): string {
   return oneIn >= 100 ? `1 In ${Math.round(oneIn).toLocaleString()}` : `1 In ${oneIn.toFixed(1)}`;
 }
 
-/** Chips as the player reads them: whole figures compact, sub-chip payouts exact. */
+/** Chips as the player reads them: whole figures compact, a fractional prize exact (it IS the prize). */
 function chipsLabel(v: number): string {
-  return v >= 1 ? compactChips(v) : v.toFixed(2);
+  return Number.isInteger(v) ? compactChips(v) : v.toFixed(2);
 }
 
 export default function DiamondPlinkoPage() {
@@ -92,6 +94,7 @@ export default function DiamondPlinkoPage() {
   const busyRef = useRef(false);
   const oddsRef = useRef<HTMLDivElement | null>(null);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
+  const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
   const loadState = useCallback(
     async (uuid: string) => {
@@ -277,9 +280,10 @@ export default function DiamondPlinkoPage() {
     if (clubUuid) {
       void loadState(clubUuid).catch((err) => reportError(err, 'DiamondPlinkoPage.reload'));
       void loadHistory(clubUuid);
+      void refreshFloor();
     }
     void freshCommit();
-  }, [pending, toast, clubUuid, loadState, loadHistory, freshCommit]);
+  }, [pending, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]);
 
   const handleVerify = useCallback(
     async (result: PlinkoDrop) => {
@@ -561,6 +565,14 @@ export default function DiamondPlinkoPage() {
           </p>
         )}
       </SpadeConsole>
+
+      <FloorFeed
+        wins={floor?.wins ?? []}
+        game="plinko"
+        eyebrow="The Floor"
+        title="Recent Wins"
+        limit={8}
+      />
 
       <SpadeConsole eyebrow="Your Drops" title="History" foot="foot">
         {history.length === 0 ? (

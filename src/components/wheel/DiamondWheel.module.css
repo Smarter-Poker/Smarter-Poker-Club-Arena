@@ -9,12 +9,11 @@
   position: relative;
   margin: 0 auto;
   border-radius: 50%;
-  /* The wheel sits IN a cavity in the panel: a dark well with a lit top edge. */
-  background: radial-gradient(circle at 50% 40%, #131b26 0%, #070a0f 70%);
-  box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -8px 18px rgba(0, 0, 0, 0.7),
-    0 18px 40px rgba(0, 0, 0, 0.6);
+  /* The wheel sits ON the console's glass. The cavity this used to draw
+     (its own radial fill and inset shadows) was a frame drawn in CSS inside
+     a painted frame - one background inside and another out. The rim's own
+     drop shadow is what grounds it now. */
+  background: transparent;
 }
 
 .svg {
@@ -22,16 +21,16 @@
   overflow: visible;
 }
 
-.segGold {
-  fill: url(#dw-gold);
+.segGlass {
+  fill: url(#dw-glass);
 }
 
 .segGoldHot {
   fill: url(#dw-gold-hot);
 }
 
-.segCyan {
-  fill: url(#dw-cyan);
+.segBlue {
+  fill: url(#dw-blue);
 }
 
 .segDark {
@@ -63,9 +62,14 @@
 }
 
 .segDark .segText,
-.segCyan .segText {
+.segBlue .segText,
+.segGlass .segText {
   fill: #eaf6ff;
   stroke: rgba(0, 0, 0, 0.5);
+}
+
+.segDark .segText {
+  fill: #9aa5b3;
 }
 
 .segLock {
@@ -77,24 +81,19 @@
   fill: #e6edf3;
 }
 
-.hubGlyph {
-  font-size: 26px;
-  fill: #8fe9ff;
-  paint-order: stroke fill;
-  stroke: rgba(0, 0, 0, 0.6);
-  stroke-width: 1px;
-}
-
+/* The lamps are the frame's blue LEDs: dark steel studs at rest, lit in a
+   chase while the wheel turns. */
 .lamp {
-  fill: #5a4a22;
+  fill: #2a3542;
   stroke: rgba(0, 0, 0, 0.6);
   stroke-width: 0.5;
 }
 
 .lampOn {
-  fill: #fff2b8;
+  fill: #8fd4ff;
   stroke: rgba(0, 0, 0, 0.6);
   stroke-width: 0.5;
+  filter: drop-shadow(0 0 3px rgba(69, 173, 255, 0.9));
   animation: dw-lamp-chase calc(0.28s * var(--animation-speed, 1)) steps(2) infinite;
 }
 

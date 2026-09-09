@@ -212,7 +212,9 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(resumeBreak).toMatch(/if \(!this\.handForHandActive && !addOnBreakStillActive\)/);
     expect(resumeBreak).toContain('if (!addOnBreakStillActive) {');
     expect(finishBreak).toContain('if (!this.running) return');
-    expect(finishBreak).toMatch(/if \(ownsPause && !this\.onBreak && !this\.handForHandActive\)/);
+    // A bubble can end during this break; its inherited gate must still release.
+    // HandForHandBreakOwnership.test.ts exercises that transition with real engine pause methods.
+    expect(finishBreak).toMatch(/if \(!this\.onBreak && !this\.handForHandActive\)/);
     expect(finishBreak).toMatch(/if \(ownsLevelClock && !this\.onBreak\)/);
   });
 

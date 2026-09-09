@@ -35,6 +35,7 @@ import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
+import { formatTableChips } from '../../utils/format';
 
 export interface GameLobbyPanelProps {
   entry: LobbyEntry;
@@ -728,7 +729,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   {avgPot != null && avgPot > 0 && (
                     <div>
                       <dt>Avg Pot</dt>
-                      <dd className="glp__mono">{Math.round(avgPot).toLocaleString()}</dd>
+                      <dd className="glp__mono">{formatTableChips(avgPot)}</dd>
                     </div>
                   )}
                   <div>
@@ -1057,9 +1058,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                 <td>{p.percentage}%</td>
                                 {Number(tournament.prize_pool) > 0 && (
                                   <td>
-                                    {Math.floor(
-                                      ((Number(tournament.prize_pool) || 0) * p.percentage) / 100
-                                    ).toLocaleString()}
+                                    {/* To the cent (2026-09-09). This is the
+                                        advertised payout table; flooring each
+                                        place advertised 98 against the 98.72
+                                        the settlement actually pays. */}
+                                    {formatTableChips(
+                                      Math.round(
+                                        (Number(tournament.prize_pool) || 0) * p.percentage
+                                      ) / 100
+                                    )}
                                   </td>
                                 )}
                               </tr>

@@ -1,0 +1,462 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB ADVERTISE PAGE - metal UI, mobile first (375px), one column that earns
+   a second on desktop. Every picture box carries the surface's own
+   aspect-ratio and `object-fit: contain`, so the buyer sees exactly the
+   shape players will.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.club-advertise {
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: clip;
+  padding: 12px 12px var(--bottom-nav-clearance, 74px);
+  box-sizing: border-box;
+  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  color: #e6edf3;
+  font-family: var(--font-sans, inherit);
+}
+
+.club-advertise__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  margin: 0 0 12px;
+}
+
+.club-advertise__back {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #2a3a4a;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6edf3;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.club-advertise__title {
+  margin: 4px 0 4px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+
+.club-advertise__sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.72);
+  max-width: 60ch;
+}
+
+.club-advertise__balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid #2a3a4a;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.06);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.club-advertise .diamond-icon::before {
+  content: '◆';
+  color: #65c4ff;
+  margin-right: 3px;
+  font-size: 0.9em;
+}
+
+.club-advertise__card {
+  padding: 14px;
+  margin: 0 0 12px;
+  border: 1px solid #2a3a4a;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.03) 100%);
+}
+
+.club-advertise__h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9fb3c8;
+}
+
+.club-advertise__hint,
+.club-advertise__blurb {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.club-advertise__error {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 16px;
+  border: 1px solid #5a2a2a;
+  border-radius: 12px;
+  background: rgba(176, 58, 50, 0.12);
+}
+
+.club-advertise__field-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(176, 58, 50, 0.16);
+  border: 1px solid rgba(224, 122, 112, 0.4);
+  color: #ffb4ab;
+  font-size: 12.5px;
+}
+
+/* ── Surfaces ── */
+.club-advertise__surfaces {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.club-advertise__surface {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid #2a3a4a;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.club-advertise__surface--on {
+  border-color: #00d4ff;
+  box-shadow:
+    0 0 0 1px rgba(0, 212, 255, 0.35),
+    0 0 16px rgba(0, 212, 255, 0.18);
+}
+
+.club-advertise__surface-shape {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(101, 196, 255, 0.18) 0 6px,
+    rgba(101, 196, 255, 0.06) 6px 12px
+  );
+  border: 1px dashed rgba(101, 196, 255, 0.45);
+}
+
+.club-advertise__surface-label {
+  font-weight: 800;
+}
+
+.club-advertise__surface-price {
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfe8ff;
+}
+
+.club-advertise__surface-size {
+  font-size: 11.5px;
+  color: rgba(226, 232, 240, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Creative ── */
+.club-advertise__preview {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #06080b;
+  border: 1px solid #2a3a4a;
+  display: grid;
+  place-items: center;
+}
+
+.club-advertise__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.club-advertise__preview-empty {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.45);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.club-advertise__file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.club-advertise__file input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.club-advertise__file-name {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  overflow-wrap: anywhere;
+}
+
+/* ── Form ── */
+.club-advertise__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.club-advertise__field {
+  display: grid;
+  gap: 5px;
+}
+
+.club-advertise__field > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9fb3c8;
+}
+
+.club-advertise__field small {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+.club-advertise__field input,
+.club-advertise__field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border: 1px solid #2a3a4a;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e6edf3;
+  font: inherit;
+  font-size: 15px;
+}
+
+.club-advertise__field input:focus-visible,
+.club-advertise__field select:focus-visible,
+.club-advertise__btn:focus-visible,
+.club-advertise__surface:focus-visible {
+  outline: 2px solid #65c4ff;
+  outline-offset: 2px;
+}
+
+.club-advertise__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #2a3a4a;
+}
+
+.club-advertise__total-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9fb3c8;
+}
+
+.club-advertise__total-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-advertise__total-math {
+  display: block;
+  font-size: 11.5px;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+/* ── Buttons ── */
+.club-advertise__btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid #2a3a4a;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e6edf3;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.club-advertise__btn--primary {
+  border: 0;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  color: #04121a;
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.35);
+}
+
+.club-advertise__btn--ghost {
+  display: inline-flex;
+  align-items: center;
+}
+
+.club-advertise__btn--sm {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  margin-top: 8px;
+}
+
+.club-advertise__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Campaign list ── */
+.club-advertise__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.club-advertise__item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #2a3a4a;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.club-advertise__item-picture {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #06080b;
+}
+
+.club-advertise__item-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The text half of a campaign row. `min-width: 0` is the load-bearing
+   declaration, not the gap: on desktop this is the second track of a grid
+   whose first track is the picture, and a grid item defaults to
+   `min-width: auto`, so one long headline or a long destination path would
+   push the track wider than its share and take the picture with it. */
+.club-advertise__item-body {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
+.club-advertise__item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.club-advertise__item-meta,
+.club-advertise__item-note {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  line-height: 1.4;
+}
+
+.club-advertise__item-note {
+  color: #ffd79a;
+}
+
+.club-advertise__item-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-advertise__status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+.club-advertise__status--submitted {
+  background: rgba(184, 137, 43, 0.2);
+  color: #ffd79a;
+}
+
+.club-advertise__status--live {
+  background: rgba(43, 122, 75, 0.25);
+  color: #8ee0b0;
+}
+
+.club-advertise__status--scheduled,
+.club-advertise__status--approved {
+  background: rgba(0, 212, 255, 0.14);
+  color: #9fe3ff;
+}
+
+.club-advertise__status--rejected,
+.club-advertise__status--cancelled {
+  background: rgba(176, 58, 50, 0.2);
+  color: #ffb4ab;
+}
+
+@media (min-width: 768px) {
+  .club-advertise {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 20px 20px var(--bottom-nav-clearance, 74px);
+  }
+
+  .club-advertise__surfaces {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .club-advertise__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .club-advertise__item {
+    grid-template-columns: minmax(200px, 40%) 1fr;
+    align-items: start;
+  }
+}

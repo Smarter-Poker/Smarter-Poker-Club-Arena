@@ -7,7 +7,7 @@
  * getTournament null return, and getTournaments empty return.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { mockRpc, mockEmit, mockUuid } = vi.hoisted(() => ({
   mockRpc: vi.fn(),
@@ -31,6 +31,7 @@ vi.mock('../../src/lib/supabase', () => {
     return new Proxy({}, handler);
   };
   return {
+    getAuthUser: async () => ({ data: { user: { id: 'u-1' } }, error: null }),
     supabase: {
       from: () => buildChain(),
       rpc: mockRpc,
@@ -68,7 +69,15 @@ import {
 } from '../../src/services/TournamentService';
 
 describe('TournamentService', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('navigator', {
+      locks: { request: (_key: string, fn: () => Promise<unknown>) => fn() },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
 
   // ─────────────────────────────────────────────────────────────────────────
   // BLIND STRUCTURES
@@ -325,6 +334,37 @@ describe('TournamentService', () => {
       });
     });
 
+    it('retains the original identity after both transport attempts fail', async () => {
+      mockRpc
+        .mockRejectedValueOnce(new Error('Lost Response'))
+        .mockRejectedValueOnce(new Error('Lost Replay'));
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(/Confirm/);
+      const original = mockRpc.mock.calls[0][1].p_request_id;
+      mockRpc.mockImplementationOnce(async (_name, args) => ({
+        data: {
+          ok: true,
+          request_id: args.p_request_id,
+          registration_id: 'registration-1',
+          refunded_chips: 110,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      }));
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+      expect(mockRpc.mock.calls.map((call) => call[1].p_request_id)).toEqual([
+        original,
+        original,
+        original,
+      ]);
+      expect(mockEmit).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a stale account before submitting', async () => {
+      await expect(tournamentService.unregisterPlayer('t-1', 'another-user')).rejects.toThrow(
+        /Correct Account/
+      );
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
     it('surfaces the server refusal reason rather than a generic failure', async () => {
       mockRpc.mockResolvedValue({
         data: { ok: false, reason: 'tournament_started' },

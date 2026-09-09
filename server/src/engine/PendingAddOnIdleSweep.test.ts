@@ -24,6 +24,19 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const loadSeatedPlayers = vi.fn();
 const loadTable = vi.fn();
+// This suite owns isolated add-on/idle behavior, never an external database.
+// Fail loudly if a newly added ancillary path escapes its explicit fixture.
+vi.mock('../services/supabase/client.js', () => ({
+  supabase: {
+    from: vi.fn(() => {
+      throw new Error('Unmodeled database read in idle-sweep fixture');
+    }),
+    rpc: vi.fn(() => {
+      throw new Error('Unmodeled database RPC in idle-sweep fixture');
+    }),
+  },
+  maintenanceSupabase: {},
+}));
 
 vi.mock('../services/supabase.js', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
@@ -67,6 +80,9 @@ function idleEngine() {
   engine.stopIfClusterTableClosed = vi.fn(async () => {});
   engine.refreshBlinds = vi.fn().mockResolvedValue(undefined);
   engine.refreshRakeConfig = vi.fn().mockResolvedValue(undefined);
+  engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+  engine.executePendingSeatMoves = vi.fn(async () => {});
+  engine.standUpBustedCashPlayers = vi.fn(async () => {});
   engine.recoverBustedSeatedHorses = vi.fn().mockResolvedValue(undefined);
   // No outstanding rows in the stand-up guard; addon behavior is driven below.
   engine.usersWithPendingLedgerChips = vi.fn(async () => new Set<string>());

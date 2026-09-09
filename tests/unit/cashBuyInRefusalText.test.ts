@@ -60,9 +60,9 @@ describe('cashBuyInRefusalText', () => {
     );
   });
 
-  it('separates the club treasury from the player wallet', () => {
+  it('names the player club wallet actually debited by the cash RPC', () => {
     expect(cashBuyInRefusalText('Insufficient club chips for buy-in (club abc)')).toBe(
-      'The Club Treasury Cannot Cover This Buy In'
+      'Your Club Wallet Does Not Have Enough Chips For This Buy In'
     );
   });
 

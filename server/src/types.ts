@@ -82,6 +82,9 @@ export interface SeatPlayer {
    * private side pot / an uncalled-bet refund for chips that belong to the pot).
    */
   deadInvested?: number;
+  /** Individual ante within deadInvested, retained for partial-ante pot caps.
+   * BBA and dead blinds remain shared dead money and never populate this field. */
+  individualAnteInvested?: number;
   cards: Card[];
   is_folded: boolean;
   is_all_in: boolean;
@@ -446,6 +449,8 @@ export interface GameState {
    */
   communityCards3: Card[];
   pot: number;
+  /** Missing SB/BB chips, used only for preflop pot-limit sizing. Never money. */
+  potLimitBlindAdjustment?: number;
   currentBet: number;
   lastRaise: number;
   minRaise: number;
@@ -491,6 +496,8 @@ export interface HandStateBroadcast {
    * fixed-limit table would have drawn a no-limit bet slider.
    */
   betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Pot-limit wager basis; the displayed/accounted pot remains `pot`. */
+  pot_limit_pot?: number;
   /** Fixed limit only: the street's one legal wager (small bet or big bet). */
   fixed_bet_size?: number;
   /**
@@ -522,6 +529,16 @@ export interface ActionRecord {
 
 export type HandEvent =
   | { type: 'HAND_START'; handNumber: number; players: SeatPlayer[] }
+  | {
+      type: 'FORCED_BETS_POSTED';
+      postings: Array<{
+        seat: number;
+        userId: string;
+        kind: string;
+        amount: number;
+        dead: boolean;
+      }>;
+    }
   | { type: 'CARDS_DEALT'; seat: number; cards: Card[] }
   /**
    * PHASE 4 2026-09-01 - the card a seat threw, for that seat's own replay.

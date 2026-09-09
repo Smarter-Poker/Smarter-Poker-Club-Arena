@@ -247,18 +247,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
        * post rows — so old and new hands both rebuild correctly, and no
        * backfill is needed or possible.
        */
-      case 'FORCED_BETS_POSTED' as never: {
-        const postings = (
-          event as never as {
-            postings?: Array<{
-              seat: number;
-              userId: string;
-              kind: string;
-              amount: number;
-              dead?: boolean;
-            }>;
-          }
-        ).postings;
+      case 'FORCED_BETS_POSTED': {
+        const postings = event.postings;
         /**
          * THE ANTE IS SEEN LEAVING THE PLAYER (Dan 2026-09-04): "IF THERE IS
          * AN ANTE, THAT NEEDS TO BE TAKEN FROM THE PLAYER AND ADDED TO THE
@@ -385,6 +375,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       }
 
       case 'TURN_CHANGE': {
+        const decisionContext = this.getActionContext();
         // ═══════════════════════════════════════════════════════════════════
         // Dan 2026-08-20: "every player's action MUST GO IN TURN. Their action
         // MUST BE DISPLAYED, an animation MUST PLAY after every decision. NO
@@ -472,6 +463,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           break;
         }
 
+        if (this.getActionContext() !== decisionContext) break;
+
         const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
 
         const baseActionTime = this.tableInfo?.action_time_seconds || 15;
@@ -530,11 +523,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           reportError(err, 'ServerTableEngine.' + this.tableId + '.broadcast_threw');
         }
 
+        if (this.getActionContext() !== decisionContext) break;
+
         // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
         // carries the correct absolute deadline for the CURRENT player.
         try {
           this.hub?.emitEvent(this.tableId, {
             type: 'turn_change',
+            action_context: decisionContext,
             table_id: this.tableId,
             hand_number: this.handCount,
             seat: event.seat,

@@ -446,7 +446,8 @@ export async function submitAction(
   tableId: string,
   _userId: string,
   action: string,
-  amount?: number
+  amount?: number,
+  actionContext?: string
 ): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
@@ -467,7 +468,7 @@ export async function submitAction(
       const response = await engineFetch(`${GAME_SERVER_URL}/action`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ tableId, action, amount, idempotencyKey }),
+        body: JSON.stringify({ tableId, action, amount, idempotencyKey, actionContext }),
       });
 
       if (response.ok) {
@@ -483,6 +484,16 @@ export async function submitAction(
       if (response.status === 429) {
         // Every retry exhausted. Never show the number.
         return { success: false, error: 'The table is busy - please try again' };
+      }
+
+      if (response.status === 400) {
+        const rejected = await response.json();
+        return {
+          success: false,
+          error: typeof rejected.error === 'string' ? rejected.error : 'Action rejected',
+          code: rejected.code,
+          hint: rejected.hint,
+        };
       }
 
       if (response.status === 409) {

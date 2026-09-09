@@ -10,6 +10,7 @@
  */
 
 import { supabase } from './client.js';
+import { pushFinancialUpdate } from '../financialPush.js';
 import { reportError } from '../errorReporter.js';
 import { tableCountChangedFilter } from './tables.js';
 
@@ -226,6 +227,11 @@ export async function atomicCashout(
 
     const receipt = confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
     void notifyWaitlistSeatOpen(tableId);
+    pushFinancialUpdate(userId, {
+      tableId,
+      ledgerEntry:
+        receipt.stack > 0 ? { direction: 'in', amount: receipt.stack, kind: 'cashout' } : null,
+    });
     return receipt.stack;
   } catch (err: any) {
     console.warn(

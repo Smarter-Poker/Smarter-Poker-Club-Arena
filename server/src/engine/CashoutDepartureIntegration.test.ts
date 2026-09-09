@@ -5,6 +5,8 @@ const transport = vi.hoisted(() => ({
     throw new Error('Unexpected database query in isolated departure test');
   }),
 }));
+const financial = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock('../services/financialPush.js', () => ({ pushFinancialUpdate: financial.push }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: transport,
   maintenanceSupabase: transport,
@@ -78,6 +80,7 @@ for (const path of ['eviction', 'busted'] as const) {
           error: null,
         });
         await sweep();
+        expect(financial.push).not.toHaveBeenCalled();
         expect(e.seatedPlayers).toHaveLength(1);
         expect(e.hub.emitEvent).not.toHaveBeenCalled();
         expect(e.disconnectEngine.unregisterPlayer).not.toHaveBeenCalled();
@@ -102,6 +105,7 @@ for (const path of ['eviction', 'busted'] as const) {
           });
         }
         expect(transport.from).not.toHaveBeenCalled();
+        expect(financial.push).toHaveBeenCalledOnce();
       }
     );
     it.each([false, true])(

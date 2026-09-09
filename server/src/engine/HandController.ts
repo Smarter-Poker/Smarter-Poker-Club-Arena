@@ -24,6 +24,8 @@ import {
   isFixedLimitVariant,
   isPotLimitVariant,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import {
@@ -274,6 +276,7 @@ export class HandController {
       totalInvested: 0,
       returnedUncalled: 0,
       deadInvested: 0,
+      individualAnteInvested: 0,
       cards: [],
       is_folded: false,
       is_all_in: false,
@@ -316,6 +319,16 @@ export class HandController {
       this.state.communityCards2 = [];
       this.state.communityCards3 = [];
       this.boardDealtOutsideState = false;
+    }
+    // Heads-up has a live button/SB. An old button on an absent or sitting-out
+    // seat must not post a blind, receive a hand, or be announced as the actor.
+    // Multiway dead-button positions remain valid and are not changed here.
+    const openingPlayers = this.getActivePlayers();
+    if (
+      openingPlayers.length === 2 &&
+      !openingPlayers.some((p) => p.seat === this.state.dealerSeat)
+    ) {
+      this.state.dealerSeat = this.getNextActiveSeat(this.state.dealerSeat);
     }
     this.handStarted = true;
     // FIX-225: FSM transitions for hand start sequence
@@ -380,6 +393,20 @@ export class HandController {
       : this.getNextActiveSeat(this.state.dealerSeat);
     const bbSeat = this.getNextActiveSeat(sbSeat);
 
+    // Individual antes precede live blinds. A short ante is all-in for that
+    // contribution only; the table-wide BBA below keeps its BB-first policy.
+    if (this.config.ante && !this.config.bigBlindAnte) {
+      for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
+        const amount = Math.min(this.config.ante, player.stack);
+        player.totalInvested += amount;
+        player.deadInvested = (player.deadInvested ?? 0) + amount;
+        player.individualAnteInvested = amount;
+        player.stack -= amount;
+        this.state.pot += amount;
+        if (player.stack === 0) player.is_all_in = true;
+      }
+    }
+
     const sbPlayer = this.state.players.find((p) => p.seat === sbSeat);
     if (sbPlayer) {
       const sbAmount = Math.min(smallBlind, sbPlayer.stack);
@@ -420,11 +447,22 @@ export class HandController {
       if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
     }
 
+    // Record the normal blind deficit once, before extra posts and straddles.
+    // This changes only the pot-limit wager ceiling, never pot or eligibility.
+    this.state.potLimitBlindAdjustment =
+      Math.round((smallBlind - (sbPlayer?.bet ?? 0) + (bigBlind - (bbPlayer?.bet ?? 0))) * 100) /
+      100;
+
     // Bible V8 §4.2: Dead blinds — players returning from sit-out post SB+BB (SB is dead money)
     if (this.config.deadBlinds && this.config.deadBlinds.length > 0) {
       for (const db of this.config.deadBlinds) {
         const dbPlayer = this.state.players.find((p) => p.seat === db.seat);
-        if (dbPlayer && dbPlayer.seat !== sbSeat && dbPlayer.seat !== bbSeat) {
+        if (
+          dbPlayer &&
+          !dbPlayer.is_sitting_out &&
+          dbPlayer.seat !== sbSeat &&
+          dbPlayer.seat !== bbSeat
+        ) {
           // Dead SB goes straight to pot (dead money, not a live bet)
           const deadSBAmount = Math.min(smallBlind, dbPlayer.stack);
           dbPlayer.totalInvested += deadSBAmount;
@@ -494,39 +532,29 @@ export class HandController {
         ])
       );
     const afterBlinds = investedSnapshot();
+    // The history buckets remain blinds, then antes, regardless of payment
+    // priority. Subtract the individual ante already paid from the blind bucket.
+    for (const p of this.state.players) {
+      const blind = afterBlinds.get(p.seat)!;
+      const ante = p.individualAnteInvested ?? 0;
+      blind.total = Math.round((blind.total - ante) * 100) / 100;
+      blind.dead = Math.round((blind.dead - ante) * 100) / 100;
+    }
 
-    if (this.config.ante) {
-      if (this.config.bigBlindAnte && bbPlayer) {
-        // Bible V8 §4.3: BBA — Big blind posts ante for entire table.
-        // The seat-count multiply lives in bigBlindAnteTotal now, because a
-        // structure that authors `ante` as the TOTAL (ante == bigBlind, the
-        // modern standard) was being charged one big blind PER SEAT — 7 to 8
-        // big blinds a hand, measured live 2026-08-30. See AnteMath.ts.
-        const totalBBA = bigBlindAnteTotal(
-          this.config.ante,
-          activePlayers.length,
-          this.config.bigBlind
-        );
-        const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
-        bbPlayer.totalInvested += bbaAmount;
-        // Dead money: the BB fronts the whole table's ante. It belongs to the
-        // pot, not to the BB as an uncalled bet or a private side pot.
-        bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
-        bbPlayer.stack -= bbaAmount;
-        this.state.pot += bbaAmount;
-        if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
-      } else {
-        // Traditional ante: each player posts individually
-        for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
-          const anteAmount = Math.min(this.config.ante, player.stack);
-          player.totalInvested += anteAmount;
-          // Dead money — antes never count as a live bet toward a call.
-          player.deadInvested = (player.deadInvested ?? 0) + anteAmount;
-          player.stack -= anteAmount;
-          this.state.pot += anteAmount;
-          if (player.stack === 0) player.is_all_in = true;
-        }
-      }
+    if (this.config.ante && this.config.bigBlindAnte && bbPlayer) {
+      // The BB fronts the whole table. Unlike an individual ante, this stays
+      // shared dead money and is paid from the stack remaining after the blind.
+      const totalBBA = bigBlindAnteTotal(
+        this.config.ante,
+        activePlayers.length,
+        this.config.bigBlind
+      );
+      const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
+      bbPlayer.totalInvested += bbaAmount;
+      bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
+      bbPlayer.stack -= bbaAmount;
+      this.state.pot += bbaAmount;
+      if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
     }
 
     /** FORCED MONEY, SNAPSHOT TWO OF THREE: blinds + antes. */
@@ -638,7 +666,7 @@ export class HandController {
     }
 
     if (forced.length > 0) {
-      this.emit({ type: 'FORCED_BETS_POSTED', postings: forced } as never);
+      this.emit({ type: 'FORCED_BETS_POSTED', postings: forced });
     }
 
     // AUDIT V6: snap chips after all posting (blinds/dead blinds/straddles)
@@ -777,7 +805,7 @@ export class HandController {
           amount: p.amount,
           dead: true,
         })),
-      } as never);
+      });
     }
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
   }
@@ -2962,7 +2990,11 @@ export class HandController {
     // here as well as rejected in validateAction so the button never appears.
     const wagersCapped =
       isFixedLimitVariant(this.config.gameVariant) &&
-      isFixedLimitCapped(this.state.actionHistory, this.state.stage);
+      isFixedLimitCapped(
+        this.state.actionHistory,
+        this.state.stage,
+        fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+      );
     if (toCall === 0) {
       actions.push('check');
 
@@ -3076,13 +3108,23 @@ export class HandController {
         {
           // Small bet preflop and flop, big bet turn and river.
           betSize: fixedLimitBetSize(this.config.bigBlind, this.state.stage),
-          capped: isFixedLimitCapped(this.state.actionHistory, this.state.stage),
+          raiseSize: fixedLimitStreetBounds(
+            this.state.actionHistory,
+            this.state.stage,
+            fixedLimitBetSize(this.config.bigBlind, this.state.stage),
+            this.state.currentBet
+          ).raiseSize,
+          capped: isFixedLimitCapped(
+            this.state.actionHistory,
+            this.state.stage,
+            fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+          ),
         }
       );
     }
 
     return calculateBettingState(
-      this.state.pot,
+      isPotLimitVariant(variant) ? potLimitBettingPot(this.state) : this.state.pot,
       this.state.currentBet,
       player.bet,
       this.config.bigBlind,

@@ -168,7 +168,10 @@ describe('the busted-seat stand-up keeps a seat with money in flight', () => {
 
     await engine.standUpBustedCashPlayers();
 
-    expect(atomicCashout).toHaveBeenCalledWith('hero', TABLE, 1, { occupancyId });
+    expect(atomicCashout).toHaveBeenCalledWith('hero', TABLE, 1, {
+      occupancyId,
+      leaveMode: 'forced',
+    });
   });
 
   it('stands nobody up on an unreadable ledger (fail open toward the seat)', async () => {

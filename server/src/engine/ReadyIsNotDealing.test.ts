@@ -214,3 +214,26 @@ describe('the on-demand door hands out `ready`, not `start()`', () => {
     );
   });
 });
+
+describe('a refusal to start settles ready (final sweep 2026-09-08)', () => {
+  /* start()'s three refusals throw BEFORE the try whose catch settles
+     `ready` false, so a refused engine left `ready` pending for ever - and
+     GameServer's readiness tracker, GET /state, GET /actions and the cluster
+     controller's wake job await it with no deadline. */
+  it('a terminal engine refuses, and ready resolves false at once', async () => {
+    const engine = startable();
+    engine.terminal = true;
+    await expect(engine.start()).rejects.toThrow(/terminal/);
+    const r = await settled(engine.ready as Promise<boolean>);
+    expect(r).toEqual({ done: true, value: false });
+  });
+
+  it('a second process-local generation refuses, and ready resolves false at once', async () => {
+    const engine = startable();
+    engine.engineLeaseAuthorityIsCurrent = () => true;
+    engine.claimProcessOwnership = () => false;
+    await expect(engine.start()).rejects.toThrow(/process-local generation/);
+    const r = await settled(engine.ready as Promise<boolean>);
+    expect(r).toEqual({ done: true, value: false });
+  });
+});

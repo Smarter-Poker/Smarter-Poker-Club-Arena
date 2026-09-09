@@ -106,14 +106,35 @@ provision_node_modules() {
   # but carries no manifest still gets ~700 packages dropped into it.
   [ -f "$dst/package.json" ] || return 0
 
+  [ -e "$dst/node_modules" ] && return 0
+
+  # PRESENT IS NOT USABLE, at the source either (2026-09-08). The World Hub's
+  # main clone held ONE package (typescript) after a git-safe-push clean and a
+  # rolled-back install, and every tree claimed that day cloned that one
+  # package and came up with no `next`, no `tsc` and a dead pre-push hook.
+  # So the source is judged by its payload, and when it fails the judgement
+  # the freshest sibling tree whose lockfile matches the main clone's donates
+  # instead. A donor with a different lockfile is not a donor: it would hand
+  # this tree somebody else's dependency set.
+  if ! node_modules_usable "$src/node_modules" "$rel"; then
+    local donor
+    donor="$(find_node_modules_donor "$rel")"
+    if [ -n "$donor" ]; then
+      echo "# $label: the main clone's copy is hollow; cloning from $donor instead" >&2
+      src="${donor%/node_modules}"
+      src="${src%${rel:+/$rel}}"
+    elif [ -z "$rel" ] && [ -x "$ROOT/scripts/check-node-modules.sh" ]; then
+      echo "# $label: the main clone's copy is hollow and no sibling can donate; repairing the main clone" >&2
+      bash "$ROOT/scripts/check-node-modules.sh" 2>&1 | sed "s/^/#   /" >&2 || true
+    fi
+  fi
+
   if [ ! -d "$src/node_modules" ]; then
     # Silence here is how the server/ hole survived: nothing was provisioned
     # and nothing said so.
     echo "# $label: the main clone has none either - run 'npm ci' in ${rel:-the clone root}" >&2
     return 0
   fi
-
-  [ -e "$dst/node_modules" ] && return 0
 
   # ATOMIC, because `[ -e ]` above is a presence test and not a completeness
   # test. Copying straight to the destination means any interruption - a killed
@@ -128,15 +149,50 @@ provision_node_modules() {
   rm -rf "$dst"/.node_modules-provision.* 2>/dev/null || true
 
   if cp -Rc "$src/node_modules" "$tmp" 2>/dev/null; then
-    mv "$tmp" "$dst/node_modules" && echo "# $label: cloned from the main clone (copy-on-write, no extra disk)" >&2
+    mv "$tmp" "$dst/node_modules" && echo "# $label: cloned from $src (copy-on-write, no extra disk)" >&2
   elif cp -R "$src/node_modules" "$tmp" 2>/dev/null; then
     # Not APFS. Slower and it really does use the disk, but still ISOLATED,
     # which is the property that matters.
-    mv "$tmp" "$dst/node_modules" && echo "# $label: copied from the main clone (no copy-on-write here)" >&2
+    mv "$tmp" "$dst/node_modules" && echo "# $label: copied from $src (no copy-on-write here)" >&2
   else
     rm -rf "$tmp" 2>/dev/null || true
     echo "# $label: could not be provisioned - run 'npm ci' in ${rel:-the tree root}" >&2
   fi
+}
+
+# A node_modules that can actually run the hooks and the build. The root needs
+# the type checker binary and a real population; a nested package just needs
+# more than a rolled-back handful.
+node_modules_usable() {
+  local nm="$1" rel="$2" n
+  [ -d "$nm" ] || return 1
+  n=$(ls "$nm" 2>/dev/null | wc -l | tr -d ' ')
+  if [ -z "$rel" ]; then
+    [ -f "$nm/typescript/package.json" ] || return 1
+    [ -x "$nm/.bin/tsc" ] || return 1
+    [ "$n" -ge 100 ] || return 1
+  else
+    [ "$n" -ge 5 ] || return 1
+  fi
+  return 0
+}
+
+# The freshest sibling tree with a usable node_modules AND a package-lock.json
+# byte-identical to the main clone's. Prints the node_modules path, or nothing.
+find_node_modules_donor() {
+  local rel="$1" cand nm best="" best_t=0 t
+  [ -d "$TREES" ] || return 0
+  for cand in "$TREES"/*/; do
+    cand="${cand%/}"
+    [ "$cand" = "$DIR" ] && continue
+    nm="$cand${rel:+/$rel}/node_modules"
+    node_modules_usable "$nm" "$rel" || continue
+    cmp -s "$cand${rel:+/$rel}/package-lock.json" "$ROOT${rel:+/$rel}/package-lock.json" || continue
+    t=$(stat -f %m "$nm" 2>/dev/null || stat -c %Y "$nm" 2>/dev/null || echo 0)
+    if [ "$t" -gt "$best_t" ]; then best="$nm"; best_t="$t"; fi
+  done
+  [ -n "$best" ] && printf '%s\n' "$best"
+  return 0
 }
 
 # EVERY package root, discovered rather than listed. The first version of this

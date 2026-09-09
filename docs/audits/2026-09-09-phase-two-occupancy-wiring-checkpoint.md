@@ -80,3 +80,11 @@ IntegrityActionService now shares the persisted occupancy-request implementation
 Verification: 12 administrative handler tests; four actual loopback HTTP/router/JSON checks (auth and receipt storage mocked, not production E2E); 50 focused client tests. Full client suite passed 17,304 tests. Full server suite passed 7,821 tests with one old exact-source forced-option assertion failing; updated that assertion to include forced authority plus occupancy. Type errors in two test assertions were corrected. Full combined verification is required again after integrating current main.
 
 Administrative moderation-history insertion is still outside the financial transaction. Do not describe it as an immutable atomic administrative audit record. Bulk action identity, original authorization context for receipts after table deletion, native/multi-tab browser acceptance and the remaining SQL wrappers are still open.
+
+## Main integration verification
+
+Merged main 5b92dc787 into the occupancy branch without discarding the new add-on delivery, financial presentation push, parallel departure reads, or common busted-seat release. The common release now passes the captured occupancy and refuses cleanup of a replacement occupancy. Parallel departure results retain both user and occupancy identity.
+
+Merged verification: 17,377 client tests in 1,253 files passed; 8,063 server tests in 599 files passed. The 52 opt-in PostgreSQL tests passed separately in the isolated harness (they are skipped in the ordinary server run). Server TypeScript passed. Six initial integration-fixture failures came from main's new post-confirmation financial presentation push; the fixture now isolates that notification and verifies no notification before a confirmed cashout and one after confirmation. The focused departure/rebuy/read-overlap suites pass all 25 tests.
+
+This records local integration evidence only. Occupancy migration, compatible engine/client adoption, legacy entrypoint retirement, remaining departure ownership and full Phase 2 acceptance remain open. No production occupancy migration or publication occurred in this verification.

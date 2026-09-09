@@ -197,5 +197,10 @@
       "Public initial registration has no request-id overload in the inspected catalog. Existing-row lookup cannot prove original operation identity after registration lifecycle changes. A complete retained registration receipt and client request binding remain unimplemented.",
       "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it."
     ]
+  },
+  "prepared_batch_publication": {
+    "status": "verified_live",
+    "evidence": "docs/audits/2026-09-09-tournament-retry-release-evidence.json",
+    "phase_complete": false
   }
 }

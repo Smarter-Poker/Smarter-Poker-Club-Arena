@@ -1,9 +1,7 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import type { PendingWrite } from './supabase/pendingWrites.js';
-const mocks = vi.hoisted(() => ({ from: vi.fn(), enqueue: vi.fn(), alert: vi.fn() }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), alert: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: { from: mocks.from }, logBBJCollection: vi.fn() }));
 vi.mock('./supabase/bbj.js', () => ({ processBBJPayout: vi.fn(), setBBJPayoutQueue: vi.fn() }));
-vi.mock('./supabase/pendingWrites.js', () => ({ enqueuePendingWrite: mocks.enqueue }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
 vi.mock('./financialAlerts.js', () => ({ raiseFinancialAlert: mocks.alert }));
 import { queueUnbankedFee } from './FeeReconciler.js';
@@ -19,7 +17,6 @@ const fee = {
   contributions: { player: 100 },
   lastError: 'fetch failed',
 };
-let write: PendingWrite;
 let insertError: string | null;
 let banked: boolean;
 function read(data: unknown) {
@@ -34,10 +31,6 @@ beforeEach(() => {
   insertError = 'fetch failed';
   banked = false;
   mocks.alert.mockResolvedValue({ persisted: true });
-  mocks.enqueue.mockImplementation((pending: PendingWrite) => {
-    write = pending;
-    return true;
-  });
   mocks.from.mockImplementation((name: string) =>
     name === 'pending_fee_distributions'
       ? {
@@ -48,36 +41,40 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.useRealTimers());
-async function deferFee() {
+async function exhaustInlineQueueInsert() {
   const promise = queueUnbankedFee('rake', fee);
   await vi.runAllTimersAsync();
   await promise;
-  expect(mocks.enqueue).toHaveBeenCalledTimes(1);
 }
-it('checks and reports a permanently rejected deferred fee before ending its attempt', async () => {
-  await deferFee();
-  insertError = 'permission denied';
-  expect(await write.attempt()).toEqual({ done: true, refused: true });
+it('checks and reports a fee after the bounded insert remains unreachable', async () => {
+  await exhaustInlineQueueInsert();
   expect(mocks.alert).toHaveBeenCalledWith(
     'critical',
     'FeeReconciler.queue_failed',
-    expect.stringContaining('permission denied'),
+    expect.stringContaining('fetch failed'),
     expect.objectContaining({ verifiedUnbanked: true, handId: fee.handId })
   );
 });
-it('does not raise a money alarm if the terminal rejection belongs to an already banked fee', async () => {
-  await deferFee();
-  insertError = 'permission denied';
+it('does not raise a money alarm if the exhausted insert belongs to an already banked fee', async () => {
   banked = true;
-  expect(await write.attempt()).toEqual({ done: true, refused: true });
+  await exhaustInlineQueueInsert();
   expect(mocks.from).toHaveBeenCalledWith('rake_records');
   expect(mocks.alert).not.toHaveBeenCalled();
 });
-it('keeps transient failures pending and accepts an acknowledged insert without an alarm', async () => {
-  await deferFee();
-  expect(await write.attempt()).toEqual({ done: false, error: 'fetch failed' });
-  expect(mocks.alert).not.toHaveBeenCalled();
-  insertError = null;
-  expect(await write.attempt()).toEqual({ done: true });
+it('accepts an acknowledged inline retry without handing the fee to a timer', async () => {
+  let inserts = 0;
+  mocks.from.mockImplementation((name: string) =>
+    name === 'pending_fee_distributions'
+      ? {
+          ...read(null),
+          insert: async () => {
+            inserts += 1;
+            return { error: inserts < 3 ? { message: 'fetch failed' } : null };
+          },
+        }
+      : read(null)
+  );
+  await exhaustInlineQueueInsert();
+  expect(inserts).toBe(3);
   expect(mocks.alert).not.toHaveBeenCalled();
 });

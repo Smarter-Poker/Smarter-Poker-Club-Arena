@@ -459,6 +459,22 @@ Rules for every agent working this project:
    pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
    "extend" them to retry other 5xx — replaying an executed write is a
    money-integrity hazard.
+7. **A PROBE NEVER CARRIES DDL, AND A CURSOR TABLE NEVER CARRIES A FOREIGN
+   KEY TO A HOT TABLE (2026-09-08, after a 4-minute production outage).** An
+   agent probed a migration by running it inside a transaction - `CREATE
+TABLE ... REFERENCES public.tournaments(id)` followed by ~10 s of function
+   work - then the client hung. Adding a foreign key takes SHARE ROW EXCLUSIVE
+   on the referenced table for the rest of the transaction, so every writer to
+   `tournaments` (the engine, the per-minute reconcile crons) queued behind it,
+   and Postgres was hard-killed at 22:53:36 UTC and came back at 22:57:05 with
+   "not properly shut down; automatic recovery". Rule 3 already said no DDL
+   probes; this is what it costs. So: probe a function by timing its QUERY, or
+   build its fixture in `pg_temp`; apply DDL in its own short transaction with
+   `lock_timeout` set, detached from any tool that can time out and kill the
+   client; and a scan/cache/cursor table that references a hot relation gets
+   NO foreign key - an orphan row in a scan log is harmless, a lock on
+   `tournaments` is not.
+   `docs/changelog/2026-09-08-deep-sweep-two-and-the-probe-that-took-the-database-down.md`.
 
 ---
 

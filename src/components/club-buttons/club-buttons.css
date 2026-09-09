@@ -59,6 +59,18 @@
   display: block;
 }
 
+/* A MARK IS LIT, NOT INKED (Dan 2026-09-09). The wireframe icons take their
+   colour from the plate and get the plate's text glow. A mark carries its own
+   facets and its own light, so it must NOT inherit that glow - the blur would
+   wash the facet values into one another and take the depth straight back
+   out. It gets a contact shadow instead, which is what a solid object sitting
+   in a recess actually casts. */
+.cb-mark {
+  width: 1.32em;
+  height: 1.32em;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
 .cb-action {
   --cb-state-color: var(--club-blue-core);
   position: relative;

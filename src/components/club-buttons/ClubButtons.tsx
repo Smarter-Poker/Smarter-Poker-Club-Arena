@@ -4,7 +4,7 @@ import type {
   ReactNode,
   SelectHTMLAttributes,
 } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import './club-buttons.css';
 
 export type ClubButtonsMode = 'arena' | 'hub' | 'commander';
@@ -55,7 +55,119 @@ export function ClubButtonsSurface({
   );
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE MARKS - icons with facets, not wireframes
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-09-09, on the diamond in the Diamond Games plate: "YOU MUST CREATE
+ * AND USE DYNAMIC HIGH QUALITY ICON'S WITH DEPTH AND 3D FEEL, NOT WHAT EVER
+ * THIS FLAT BORING BROKEN THING IS."
+ *
+ * He was right. Every icon on these buttons was a 1.8px `currentColor` stroke
+ * on `fill: none` - a wireframe - sitting inside a bevelled steel plate with
+ * rivets and a lit LED. At 20px the diamond's three interior facet lines
+ * collapsed into a smudge, which is the "broken" he circled.
+ *
+ * A mark is the other kind: real geometry with a light on it. The gem below is
+ * cut the way a brilliant is cut - a table, four crown facets down to the
+ * girdle, four pavilion facets converging on the culet - and every facet
+ * carries its own gradient. Nothing here is an outline. What makes it read as
+ * three dimensions is that neighbouring facets have different VALUES, lit from
+ * the top left, exactly as the plate around it is lit.
+ *
+ * Gradient ids are namespaced per instance (useId): two of these on one page
+ * with the same ids would have the second silently steal the first's fills.
+ */
+
+interface MarkProps {
+  uid: string;
+  className: string;
+}
+
+function DiamondMark({ uid, className }: MarkProps) {
+  const id = (k: string) => `${uid}-${k}`;
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <defs>
+        {/* The crown catches the light; the pavilion holds the club's blue. */}
+        <linearGradient id={id('cl')} x1="0" y1="0" x2="0.6" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#a8d8ff" />
+        </linearGradient>
+        <linearGradient id={id('cm')} x1="0.2" y1="0" x2="0.8" y2="1">
+          <stop offset="0" stopColor="#eaf6ff" />
+          <stop offset="1" stopColor="#7cc2f7" />
+        </linearGradient>
+        <linearGradient id={id('cr')} x1="1" y1="0" x2="0.3" y2="1">
+          <stop offset="0" stopColor="#9ecdf0" />
+          <stop offset="1" stopColor="#3f8fd0" />
+        </linearGradient>
+        <linearGradient id={id('ce')} x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#6ea7d6" />
+          <stop offset="1" stopColor="#2b6ea8" />
+        </linearGradient>
+        <linearGradient id={id('pl')} x1="0" y1="0" x2="0.7" y2="1">
+          <stop offset="0" stopColor="#8fc6ee" />
+          <stop offset="1" stopColor="#20527d" />
+        </linearGradient>
+        <linearGradient id={id('pm')} x1="0.5" y1="0" x2="0.5" y2="1">
+          <stop offset="0" stopColor="#b6ddf7" />
+          <stop offset="1" stopColor="#2f6f9f" />
+        </linearGradient>
+        <linearGradient id={id('pr')} x1="0.6" y1="0" x2="0.2" y2="1">
+          <stop offset="0" stopColor="#5d9bc9" />
+          <stop offset="1" stopColor="#153c5e" />
+        </linearGradient>
+        <linearGradient id={id('pe')} x1="1" y1="0" x2="0.3" y2="1">
+          <stop offset="0" stopColor="#3d7aa8" />
+          <stop offset="1" stopColor="#0d2c47" />
+        </linearGradient>
+        <linearGradient id={id('gd')} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.35" />
+          <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.95" />
+          <stop offset="1" stopColor="#ffffff" stopOpacity="0.35" />
+        </linearGradient>
+        <filter id={id('glow')} x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="2.4" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      {/* The stone sits in its own light, the way the LED sits in the plate. */}
+      <g filter={`url(#${id('glow')})`}>
+        {/* Crown: the table edge at y 11, down to the girdle at y 23. */}
+        <path d="M6 23 L22 11 L17 23 Z" fill={`url(#${id('cl')})`} />
+        <path d="M17 23 L22 11 L32 11 L32 23 Z" fill={`url(#${id('cm')})`} />
+        <path d="M32 23 L32 11 L42 11 L47 23 Z" fill={`url(#${id('cr')})`} />
+        <path d="M47 23 L42 11 L58 23 Z" fill={`url(#${id('ce')})`} />
+        {/* Pavilion: four facets to the culet. */}
+        <path d="M6 23 L19 23 L32 54 Z" fill={`url(#${id('pl')})`} />
+        <path d="M19 23 L32 23 L32 54 Z" fill={`url(#${id('pm')})`} />
+        <path d="M32 23 L45 23 L32 54 Z" fill={`url(#${id('pr')})`} />
+        <path d="M45 23 L58 23 L32 54 Z" fill={`url(#${id('pe')})`} />
+        {/* The girdle, and the one specular the whole stone hangs on. */}
+        <path d="M6 23 H58" stroke={`url(#${id('gd')})`} strokeWidth="1.7" fill="none" />
+        <path d="M20.6 13.4 L29.6 13.4 L23.4 21 Z" fill="#ffffff" opacity="0.55" />
+      </g>
+    </svg>
+  );
+}
+
+/** Icons that are marks rather than wireframes. The rest fall through below. */
+const MARKS: Partial<Record<ClubIconName, (p: MarkProps) => ReactNode>> = {
+  diamond: DiamondMark,
+};
+
 export function ClubIcon({ name, className }: { name: ClubIconName; className?: string }) {
+   
+  const uid = useId().replace(/:/g, '');
+  const Mark = MARKS[name];
+  if (Mark) return Mark({ uid, className: join('cb-icon', 'cb-mark', className) });
+
   const shared = {
     viewBox: '0 0 24 24',
     fill: 'none',

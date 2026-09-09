@@ -132,9 +132,11 @@ export interface ExecuteSeatMovesOptions {
  */
 export async function executePendingSeatMoves(
   tableId: string,
-  opts: ExecuteSeatMovesOptions = { announcedOnly: false }
+  opts: ExecuteSeatMovesOptions = { announcedOnly: false },
+  /** Optional fresh candidate read from this same hand boundary, never cached. */
+  prefetched?: readonly PendingSeatMove[]
 ): Promise<SeatMoveOutcome> {
-  const pending = await pendingSeatMoves(tableId);
+  const pending = prefetched ?? (await pendingSeatMoves(tableId));
   const due = opts.announcedOnly ? pending.filter((m) => m.announced_at != null) : pending;
   const done: ExecutedSeatMove[] = [];
   const held: SeatMoveOutcome['held'] = [];

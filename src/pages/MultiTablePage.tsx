@@ -30,6 +30,7 @@ import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
   InTabLobbyContext,
+  arenaTargetFromTo,
   tournamentTargetFromTo,
   type InTabLobbyNav,
   type InTabTournamentTarget,
@@ -247,6 +248,9 @@ interface TableInstance {
    * exists to serve.
    */
   lobbyTournamentStack?: InTabTournamentTarget[];
+  /** undefined uses the home club; null displays the shared arena selector. */
+  lobbyClubId?: string | null;
+  lobbyArenaStack?: (string | null)[];
 }
 
 /**
@@ -3014,6 +3018,25 @@ export default function MultiTablePage() {
    * exactly like a schedule row in ClubHomePage. See InTabLobbyContext.tsx for
    * why a DOM click-capture could never do this job.
    */
+  /** Change only the lobby slot. Running table instances keep their identity. */
+  const openArenaTab = useCallback((clubKey: string | null): boolean => {
+    const cur = tablesRef.current[activeIndexRef.current];
+    if (!cur || !isLobbyTab(cur)) return false;
+    setTables((tabs) =>
+      tabs.map((tab) => {
+        if (tab.id !== cur.id) return tab;
+        const current = tab.lobbyClubId === undefined ? homeClubIdRef.current : tab.lobbyClubId;
+        if (current === clubKey && !tab.lobbyTournamentStack?.length) return tab;
+        return {
+          ...clearLobbyTournaments(tab),
+          lobbyClubId: clubKey,
+          lobbyArenaStack: [...(tab.lobbyArenaStack ?? []), current],
+        };
+      })
+    );
+    return true;
+  }, []);
+
   /**
    * ─── HUB TABS: THE "+" TAB IS AN INTERNAL BROWSER TAB (Dan 2026-09-04) ────
    *
@@ -3097,6 +3120,7 @@ export default function MultiTablePage() {
       const idx = prev.findIndex((t) => t.id === tabId);
       if (idx === -1) return;
       const tournament = tournamentTargetFromTo(caPath);
+      const arena = arenaTargetFromTo(caPath);
       const pathname = caPath.split('?')[0] ?? '/';
       /* The lobby ITSELF: the SPA root, the aliases, or the player's own home
          club. Another club's page is a real destination and navigates for
@@ -3125,7 +3149,10 @@ export default function MultiTablePage() {
               t.id === lobbyId
                 ? tournament
                   ? pushLobbyTournament(t, tournament)
-                  : clearLobbyTournaments(t)
+                  : {
+                      ...clearLobbyTournaments(t),
+                      ...(arena ? { lobbyClubId: arena.clubKey } : {}),
+                    }
                 : t
             )
         );
@@ -3137,10 +3164,10 @@ export default function MultiTablePage() {
               lobbyTournamentId: tournament.tournamentId,
               lobbyTournamentStack: [tournament],
             }
-          : makeLobbyTab();
+          : { ...makeLobbyTab(), ...(arena ? { lobbyClubId: arena.clubKey } : {}) };
         setTables((tabs) => tabs.map((t) => (t.id === tabId ? lobby : t)));
       }
-      if (tournament || isLobbyItself) return;
+      if (tournament || arena || isLobbyItself) return;
       navigate(caPath);
     },
     [navigate]
@@ -3154,6 +3181,20 @@ export default function MultiTablePage() {
     const cur = tablesRef.current[activeIndexRef.current];
     if (cur && isLobbyTab(cur) && (cur.lobbyTournamentStack?.length ?? 0) > 0) {
       setTables((tabs) => tabs.map((t) => (t.id === cur.id ? popLobbyTournament(t) : t)));
+      return;
+    }
+    if (cur && isLobbyTab(cur) && cur.lobbyArenaStack?.length) {
+      setTables((tabs) =>
+        tabs.map((tab) => {
+          if (tab.id !== cur.id) return tab;
+          const stack = tab.lobbyArenaStack ?? [];
+          return {
+            ...clearLobbyTournaments(tab),
+            lobbyClubId: stack[stack.length - 1],
+            lobbyArenaStack: stack.slice(0, -1),
+          };
+        })
+      );
       return;
     }
     window.history.back();
@@ -3184,8 +3225,13 @@ export default function MultiTablePage() {
   const hubKeysRef = useRef<((e: KeyboardEvent) => void) | null>(null);
 
   const inTabLobbyNav = useMemo<InTabLobbyNav>(
-    () => ({ openTournament: openTournamentTab, openHub: openHubTab, goBack: goBackInTab }),
-    [openTournamentTab, openHubTab, goBackInTab]
+    () => ({
+      openTournament: openTournamentTab,
+      openHub: openHubTab,
+      openArena: openArenaTab,
+      goBack: goBackInTab,
+    }),
+    [openTournamentTab, openHubTab, openArenaTab, goBackInTab]
   );
 
   // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
@@ -3355,6 +3401,7 @@ export default function MultiTablePage() {
    * separate navigate calls — dumped the player off the route every time.
    */
   const renderLobbyTab = (table: TableInstance) => {
+    const selectedClub = table.lobbyClubId === undefined ? homeClubId : table.lobbyClubId;
     const stack = table.lobbyTournamentStack ?? [];
     const top = stack[stack.length - 1];
     /* The back pill says where it actually goes. At depth 1 that is the club
@@ -3418,7 +3465,11 @@ export default function MultiTablePage() {
           <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
             <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
-            {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+            {selectedClub ? (
+              <ClubHomePage key={selectedClub} clubIdOverride={selectedClub} />
+            ) : (
+              <HomePage />
+            )}
           </div>
         )}
       </>

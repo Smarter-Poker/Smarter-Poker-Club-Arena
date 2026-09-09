@@ -3,7 +3,7 @@ import { soundService } from '../../services/SoundService';
 // Whole-number tournament money (Dan 2026-08-20): "Sit and Go and any
 // tournament buy-ins must never be decimal buy-ins, whole numbers only."
 // This file used to define its own money() that FORCED two decimals.
-import { money } from '../../utils/buyIn';
+import { money, moneyExact } from '../../utils/buyIn';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
@@ -37,8 +37,10 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Whole chips both halves, so the total is whole and matches the debit.
-  const totalCost = Math.round(rebuyCost) + Math.round(rebuyFee);
+  // The advertised total is whole, but its prize/fee split is cent-accurate.
+  // Rounding both halves independently turned 13.50 + 1.50 into a fictional
+  // 16-chip charge. Add first, then round only the whole advertised price.
+  const totalCost = Math.round((Number(rebuyCost) + Number(rebuyFee)) * 100) / 100;
   // Gate on the TOTAL — this is the number the server debits.
   const canAfford = walletBalance >= totalCost;
 
@@ -68,12 +70,12 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
             {/* FIX 197: Format amounts with .toLocaleString() — was raw unformatted numbers */}
             <div className="rebuyRow">
               <span>Rebuy Cost</span>
-              <span className="rebuyValue">{money(rebuyCost)}</span>
+              <span className="rebuyValue">{moneyExact(rebuyCost)}</span>
             </div>
             {rebuyFee > 0 && (
               <div className="rebuyRow">
                 <span>House Fee</span>
-                <span className="rebuyValue">{money(rebuyFee)}</span>
+                <span className="rebuyValue">{moneyExact(rebuyFee)}</span>
               </div>
             )}
             <div className="rebuyRow rebuyRow--total">

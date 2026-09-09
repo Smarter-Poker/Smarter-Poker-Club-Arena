@@ -132,9 +132,7 @@ interface RememberedAction {
 }
 
 export type ActionKeyVerdict =
-  | { kind: 'fresh' }
-  | { kind: 'replay'; status: number; body: unknown }
-  | { kind: 'conflict' };
+  { kind: 'fresh' } | { kind: 'replay'; status: number; body: unknown } | { kind: 'conflict' };
 
 const remembered = new Map<string, RememberedAction>();
 

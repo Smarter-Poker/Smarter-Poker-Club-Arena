@@ -61,6 +61,7 @@ export interface OrphanSeatRow {
  * sweep runs every minute, so a genuine backlog drains in minutes.
  */
 export const MAX_ORPHAN_RESEATS_PER_PASS = 9;
+export const CLOSED_ORPHAN_RESEAT_REASON = 'orphaned_seat_on_closed_table';
 
 /** Seats a table has when the row does not say. Matches the balancer default. */
 const DEFAULT_MAX_SEATS = 9;
@@ -193,7 +194,7 @@ export function planOrphanReseats(
       fromSeat: Number.isFinite(fromSeat) ? fromSeat : 0,
       toTableId: destId,
       toSeat,
-      reason: 'orphaned_seat_on_closed_table',
+      reason: CLOSED_ORPHAN_RESEAT_REASON,
     });
     taken.add(toSeat);
   }

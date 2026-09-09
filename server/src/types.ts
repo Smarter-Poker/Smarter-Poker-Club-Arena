@@ -47,13 +47,7 @@ export type GameVariant =
 
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
-  | 'empty'
-  | 'waiting'
-  | 'seating'
-  | 'running'
-  | 'paused'
-  | 'closing'
-  | 'closed';
+  'empty' | 'waiting' | 'seating' | 'running' | 'paused' | 'closing' | 'closed';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Player Types
@@ -830,12 +824,7 @@ export interface PayoutEntry {
 }
 
 export type TournamentStatus =
-  | 'ANNOUNCED'
-  | 'REGISTERING'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'LATE_REG';
+  'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'LATE_REG';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rake Distribution Types

@@ -356,9 +356,14 @@ def _renamed_definition(definition,destination):
  )
 
 
-def _function_state(root):
+def _function_state(root, through=None):
  state={}
- for path in sorted((root/"supabase/migrations").glob("*.sql")):
+ paths=sorted((root/"supabase/migrations").glob("*.sql"))
+ if through is not None and not any(path.name==through for path in paths):
+  raise RuntimeError(f"Migration ceiling does not exist: {through}")
+ for path in paths:
+  if through is not None and path.name>through:
+   break
   for event,payload in _history_events(path.read_text(),path.name):
    if event=="create":
     state[(payload.name,payload.signature)]=payload
@@ -409,7 +414,7 @@ def _fixture_function_names(fixture):
  return names
 
 
-def authoritative_function_closure(root, fixture, roots):
+def authoritative_function_closure(root, fixture, roots, through=None):
  """Resolve roots plus every public helper from ordered migration history.
 
  Migration ALTER FUNCTION ... RENAME TO events are part of the function graph:
@@ -419,7 +424,7 @@ def authoritative_function_closure(root, fixture, roots):
  calls.  Any helper absent from migrations and the explicit fixture stubs fails
  bootstrap before PostgreSQL executes a single test operation.
  """
- state=_function_state(root)
+ state=_function_state(root,through)
  fixture_functions=_fixture_function_names(fixture)
 
  def resolve(name):

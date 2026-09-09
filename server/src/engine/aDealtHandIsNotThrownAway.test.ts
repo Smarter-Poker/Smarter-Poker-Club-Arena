@@ -20,46 +20,49 @@ const MIGRATIONS = resolve(__dirname, '../../../supabase/migrations');
 const read = (f: string) => readFileSync(resolve(MIGRATIONS, f), 'utf8');
 
 const CONFLICT = read(
-  '20260909011642_a_second_bust_on_the_same_chair_does_not_throw_away_the_hand.sql'
+  '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 );
+const REBUY = read('20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql');
 const HALVES = read('20260909012046_retire_the_six_stranded_half_chips_on_the_felt.sql');
 
 describe('an unhandled conflict target no longer discards the hand', () => {
   /**
    * `tournament_knockout_candidates` carries TWO unique constraints, and the
-   * insert named only one of them as its ON CONFLICT target. An ON CONFLICT with
-   * an explicit target does not absorb a violation of any other constraint, so a
-   * second bust from the SAME chair - the ordinary rebuy shape, because a rebuy
-   * credits chips without moving `seat_joined_at` - raised, and the raise took
-   * the whole atomic hand commit with it.
+   * insert named only one of them as its ON CONFLICT target. A paid rebuy now
+   * advances `seat_joined_at` in the same transaction as its money, candidate,
+   * roster and seat commit. The next bust is therefore a new immutable entry
+   * generation and cannot collide with the prior chair identity.
    */
-  it('absorbs every unique violation rather than one of them', () => {
-    expect(CONFLICT).toMatch(/v_new_conflict CONSTANT text :=\s*\n?\s*'ON CONFLICT DO NOTHING'/);
+  it('keeps one candidate per global hand and advances a same-chair rebuy generation', () => {
     expect(CONFLICT).toMatch(
-      /v_old_conflict CONSTANT text :=\s*\n?\s*'ON CONFLICT \(tournament_id,hand_number,eliminated_user_id\) DO NOTHING'/
+      /ON CONFLICT \(tournament_id,hand_number,eliminated_user_id\) DO NOTHING/
     );
+    expect(CONFLICT).not.toMatch(
+      /DROP CONSTRAINT(?: IF EXISTS)?\s+tournament_knockout_candidate_tournament_id_eliminated_user_key/
+    );
+    expect(REBUY).toMatch(/joined_at=clock_timestamp\(\),status='active'/);
+    expect(REBUY).toMatch(/AND s\.joined_at=v_candidate\.seat_joined_at/);
+    expect(CONFLICT).toMatch(/idx_tournament_knockout_candidates_user_hand/);
   });
 
-  it('teaches the identity re-check to accept the same seat generation', () => {
-    // Absorbing the conflict alone would swap a constraint violation for a
-    // hand-killing RAISE, because the re-check verified an exact replay of THIS
-    // hand and a second bust is a different hand number.
-    expect(CONFLICT).toMatch(/AND c2\.eliminated_user_id=v_uid/);
-    expect(CONFLICT).toMatch(/AND c2\.seat_joined_at=v_seat\.joined_at\) THEN/);
+  it('accepts only an exact replay of this hand after a conflict', () => {
+    expect(CONFLICT).toMatch(/AND c\.hand_number=p_hand_number/);
+    expect(CONFLICT).toMatch(/AND c\.hand_id=v_hand_id/);
+    expect(CONFLICT).not.toMatch(/AND c2\.seat_joined_at=v_seat\.joined_at/);
   });
 
-  it('refuses to run if the live definition is not the shape it expects', () => {
+  it('uses a hard-coded source definition, not a catalog body rewrite', () => {
+    expect(CONFLICT).not.toMatch(/pg_get_functiondef\([\s\S]*?replace\(v_src/);
     expect(CONFLICT).toMatch(
-      /IF position\(v_old_conflict in v_src\) = 0 THEN\s*\n\s*RAISE EXCEPTION/
+      /CREATE OR REPLACE FUNCTION public\.fn_ca_commit_hand_settlement_before_lease_generation/
     );
-    expect(CONFLICT).toMatch(/IF position\(v_old_check in v_src\) = 0 THEN\s*\n\s*RAISE EXCEPTION/);
-    expect(CONFLICT).toMatch(/RAISE EXCEPTION 'the replacement did not take'/);
-    expect(CONFLICT).toMatch(/a landmark of the hand settlement went missing/);
   });
 
   it('does not widen the grant: this writer is reachable only inside the definer chain', () => {
-    expect(CONFLICT).toMatch(/FROM PUBLIC, anon, authenticated;/);
-    expect(CONFLICT).not.toMatch(/GRANT EXECUTE[\s\S]*TO service_role/);
+    expect(CONFLICT).toMatch(/FROM PUBLIC,anon,authenticated,service_role;/);
+    expect(CONFLICT).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION\s+public\.fn_ca_commit_hand_settlement_before_lease_generation\([\s\S]*?TO service_role;/
+    );
   });
 });
 

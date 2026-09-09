@@ -133,12 +133,17 @@ describe('WIRING - the registration pool actually consults it', () => {
     expect(TOURNEY).toMatch(/if \(!\(floor > 0\)\) return false;/);
   });
 
-  it('rotates over the GATED pool, or the gate is decoration', () => {
-    // Rotating over `eligible` after filtering into `pool` would reinstate
-    // every horse the gate just removed.
-    expect(TOURNEY).toMatch(/const eligiblePool = pool;/);
-    expect(TOURNEY).toMatch(
-      /const horses = eligiblePool\.slice\(rot\)\.concat\(eligiblePool\.slice\(0, rot\)\)\.slice\(0, count\);/
+  it('rotates only the GATED pools and puts ticket holders before count truncation', () => {
+    // Both partitions must derive from `pool`, after bankroll filtering. A
+    // partition from `eligible` would reinstate every horse the gate removed.
+    expect(TOURNEY).toContain(
+      'const ticketPool = pool.filter((horse) => ticketHintIds.has(horse.id));'
+    );
+    expect(TOURNEY).toContain(
+      'const walletPool = pool.filter((horse) => !ticketHintIds.has(horse.id));'
+    );
+    expect(TOURNEY).toContain(
+      'const horses = orderedTickets.concat(orderedWallets).slice(0, count);'
     );
     expect(TOURNEY).not.toMatch(/const horses = eligible\.slice\(rot\)/);
   });

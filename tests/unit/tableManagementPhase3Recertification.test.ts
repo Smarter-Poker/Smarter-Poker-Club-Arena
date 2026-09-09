@@ -10,6 +10,7 @@ import {
 const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906132537_phase_3_managed_command_integrity_recertified.sql';
+const CANCELLATION = '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql';
 const EVIDENCE_INVARIANT = '20260906135711_phase_3_command_receipt_evidence_is_self_consistent.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
 const evidenceInvariant = readFileSync(resolve(MIGRATIONS, EVIDENCE_INVARIANT), 'utf8');
@@ -66,7 +67,7 @@ describe('Table Management Phase 3 remains exactly once', () => {
     const commandLock = latest.source.indexOf('pg_advisory_xact_lock');
     const receiptRead = latest.source.indexOf('SELECT * INTO v_existing');
 
-    expect(latest.file).toBe(RECERTIFICATION);
+    expect(latest.file).toBe(CANCELLATION);
     expect(commandLock).toBeGreaterThan(0);
     expect(receiptRead).toBeGreaterThan(commandLock);
     expect(latest.source).toContain("'managed-game-command:' || p_command_id::text");

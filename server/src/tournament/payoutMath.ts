@@ -56,7 +56,7 @@ export function computePlacePrize(
   const seen = new Set<number>();
   for (const p of payouts) {
     const pl = Number(p?.place);
-    if (!Number.isFinite(pl) || pl <= 0) continue;
+    if (!Number.isInteger(pl) || pl <= 0) continue;
     if (seen.has(pl)) continue; // first entry for a place wins, exactly as `find` did
     seen.add(pl);
     const pct = Number(p?.percentage ?? 0);
@@ -157,4 +157,40 @@ export function computePlacePrize(
   }
 
   return (centsByPlace.get(place) ?? 0) / 100;
+}
+
+/**
+ * The part of a cash prize pool available to the paid-place ladder.
+ *
+ * Bubble protection is funded by the tournament pool. When the final field
+ * extends beyond the deepest paid place, exactly one base buy-in is reserved
+ * for that stone-bubble finisher before any place percentage is applied. The
+ * entry fee is never part of the refund. Satellites must pass `false`; their
+ * separate authority awards the sub-seat remainder to its bubble instead.
+ */
+export function prizePoolAvailableToPlaces(
+  pool: number,
+  payouts: Array<{ place?: number; percentage?: number }>,
+  fieldSize: number,
+  bubbleProtection: boolean,
+  buyInAmount: number
+): number | null {
+  if (!Number.isFinite(pool) || pool < 0) return null;
+  const poolCents = Math.round(pool * 100);
+  if (Math.abs(pool * 100 - poolCents) > 1e-7) return null;
+  if (!bubbleProtection) return poolCents / 100;
+
+  let deepestPaidPlace = 0;
+  for (const payout of payouts) {
+    const place = Number(payout?.place);
+    if (Number.isInteger(place) && place > deepestPaidPlace) deepestPaidPlace = place;
+  }
+  const finalField = Number(fieldSize);
+  if (deepestPaidPlace < 1 || !Number.isInteger(finalField) || finalField < 1) return null;
+  if (finalField <= deepestPaidPlace) return poolCents / 100;
+
+  if (!Number.isFinite(buyInAmount) || buyInAmount <= 0) return null;
+  const buyInCents = Math.round(buyInAmount * 100);
+  if (Math.abs(buyInAmount * 100 - buyInCents) > 1e-7 || buyInCents > poolCents) return null;
+  return (poolCents - buyInCents) / 100;
 }

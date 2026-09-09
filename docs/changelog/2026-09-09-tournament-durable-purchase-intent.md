@@ -8,7 +8,7 @@ Both tournament modal callbacks now pass the exact confirmed stack, including ze
 
 ## Verification
 
-110 focused tests across four files and TypeScript passed locally. These cover service-level rebuy, reentry and add-on retries after eligibility changes; competing independently loaded modules; reloads; original payload retention; old-tab isolation; malformed saved state; storage failure; and modal zero-stack callbacks. Six isolated native Chromium scenarios now pass using real Web Locks and storage across two tabs and reloads for rebuy, reentry and add-on. The fixture never calls production transaction endpoints. Production adoption remains pending.
+110 focused tests across four files and TypeScript passed locally. These cover service-level rebuy, reentry and add-on retries after eligibility changes; competing independently loaded modules; reloads; original payload retention; old-tab isolation; malformed saved state; storage failure; and modal zero-stack callbacks. Six isolated native Chromium scenarios now pass using real Web Locks and storage across two tabs and reloads for rebuy, reentry and add-on. The fixture never calls production transaction endpoints. Production adoption of this prepared batch is verified in the release addendum below.
 
 PR3991 CI34389715780 shard4 failed an unrelated asynchronous wallet assertion: the test observed the RPC invocation before the response updated the displayed balance. It now awaits the same exact 70,000.00 result; no production wallet code or expected balance changed. Shard3 log reported all317 files passed.
 
@@ -22,4 +22,10 @@ The expanded focused run including the wallet assertion passed131 tests across f
 
 The four-worker full-client run completed with17682 passed and15 repository-scan timeouts across14 files. All14 affected files then passed unchanged with one worker. This is isolated failure-resolution evidence, not a claim that either full-suite run was green. Logs remain in /tmp/chip-conservation-evidence/phase-three-integrated-client-four-workers.log and phase-three-scan-failures-isolated.log.
 
-Publication of this batch has not been attempted after the Sentry export rejection. The initial purchase-confirmation PR3991 remains open; the new local branch commits await an authorized release path. No hooks were bypassed.
+## Verified Batch Publication
+
+The user approved the configured Sentry source-map upload on 2026-09-09. Normal push and automatic PR3991 merge completed at 19:31:12 UTC as 0ed94e26141be46f0d4aa7bf9b0ade9ac025a526. Required CI34395034026 checks passed, including all four client shards, server tests, PostgreSQL accounting tests, TypeScript, build and CSS browser tests. Optional Live Production E2E and Post-Deploy Verification were skipped, not passed.
+
+Cache-busted public and origin build-info endpoints both served 5001c683d53de005fdf96d04f916b4de09aec020, built by publish-club-arena.yml at 19:42:07 UTC. The PR merge is an ancestor of that SHA and all four changed production source blobs match exactly. Publisher34396375758 passed its four test shards, build and origin publication; Capgo OTA was skipped. Full details are in docs/audits/2026-09-09-tournament-retry-release-evidence.json.
+
+No hooks were bypassed, engine restarted, migration applied or production financial transaction executed for this verification. This closes publication of the prepared retry batch only. All 12 original Phase 3 controls retain their open acceptance status.

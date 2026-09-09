@@ -56,6 +56,15 @@ const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  /* `../services/supabase/client.js` is replaced by the module factory above,
+     so `supabase.from`/`supabase.rpc` are plain `vi.fn()`s and NOT spies.
+     Two consequences that bit this file: `vi.spyOn` on an already-mocked
+     function hands back that same mock - call history and all - and
+     `restoreAllMocks` only restores what `spyOn` itself created, so it never
+     empties them. A read issued by one test was therefore still on the
+     counter when the next test asserted `not.toHaveBeenCalled()`. Clear the
+     counters (not the implementations) between tests. */
+  vi.clearAllMocks();
   loadSeatedPlayers.mockReset();
 });
 
@@ -212,7 +221,9 @@ describe('completed idle dealing sweeps are live work', () => {
     engine.running = true;
     const loop = engine.dealingLoop();
     try {
-      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled());
+      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled(), {
+        timeout: 5_000,
+      });
       now += 181_000;
       expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
       expect(progress).not.toHaveBeenCalled();

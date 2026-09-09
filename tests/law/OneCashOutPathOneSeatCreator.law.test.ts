@@ -24,8 +24,8 @@
  *       it would refuse to ca_seat_guard_dryrun and never raises. Flipping it
  *       to refuse is a follow-up after 24h of an empty log.
  *
- *   C3  atomic_table_rebuy did `table_seats.stack += n` while the engine's
- *       syncStacks writes the stack ABSOLUTELY from memory - a rebuy landing
+ *   C3  atomic_table_rebuy did `table_seats.stack += n` while the retired
+ *       stack-only writer wrote ABSOLUTELY from memory - a rebuy landing
  *       between loadSeatedPlayers and the next sync was erased while the
  *       wallet stayed debited. The RPC writes a table_pending_addons row
  *       (kind 'rebuy') instead; the engine treats that row as the busted

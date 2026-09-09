@@ -1,0 +1,72 @@
+# Atomic Tournament Cancellation
+
+## What Was Wrong
+
+The game server cancelled a tournament through a series of independently
+committed writes. It discovered each open entrant, settled one refund at a
+time, inserted fee reversals separately, then closed player and table rows.
+A timeout between those calls could leave only part of the decision committed.
+The next attempt also read a different set of open rows, so it could not prove
+or replay the original closeout.
+
+## Root Repair
+
+Migration `20260909014444_tournament_cancellation_commits_one_stored_receipt`
+turns the existing `atomic_cancel_tournament(tournament_id, actor_id)` door
+into the sole transaction boundary for cancellation:
+
+- The tournament row is locked before replay inspection or any money write.
+- Refund entitlement comes from recorded tournament buy-in, rebuy, and add-on
+  debits. The existing satellite-seat transfer fallback remains intact.
+- Every positive entitlement is settled through the existing refund
+  obligation, and the transaction refuses to commit unless the obligation is
+  fully settled for the evidence-derived gross amount.
+- Per-player fee reversals and both existing aggregate Spin fee sources remain
+  covered in the same transaction.
+- Tournament, player, and table rows become terminal before one immutable
+  receipt is inserted. A retry returns that stored receipt without moving
+  money again.
+- The managed-game close wrapper no longer writes `CANCELLED` directly when a
+  tournament has no registrations. Both the wrapper and its exactly-once
+  command gateway take the global terminal settlement lock before their first
+  tournament row lock, then the wrapper calls `atomic_cancel_tournament` and
+  returns `{ok:true}` only after validating its exact terminal receipt.
+- Cancellation authorization now uses the same fail-closed,
+  union-aware `fn_can_create_games` authority as game management. An
+  affiliated club owner cannot bypass its union, while a union owner or union
+  administrator is no longer rejected by the older club-admin-only check.
+- The cash-table close branch is unchanged and remains pinned byte for byte to
+  the Phase 1 recertified definition.
+
+The game server keeps its fail-closed survivor-list preflight, makes one RPC,
+and validates the receipt's identity, actor, terminal state, exact-cent totals,
+unique refund lines, obligation IDs, and row counts before acknowledging the
+cancellation.
+
+## Rolling Cutover
+
+This is the database-first stage. The existing cancellation signature and its
+service-role grant are preserved so the live old engine remains callable while
+the migration lands ahead of the receipt-verifying server. The generic
+obligation helper is also retained. Retirement or revocation of a legacy door
+must be a separate post-deploy cleanup after the new server is verified live.
+
+The migration changes no historical balances and performs no backfill. It has
+not been applied or deployed as part of this change.
+
+## Verification
+
+- Runtime tests exercise one-RPC ownership, unreadable-survivor refusal, RPC
+  failure, hostile receipt values, exact-cent arithmetic, complete refund
+  lines, and duplicate rejection.
+- Source guards pin lock-before-money ordering, immutable replay, evidence
+  derivation, all-row closeout, preserved cancellation safeguards, the
+  database-first ACL, and one migration transaction.
+- A disposable PostgreSQL 17 fixture compiled the migration and exercised
+  first execution, byte-identical replay, append-only receipt refusal, and
+  rollback after an intentionally partial obligation result.
+- `managed-tournament-cancellation-authority.sql` runs the installed command
+  path for a synthetic union administrator, forces the deferred receipt check,
+  proves exactly-once replay, proves the registered-player refusal, proves an
+  affiliated club owner is rejected, and rolls every fixture row back.
+- The server TypeScript build passes.

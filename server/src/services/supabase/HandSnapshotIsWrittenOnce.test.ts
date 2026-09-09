@@ -16,25 +16,48 @@
  *
  * These assertions fail against the two-statement version. That is the point.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 vi.mock('./client.js', () => ({
-  supabase: { rpc: vi.fn().mockResolvedValue({ error: null }) },
+  supabase: {
+    rpc: vi.fn().mockResolvedValue({ error: null }),
+    from: vi.fn(),
+  },
 }));
 
 import * as snapshots from './snapshots.js';
 import { supabase } from './client.js';
 
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+const from = supabase.from as unknown as ReturnType<typeof vi.fn>;
 const here = dirname(fileURLToPath(import.meta.url));
+
+function mockFullSnapshotRead(result: { data: unknown; error: unknown }): void {
+  from.mockReturnValue({
+    select: () => ({
+      eq: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: () => ({
+              maybeSingle: vi.fn().mockResolvedValue(result),
+            }),
+          }),
+        }),
+      }),
+    }),
+  });
+}
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('the hand snapshot is written once, not twice', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     rpc.mockResolvedValue({ error: null });
+    mockFullSnapshotRead({ data: null, error: null });
   });
 
   it('carries the deadlines and disconnect states on the insert itself', async () => {
@@ -74,6 +97,108 @@ describe('the hand snapshot is written once, not twice', () => {
     const [, args] = rpc.mock.calls[0];
     expect(args.p_pending_deadlines).toEqual([]);
     expect(args.p_disconnect_states).toEqual({});
+  });
+
+  it('rejects when the snapshot RPC returns a database error', async () => {
+    const failure = { message: 'snapshot row refused' };
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    rpc.mockResolvedValue({ error: failure });
+
+    await expect(
+      snapshots.saveHandStateSnapshot({
+        tableId: '11111111-1111-1111-1111-111111111111',
+        handNumber: 44,
+        stateJson: {},
+        configJson: {},
+        dealerSeat: 0,
+        playersJson: [],
+        stage: 'turn',
+      })
+    ).rejects.toBe(failure);
+
+    expect(warning).toHaveBeenCalledOnce();
+  });
+
+  it('preserves a thrown snapshot transport failure for the engine boundary', async () => {
+    const failure = new Error('snapshot transport unavailable');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    rpc.mockRejectedValue(failure);
+
+    await expect(
+      snapshots.saveHandStateSnapshot({
+        tableId: '11111111-1111-1111-1111-111111111111',
+        handNumber: 45,
+        stateJson: {},
+        configJson: {},
+        dealerSeat: 0,
+        playersJson: [],
+        stage: 'river',
+      })
+    ).rejects.toBe(failure);
+
+    expect(warning).toHaveBeenCalledOnce();
+  });
+
+  it('does not turn a refused completion marker into a successful recovery proof', async () => {
+    const failure = { message: 'snapshot completion refused' };
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    rpc.mockResolvedValue({ error: failure });
+
+    await expect(
+      snapshots.completeHandSnapshot('11111111-1111-1111-1111-111111111111', 46)
+    ).rejects.toBe(failure);
+
+    expect(warning).toHaveBeenCalledOnce();
+  });
+
+  it('preserves a thrown completion-marker transport failure', async () => {
+    const failure = new Error('completion transport unavailable');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    rpc.mockRejectedValue(failure);
+
+    await expect(
+      snapshots.completeHandSnapshot('11111111-1111-1111-1111-111111111111', 47)
+    ).rejects.toBe(failure);
+
+    expect(warning).toHaveBeenCalledOnce();
+  });
+
+  it('returns no active RPC snapshot only when the database proves no row exists', async () => {
+    rpc.mockResolvedValue({ data: [], error: null });
+
+    await expect(
+      snapshots.getActiveHandSnapshot('11111111-1111-1111-1111-111111111111')
+    ).resolves.toBeNull();
+  });
+
+  it('rejects an unreadable active RPC snapshot instead of authorizing a fresh hand', async () => {
+    const failure = { message: 'snapshot recovery RPC unreadable' };
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    rpc.mockResolvedValue({ data: null, error: failure });
+
+    await expect(
+      snapshots.getActiveHandSnapshot('11111111-1111-1111-1111-111111111111')
+    ).rejects.toBe(failure);
+    expect(warning).toHaveBeenCalledOnce();
+  });
+
+  it('returns no extended snapshot only for a successful empty read', async () => {
+    mockFullSnapshotRead({ data: null, error: null });
+
+    await expect(
+      snapshots.getActiveHandSnapshotFull('11111111-1111-1111-1111-111111111111')
+    ).resolves.toBeNull();
+  });
+
+  it('rejects an unreadable extended snapshot so engine startup fails closed', async () => {
+    const failure = { message: 'snapshot recovery row unreadable' };
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockFullSnapshotRead({ data: null, error: failure });
+
+    await expect(
+      snapshots.getActiveHandSnapshotFull('11111111-1111-1111-1111-111111111111')
+    ).rejects.toBe(failure);
+    expect(warning).toHaveBeenCalledOnce();
   });
 
   it('no longer exports the second-statement writer at all', () => {

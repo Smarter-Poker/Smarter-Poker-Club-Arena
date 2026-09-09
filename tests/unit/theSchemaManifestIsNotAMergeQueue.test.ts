@@ -30,15 +30,21 @@ import {
 const root = resolve(__dirname, '..', '..');
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
 
-describe('an agent can declare a new object without touching a shared file', () => {
-  it('unions every fragment into the base snapshot', () => {
+describe('an agent can declare a schema change without touching a shared file', () => {
+  it('applies fragment additions and explicit retirement tombstones', () => {
     const base = JSON.parse(read('scripts/ci/supabase-schema-manifest.json'));
     const merged = loadSchemaManifest(root);
-    // The overlay may only ADD. Losing a base name would silently switch off
-    // the phantom-reference gate for whatever it dropped.
-    for (const t of base.tables ?? []) expect(merged.tables).toContain(t);
-    for (const f of base.functions ?? []) expect(merged.functions).toContain(f);
-    expect(merged.tables.length).toBeGreaterThanOrEqual((base.tables ?? []).length);
+    const fragments = readFragments(root);
+    const removedTables = new Set(fragments.flatMap(({ data }) => data.removedTables ?? []));
+    const removedFunctions = new Set(fragments.flatMap(({ data }) => data.removedFunctions ?? []));
+
+    for (const t of base.tables ?? []) {
+      expect(merged.tables.includes(t), t).toBe(!removedTables.has(t));
+    }
+    for (const f of base.functions ?? []) {
+      expect(merged.functions.includes(f), f).toBe(!removedFunctions.has(f));
+    }
+    expect(merged.removedByFragments).toBe(removedTables.size + removedFunctions.size);
   });
 
   it('carries column declarations through the same overlay', () => {
@@ -87,6 +93,7 @@ describe('fragments are temporary, and a lying one is found', () => {
     const prune = read('scripts/ci/prune-schema-fragments.mjs');
     // Warn while it may still be landing; fail once it cannot be.
     expect(prune).toContain('STALE_AFTER_MS');
+    expect(prune).toContain('keepRemovedFns');
     expect(prune).toContain('process.exit(stale.length ? 1 : 0)');
   });
 });

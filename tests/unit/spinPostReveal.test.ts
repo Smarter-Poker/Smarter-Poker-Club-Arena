@@ -1,21 +1,16 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  AFTER THE WHEEL: CHIPS, THEN BUTTON, THEN CARDS
+ *  AFTER THE WHEEL: CHIP PRESENTATION, THEN BUTTON, THEN CARDS
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan, 2026-08-21: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON
  * RANDOMLY ASSIGNED AND THE SPIN STARTS!"
  *
- * Two things were wrong before this.
+ * The database owns each paid seat's real positive stack before this theatre
+ * begins. `spin_chips` is only the client cue that reveals those already-stored
+ * chips; a timer must never write, repair, or reconcile game state.
  *
- * 1. THE STACKS ARRIVED EARLY. A seat is a reservation at zero chips until the
- *    multiplier is known — stack depth belongs to the tier, and spin tiers run
- *    300/400/500, so there is no honest number to seat someone with before the
- *    draw. But the credit ran at start, BEFORE the reveal broadcast, so the
- *    stacks landed on the felt while the wheel was still turning. The table
- *    had already answered the question the wheel was in the middle of asking.
- *
- * 2. THE BUTTON WAS NOT RANDOM. The first hand's dealer was `sortedSeats[0]`,
+ * The button was not random. The first hand's dealer was `sortedSeats[0]`,
  *    the lowest occupied seat. On a 3-handed Spin that is a genuine positional
  *    edge, and in a seat-first format the low seat goes to whoever clicked
  *    first — so the edge was awarded for reaction time.
@@ -23,7 +18,7 @@
  * The ordering is enforced by the ENGINE HOLD, not by hope: the hold now runs
  * to `spinRevealToDealMs()`, which includes the two post-reveal beats. Holding
  * only for the wheel would leave the engine free to deal in the same instant
- * the stacks are being written, and the deal wins that race.
+ * the presentation beats are running, and the deal wins that race.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -40,7 +35,6 @@ const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
 const MANAGER = strip(read('server/src/tournament/TournamentManagerBase.ts'));
-const SEAT_CREDIT = strip(read('server/src/tournament/seatStackCredit.ts'));
 const DEALING = strip(read('server/src/engine/ServerTableEngineDealing.ts'));
 const ENGINE = strip(read('server/src/engine/ServerTableEngineBase.ts'));
 
@@ -110,58 +104,20 @@ describe('the hold covers the whole sequence, not just the wheel', () => {
   });
 });
 
-describe('the stacks wait for the wheel', () => {
-  it('a spin with a drawn multiplier DEFERS the credit', () => {
-    expect(MANAGER).toMatch(/deferStacksForSpinReveal/);
-    const fn = sliceMethod(MANAGER, 'private async deferStacksForSpinReveal');
-    expect(fn).toMatch(/isSpin && Number\(tournament\?\.spin_multiplier\) > 0/);
+describe('the wheel never owns stack state', () => {
+  it('has no process-side credit, deferral, resume repair, or credited-seat payload', () => {
+    expect(MANAGER).not.toMatch(/creditSeatStacks/);
+    expect(MANAGER).not.toMatch(/deferStacksForSpinReveal/);
+    expect(MANAGER).not.toMatch(/stacksMayBeDeferred/);
+    expect(MANAGER).not.toMatch(/seats_credited/);
   });
 
-  it('everything else is still credited at start', () => {
-    // The negation matters: a non-spin table must not sit at zero chips
-    // waiting for a wheel that will never turn.
-    expect(MANAGER).toMatch(
-      /let stacksMayBeDeferred = await this\.deferStacksForSpinReveal\(tournament\);\s*if \(!stacksMayBeDeferred\) \{[\s\S]{0,160}?await this\.creditSeatStacks\(tournament\);/
-    );
-  });
-
-  it('a spin that reached start WITHOUT a multiplier is credited immediately too', () => {
-    // Same reason. A missing draw is a bug, but stranding three players on
-    // zero chips forever is a worse one.
-    const fn = sliceMethod(MANAGER, 'private async deferStacksForSpinReveal');
-    expect(fn).toMatch(/> 0/);
-  });
-
-  it('the credit is idempotent, because it runs from a timer', () => {
-    // A restart between the reveal and the credit has to be recoverable by
-    // simply calling it again, so it may only ever write the value start
-    // already decided, and only to seats that disagree.
-    //
-    // 2026-08-22: "disagree" tightened from `!== target` to `< target` — the
-    // credit strictly RAISES a reservation seat to the decided stack and never
-    // lowers one, because an early-bird seat (starting chips + bonus) sits
-    // ABOVE the plain starting stack and flattening it would destroy the
-    // bonus. Idempotence is unchanged: a healthy seat still writes nothing.
-    //
-    // 2026-09-02 (chip-std, tournament chips are conserved): the "which seats"
-    // decision moved out of the manager into the pure selectSeatsToFund in
-    // server/src/tournament/seatStackCredit.ts, so the credit can also refuse
-    // when raising seats would mint chips. The `< target` rule lives there
-    // now; the manager must hand the decision to it and write only what it
-    // returns.
-    const fn = sliceMethod(MANAGER, 'protected async creditSeatStacks');
-    const body = fn;
-    expect(body).toMatch(/selectSeatsToFund\(\{/);
-    expect(body).toMatch(/const stale = decision\.fund;/);
-    expect(body).toMatch(/if \(stale\.length === 0\) return 0;/);
-    expect(body).toMatch(/\.update\(\{ stack: target \}\)/);
-    const rule = sliceMethod(SEAT_CREDIT, 'export function selectSeatsToFund(');
-    expect(rule).toMatch(/num\(s\.stack\) < target/);
-  });
-
-  it('a failed credit is reported, never thrown into the start path', () => {
-    const fn = sliceMethod(MANAGER, 'protected async creditSeatStacks');
-    expect(fn).toMatch(/reportError/);
+  it('the chip beat is presentation-only and carries the authoritative board stack', () => {
+    const fn = sliceMethod(MANAGER, 'private scheduleSpinPostReveal(');
+    const chipBeat = sliceEnclosingBlock(fn, "type: 'spin_chips'");
+    expect(chipBeat).toMatch(/starting_stack:\s*stack/);
+    expect(fn).not.toMatch(/from\('table_seats'\)/);
+    expect(fn).not.toMatch(/\.update\(\{\s*stack:/);
   });
 });
 
@@ -181,7 +137,7 @@ describe('the three beats, in order, each announced', () => {
     expect(block).toMatch(/dealer_seat: seat/);
   });
 
-  it('a dead tournament cannot have chips written into it seconds later', () => {
+  it('a dead tournament cannot receive presentation events seconds later', () => {
     expect(MANAGER).toMatch(/const stillLive = \(\) => this\.isRunning\(\)/);
     expect(MANAGER).toMatch(/if \(!stillLive\(\)\) return;/);
   });
@@ -190,11 +146,11 @@ describe('the three beats, in order, each announced', () => {
     expect(MANAGER).toMatch(/unref/);
   });
 
-  it('a missed chip drop self-heals rather than stranding the table', () => {
-    // Without this a transient DB error at beat 1 leaves every seat on zero
-    // chips and NO hand can ever start — the table just sits there.
-    expect(MANAGER).toMatch(/safety net/i);
-    expect(MANAGER).toMatch(/buttonAt \+ SPIN_REVEAL\.BUTTON_DRAW_MS \+ \d+/);
+  it('no post-reveal timer is a stack repair safety net', () => {
+    const fn = sliceMethod(MANAGER, 'private scheduleSpinPostReveal(');
+    expect(fn).not.toMatch(/safety net/i);
+    expect(fn).not.toMatch(/healed/);
+    expect(fn).not.toMatch(/BUTTON_DRAW_MS \+ \d+/);
   });
 });
 

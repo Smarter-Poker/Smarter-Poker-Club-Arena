@@ -1,15 +1,49 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   MTT STARTING TICKER (Dan 2026-08-20)
+   THE LIVE MESSAGE RAIL (Dan 2026-08-20, rebuilt after the audit 2026-09-05)
 
    A single strip pinned to the top of the viewport, above everything except
    modals. It has to be readable over a felt, a lobby and a tournament list
    without owning any of them, so: fixed height, its own background, and a
    z-index below the dialogs (9600+) but above page chrome.
 
-   The marquee is one transform animation on the compositor. It pauses on
-   hover, so a player can actually read it, and collapses to a static line
-   under prefers-reduced-motion rather than being silently dropped — the
-   announcement matters more than the movement.
+   WHAT THE AUDIT FOUND IN THIS FILE, AND WHERE EACH FIX IS
+
+   1. THE FLAG WAS PAINTED CYAN ON CYAN. The rule below set `color: #04121f`
+      and the render overrode it inline with the club accent, which defaults to
+      the same `#00d4ff` the gradient here was built from. About 1.06:1. The
+      accent is a BACKGROUND now (`--ticker-flag-bg`) and the ink is derived
+      from its luminance (`--ticker-flag-ink`), both computed in tickerTheme.ts.
+
+   2. THE GRADIENT NEVER RENDERED. `background: linear-gradient(...)` lived
+      here from the first commit and lost to an inline single hex value on
+      every single render. There is no background declared on `.mtt-ticker`
+      any more - `railBackground()` builds it FROM the managed colour and the
+      render sets the whole thing inline, so operator branding survives and the
+      depth is real.
+
+   3. `translateX(-50%)` SHOWED EMPTY RAIL. Fixed two copies against a variable
+      viewport. The scroller now travels exactly `--ticker-travel` (one copy
+      width) and marqueeMetrics decides how many copies that needs.
+
+   4. THE SPEED WAS A DURATION. `--ticker-duration` is derived from the copy
+      width and the operator's pace, so eight messages and one read alike.
+
+   5. "IT PAUSES ON HOVER" WAS A COMMENT, NOT A RULE - AND IT NEVER CAN BE.
+      The file header promised a hover pause from the first commit and no
+      `animation-play-state` was ever written. It is not written now either,
+      because `tests/no-hover-effects.law.test.ts` is binding: Dan removed
+      hover from Club Arena entirely on 2026-08-29, and the reasoning applies
+      to this strip more than to most - the overwhelming majority of play is on
+      a phone, where a hover pause is a readability feature that most players
+      can never reach.
+
+      So readability is delivered where every player can get it. The rail HOLDS
+      STILL whenever the message fits it (marqueeMetrics), which is the common
+      case for a single announcement on anything wider than a phone; the pace
+      is now normalised per pixel so a long message is no longer a blur; and
+      `:focus-within` still pauses it, which the law explicitly preserves for
+      keyboard users. The promise in the old comment is gone rather than
+      quietly still broken.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .mtt-ticker {
@@ -20,30 +54,47 @@
   z-index: 9400;
   display: flex;
   align-items: stretch;
-  height: 34px;
-  background: linear-gradient(90deg, #0b1a33 0%, #123163 50%, #0b1a33 100%);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.4);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  height: 38px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.26);
   animation: mttDrop 0.3s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
   /* Safe-area aware so it clears a notch instead of hiding under it. */
   padding-top: env(safe-area-inset-top, 0px);
   box-sizing: content-box;
+  /* Every number on this rail is a quantity a player is deciding on, and a
+     proportional 3 is narrower than a proportional 0. Without this the whole
+     line re-flows once a second as the countdown ticks and the strip shimmers.
+     It is the single cheapest thing on this list and the most noticed. */
+  font-variant-numeric: tabular-nums;
 }
 
+/* The strip leaves the way it arrived. Something that vanishes reads as
+   broken; something that retracts reads as finished. */
+.mtt-ticker--leaving {
+  animation: mttLift 0.24s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+
+/* ── THE FLAG ──────────────────────────────────────────────────────────────
+   Filled with the accent, inked by luminance, bevelled so it reads as a
+   physical chip seated in the rail rather than a coloured rectangle. */
 .mtt-ticker__flag {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  padding: 0 10px;
-  font-size: 0.63rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  color: #04121f;
-  background: linear-gradient(180deg, #00d4ff 0%, #0aa6cc 100%);
+  padding: 0 12px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  background: var(--ticker-flag-bg, linear-gradient(180deg, #00d4ff 0%, #0aa6cc 100%));
+  color: var(--ticker-flag-ink, #04121f);
   white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3);
 }
 
-/* The scrolling region is a button: the whole strip is the tap target. */
+/* ── THE SCROLLING REGION ──────────────────────────────────────────────────
+   The whole strip is the tap target, so it is a button. */
 .mtt-ticker__track {
   position: relative;
   flex: 1 1 auto;
@@ -56,6 +107,35 @@
   display: flex;
   align-items: center;
 }
+
+/* The clipping region, and the thing the marquee measures.
+   Text dissolves at both ends instead of being guillotined by the bezel -
+   nothing else on the premium list changes the feel of a rail this much. The
+   mask lives HERE rather than on the button because a mask applies to every
+   descendant, and on the button it faded out the "REGISTER" label sitting at
+   the right edge along with the message underneath it. */
+.mtt-ticker__viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
+}
 .mtt-ticker__track:focus-visible {
   outline: 2px solid var(--ticker-accent, #00d4ff);
   outline-offset: -2px;
@@ -66,30 +146,149 @@
   align-items: center;
   white-space: nowrap;
   will-change: transform;
-  animation: mttScroll var(--ticker-speed, 22s) linear infinite;
+  animation: mttScroll var(--ticker-duration, 22s) linear infinite;
+  /* A handover from a countdown to an overlay is the moment a player notices
+     this bar exists. 240ms of fade is the difference between a deliberate
+     change and a glitch. */
+  animation-name: mttScroll, mttArrive;
+  animation-duration: var(--ticker-duration, 22s), 0.24s;
+  animation-timing-function: linear, ease-out;
+  animation-iteration-count: infinite, 1;
+}
+
+/* A keyboard user tabbing on to the strip can hold it still and read it.
+   `:focus-visible` and `:focus-within` are what no-hover-effects.law.test.ts
+   keeps precisely because removing hover makes focus more load-bearing, not
+   less. There is deliberately no hover twin: see point 5 in the header. */
+.mtt-ticker__track:focus-within .mtt-ticker__scroll {
+  animation-play-state: paused;
+}
+
+/* The message fits the rail: centre it and stop. Motion should mean "there is
+   more to read", not "this is a ticker". */
+.mtt-ticker[data-static='true'] .mtt-ticker__viewport {
+  justify-content: center;
+}
+.mtt-ticker[data-static='true'] .mtt-ticker__scroll {
+  animation-name: mttArrive;
+  animation-iteration-count: 1;
+  animation-duration: 0.24s;
+  width: 100%;
+  justify-content: center;
 }
 
 .mtt-ticker__msg {
-  padding: 0 28px;
-  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 26px;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--ticker-text, #eaf4ff);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.015em;
+}
+
+.mtt-ticker__item {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── THE SEPARATOR IS AN OBJECT, NOT A CHARACTER ───────────────────────────
+   Messages used to be joined with a bullet, fields with a middle dot, and
+   operator-typed tournament names contain bullets of their own ("DSS Saturday
+   $11 NLH Daily - 11 AM CT" arrived with one), so a reader could not tell
+   where one announcement ended. A drawn pip cannot be typed into a club's
+   tournament name. */
+.mtt-ticker__pip {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 18px;
+  transform: rotate(45deg);
+  background: var(--ticker-accent, #00d4ff);
+  opacity: 0.85;
+  flex: 0 0 auto;
+}
+
+.mtt-ticker__field-sep {
+  opacity: 0.55;
+  padding: 0 2px;
+}
+
+/* The digits, and only the digits, carry the urgency. */
+.mtt-ticker__clock {
+  font-variant-numeric: tabular-nums;
+}
+.mtt-ticker__clock--urgent {
+  color: var(--ticker-accent, #00d4ff);
+  animation: mttHeartbeat 1s ease-in-out infinite;
+}
+
+/* Nothing on the old bar said it was a button, which is a real problem for a
+   strip whose whole purpose is to be pressed.
+
+   This says it, and it says it to EVERYONE. Revealing it on hover was the
+   first draft and it is exactly the anti-pattern no-hover-effects.law.test.ts
+   was written about: an affordance that exists only for a pointer is invisible
+   on the phones most of this room plays on. It is painted at all times on a
+   pointer-width viewport and hidden below 768px, where the strip is one big
+   tap target and the width is worth more than the label. */
+.mtt-ticker__cta {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 26px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--ticker-accent, #00d4ff);
+  background: linear-gradient(90deg, transparent 0, rgba(0, 0, 0, 0.55) 40%);
+  pointer-events: none;
 }
 
 .mtt-ticker__close {
   flex: 0 0 auto;
-  width: 32px;
+  width: 40px;
   border: none;
   background: transparent;
   color: #8fb4d8;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
+}
+.mtt-ticker__close:active {
+  color: var(--ticker-text, #eaf4ff);
 }
 .mtt-ticker__close:focus-visible {
   outline: 2px solid var(--ticker-accent, #00d4ff);
   outline-offset: -2px;
+}
+
+/* The window, drawn. Two pixels that empty as the countdown runs. */
+.mtt-ticker__drain {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ticker-accent, #00d4ff), rgba(255, 255, 255, 0.75));
+  transition: width 1s linear;
+  pointer-events: none;
+}
+
+/* Heard, never seen. The only live region on the strip. */
+.mtt-ticker__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 @keyframes mttScroll {
@@ -97,8 +296,19 @@
     transform: translateX(0);
   }
   to {
-    /* Exactly one copy of the duplicated message, so the loop is seamless. */
-    transform: translateX(-50%);
+    /* Exactly one copy of the message, measured. Not a percentage of a
+       scroller whose width changes with the news. */
+    transform: translateX(calc(-1 * var(--ticker-travel, 50%)));
+  }
+}
+@keyframes mttArrive {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
   }
 }
 @keyframes mttDrop {
@@ -109,9 +319,32 @@
     transform: translateY(0);
   }
 }
+@keyframes mttLift {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+@keyframes mttHeartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.14);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .mtt-ticker {
+  .mtt-ticker,
+  .mtt-ticker--leaving {
     animation: none;
   }
   .mtt-ticker__scroll {
@@ -122,6 +355,12 @@
     max-width: 100%;
     min-width: 0;
   }
+  .mtt-ticker__viewport {
+    /* The fade reads as "there is more", and under reduced motion there is no
+       movement to make good on it. The ellipsis below says it instead. */
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
   /* Static: show the first copy, truncated, instead of a moving strip. */
   .mtt-ticker__msg + .mtt-ticker__msg {
     display: none;
@@ -130,89 +369,50 @@
     /* Ellipsis, not a hard cut: reduced motion collapses the MOVEMENT, and the
        reader still has to be able to tell that the line continues. The strip is
        a button on to the event either way, and the message is built
-       most-important-part-first ("505 Overlay Right Now - <event> - ..."), so
-       what survives the truncation is the part worth reading. */
+       most-important-part-first, so what survives the truncation is the part
+       worth reading. */
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+    display: block;
   }
-  .mtt-ticker__track {
-    overflow: hidden;
+  .mtt-ticker__clock--urgent {
+    animation: none;
+  }
+  .mtt-ticker__drain {
+    transition: none;
   }
 }
 
-/* Mobile: a thinner strip. 34px reads fine on desktop; on a phone it eats a
+/* Mobile: a thinner strip. 38px reads on a desktop; on a phone it eats a
    meaningful slice of a small viewport, and Dan called it out ("the ticker is
-   way too thick on mobile"). 26px still clears the 0.72rem message line. */
+   way too thick on mobile"). 30px still clears the 0.74rem message line. */
 @media (max-width: 768px) {
   .mtt-ticker {
-    height: 26px;
+    height: 30px;
   }
   .mtt-ticker__close {
-    width: 28px;
-    font-size: 15px;
+    width: 34px;
+    font-size: 16px;
+  }
+  /* On a phone the whole strip is the tap target and 375px of width is worth
+     more than a label. */
+  .mtt-ticker__cta {
+    display: none;
   }
 }
 
 @media (max-width: 420px) {
   .mtt-ticker__flag {
     font-size: 0.58rem;
-    padding: 0 7px;
+    padding: 0 8px;
+    letter-spacing: 0.12em;
   }
   .mtt-ticker__msg {
-    font-size: 0.72rem;
-    padding: 0 18px;
+    font-size: 0.74rem;
+    padding: 0 16px;
   }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   OVERLAY ANNOUNCEMENTS (Dan 2026-08-26)
-   ───────────────────────────────────────────────────────────────────────────
-   "alerting players if there is an overlay or potential overlay to jump in
-   and play."
-
-   Deliberately a DIFFERENT colour from the cyan STARTING SOON flag. The two
-   say different things and a player should be able to tell which one is on
-   the bar without reading it: cyan means "hurry", gold means "there is money
-   here". Reusing the cyan would have made the strongest message this room can
-   send look like the routine one.
-
-   Gold on near-black rather than the usual green: green reads as "success /
-   confirmed" everywhere else in this app (ClubAnnouncementBanner uses it for
-   exactly that), and an overlay is neither. It is treasure.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.mtt-ticker__flag--overlay {
-  background: linear-gradient(180deg, #d8dce0 0%, #9ba1a8 100%);
-  color: #111418;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
-/* A LIVE overlay - late registration open on a running event - is the one
-   with a closing door, so it is the only thing on this strip allowed to
-   pulse. The potential one is information; this one is a countdown with
-   money attached. */
-.mtt-ticker__flag--overlay-live {
-  animation: mttOverlayPulse 1.8s ease-in-out infinite;
-}
-
-@keyframes mttOverlayPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(180, 186, 194, 0.55);
-  }
-  50% {
-    box-shadow: 0 0 10px 2px rgba(180, 186, 194, 0.85);
-  }
-}
-
-/* The house rule the rest of this file already follows: nothing moves for a
-   player who asked for no motion. They still get the flag and the colour,
-   which is the whole message - only the pulse goes. */
-@media (prefers-reduced-motion: reduce) {
-  .mtt-ticker__flag--overlay-live {
-    animation: none;
-    box-shadow: 0 0 8px 1px rgba(180, 186, 194, 0.7);
+  .mtt-ticker__pip {
+    margin: 0 12px;
   }
 }

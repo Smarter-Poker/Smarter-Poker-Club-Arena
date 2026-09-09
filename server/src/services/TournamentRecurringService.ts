@@ -1311,7 +1311,10 @@ export function horseAtCapacity(load: number): boolean {
  * callers and every unit test are only exercising the counting.
  */
 export type LoadRef =
-  string | null | undefined | { user_id?: string | null; tournament_id?: string | null };
+  | string
+  | null
+  | undefined
+  | { user_id?: string | null; tournament_id?: string | null };
 
 function refUser(ref: LoadRef): string | null {
   if (!ref) return null;
@@ -4366,7 +4369,9 @@ export class TournamentRecurringService {
         const row = r as {
           user_id?: string;
           tables?:
-            { tournament_id?: string | null } | Array<{ tournament_id?: string | null }> | null;
+            | { tournament_id?: string | null }
+            | Array<{ tournament_id?: string | null }>
+            | null;
         };
         const embedded = Array.isArray(row.tables) ? row.tables[0] : row.tables;
         return { user_id: row.user_id, tournament_id: embedded?.tournament_id ?? null };

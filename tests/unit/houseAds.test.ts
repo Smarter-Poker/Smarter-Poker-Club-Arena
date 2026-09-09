@@ -16,7 +16,7 @@ const SERVICE = read('src/services/AdService.ts');
 const ROTATOR = read('src/components/ads/HouseAdRotator.tsx');
 const ROTATOR_CSS = read('src/components/ads/HouseAdRotator.css');
 const ADMIN = read('src/pages/admin/HouseAdsPage.tsx');
-const PICTURE_MIGRATION = read('supabase/migrations/20260903200000_an_advert_is_a_picture_now.sql');
+const PICTURE_MIGRATION = read('supabase/migrations/20260903184811_an_advert_is_a_picture_now.sql');
 const CAP_MIGRATION = read('supabase/migrations/20260828032000_ad_cap_is_per_surface.sql');
 const SUPPRESSION_MIGRATION = read(
   'supabase/migrations/20260828055000_suppression_countable_by_an_operator.sql'
@@ -141,7 +141,7 @@ describe('who is speaking, and who paid (Dan 2026-09-03)', () => {
      advertising their club or events (using diamonds)." Every rule that
      touches money lives in the migration; the client only repeats answers. */
   const PAID_MIGRATION = read(
-    'supabase/migrations/20260903213000_who_is_speaking_and_who_paid.sql'
+    'supabase/migrations/20260903190516_who_is_speaking_and_who_paid.sql'
   );
   const CAMPAIGNS = read('src/services/AdCampaignService.ts');
   const ADVERTISE = read('src/pages/ClubAdvertisePage.tsx');

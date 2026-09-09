@@ -23,7 +23,7 @@ DISTORTED BY PAGES CHANGING SIZE."
 
 ## What changed
 
-- `supabase/migrations/20260903200000_an_advert_is_a_picture_now.sql`
+- `supabase/migrations/20260903184811_an_advert_is_a_picture_now.sql`
   (applied to production via the Supabase MCP, one transaction):
   `ad_placement.image_url` with the same same-origin CHECK as the catalog;
   `ad_event.event_type` admits `viewable`; `fn_resolve_ads` prefers the

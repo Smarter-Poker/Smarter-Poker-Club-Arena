@@ -13,7 +13,7 @@ upload a picture that the three same-origin locks would accept.
 
 ## What changed
 
-- `supabase/migrations/20260903213000_who_is_speaking_and_who_paid.sql`
+- `supabase/migrations/20260903190516_who_is_speaking_and_who_paid.sql`
   (applied to production via the Supabase MCP, one transaction):
   - `ad_advertiser` (house | club | sponsor; one row per club; the house row
     seeded), `ad_rate_card` (diamonds per day, min/max days, exact creative

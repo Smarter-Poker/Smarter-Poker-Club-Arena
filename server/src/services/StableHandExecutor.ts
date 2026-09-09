@@ -86,7 +86,7 @@ export interface YieldEngine {
     success: boolean;
     error?: string;
     immediate?: boolean;
-    code?: 'LEAVE_LOCKED';
+    code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY';
     stay_remaining_ms?: number;
   }>;
 }

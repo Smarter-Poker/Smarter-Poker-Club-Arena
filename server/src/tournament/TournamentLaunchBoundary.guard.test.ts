@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceMethod, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
@@ -20,7 +20,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(paidEvidence).toBeGreaterThan(-1);
     expect(claim).toBeGreaterThan(paidEvidence);
     for (const mutation of [
-      "supabase.rpc('fn_spin_settle_game'",
+      "supabase.rpc('fn_spin_draw_and_settle_atomic'",
       ".update({ status: 'playing'",
       'await this.creditSeatStacks(tournament)',
       'await this.createTablesAndSeatPlayers(tournament)',
@@ -76,7 +76,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(begin).toContain('return null;');
 
     const refusal = start.indexOf('if (!launchClaim || launchClaim.completed)');
-    const firstMutation = start.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const firstMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     expect(refusal).toBeGreaterThan(-1);
     expect(refusal).toBeLessThan(firstMutation);
     expect(start.slice(refusal, firstMutation)).toMatch(
@@ -88,7 +88,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(begin).toContain("result.completed === true && result.status === 'RUNNING'");
 
     const completedReceipt = start.indexOf('if (!launchClaim || launchClaim.completed)');
-    const firstSetupMutation = start.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const firstSetupMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     const firstDealerAdmission = start.indexOf('this.admitManagedTableEngine(');
 
     expect(completedReceipt).toBeGreaterThan(-1);
@@ -151,7 +151,9 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('uses the incomplete receipt retry path instead of delayed repair work', () => {
-    expect(start).toMatch(/if \(!settled\) \{\s*this\.running = false;\s*return;/);
+    const refusedDraw = sliceEnclosingBlock(start, 'if (!fundedSpin)');
+    expect(refusedDraw).toContain('this.running = false;');
+    expect(refusedDraw).toContain('return;');
     expect(start).toMatch(/if \(!spinRowWritten\) \{\s*this\.running = false;\s*return;/);
     expect(source).not.toContain('scheduleSpinRowRepair');
     expect(source).not.toContain('spin_row_repair_exhausted');

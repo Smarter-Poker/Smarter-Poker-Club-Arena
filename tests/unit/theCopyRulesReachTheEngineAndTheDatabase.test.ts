@@ -35,6 +35,7 @@
  * Both blind spots are the same mistake as the Phase 3 insurance finding: a
  * green gate is evidence about the gate, not about the product.
  */
+import { parse as parseWorkflow } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -201,9 +202,30 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain("- cron: '35 6 * * *'");
     // Both suites must run unconditionally on that schedule - change
     // detection is meaningless when the question is about the whole branch.
-    expect(CI).toContain("github.event_name == 'schedule' ||");
-    const scheduleGates = CI.split("github.event_name == 'schedule' ||").length - 1;
-    expect(scheduleGates, 'both the unit and server jobs need it').toBe(2);
+    const jobs = parseWorkflow(CI).jobs;
+    for (const name of ['unit_shards', 'server', 'accounting_postgres']) {
+      expect(jobs[name].if, name + ' must verify the scheduled branch').toContain(
+        "github.event_name == 'schedule' ||"
+      );
+    }
+  });
+
+  it('the required server check cannot pass without real accounting transaction tests', () => {
+    const jobs = parseWorkflow(CI).jobs;
+    expect(jobs.server.needs).toContain('accounting_postgres');
+    expect(jobs.accounting_postgres.if).toBe(jobs.server.if);
+    expect(jobs.server.steps).toContainEqual(
+      expect.objectContaining({
+        if: "needs.accounting_postgres.result != 'success'",
+        run: expect.stringContaining('exit 1'),
+      })
+    );
+    expect(jobs.accounting_postgres.steps).toContainEqual(
+      expect.objectContaining({
+        run: 'bash scripts/dev/probe-departure-postgres.sh',
+        env: { PGBIN: '/usr/lib/postgresql/17/bin' },
+      })
+    );
   });
 
   it('the deploy window cannot be closed by one dropped cron tick', () => {

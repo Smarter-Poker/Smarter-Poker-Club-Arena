@@ -66,60 +66,52 @@ function closesBefore(lines: string[], from: number, to: number): number {
   return -1;
 }
 
-describe('a departing seat is visible to everything that reads a seat', () => {
-  it('the deferred mid-hand leave writes is_sitting_out, not status alone', () => {
-    expect(SEATING).toMatch(
-      /\.update\(\{ leave_pending: true, status: 'sitting_out', is_sitting_out: true \}\)/
+const DEPARTURE_SQL = readFileSync(
+  join(
+    process.cwd(),
+    '..',
+    'supabase',
+    'migrations',
+    '20260908220604_bind_cashout_requests_to_seat_occupancy.sql'
+  ),
+  'utf8'
+);
+const CASH_LEAVE = sliceEnclosingBlock(
+  SEATING,
+  'A deferred acknowledgement requires a durable request'
+);
+const TOURNAMENT_LEAVE = sliceEnclosingBlock(
+  SEATING,
+  'In tournaments, leaving the table NEVER cashes out'
+);
+
+describe('a departing seat is durably visible through the occupancy transaction', () => {
+  it.each([
+    ['cash', CASH_LEAVE],
+    ['tournament', TOURNAMENT_LEAVE],
+  ])('%s departure awaits the original occupancy request', (_name, branch) => {
+    expect(branch).not.toBe('');
+    expect(branch).toMatch(/await requestSeatDeparture\(/);
+    expect(branch).toContain('player.occupancy_id');
+  });
+  it('the transaction writes both sit-out columns and cash-only pending state', () => {
+    expect(DEPARTURE_SQL).toMatch(/SET status='sitting_out',is_sitting_out=true/);
+    expect(DEPARTURE_SQL).toMatch(
+      /leave_pending=CASE WHEN v_tournament IS NULL THEN true ELSE leave_pending END/
     );
-  });
-
-  it('the tournament sit-out writes it too', () => {
-    expect(SEATING).toMatch(/\.update\(\{ status: 'sitting_out', is_sitting_out: true \}\)/);
-  });
-
-  it('no leave path writes status without the boolean anything reads', () => {
-    /* The whole defect in one assertion: a `status: 'sitting_out'` update with
-       no `is_sitting_out` beside it is invisible to the trigger, the restart
-       restore and the client poll. */
-    const writes = SEATING.match(/\.update\(\{[^}]*status: 'sitting_out'[^}]*\}\)/g) || [];
-    expect(writes.length, 'both sit-out writes must be present').toBeGreaterThanOrEqual(2);
-    for (const write of writes) {
-      expect(write, `this write is invisible to the sit-out trigger: ${write}`).toContain(
-        'is_sitting_out: true'
-      );
-    }
   });
 });
 
-describe('every device is told when a seat changes hands', () => {
-  /* Both windows are bounded by the BRANCH that encloses the write, never by a
-     byte count: a fixed window drifts off the code it guards as comments are
-     added, and it can drift while staying green
-     (tests/unit/noFixedSizeSourceWindows.test.ts). */
-  it('the deferred mid-hand leave re-broadcasts state', () => {
-    const branch = sliceEnclosingBlock(
-      SEATING,
-      "update({ leave_pending: true, status: 'sitting_out', is_sitting_out: true })"
+describe('every device is told after durable departure', () => {
+  it.each([
+    ['cash', CASH_LEAVE],
+    ['tournament', TOURNAMENT_LEAVE],
+  ])('%s departure re-broadcasts state after confirmation', (_name, branch) => {
+    expect(branch).toContain('this.broadcastCurrentState();');
+    expect(branch.indexOf('await requestSeatDeparture(')).toBeGreaterThan(-1);
+    expect(branch.indexOf('this.broadcastCurrentState();')).toBeGreaterThan(
+      branch.indexOf('await requestSeatDeparture(')
     );
-    expect(branch, 'the deferred leave branch has moved or gone').not.toBe('');
-    expect(branch, 'a seat_left with no state broadcast leaves every other client stale').toMatch(
-      /this\.broadcastCurrentState\(\);/
-    );
-  });
-
-  it('the tournament sit-out re-broadcasts state', () => {
-    /* Anchored on the tournament branch's own write - `disconnectEngine.sitOut`
-       appears in several places, and the first is the sitOut() method, not this
-       branch. */
-    const branch = sliceEnclosingBlock(
-      SEATING,
-      "update({ status: 'sitting_out', is_sitting_out: true })"
-    );
-    expect(branch, 'the tournament sit-out branch has moved or gone').not.toBe('');
-    expect(
-      branch,
-      'a tournament sit-out that broadcasts nothing leaves every other device stale'
-    ).toMatch(/this\.broadcastCurrentState\(\);/);
   });
 });
 

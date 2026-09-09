@@ -1,3 +1,8 @@
+import {
+  getAdminSeatCashoutReceipt,
+  getSeatCashoutReceipt,
+  type AdminDepartureAuthority,
+} from '../services/supabase/seats.js';
 /**
  * Admin handlers — Bible V8 §6.17: pause / resume table dealing.
  *
@@ -23,7 +28,12 @@ export interface AdminDeps {
           adminResume(): unknown;
           leaveTable(
             userId: string,
-            opts?: { forced?: boolean }
+            opts?: {
+              forced?: boolean;
+              occupancyId?: string;
+              seatNumber?: number;
+              admin?: AdminDepartureAuthority;
+            }
           ):
             | { success: boolean; [k: string]: unknown }
             | Promise<{ success: boolean; [k: string]: unknown }>;
@@ -44,11 +54,12 @@ export interface AdminDeps {
  */
 async function authorizeTableAdmin(
   req: IncomingMessage,
-  tableId: string | undefined
+  tableId: string | undefined,
+  verifiedAuth?: { userId: string }
 ): Promise<
   { ok: true; userId: string; clubId: string } | { ok: false; status: number; error: string }
 > {
-  const auth = await authenticateRequest(req);
+  const auth = verifiedAuth ?? (await authenticateRequest(req));
   if (!auth) return { ok: false, status: 401, error: 'Authentication required' };
   if (!tableId) return { ok: false, status: 400, error: 'Missing tableId' };
 
@@ -197,78 +208,138 @@ export async function handleAdminResume(
  * + cashout-pending, between-hand atomic-cashouts, and writes the seat_left
  * event so all clients re-render.
  *
- * Audit: caller, target, table, reason go into anti_cheat_events via the
- * dashboard's existing logging path AFTER this returns success.
+ * Audit: verified authority is persisted with the accepted departure before
+ * cashout; the original occupancy receipt proves the financial outcome.
  */
 export async function handleAdminKick(
   req: IncomingMessage,
   res: ServerResponse,
-  deps: AdminDeps
+  deps: AdminDeps,
+  occupancyBound = false
 ): Promise<void> {
   try {
     const body = JSON.parse(await readBody(req));
-    const { tableId, userId: targetUserId } = body as {
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      return sendJSON(res, 400, { success: false, error: 'Invalid Removal Request' });
+    const {
+      tableId,
+      userId: targetUserId,
+      occupancyId,
+      seatNumber,
+    } = body as {
       tableId?: string;
       userId?: string;
       reason?: string;
+      occupancyId?: string;
+      seatNumber?: number;
     };
     if (!tableId || !targetUserId) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or userId' });
     }
 
-    // Resolve caller + verify club-admin role (owner / admin / super_agent).
-    const authz = await authorizeTableAdmin(req, tableId);
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (
+      occupancyBound &&
+      (!uuid.test(tableId) ||
+        !uuid.test(targetUserId) ||
+        typeof occupancyId !== 'string' ||
+        !uuid.test(occupancyId) ||
+        !Number.isInteger(seatNumber) ||
+        seatNumber! < 0)
+    ) {
+      return sendJSON(res, 400, { success: false, error: 'Original Seat Identity Required' });
+    }
+    const identity = occupancyBound
+      ? { protocol: 'seat-occupancy-v1', occupancyId, seatNumber }
+      : {};
+    const verifiedAuth = await authenticateRequest(req);
+    if (!verifiedAuth)
+      return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+    if (occupancyBound) {
+      // A committed original action remains replayable after table deletion.
+      // This lookup cannot authorize a new action or another actor's receipt.
+      const previous = await getAdminSeatCashoutReceipt(
+        verifiedAuth.userId,
+        targetUserId,
+        tableId,
+        seatNumber!,
+        occupancyId!
+      );
+      if (previous)
+        return sendJSON(res, 200, {
+          ...identity,
+          success: true,
+          immediate: true,
+          cashout: previous,
+          kicked_by: verifiedAuth.userId,
+          target_user_id: targetUserId,
+        });
+    }
+    // Every new action still requires current club-admin authorization.
+    const authz = await authorizeTableAdmin(req, tableId, verifiedAuth);
     if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const callerUserId = authz.userId;
     const clubId = authz.clubId;
 
+    if (!occupancyBound) {
+      return sendJSON(res, 200, {
+        success: false,
+        code: 'SEAT_OCCUPANCY_REQUIRED',
+        error: 'Reload the table before removing a player.',
+        reloadRequired: true,
+      });
+    }
+
+    if (occupancyBound) {
+      const previous = await getSeatCashoutReceipt(
+        targetUserId,
+        tableId,
+        seatNumber!,
+        occupancyId!
+      );
+      if (previous)
+        return sendJSON(res, 200, {
+          ...identity,
+          success: true,
+          immediate: true,
+          cashout: previous,
+          target_user_id: targetUserId,
+        });
+    }
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
+    const reasonText = (body as { reason?: unknown }).reason ?? 'admin kick';
+    if (typeof reasonText !== 'string' || !reasonText.trim() || reasonText.length > 2000)
+      return sendJSON(res, 400, { success: false, error: 'Invalid Removal Reason' });
+
     // CHIP CONTINUITY: a kick is a system exit. The stay clock never blocks it;
     // the session still closes and the rejoin floor is still written.
-    const result = await engine.leaveTable(targetUserId, { forced: true });
-
-    // Round 71: write audit ledger row so forensic review sees who kicked
-    // whom, when, why. Fire-and-forget — engine admin actions log to
-    // anti_cheat_events (the moderation-specific stream) and audit_trail
-    // (the universal immutable ledger) when available. Failures don't
-    // block the response — the kick already happened.
-    const reasonText = (body as { reason?: string }).reason ?? 'admin kick';
-    void Promise.resolve(
-      supabase.from('anti_cheat_events').insert({
-        event_type: 'player_kicked',
-        player_id: targetUserId,
-        club_id: clubId,
-        table_id: tableId,
-        details: {
-          reason: reasonText,
-          kicked_by: callerUserId,
-          source: 'engine_admin_kick',
-          immediate: result.immediate ?? false,
-        },
-        triggered_by: callerUserId,
-      })
-    )
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[admin.kick] anti_cheat_events insert failed:', error.message);
-        }
-      })
-      // .then() alone covers only the resolved-with-error case; a transport
-      // failure rejects, and an unhandled rejection here would take down an
-      // otherwise successful kick response.
-      .catch((err: unknown) => {
-        console.warn(
-          '[admin.kick] anti_cheat_events insert threw:',
-          (err as Error)?.message ?? err
-        );
+    const result = await engine.leaveTable(targetUserId, {
+      forced: true,
+      admin: { actorId: callerUserId, clubId, reason: reasonText },
+      ...(occupancyBound ? { occupancyId, seatNumber } : {}),
+    });
+    if (!result.success)
+      return sendJSON(res, 400, { ...result, ...identity, target_user_id: targetUserId });
+    const cashout =
+      occupancyBound && result.immediate === true && result.tournament !== true
+        ? await getSeatCashoutReceipt(targetUserId, tableId, seatNumber!, occupancyId!)
+        : null;
+    if (occupancyBound && result.immediate === true && result.tournament !== true && !cashout) {
+      return sendJSON(res, 503, {
+        ...identity,
+        success: false,
+        error: 'Cashout Outcome Could Not Be Confirmed',
       });
+    }
 
     return sendJSON(res, result.success ? 200 : 400, {
       ...result,
+      ...identity,
+      ...(occupancyBound ? { cashout } : {}),
       kicked_by: callerUserId,
       target_user_id: targetUserId,
     });
@@ -276,4 +347,12 @@ export async function handleAdminKick(
     reportError(err, 'HTTP.admin_kick_error');
     return sendJSON(res, 500, { success: false, error: 'Failed to kick player' });
   }
+}
+
+export async function handleAdminKickOccupancy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps
+): Promise<void> {
+  return handleAdminKick(req, res, deps, true);
 }

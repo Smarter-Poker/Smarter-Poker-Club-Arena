@@ -30,8 +30,8 @@
  *      was dropped while a cached client still selected it, the hook
  *      swallowed the error, and the badge went dark for real users.
  *
- *   4. The engine growing its own opinion about which pool to use. It passes
- *      the playing club and the database resolves — that is what keeps a
+ *   4. The engine growing its own opinion about which pool to use. It identifies
+ *      the tournament and the database reads its club and resolves — that is what keeps a
  *      cached client from ever being out of contract with the money path.
  */
 
@@ -154,19 +154,28 @@ describe('Spin reserve ownership', () => {
     expect(migration).toMatch(/'merge', r\.balance/);
   });
 
-  it('leaves the engine passing the playing club, unchanged', () => {
-    // The RPCs resolve inside the database precisely so no deployed client or
-    // engine build can disagree with them about which pool is correct.
-    for (const rpc of ['fn_spin_draw_multiplier', 'fn_spin_settle_game']) {
-      const i = engine.indexOf(`supabase.rpc('${rpc}'`);
-      expect(i, `expected the engine to call ${rpc}`).toBeGreaterThan(-1);
-      const call = sliceCall(engine, `supabase.rpc('${rpc}'`);
-      expect(call, `${rpc} must be called with the playing club`).toMatch(
-        /p_club_id:\s*tournament\.club_id/
-      );
-      // No union plumbing in the engine. If this ever fails, ownership has
-      // leaked out of the database and back into application code.
-      expect(call).not.toMatch(/p_union_id|union_id/);
-    }
+  it('resolves the playing club inside the atomic funded draw', () => {
+    // Only the tournament identity crosses the engine boundary. The locked
+    // database row supplies the playing club to the existing owner resolver.
+    const call = sliceCall(engine, "supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    expect(call).toMatch(/p_tournament_id:\s*this\.tournamentId/);
+    expect(call).not.toMatch(/p_club_id|p_union_id|union_id/);
+    expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
+
+    const atomic = sqlCode(
+      read('supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql')
+    );
+    const start = atomic.indexOf('FUNCTION public.fn_spin_draw_and_settle_atomic(');
+    expect(start).toBeGreaterThan(-1);
+    const open = atomic.indexOf('AS $function$', start);
+    expect(open).toBeGreaterThan(start);
+    const close = atomic.indexOf('$function$;', open + 13);
+    expect(close).toBeGreaterThan(open);
+    const body = atomic.slice(open, close);
+    expect(body).toMatch(/SELECT \* INTO v_t FROM public\.tournaments WHERE id = p_tournament_id/);
+    expect(body).toMatch(/public\.fn_spin_draw_multiplier\(v_t\.club_id,\s*v_t\.buy_in_amount/);
+    expect(body).toMatch(
+      /public\.fn_spin_settle_game\(p_tournament_id,\s*v_t\.club_id,\s*v_t\.buy_in_amount/
+    );
   });
 });

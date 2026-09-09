@@ -147,7 +147,7 @@ describe('the engine side of the sweep', () => {
     expect(evict).toMatch(/if \(isMaintenanceFrozen\(\)\) return;/);
   });
 
-  it('the off-path write queue is retired instead of being reconciled after a freeze', () => {
+  it('the off-path write queue is retired instead of being retried after a freeze', () => {
     expect(existsSync(PENDING_PATH)).toBe(false);
     expect(RUNTIME).not.toMatch(
       /pendingWrites|enqueuePendingWrite|drainPendingWrites|PENDING_WRITE_BUDGET_MS/

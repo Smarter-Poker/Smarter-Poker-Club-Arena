@@ -2589,26 +2589,23 @@ export abstract class TournamentManagerBase {
      * credited sums to zero and is still refused, which is the whole point of
      * the original check.
      *
-     * `stacksMayBeDeferred` still means the credit legitimately has not
-     * happened yet (the Spin reveal hold credits after this); the later
-     * durable-stack check below owns that case, so conservation is only
-     * asserted once the credit is claimed to be done.
+     * There is no deferred stack-credit mode. The atomic launch authority has
+     * already placed every stack before this proof runs, so conservation is
+     * always asserted here and a short field always stands down.
      */
-    if (!stacksMayBeDeferred) {
-      const startingChips = Math.max(0, Math.floor(Number(tournament?.starting_chips) || 0));
-      const rosterChips = roster.reduce((sum, row) => sum + Number(row.chips), 0);
-      const expectedFloor = roster.length * startingChips;
-      if (startingChips > 0 && rosterChips < expectedFloor) {
-        return refuse(
-          `the playing roster holds ${rosterChips} chips, short of the ${expectedFloor} its ${roster.length} seats were bought for - the stacks were not credited`
-        );
-      }
-      if (rosterChips <= 0) {
-        return refuse('the playing roster holds no chips at all - the stacks were not credited');
-      }
-      if (!roster.some((row) => Number(row.chips) > 0)) {
-        return refuse('no seat on the playing roster holds a positive stack');
-      }
+    const startingChips = Math.max(0, Math.floor(Number(tournament?.starting_chips) || 0));
+    const rosterChips = roster.reduce((sum, row) => sum + Number(row.chips), 0);
+    const expectedFloor = roster.length * startingChips;
+    if (startingChips > 0 && rosterChips < expectedFloor) {
+      return refuse(
+        `the playing roster holds ${rosterChips} chips, short of the ${expectedFloor} its ${roster.length} seats were bought for - the stacks were not credited`
+      );
+    }
+    if (rosterChips <= 0) {
+      return refuse('the playing roster holds no chips at all - the stacks were not credited');
+    }
+    if (!roster.some((row) => Number(row.chips) > 0)) {
+      return refuse('no seat on the playing roster holds a positive stack');
     }
     if (new Set(roster.map((row) => row.user_id)).size !== roster.length) {
       return refuse('the active roster contains a duplicate player');
@@ -2732,10 +2729,7 @@ export abstract class TournamentManagerBase {
       // down to zero is funded, it is just busted. Only a stack that is missing
       // or impossible is a funding failure at this point; the seat TOTAL is
       // checked once, below, against what the field was bought for.
-      if (
-        !stacksMayBeDeferred &&
-        (!Number.isFinite(Number(seat.stack)) || Number(seat.stack) < 0)
-      ) {
+      if (!Number.isFinite(Number(seat.stack)) || Number(seat.stack) < 0) {
         return refuse(`${userId.slice(0, 8)} has no funded stack`);
       }
       if (
@@ -2749,15 +2743,11 @@ export abstract class TournamentManagerBase {
     // The felt has to hold what the field paid for. One seat at zero is a bust;
     // every seat short of the floor is a credit that never landed, and that is
     // the case this proof exists to stop from ever dealing a hand.
-    if (!stacksMayBeDeferred) {
-      const startingChips = Math.max(0, Math.floor(Number(tournament?.starting_chips) || 0));
-      const seatChips = seats.reduce((sum, seat) => sum + Number(seat.stack ?? 0), 0);
-      const expectedFloor = roster.length * startingChips;
-      if (startingChips > 0 && seatChips < expectedFloor) {
-        return refuse(
-          `the felt holds ${seatChips} chips, short of the ${expectedFloor} its ${roster.length} seats were bought for`
-        );
-      }
+    const seatChips = seats.reduce((sum, seat) => sum + Number(seat.stack ?? 0), 0);
+    if (startingChips > 0 && seatChips < expectedFloor) {
+      return refuse(
+        `the felt holds ${seatChips} chips, short of the ${expectedFloor} its ${roster.length} seats were bought for`
+      );
     }
 
     for (const durableTable of durableTables) {

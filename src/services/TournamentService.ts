@@ -30,6 +30,27 @@ import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 
+/** A transport success alone does not confirm a tournament chip purchase. */
+function confirmedTournamentPurchaseStack(
+  value: unknown,
+  kind: 'rebuy' | 'reentry' | 'addon'
+): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('The Tournament Purchase Could Not Be Confirmed.');
+  }
+  const receipt = value as Record<string, unknown>;
+  if (
+    receipt.success !== true ||
+    receipt.rebuy_type !== kind ||
+    typeof receipt.new_stack !== 'number' ||
+    !Number.isFinite(receipt.new_stack) ||
+    receipt.new_stack < 0
+  ) {
+    throw new Error('The Tournament Purchase Could Not Be Confirmed.');
+  }
+  return receipt.new_stack;
+}
+
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
 // seated" and "the database is down" must not read as the same event.
@@ -1872,7 +1893,7 @@ class TournamentService {
     });
 
     if (error) {
-      reportError(error, 'TournamentService.Rebuy_RPC_failed_No_chips_were_deducted');
+      reportError(error, 'TournamentService.Rebuy_RPC_outcome_unconfirmed');
       throw error;
     }
 
@@ -1882,6 +1903,10 @@ class TournamentService {
     // counted twice in union rake revenue and in rakeback.
 
     // Emit AFTER confirmed success — never optimistically before RPC
+    const newStack = confirmedTournamentPurchaseStack(
+      data,
+      tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy'
+    );
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
 
     /* The browser-side "broadcast rebuy event" that used to sit here was
@@ -1891,7 +1916,7 @@ class TournamentService {
        the event. The engine's own tournament manager announces what a table
        needs to know. */
 
-    return { success: true, newStack: data?.new_stack || rebuyChips };
+    return { success: true, newStack };
   }
 
   /**
@@ -1987,7 +2012,7 @@ class TournamentService {
     });
 
     if (error) {
-      reportError(error, 'TournamentService.Addon_process_failed_No_chips_were_deduc');
+      reportError(error, 'TournamentService.Addon_RPC_outcome_unconfirmed');
       throw error;
     }
 
@@ -1997,13 +2022,14 @@ class TournamentService {
     // counted twice in union rake revenue and in rakeback.
 
     // Emit AFTER confirmed success — never optimistically before RPC
+    const newStack = confirmedTournamentPurchaseStack(data, 'addon');
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
 
     /* The browser-side add-on broadcast was removed with the rebuy one
        (final sweep 2026-09-08): an INTERNAL_API_KEY route called with a player
        JWT, a 401 on every add-on, no consumer. */
 
-    return { success: true, newStack: data?.new_stack };
+    return { success: true, newStack };
   }
 
   /* ── `processReentry` DELETED 2026-09-02 — a broken duplicate money path ──

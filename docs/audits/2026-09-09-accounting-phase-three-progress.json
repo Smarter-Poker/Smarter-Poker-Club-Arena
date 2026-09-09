@@ -1,0 +1,164 @@
+{
+  "phase": 3,
+  "of": 12,
+  "status": "in_progress",
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "source_register": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+  "phase_two": "Publication verification continues independently per user authorization. No completion is inferred.",
+  "controls": [
+    {
+      "id": "CA-03-01",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Entry and re-entry",
+      "required_work": "Trace registration, late registration, rebuy and addon through wallet debit, prize allocation and seat creation.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Atomic failure injection and concurrent retry tests prove one funded entry per operation."
+    },
+    {
+      "id": "CA-03-02",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Bounty PKO accounting",
+      "required_work": "Trace entry bounty split, knockout allocation, progressive carry and final winner disposition.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Prize, fee and bounty liabilities reconcile algebraically within each committed operation."
+    },
+    {
+      "id": "CA-03-03",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Mystery bounty commitments",
+      "required_work": "Review funded award inventory, eligibility, random draw, reveal and retry identity.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "One funded award per eligible draw; retries cannot reroll or consume multiple awards."
+    },
+    {
+      "id": "CA-03-04",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Payout plan authority",
+      "required_work": "Review current canonical payout plan, rank finalization and idempotent awards; recheck concurrent fixes before opening defects.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "No partial completion; each recipient and retained liability matches the immutable approved plan."
+    },
+    {
+      "id": "CA-03-05",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Disabled tournament safeguards",
+      "required_work": "Explain all seven disabled triggers and prove replacement invariants and authorized retirement.",
+      "source_or_register": "live-trigger-register.csv",
+      "acceptance": "Each disabled guard has replacement evidence or a tested source correction; no blind re-enabling."
+    },
+    {
+      "id": "CA-03-06",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Deals and final table completion",
+      "required_work": "Review deal acceptance, participant binding, chip-based calculations and post-deal completion.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "All required consents match one versioned plan; no double payout or mutable finalized pool."
+    },
+    {
+      "id": "CA-03-07",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Guarantees and overlays",
+      "required_work": "Review funding source, fee separation, minimum entries and guarantee changes.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Every overlay is funded and journaled; published commitments cannot silently change."
+    },
+    {
+      "id": "CA-03-08",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Spin multiplier and prizes",
+      "required_work": "Review draw commitment, multiplier persistence, funding and restart behavior.",
+      "source_or_register": "existing-repair-debt-register.csv",
+      "acceptance": "A started game has one funded immutable prize; retry and outage cannot redraw."
+    },
+    {
+      "id": "CA-03-09",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P1",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Tournament seating and clocks",
+      "required_work": "Review balancing, table merges, breaks, blind levels, heads-up transitions and duplicate seats.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Concurrent moves preserve one seat per entry and one authoritative tournament clock."
+    },
+    {
+      "id": "CA-03-10",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Satellite awards and ticket liabilities",
+      "required_work": "Review the hardened funding path plus ticket mint, ownership, redemption and award completion.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Tickets and underlying liabilities are created/redeemed once with recipient and tournament binding."
+    },
+    {
+      "id": "CA-03-11",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Unregister, cancellation and outage",
+      "required_work": "Review approved pre-start unregister and common origin-wallet refund; inspect cancellation and interrupted-event policy.",
+      "source_or_register": "docs/CLUB-ARENA-12-PHASE-AUDIT.md",
+      "acceptance": "Refunds return once to the proper origin; no invented satellite refund subsystem."
+    },
+    {
+      "id": "CA-03-12",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P1",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Tournament client wiring",
+      "required_work": "Exercise all create/edit/register/rebuy/addon/deal/results pages and permission states.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Displayed options, server acceptance and persisted state agree for MTT, SNG and Spins."
+    }
+  ],
+  "first_correction": {
+    "controls": ["CA-03-01", "CA-03-12"],
+    "source": "src/services/TournamentService.ts",
+    "tests": "tests/unit/TournamentService.test.ts",
+    "before": {
+      "failed": 35,
+      "passed": 44
+    },
+    "after": {
+      "passed": 89,
+      "files": 2
+    },
+    "typescript": "passed",
+    "status": "implemented_and_tested_publication_pending",
+    "production_build": "passed locally; publication pending"
+  },
+  "remaining_entry_findings": [
+    "Some rebuy surfaces provide no prompt token. Full durable operation identity and request payload persistence remain open.",
+    "The shared database receipt binds current_level and amounts, but client retries recompute them and perform eligibility checks before receipt replay. Replay after a level/window change remains open.",
+    "Add-on client history/eligibility prechecks can prevent retrieval of a committed result. No replay completion is claimed."
+  ],
+  "shared_work": "Existing docs/audits/2026-09-09-phase3-progress.json tracks a separate 58-control tournament audit. Reuse verified changes and inspect latest source before duplicating work."
+}

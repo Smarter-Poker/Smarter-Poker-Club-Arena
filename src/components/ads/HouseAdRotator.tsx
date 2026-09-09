@@ -37,7 +37,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AdService, isSafeAdImage, isSafeAdTarget } from '../../services/AdService';
+import {
+  AdService,
+  isExternalAdClick,
+  isSafeAdImage,
+  isSafeAdTarget,
+} from '../../services/AdService';
 import type { AdSlot, HouseAd } from '../../services/AdService';
 import './HouseAdRotator.css';
 
@@ -208,10 +213,24 @@ export default function HouseAdRotator({
     return isSafeAdTarget(url) ? url : null;
   })();
 
-  const activatable = Boolean(target) && Boolean(onNavigate);
+  /* A sponsor's destination leaves the site, and the router cannot take us
+     there: this app is mounted under a basename, so navigate('/c/x') would
+     resolve to /hub/club-arena/c/x. It needs a document navigation. That also
+     means an external click is activatable WITHOUT an onNavigate handler -
+     leaving does not need the router at all. */
+  const external = isExternalAdClick(target);
+  const activatable = Boolean(target) && (external || Boolean(onNavigate));
 
   const activate = () => {
     if (!target || !activatable) return;
+    if (external) {
+      /* NOT logged here. The redirect at the other end of this path records
+         the click server-side, in the same call that resolves the address,
+         because this page is about to be torn down. Logging in both places
+         would show a sponsor twice the clicks they were given. */
+      window.location.assign(target);
+      return;
+    }
     AdService.logClick({ adId: ad.adId }, slot, clubId);
     onNavigate?.(target);
   };

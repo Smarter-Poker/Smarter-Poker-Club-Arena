@@ -109,3 +109,37 @@
     align-items: start;
   }
 }
+
+/* ── Opening a flight for an outside advertiser ── */
+.campaign-queue__sponsor {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin: 0 0 14px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.campaign-queue__sponsor-form {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.campaign-queue__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.campaign-queue__field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .campaign-queue__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

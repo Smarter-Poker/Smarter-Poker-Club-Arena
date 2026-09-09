@@ -781,7 +781,7 @@ export function GameRulesModal({
                 )}
               </ul>
               {isCashTable && (
-                <div className="rules-modal__section">
+                <div>
                   <h3 className="rules-modal__section-title">Cash Button And Blinds</h3>
                   <ul className="rules-modal__bullet-list">
                     <li>

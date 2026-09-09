@@ -15,7 +15,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import type { ChipTransaction } from '../types/database.types';
-import { cashoutService } from '../services/CashoutService';
+import { cashoutService, newOpId } from '../services/CashoutService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
@@ -596,13 +596,38 @@ export default function AgentDashboardPage() {
   useVisibilityRefresh(() => loadDashboard(clubId));
 
   // ── Cashout Actions ────────────────────────────────────────
+  /* ONE OP ID PER (ACTION, REQUEST), HELD ACROSS RETRIES (2026-09-09).
+     Both calls below omitted `opId`, so `CashoutService` fell through to
+     `opId || newOpId()` and minted a fresh key on every attempt: an approval
+     that committed and lost its response released the player's chips twice
+     on the next press. The key is scoped to the ACTION as well as the
+     request because `chip_transactions_agent_wallet_op_id_uidx` spans every
+     type - reusing an approve's key for a later decline would COLLIDE rather
+     than replay, and `fn_cashout_release` has no unique_violation handler.
+     This is `AgentCashoutPanel`'s map, which had it right; the dashboard is
+     the second surface for the same money and never got it. */
+  const cashoutOpIdsRef = useRef<Map<string, string>>(new Map());
+  const cashoutOpIdFor = (action: 'approve' | 'reject', cashoutId: string): string => {
+    const key = `${action}:${cashoutId}`;
+    const held = cashoutOpIdsRef.current.get(key);
+    if (held) return held;
+    const fresh = newOpId();
+    cashoutOpIdsRef.current.set(key, fresh);
+    return fresh;
+  };
+
   const approveCashout = async (cashoutId: string) => {
     if (!(await confirmDialog({ message: 'Approve this cashout request?', variant: 'danger' })))
       return;
     setProcessing(true);
     setError(null);
     try {
-      await cashoutService.approveCashout(cashoutId, user?.id || '');
+      await cashoutService.approveCashout(
+        cashoutId,
+        user?.id || '',
+        undefined,
+        cashoutOpIdFor('approve', cashoutId)
+      );
       setSuccess('Cashout approved successfully.');
       masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);
@@ -624,7 +649,12 @@ export default function AgentDashboardPage() {
     setProcessing(true);
     setError(null);
     try {
-      await cashoutService.rejectCashout(cashoutId, user?.id || '', 'Denied by agent');
+      await cashoutService.rejectCashout(
+        cashoutId,
+        user?.id || '',
+        'Denied by agent',
+        cashoutOpIdFor('reject', cashoutId)
+      );
       setSuccess('Cashout denied and chips refunded to player.');
       masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);

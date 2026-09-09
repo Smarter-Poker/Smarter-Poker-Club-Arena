@@ -409,7 +409,17 @@ export async function storeFetch<T = Record<string, unknown>>(
       errField?.message ||
       data?.message ||
       `Request failed (HTTP ${res.status})`;
-    throw new Error(msg);
+    /* TERMINAL OR AMBIGUOUS (2026-09-09). A caller holding a money
+       idempotency key needs to know which: a terminal refusal (validation,
+       auth, not found) means the attempt is finished and the next press is a
+       new purchase, while a 5xx, a 408/409/425/429 or a transport exception
+       may be a purchase that COMMITTED and lost its response - retiring the
+       key there is what charges a player twice. Same list as
+       UnionApiService and clubArenaApi. */
+    const err = new Error(msg) as Error & { status?: number; definitive?: boolean };
+    err.status = res.status;
+    err.definitive = [400, 401, 403, 404, 405, 422].includes(res.status);
+    throw err;
   }
   if (data == null) throw new Error('Empty response from server');
   return data as T;

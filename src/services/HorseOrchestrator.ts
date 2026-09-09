@@ -2099,7 +2099,10 @@ class HorseOrchestrator {
                 seatNumber++;
               if (seatNumber > availableTable.max_players) continue;
 
-              const buyIn = (availableTable.big_blind || 1) * 100;
+              // To the cent: this is a treasury debit (fn_horse_seat_from_treasury),
+              // and a blind like 0.07 makes `bb * 100` a float artifact. Horses are
+              // players (10.5), so their money path gets the same guard.
+              const buyIn = Math.round((availableTable.big_blind || 1) * 100 * 100) / 100;
               // Seat + fund from the club treasury atomically (no minting).
               const { data: seatRes, error: seatError } = await supabase.rpc(
                 'fn_horse_seat_from_treasury',

@@ -703,6 +703,20 @@
       "service_execute": true,
       "settlement_body_md5": "a0f5a4d8edb0c0e403d3c00a9aadaa95",
       "reason": "Explicitly restate preserved service-only ACL for the branch permission gate; original applied migration remains unchanged"
+    },
+    "ci": {
+      "pr": 4000,
+      "initial_run": 34393636533,
+      "initial_failure": "One lease-generation source pin expected two calls before the third atomic Spin call was added",
+      "head": "3bfe6abe4a3fef9036aefe59033f22fd703058cd",
+      "full_server_after_pin_fix": {
+        "passed": 8291,
+        "skipped": 145,
+        "files_passed": 617,
+        "files_skipped": 1
+      },
+      "client_shards": "all four passed",
+      "status": "retry_pending"
     }
   }
 }

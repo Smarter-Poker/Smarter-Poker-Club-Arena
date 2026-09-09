@@ -33,7 +33,6 @@ import {
   reconcileTableSeatCount,
   autoRebuyHorse,
   processLeavePending,
-  atomicCashoutVoluntary,
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
@@ -3209,13 +3208,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // orbit" - the target still stands and it tries again when the big
           // blind comes back around, exactly as a human would.
           if (!this.lifecycleCanMutate()) return;
-          const exit = await atomicCashoutVoluntary(
-            horse.user_id,
-            this.tableId,
-            horse.seat_number,
-            horse.occupancy_id
-          );
+          const exit = await this.cashoutVoluntaryStay(horse);
           if (!this.lifecycleCanMutate()) return;
+          if (!exit) continue;
           if (!exit.ok) {
             if (exit.code === 'LEAVE_LOCKED') {
               this.chipContinuity.noteRefusal(horse.user_id, exit.stayRemainingMs);

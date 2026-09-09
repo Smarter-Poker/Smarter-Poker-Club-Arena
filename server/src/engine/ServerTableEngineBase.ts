@@ -3044,6 +3044,25 @@ export abstract class ServerTableEngineBase {
    * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
    * that has none.
    */
+  protected async cashoutVoluntaryStay(
+    player: SeatedPlayer
+  ): Promise<Awaited<ReturnType<typeof atomicCashoutVoluntary>> | null> {
+    // Snapshot before awaiting: callers may retain a mutable roster object.
+    const { user_id, seat_number, occupancy_id } = player;
+    const mayReflect = () => {
+      if (!this.lifecycleCanMutate()) return false;
+      const current = this.seatedPlayers.find((seat) => seat.user_id === user_id);
+      return (
+        !current || (current.occupancy_id === occupancy_id && current.seat_number === seat_number)
+      );
+    };
+    if (!mayReflect()) return null;
+    const result = await atomicCashoutVoluntary(user_id, this.tableId, seat_number, occupancy_id);
+    // The durable outcome is still retained, but a later stay must not inherit
+    // either its refusal clock or the cleanup of its local presence trackers.
+    return mayReflect() ? result : null;
+  }
+
   protected async executeIdleSeatMoves(): Promise<string[]> {
     const release = await this.acquireSeatBoundary();
     try {

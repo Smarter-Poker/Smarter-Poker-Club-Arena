@@ -36,3 +36,7 @@ Automatic approval initially rejected the push because origin authorization was 
 The branch pushed and Agent Open PR created PR 3974. CI and normal publication remain to be verified. The corrected legacy-destination migration and tests must be pushed in the follow-up commit.
 
 Final unbound cashout retirement stays staged outside migrations until compatible engine/frontend adoption is proved. Outstanding Phase 2 review includes original-occupancy protection for delayed profit-target mirror cleanup, the complete rule acceptance matrix, required browser evidence, final production grant checks and exact deployed code provenance. Phase 3 has not started.
+
+## Delayed Voluntary Outcome Follow-Up
+
+The remaining profit-target cleanup gap is now locally corrected. cashoutVoluntaryStay snapshots the selected user, seat and occupancy before awaiting the existing bound voluntary cashout. It suppresses local reflection if the occupancy changes or engine authority is lost, preserving the retained database result without transferring its refusal clock or presence cleanup to a later stay. The existing departure selection policy is unchanged. Six behavioral cases cover delayed success, delayed refusal, already stale selection, lost engine authority, original-stay success and already-removed original-stay success. All 68 targeted continuity/departure tests passed and server TypeScript passed. This follow-up still requires the normal commit, push and deployed-version checks.

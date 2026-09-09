@@ -259,9 +259,13 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
       body.indexOf("runStep('horse_cashouts'"),
       body.indexOf("runStep('deferred_sitouts'")
     );
-    expect(horse.replace(/\s+/g, '').replace(/,\)/g, ')')).toContain(
-      'atomicCashoutVoluntary(horse.user_id,this.tableId,horse.seat_number,horse.occupancy_id)'
+    expect(horse).toContain('await this.cashoutVoluntaryStay(horse)');
+    expect(horse).toContain('if (!exit) continue');
+    const stay = sliceMethod(BASE, 'protected async cashoutVoluntaryStay(');
+    expect(stay).toContain(
+      'await atomicCashoutVoluntary(user_id, this.tableId, seat_number, occupancy_id)'
     );
+    expect(stay).toContain('return mayReflect() ? result : null');
     expect(blankNonCode(horse)).not.toContain('markSeatAsLeft');
     expect(horse).toContain("exit.code === 'LEAVE_LOCKED'");
   });

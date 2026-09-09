@@ -138,16 +138,37 @@
     border: 0;
   }
 
-  /* The count line: x 900-1476, y 414-480 on the master. */
+  /* The count line, printed into the title bay under MY WALLETS and CENTRED
+     ON THE PAINTED TITLE (Dan 2026-09-09: it "should just have 5 BALANCES ...
+     and it centered inside that frame").
+
+     The old zone was x 900-1476 on the master (left 41.4%, width 26.5%), and
+     it was wrong twice over:
+
+     1. NOT CENTRED. `place-items: center` centres grid ITEMS. The count is a
+        bare text node, so it forms an anonymous item that fills the cell and
+        is then laid out by `text-align`, which was never set and therefore
+        started at the left edge. The line printed hard against the left of
+        the zone instead of under the middle of the painted title.
+     2. CLIPPED. 26.5% of the plate is 96.7px on a 393px phone. The string was
+        109.7px, and `overflow: hidden` took the difference off the right end
+        - which is the "LOADING BALANC" Dan photographed.
+
+     The zone is now symmetric about the painted title's own optical centre
+     (54.65% of the plate, measured off the master) and spans the bay between
+     the octagon and the chevron divider, so a two-digit count still fits with
+     room to spare. `text-align: center` is what does the centring for the
+     text node; `place-items` stays for an element child. */
   .club-home--unified-mobile .lobby-wallets-trigger__copy small {
     position: absolute;
-    left: 41.4%;
+    left: 32.65%;
     top: 57.2%;
-    width: 26.5%;
+    width: 44%;
     height: 9.1%;
     display: grid;
     place-items: center;
     overflow: hidden;
+    text-align: center;
     color: #5b83e8;
     font-family: Inter, system-ui, sans-serif;
     font-size: 2.35cqw;

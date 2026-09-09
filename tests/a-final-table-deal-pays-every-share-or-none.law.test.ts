@@ -23,6 +23,34 @@ const SQL = migration ? readFileSync(join(MIGRATIONS, migration), 'utf8') : '';
 const executableSql = SQL.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 const sqlStatement = (anchor: string): string =>
   executableSql ? sliceSqlStatement(executableSql, anchor) : '';
+const currentCashMigration = readdirSync(MIGRATIONS)
+  .filter((name) => name.endsWith('_tournament_cash_settlement_has_one_atomic_authority.sql'))
+  .sort()
+  .at(-1);
+const currentTerminalMigration = readdirSync(MIGRATIONS)
+  .filter((name) =>
+    name.endsWith('_non_satellite_terminal_settlement_commits_one_stored_receipt.sql')
+  )
+  .sort()
+  .at(-1);
+const CURRENT_CASH_SQL = currentCashMigration
+  ? readFileSync(join(MIGRATIONS, currentCashMigration), 'utf8')
+  : '';
+const CURRENT_TERMINAL_SQL = currentTerminalMigration
+  ? readFileSync(join(MIGRATIONS, currentTerminalMigration), 'utf8')
+  : '';
+const CURRENT_DEAL = CURRENT_CASH_SQL
+  ? sliceSqlStatement(
+      CURRENT_CASH_SQL,
+      'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_final_table_deal('
+    )
+  : '';
+const CURRENT_TERMINAL = CURRENT_TERMINAL_SQL
+  ? sliceSqlStatement(
+      CURRENT_TERMINAL_SQL,
+      'CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal('
+    )
+  : '';
 
 const TABLE = sqlStatement('CREATE TABLE IF NOT EXISTS public.tournament_final_table_deal_batches');
 const CHECK = sqlStatement('CREATE OR REPLACE FUNCTION public.fn_check_atomic_final_table_deal(');
@@ -47,13 +75,8 @@ const ENGINE = stripComments(
   readFileSync(join(ROOT, 'server/src/tournament/TournamentManagerEliminations.ts'), 'utf8')
 );
 const CHECK_DEAL = sliceMethod(ENGINE, 'checkFinalTableDeal(): Promise<boolean>');
-const DEAL_TAIL = sliceMethod(
-  ENGINE,
-  'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<boolean>'
-);
-const CLIENT = stripComments(
-  readFileSync(join(ROOT, 'server/src/tournament/atomicFinalTableDeal.ts'), 'utf8')
-);
+const COMPLETE_DEAL = sliceMethod(ENGINE, 'private async completeFinalTableDealAtBoundary(');
+const DEAL_TAIL = sliceMethod(ENGINE, 'private async settleFinalTableDeal(');
 
 describe('a final-table deal pays every share or none', () => {
   it('ships as one transactional migration with an immutable exact-cent batch', () => {
@@ -441,30 +464,62 @@ describe('a final-table deal pays every share or none', () => {
     }
   });
 
-  it('funds first, requires the atomic completion proof, then runs an operational-only tail', () => {
-    const fund = CHECK_DEAL.indexOf("this.applyPrizeGuarantee('final_table_deal')");
-    const rowProof = CHECK_DEAL.indexOf(
-      ".select('prize_pool, guaranteed_prize, prize_pool_finalized, status')"
+  it('funds and commits through one terminal receipt, then runs an operational-only tail', () => {
+    const fund = CURRENT_DEAL.indexOf('v_guarantee_result := public.fn_apply_prize_guarantee(');
+    const fundedPool = CURRENT_DEAL.indexOf(
+      'COALESCE(v_t.prize_pool_finalized, false) IS NOT TRUE',
+      fund
     );
-    const settle = CHECK_DEAL.indexOf('settleFinalTableDealAtomically(');
-    const completed = CHECK_DEAL.indexOf('!deal.ok || !deal.completed', settle);
-    const tail = CHECK_DEAL.indexOf('this.settleFinalTableDeal(deal)', completed);
+    const firstObligation = CURRENT_DEAL.indexOf(
+      'INSERT INTO public.tournament_obligations',
+      fundedPool
+    );
     expect(fund).toBeGreaterThan(-1);
-    expect(rowProof).toBeGreaterThan(fund);
-    expect(settle).toBeGreaterThan(rowProof);
-    expect(completed).toBeGreaterThan(settle);
-    expect(tail).toBeGreaterThan(completed);
-    expect(CLIENT).toContain("'fn_settle_final_table_deal_atomic'");
-    expect(CLIENT).not.toContain("'fn_final_table_deal'");
+    expect(fundedPool).toBeGreaterThan(fund);
+    expect(firstObligation).toBeGreaterThan(fundedPool);
+
+    const terminalCall = COMPLETE_DEAL.indexOf('requestTournamentTerminalReceipt(');
+    const receiptProof = COMPLETE_DEAL.indexOf(
+      'receipt.dealShares.length === alive.length',
+      terminalCall
+    );
+    const receiptStored = COMPLETE_DEAL.indexOf(
+      'this.committedFinalTableDealReceipt = receipt',
+      receiptProof
+    );
+    const tail = COMPLETE_DEAL.indexOf('this.settleFinalTableDeal(receipt)', receiptStored);
+    expect(CHECK_DEAL).toContain('this.completeFinalTableDealAtBoundary(');
+    expect(terminalCall).toBeGreaterThan(-1);
+    expect(COMPLETE_DEAL.slice(terminalCall, receiptProof)).toContain("'final_table_deal'");
+    expect(receiptProof).toBeGreaterThan(terminalCall);
+    expect(receiptStored).toBeGreaterThan(receiptProof);
+    expect(tail).toBeGreaterThan(receiptStored);
+
+    const terminalDelegate = CURRENT_TERMINAL.indexOf(
+      'v_cash := public.fn_settle_tournament_final_table_deal(p_tournament_id)'
+    );
+    const terminalProof = CURRENT_TERMINAL.indexOf(
+      "COALESCE((v_cash->>'fully_settled')::boolean,false) IS NOT TRUE",
+      terminalDelegate
+    );
+    const completed = CURRENT_TERMINAL.indexOf("SET status = 'COMPLETED'", terminalProof);
+    const storedReceipt = CURRENT_TERMINAL.indexOf(
+      'INSERT INTO public.tournament_terminal_settlements',
+      completed
+    );
+    expect(terminalDelegate).toBeGreaterThan(-1);
+    expect(terminalProof).toBeGreaterThan(terminalDelegate);
+    expect(completed).toBeGreaterThan(terminalProof);
+    expect(storedReceipt).toBeGreaterThan(completed);
+
     expect(DEAL_TAIL).not.toMatch(/fn_settle_tournament_obligation|fn_final_table_deal/);
     expect(DEAL_TAIL).not.toMatch(
       /fn_finalize_bounty_pool|reconcileMysteryBounty|settleTournamentRake/
     );
     expect(DEAL_TAIL).not.toMatch(/from\('tournaments'\)[\s\S]*?status:\s*'COMPLETED'/);
-    expect(DEAL_TAIL).toMatch(/recordedPayoutCount === deal\.players/);
-    expect(DEAL_TAIL).toMatch(
-      /winnerRow\.user_id === deal\.chip_leader[\s\S]*?\? winnerRow\.user_id[\s\S]*?: null/
-    );
+    expect(DEAL_TAIL).toMatch(/const payoutRows = \[\.\.\.receipt\.dealShares\]/);
+    expect(DEAL_TAIL).toMatch(/chipLeader:\s*receipt\.winnerId/);
+    expect(DEAL_TAIL).toMatch(/receipt\.tableClosure\.closedTableIds/);
 
     const claim = SETTLE.indexOf("SET status = 'COMPLETING'");
     const mystery = SETTLE.indexOf('public.fn_mystery_bounty_settle(', claim);

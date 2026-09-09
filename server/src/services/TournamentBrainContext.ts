@@ -74,7 +74,7 @@ export interface TournamentBrainContext {
   //
   // A satellite's stored payout_structure is the ordinary MTT curve (40/25/
   // 18/10/7) — settlement ignores it and hands out `seats` identical tickets
-  // (satelliteAwardPlan). So the brain was reading every satellite as an MTT
+  // in equal immutable ticket lines. So the brain was reading every satellite as an MTT
   // with a top-heavy ladder, and an MTT ladder says "chips up top are worth
   // more": the exact opposite of a satellite, where the K-th seat is worth
   // the first and every chip past a locked seat is worth NOTHING. payoutPct
@@ -296,10 +296,11 @@ export function deriveContext(
   let places = resolvePayoutStructure(row as PayoutSubject);
 
   // ═══ V37 SATELLITE: the prize curve is FLAT, whatever the row says ═══
-  // seats = max(guaranteed, floor(pool / ticket)) — planSatelliteAwards'
-  // rule — and every one of them pays the same. A cash remainder (pool minus
-  // the tickets) goes to the next finisher and is carried as one small extra
-  // place so the model does not pretend the bubble pays nothing at all.
+  // Once the guarantee-funding rail finalizes the pool, the atomic database
+  // settlement awards floor(pool / ticket) equal tickets. Before finalization,
+  // the advertised guarantee remains the minimum expected count. A cash
+  // remainder goes to the single next finisher and is carried as one small
+  // extra place so the model does not pretend the bubble pays nothing at all.
   const configuredSeats = Math.max(0, Math.floor(Number(row.satellite_seats) || 0));
   const hasTarget = !!(row.satellite_target_id || row.satellite_target);
   const isSatellite = format !== 'spin' && (configuredSeats > 0 || hasTarget);

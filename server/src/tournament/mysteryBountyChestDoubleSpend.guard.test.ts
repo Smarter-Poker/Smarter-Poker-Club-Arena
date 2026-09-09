@@ -54,7 +54,10 @@ function newestDefining(fn: string, required = ''): string {
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .map((f) => strip(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
-    .filter((b) => b.includes(`FUNCTION public.${fn}`))
+    // ACL/search-path hardening migrations legitimately contain
+    // `ALTER FUNCTION public.<name>`. They are not a function definition and
+    // must never outrank the newest CREATE body merely because they sort later.
+    .filter((b) => b.includes(`CREATE OR REPLACE FUNCTION public.${fn}`))
     .map((body) => {
       const start = body.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}`);
       const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
@@ -102,9 +105,12 @@ describe('fn_mystery_bounty_pay', () => {
     expect(def).toContain('chest_settled_to_champion');
   });
 
-  it('the recoverability wrapper delegates only to the private guarded implementation', () => {
-    const wrapper = newestDefining('fn_mystery_bounty_pay');
-    expect(wrapper).toContain('fn_mystery_bounty_pay_unguarded_20260907');
-    expect(wrapper).toMatch(/public\.fn_mystery_bounty_pay_unguarded_20260907\(p_award_id\)/);
+  it('is a self-contained root with the global terminal lock and exact obligation payer', () => {
+    const root = newestDefining('fn_mystery_bounty_pay');
+    expect(root).not.toContain('fn_mystery_bounty_pay_unguarded_20260907');
+    expect(root).toContain("hashtextextended('ca:tournament-terminal-settlement:v1',0)");
+    expect(root).toContain('public.fn_settle_tournament_obligation(');
+    expect(root).toContain('completed_award_marker_incomplete');
+    expect(root).toContain('public.fn_bounty_obligation_has_complete_marker');
   });
 });

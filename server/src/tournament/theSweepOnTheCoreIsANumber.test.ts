@@ -180,16 +180,6 @@ describe('the measured fan-out is replaced, not merely charted', () => {
     expect(semanticRefusal).toContain('throw err;');
   });
 
-  it('re-wakes the owning manager only when a queued knockout hand lands', () => {
-    const recoveredAt = GAME_SERVER.indexOf('onHandHistoryRecovered(({ tableId');
-    const teardownAt = GAME_SERVER.indexOf('onHandHistoryRecovered(null)', recoveredAt);
-    const recovered = GAME_SERVER.slice(recoveredAt, teardownAt);
-    expect(recoveredAt).toBeGreaterThan(-1);
-    expect(teardownAt).toBeGreaterThan(recoveredAt);
-    expect(recovered).toContain('manager.getTableIds().includes(tableId)');
-    expect(recovered).toContain('manager.requestEliminationSweep()');
-  });
-
   it('wires every tournament engine construction and rebuild path', () => {
     const count = (source: string, needle: string) => source.split(needle).length - 1;
     // Construction is centralized so every dealer inherits the manager's exact

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-ads3/feat/club-advertising (2026-09-03). This branch carries the image-ad-rotator work, so it declares the same two modules for the same reason: the lobby ad strip is mounted in ClubHomePage under the game action bar and IS first paint on the lobby, and a lazy import of a fixed aspect-ratio box either holds an empty hole or shifts the table list after layout. Nothing this branch adds ON TOP of that reaches the entry chunk - ClubAdvertisePage is a lazy route and CampaignQueue is inside the already-lazy admin page, both by design, so the buyer-side and review-side code costs a player who never opens them nothing.",
+  "modules": ["src/components/ads/HouseAdRotator.css", "src/components/ads/HouseAdRotator.tsx"]
+}

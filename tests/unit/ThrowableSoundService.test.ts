@@ -104,6 +104,19 @@ describe('recorded throwable cue lifecycle', () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
+  it('recovers on the first throw after an offline preload', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal('fetch', fetcher);
+    const { service, start } = await fixture();
+    service.preloadCues(['clink'], opts.urlFor);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    fetcher.mockImplementation(async () => response());
+    service.scheduleCues(cue, opts);
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(service.droppedCues.no_buffer).toBe(0);
+  });
+
   it('stops an already scheduled cue on cancellation', async () => {
     vi.stubGlobal(
       'fetch',
@@ -114,5 +127,53 @@ describe('recorded throwable cue lifecycle', () => {
     await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
     cancel();
     expect(stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('throwable cue network deadlines', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('aborts stalled containers, evicts the failed cue and retries a later throw', async () => {
+    const fetcher = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetcher);
+    const { service, start } = await fixture();
+    service.scheduleCues(cue, opts);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    for (const call of fetcher.mock.calls)
+      expect((call as unknown as [string, RequestInit])[1].signal?.aborted).toBe(true);
+    expect(service.droppedCues.no_buffer).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+    fetcher.mockImplementation(async () => response());
+    service.scheduleCues(cue, opts);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(start).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('bounds a stalled response body and uses the alternate container', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: () => new Promise(() => {}) })
+      .mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetcher);
+    const { service, start } = await fixture();
+    service.scheduleCues(cue, opts);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/sounds/clink.webm',
+      '/sounds/clink.m4a',
+    ]);
+    expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(start).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

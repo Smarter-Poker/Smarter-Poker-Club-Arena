@@ -30,6 +30,7 @@ on:
     branches: [main]
     paths:
       - 'infra/monitoring/**'
+      - 'server/scripts/install-caddy-websocket-log-redaction.sh'
       - '.github/workflows/deploy-monitoring.yml'
   workflow_dispatch:
 
@@ -179,7 +180,7 @@ jobs:
       # controller was down 65 minutes with ClusterPassErrors declared here and
       # not loaded there. deploy.sh's own git clone fails the same way on a box
       # with no credentials. So the runner, which HAS the files, sends them.
-      - name: Ship infra/monitoring to the box
+      - name: Ship monitoring config and the Caddy safety installer to the box
         run: |
           set -euo pipefail
           echo "${{ github.sha }} ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ)" > infra/monitoring/.deployed-from
@@ -189,12 +190,16 @@ jobs:
           # file the running container never sees again until it restarts.
           # `cp` opens the existing file and truncates it, so the inode - and
           # the mount - survive, and the reload in deploy.sh reads new bytes.
-          tar -C . -cf - infra/monitoring \
+          tar -C . -cf - infra/monitoring server/scripts/install-caddy-websocket-log-redaction.sh \
             | ~/hssh "rm -rf /opt/smarter-poker-monitoring-src.incoming && mkdir -p /opt/smarter-poker-monitoring-src.incoming && tar -C /opt/smarter-poker-monitoring-src.incoming -xf -"
           ~/hssh "mkdir -p /opt/smarter-poker-monitoring-src/infra/monitoring \
+            /opt/smarter-poker-monitoring-src/server/scripts \
             && cp -R /opt/smarter-poker-monitoring-src.incoming/infra/monitoring/. /opt/smarter-poker-monitoring-src/infra/monitoring/ \
+            && cp /opt/smarter-poker-monitoring-src.incoming/server/scripts/install-caddy-websocket-log-redaction.sh /opt/smarter-poker-monitoring-src/server/scripts/ \
+            && chmod +x /opt/smarter-poker-monitoring-src/server/scripts/install-caddy-websocket-log-redaction.sh \
             && rm -rf /opt/smarter-poker-monitoring-src.incoming \
             && test -f /opt/smarter-poker-monitoring-src/infra/monitoring/prometheus.yml \
+            && test -x /opt/smarter-poker-monitoring-src/server/scripts/install-caddy-websocket-log-redaction.sh \
             && cat /opt/smarter-poker-monitoring-src/infra/monitoring/.deployed-from"
       - name: Deploy
         run: |

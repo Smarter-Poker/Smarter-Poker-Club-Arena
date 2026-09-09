@@ -145,7 +145,9 @@ SELECT (SELECT count(*) FROM club_members WHERE chip_balance < 0)            AS 
        (SELECT round(COALESCE(SUM(stack),0),2) FROM table_seats WHERE left_at IS NULL) AS chips_on_the_felt;
 
 -- ── 7. MONEY OWED AND NEVER PAID ─────────────────────────────────────────
--- Expect 0.00. Dry run -- p_apply is false, so this moves nothing.
+-- Expect 0.00 owed, zero missing batches, and zero unsettled batches. This is
+-- a read-only inspection of the immutable atomic settlement records; it never
+-- invokes a repair or payout function.
 -- NOTE the window is `started_at`, NOT `updated_at`: tournaments.updated_at is
 -- never maintained and holds row-creation time, which is what hid 38 events
 -- carrying 11,238.80 until 2026-08-29.
@@ -153,7 +155,19 @@ WITH cand AS (
   SELECT id FROM tournaments
    WHERE status = 'COMPLETED' AND started_at > now() - interval '7 days'
      AND COALESCE(prize_pool,0) > 0 AND COALESCE(variant,'') <> 'satellite'
+), state AS (
+  SELECT c.id,
+         b.tournament_id IS NULL AS missing_batch,
+         b.settled_at IS NULL AS unsettled_batch,
+         round(COALESCE(sum(GREATEST(o.amount_owed - o.amount_paid, 0)), 0), 2) AS owed
+    FROM cand c
+    LEFT JOIN tournament_place_settlement_batches b ON b.tournament_id = c.id
+    LEFT JOIN tournament_obligations o
+      ON o.tournament_id = c.id
+     AND o.kind IN ('place', 'bubble_protection')
+   GROUP BY c.id, b.tournament_id, b.settled_at
 )
-SELECT round(COALESCE(SUM((fn_tournament_payout_reconcile(id, false)->>'total_top_up')::numeric), 0), 2)
-         AS total_owed
-  FROM cand;
+SELECT round(COALESCE(sum(owed), 0), 2) AS total_owed,
+       count(*) FILTER (WHERE missing_batch) AS missing_atomic_batches,
+       count(*) FILTER (WHERE unsettled_batch) AS unsettled_atomic_batches
+  FROM state;

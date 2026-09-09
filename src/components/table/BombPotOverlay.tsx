@@ -37,13 +37,18 @@
  * animation uses.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { soundService } from '../../services/SoundService';
 import { getThrowableImageUrl } from '../../services/ThrowableService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { triggerScreenShake } from '../../utils/ScreenShake';
 import './BombPotOverlay.css';
+import {
+  measureTitleAnchor,
+  TITLE_FALLBACK_TOP,
+  type TitleAnchor,
+} from '../../lib/bombPotTitleAnchor';
 
 interface BombPotOverlayProps {
   tableId: string;
@@ -72,6 +77,35 @@ const T_HIDE = 6400;
 /** The letters thrown out of the blast. */
 const TITLE_TEXT = 'BOMB POT!';
 
+/**
+ * ═══ THE TITLE LANDS ABOVE THE BOARD, NOT ON IT (Dan 2026-09-04) ═══════════
+ *
+ * "THE 'BOMB POT' THAT EXPLODES AND APPEARS ON THE TABLE NEEDS TO BE HIGHER,
+ * IT COVERS THE BOARD WHILE DISPLAYING."
+ *
+ * The title block was pinned at `top: 42%` of the VIEWPORT. The community
+ * area sits at 42.5% of the FELT and the bomb's flop deals in the moment the
+ * explosion finishes - exactly when the title arrives and holds for 3.2s. So
+ * on every bomb hand the biggest text on the screen sat on top of the cards
+ * for as long as it was up (Dan's screenshot: "BOMB POT!" across a dealt
+ * double board).
+ *
+ * There is no viewport percentage that fixes this: the felt is edge-to-edge
+ * on a phone and a 324px island on a laptop, so the band of empty felt
+ * between the top seats and the pot lives at a different place on each. The
+ * overlay measures that band the moment the title phase begins and stands
+ * the block in it - bottom edge TITLE_GAP_PX above whichever is higher, the
+ * pot pill or the board. If the band is shorter than the block (laptop-height
+ * windows leave ~50px), the block scales down from its bottom edge rather
+ * than climbing onto the seat plates above. Nothing is measured on any other
+ * table: the lookup is scoped to this overlay's own `.table-page`, so the
+ * hidden tables in a multi-table stack (display:none, zero-size rects) are
+ * never the anchor.
+ *
+ * TITLE_FALLBACK_TOP is the viewport position used only when there is nothing
+ * to measure (the table has not painted yet). It is above the old 42%, not
+ * at it, so the failure mode is "a little high" and never "on the cards".
+ */
 export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSounds = true }) => {
   const [phase, setPhase] = useState<BombPhase>('idle');
   const [anteAmount, setAnteAmount] = useState(0);
@@ -84,6 +118,36 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
   const [artFailed, setArtFailed] = useState(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const titleBlockRef = useRef<HTMLDivElement>(null);
+  const [titleAnchor, setTitleAnchor] = useState<TitleAnchor | null>(null);
+
+  /**
+   * Measure where the title may stand the instant the title phase renders,
+   * before the browser paints it (useLayoutEffect), so the letters are never
+   * seen at the fallback position for a frame and then jump. Re-measured on
+   * resize/orientation change for the 3.2s it is up.
+   */
+  useLayoutEffect(() => {
+    if (phase !== 'title') {
+      setTitleAnchor(null);
+      return;
+    }
+    const measure = () => {
+      const scope: ParentNode =
+        containerRef.current?.closest('.table-page') ??
+        containerRef.current?.ownerDocument ??
+        document;
+      // offsetHeight, not getBoundingClientRect: after the first anchor the
+      // block may be SCALED, and the rect reports the scaled height. A
+      // re-measure on resize would then read band == height, set scale 1,
+      // and climb back onto the seats.
+      const blockH = titleBlockRef.current?.offsetHeight ?? 0;
+      setTitleAnchor(measureTitleAnchor(scope, blockH));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [phase]);
 
   /**
    * The throwables bomb render, sized through the transform endpoint. Resolved
@@ -283,7 +347,20 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
 
       {/* ── Phase 4: BOMB POT! thrown out of the blast ──────────────────── */}
       {phase === 'title' && (
-        <div className="bpo-title-block">
+        <div
+          className="bpo-title-block"
+          ref={titleBlockRef}
+          data-anchored={titleAnchor ? 'felt' : 'fallback'}
+          style={
+            titleAnchor
+              ? ({
+                  top: 'auto',
+                  bottom: `${titleAnchor.bottomPx}px`,
+                  transform: `translate(-50%, 0) scale(${titleAnchor.scale})`,
+                } as React.CSSProperties)
+              : ({ top: TITLE_FALLBACK_TOP } as React.CSSProperties)
+          }
+        >
           <div className="bpo-title">
             {TITLE_TEXT.split('').map((ch, i) => {
               // Deterministic scatter per letter index — same blast every time,

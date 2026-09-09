@@ -361,19 +361,10 @@ describe('a new player never receives the button', () => {
     );
   });
 
-  it('the button always moves, so nobody posts the same blind twice', () => {
-    // getNextSeat over a ONE-seat roster returns that seat from both branches,
-    // so a single eligible player already on the button kept it, and the same
-    // two players posted the small and big blind two hands running.
-    const at = DEALING.indexOf('dealerSeat === prevButtonSeat');
-    expect(at, 'no guard against a stationary button').toBeGreaterThan(-1);
-    const block = DEALING.slice(at - 200, at + 300);
-    // Heads-up is deliberately exempt: with two players the button IS the small
-    // blind, so forcing it across would put the newcomer in the small blind, the
-    // hold-out would refuse them, and the table would never deal again.
-    expect(block).toMatch(/players\.length > 2/);
-    expect(block).toMatch(/getNextSeat\(prevButtonSeat, players\)/);
-  });
+  // The old source-only "always moves" assertion pinned a rule violation:
+  // it forced a sole veteran's button onto a first-hand cash entrant. The
+  // real-deal cases in CashButtonDecisionBoundary.test.ts now cover entry,
+  // the following rotation, and all three heads-up departure boundaries.
 
   it('leaving the table forfeits button eligibility', () => {
     // Keeps the set bounded by the table rather than by process lifetime, and

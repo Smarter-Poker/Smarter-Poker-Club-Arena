@@ -1,0 +1,4 @@
+{
+  "_owner": "codex-realtime-continuation-sep08; verified live pg_proc after Supabase migration 20260908180908. Existing function absent from the stale base manifest; definition MD5 0f9656e8ece4172db2988376c287d10c.",
+  "functions": ["fn_ca_process_hand_post_commit_obligations"]
+}

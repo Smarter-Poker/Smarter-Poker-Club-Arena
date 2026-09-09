@@ -110,6 +110,48 @@ describe('V44 equity depth', () => {
     restoreFastRandom(after);
     expect(saveFastRandom()).toBe(after);
   });
+
+  it('a deep replay can read the mind without observing its action snapshot again', () => {
+    const hero = {
+      seat: 1,
+      user_id: 'hero-observation-control',
+      username: 'Hero',
+      stack: 100,
+      bet: 0,
+      totalInvested: 0,
+      cards: cc('Ah', 'Kh'),
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      is_horse: true,
+    } as SeatPlayer;
+    const villain = { ...hero, seat: 2, user_id: 'villain-observation-control' };
+    const gameState = {
+      players: [hero, villain],
+      communityCards: cc('Kd', '7s', '2c'),
+      pot: 12,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'flop' as HandStage,
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      actionHistory: [
+        {
+          userId: villain.user_id,
+          seat: villain.seat,
+          action: 'check',
+          amount: 0,
+          stage: 'flop' as HandStage,
+          timestamp: 44_001,
+        },
+      ],
+    } as unknown as HorseGameStateV2;
+
+    HorseLogic.decide(hero, gameState, 'balanced', {}, { observeMind: false, deepEquity: 6 });
+
+    expect(HorseMind.getStats(villain.user_id)).toBeUndefined();
+    expect(HorseMind.currentScope()).toBeNull();
+  });
 });
 
 describe('V44 second look plan and verdict', () => {

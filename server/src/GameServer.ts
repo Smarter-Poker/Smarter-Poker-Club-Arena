@@ -7,9 +7,30 @@
  * re-exported here so existing importers keep working.
  */
 
+import { randomUUID } from 'node:crypto';
+import { AsyncResource } from 'node:async_hooks';
+
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
+import {
+  HorseDecisionAbortedError,
+  liveHorseDecisionWorkerStatus,
+  startLiveHorseDecisionWorker,
+  stopLiveHorseDecisionWorker,
+} from './engine/horseDecision/client.js';
+import {
+  EquityWorkerPoolAbortedError,
+  equityWorkerPoolStatus,
+  startEquityWorkerPool,
+  stopEquityWorkerPool,
+} from './engine/equity/EquityWorkerPool.js';
+import { nextHandGap } from './engine/nextHandGapRecorder.js';
 import { EngineTelemetry } from './engine/EngineTelemetry.js';
+import { evaluateEngineLiveness } from './engine/EngineLivenessVerdict.js';
+import {
+  settlementHealthSnapshot,
+  settlementPrometheusLines,
+} from './observability/SettlementHealth.js';
 import {
   supabase,
   startHandHistoryRetry,
@@ -17,6 +38,8 @@ import {
   onHandHistoryRecovered,
   drainHandHistoryQueue,
   handHistoryQueueDepth,
+  startHandProjectionWorker,
+  stopHandProjectionWorker,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
@@ -39,10 +62,33 @@ import {
 } from './transport/wsHelpers.js';
 import {
   alwaysOnPrometheusLines,
+  bountyRecoveryPending,
+  bountyRecoveryRealtimeConnected,
+  bountyRecoverySweepInflight,
+  bountyRecoverySweepMs,
+  bountyRecoverySweepRunsTotal,
+  tournamentManagerWakeRealtimeConnected,
   equityGovernorScale,
   equityGovernorSamplerLateMs,
   eventLoopDelayP50,
   eventLoopDelayP99,
+  horseDecisionWorkerActiveJobAgeMs,
+  horseDecisionWorkerEventLoopDelayP50,
+  horseDecisionWorkerEventLoopDelayP99,
+  horseDecisionWorkerLastCompletionAgeMs,
+  horseDecisionWorkerLastComputeMs,
+  horseDecisionWorkerOldestQueuedAgeMs,
+  horseDecisionWorkerQueueDepth,
+  horseDecisionWorkerReady,
+  equityWorkerPoolReady,
+  equityWorkerPoolConfiguredWorkers,
+  equityWorkerPoolReadyWorkers,
+  equityWorkerPoolBusyWorkers,
+  equityWorkerPoolQueueDepth,
+  equityWorkerPoolOldestQueuedAgeMs,
+  equityWorkerPoolLastCompletionAgeMs,
+  mainEventLoopGovernorSamplerLateMs,
+  mainEventLoopGovernorScale,
 } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -65,11 +111,16 @@ import {
   markBootedAsStandby,
 } from './services/leadership.js';
 import {
-  claimTournament,
+  claimTournamentLease,
   heartbeatTournaments,
   releaseTournaments,
+  TOURNAMENT_LEASE_PROOF_WINDOW_MS,
   tournamentLeaseDiagnostics,
 } from './services/tournamentLease.js';
+import {
+  bindTournamentDataAuthorityMethods,
+  currentTournamentDataAuthority,
+} from './services/supabase/dataActorContext.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import {
@@ -84,9 +135,14 @@ import {
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
-import { startRakeSpecGuard } from './services/rakeSpecGuard.js';
+import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
-import { fetchAllRows } from './services/supabase/pagination.js';
+import {
+  admitOwnedTableEngine,
+  replaceOwnedTableEngine,
+  stopOwnedTournamentManager,
+  unregisterOwnedTournamentTableEngine,
+} from './tournament/TournamentManagerOwnership.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
 
@@ -98,6 +154,11 @@ import { managerHasOverstayed, selectCompletingDue } from './tournament/completi
 import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';
 import { resolvePayoutStructure } from './tournament/payoutStructure.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import {
+  chunkTournamentManagerWakeReceipts,
+  type TournamentManagerWakeDatabaseState,
+  type TournamentManagerWakeReceipt,
+} from './tournament/TournamentManagerWakeProtocol.js';
 import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
@@ -106,16 +167,15 @@ import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
-import { solverPolicyArtifactStatus } from './gto/SolverPolicyArtifactLoader.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
   INSTANCE_ID,
-  claimTable,
+  claimTableLease,
   heartbeatTables,
-  retryRefusedClaims,
   releaseTables,
   leaseDiagnostics,
+  TABLE_LEASE_PROOF_WINDOW_MS,
 } from './services/tableLease.js';
 
 export { TournamentManager };
@@ -126,6 +186,35 @@ export { TournamentManager };
 
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
+/**
+ * Ownership renewal is a primary lifecycle, not part of table discovery.
+ * Start each pass at least four times inside the shorter conservative proof
+ * window. A slow pass subtracts its own elapsed time before sleeping, so a 15s
+ * PostgREST timeout is followed immediately rather than turning 15s + 5s into
+ * an accidental expiry at the exact 20s local boundary.
+ */
+const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
+  Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS) / 4
+);
+
+/**
+ * The four materially different answers to a direct table admission attempt.
+ * A boolean erased the distinction between "this table was closed", "another
+ * live process owns it", and "the database/start path blipped". The first two
+ * are terminal for this process; the last one must retain the exact causal
+ * recovery obligation instead of waiting for fleet discovery to notice it.
+ */
+type DirectTableAdmission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
+type TournamentManagerStartMode = 'start' | 'resume';
+type DealerPrerequisiteGate = {
+  generation: number;
+  promise: Promise<boolean>;
+  resolve: (ready: boolean) => void;
+  settled: boolean;
+};
+type ExternalShutdownOwnershipResult =
+  | { status: 'fulfilled' }
+  | { status: 'rejected'; reason: unknown };
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -216,8 +305,166 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
 
 export class GameServer {
   private tableEngines: Map<string, ServerTableEngine> = new Map();
-  /** One shared readiness promise per on-demand engine start. */
-  private tableEngineStartPromises: Map<string, Promise<boolean>> = new Map();
+  /** One shared, classified readiness promise per on-demand engine start. */
+  private tableEngineStartPromises: Map<string, Promise<DirectTableAdmission>> = new Map();
+  /** Serialize lookup/claim/terminal release for one direct table. */
+  private directTableAdmissionOperations = new Map<string, Promise<DirectTableAdmission>>();
+  /**
+   * Exact-generation teardown promises. A second signal for the same dead
+   * object joins its teardown; a successor is a different WeakMap key and can
+   * never be suppressed by an older continuation.
+   */
+  private directTableEngineRecoveries = new WeakMap<ServerTableEngine, Promise<void>>();
+  /** Enumerable companions to the identity WeakMap so shutdown can join them. */
+  private directTableEngineRecoveryJobs = new Set<Promise<void>>();
+  /** One causal retry timer per table after a classified transient failure. */
+  private directTableRecoveryTimers: Map<string, NodeJS.Timeout> = new Map();
+  private directTableRecoveryAttempts: Map<string, number> = new Map();
+  /** One caller-selected protocol-2 generation reused by one causal admission retry. */
+  private directTableAdmissionLeaseGenerations = new Map<string, string>();
+  /** Exact acquired generations whose local proof expired before admission. */
+  private directTablePendingLeaseReleases = new Map<string, string>();
+  /** Fences admissions that were awaiting I/O when this server generation stopped. */
+  private lifecycleGeneration = 0;
+  /**
+   * A process can answer HTTP while leader election, worker hydration and stale
+   * cleanup are still running. Direct WebSocket admission must wait for the
+   * entire dealer boot contract instead of treating `running` as `ready`.
+   */
+  private dealerPrerequisitesReady = false;
+  private dealerPrerequisiteGate: DealerPrerequisiteGate | null = null;
+  /**
+   * Infinite discovery loops and the exact asynchronous work they launch.
+   * Shutdown drains this set to a fixed point before taking its final dealer
+   * snapshot or releasing a distributed lease.
+   */
+  private discoveryJobs = new Set<Promise<void>>();
+  /** Non-discovery async work launched by timers, subscriptions, or boot. */
+  private serverLifecycleJobs = new Set<Promise<void>>();
+  /** Keeps exact table/tournament authority alive only through shutdown drain. */
+  private ownershipLeaseRenewalOperation: Promise<void> | null = null;
+  private shutdownOwnershipLeaseRenewalActive = false;
+  private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
+  /** One distributed claim + manager publication operation per tournament id. */
+  private tournamentManagerAdmissionOperations = new Map<string, Promise<void>>();
+  /** Exact causal lease/start retries; never a tournament-board reconciliation scan. */
+  private tournamentManagerAdmissionRetryTimers = new Map<string, NodeJS.Timeout>();
+  private tournamentManagerAdmissionRetryAttempts = new Map<string, number>();
+  /** One caller-selected database generation reused across this causal retry. */
+  private tournamentManagerAdmissionLeaseGenerations = new Map<string, string>();
+  /**
+   * Exact release is part of retiring a protocol-2 manager. A successor waits
+   * for this barrier before choosing a new generation, so a same-process
+   * admission cannot race the old manager's final teardown/release.
+   */
+  private tournamentManagerLeaseReleaseOperations = new Map<string, Promise<boolean>>();
+  /** Exact stopped-manager generations whose PostgREST release is still unproved. */
+  private tournamentManagerPendingLeaseReleases = new Map<string, string>();
+  /** Multiple failure signals join one exact manager retirement. */
+  private tournamentManagerRetirementOperations = new WeakMap<
+    TournamentManager,
+    Promise<boolean>
+  >();
+
+  private launchDiscoveryJob(
+    operation: Promise<unknown>,
+    errorContext: string,
+    metadata?: Record<string, unknown>
+  ): void {
+    const tracked = operation
+      .then(() => undefined)
+      .catch((error) => reportError(error, errorContext, metadata))
+      .finally(() => this.discoveryJobs.delete(tracked));
+    this.discoveryJobs.add(tracked);
+  }
+
+  private launchServerLifecycleJob(
+    operation: Promise<unknown>,
+    errorContext: string,
+    metadata?: Record<string, unknown>
+  ): void {
+    const tracked = operation
+      .then(() => undefined)
+      .catch((error) => reportError(error, errorContext, metadata))
+      .finally(() => this.serverLifecycleJobs.delete(tracked));
+    this.serverLifecycleJobs.add(tracked);
+  }
+
+  private async drainServerLifecycleJobs(): Promise<void> {
+    while (this.serverLifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.serverLifecycleJobs]);
+    }
+  }
+
+  /** A completed job can enqueue another exact job, so drain to a fixed point. */
+  private async drainDiscoveryJobs(): Promise<void> {
+    while (this.discoveryJobs.size > 0) {
+      await Promise.allSettled([...this.discoveryJobs]);
+    }
+  }
+
+  /** HTTP/WS admission is not necessarily launched by discovery, but owns leases too. */
+  private async drainDirectTableAdmissions(): Promise<void> {
+    while (
+      this.directTableAdmissionOperations.size > 0 ||
+      this.directTableEngineRecoveryJobs.size > 0
+    ) {
+      await Promise.allSettled([
+        ...this.directTableAdmissionOperations.values(),
+        ...this.directTableEngineRecoveryJobs,
+      ]);
+    }
+  }
+
+  private async drainTournamentManagerAdmissions(): Promise<void> {
+    while (
+      this.tournamentManagerAdmissionOperations.size > 0 ||
+      this.tournamentManagerLeaseReleaseOperations.size > 0
+    ) {
+      await Promise.allSettled([
+        ...this.tournamentManagerAdmissionOperations.values(),
+        ...this.tournamentManagerLeaseReleaseOperations.values(),
+      ]);
+    }
+  }
+
+  /**
+   * Observe every server-owned async registry together. Draining them one at a
+   * time was not a shutdown barrier: a later tournament admission could enqueue
+   * a direct recovery after that earlier registry had already looked empty.
+   * Producer sources are stopped first, then this union is drained until one
+   * stable microtask boundary sees no work anywhere.
+   */
+  private async drainOwnedLifecycleJobs(): Promise<void> {
+    for (;;) {
+      await Promise.resolve();
+      const pending = [
+        ...this.serverLifecycleJobs,
+        ...this.discoveryJobs,
+        ...this.directTableAdmissionOperations.values(),
+        ...this.directTableEngineRecoveryJobs,
+        ...this.tournamentManagerAdmissionOperations.values(),
+        ...this.tournamentManagerLeaseReleaseOperations.values(),
+      ];
+      if (pending.length === 0) {
+        // A settled promise's finally-handler may publish the next exact job.
+        // Require the union to remain empty across a second microtask turn.
+        await Promise.resolve();
+        if (
+          this.serverLifecycleJobs.size === 0 &&
+          this.discoveryJobs.size === 0 &&
+          this.directTableAdmissionOperations.size === 0 &&
+          this.directTableEngineRecoveryJobs.size === 0 &&
+          this.tournamentManagerAdmissionOperations.size === 0 &&
+          this.tournamentManagerLeaseReleaseOperations.size === 0
+        ) {
+          return;
+        }
+        continue;
+      }
+      await Promise.allSettled(pending);
+    }
+  }
   /**
    * Table ids whose engine is owned and rebuilt by a TournamentManager rather
    * than by discoverCashTables. Discovery's RPC is cash-only, so without this
@@ -251,6 +498,277 @@ export class GameServer {
       if (!stillOwned.has(id)) this.tournamentOwnedTables.delete(id);
     }
   }
+
+  /**
+   * Renew only cash dealers with a verified table lease. Tournament dealers
+   * inherit the parent tournament generation and are renewed by that manager.
+   */
+  private async renewVerifiedCashTableLeaseProofs(
+    candidateTableIds: Iterable<string> = this.tableEngines.keys()
+  ): Promise<Map<string, ServerTableEngine>> {
+    const candidates: Array<[string, ServerTableEngine]> = [];
+    const lostEngines = new Map<string, ServerTableEngine>();
+    for (const tableId of candidateTableIds) {
+      const engine = this.tableEngines.get(tableId);
+      if (!engine) continue;
+      const authority = engine.getEngineLeaseAuthority();
+      if (authority?.scope === 'cash' && authority.verified) {
+        /* A paused callback must not resurrect authority after its conservative
+           local proof already expired. Test the old proof before asking the DB
+           to move heartbeat_at; expiry is a loss, never a renewal attempt. */
+        if (!engine.hasCurrentEngineLeaseAuthority()) {
+          lostEngines.set(tableId, engine);
+          continue;
+        }
+        candidates.push([tableId, engine]);
+      }
+    }
+
+    const heartbeat = await heartbeatTables(
+      candidates.map(([tableId, engine]) => {
+        const authority = engine.getEngineLeaseAuthority();
+        if (!authority || authority.scope !== 'cash' || !authority.verified) {
+          throw new Error(`Cash lease authority disappeared before heartbeat for ${tableId}`);
+        }
+        return { tableId, leaseGeneration: authority.generation };
+      })
+    );
+    if (heartbeat.status === 'answered') {
+      for (const proof of heartbeat.proofs) {
+        const captured = candidates.find(([tableId]) => tableId === proof.tableId)?.[1];
+        if (!captured || this.tableEngines.get(proof.tableId) !== captured) continue;
+        const authority = captured.getEngineLeaseAuthority();
+        if (
+          !authority ||
+          authority.scope !== 'cash' ||
+          !authority.verified ||
+          !captured.renewEngineLeaseProof({
+            ...authority,
+            proofDeadlineMonotonicMs: proof.proofDeadlineMonotonicMs,
+          })
+        ) {
+          lostEngines.set(proof.tableId, captured);
+        }
+      }
+      for (const tableId of heartbeat.lostTableIds) {
+        const captured = candidates.find(([id]) => id === tableId)?.[1];
+        if (captured && this.tableEngines.get(tableId) === captured) {
+          lostEngines.set(tableId, captured);
+        }
+      }
+    }
+
+    /* UNKNOWN extends nothing. Re-read every exact captured engine so an
+       event-loop stall that crossed its deadline before the timer callback
+       ran becomes a synchronous loss in this sweep. */
+    for (const [tableId, engine] of candidates) {
+      if (this.tableEngines.get(tableId) === engine && !engine.hasCurrentEngineLeaseAuthority()) {
+        lostEngines.set(tableId, engine);
+      }
+    }
+    return lostEngines;
+  }
+
+  /**
+   * Renew the exact manager generations captured at the start of this pass.
+   * A manager admitted while the RPC is in flight is never judged using its
+   * predecessor's answer.
+   */
+  private async renewVerifiedTournamentManagerLeaseProofs(): Promise<
+    Map<string, TournamentManager>
+  > {
+    const candidates = new Map<string, { manager: TournamentManager; leaseGeneration: string }>();
+    const lostManagers = new Map<string, TournamentManager>();
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const leaseGeneration = manager.getTournamentLeaseGeneration();
+      if (leaseGeneration) {
+        if (!manager.hasCurrentTournamentLeaseAuthority()) {
+          lostManagers.set(tournamentId, manager);
+          continue;
+        }
+        candidates.set(tournamentId, { manager, leaseGeneration });
+      } else {
+        // Production admission may never publish a generation-less manager.
+        lostManagers.set(tournamentId, manager);
+      }
+    }
+
+    const heartbeat = await heartbeatTournaments(
+      [...candidates].map(([tournamentId, candidate]) => ({
+        tournamentId,
+        leaseGeneration: candidate.leaseGeneration,
+      }))
+    );
+    if (heartbeat.status === 'answered') {
+      for (const proof of heartbeat.proofs) {
+        const captured = candidates.get(proof.tournamentId);
+        if (!captured || this.tournamentEngines.get(proof.tournamentId) !== captured.manager) {
+          continue;
+        }
+        if (
+          !captured.manager.renewTournamentLeaseProof(
+            proof.leaseGeneration,
+            proof.proofDeadlineMonotonicMs
+          )
+        ) {
+          lostManagers.set(proof.tournamentId, captured.manager);
+        }
+      }
+      for (const tournamentId of heartbeat.lostTournamentIds) {
+        const captured = candidates.get(tournamentId);
+        if (captured && this.tournamentEngines.get(tournamentId) === captured.manager) {
+          lostManagers.set(tournamentId, captured.manager);
+        }
+      }
+    }
+
+    /* UNKNOWN extends nothing. Check only the exact objects captured before the
+       RPC; a new manager may have been admitted with a fresh proof meanwhile. */
+    for (const [tournamentId, captured] of candidates) {
+      if (
+        this.tournamentEngines.get(tournamentId) === captured.manager &&
+        !captured.manager.hasCurrentTournamentLeaseAuthority()
+      ) {
+        lostManagers.set(tournamentId, captured.manager);
+      }
+    }
+    return lostManagers;
+  }
+
+  /**
+   * One serialized ownership pass for both lease scopes. Heartbeats run in
+   * parallel so the cash RPC cannot consume the tournament proof window (or
+   * vice versa). Every proven loss is fenced synchronously before any physical
+   * teardown awaits; teardown/release remains in its exact causal registry so
+   * this primary renewal lifecycle can begin its next pass on time.
+   */
+  private renewOwnedEngineLeaseProofs(): Promise<void> {
+    const existing = this.ownershipLeaseRenewalOperation;
+    if (existing) return existing;
+    const operation = this.performOwnedEngineLeaseProofRenewal();
+    let tracked!: Promise<void>;
+    tracked = operation.finally(() => {
+      if (this.ownershipLeaseRenewalOperation === tracked) {
+        this.ownershipLeaseRenewalOperation = null;
+      }
+    });
+    this.ownershipLeaseRenewalOperation = tracked;
+    return tracked;
+  }
+
+  private async performOwnedEngineLeaseProofRenewal(): Promise<void> {
+    const [cashResult, tournamentResult] = await Promise.allSettled([
+      this.renewVerifiedCashTableLeaseProofs(),
+      this.renewVerifiedTournamentManagerLeaseProofs(),
+    ]);
+
+    const lostTables =
+      cashResult.status === 'fulfilled' ? cashResult.value : new Map<string, ServerTableEngine>();
+    if (cashResult.status === 'rejected') {
+      reportError(cashResult.reason, 'GameServer.cash_lease_renewal_pass_failed');
+    }
+    const lostTournamentIds =
+      tournamentResult.status === 'fulfilled'
+        ? tournamentResult.value
+        : new Map<string, TournamentManager>();
+    if (tournamentResult.status === 'rejected') {
+      reportError(tournamentResult.reason, 'GameServer.tournament_lease_renewal_pass_failed');
+    }
+
+    const lostCashEngines: Array<[string, ServerTableEngine]> = [];
+    for (const [tableId, engine] of lostTables) {
+      if (this.tableEngines.get(tableId) !== engine || this.tournamentOwnedTables.has(tableId)) {
+        continue;
+      }
+      reportError(
+        new Error(`Lost the deal-lease on table ${tableId} to another engine instance`),
+        'GameServer.table_lease_lost'
+      );
+      engine.fenceForEngineLeaseLoss('cash_table_lease_lost', false);
+      lostCashEngines.push([tableId, engine]);
+    }
+
+    const lostManagers: Array<[string, TournamentManager]> = [];
+    for (const [tournamentId, manager] of lostTournamentIds) {
+      if (this.tournamentEngines.get(tournamentId) !== manager) continue;
+      reportError(
+        new Error(`Lost the tournament lease on ${tournamentId} to another engine instance`),
+        'GameServer.tournament_lease_lost'
+      );
+      manager.fenceForTournamentLeaseLoss();
+      lostManagers.push([tournamentId, manager]);
+    }
+
+    for (const [tableId, engine] of lostCashEngines) {
+      void this.recoverDirectTableEngine(tableId, engine, 'cash_table_lease_lost').catch((error) =>
+        reportError(error, 'GameServer.table_lease_lost_recovery_failed', { tableId })
+      );
+    }
+    for (const [tournamentId, manager] of lostManagers) {
+      this.launchServerLifecycleJob(
+        this.stopTournamentManagerIfOwned(
+          tournamentId,
+          manager,
+          'GameServer.tournament_lease_lost_stop_failed'
+        ),
+        'GameServer.tournament_lease_lost_retirement_failed',
+        { tournamentId }
+      );
+    }
+  }
+
+  /**
+   * Primary, serialized lease lifecycle. Discovery may spend its full timeout
+   * adopting or inspecting tables without delaying this loop. Cadence is based
+   * on pass start, not pass completion, so slow RPC time is charged against the
+   * next sleep rather than silently added to the authority gap.
+   */
+  private async runOwnershipLeaseRenewalLoop(generation: number): Promise<void> {
+    while (this.directAdmissionIsCurrent(generation)) {
+      const passStartedAt = performance.now();
+      try {
+        await this.renewOwnedEngineLeaseProofs();
+      } catch (error) {
+        // A programming or transport surprise cannot permanently remove the
+        // platform's primary ownership lifecycle. Existing local deadlines stay
+        // authoritative and the next serialized pass still runs.
+        reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+      }
+      if (!this.directAdmissionIsCurrent(generation)) return;
+      const elapsedMs = Math.max(0, performance.now() - passStartedAt);
+      await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+    }
+  }
+
+  private startShutdownOwnershipLeaseRenewal(): void {
+    if (this.shutdownOwnershipLeaseRenewalOperation) return;
+    this.shutdownOwnershipLeaseRenewalActive = true;
+    let tracked!: Promise<void>;
+    tracked = this.runShutdownOwnershipLeaseRenewalLoop().finally(() => {
+      if (this.shutdownOwnershipLeaseRenewalOperation === tracked) {
+        this.shutdownOwnershipLeaseRenewalOperation = null;
+      }
+    });
+    this.shutdownOwnershipLeaseRenewalOperation = tracked;
+  }
+
+  private async runShutdownOwnershipLeaseRenewalLoop(): Promise<void> {
+    while (this.shutdownOwnershipLeaseRenewalActive) {
+      const passStartedAt = performance.now();
+      await this.renewOwnedEngineLeaseProofs().catch((error) =>
+        reportError(error, 'GameServer.shutdown_lease_renewal_pass_threw')
+      );
+      if (!this.shutdownOwnershipLeaseRenewalActive) return;
+      const elapsedMs = Math.max(0, performance.now() - passStartedAt);
+      await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+    }
+  }
+
+  private async stopShutdownOwnershipLeaseRenewal(): Promise<void> {
+    this.shutdownOwnershipLeaseRenewalActive = false;
+    const operation = this.shutdownOwnershipLeaseRenewalOperation;
+    if (operation) await operation;
+  }
   /** Last orphaned-seat repair pass. See tournament/orphanedSeatRepair.ts. */
   private lastOrphanSeatSweepAt = 0;
   /**
@@ -265,14 +783,6 @@ export class GameServer {
    * the only thing that starts engines AND the only thing that reaps zombies —
    * if it stalls, the whole platform is frozen with nothing to notice.
    */
-  /**
-   * How long a boot is given before discovery staleness may declare the
-   * process dead. Generous on purpose: it only delays a verdict that Docker's
-   * own 90s start-period already suppresses, and the cost of being early is
-   * killing a container that is starting correctly.
-   */
-  private static readonly STARTUP_GRACE_MS = 180_000;
-
   private lastDiscoveryOkAt: number = Date.now();
   /**
    * When the discovery loop last RAN, as opposed to last succeeded.
@@ -321,12 +831,574 @@ export class GameServer {
     this.engineStartBudget = nextEngineStartBudget(this.engineStartBudget, distressed);
     return this.engineStartBudget;
   }
+
+  private clearDirectTableRecovery(tableId: string): void {
+    const timer = this.directTableRecoveryTimers.get(tableId);
+    if (timer) clearTimeout(timer);
+    this.directTableRecoveryTimers.delete(tableId);
+    this.directTableRecoveryAttempts.delete(tableId);
+    this.directTableAdmissionLeaseGenerations.delete(tableId);
+  }
+
+  /**
+   * Preserve one exact table's recovery obligation after a transient admission
+   * failure. This is not a fleet scan: it is armed only by the failed causal
+   * operation, names one durable table id, and disarms on success, closure, a
+   * proven foreign owner, or process shutdown.
+   */
+  private scheduleDirectTableRecovery(tableId: string, reason: string): void {
+    if (!this.running || this.tournamentOwnedTables.has(tableId)) {
+      this.clearDirectTableRecovery(tableId);
+      return;
+    }
+    if (this.directTableRecoveryTimers.has(tableId)) return;
+
+    const attempt = (this.directTableRecoveryAttempts.get(tableId) ?? 0) + 1;
+    this.directTableRecoveryAttempts.set(tableId, attempt);
+    const delayMs = Math.min(250 * 2 ** Math.min(attempt - 1, 6), 15_000);
+    const timer = setTimeout(() => {
+      if (this.directTableRecoveryTimers.get(tableId) !== timer) return;
+      this.directTableRecoveryTimers.delete(tableId);
+      void this.ensureCashTableEngineAdmission(tableId)
+        .then((outcome) => {
+          if (outcome === 'retryable_failure') {
+            this.scheduleDirectTableRecovery(tableId, reason);
+            return;
+          }
+          this.clearDirectTableRecovery(tableId);
+        })
+        .catch((error) => {
+          reportError(error, 'GameServer.direct_table_recovery_admission_threw', {
+            tableId,
+            reason,
+            attempt,
+          });
+          this.scheduleDirectTableRecovery(tableId, reason);
+        });
+    }, delayMs);
+    timer.unref?.();
+    this.directTableRecoveryTimers.set(tableId, timer);
+  }
+
+  private finishDirectTableAdmission(
+    tableId: string,
+    reason: string,
+    outcome: DirectTableAdmission
+  ): void {
+    if (outcome === 'retryable_failure') {
+      this.scheduleDirectTableRecovery(tableId, reason);
+      return;
+    }
+    this.clearDirectTableRecovery(tableId);
+  }
+
+  /**
+   * Publish the readiness of every direct engine generation before start can
+   * yield. Discovery used to publish only the engine map entry, so an arriving
+   * viewer saw `running=true` and was admitted while table configuration and
+   * the first authoritative snapshot were still loading.
+   */
+  private trackDirectTableEngineReadiness(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<DirectTableAdmission> {
+    const outcome = engine.ready.then<DirectTableAdmission>((ready) =>
+      ready ? 'ready' : 'retryable_failure'
+    );
+    const tracked = outcome.finally(() => {
+      if (this.tableEngineStartPromises.get(tableId) === tracked) {
+        this.tableEngineStartPromises.delete(tableId);
+      }
+    });
+    this.tableEngineStartPromises.set(tableId, tracked);
+    return tracked;
+  }
+
+  /**
+   * A detached dealing-loop/watchdog failure cannot reject engine.start(): by
+   * then start has already handed control to the loop. Bind that exact engine
+   * generation back to this map owner so terminal state initiates teardown
+   * immediately instead of waiting for the five-second discovery scanner.
+   */
+  private wireDirectTableEngineRecovery(tableId: string, engine: ServerTableEngine): void {
+    engine.onRestartRequired((reason) => {
+      void this.recoverDirectTableEngine(tableId, engine, reason).catch((error) => {
+        reportError(error, 'GameServer.direct_table_engine_recovery_threw', {
+          tableId,
+          reason,
+        });
+        this.scheduleDirectTableRecovery(tableId, reason);
+      });
+    });
+  }
+
+  private async recoverDirectTableEngine(
+    tableId: string,
+    engine: ServerTableEngine,
+    reason: string,
+    deferReadmission = false
+  ): Promise<void> {
+    const existingRecovery = this.directTableEngineRecoveries.get(engine);
+    if (existingRecovery) return existingRecovery;
+
+    const operation = this.performDirectTableEngineRecovery(
+      tableId,
+      engine,
+      reason,
+      deferReadmission
+    );
+    const tracked = operation.finally(() => {
+      // De-duplicate only while this exact recovery is live. Retaining a
+      // rejected promise here made every later causal retry join the same old
+      // rejection forever, so a transient teardown failure permanently
+      // quarantined the table even though its per-table retry kept firing.
+      if (this.directTableEngineRecoveries.get(engine) === tracked) {
+        this.directTableEngineRecoveries.delete(engine);
+      }
+      this.directTableEngineRecoveryJobs.delete(tracked);
+    });
+    this.directTableEngineRecoveries.set(engine, tracked);
+    this.directTableEngineRecoveryJobs.add(tracked);
+    return tracked;
+  }
+
+  private async performDirectTableEngineRecovery(
+    tableId: string,
+    engine: ServerTableEngine,
+    reason: string,
+    deferReadmission: boolean
+  ): Promise<void> {
+    if (!this.running || this.tableEngines.get(tableId) !== engine) return;
+    // TournamentManager owns tournament replacement and installs its own
+    // generation callback. Never race that authority from the cash lane.
+    if (this.tournamentOwnedTables.has(tableId)) return;
+
+    const leaseAuthority = engine.getEngineLeaseAuthority();
+    try {
+      await engine.stop();
+    } catch (error) {
+      reportError(error, 'GameServer.direct_table_engine_recovery_teardown_failed', {
+        tableId,
+        reason,
+      });
+      // Cleanup diagnostics may reject after process ownership was released;
+      // that generation is safe to retire. An earlier teardown failure is
+      // different: hiding the still-owning object from the final shutdown
+      // snapshot would let GameServer release its distributed lease while a
+      // scheduler/timer owner remained alive. Keep it quarantined and fail
+      // closed so shutdown can prove (or refuse) ownership release.
+      if (!engine.hasReleasedProcessOwnership()) throw error;
+    }
+    if (this.tableEngines.get(tableId) !== engine) return;
+
+    /* Keep the terminal object published until its exact database generation
+       is released. A concurrent admission therefore joins this recovery
+       instead of choosing a new UUID while the old same-instance row is still
+       live. Exact release cannot erase a later generation. */
+    if (leaseAuthority?.scope === 'cash' && leaseAuthority.verified) {
+      const release = await releaseTables([
+        { tableId, leaseGeneration: leaseAuthority.generation },
+      ]);
+      if (release.status !== 'confirmed') {
+        throw new Error(
+          `Cash lease release was not confirmed for ${tableId}/${leaseAuthority.generation}: ` +
+            `${release.reason} after ${release.attempts} attempt(s): ${release.detail}`
+        );
+      }
+    }
+    if (this.tableEngines.get(tableId) !== engine) return;
+
+    this.tableEngines.delete(tableId);
+    tableStateHub.dropTable(tableId);
+    if (!this.running) return;
+
+    // A start that exhausted its own transient retries gets a causal backoff;
+    // a detached runtime death is replaced immediately. Both remain exact to
+    // this table and neither waits for the five-second discovery scanner.
+    if (deferReadmission) {
+      this.scheduleDirectTableRecovery(tableId, reason);
+      return;
+    }
+    const outcome = await this.ensureCashTableEngineAdmission(tableId);
+    this.finishDirectTableAdmission(tableId, reason, outcome);
+  }
+
+  /**
+   * Close an acquired-but-never-published cash generation before any new claim.
+   * This is a causal release barrier, not a delayed reconciliation scan: the
+   * exact table admission that observes it must prove deletion or fail closed.
+   */
+  private async awaitDirectTableLeaseRelease(tableId: string): Promise<void> {
+    for (;;) {
+      const leaseGeneration = this.directTablePendingLeaseReleases.get(tableId);
+      if (!leaseGeneration) return;
+      const outcome = await releaseTables([{ tableId, leaseGeneration }]);
+      if (outcome.status !== 'confirmed') {
+        throw new Error(
+          `Pending cash lease release remains unconfirmed for ${tableId}/${leaseGeneration}: ` +
+            `${outcome.reason} after ${outcome.attempts} attempt(s): ${outcome.detail}`
+        );
+      }
+      if (this.directTablePendingLeaseReleases.get(tableId) === leaseGeneration) {
+        this.directTablePendingLeaseReleases.delete(tableId);
+      }
+      if (this.directTableAdmissionLeaseGenerations.get(tableId) === leaseGeneration) {
+        this.directTableAdmissionLeaseGenerations.delete(tableId);
+      }
+    }
+  }
   /**
    * When this process started. Used to keep boot from looking like death --
    * see the startup grace in getStatus().
    */
   private readonly processStartedAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /** Re-entrancy guard for the event-driven managerless bounty-outbox drain. */
+  private bountyRecoverySweepInFlight = false;
+  /** A committed outbox event arrived while the current bounded drain was active. */
+  private bountyRecoveryRequested = false;
+  /** One causal timer for the database-reported relative retry delay, never a polling interval. */
+  private bountyRecoveryDueTimer: NodeJS.Timeout | null = null;
+  private bountyRecoveryDueAt = 0;
+  private bountyRecoveryTransportBackoffMs = 1_000;
+  private bountyRecoveryContentionBackoffMs = 50;
+  /**
+   * One process-wide durable browser-action bridge. Realtime is the primary
+   * delivery path; rows are acknowledged only after a live manager accepts
+   * the wake, so subscribe-then-drain also closes the boot/reconnect gap.
+   */
+  private tournamentManagerWakeChannel: ReturnType<typeof supabase.channel> | null = null;
+  private tournamentManagerWakeDrainInFlight = false;
+  /** A global drain signal arrived while the final snapshot page was in flight. */
+  private tournamentManagerWakeDrainRequested = false;
+  /** Retry only a failed durable-wake read; this is a causal backoff, never a scan interval. */
+  private tournamentManagerWakeDrainRetryTimer: NodeJS.Timeout | null = null;
+  private tournamentManagerWakeDrainRetryBackoffMs = 250;
+  /** Invalidates a scheduled read retry across shutdown/restart lifecycle changes. */
+  private tournamentManagerWakeDrainRetryGeneration = 0;
+  private tournamentManagerWakeReconnectTimer: NodeJS.Timeout | null = null;
+  private tournamentManagerWakeReconnectBackoffMs = 1_000;
+  /** Subscribe-first delivery for durable bounty obligations. */
+  private tournamentBountyObligationChannel: ReturnType<typeof supabase.channel> | null = null;
+  private tournamentBountyReconnectTimer: NodeJS.Timeout | null = null;
+  private tournamentBountyReconnectBackoffMs = 1_000;
+
+  /** Compare-and-delete: an old async continuation never owns a new slot. */
+  private ownsTournamentManager(tournamentId: string, manager: TournamentManager): boolean {
+    return this.tournamentEngines.get(tournamentId) === manager;
+  }
+
+  /**
+   * Stop one exact manager generation and release its slot only after every
+   * table engine has completed teardown. A replacement installed while the
+   * await is in flight wins the CAS and is never deleted by this continuation.
+   */
+  private async stopTournamentManagerIfOwned(
+    tournamentId: string,
+    manager: TournamentManager,
+    errorContext: string,
+    releaseLease = true
+  ): Promise<boolean> {
+    const existing = this.tournamentManagerRetirementOperations.get(manager);
+    if (existing) return existing;
+
+    const leaseGeneration = releaseLease ? manager.getTournamentLeaseGeneration() : null;
+    let resolveReleaseBarrier: (confirmed: boolean) => void = () => undefined;
+    const releaseBarrier = leaseGeneration
+      ? new Promise<boolean>((resolve) => {
+          resolveReleaseBarrier = resolve;
+        })
+      : null;
+    if (releaseBarrier) {
+      /* Publish the barrier before stop() reaches its first await. The manager
+         may disappear from the local map during teardown, but no successor is
+         allowed to claim a distinct generation until exact release finishes. */
+      this.tournamentManagerLeaseReleaseOperations.set(tournamentId, releaseBarrier);
+    }
+
+    const operation = (async (): Promise<boolean> => {
+      let releaseConfirmed = leaseGeneration === null;
+      try {
+        const stopped = await stopOwnedTournamentManager(
+          this.tournamentEngines,
+          tournamentId,
+          manager,
+          (error) => reportError(error, errorContext)
+        );
+        if (stopped && leaseGeneration) {
+          this.tournamentManagerPendingLeaseReleases.set(tournamentId, leaseGeneration);
+          const release = await releaseTournaments([{ tournamentId, leaseGeneration }]);
+          if (release.status !== 'confirmed') {
+            throw new Error(
+              `Tournament lease release was not confirmed for ${tournamentId}/${leaseGeneration}: ` +
+                `${release.reason} after ${release.attempts} attempt(s): ${release.detail}`
+            );
+          }
+          releaseConfirmed = true;
+          if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === leaseGeneration) {
+            this.tournamentManagerPendingLeaseReleases.delete(tournamentId);
+          }
+        }
+        return stopped;
+      } finally {
+        if (
+          releaseBarrier &&
+          this.tournamentManagerLeaseReleaseOperations.get(tournamentId) === releaseBarrier
+        ) {
+          this.tournamentManagerLeaseReleaseOperations.delete(tournamentId);
+        }
+        if (releaseBarrier) resolveReleaseBarrier(releaseConfirmed);
+        this.tournamentManagerRetirementOperations.delete(manager);
+      }
+    })();
+    this.tournamentManagerRetirementOperations.set(manager, operation);
+    return operation;
+  }
+
+  private async awaitTournamentManagerLeaseRelease(tournamentId: string): Promise<void> {
+    for (;;) {
+      const release = this.tournamentManagerLeaseReleaseOperations.get(tournamentId);
+      if (release) {
+        await release;
+        continue;
+      }
+      const leaseGeneration = this.tournamentManagerPendingLeaseReleases.get(tournamentId);
+      if (!leaseGeneration) return;
+      const outcome = await releaseTournaments([{ tournamentId, leaseGeneration }]);
+      if (outcome.status !== 'confirmed') {
+        throw new Error(
+          `Pending tournament lease release remains unconfirmed for ${tournamentId}/${leaseGeneration}: ` +
+            `${outcome.reason} after ${outcome.attempts} attempt(s): ${outcome.detail}`
+        );
+      }
+      if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === leaseGeneration) {
+        this.tournamentManagerPendingLeaseReleases.delete(tournamentId);
+      }
+      if (this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId) === leaseGeneration) {
+        this.tournamentManagerAdmissionLeaseGenerations.delete(tournamentId);
+      }
+    }
+  }
+
+  private clearTournamentManagerAdmissionRetry(tournamentId: string): void {
+    const timer = this.tournamentManagerAdmissionRetryTimers.get(tournamentId);
+    if (timer) clearTimeout(timer);
+    this.tournamentManagerAdmissionRetryTimers.delete(tournamentId);
+    this.tournamentManagerAdmissionRetryAttempts.delete(tournamentId);
+    this.tournamentManagerAdmissionLeaseGenerations.delete(tournamentId);
+  }
+
+  private scheduleTournamentManagerAdmissionRetry(
+    tournamentId: string,
+    mode: TournamentManagerStartMode,
+    description: string,
+    generation: number
+  ): void {
+    if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId)) {
+      this.clearTournamentManagerAdmissionRetry(tournamentId);
+      return;
+    }
+    if (this.tournamentManagerAdmissionRetryTimers.has(tournamentId)) return;
+
+    const attempt = (this.tournamentManagerAdmissionRetryAttempts.get(tournamentId) ?? 0) + 1;
+    this.tournamentManagerAdmissionRetryAttempts.set(tournamentId, attempt);
+    const delayMs = Math.min(250 * 2 ** Math.min(attempt - 1, 6), 15_000);
+    const timer = setTimeout(() => {
+      if (this.tournamentManagerAdmissionRetryTimers.get(tournamentId) !== timer) return;
+      this.tournamentManagerAdmissionRetryTimers.delete(tournamentId);
+      void this.ensureTournamentManagerAdmission(tournamentId, mode, description, generation).catch(
+        (error) => {
+          reportError(error, 'GameServer.tournament_admission_retry_failed', {
+            tournamentId,
+            attempt,
+          });
+          this.scheduleTournamentManagerAdmissionRetry(tournamentId, mode, description, generation);
+        }
+      );
+    }, delayMs);
+    timer.unref?.();
+    this.tournamentManagerAdmissionRetryTimers.set(tournamentId, timer);
+  }
+
+  /**
+   * Serialize the distributed claim, publication and initial lifecycle for one
+   * tournament. REGISTERING and RUNNING discovery used to use different
+   * admission paths; the seat-first path did not claim a lease at all, while a
+   * RUNNING claim could resume after shutdown and publish a manager outside the
+   * final snapshot. One primitive now owns every construction site.
+   */
+  private ensureTournamentManagerAdmission(
+    tournamentId: string,
+    mode: TournamentManagerStartMode,
+    description: string,
+    generation: number
+  ): Promise<void> {
+    if (!this.directAdmissionIsCurrent(generation)) {
+      return Promise.resolve();
+    }
+    if (this.tournamentEngines.has(tournamentId)) {
+      this.clearTournamentManagerAdmissionRetry(tournamentId);
+      return Promise.resolve();
+    }
+    const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
+    if (existing) return existing;
+
+    const operation = this.performTournamentManagerAdmission(
+      tournamentId,
+      mode,
+      description,
+      generation
+    );
+    const tracked = operation.finally(() => {
+      if (this.tournamentManagerAdmissionOperations.get(tournamentId) === tracked) {
+        this.tournamentManagerAdmissionOperations.delete(tournamentId);
+      }
+    });
+    this.tournamentManagerAdmissionOperations.set(tournamentId, tracked);
+    return tracked;
+  }
+
+  private async performTournamentManagerAdmission(
+    tournamentId: string,
+    mode: TournamentManagerStartMode,
+    description: string,
+    generation: number
+  ): Promise<void> {
+    await this.awaitTournamentManagerLeaseRelease(tournamentId);
+    if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId)) {
+      return;
+    }
+
+    const requestedLeaseGeneration =
+      this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId) ?? randomUUID();
+    this.tournamentManagerAdmissionLeaseGenerations.set(tournamentId, requestedLeaseGeneration);
+    const lease = await claimTournamentLease(tournamentId, requestedLeaseGeneration);
+    const uncertainLeaseGeneration =
+      lease.status === 'acquired_but_proof_expired'
+        ? lease.leaseGeneration
+        : lease.status === 'retryable_failure' && lease.mayHaveCommitted
+          ? lease.requestedGeneration
+          : null;
+    if (uncertainLeaseGeneration) {
+      /* An RPC error/throw is not proof the transaction rolled back. Publish
+         the exact requested generation before any lifecycle test or retry, and
+         synchronously attempt its CAS release. Shutdown drains this admission
+         and retains the pending claim if the release remains uncertain. */
+      this.tournamentManagerPendingLeaseReleases.set(tournamentId, uncertainLeaseGeneration);
+      try {
+        await this.awaitTournamentManagerLeaseRelease(tournamentId);
+      } catch (releaseError) {
+        reportError(releaseError, 'GameServer.uncertain_tournament_claim_release_unconfirmed', {
+          tournamentId,
+          leaseGeneration: uncertainLeaseGeneration,
+        });
+      }
+      if (this.directAdmissionIsCurrent(generation)) {
+        this.scheduleTournamentManagerAdmissionRetry(tournamentId, mode, description, generation);
+      }
+      return;
+    }
+    if (!this.directAdmissionIsCurrent(generation)) {
+      // This exact operation acquired the lease after shutdown had fenced the
+      // generation. Return it before the admission promise settles so a deploy
+      // never leaves a post-snapshot ownership grant behind.
+      if (lease.status === 'granted') {
+        const staleGeneration = lease.leaseGeneration;
+        this.tournamentManagerPendingLeaseReleases.set(tournamentId, staleGeneration);
+        try {
+          await this.awaitTournamentManagerLeaseRelease(tournamentId);
+        } catch (releaseError) {
+          reportError(releaseError, 'GameServer.stale_tournament_admission_release_unconfirmed', {
+            tournamentId,
+            leaseGeneration: staleGeneration,
+          });
+        }
+      }
+      return;
+    }
+    if (lease.status === 'retryable_failure') {
+      this.scheduleTournamentManagerAdmissionRetry(tournamentId, mode, description, generation);
+      return;
+    }
+    if (lease.status !== 'granted') {
+      this.clearTournamentManagerAdmissionRetry(tournamentId);
+      return;
+    }
+    if (this.tournamentEngines.has(tournamentId)) {
+      this.clearTournamentManagerAdmissionRetry(tournamentId);
+      return;
+    }
+    this.clearTournamentManagerAdmissionRetry(tournamentId);
+
+    console.log(`[GameServer] ${description}`);
+    const manager = new TournamentManager(
+      tournamentId,
+      this,
+      lease.leaseGeneration,
+      lease.proofDeadlineMonotonicMs
+    );
+    bindTournamentDataAuthorityMethods(
+      { tournamentId, leaseGeneration: lease.leaseGeneration },
+      manager
+    );
+    this.tournamentEngines.set(tournamentId, manager);
+    try {
+      if (mode === 'resume') await manager.resume();
+      else await manager.start();
+
+      if (!this.directAdmissionIsCurrent(generation)) {
+        await this.stopTournamentManagerIfOwned(
+          tournamentId,
+          manager,
+          'GameServer.stale_tournament_admission_cleanup_failed'
+        );
+        return;
+      }
+      await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
+    } catch (error) {
+      await this.stopTournamentManagerIfOwned(
+        tournamentId,
+        manager,
+        'GameServer.tournament_admission_cleanup_failed'
+      );
+      this.scheduleTournamentManagerAdmissionRetry(tournamentId, mode, description, generation);
+      throw error;
+    }
+  }
+
+  /** Only a still-owned, still-running generation may execute post-start work. */
+  private async finishTournamentManagerAdmission(
+    tournamentId: string,
+    manager: TournamentManager,
+    generation: number
+  ): Promise<void> {
+    if (
+      !this.directAdmissionIsCurrent(generation) ||
+      !this.ownsTournamentManager(tournamentId, manager) ||
+      !manager.isRunning()
+    ) {
+      await this.stopTournamentManagerIfOwned(
+        tournamentId,
+        manager,
+        'GameServer.tournament_standdown_stop_failed'
+      );
+      return;
+    }
+    await this.holdIfBreakIsRunning(manager);
+    if (
+      !this.directAdmissionIsCurrent(generation) ||
+      !this.ownsTournamentManager(tournamentId, manager) ||
+      !manager.isRunning()
+    ) {
+      await this.stopTournamentManagerIfOwned(
+        tournamentId,
+        manager,
+        'GameServer.tournament_post_break_standdown_stop_failed'
+      );
+      return;
+    }
+    await this.drainTournamentManagerWakes(tournamentId);
+  }
   /**
    * Dan 2026-08-23: last time the MTT pre-start horse ramp ran per tournament.
    *
@@ -348,14 +1420,12 @@ export class GameServer {
   private seatFirstFullSince: Map<string, number> = new Map();
   /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
   private lastRakeSweepAt = 0;
-  /** One seat-first finish sweep per minute — see the call site for why. */
+  /** One seat-first finish sweep per minute - see the call site for why. */
   private lastSeatFirstFinishSweepAt = 0;
   /** One reopen sweep per minute for tables closed under a live tournament. */
   private lastClosedTableReopenSweepAt = 0;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
-  /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
-  private lastHuBackpayAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
   /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
@@ -370,9 +1440,18 @@ export class GameServer {
   private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
   private lastFeeRequeueAt = 0;
-  /** Last fn_pay_backed_payout_shortfalls pass (2026-08-28 backed payouts). */
-  private lastBackedPayoutAt = 0;
   private running: boolean = false;
+  /** One boot and one teardown per orchestrator instance; neither may outrun the other. */
+  private startOperation: Promise<void> | null = null;
+  private teardownPromise: Promise<void> | null = null;
+  private leaderBootComplete = false;
+  /**
+   * Process-level writers started by index.ts are outside this orchestrator's
+   * service graph, but they share the same distributed leadership. Their stop
+   * fence is invoked synchronously with ours and its completion is part of the
+   * same fail-closed ownership proof before any lease can be released.
+   */
+  private externalShutdownOwnershipBarrier: (() => Promise<void>) | null = null;
   private startTime: number = Date.now();
 
   // Server-side services (replaces browser-based DealerPage services)
@@ -395,7 +1474,7 @@ export class GameServer {
     },
   });
   private tournamentRecurring = new TournamentRecurringService();
-  // Data-driven recurring schedules (tournament_schedules) — runs alongside the
+  // Data-driven recurring schedules (tournament_schedules) - runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
   private scheduledTournaments = new ScheduledTournamentService();
   /**
@@ -496,19 +1575,27 @@ export class GameServer {
     // hand_history reveals from outside. Insert-only; a failure is reported
     // by MaintenanceBreak and never delays the resume.
     recordOutcome: async (o) => {
-      const { error } = await supabase.from('engine_maintenance_break_log').insert({
-        break_started_at: new Date(o.breakStartedAtMs).toISOString(),
-        break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
-        unparked_at_countdown: o.unparkedAtCountdown,
-        peak_unparked: o.peakUnparked,
-        ready_for_restart_at:
-          o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
-        tables_resumed: o.tablesResumed,
-        thaw_ok: o.thawOk,
-        engine_version:
-          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
-      });
-      if (error) throw new Error(error.message);
+      try {
+        const { error } = await supabase.from('engine_maintenance_break_log').insert({
+          break_started_at: new Date(o.breakStartedAtMs).toISOString(),
+          break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
+          unparked_at_countdown: o.unparkedAtCountdown,
+          peak_unparked: o.peakUnparked,
+          ready_for_restart_at:
+            o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
+          tables_resumed: o.tablesResumed,
+          thaw_ok: o.thawOk,
+          engine_version:
+            process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+        });
+        if (error) throw new Error(error.message);
+      } finally {
+        // A committed obligation received during the freeze deliberately did
+        // not move money.  Thaw is the causal event that makes it runnable;
+        // re-drive the durable queue now instead of polling throughout the
+        // break or waiting for an unrelated tournament discovery pass.
+        this.requestPendingTournamentBountyRecovery();
+      }
     },
     // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
     // checkpoints each completed step in engine_maintenance_thaws.shifted and
@@ -536,6 +1623,22 @@ export class GameServer {
       console.log(
         `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
         JSON.stringify(summary.last?.shifted ?? null)
+      );
+
+      /* fn_thaw_platform has just moved every open add-on deadline. Managers
+         armed their timers from the pre-break value and clients are counting
+         down that same absolute instant, so both must adopt the committed row
+         before any table resumes. Managers without an active window return
+         without I/O; failures are isolated per event and their live timer
+         keeps re-reading the durable deadline. */
+      await Promise.all(
+        [...this.tournamentEngines.values()].map(async (manager) => {
+          try {
+            await manager.resyncAddOnPeriodAfterMaintenanceThaw();
+          } catch (error) {
+            reportError(error, 'GameServer.addon_period_thaw_resync_failed');
+          }
+        })
       );
     },
   });
@@ -566,6 +1669,7 @@ export class GameServer {
   private feeReconcileTimer: NodeJS.Timeout | null = null;
   private leaseReapTimer: NodeJS.Timeout | null = null;
   private bombLedgerRepairTimer: NodeJS.Timeout | null = null;
+  private clockSkewTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
   /**
    * When the platform-wide break is expected to end, as epoch ms; 0 when no
@@ -597,8 +1701,28 @@ export class GameServer {
    */
   static readonly MAX_HEALTHY_PAUSE_MS = 10 * 60 * 1000;
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
+    if (this.teardownPromise) {
+      return Promise.reject(new Error('A stopped GameServer instance cannot be restarted'));
+    }
+    if (this.startOperation) return this.startOperation;
+    const generation = this.lifecycleGeneration + 1;
+    this.lifecycleGeneration = generation;
     this.running = true;
+    this.leaderBootComplete = false;
+    this.resetDealerPrerequisiteGate(generation);
+    const operation = this.performStart(generation);
+    this.startOperation = operation;
+    void operation
+      .then(
+        () => this.settleDealerPrerequisiteGate(generation, false),
+        () => this.settleDealerPrerequisiteGate(generation, false)
+      )
+      .catch(() => undefined);
+    return operation;
+  }
+
+  private async performStart(generation: number): Promise<void> {
     const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
     // E2E test mode — when set, MAINTENANCE_MODE still applies (no auto-spawn,
     // no recurring tournaments, no horse fleet) but a single table engine is
@@ -652,6 +1776,7 @@ export class GameServer {
      * services/leadership.ts for why that asymmetry matters.
      */
     let role = await renewLeadership();
+    if (!this.directAdmissionIsCurrent(generation)) return;
     startLeadershipRenewal();
     /**
      * THE BOOT CLAIM RETRIES THROUGH ONE STALENESS WINDOW (2026-08-30).
@@ -677,7 +1802,9 @@ export class GameServer {
       const bootClaimDeadline = Date.now() + (LEADERSHIP_STALE_SECONDS + 15) * 1000;
       while (role === 'standby' && Date.now() < bootClaimDeadline) {
         await new Promise((r) => setTimeout(r, 5000));
+        if (!this.directAdmissionIsCurrent(generation)) return;
         role = await renewLeadership();
+        if (!this.directAdmissionIsCurrent(generation)) return;
       }
       if (role === 'leader') {
         console.log(
@@ -702,9 +1829,59 @@ export class GameServer {
       return;
     }
 
+    /**
+     * LIVE HORSE COMPUTE HAS ONE OWNER (2026-09-08).
+     *
+     * HorseLogic, its RNG, learned opponent memory and solver lookup stores
+     * live together in one FIFO worker. READY is a boot prerequisite: table
+     * discovery cannot admit a live horse turn until that authority exists.
+     * A standby returns above and therefore never starts a competing copy.
+     * Unexpected worker loss is process-fatal because silently replacing it
+     * would reset RNG and learned-memory ordering inside active hands.
+     */
+    try {
+      await startLiveHorseDecisionWorker({
+        onFatal: (error) => {
+          this.revokeDealerPrerequisites(generation);
+          throw error;
+        },
+      });
+    } catch (error) {
+      // stop() can intentionally cancel a worker that has not reached READY.
+      // That is a successful boot cancellation, not a fatal startup failure.
+      if (
+        error instanceof HorseDecisionAbortedError &&
+        !this.directAdmissionIsCurrent(generation)
+      ) {
+        return;
+      }
+      throw error;
+    }
+    if (!this.directAdmissionIsCurrent(generation)) return;
+
+    /**
+     * All-in equity and insurance are also hard realtime dependencies. Every
+     * configured worker must author a READY handshake before table discovery
+     * can route a hand here; degraded capacity removes this process from
+     * routing instead of moving calculator work back onto the table thread.
+     */
+    try {
+      await startEquityWorkerPool();
+    } catch (error) {
+      if (
+        error instanceof EquityWorkerPoolAbortedError &&
+        !this.directAdmissionIsCurrent(generation)
+      ) {
+        return;
+      }
+      throw error;
+    }
+    if (!this.directAdmissionIsCurrent(generation)) return;
+
     // Step 1: Clean up stale data from previous runs.
     // Test mode passes the protected id so cleanup spares it.
     await this.cleanupStaleData(testTableId);
+    if (!this.directAdmissionIsCurrent(generation)) return;
 
     /**
      * ONE RAKE SPEC (Chip Accounting Standard R7, 2026-09-02). Before any
@@ -717,6 +1894,7 @@ export class GameServer {
      * the boot. See services/rakeSpecGuard.ts.
      */
     await startRakeSpecGuard();
+    if (!this.directAdmissionIsCurrent(generation)) return;
 
     if (!maintenanceMode && !testTableId) {
       /**
@@ -768,12 +1946,32 @@ export class GameServer {
        * adopted later are parked by maintenanceBreak.adopt().
        */
       await this.maintenanceBreak.start();
+      if (!this.directAdmissionIsCurrent(generation)) return;
 
-      this.discoverCashTables().catch((err) =>
-        reportError(err, 'GameServer.Cash_table_discovery_fatal_err')
+      // Subscribe before tournament discovery starts. Any action committed
+      // while managers are being adopted remains an unconsumed durable row;
+      // each manager start/resume drains its own rows once it can accept work.
+      this.startTournamentManagerWakeSubscription();
+      // Bounty payout recovery follows the same subscribe-then-drain rule.
+      // New eliminations normally settle in their own atomic path; this lane
+      // exists only for a committed outbox row whose process/response died.
+      this.startTournamentBountyObligationSubscription();
+
+      /* Ownership renewal is a primary lifecycle, independent of the much
+         heavier discovery/adoption/reaper loops. A blocked discovery RPC must
+         never consume the 20-second local authority proof of a healthy dealer. */
+      this.launchServerLifecycleJob(
+        this.runOwnershipLeaseRenewalLoop(generation),
+        'GameServer.ownership_lease_renewal_fatal_err'
       );
-      this.discoverTournaments().catch((err) =>
-        reportError(err, 'GameServer.Tournament_discovery_fatal_err')
+
+      this.launchDiscoveryJob(
+        this.discoverCashTables(),
+        'GameServer.Cash_table_discovery_fatal_err'
+      );
+      this.launchDiscoveryJob(
+        this.discoverTournaments(),
+        'GameServer.Tournament_discovery_fatal_err'
       );
       /**
        * The seat-first fast lane (Dan 2026-08-21: the wheel spins the MOMENT
@@ -781,8 +1979,9 @@ export class GameServer {
        * start gate as a backstop; this loop just refuses to make a paid-up
        * spin wait out the big loop's pass time. See discoverSeatFirstStarts.
        */
-      this.discoverSeatFirstStarts().catch((err) =>
-        reportError(err, 'GameServer.seat_first_fast_start_fatal_err')
+      this.launchDiscoveryJob(
+        this.discoverSeatFirstStarts(),
+        'GameServer.seat_first_fast_start_fatal_err'
       );
 
       /**
@@ -799,9 +1998,7 @@ export class GameServer {
        * TABLE_DISCOVERY_INTERVAL, so tables the fleet creates late are adopted
        * on the next sweep rather than missed.
        */
-      void this.horseFleet
-        .start()
-        .catch((err) => reportError(err, 'GameServer.horse_fleet_start_failed'));
+      this.launchServerLifecycleJob(this.horseFleet.start(), 'GameServer.horse_fleet_start_failed');
 
       // Slice 6: the cluster lifecycle, beside the fleet, on the leader only.
       this.clusterController.start();
@@ -877,6 +2074,7 @@ export class GameServer {
       // the note above insertHandHistoryRow); a hand's payload only exists in
       // memory at settlement, so a failed write is held and re-attempted here
       // rather than losing the hand and leaving its rake unattributable.
+      startHandProjectionWorker();
       startHandHistoryRetry();
       // Tell the table when a hand the queue was holding finally lands, so the
       // client can open the right replay. Without this the client falls back to
@@ -890,15 +2088,30 @@ export class GameServer {
           recovered: true,
           timestamp: Date.now(),
         });
+        // A tournament bust wake is deliberately withheld until the knockout
+        // hand is queryable: eliminatePlayer derives bounty/PKO attribution
+        // and its hand_id from hand_history. If the inline write fell into the
+        // retry queue, re-wake the owning manager at the exact moment the row
+        // lands. Recovery is rare, so an O(managers) ownership lookup here is
+        // cheaper and safer than maintaining another mutable table index.
+        for (const manager of this.tournamentEngines.values()) {
+          if (!manager.getTableIds().includes(tableId)) continue;
+          manager.requestEliminationSweep();
+          break;
+        }
       });
 
+      if (!this.publishDealerPrerequisitesReady(generation)) return;
+      this.leaderBootComplete = true;
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
       // E2E test mode: boot a single table engine for the designated test id.
       // No other services run — no horse seeding, no tournament expansion,
       // no discovery sweeps, no break timer. Just one table for hand testing.
       try {
+        if (!this.publishDealerPrerequisitesReady(generation)) return;
         await this.startTableEngineForTesting(testTableId);
+        if (!this.directAdmissionIsCurrent(generation)) return;
         console.log(`[GameServer] E2E test table ${testTableId.slice(0, 8)} engine started.`);
       } catch (err) {
         reportError(err, 'GameServer.E2E_test_table_start_failed');
@@ -917,39 +2130,148 @@ export class GameServer {
    * is set so this stays out of the normal-operation hot path.
    */
   private async startTableEngineForTesting(tableId: string): Promise<void> {
-    if (this.tableEngines.has(tableId)) return;
-    const engine = new ServerTableEngine(tableId);
-    engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
-    this.tableEngines.set(tableId, engine);
-    // A table built during a maintenance break must be born parked. Otherwise
-    // it is the one table on the platform dealing while every other felt sits
-    // on the break screen. No-ops when no break is running.
-    this.maintenanceBreak.adopt(tableId, engine);
-    // Mirror the discovery-loop start invocation so any errors get reported
-    // consistently and the engine cleanup path runs on failure.
-    engine.start().catch((err) => {
-      reportError(err, 'GameServer.E2E_test_table_engine_start_error');
-      this.tableEngines.delete(tableId);
-      tableStateHub.dropTable(tableId);
-    });
+    const outcome = await this.ensureCashTableEngineAdmission(tableId);
+    this.finishDirectTableAdmission(tableId, 'test_table_admission_failed', outcome);
+    if (outcome !== 'ready') {
+      throw new Error(`E2E test table ${tableId} admission ended as ${outcome}`);
+    }
   }
 
-  async stop(): Promise<void> {
+  /** Index-owned mutators may start only after the leader boot is fully committed. */
+  isLeaderBooted(): boolean {
+    return this.running && this.leaderBootComplete && isLeader();
+  }
+
+  registerExternalShutdownOwnershipBarrier(barrier: () => Promise<void>): void {
+    if (this.teardownPromise) {
+      throw new Error('Cannot register a shutdown ownership barrier after teardown begins');
+    }
+    if (
+      this.externalShutdownOwnershipBarrier &&
+      this.externalShutdownOwnershipBarrier !== barrier
+    ) {
+      throw new Error('A shutdown ownership barrier is already registered');
+    }
+    this.externalShutdownOwnershipBarrier = barrier;
+  }
+
+  private beginExternalShutdownOwnershipBarrier(): Promise<ExternalShutdownOwnershipResult> {
+    const barrier = this.externalShutdownOwnershipBarrier;
+    if (!barrier) return Promise.resolve({ status: 'fulfilled' });
+    try {
+      // Calling the provider, rather than deferring it through Promise.then,
+      // applies every external generation fence before stop() can yield.
+      return Promise.resolve(barrier()).then(
+        () => ({ status: 'fulfilled' }) as const,
+        (reason) => ({ status: 'rejected', reason }) as const
+      );
+    } catch (reason) {
+      return Promise.resolve({ status: 'rejected', reason });
+    }
+  }
+
+  stop(): Promise<void> {
+    if (this.teardownPromise) return this.teardownPromise;
     // The governor's sampler is unref'd, so this is tidiness rather than a
     // leak - but a stopped engine should not keep reading a loop it no
     // longer drives.
     equityGovernor.stopSampling();
+    const stoppingGeneration = this.lifecycleGeneration;
     this.running = false;
+    this.leaderBootComplete = false;
+    this.revokeDealerPrerequisites(stoppingGeneration);
+    this.lifecycleGeneration += 1;
     console.log('[GameServer] Shutting down...');
 
-    // Stop services
-    this.horseFleet.stop();
-    this.clusterController.stop();
-    this.tournamentRecurring.stop();
-    this.scheduledTournaments.stop();
-    this.lifecycle.stop();
-    this.dealRateVerifier.stop();
-    this.rakebackSettler.stop();
+    // Revoke every manager callback before the first shutdown await, but retain
+    // and renew its exact lease generation for hands already in progress. The
+    // final authority fence lands only after the bounded between-hands drain.
+    const tournamentManagersAtFence = [...this.tournamentEngines.entries()];
+    for (const [, manager] of tournamentManagersAtFence) manager.beginServerShutdownDrain();
+    this.startShutdownOwnershipLeaseRenewal();
+    const externalOwnership = this.beginExternalShutdownOwnershipBarrier();
+
+    const teardown = this.performStop(tournamentManagersAtFence, externalOwnership).finally(() =>
+      this.stopShutdownOwnershipLeaseRenewal()
+    );
+    this.teardownPromise = teardown;
+    return teardown;
+  }
+
+  private async performStop(
+    tournamentManagersAtFence: Array<[string, TournamentManager]>,
+    externalOwnership?: Promise<ExternalShutdownOwnershipResult>
+  ): Promise<void> {
+    const ownershipFailures: unknown[] = [];
+    type OwnedStopResult =
+      | { service: string; status: 'fulfilled' }
+      | { service: string; status: 'rejected'; reason: unknown };
+    const beginOwnedStop = (
+      service: string,
+      stop: () => Promise<void> | void
+    ): Promise<OwnedStopResult> => {
+      try {
+        // Attach both outcomes immediately. A stop rejection must remain part
+        // of the ownership certificate without becoming an unhandled
+        // rejection while another producer or boot generation is draining.
+        return Promise.resolve(stop()).then<OwnedStopResult, OwnedStopResult>(
+          () => ({ service, status: 'fulfilled' }),
+          (reason) => ({ service, status: 'rejected', reason })
+        );
+      } catch (reason) {
+        return Promise.resolve({ service, status: 'rejected', reason });
+      }
+    };
+    const beginOwnedProducerStops = (): Array<Promise<OwnedStopResult>> => {
+      const stops: Array<[service: string, stop: () => Promise<void>]> = [
+        ['HorseFleetManager', () => this.horseFleet.stop()],
+        ['ClusterController', () => this.clusterController.stop()],
+        ['TournamentRecurringService', () => this.tournamentRecurring.stop()],
+        ['ScheduledTournamentService', () => this.scheduledTournaments.stop()],
+        ['HorseLifecycleManager', () => this.lifecycle.stop()],
+        ['DealRateVerifier', () => this.dealRateVerifier.stop()],
+        ['RakebackSettlerService', () => this.rakebackSettler.stop()],
+        ['StatsHealthMonitor', () => this.statsHealth.stop()],
+      ];
+      return stops.map(([service, stop]) => beginOwnedStop(service, stop));
+    };
+    const externalOwnershipCompletion =
+      externalOwnership ??
+      Promise.resolve<ExternalShutdownOwnershipResult>({ status: 'fulfilled' });
+    for (const timer of this.directTableRecoveryTimers.values()) clearTimeout(timer);
+    this.directTableRecoveryTimers.clear();
+    this.directTableRecoveryAttempts.clear();
+    for (const timer of this.tournamentManagerAdmissionRetryTimers.values()) clearTimeout(timer);
+    this.tournamentManagerAdmissionRetryTimers.clear();
+    this.tournamentManagerAdmissionRetryAttempts.clear();
+    /* Admission UUIDs are potential committed authority, not disposable retry
+       bookkeeping. Keep them through the fixed-point admission drain; each
+       uncertain result publishes an exact pending release, and the final
+       shutdown certificate includes both maps. */
+
+    // Stop services. Every shared-state producer is invoked before the first
+    // await, so all lifecycle generations are fenced as one boundary. Their
+    // promises are retained and checked before distributed ownership release.
+    const firstProducerStops = beginOwnedProducerStops();
+    const firstSupportingStops = [
+      beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
+      beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
+    ];
+    // If shutdown lands while the worker is still hydrating, begin its
+    // cancellation before joining performStart(). No dealer can have been
+    // admitted before worker READY, so this cannot interrupt a live hand. A
+    // ready worker remains alive until every admitted dealer has drained below.
+    const startingHorseDecisionStop =
+      liveHorseDecisionWorkerStatus().phase === 'starting'
+        ? beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker)
+        : null;
+    const startingEquityWorkerStop =
+      equityWorkerPoolStatus().phase === 'starting'
+        ? beginOwnedStop('EquityWorkerPool', stopEquityWorkerPool)
+        : null;
+    this.tournamentMetrics.stop();
+    this.spinMetrics.stop();
+    this.replicationMetrics.stop();
     if (this.breakTimer) {
       clearTimeout(this.breakTimer);
       this.breakTimer = null;
@@ -965,8 +2287,6 @@ export class GameServer {
      * either the next engine when it reaches :00, or fn_maintenance_break_state
      * expiring it if no engine ever comes back.
      */
-    this.maintenanceBreak.stop();
-    this.statsHealth.stop();
     if (this.feeReconcileTimer) {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
@@ -979,22 +2299,116 @@ export class GameServer {
       clearInterval(this.bombLedgerRepairTimer);
       this.bombLedgerRepairTimer = null;
     }
+    if (this.clockSkewTimer) {
+      clearInterval(this.clockSkewTimer);
+      this.clockSkewTimer = null;
+    }
+
+    // A signal may arrive while boot is suspended in leadership, cleanup,
+    // rake verification, break restoration, or test-table readiness. The boot
+    // generation checks after each await and returns without publishing new
+    // services; joining it here makes that fact part of the ownership proof.
+    if (this.startOperation) {
+      await this.startOperation.catch((error) =>
+        reportError(error, 'GameServer.start_failed_during_shutdown')
+      );
+    }
+    // Async starters may have crossed their own final await immediately before
+    // observing the generation fence. Stop their timers again after the joined
+    // boot so no boot continuation can re-arm a source behind shutdown.
+    const supportingStopResults = await Promise.all([
+      ...firstSupportingStops,
+      beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
+      beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
+    ]);
+    for (const result of supportingStopResults) {
+      if (result.status !== 'rejected') continue;
+      const error = new AggregateError(
+        [result.reason],
+        `${result.service} did not certify shutdown ownership`
+      );
+      reportError(error, 'GameServer.supporting_shutdown_failed', { service: result.service });
+      ownershipFailures.push(error);
+    }
+
+    // A starter may have reached its last synchronous start call immediately
+    // before observing GameServer's generation fence. Re-fence after the boot
+    // promise is joined, and require both stop rounds to settle successfully.
+    const producerStopResults = await Promise.all([
+      ...firstProducerStops,
+      ...beginOwnedProducerStops(),
+    ]);
+    for (const result of producerStopResults) {
+      if (result.status !== 'rejected') continue;
+      const error = new AggregateError(
+        [result.reason],
+        `${result.service} did not certify shutdown ownership`
+      );
+      reportError(error, 'GameServer.producer_shutdown_failed', { service: result.service });
+      ownershipFailures.push(error);
+    }
+    const externalOwnershipResult = await externalOwnershipCompletion;
+    if (externalOwnershipResult.status === 'rejected') {
+      ownershipFailures.push(externalOwnershipResult.reason);
+    }
+
+    if (this.tournamentManagerWakeChannel) {
+      const wakeChannel = this.tournamentManagerWakeChannel;
+      this.tournamentManagerWakeChannel = null;
+      await Promise.resolve(supabase.removeChannel(wakeChannel)).catch((err) =>
+        reportError(err, 'GameServer.tournament_manager_wake_channel_remove_failed')
+      );
+    }
+    tournamentManagerWakeRealtimeConnected.set(0);
+    if (this.tournamentBountyObligationChannel) {
+      const bountyChannel = this.tournamentBountyObligationChannel;
+      this.tournamentBountyObligationChannel = null;
+      await Promise.resolve(supabase.removeChannel(bountyChannel)).catch((err) =>
+        reportError(err, 'GameServer.tournament_bounty_channel_remove_failed')
+      );
+    }
+    bountyRecoveryRealtimeConnected.set(0);
+    if (this.bountyRecoveryDueTimer) {
+      clearTimeout(this.bountyRecoveryDueTimer);
+      this.bountyRecoveryDueTimer = null;
+    }
+    if (this.tournamentBountyReconnectTimer) {
+      clearTimeout(this.tournamentBountyReconnectTimer);
+      this.tournamentBountyReconnectTimer = null;
+    }
+    if (this.tournamentManagerWakeReconnectTimer) {
+      clearTimeout(this.tournamentManagerWakeReconnectTimer);
+      this.tournamentManagerWakeReconnectTimer = null;
+    }
+    if (this.tournamentManagerWakeDrainRetryTimer) {
+      clearTimeout(this.tournamentManagerWakeDrainRetryTimer);
+      this.tournamentManagerWakeDrainRetryTimer = null;
+    }
+    this.tournamentManagerWakeDrainRetryGeneration++;
+    this.tournamentManagerWakeDrainRetryBackoffMs = 250;
+    this.bountyRecoveryDueAt = 0;
+    this.bountyRecoveryRequested = false;
+    this.tournamentManagerWakeDrainRequested = false;
 
     if (this.breakResumeTimer) {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;
     }
 
-    // Hand the leases back BEFORE the engines are torn down. A rolling deploy
-    // otherwise makes the incoming container wait out the full 30s stale window
-    // on every table, which is 30s of a live platform not dealing. Best-effort:
-    // releaseTables never throws and never blocks shutdown.
-    stopLeadershipRenewal();
-    // Hand leadership back first: the standby can then promote at once instead
-    // of waiting out the staleness window on a planned restart.
-    await releaseLeadership();
-    await releaseTables();
-    await releaseTournaments();
+    // The three infinite discovery loops and every detached admission/repair
+    // they launched are joined before the final dealer snapshot. Direct
+    // HTTP/WS admissions have their own registry because they need not begin
+    // inside discovery. Only after both sets reach a fixed point can shutdown
+    // prove that no lease or engine will appear behind its back.
+    await this.drainOwnedLifecycleJobs();
+
+    // This should add nothing after the generation fence and fixed-point
+    // drains. Keep the union defensive and fence it synchronously so a future
+    // admission site cannot silently escape the protocol.
+    const tournamentManagers = [
+      ...new Map([...tournamentManagersAtFence, ...this.tournamentEngines.entries()]).entries(),
+    ];
+    for (const [, manager] of tournamentManagers) manager.beginServerShutdownDrain();
 
     /**
      * C19 FIX (2026-08-20): drain in-flight hands, then stop everything at once.
@@ -1015,8 +2429,25 @@ export class GameServer {
      */
     const DRAIN_BUDGET_MS = 12_000;
     const DRAIN_POLL_MS = 250;
+    const engineTableIds = [...this.tableEngines.keys()];
     const engines = [...this.tableEngines.values()];
+    const cashLeaseClaimsByTable = new Map(this.directTablePendingLeaseReleases);
+    for (let index = 0; index < engines.length; index++) {
+      const engine = engines[index];
+      const authority = engine.getEngineLeaseAuthority();
+      if (authority?.scope === 'cash' && authority.verified) {
+        cashLeaseClaimsByTable.set(engineTableIds[index], authority.generation);
+      }
+    }
+    const cashLeaseClaims = [...cashLeaseClaimsByTable].map(([tableId, leaseGeneration]) => ({
+      tableId,
+      leaseGeneration,
+    }));
     if (engines.length > 0) {
+      // Refresh the distributed fence immediately before the bounded drain.
+      // Leadership renewal remains active until every manager and dealer is
+      // stopped, so a standby cannot overlap this outgoing generation.
+      await this.renewOwnedEngineLeaseProofs();
       for (const engine of engines) {
         try {
           // A drain is stopping the process: do not start another hand.
@@ -1036,12 +2467,89 @@ export class GameServer {
           ? `[GameServer] Drained all ${engines.length} table(s) between hands`
           : `[GameServer] Drain window elapsed with ${pending}/${engines.length} table(s) still mid-hand - stopping anyway`
       );
+      // The drain itself can consume most of the lease stale window. Renew at
+      // its far edge so teardown still owns the database fence it relies on.
+      await this.renewOwnedEngineLeaseProofs();
     }
 
-    // Stop all table engines IN PARALLEL. allSettled so one engine that throws
-    // on teardown cannot strand the rest half-stopped.
-    await Promise.allSettled(engines.map((engine) => engine.stop()));
-    this.tableEngines.clear();
+    /* No heartbeat may race the final fence or exact release. End and join the
+       shutdown-only renewal owner, then drain any lease-loss retirement it
+       launched before taking authority away from the parked tables. */
+    await this.stopShutdownOwnershipLeaseRenewal();
+    await this.drainOwnedLifecycleJobs();
+    for (const [, manager] of tournamentManagers) manager.fenceForServerShutdown();
+
+    // Stop every dealer and manager in parallel. Manager stop is invoked
+    // through the identity-CAS owner so a stale teardown can never remove a
+    // successor. A cleanup error is tolerable only after the engine proves its
+    // process scheduler ownership has already been released.
+    const engineStops = engines.map((engine) => engine.stop());
+    const managerStops = tournamentManagers.map(([id, manager]) =>
+      this.stopTournamentManagerIfOwned(
+        id,
+        manager,
+        'GameServer.shutdown_manager_stop_failed',
+        false
+      )
+    );
+    const [engineStopResults, managerStopResults] = await Promise.all([
+      Promise.allSettled(engineStops),
+      Promise.allSettled(managerStops),
+    ]);
+    for (let index = 0; index < engines.length; index++) {
+      const engine = engines[index];
+      const tableId = engineTableIds[index];
+      const result = engineStopResults[index];
+      if (result.status === 'rejected') {
+        if (!engine.hasReleasedProcessOwnership()) {
+          ownershipFailures.push(result.reason);
+          continue;
+        }
+        reportError(result.reason, 'GameServer.table_engine_stop_cleanup_failed', { tableId });
+      }
+      if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
+    }
+    for (let index = 0; index < managerStopResults.length; index++) {
+      const result = managerStopResults[index];
+      const [tournamentId, manager] = tournamentManagers[index];
+      if (result.status === 'rejected') {
+        ownershipFailures.push(result.reason);
+      } else if (result.value !== true && this.tournamentEngines.get(tournamentId) === manager) {
+        ownershipFailures.push(
+          new Error(`Tournament manager ${tournamentId} retained shutdown ownership`)
+        );
+      }
+    }
+
+    // No table can enqueue new compute after the dealer/manager drain. Abort
+    // and join every remaining equity operation before distributed ownership
+    // is released to a successor process.
+    const equityWorkerStop = await (startingEquityWorkerStop ??
+      beginOwnedStop('EquityWorkerPool', stopEquityWorkerPool));
+    if (equityWorkerStop.status === 'rejected') {
+      const error = new AggregateError(
+        [equityWorkerStop.reason],
+        'EquityWorkerPool did not certify shutdown'
+      );
+      reportError(error, 'GameServer.equity_worker_pool_shutdown_failed');
+      ownershipFailures.push(error);
+    }
+
+    // The worker FIFO can contain the last completed-hand observation or a
+    // decision already accepted before its table was fenced. Dealers and
+    // managers must stop first; then this drain flushes the worker-owned mind,
+    // telemetry and solver clocks before any distributed lease is released.
+    const horseDecisionStop = await (startingHorseDecisionStop ??
+      beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker));
+    if (horseDecisionStop.status === 'rejected') {
+      const error = new AggregateError(
+        [horseDecisionStop.reason],
+        'LiveHorseDecisionWorker did not certify shutdown ownership'
+      );
+      reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
+      ownershipFailures.push(error);
+    }
+    await stopHandProjectionWorker();
 
     // ── Flush the hand_history retry queue ──────────────────────────────────
     //
@@ -1082,15 +2590,71 @@ export class GameServer {
     onHandHistoryRecovered(null);
     stopHandHistoryRetry();
 
-    // Stop all tournament engines
-    for (const [, tm] of this.tournamentEngines) {
-      try {
-        tm.stop();
-      } catch {
-        /* keep tearing the rest down */
-      }
+    /**
+     * Distributed ownership is released only after all code that can deal or
+     * mutate a tournament has stopped. Releasing first created a 12-27 second
+     * cross-container split-brain window during every normal deploy: the
+     * standby could claim the same table while the outgoing engine was still
+     * finishing a hand. Explicit release here keeps fast handoff without ever
+     * trading correctness for it.
+     */
+    if (ownershipFailures.length > 0) {
+      const error = new AggregateError(
+        ownershipFailures,
+        `GameServer shutdown retained ${ownershipFailures.length} process owner(s); distributed leases were not released`
+      );
+      reportError(error, 'GameServer.shutdown_ownership_not_released');
+      await flushSentry();
+      throw error;
     }
-    this.tournamentEngines.clear();
+
+    const cashRelease = await releaseTables(cashLeaseClaims);
+    const distributedReleaseFailures: Error[] = [];
+    if (cashRelease.status !== 'confirmed') {
+      const error = new Error(
+        `Shutdown cash lease release was not confirmed: ${cashRelease.reason} after ` +
+          `${cashRelease.attempts} attempt(s): ${cashRelease.detail}`
+      );
+      distributedReleaseFailures.push(error);
+      reportError(error, 'GameServer.shutdown_cash_lease_release_unconfirmed');
+    }
+    const tournamentLeaseClaims = new Map(this.tournamentManagerPendingLeaseReleases);
+    for (const [tournamentId, manager] of tournamentManagers) {
+      const leaseGeneration = manager.getTournamentLeaseGeneration();
+      if (leaseGeneration) tournamentLeaseClaims.set(tournamentId, leaseGeneration);
+    }
+    const tournamentRelease = await releaseTournaments(
+      [...tournamentLeaseClaims].map(([tournamentId, leaseGeneration]) => ({
+        tournamentId,
+        leaseGeneration,
+      }))
+    );
+    if (tournamentRelease.status !== 'confirmed') {
+      const error = new Error(
+        `Shutdown tournament lease release was not confirmed: ${tournamentRelease.reason} after ` +
+          `${tournamentRelease.attempts} attempt(s): ${tournamentRelease.detail}`
+      );
+      distributedReleaseFailures.push(error);
+      reportError(error, 'GameServer.shutdown_tournament_lease_release_unconfirmed');
+    }
+    if (distributedReleaseFailures.length > 0) {
+      const error = new AggregateError(
+        distributedReleaseFailures,
+        `GameServer shutdown could not prove ${distributedReleaseFailures.length} exact distributed lease release(s)`
+      );
+      reportError(error, 'GameServer.shutdown_distributed_release_unproven');
+      await flushSentry();
+      /* Leadership deliberately remains held and no success line is emitted.
+         A supervisor may terminate this failed-stop process, after which the
+         30-second DB lease boundary remains the conservative handoff gate. */
+      throw error;
+    }
+    this.directTablePendingLeaseReleases.clear();
+    this.tournamentManagerPendingLeaseReleases.clear();
+    this.directTableAdmissionLeaseGenerations.clear();
+    this.tournamentManagerAdmissionLeaseGenerations.clear();
+    stopLeadershipRenewal();
+    await releaseLeadership();
 
     // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
     // WebSocket server (EngineWebSocketServer.close()) handles its own
@@ -1103,6 +2667,9 @@ export class GameServer {
   }
 
   getStatus() {
+    const now = Date.now();
+    const liveHorseDecision = liveHorseDecisionWorkerStatus();
+    const equityWorkers = equityWorkerPoolStatus();
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
     const tableLiveness = this.tableLivenessSnapshot();
@@ -1121,9 +2688,6 @@ export class GameServer {
     // recovery had a chance to finish. Report stalls at 120s (visibility),
     // but only declare the process dead once a table has out-stalled the
     // entire in-process recovery chain.
-    const deadStalledCount = tableLiveness.filter(
-      (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
-    ).length;
     /**
      * ── A MINORITY STALL IS NOT A DEAD PROCESS (2026-09-05) ────────────────
      *
@@ -1174,9 +2738,7 @@ export class GameServer {
      * process's opinion of itself, and it is the correct home for "nothing is
      * dealing" precisely because it cannot be fooled by our own bookkeeping.
      */
-    const dealableTableCount = tableLiveness.filter((t) => t.dealable >= 2 && !t.paused).length;
-    const wholeFleetStalled = dealableTableCount > 0 && deadStalledCount >= dealableTableCount;
-    const discoveryStaleMs = Date.now() - this.lastDiscoveryOkAt;
+    const discoveryStaleMs = now - this.lastDiscoveryOkAt;
     /**
      * ── A SLOW DATABASE IS NOT A DEAD PROCESS (2026-08-23) ──────────────────
      *
@@ -1196,7 +2758,7 @@ export class GameServer {
      * Sustained RPC failure is still reported — see discoveryStaleMs below and
      * the fleet alarms — it simply no longer restarts a healthy container.
      */
-    const discoveryLoopStalledMs = Date.now() - this.lastDiscoveryAttemptAt;
+    const discoveryLoopStalledMs = now - this.lastDiscoveryAttemptAt;
     /**
      * ── BOOTING IS NOT DEAD (2026-08-23) ────────────────────────────────────
      *
@@ -1211,16 +2773,13 @@ export class GameServer {
      * /health returned liveness 'dead' at ~60s uptime on a container that was
      * booting perfectly and reported 'ok' thirty seconds later.
      *
-     * Docker's --health-start-period=90s covers the usual case, which is why
-     * this has not bitten -- but a boot slower than 90s is exactly a boot
-     * against a struggling database, and that is the worst possible moment to
-     * have autoheal kill the container. Same reasoning, and the same fix, as
-     * the fleet-floor startup grace in DealRateVerifier.
+     * Docker separately gives the container a five-minute health grace. This
+     * in-process grace keeps both /health and /metrics truthful during their
+     * first three minutes even when read outside Docker.
      *
      * A boot that never finishes is still caught: the process either fails to
      * answer /health at all, or finishes and starts being judged normally.
      */
-    const stillBooting = Date.now() - this.processStartedAt < GameServer.STARTUP_GRACE_MS;
     // The one liveness signal not derived from this process's own beliefs.
     // deadStalledCount above is computed from msSinceProgress(), which
     // markProgress() sets about our own work; on 2026-08-22 that belief was
@@ -1246,12 +2805,6 @@ export class GameServer {
      * horses keep tables "progressing" indefinitely. Past 15 minutes of no
      * discovery attempts the restart is the correct answer regardless.
      */
-    const anyTableProgressedRecently = tableLiveness.some((t) => t.msSinceProgress < 120_000);
-    const discoveryLoopDead =
-      !stillBooting &&
-      (discoveryLoopStalledMs > 900_000 ||
-        (discoveryLoopStalledMs > 60_000 && !anyTableProgressedRecently));
-
     /**
      * ── A BARREN LEADER IS DEAD, HOWEVER BUSY ITS LOOP LOOKS (2026-08-30) ───
      *
@@ -1285,13 +2838,21 @@ export class GameServer {
      * not: every regression above was harmful because it killed an engine with
      * live tables. This one is unreachable unless there is nothing to lose.
      */
-    const barrenLeaderDead =
-      !stillBooting && this.tableEngines.size === 0 && discoveryStaleMs > 600_000;
+    const livenessVerdict = evaluateEngineLiveness({
+      isLeader: isLeader(),
+      processUptimeMs: now - this.processStartedAt,
+      discoveryLoopStalledMs,
+      discoveryStaleMs,
+      dbConfirmedDead: dealRate.dbConfirmedDead,
+      tables: tableLiveness,
+    });
+    const { deadStalledCount, dealableTableCount, wholeFleetStalled, barrenLeaderDead } =
+      livenessVerdict;
 
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
     const tableMetrics: any[] = [];
-    for (const [tableId, engine] of this.tableEngines) {
+    for (const engine of this.tableEngines.values()) {
       totalHands += engine.getHandCount();
       const snapshot = engine.getTelemetrySnapshot();
       if (snapshot.tables.length > 0) {
@@ -1313,8 +2874,7 @@ export class GameServer {
     let actionCount = 0;
     let processingViolations = 0;
     let broadcastViolations = 0;
-    for (const [, engine] of this.tableEngines) {
-      const snap = engine.getTelemetrySnapshot();
+    for (const engine of this.tableEngines.values()) {
       // Performance summary is on the telemetry instance via engine
       const perf = engine.getPerformanceSummary();
       if (perf) {
@@ -1335,8 +2895,10 @@ export class GameServer {
       // `status` reflects only whether the process booted. A table freeze is
       // invisible to it, which is why the 2026-08-15 incident was reported by a
       // player rather than by monitoring. `liveness` is the hard signal: it goes
-      // 'dead' when any table with 2+ dealable seats has made no observable
-      // progress for 2 minutes, or when the discovery loop itself has stalled.
+      // 'dead' only when the entire dealable fleet has out-stalled its
+      // five-minute recovery chain, discovery itself has stopped, the leader
+      // is barren behind a stale discovery result, or the independent database
+      // verifier confirms that the fleet has stopped dealing.
       // The Docker HEALTHCHECK reads this field, so a wedged process restarts
       // itself with no human involved.
       /**
@@ -1348,11 +2910,7 @@ export class GameServer {
        *   Docker healthcheck exits non-zero only on 'dead', so a standby is
        *          NOT restarted -- it must stay alive to be able to take over.
        */
-      liveness: !isLeader()
-        ? 'standby'
-        : wholeFleetStalled || discoveryLoopDead || barrenLeaderDead || dealRate.dbConfirmedDead
-          ? 'dead'
-          : 'ok',
+      liveness: livenessVerdict.status,
       /**
        * Independent evidence, reported whether or not it has reached a
        * verdict, so a fleet going quiet is visible BEFORE anything restarts.
@@ -1389,6 +2947,10 @@ export class GameServer {
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
+      // A retrying settlement can keep process liveness fresh forever. Publish
+      // its continuous wait separately; one blockage must not withdraw routing
+      // or restart every healthy table via the HTTP health probe.
+      ...settlementHealthSnapshot(tableLiveness),
       /**
        * The numerator and denominator of the liveness verdict, published so
        * the verdict can be argued with from outside the process (2026-09-05).
@@ -1402,9 +2964,26 @@ export class GameServer {
       deadStalledCount,
       dealableTableCount,
       wholeFleetStalled,
-      // 2026-09-04: is horse Monte Carlo being throttled to protect the loop?
-      // scale < 1 means the core is saturated; see EquityLoadGovernor.ts.
-      equityGovernor: equityGovernor.snapshot(),
+      // Horse Monte Carlo executes in the worker, so this canonical governor
+      // must come from that core. Publishing the main-thread singleton here
+      // made healthy isolation look like an idle horse solver even while its
+      // FIFO was saturated.
+      equityGovernor: liveHorseDecision.governor,
+      // Still useful, but a different question: can the realtime table loop
+      // service sockets, clocks, leases and state broadcasts without delay?
+      mainEventLoopGovernor: equityGovernor.snapshot(),
+      // The one process-wide FIFO that owns live HorseLogic state. Queue depth
+      // and phase distinguish worker pressure/failure from main-loop pressure;
+      // solver store counts prove the worker reached an authoritative READY.
+      liveHorseDecision,
+      // HTTP and WebSocket handlers are reachable before the leader boot has
+      // finished. This is the exact admission gate they await before any table
+      // lookup, lease claim or dealer construction is allowed to begin.
+      dealerPrerequisitesReady: this.dealerPrerequisitesReady,
+      // THE REST, MEASURED (Dan 2026-09-07): completion -> next deal, fleet-wide,
+      // last ten minutes. `over` is the number that means the bookkeeping did
+      // not fit inside the rest. See engine/NextHandGap.ts.
+      nextHandGap: nextHandGap.snapshot(),
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people
       // are seated. Horses are excluded — they do not care.
@@ -1441,13 +3020,21 @@ export class GameServer {
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
-      // Public liveness for the cross-repository solver contract. Counts and
-      // versions only; no ranges or private decision data leave the process.
-      solverPolicyArtifact: solverPolicyArtifactStatus(),
+      // Public liveness comes from the worker-owned store. The main thread no
+      // longer hydrates a second solver artifact whose status could look healthy
+      // while the live action path was empty or failed.
+      solverPolicyArtifact: liveHorseDecision.solverPolicyArtifact,
+      equityWorkerPool: equityWorkers,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
-      status: this.running ? 'ok' : 'degraded',
+      status:
+        this.running &&
+        this.dealerPrerequisitesReady &&
+        liveHorseDecision.phase === 'ready' &&
+        equityWorkers.phase === 'ready'
+          ? 'ok'
+          : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
       // ── PROCESS IDENTITY (2026-08-16) ───────────────────────────────
       // On 2026-08-16 two engine containers served this hostname at once and
@@ -1514,7 +3101,16 @@ export class GameServer {
     // never fire. A table could sit dead for 18 minutes with every dashboard
     // green. These four gauges are what make a freeze alertable from outside
     // the process, independent of whether the engine can still report itself.
+    const now = Date.now();
     const liveness = this.tableLivenessSnapshot();
+    const livenessVerdict = evaluateEngineLiveness({
+      isLeader: isLeader(),
+      processUptimeMs: now - this.processStartedAt,
+      discoveryLoopStalledMs: now - this.lastDiscoveryAttemptAt,
+      discoveryStaleMs: now - this.lastDiscoveryOkAt,
+      dbConfirmedDead: this.dealRateVerifier.snapshot().dbConfirmedDead,
+      tables: liveness,
+    });
     const stalled = liveness.filter(
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
     );
@@ -1527,21 +3123,17 @@ export class GameServer {
      * same snapshot: dead only when the WHOLE dealable fleet has out-stalled
      * the recovery chain. See the long note on `wholeFleetStalled` above.
      */
-    const deadStalled = liveness.filter(
-      (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
-    );
-    const dealable = liveness.filter((t) => t.dealable >= 2 && !t.paused);
-    const fleetStalled = dealable.length > 0 && deadStalled.length >= dealable.length;
     const freeze: string[] = [
+      ...settlementPrometheusLines(liveness),
       '# HELP poker_stalled_tables Tables with 2+ dealable seats, not paused by design, and no progress for 2 minutes',
       '# TYPE poker_stalled_tables gauge',
       `poker_stalled_tables ${stalled.length}`,
       '# HELP poker_dead_stalled_tables Tables that have out-stalled the whole per-table recovery chain (5 minutes)',
       '# TYPE poker_dead_stalled_tables gauge',
-      `poker_dead_stalled_tables ${deadStalled.length}`,
+      `poker_dead_stalled_tables ${livenessVerdict.deadStalledCount}`,
       '# HELP poker_dealable_tables Tables with 2+ dealable seats and not paused by design - the denominator of the liveness verdict',
       '# TYPE poker_dealable_tables gauge',
-      `poker_dealable_tables ${dealable.length}`,
+      `poker_dealable_tables ${livenessVerdict.dealableTableCount}`,
       '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
@@ -1564,11 +3156,11 @@ export class GameServer {
       `poker_db_clock_skew_ms ${this.lastDbSkewMs ?? 0}`,
       '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
       '# TYPE poker_discovery_stale_ms gauge',
-      `poker_discovery_stale_ms ${Date.now() - this.lastDiscoveryOkAt}`,
+      `poker_discovery_stale_ms ${now - this.lastDiscoveryOkAt}`,
       '# HELP poker_discovery_loop_stalled_ms Milliseconds since the discovery loop last RAN (not since it last succeeded)',
       '# TYPE poker_discovery_loop_stalled_ms gauge',
-      `poker_discovery_loop_stalled_ms ${Date.now() - this.lastDiscoveryAttemptAt}`,
-      '# HELP poker_engine_liveness 1 unless the WHOLE dealable fleet has out-stalled recovery, or the discovery loop has stopped, else 0',
+      `poker_discovery_loop_stalled_ms ${now - this.lastDiscoveryAttemptAt}`,
+      '# HELP poker_engine_liveness 1 unless the shared health verdict marks the leader dead from fleet stall, discovery failure or independently confirmed deal-rate silence; standby remains 1',
       '# TYPE poker_engine_liveness gauge',
       // Must match getStatus(): a slow database is not a dead process, so this
       // keys on whether the loop RAN, not on whether its last answer was good.
@@ -1585,13 +3177,7 @@ export class GameServer {
       // reported the whole engine dead — and Docker acted on it, five times on
       // the day this was measured, every one an unannounced restart outside
       // the §13 break. It reads the same fleet-wide rule as getStatus() now.
-      `poker_engine_liveness ${
-        !fleetStalled &&
-        Date.now() - this.lastDiscoveryAttemptAt <= 60_000 &&
-        !(this.tableEngines.size === 0 && Date.now() - this.lastDiscoveryOkAt > 600_000)
-          ? 1
-          : 0
-      }`,
+      `poker_engine_liveness ${livenessVerdict.prometheusValue}`,
       '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
       '# TYPE poker_table_ms_since_progress gauge',
       ...liveness.map(
@@ -1619,7 +3205,16 @@ export class GameServer {
       // single most player-visible tournament failure there is. These come
       // from the database because the database is the only thing that knows
       // what SHOULD exist. See services/TournamentMetrics.ts.
-      ...this.tournamentMetrics.toPrometheus(),
+      // `owned` is the half the database cannot see and this process is the only
+      // thing that knows: how many of those RUNNING events actually have a
+      // manager here. Leadership and boot state are passed for the same reason -
+      // a standby owns nothing legitimately, and a rule reading these series
+      // from outside cannot tell that apart from an outage.
+      ...this.tournamentMetrics.toPrometheus({
+        owned: this.tournamentEngines.size,
+        isLeader: isLeader(),
+        stillBooting: livenessVerdict.stillBooting,
+      }),
       // ── SPIN OBSERVABILITY (2026-08-31) ──────────────────────────────
       // The tournament gauges above count events. These test the one
       // EQUALITY the Spin format is sold on, and watch the punctuality of
@@ -1692,14 +3287,54 @@ export class GameServer {
       // reading onto the gauges the scrape renders, so /metrics can never
       // show a number older than the last sample.
       ...(() => {
-        const g = equityGovernor.snapshot();
-        eventLoopDelayP50.set(Number.isFinite(g.p50Ms) ? g.p50Ms : 0);
-        eventLoopDelayP99.set(Number.isFinite(g.p99Ms) ? g.p99Ms : 0);
-        equityGovernorScale.set(Number.isFinite(g.scale) ? g.scale : 1);
-        // The reading that cannot be starved by the load it measures - see
-        // the gauge's own comment. Published even when it is zero, because a
-        // flat zero here beside a rising p50 is itself the diagnosis.
-        equityGovernorSamplerLateMs.set(Number.isFinite(g.timerLateMs) ? g.timerLateMs : 0);
+        const main = equityGovernor.snapshot();
+        const worker = liveHorseDecisionWorkerStatus();
+        const equityWorkers = equityWorkerPoolStatus();
+        const workerGovernor = worker.governor;
+
+        // Existing event-loop series retain their realtime-main-thread
+        // meaning. The explicitly named companion series makes that ownership
+        // impossible to confuse with the worker core.
+        eventLoopDelayP50.set(Number.isFinite(main.p50Ms) ? main.p50Ms : 0);
+        eventLoopDelayP99.set(Number.isFinite(main.p99Ms) ? main.p99Ms : 0);
+        mainEventLoopGovernorScale.set(Number.isFinite(main.scale) ? main.scale : 1);
+        mainEventLoopGovernorSamplerLateMs.set(
+          Number.isFinite(main.timerLateMs) ? main.timerLateMs : 0
+        );
+
+        // These are the authoritative HorseLogic/Monte Carlo readings. Never
+        // substitute the main-thread module singleton when the worker has not
+        // sampled yet: absence is represented by worker_ready=0, not a fake
+        // healthy scale.
+        horseDecisionWorkerReady.set(worker.phase === 'ready' ? 1 : 0);
+        horseDecisionWorkerQueueDepth.set(worker.queueDepth);
+        horseDecisionWorkerActiveJobAgeMs.set(worker.activeJobAgeMs ?? 0);
+        horseDecisionWorkerOldestQueuedAgeMs.set(worker.oldestQueuedAgeMs ?? 0);
+        horseDecisionWorkerLastCompletionAgeMs.set(
+          worker.lastCompletedAt === null ? -1 : Math.max(0, Date.now() - worker.lastCompletedAt)
+        );
+        horseDecisionWorkerLastComputeMs.set(worker.lastComputeMs ?? 0);
+        horseDecisionWorkerEventLoopDelayP50.set(
+          workerGovernor && Number.isFinite(workerGovernor.p50Ms) ? workerGovernor.p50Ms : 0
+        );
+        horseDecisionWorkerEventLoopDelayP99.set(
+          workerGovernor && Number.isFinite(workerGovernor.p99Ms) ? workerGovernor.p99Ms : 0
+        );
+        equityGovernorScale.set(
+          workerGovernor && Number.isFinite(workerGovernor.scale) ? workerGovernor.scale : 0
+        );
+        equityGovernorSamplerLateMs.set(
+          workerGovernor && Number.isFinite(workerGovernor.timerLateMs)
+            ? workerGovernor.timerLateMs
+            : 0
+        );
+        equityWorkerPoolReady.set(equityWorkers.phase === 'ready' ? 1 : 0);
+        equityWorkerPoolConfiguredWorkers.set(equityWorkers.configuredWorkers);
+        equityWorkerPoolReadyWorkers.set(equityWorkers.readyWorkers);
+        equityWorkerPoolBusyWorkers.set(equityWorkers.busyWorkers);
+        equityWorkerPoolQueueDepth.set(equityWorkers.queueDepth);
+        equityWorkerPoolOldestQueuedAgeMs.set(equityWorkers.oldestQueuedAgeMs);
+        equityWorkerPoolLastCompletionAgeMs.set(equityWorkers.lastCompletionAgeMs ?? -1);
         return [];
       })(),
       ...alwaysOnPrometheusLines(),
@@ -1804,21 +3439,44 @@ export class GameServer {
   }
 
   private tableLivenessSnapshot() {
-    return [...this.tableEngines].map(([id, engine]) => ({
-      tableId: id,
-      seated: engine.seatedCount(),
-      dealable: engine.dealableCount(),
-      humans: engine.humansSeated(),
-      handCount: engine.getHandCount(),
-      msSinceProgress: engine.msSinceProgress(),
-      // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
-      // /health could say a table had made no progress for 96 seconds but not
-      // what it was doing for those 96 seconds, so a fleet-wide stall showed up
-      // as ninety identical unexplained numbers. This is the missing half.
-      loopPhase: engine.describeLoopPhase(),
-      paused: engine.isPausedByDesign(),
-      isTournament: engine.isTournament(),
-    }));
+    const tournamentDescriptorByTableId = new Map<
+      string,
+      { gameFormat: 'mtt' | 'spin' | 'sng'; clubId: string | null }
+    >();
+    for (const manager of this.tournamentEngines.values()) {
+      const gameFormat = manager.getPublicLiveTableFormat();
+      if (!gameFormat) continue;
+      const clubId = manager.getPublicLiveTableClubId();
+      for (const tableId of manager.getTableIds()) {
+        tournamentDescriptorByTableId.set(tableId, { gameFormat, clubId });
+      }
+    }
+
+    return [...this.tableEngines].map(([id, engine]) => {
+      const tournament = tournamentDescriptorByTableId.get(id);
+      return {
+        tableId: id,
+        // Public category and club scope only. The manager's row and lease
+        // generation never enter /health; null makes an incomplete tournament
+        // admission visible instead of guessing and letting the certificate
+        // select a table its isolated account cannot observe.
+        gameFormat: tournament?.gameFormat ?? (engine.isTournament() ? null : 'cash'),
+        clubId: tournament?.clubId ?? null,
+        seated: engine.seatedCount(),
+        dealable: engine.dealableCount(),
+        humans: engine.humansSeated(),
+        handCount: engine.getHandCount(),
+        msSinceProgress: engine.msSinceProgress(),
+        settlementAgeMs: engine.settlementAgeMs(),
+        // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
+        // /health could say a table had made no progress for 96 seconds but not
+        // what it was doing for those 96 seconds, so a fleet-wide stall showed up
+        // as ninety identical unexplained numbers. This is the missing half.
+        loopPhase: engine.describeLoopPhase(),
+        paused: engine.isPausedByDesign(),
+        isTournament: engine.isTournament(),
+      };
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
@@ -1876,7 +3534,10 @@ export class GameServer {
      */
     this.breakTimer = setTimeout(() => {
       if (!this.running) return;
-      void this.triggerSynchronizedBreak();
+      this.launchServerLifecycleJob(
+        this.triggerSynchronizedBreak(),
+        'GameServer.synchronized_break_failed'
+      );
       // Re-arm from the wall clock, never from this moment.
       this.scheduleSynchronizedBreaks();
     }, msUntilNextBreak);
@@ -1986,9 +3647,9 @@ export class GameServer {
       cycle++;
     };
 
-    void tick();
+    this.launchServerLifecycleJob(tick(), 'GameServer.fee_reconcile_tick_failed');
     this.feeReconcileTimer = setInterval(() => {
-      void tick();
+      this.launchServerLifecycleJob(tick(), 'GameServer.fee_reconcile_tick_failed');
     }, FEE_RECONCILE_INTERVAL_MS);
     console.log('[GameServer] Fee reconciler started (5-min cycle, hourly BBJ drift audit)');
   }
@@ -2039,6 +3700,7 @@ export class GameServer {
    * says so, it never guesses.
    */
   private startClockSkewMonitor(): void {
+    if (this.clockSkewTimer) return;
     const measure = async () => {
       if (!this.running) return;
       try {
@@ -2051,7 +3713,7 @@ export class GameServer {
         // Engine clock at the midpoint of the round trip vs the DB's stamp.
         this.lastDbSkewMs = Math.round((t0 + t1) / 2 - dbMs);
         if (Math.abs(this.lastDbSkewMs) > 5000) {
-          void raiseEngineAlert({
+          await raiseEngineAlert({
             alertname: 'ClubArenaClockSkew',
             severity: 'warning',
             component: 'club-arena-engine',
@@ -2064,7 +3726,7 @@ export class GameServer {
             labels: { skew_ms: String(this.lastDbSkewMs) },
           });
         } else {
-          void resolveEngineAlert(
+          await resolveEngineAlert(
             'ClubArenaClockSkew',
             'club-arena-engine',
             'Clock skew back within bounds'
@@ -2074,15 +3736,18 @@ export class GameServer {
         console.warn('[GameServer] clock skew measurement failed:', (err as Error)?.message);
       }
     };
-    void measure();
-    const timer = setInterval(() => void measure(), 30 * 60 * 1000);
-    (timer as { unref?: () => void }).unref?.();
+    this.launchServerLifecycleJob(measure(), 'GameServer.clock_skew_measurement_failed');
+    this.clockSkewTimer = setInterval(
+      () => this.launchServerLifecycleJob(measure(), 'GameServer.clock_skew_measurement_failed'),
+      30 * 60 * 1000
+    );
+    this.clockSkewTimer.unref?.();
   }
 
   private startLeaseReaper(): void {
     if (this.leaseReapTimer) return;
     this.leaseReapTimer = setInterval(() => {
-      void this.reapDeadLeases();
+      this.launchServerLifecycleJob(this.reapDeadLeases(), 'GameServer.lease_reap_failed');
     }, LEASE_REAP_INTERVAL_MS);
     console.log('[GameServer] Lease reaper started (hourly)');
   }
@@ -2144,15 +3809,16 @@ export class GameServer {
       }
     };
 
-    void tick();
+    this.launchServerLifecycleJob(tick(), 'GameServer.bomb_ledger_repair_tick_failed');
     this.bombLedgerRepairTimer = setInterval(() => {
-      void tick();
+      this.launchServerLifecycleJob(tick(), 'GameServer.bomb_ledger_repair_tick_failed');
     }, BOMB_LEDGER_REPAIR_INTERVAL_MS);
     console.log('[GameServer] Bomb-pot award ledger repair sweep started (hourly)');
   }
 
   private async triggerSynchronizedBreak(): Promise<void> {
-    if (!this.running) return;
+    const generation = this.lifecycleGeneration;
+    if (!this.directAdmissionIsCurrent(generation)) return;
 
     /**
      * EVERY FORMAT, NOT JUST THE MTTs (Dan 2026-08-27).
@@ -2213,11 +3879,19 @@ export class GameServer {
       } catch (err: any) {
         reportError(err, 'GameServer.Failed_to_pause_tournament');
       }
+      if (!this.directAdmissionIsCurrent(generation)) {
+        this.breakEndsAt = 0;
+        return;
+      }
     }
 
     const waitStartedAt = Date.now();
     const allParked = await this.waitForAllTablesParked(breakEngines);
     const lastHandMs = Date.now() - waitStartedAt;
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
+    }
 
     if (allParked) {
       console.log(
@@ -2240,6 +3914,10 @@ export class GameServer {
       } catch (err: any) {
         reportError(err, 'GameServer.Failed_to_begin_break_countdown');
       }
+      if (!this.directAdmissionIsCurrent(generation)) {
+        this.breakEndsAt = 0;
+        return;
+      }
     }
 
     // Never leave two resume timers pending. If a previous break's last-hand
@@ -2252,24 +3930,38 @@ export class GameServer {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;
     }
-    this.breakResumeTimer = setTimeout(async () => {
-      // Close the window FIRST. Anything starting from here on is not in a
-      // break and must not be held.
-      this.breakEndsAt = 0;
-      console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
-      // Resume everything on break, not just the :55 snapshot — a tournament
-      // that started during the break was held by holdIfBreakIsRunning and is
-      // not in breakEngines. resumeFromBreak no-ops on anything not on break.
-      const toResume = new Set<TournamentManager>(breakEngines);
-      for (const tm of this.tournamentEngines.values()) toResume.add(tm);
-      for (const tm of toResume) {
-        try {
-          await tm.resumeFromBreak();
-        } catch (err: any) {
-          reportError(err, 'GameServer.Failed_to_resume_tournament');
-        }
-      }
+    this.breakResumeTimer = setTimeout(() => {
+      this.breakResumeTimer = null;
+      this.launchServerLifecycleJob(
+        this.resumeSynchronizedBreak(breakEngines, generation),
+        'GameServer.synchronized_break_resume_failed'
+      );
     }, GameServer.BREAK_DURATION_MS);
+    this.breakResumeTimer.unref?.();
+  }
+
+  private async resumeSynchronizedBreak(
+    breakEngines: TournamentManager[],
+    generation: number
+  ): Promise<void> {
+    if (!this.directAdmissionIsCurrent(generation)) return;
+    // Close the window FIRST. Anything starting from here on is not in a
+    // break and must not be held.
+    this.breakEndsAt = 0;
+    console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
+    // Resume everything on break, not just the :55 snapshot - a tournament
+    // that started during the break was held by holdIfBreakIsRunning and is
+    // not in breakEngines. resumeFromBreak no-ops on anything not on break.
+    const toResume = new Set<TournamentManager>(breakEngines);
+    for (const tm of this.tournamentEngines.values()) toResume.add(tm);
+    for (const tm of toResume) {
+      if (!this.directAdmissionIsCurrent(generation)) return;
+      try {
+        await tm.resumeFromBreak();
+      } catch (err: any) {
+        reportError(err, 'GameServer.Failed_to_resume_tournament');
+      }
+    }
   }
 
   /**
@@ -2522,222 +4214,306 @@ export class GameServer {
         }
       }
 
-      // Run slow background sweeps asynchronously so they don't block the server boot sequence!
-      Promise.resolve().then(async () => {
-        try {
-          // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
-          //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
-          //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
-          //    New policy:
-          //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
-          //        stalled much longer than that)
-          //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
-          //      - only target tournaments where last_activity is also stale
-          //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
-          //    A separate scheduled cleanup should refund affected players; that's handled
-          //    by TournamentManager.cancelTournament via normal refund path. This startup
-          //    sweep is strictly a safety-net for server crashes and should rarely fire.
-          const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-          const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-          // Find stale RUNNING tournaments with no recent hand activity
-          /**
-           * TWELVE HOURS OF PLAYING, NOT TWELVE HOURS OF EXISTING
-           * (2026-09-06). This asked `created_at`, which for a scheduled or
-           * recurring event is when the ROW was written, not when the cards
-           * went in the air. Measured on production the day this was fixed:
-           * 94 RUNNING tournaments, 5 of them "stale" by `created_at` and
-           * ZERO by `started_at` - all five created on 09-03 as scheduled
-           * rows, started this morning, at level 4 and level 10 of 40, and
-           * dealing 100+ hands an hour while this sweep sized them up for
-           * settlement every time the engine booted.
-           *
-           * Only the hand-activity check below stood between five healthy
-           * games (21-28 players, 405 to 600 in prize pools) and being
-           * ranked by chipstack and paid out. One quiet hour - a stall, a
-           * long break, a slow Postgres - and the wrong axis becomes an
-           * outage. `started_at` is the question this sweep is actually
-           * asking; `created_at` remains the fallback for a row that somehow
-           * never recorded one.
-           */
-          const { data: staleTourneys } = await supabase
-            .from('tournaments')
-            // payout_structure / variant / tournament_type / spin_multiplier
-            // joined the list on 2026-09-06: the sweep now asks the SAME
-            // structural question the recovery will ask before it claims the
-            // row. See the guard below.
-            .select(
-              'id, name, started_at, created_at, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
-            )
-            .eq('status', 'RUNNING')
-            .or(
-              `started_at.lt.${twelveHoursAgo},and(started_at.is.null,created_at.lt.${twelveHoursAgo})`
-            );
-          for (const t of staleTourneys || []) {
-            const { data: recentHands, error } = await supabase
-              .from('hand_history')
-              .select('id')
-              .eq('tournament_id', t.id)
-              .gte('created_at', recentActivityCutoff)
-              .limit(1);
-
-            if (error) {
-              console.log(
-                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - error checking activity, assuming active.`
-              );
-              continue;
-            }
-
-            if (recentHands && recentHands.length > 0) {
-              console.log(
-                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - found recent hands in last hour (still active)`
-              );
-              continue;
-            }
+      // Run slow background sweeps asynchronously so they don't block the
+      // server boot sequence, but retain their ownership promise so shutdown
+      // cannot release leadership while one is still changing shared rows.
+      const cleanupGeneration = this.lifecycleGeneration;
+      this.launchServerLifecycleJob(
+        Promise.resolve().then(async () => {
+          if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
+          try {
+            // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
+            //    Prior threshold was 2 hours which killed every legitimate MTT - deep-stack
+            //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
+            //    New policy:
+            //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
+            //        stalled much longer than that)
+            //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
+            //      - only target tournaments where last_activity is also stale
+            //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
+            //    A separate scheduled cleanup should refund affected players; that's handled
+            //    by TournamentManager.cancelTournament via normal refund path. This startup
+            //    sweep is strictly a safety-net for server crashes and should rarely fire.
+            const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+            const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            // Find stale RUNNING tournaments with no recent hand activity
             /**
-             * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+             * TWELVE HOURS OF PLAYING, NOT TWELVE HOURS OF EXISTING
+             * (2026-09-06). This asked `created_at`, which for a scheduled or
+             * recurring event is when the ROW was written, not when the cards
+             * went in the air. Measured on production the day this was fixed:
+             * 94 RUNNING tournaments, 5 of them "stale" by `created_at` and
+             * ZERO by `started_at` - all five created on 09-03 as scheduled
+             * rows, started this morning, at level 4 and level 10 of 40, and
+             * dealing 100+ hands an hour while this sweep sized them up for
+             * settlement every time the engine booted.
              *
-             * This was the last cancel write on the server. A tournament wedged for
-             * over 12 hours with no hands is genuinely stuck, but voiding it is
-             * still the wrong ending: the players earned their chip positions. A
-             * real room settles the game and pays the places out.
-             *
-             * So instead of CANCELLED, this now walks it through the normal
-             * finish: flip to COMPLETING (CAS-guarded so a live engine that is
-             * mid-finish always wins the race) and hand it to
-             * recoverStuckCompletingTournaments, which ranks the remaining players
-             * by chip count, assigns the top positions, pays the payout structure
-             * and flips to COMPLETED. Money reaches the players who earned it and
-             * the game shows a real result instead of vanishing.
+             * Only the hand-activity check below stood between five healthy
+             * games (21-28 players, 405 to 600 in prize pools) and being
+             * ranked by chipstack and paid out. One quiet hour - a stall, a
+             * long break, a slow Postgres - and the wrong axis becomes an
+             * outage. `started_at` is the question this sweep is actually
+             * asking; `created_at` remains the fallback for a row that somehow
+             * never recorded one.
              */
-            /**
-             * A SWEEP NEVER MAKES A ROW THE RECOVERY WILL REFUSE (2026-09-06).
-             *
-             * `recoverStuckCompletingTournaments` asks `fieldIsStillLive`
-             * before it pays anything, and refuses a field with more players
-             * left than the structure has places - correctly, since ranking a
-             * live tournament by chipstack once paid an entire 20,880 pool to
-             * nine of ninety players (see recoveryFieldGuard.ts).
-             *
-             * The sweep did not ask. It flipped the row to COMPLETING anyway
-             * and handed it over, and the recovery then refused it - leaving
-             * the event in a state NOTHING can finish: the discovery loop
-             * resumes RUNNING tournaments only, so a COMPLETING row is
-             * invisible to the one path that could have played it out. The
-             * sweep took a stalled game that a manager could still adopt and
-             * made it permanently stuck.
-             *
-             * PLO4 Heads-Up 25 (3e281f5c) was in exactly that state for three
-             * days with two players still holding chips, and had to be settled
-             * by hand on 2026-09-06 (migration 20260906153943).
-             *
-             * So ask first, with the same numbers and the same pure guard. A
-             * field the recovery would refuse is LEFT RUNNING - the state it
-             * can still be rescued from - and reported. `count: 'exact'` on
-             * both reads, and an unreadable count skips the row rather than
-             * guessing: a sweep that cannot tell must not act (10.86).
-             */
-            const [{ count: liveCount, error: liveErr }, { count: fieldCount, error: fieldErr }] =
-              await Promise.all([
-                supabase
-                  .from('tournament_players')
-                  .select('id', { count: 'exact', head: true })
-                  .eq('tournament_id', t.id)
-                  .eq('status', 'playing'),
-                supabase
-                  .from('tournament_players')
-                  .select('id', { count: 'exact', head: true })
-                  .eq('tournament_id', t.id),
-              ]);
-            if (liveErr || fieldErr || typeof liveCount !== 'number') {
-              console.log(
-                `[GameServer] Skipping settlement of tournament ${t.id.slice(0, 8)} - could not read its field (${liveErr?.message ?? fieldErr?.message ?? 'no count'}); left RUNNING.`
+            const { data: staleTourneys, error: staleTourneysError } = await supabase
+              .from('tournaments')
+              // payout_structure / variant / tournament_type / spin_multiplier
+              // joined the list on 2026-09-06: the sweep now asks the SAME
+              // structural question the recovery will ask before it claims the
+              // row. See the guard below.
+              .select(
+                'id, name, started_at, created_at, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
+              )
+              .eq('status', 'RUNNING')
+              .or(
+                `started_at.lt.${twelveHoursAgo},and(started_at.is.null,created_at.lt.${twelveHoursAgo})`
               );
-              continue;
-            }
-            const sweepPayouts =
-              resolvePayoutStructure(
-                t as never,
-                typeof fieldCount === 'number' && fieldCount >= 1 ? fieldCount : undefined
-              ) ?? [];
-            if (fieldIsStillLive({ livePlayers: liveCount, paidPlaces: sweepPayouts.length })) {
+            if (staleTourneysError) {
               reportError(
                 new Error(
-                  `[GameServer] ${t.name} (${t.id.slice(0, 8)}) has been RUNNING over 12h with no hand in the last hour, but ${liveCount} player(s) are still in it against ${sweepPayouts.length} paid place(s) - the recovery would refuse to settle that, and a COMPLETING row cannot be resumed by anything. LEFT RUNNING so a manager can adopt and play it out; it needs an operator if it does not deal.`
+                  `[GameServer] Stale-tournament sweep could not list RUNNING tournaments: ${staleTourneysError.message}`
                 ),
-                'GameServer.stale_sweep_left_live_field_running'
+                'GameServer.stale_tournament_list_failed'
               );
-              continue;
             }
-
-            const { data: completingClaim } = await supabase
-              .from('tournaments')
-              .update({ status: 'COMPLETING' })
-              .eq('id', t.id)
-              .eq('status', 'RUNNING')
-              .select('id');
-
-            if (!completingClaim || completingClaim.length === 0) {
-              // Someone else moved it on — leave it alone.
-              continue;
-            }
-
-            await recoverStuckCompletingTournaments('startup-stale-12h-settle', t.id);
-            console.log(
-              `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) - paid out and COMPLETED, not cancelled`
-            );
-          }
-          console.log(
-            `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
-          );
-
-          // 7. Recover stuck COMPLETING tournaments (crashed during finishTournament flow)
-          // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
-          // COMPLETING → COMPLETED. A crash between the COMPLETING claim and the
-          // winner credit meant the winner (and any unpaid ITM places) were NEVER
-          // paid — the tournament just "completed" with stranded 'playing' rows
-          // (verified live: a COMPLETED bounty MTT with 8 players still 'playing'
-          // and $60 of a $100 guaranteed pool never paid). Recovery now PAYS what
-          // is owed (positions by chip count, prizes per normalized payout
-          // structure) before completing.
-          await recoverStuckCompletingTournaments('startup-cleanup');
-
-          // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
-          // A crashed/abandoned tournament left its tables status='running' forever
-          // (finishTournament only closes tables in the in-memory engine map). Any
-          // open table whose tournament is COMPLETED/CANCELLED gets closed here.
-          try {
-            const { data: openTourneyTables } = await supabase
-              .from('tables')
-              .select('id, tournament_id')
-              .not('tournament_id', 'is', null)
-              .in('status', ['waiting', 'running', 'RUNNING'])
-              .limit(500);
-            if (openTourneyTables && openTourneyTables.length > 0) {
-              const tourneyIds = [...new Set(openTourneyTables.map((t) => t.tournament_id))];
-              const { data: finished } = await supabase
-                .from('tournaments')
+            const staleTournamentCandidates = staleTourneysError ? [] : staleTourneys || [];
+            for (const t of staleTournamentCandidates) {
+              const { data: recentHands, error } = await supabase
+                .from('hand_history')
                 .select('id')
-                .in('id', tourneyIds)
-                .in('status', ['COMPLETED', 'CANCELLED']);
-              const finishedSet = new Set((finished ?? []).map((t) => t.id));
-              const orphanRows = openTourneyTables
-                .filter((t) => finishedSet.has(t.tournament_id))
-                .map((t) => ({ tableId: String(t.id), tournamentId: String(t.tournament_id) }));
+                .eq('tournament_id', t.id)
+                .gte('created_at', recentActivityCutoff)
+                .limit(1);
+
+              if (error) {
+                console.log(
+                  `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - error checking activity, assuming active.`
+                );
+                continue;
+              }
+
+              if (recentHands && recentHands.length > 0) {
+                console.log(
+                  `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - found recent hands in last hour (still active)`
+                );
+                continue;
+              }
+              /**
+               * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+               *
+               * This was the last cancel write on the server. A tournament wedged for
+               * over 12 hours with no hands is genuinely stuck, but voiding it is
+               * still the wrong ending: the players earned their chip positions. A
+               * real room settles the game and pays the places out.
+               *
+               * So instead of CANCELLED, this now walks it through the normal
+               * finish: flip to COMPLETING (CAS-guarded so a live engine that is
+               * mid-finish always wins the race) and hand it to
+               * recoverStuckCompletingTournaments, which ranks the remaining players
+               * by chip count, assigns the top positions, pays the payout structure
+               * and flips to COMPLETED. Money reaches the players who earned it and
+               * the game shows a real result instead of vanishing.
+               */
+              /**
+               * A SWEEP NEVER MAKES A ROW THE RECOVERY WILL REFUSE (2026-09-06).
+               *
+               * `recoverStuckCompletingTournaments` asks `fieldIsStillLive`
+               * before it pays anything, and refuses a field with more players
+               * left than the structure has places - correctly, since ranking a
+               * live tournament by chipstack once paid an entire 20,880 pool to
+               * nine of ninety players (see recoveryFieldGuard.ts).
+               *
+               * The sweep did not ask. It flipped the row to COMPLETING anyway
+               * and handed it over, and the recovery then refused it - leaving
+               * the event in a state NOTHING can finish: the discovery loop
+               * resumes RUNNING tournaments only, so a COMPLETING row is
+               * invisible to the one path that could have played it out. The
+               * sweep took a stalled game that a manager could still adopt and
+               * made it permanently stuck.
+               *
+               * PLO4 Heads-Up 25 (3e281f5c) was in exactly that state for three
+               * days with two players still holding chips, and had to be settled
+               * by hand on 2026-09-06 (migration 20260906153943).
+               *
+               * So ask first, with the same numbers and the same pure guard. A
+               * field the recovery would refuse is LEFT RUNNING - the state it
+               * can still be rescued from - and reported. `count: 'exact'` on
+               * both reads, and an unreadable count skips the row rather than
+               * guessing: a sweep that cannot tell must not act (10.86).
+               */
+              const [{ count: liveCount, error: liveErr }, { count: fieldCount, error: fieldErr }] =
+                await Promise.all([
+                  supabase
+                    .from('tournament_players')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('tournament_id', t.id)
+                    .eq('status', 'playing'),
+                  supabase
+                    .from('tournament_players')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('tournament_id', t.id),
+                ]);
+              if (liveErr || fieldErr || typeof liveCount !== 'number') {
+                console.log(
+                  `[GameServer] Skipping settlement of tournament ${t.id.slice(0, 8)} - could not read its field (${liveErr?.message ?? fieldErr?.message ?? 'no count'}); left RUNNING.`
+                );
+                continue;
+              }
+              const sweepPayouts =
+                resolvePayoutStructure(
+                  t as never,
+                  typeof fieldCount === 'number' && fieldCount >= 1 ? fieldCount : undefined
+                ) ?? [];
+              if (fieldIsStillLive({ livePlayers: liveCount, paidPlaces: sweepPayouts.length })) {
+                reportError(
+                  new Error(
+                    `[GameServer] ${t.name} (${t.id.slice(0, 8)}) has been RUNNING over 12h with no hand in the last hour, but ${liveCount} player(s) are still in it against ${sweepPayouts.length} paid place(s) - the recovery would refuse to settle that, and a COMPLETING row cannot be resumed by anything. LEFT RUNNING so a manager can adopt and play it out; it needs an operator if it does not deal.`
+                  ),
+                  'GameServer.stale_sweep_left_live_field_running'
+                );
+                continue;
+              }
+
+              // Silence is not a terminal result. Completion is now entered
+              // only through fn_claim_tournament_finish, which proves one
+              // canonical survivor and writes the immutable claim in the same
+              // transaction. Leave this contest RUNNING so normal lease-backed
+              // discovery can resume its manager; never rank a live field by a
+              // timeout and never manufacture a COMPLETING recovery row.
+              reportError(
+                new Error(
+                  `[GameServer] ${t.name} (${t.id.slice(0, 8)}) has no recent hand after 12h; left RUNNING for lease-backed manager resumption because inactivity is not finish evidence.`
+                ),
+                'GameServer.stale_tournament_left_for_resume'
+              );
+            }
+            if (!staleTourneysError) {
+              console.log(
+                `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
+              );
+            }
+
+            // 7. Recover stuck COMPLETING tournaments (crashed during finishTournament flow)
+            // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
+            // COMPLETING → COMPLETED. A crash between the COMPLETING claim and the
+            // winner credit meant the winner (and any unpaid ITM places) were NEVER
+            // paid - the tournament just "completed" with stranded 'playing' rows
+            // (verified live: a COMPLETED bounty MTT with 8 players still 'playing'
+            // and $60 of a $100 guaranteed pool never paid). Recovery now PAYS what
+            // is owed (positions by chip count, prizes per normalized payout
+            // structure) before completing.
+            await recoverStuckCompletingTournaments('startup-cleanup');
+
+            // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
+            // A crashed/abandoned tournament left its tables status='running' forever
+            // (finishTournament only closes tables in the in-memory engine map). Any
+            // open table whose tournament is COMPLETED/CANCELLED gets closed here.
+            try {
+              const orphanPageSize = 500;
+
+              /**
+               * Candidate from evidence, not history (2026-09-07).
+               *
+               * This sweep briefly keyset-paged every tournament table so it could
+               * still find an already-closed table with a leaked live seat. That
+               * made each engine boot scan the complete historical table estate and
+               * then rewrite every terminal row, even when `status='closed'` and
+               * `current_players=0` were already exact. The returned rows were then
+               * reported as repairs, so a clean restart looked like a large cleanup.
+               *
+               * The evidence set is the union of (a) tournament tables whose own
+               * terminal fields need work and (b) table ids on live seats. The
+               * second set preserves the closed-table/leaked-seat case without
+               * reading or writing unrelated history. Both reads are keyset-paged;
+               * a failure makes the whole sweep UNKNOWN and therefore closes
+               * nothing.
+               */
+              const orphanCandidates = new Map<string, { tableId: string; tournamentId: string }>();
+              let afterTableId: string | null = null;
+              while (true) {
+                let nonterminalTableQuery = supabase
+                  .from('tables')
+                  .select('id, tournament_id, status, current_players')
+                  .not('tournament_id', 'is', null)
+                  .or(
+                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
+                  )
+                  .order('id', { ascending: true })
+                  .limit(orphanPageSize);
+                if (afterTableId) {
+                  nonterminalTableQuery = nonterminalTableQuery.gt('id', afterTableId);
+                }
+                const { data: nonterminalTables, error: openTableError } =
+                  await nonterminalTableQuery;
+                if (openTableError) {
+                  throw new Error(`orphan table list failed: ${openTableError.message}`);
+                }
+                if (!nonterminalTables || nonterminalTables.length === 0) break;
+                for (const table of nonterminalTables) {
+                  orphanCandidates.set(String(table.id), {
+                    tableId: String(table.id),
+                    tournamentId: String(table.tournament_id),
+                  });
+                }
+                afterTableId = String(nonterminalTables[nonterminalTables.length - 1].id);
+                if (nonterminalTables.length < orphanPageSize) break;
+              }
+
+              let afterSeatId: string | null = null;
+              while (true) {
+                let liveSeatQuery = supabase
+                  .from('table_seats')
+                  .select('id, table_id')
+                  .is('left_at', null)
+                  .order('id', { ascending: true })
+                  .limit(orphanPageSize);
+                if (afterSeatId) liveSeatQuery = liveSeatQuery.gt('id', afterSeatId);
+                const { data: liveSeats, error: liveSeatListError } = await liveSeatQuery;
+                if (liveSeatListError) {
+                  throw new Error(`orphan live-seat list failed: ${liveSeatListError.message}`);
+                }
+                if (!liveSeats || liveSeats.length === 0) break;
+                afterSeatId = String(liveSeats[liveSeats.length - 1].id);
+
+                const liveSeatTableIds = [
+                  ...new Set(liveSeats.map((seat) => String(seat.table_id))),
+                ];
+                for (let i = 0; i < liveSeatTableIds.length; i += 100) {
+                  const { data: tournamentTables, error: liveSeatTableError } = await supabase
+                    .from('tables')
+                    .select('id, tournament_id, status, current_players')
+                    .in('id', liveSeatTableIds.slice(i, i + 100))
+                    .not('tournament_id', 'is', null);
+                  if (liveSeatTableError) {
+                    throw new Error(
+                      `orphan live-seat table lookup failed: ${liveSeatTableError.message}`
+                    );
+                  }
+                  for (const table of tournamentTables ?? []) {
+                    orphanCandidates.set(String(table.id), {
+                      tableId: String(table.id),
+                      tournamentId: String(table.tournament_id),
+                    });
+                  }
+                }
+                if (liveSeats.length < orphanPageSize) break;
+              }
+
+              const orphanRows = [...orphanCandidates.values()].sort((a, b) =>
+                a.tableId.localeCompare(b.tableId)
+              );
               let closedOrphans = 0;
+              let releasedOrphanSeats = 0;
               for (let i = 0; i < orphanRows.length; i += 100) {
                 const batchRows = orphanRows.slice(i, i + 100);
 
                 /**
                  * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
-                 * (2026-08-31). The finished set above was read once, before
-                 * the seat releases and the earlier batches; a tournament that
-                 * was re-opened, or a late-registration event that moved back
-                 * to RUNNING, would have been closed on the strength of a
-                 * stale read. `tablesASweepMayClose` is the rule in one place:
-                 * a SWEEP may only close a table whose tournament is already
-                 * COMPLETED or CANCELLED, and an unreadable status counts as
-                 * not-terminal, so the table is left open. See
-                 * services/tableCloseGuard.ts for the two outages behind it.
+                 * (2026-08-31). The candidate evidence above can become stale;
+                 * `tablesASweepMayClose` is the rule in one place: a sweep may
+                 * only close a table whose tournament is already COMPLETED or
+                 * CANCELLED, and an unreadable status leaves the table alone.
                  */
                 const { data: freshStatuses, error: freshErr } = await supabase
                   .from('tournaments')
@@ -2761,56 +4537,90 @@ export class GameServer {
                 const batch = tablesASweepMayClose(batchRows, statusByTournament);
                 if (batch.length === 0) continue;
 
-                /**
-                 * RELEASE THE SEATS, not just the table (audit 2026-08-21).
-                 *
-                 * TournamentManagerEliminations releases seats on the NORMAL
-                 * finish, but a tournament can reach COMPLETED/CANCELLED without
-                 * ever passing through it - a crashed engine, the stuck-COMPLETING
-                 * recovery, or the 12-hour idle sweep. Those paths landed here,
-                 * where the table was closed and `table_seats` was left untouched,
-                 * so seats kept leaking at a slower rate after the main fix. Two
-                 * had already reappeared within hours of it shipping.
-                 *
-                 * This is the catch-all: whatever route a tournament took to
-                 * finished, its players end up released. `left_at IS NULL` is what
-                 * the multi-table rebuild reads as "I am still playing here", so a
-                 * seat left open at a closed table follows the player around as a
-                 * dead tab until something clears it.
-                 */
-                const { error: seatErr } = await supabase
+                const { data: releasedSeats, error: seatErr } = await supabase
                   .from('table_seats')
                   .update({ left_at: new Date().toISOString() })
                   .in('table_id', batch)
-                  .is('left_at', null);
+                  .is('left_at', null)
+                  .select('id');
                 if (seatErr) {
                   reportError(
                     new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
                     'GameServer.orphan_seat_release_failed'
                   );
+                  continue;
                 }
+                releasedOrphanSeats += releasedSeats?.length ?? 0;
 
-                await supabase
+                // Do not turn a clean historical row into a write. The final
+                // read below proves both changed and already-correct candidates.
+                const { data: closedRows, error: closeError } = await supabase
                   .from('tables')
                   .update({ status: 'closed', current_players: 0 })
-                  .in('id', batch);
-                closedOrphans += batch.length;
+                  .in('id', batch)
+                  .or(
+                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
+                  )
+                  .select('id');
+                if (closeError) {
+                  reportError(
+                    new Error(`[GameServer] orphan table close failed: ${closeError.message}`),
+                    'GameServer.orphan_table_close_failed'
+                  );
+                  continue;
+                }
+
+                const [seatProof, tableProof] = await Promise.all([
+                  supabase
+                    .from('table_seats')
+                    .select('id', { count: 'exact', head: true })
+                    .in('table_id', batch)
+                    .is('left_at', null),
+                  supabase.from('tables').select('id, status, current_players').in('id', batch),
+                ]);
+                if (seatProof.error || seatProof.count !== 0) {
+                  reportError(
+                    new Error(
+                      `[GameServer] orphan seat release proof failed: ${seatProof.error?.message ?? `${seatProof.count ?? 'unknown'} live seat(s) remain`}`
+                    ),
+                    'GameServer.orphan_seat_release_unproven'
+                  );
+                  continue;
+                }
+                const terminalTables = tableProof.data ?? [];
+                if (
+                  tableProof.error ||
+                  terminalTables.length !== batch.length ||
+                  terminalTables.some(
+                    (table) => table.status !== 'closed' || table.current_players !== 0
+                  )
+                ) {
+                  reportError(
+                    new Error(
+                      `[GameServer] orphan table close proof failed: ${tableProof.error?.message ?? `${terminalTables.length}/${batch.length} rows read back terminal`}`
+                    ),
+                    'GameServer.orphan_table_close_unproven'
+                  );
+                  continue;
+                }
+                closedOrphans += closedRows?.length ?? 0;
               }
-              if (closedOrphans > 0) {
+
+              if (closedOrphans > 0 || releasedOrphanSeats > 0) {
                 console.log(
-                  `[GameServer] Closed ${closedOrphans} orphaned tournament tables and released their seats`
+                  `[GameServer] Reconciled ${closedOrphans} terminal tournament table state(s) and released ${releasedOrphanSeats} leaked seat(s)`
                 );
               }
+              console.log('[GameServer] Stale data cleanup complete');
+            } catch (orphanErr) {
+              reportError(orphanErr, 'GameServer.orphan_table_sweep');
             }
-          } catch (orphanErr) {
-            reportError(orphanErr, 'GameServer.orphan_table_sweep');
+          } catch (bgErr) {
+            reportError(bgErr, 'GameServer.background_stale_cleanup_error');
           }
-
-          console.log('[GameServer] Stale data cleanup complete');
-        } catch (bgErr) {
-          reportError(bgErr, 'GameServer.background_stale_cleanup_error');
-        }
-      });
+        }),
+        'GameServer.background_stale_cleanup_job_failed'
+      );
     } catch (err) {
       reportError(err, 'GameServer.Stale_data_cleanup_error');
     }
@@ -2821,14 +4631,15 @@ export class GameServer {
   // ═════════════════════════════════════════════════════════════════════════════
 
   private async discoverCashTables(): Promise<void> {
-    while (this.running) {
+    const generation = this.lifecycleGeneration;
+    while (this.directAdmissionIsCurrent(generation)) {
       /**
        * C20 FIX-UP (2026-08-24): the sweep verdict must be reached on EVERY
        * exit path, so it is captured here and applied in a finally.
        *
        * Shipped first with the verdict as an ordinary statement near the end
        * of the try. That is only reached when the sweep runs to completion,
-       * and the sweep contains heartbeatTables(), claimTable() and the whole
+       * and the sweep contains heartbeatTables(), claimTableLease() and the whole
        * adoption loop before it - any of which can throw when the database is
        * struggling, which is exactly when this control loop matters. Meanwhile
        * the discovery-RPC error path still halved the budget. So distress
@@ -2901,62 +4712,10 @@ export class GameServer {
           continue;
         }
 
-        // ── Reclaim tables refused during a cutover (2026-08-17) ───────
-        // A claim refused while the outgoing container still held the
-        // lease used to latch for the life of the process: the table
-        // starts anyway (enforcement is off) and the loop below skips
-        // anything already in `tableEngines`. Retrying here converges
-        // ownership within one discovery tick and unlatches conflictCount.
-        await retryRefusedClaims();
-
-        // ── Lease renewal (2026-08-16) ──────────────────────────────────
-        // Runs before the start loop so a table we have just lost is torn down
-        // in the same tick that another instance takes it, rather than dealing
-        // one more hand against a table someone else now owns.
-        //
-        // heartbeatTables() returns [] on any error and [] whenever
-        // ENGINE_LEASE_ENFORCE is off, so this loop is inert until the
-        // conflict logs say the claim path behaves.
-        const lostTables = await heartbeatTables([...this.tableEngines.keys()]);
-
-        for (const id of lostTables) {
-          const engine = this.tableEngines.get(id);
-          if (!engine) continue;
-          reportError(
-            new Error(`Lost the deal-lease on table ${id} to another engine instance`),
-            'GameServer.table_lease_lost'
-          );
-          void engine.stop().catch(() => {});
-          this.tableEngines.delete(id);
-          if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
-        }
-
-        /**
-         * Tournaments renew on the same cadence, but AFTER the table loop
-         * above: leaseEnforcementGuard pins the adjacency of
-         * heartbeatTables -> engine.stop() -> tableEngines.delete(), and
-         * splitting it would make that invariant unreadable. Handling tables
-         * completely and then tournaments is also simply the clearer order.
-         *
-         * Anything reported lost has been taken over by another instance and
-         * must stop here, or two managers run one tournament — the exact thing
-         * the lease exists to prevent.
-         */
-        const lostTournaments = await heartbeatTournaments([...this.tournamentEngines.keys()]);
-        for (const id of lostTournaments) {
-          const tm = this.tournamentEngines.get(id);
-          if (!tm) continue;
-          reportError(
-            new Error(`Lost the tournament lease on ${id} to another engine instance`),
-            'GameServer.tournament_lease_lost'
-          );
-          try {
-            tm.stop();
-          } catch {
-            /* already stopping */
-          }
-          this.tournamentEngines.delete(id);
-        }
+        /* Lease authority is renewed and loss-fenced by the dedicated primary
+           lifecycle started in performStart. Discovery deliberately performs
+           no ownership heartbeat: its heavier adoption/reaper work can consume
+           a full database timeout without delaying the next proof pass. */
 
         /**
          * C19 FIX (2026-08-20): stagger the starts.
@@ -2976,21 +4735,13 @@ export class GameServer {
          */
         const ENGINE_START_STAGGER_MS = 40;
         let startedThisSweep = 0;
-        /**
-         * Read and clear BEFORE the loop, not after. The .catch that increments
-         * it is asynchronous, so failures from starts issued in this sweep may
-         * land after the loop has finished - they belong to the next sweep's
-         * verdict, and clearing here is what makes that happen instead of them
-         * being double-counted or lost.
-         */
-        const failuresSinceLastSweep = this.engineStartFailures;
-        this.engineStartFailures = 0;
         const budgetThisSweep = this.engineStartBudget;
         for (const row of (ready || []) as Array<{
           table_id: string;
           player_count: number;
           human_count?: number;
         }>) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
           // C20: adoption budget spent. The remaining tables are picked up by
           // the next sweep in TABLE_DISCOVERY_INTERVAL - nothing is dropped, and
           // a table with no engine is by definition one nobody is dealing at.
@@ -2999,27 +4750,7 @@ export class GameServer {
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
 
-          // Single-owner check. Returns true on any RPC failure and whenever
-          // enforcement is off — a lease problem must never be the reason a
-          // table fails to start.
-          if (!(await claimTable(row.table_id))) continue;
-
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
-
-          // RE-CHECKED AFTER THE AWAITS (2026-09-05). The ClusterController
-          // wakes a seated Main 1 through ensureCashTableEngine on the same
-          // 5 s cadence this sweep runs on, and on the same trigger (a seat
-          // appeared). Between the `has` check above and this line are a
-          // lease round trip and the stagger sleep; a wake that lands inside
-          // that window put a second engine on the same table, and the `set`
-          // below overwrote the first, which kept dealing unreferenced. The
-          // on-demand door re-checks after its claim; so does this one now.
-          if (
-            this.tableEngines.has(row.table_id) ||
-            this.tableEngineStartPromises.has(row.table_id)
-          ) {
-            continue;
-          }
           startedThisSweep++;
 
           console.log(
@@ -3029,25 +4760,23 @@ export class GameServer {
                 ? ' - lone seat, engine exists so the table is not a spinner'
                 : '')
           );
-          const engine = new ServerTableEngine(row.table_id);
-          engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
-          this.tableEngines.set(row.table_id, engine);
-          // THE POST-RESTART PATH. After a restart inside a break this sweep
-          // is what rebuilds the whole fleet, so without this every table
-          // would come back dealing while the break still has minutes left.
-          this.maintenanceBreak.adopt(row.table_id, engine);
-          engine.start().catch((err) => {
-            /**
-             * C20: counted for the adoption budget. This delete is what makes
-             * the table eligible again on the very next sweep, so without the
-             * budget backing off, a database too busy to serve starts got the
-             * same volume retried into it every 5 seconds indefinitely.
-             */
-            this.engineStartFailures++;
-            reportError(err, 'GameServer.Engine_start_failed_for_tablei');
-            this.tableEngines.delete(row.table_id);
-            tableStateHub.dropTable(row.table_id);
-          });
+          // Discovery and an arriving viewer now share ONE serialized
+          // lookup/claim/publication primitive. The old duplicate path could
+          // finish an awaited claim after shutdown and publish an engine that
+          // was absent from stop()'s snapshot. This operation is lifecycle
+          // fenced after every await and retains its own causal retry.
+          this.launchDiscoveryJob(
+            this.ensureCashTableEngineAdmission(row.table_id)
+              .then((outcome) =>
+                this.finishDirectTableAdmission(row.table_id, 'discovery_admission_failed', outcome)
+              )
+              .catch((error) => {
+                this.scheduleDirectTableRecovery(row.table_id, 'discovery_admission_threw');
+                throw error;
+              }),
+            'GameServer.discovery_table_admission_threw',
+            { tableId: row.table_id }
+          );
         }
 
         // C20: the verdict is applied in the finally below, so that a throw
@@ -3095,40 +4824,21 @@ export class GameServer {
         );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
-            this.tableEngines.delete(id);
-            /**
-             * 2026-08-22: this branch used to delete the engine and trust that
-             * whatever cleared `running` had already torn it down. That is true
-             * of every path today — killForRestart and stop() both do full
-             * teardown at source — but it is trust, not enforcement, and the
-             * cost of it being wrong once is a leaked heartbeat entry and armed
-             * deadlines belonging to a table nothing owns any more.
-             *
-             * `stop()` cannot be that enforcement: its first line is
-             * `if (!this.running) return`, so calling it here would be a no-op
-             * dressed up as a safety net — worse than nothing, because the next
-             * reader would believe it.
-             *
-             * reconcileTeardown() is the real check. It asks whether this
-             * engine still OWNS the table (no successor has taken it) while
-             * holding scheduler entries it should have released, cancels them
-             * if so, and names them. Silent when the invariant holds, which is
-             * every path we know of today.
-             */
-            const leaked = engine.reconcileTeardown();
-            if (leaked) {
-              reportError(
-                new Error(
-                  'Engine for ' + id + ' stopped without tearing down: ' + leaked + ' still armed'
-                ),
-                'GameServer.engine_teardown_leak'
+            /* TournamentManager owns its child's causal restart callback and
+               map replacement. Discovery must never delete that slot. A cash
+               generation instead joins the one teardown that stops it, proves
+               exact lease release, compare-deletes, and only then readmits. */
+            if (!this.tournamentOwnedTables.has(id)) {
+              void this.recoverDirectTableEngine(
+                id,
+                engine,
+                'not_running_generation_seen_by_discovery'
+              ).catch((recoveryError) =>
+                reportError(recoveryError, 'GameServer.not_running_engine_recovery_failed', {
+                  tableId: id,
+                })
               );
             }
-            // Leave the hub room alone for tournament tables: their
-            // TournamentManager rebuilds the engine and the same players stay
-            // connected throughout. dropTable() now preserves subscribers
-            // anyway, but skipping it avoids a spurious sequence reset.
-            if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
             continue;
           }
           // 2026-08-15: the seat counts come from a cash-only RPC (its WHERE
@@ -3180,9 +4890,21 @@ export class GameServer {
               ),
               'GameServer.zombie_engine_rebuilt'
             );
-            void engine.stop().catch(() => {});
-            this.tableEngines.delete(id);
-            tableStateHub.dropTable(id);
+            if (this.tournamentOwnedTables.has(id)) {
+              /* Synchronously stop mutation and notify the exact owning manager;
+                 its identity-CAS replacement preserves the tournament lease. */
+              engine.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+            } else {
+              // Stop mutation before the first teardown await, then retain the
+              // old map generation until its exact DB lease is released.
+              engine.fenceForEngineLeaseLoss('cash_table_zombie', false);
+              void this.recoverDirectTableEngine(id, engine, 'zombie_engine').catch(
+                (recoveryError) =>
+                  reportError(recoveryError, 'GameServer.zombie_engine_recovery_failed', {
+                    tableId: id,
+                  })
+              );
+            }
           }
         }
       } catch (err) {
@@ -3194,7 +4916,7 @@ export class GameServer {
         reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
         /**
          * A throw mid-sweep is a distress signal in its own right - it is what
-         * a timeout inside heartbeatTables() or claimTable() looks like from
+         * a timeout inside heartbeatTables() or claimTableLease() looks like from
          * out here - and it must not be mistaken for a clean sweep.
          */
         sweepDistressed = true;
@@ -3220,7 +4942,8 @@ export class GameServer {
   // discoverTournaments for exactly that reason.
 
   private async discoverTournaments(): Promise<void> {
-    while (this.running) {
+    const generation = this.lifecycleGeneration;
+    while (this.directAdmissionIsCurrent(generation)) {
       try {
         // Find REGISTERING tournaments ready to start
         const { data: registering, error: registeringErr } = await supabase
@@ -3264,6 +4987,7 @@ export class GameServer {
         const paidSeatsByTournament = await this.readSeatFirstPaidSeats(seatFirstRows);
 
         for (const tournament of registering || []) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (this.tournamentEngines.has(tournament.id)) continue;
           // THE FREEZE IS TOTAL (Dan 2026-09-03): starting an event pre-seats its
           // field and topping it up buys horses in. Both are chip movement.
@@ -3460,17 +5184,17 @@ export class GameServer {
                pass was busy with earlier rows. Both sites check-and-set with
                no await in between, so one manager per id is structural. */
             if (this.tournamentEngines.has(tournament.id)) continue;
-            console.log(`[GameServer] Starting tournament: ${tournament.name} (${reason})`);
-            const tm = new TournamentManager(tournament.id, this);
-            this.tournamentEngines.set(tournament.id, tm);
-            tm.start()
-              // A tournament reaching its start time between :55 and the hour
-              // is not in the break snapshot, so nothing else will pause it.
-              .then(() => this.holdIfBreakIsRunning(tm))
-              .catch((err) => {
-                reportError(err, 'GameServer.Tournament_start_failed_for_to');
-                this.tournamentEngines.delete(tournament.id);
-              });
+            const tournamentId = String(tournament.id);
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                tournamentId,
+                'start',
+                `Starting tournament: ${tournament.name} (${reason})`,
+                generation
+              ),
+              'GameServer.Tournament_start_failed_for_to',
+              { tournamentId }
+            );
           }
         }
 
@@ -3500,6 +5224,7 @@ export class GameServer {
           }
 
           for (const t of seatFirstRows) {
+            if (!this.directAdmissionIsCurrent(generation)) break;
             // THE FREEZE IS TOTAL (Dan 2026-09-03): a seat-first start seats its
             // players and a partial fill buys horses in.
             if (isMaintenanceFrozen()) break;
@@ -3534,7 +5259,11 @@ export class GameServer {
             if (held && !held.isRunning()) {
               // A finished or dead manager still owning the map slot IS the
               // bug: the start gate at the top of this loop skips it forever.
-              this.tournamentEngines.delete(id);
+              await this.stopTournamentManagerIfOwned(
+                id,
+                held,
+                'GameServer.seat_first_stalled_manager_stop_failed'
+              );
             }
             if (this.tournamentEngines.has(id)) continue;
 
@@ -3546,15 +5275,16 @@ export class GameServer {
               'GameServer.seat_first_fully_paid_never_started'
             );
 
-            const stalledTm = new TournamentManager(id, this);
-            this.tournamentEngines.set(id, stalledTm);
-            stalledTm
-              .start()
-              .then(() => this.holdIfBreakIsRunning(stalledTm))
-              .catch((err) => {
-                reportError(err, 'GameServer.seat_first_stall_start_failed');
-                this.tournamentEngines.delete(id);
-              });
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                id,
+                'start',
+                `Force-starting fully paid seat-first game ${t.name}`,
+                generation
+              ),
+              'GameServer.seat_first_stall_start_failed',
+              { tournamentId: id }
+            );
             // Re-arm the clock rather than clearing it: if this start does not
             // take either, the next attempt is one stall window away and not
             // one five-second pass away.
@@ -3562,11 +5292,38 @@ export class GameServer {
           }
         }
 
-        // Find RUNNING tournaments that need resuming
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  THE LONGEST-WAITING TOURNAMENT IS ADOPTED FIRST (2026-09-09)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This read had no ORDER BY, so the resume order was whatever
+         * PostgREST happened to return - in practice stable, which is worse
+         * than random: the same events land at the end of the list on every
+         * single pass. Adoption is not free (a manager plus an engine per
+         * table, against a database where a single bounty-evidence read can
+         * take eight seconds), so when the fleet cannot all be adopted at once
+         * the tail is not merely late, it is ALWAYS the same tail.
+         *
+         * Measured on production 2026-09-09: after the 05:55 maintenance
+         * restart, tournaments dealing in the last ten minutes fell from 86 to
+         * EIGHT of 126 RUNNING, while THIRTEEN events had been stalled for more
+         * than an hour - across several hourly restarts, so they had lost the
+         * race every time. The oldest, `$100 Freeroll 6:00 AM`, had not dealt a
+         * hand in 903 minutes with players still seated in it.
+         *
+         * `started_at` ascending makes the order a queue instead of a lottery.
+         * It is the cheapest possible fix for starvation and it cannot make
+         * anything slower: the same set is adopted in the same number of
+         * passes, and the event that has been waiting longest is simply no
+         * longer the one that waits again. NULLS LAST because a row with no
+         * start time is not evidence of a long wait.
+         */
         const { data: running, error: runningErr } = await supabase
           .from('tournaments')
           .select('id, name')
-          .eq('status', 'RUNNING');
+          .eq('status', 'RUNNING')
+          .order('started_at', { ascending: true, nullsFirst: false });
         if (runningErr) {
           // Same rule as the REGISTERING read: unreadable is UNKNOWN. Reading
           // it as "nothing is running" silently stops every re-adoption.
@@ -3577,50 +5334,20 @@ export class GameServer {
         }
 
         for (const tournament of running || []) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (this.tournamentEngines.has(tournament.id)) continue;
 
-          /**
-           * ONE TOURNAMENT, ONE MANAGER (2026-08-23).
-           *
-           * The `has()` check above is per-process, so it means nothing across
-           * containers. Without this claim a second engine instance would
-           * resume the SAME tournament: two managers advancing blind levels,
-           * calling breaks, running hand-for-hand and processing eliminations
-           * for one event. Cash tables have been leased for exactly this reason
-           * and tournaments were the gap that kept the engine a single point of
-           * failure.
-           *
-           * Fail-open like claimTable: true on any error, and true whenever
-           * enforcement is off. A lease problem must never stop a tournament.
-           */
-          if (!(await claimTournament(tournament.id))) continue;
-
-          console.log(`[GameServer] Resuming tournament: ${tournament.name}`);
-          const tm = new TournamentManager(tournament.id, this);
-          this.tournamentEngines.set(tournament.id, tm);
-          /**
-           * A RESTART DURING A BREAK MUST NOT DEAL THROUGH THE REST OF IT
-           * (2026-08-27).
-           *
-           * The two other TournamentManager construction sites both chain
-           * holdIfBreakIsRunning; this one did not. resume() has its own
-           * break-recovery block, but it can only recover a break the ROW
-           * knows about — it reads on_break / break_started_at. A tournament
-           * that was mid-break-window but not yet flagged (it started inside
-           * the last-hand wait, or its pauseForBreak write lost the race with
-           * the redeploy) came back believing nothing was happening and dealt
-           * out the remainder of the break alone, while every other table on
-           * the platform sat on the break screen.
-           *
-           * holdIfBreakIsRunning is idempotent: pauseForBreak no-ops on a
-           * tournament already on break, so the recovered case costs nothing.
-           */
-          tm.resume()
-            .then(() => this.holdIfBreakIsRunning(tm))
-            .catch((err) => {
-              reportError(err, 'GameServer.Tournament_resume_failed_for_t');
-              this.tournamentEngines.delete(tournament.id);
-            });
+          const tournamentId = String(tournament.id);
+          this.launchDiscoveryJob(
+            this.ensureTournamentManagerAdmission(
+              tournamentId,
+              'resume',
+              `Resuming tournament: ${tournament.name}`,
+              generation
+            ),
+            'GameServer.Tournament_resume_failed_for_t',
+            { tournamentId }
+          );
         }
 
         // The ramp map only ever holds tournaments still in REGISTERING.
@@ -3636,7 +5363,11 @@ export class GameServer {
         // Clean up completed tournaments
         for (const [id, tm] of this.tournamentEngines) {
           if (!tm.isRunning()) {
-            this.tournamentEngines.delete(id);
+            await this.stopTournamentManagerIfOwned(
+              id,
+              tm,
+              'GameServer.tournament_completed_cleanup_failed'
+            );
           }
         }
 
@@ -3688,12 +5419,11 @@ export class GameServer {
                 ),
                 'GameServer.completing_manager_overstayed'
               );
-              try {
-                lingering.stop();
-              } catch (stopErr) {
-                reportError(stopErr, 'GameServer.completing_manager_stop_failed');
-              }
-              this.tournamentEngines.delete(String(stuck.id));
+              await this.stopTournamentManagerIfOwned(
+                String(stuck.id),
+                lingering,
+                'GameServer.completing_manager_stop_failed'
+              );
             }
             if (!this.tournamentEngines.has(stuck.id)) {
               // No active engine managing this tournament - it's truly stuck.
@@ -3752,8 +5482,9 @@ export class GameServer {
          */
         if (Date.now() - this.lastSeatFirstFinishSweepAt > 60 * 1000) {
           this.lastSeatFirstFinishSweepAt = Date.now();
-          void this.finishSeatFirstGamesThatAreOver().catch((err) =>
-            reportError(err, 'GameServer.seat_first_finish_sweep_error')
+          this.launchDiscoveryJob(
+            this.finishSeatFirstGamesThatAreOver(),
+            'GameServer.seat_first_finish_sweep_error'
           );
         }
 
@@ -3768,8 +5499,9 @@ export class GameServer {
          */
         if (Date.now() - this.lastClosedTableReopenSweepAt > 60 * 1000) {
           this.lastClosedTableReopenSweepAt = Date.now();
-          void this.reopenTablesClosedUnderLiveTournaments().catch((err) =>
-            reportError(err, 'GameServer.closed_table_reopen_sweep_error')
+          this.launchDiscoveryJob(
+            this.reopenTablesClosedUnderLiveTournaments(),
+            'GameServer.closed_table_reopen_sweep_error'
           );
         }
 
@@ -3788,8 +5520,9 @@ export class GameServer {
          */
         if (Date.now() - this.lastOrphanSeatSweepAt > 60 * 1000) {
           this.lastOrphanSeatSweepAt = Date.now();
-          void this.repairOrphanedTournamentSeats().catch((err) =>
-            reportError(err, 'GameServer.orphan_seat_repair_sweep_error')
+          this.launchDiscoveryJob(
+            this.repairOrphanedTournamentSeats(),
+            'GameServer.orphan_seat_repair_sweep_error'
           );
         }
 
@@ -3835,55 +5568,6 @@ export class GameServer {
             }
           } catch (sweepEx) {
             reportError(sweepEx, 'GameServer.rake_sweep_threw');
-          }
-        }
-
-        // ── HEADS-UP SHORTFALL BACK-PAY + CONSERVATION SENTINEL (2026-08-27) ──
-        // Back-pay: every completed Heads-Up whose winner was paid one prize
-        // share instead of two (the createSNG pool overwrite, ~230,561 chips
-        // over 30 days) is repaid, evidence-based and idempotent
-        // (fn_credit_and_log key per tournament+winner). Self-draining: paid
-        // events fall out of the scan, so the backlog can only shrink.
-        //
-        // CORRECTED 2026-08-28: this used to say the backlog could only shrink
-        // "because of the cutoff date". That cutoff was a literal
-        // `ended_at < '2026-08-28T00:00:00Z'` inside the RPC, and on 2026-08-28
-        // it stopped matching anything at all - the sweep would have reported a
-        // clean paid:0 forever while new shortfalls piled up behind it. The
-        // window is a rolling 30 days now (with a 30-minute settling grace so
-        // an event still writing its prize credits is never back-paid
-        // mid-finalisation). What makes it drain is the idempotency key and the
-        // NOT EXISTS on the back-pay row, not a date that expires.
-        //
-        // ITS OWN TIMER (2026-08-27, phase 3d). This used to run inside a
-        // 60-second window that opened only when the RAKE sweep had just
-        // fired -- a piggyback on another job's clock. In production that
-        // meant it ran once on engine boot and then effectively never again:
-        // 100 winners repaid at 15:32 after a deploy, then nothing, with
-        // 8,600 events and ~211,000 chips still owed. Money owed to players
-        // must not depend on when a different sweep happens to tick, so this
-        // now keeps its own interval like every other periodic job here.
-        // 250 per pass drains the remaining backlog in about three hours
-        // instead of fourteen; the RPC is ~270ms and fully idempotent.
-        if (Date.now() - this.lastHuBackpayAt > 5 * 60 * 1000) {
-          this.lastHuBackpayAt = Date.now();
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_backpay_hu_winner_shortfalls',
-              { p_limit: 250 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] HU shortfall back-pay failed: ${bpErr.message}`),
-                'GameServer.hu_backpay_failed'
-              );
-            } else if (Number(bp?.paid) > 0) {
-              console.log(
-                `[GameServer] HU shortfall back-pay: ${bp.paid} winner(s), ${bp.chips} chips (scanned ${bp.scanned})`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.hu_backpay_threw');
           }
         }
 
@@ -4209,141 +5893,14 @@ export class GameServer {
           }
         }
 
-        // ── BACKED PAYOUT SHORTFALLS (2026-08-28) ──
-        // Events that finished owing an identifiable finisher money AND still
-        // hold the chips to pay it. The rule is strict and lives in the RPC:
-        // pay only where fn_tournament_conservation_delta >= total_top_up, so
-        // an event can never be pushed into deficit to make a player whole,
-        // and refuse afterwards if conservation would go negative anyway.
-        // Spins and satellites are excluded - a Spin's pool is funded by the
-        // Reserve Pool rather than its own collections, and a satellite awards
-        // seats, so neither delta means what it means elsewhere.
-        //
-        // Wired here because the playbook's own wiring check caught it as dead
-        // code: it had been run by hand and had no caller. Everything else in
-        // this block learned the same lesson the hard way - a repair that
-        // depends on someone remembering to run it does not run.
-        if (Date.now() - this.lastBackedPayoutAt > 60 * 60 * 1000) {
-          this.lastBackedPayoutAt = Date.now();
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_pay_backed_payout_shortfalls',
-              { p_apply: true, p_limit: 500 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] backed payout sweep failed: ${bpErr.message}`),
-                'GameServer.backed_payout_failed'
-              );
-            } else if (
-              Number(bp?.events_paid) > 0 ||
-              Number(bp?.events_withheld_unfunded_pool) > 0
-            ) {
-              console.log(
-                `[GameServer] Backed payout sweep: ${bp.events_paid} event(s) paid ${bp.chips_paid} chips, ` +
-                  `${bp.events_withheld_unfunded_pool} withheld (${bp.chips_withheld_unfunded_pool} chips, unfunded pools)`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.backed_payout_threw');
-          }
-        }
-
-        // ── PLAYED-BUT-STILL-REGISTERING RECOVERY (2026-08-23) ──
-        //
-        // The mirror of the stalled-RUNNING sweep below, for the failure at
-        // the OTHER end of the lifecycle: start() dealt the game but its
-        // REGISTERING -> RUNNING flip never landed (see the retry there). The
-        // row still says REGISTERING while its players hold positions and
-        // elimination stamps, so every other watchdog looks straight past it
-        // — COMPLETING sweeps read COMPLETING, the decided sweep reads
-        // RUNNING. Found live: 11 tournaments, 22-33 hours old, 570 chips
-        // debited against 48 paid out.
-        //
-        // The evidence a game actually dealt is an eliminated/winner/finished
-        // player row; registration alone never produces one. Given that, the
-        // row is relabelled to what it truly is: still contested -> RUNNING
-        // (the resume path above adopts it on the next pass); already decided
-        // -> COMPLETING, then through the SAME recovery that pays stuck
-        // finishers.
-        const { data: playedButRegistering } = await supabase
-          .from('tournaments')
-          .select('id, name, status')
-          .in('status', ['REGISTERING', 'ANNOUNCED'])
-          .lt('start_time', new Date(Date.now() - 10 * 60 * 1000).toISOString());
-        for (const t of playedButRegistering || []) {
-          const { count: playedCount, error: playedErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', t.id)
-            .in('status', ['eliminated', 'winner', 'finished']);
-          // Unreadable is UNKNOWN, never "it never dealt" — fail closed.
-          if (playedErr || !playedCount) continue;
-
-          const { count: stillPlaying, error: stillErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', t.id)
-            .eq('status', 'playing');
-          if (stillErr || stillPlaying === null || stillPlaying === undefined) continue;
-
-          console.warn(
-            `[GameServer] ${t.name} (${t.id.slice(0, 8)}) dealt but never left ${t.status} - ${playedCount} finished, ${stillPlaying} playing; relabelling`
-          );
-
-          if (stillPlaying > 1) {
-            // A live contest wearing the wrong label. Hand it to the resume
-            // path rather than settling a game that is still being played.
-            await supabase
-              .from('tournaments')
-              .update({ status: 'RUNNING', started_at: new Date().toISOString() })
-              .eq('id', t.id)
-              .in('status', ['REGISTERING', 'ANNOUNCED']);
-            continue;
-          }
-
-          /**
-           * ZERO PLAYING IS "NEVER DEALT", NOT "DECIDED" (2026-08-31).
-           *
-           * `stillPlaying > 1` sends a live contest back to RUNNING, and
-           * everything else fell through to COMPLETING — including ZERO. In a
-           * tournament that has not started nobody is 'playing': every entrant
-           * is 'registered'. So this settled events that had dealt nothing,
-           * and recoverStuckCompleting then paid the whole payout structure to
-           * registered entrants in arbitrary chip order. See the dfae9288 note
-           * in tournamentRecovery.ts — 20,880 chips to players who went on to
-           * finish 107th and 87th.
-           *
-           * A decided game has exactly one player left standing. Zero means
-           * the label is wrong for some other reason, and settling is a guess.
-           */
-          if (stillPlaying === 0) {
-            reportError(
-              new Error(
-                `[GameServer] ${t.name} (${t.id.slice(0, 8)}) is ${t.status} with ${playedCount} finished and NOBODY playing - that is not a decided game, it is a mislabelled one. Not settling; left ${t.status} for review.`
-              ),
-              'GameServer.played_registering_zero_playing'
-            );
-            continue;
-          }
-
-          const staleTm = this.tournamentEngines.get(t.id);
-          if (staleTm) {
-            try {
-              staleTm.stop();
-            } catch (err) {
-              reportError(err, 'GameServer.played_registering_stop_engine');
-            }
-            this.tournamentEngines.delete(t.id);
-          }
-          // CAS so a concurrent legitimate transition is never clobbered.
-          await supabase
-            .from('tournaments')
-            .update({ status: 'COMPLETING' })
-            .eq('id', t.id)
-            .in('status', ['REGISTERING', 'ANNOUNCED']);
-          await recoverStuckCompletingTournaments('played-but-registering', t.id);
-        }
+        /* The former PLAYED-BUT-STILL-REGISTERING repair is intentionally
+           gone. It was compensating for start() dealing before its lifecycle
+           transition committed. Launch setup now completes through one
+           immutable receipt transaction and dealer admission happens only
+           afterwards, so that state is structurally impossible. Keeping a
+           periodic direct relabel would create a second, receipt-free door to
+           RUNNING and turn a fixed invariant back into reconciliation. A
+           production pre-deploy proof on 2026-09-07 found zero legacy rows. */
 
         // ── STALLED DECIDED-BUT-RUNNING RECOVERY (2026-08-21) ──
         // A tournament whose LAST elimination was processed but whose finish
@@ -4375,23 +5932,21 @@ export class GameServer {
           console.warn(
             `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
           );
-          const idleTm = this.tournamentEngines.get(t.id);
+          const idleTm = this.tournamentEngines.get(String(t.id));
           if (idleTm) {
-            try {
-              idleTm.stop();
-            } catch (err) {
-              reportError(err, 'GameServer.stalled_decided_stop_engine');
-            }
-            this.tournamentEngines.delete(t.id);
+            idleTm.requestEliminationSweep('stalled_decided_survivor');
+          } else {
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                String(t.id),
+                'resume',
+                `Resuming decided tournament through its finish owner: ${t.name}`,
+                generation
+              ),
+              'GameServer.stalled_decided_resume_failed',
+              { tournamentId: String(t.id) }
+            );
           }
-          // Conditional flip so a concurrent legitimate finish is never clobbered;
-          // recovery itself only acts on COMPLETING rows and dedupes payouts.
-          await supabase
-            .from('tournaments')
-            .update({ status: 'COMPLETING' })
-            .eq('id', t.id)
-            .eq('status', 'RUNNING');
-          await recoverStuckCompletingTournaments('stalled-running-decided', t.id);
         }
 
         // ── STARTED-BUT-NEVER-DEALT RECOVERY (2026-08-24) ──
@@ -4411,11 +5966,13 @@ export class GameServer {
         // never-dealt game has a full field. So the paid players sit at a
         // dead felt forever, buy-ins committed.
         //
-        // Recovery: hand the game back to the start gate. Stop any idle
-        // manager holding the map entry, flip RUNNING -> REGISTERING (CAS),
-        // and the discovery pass above re-adopts it - registrations and seats
-        // are intact, a drawn spin multiplier is kept, settlement is
-        // idempotent, createTablesAndSeatPlayers adopts the existing table.
+        // Recovery: preserve the durably completed RUNNING launch. Stop the
+        // exact idle manager generation holding the map entry; the ordinary
+        // RUNNING discovery path above then resumes it from its existing
+        // tables and seats on the next pass. Rewinding to REGISTERING used to
+        // erase the lifecycle truth. With an immutable completed launch
+        // receipt it also creates an impossible state that no start or resume
+        // path may legally adopt.
         //
         // Budgeted to 15 candidates a pass so a pathological backlog cannot
         // turn this sweep into its own outage; in steady state it is empty.
@@ -4499,29 +6056,684 @@ export class GameServer {
           if (liveSeats < stillPlaying) continue;
 
           console.warn(
-            `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - requeueing for a fresh start`
+            `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - releasing its idle manager for RUNNING resume`
           );
           const idleNeverDealtTm = this.tournamentEngines.get(t.id);
           if (idleNeverDealtTm) {
-            try {
-              idleNeverDealtTm.stop();
-            } catch (err) {
-              reportError(err, 'GameServer.never_dealt_stop_engine');
-            }
-            this.tournamentEngines.delete(t.id);
+            await this.stopTournamentManagerIfOwned(
+              String(t.id),
+              idleNeverDealtTm,
+              'GameServer.never_dealt_stop_engine'
+            );
           }
-          // CAS so a game that just dealt or finished is never clobbered.
-          await supabase
-            .from('tournaments')
-            .update({ status: 'REGISTERING' })
-            .eq('id', t.id)
-            .eq('status', 'RUNNING');
+          // Do not mutate durable lifecycle state here. A tournament that
+          // just dealt or completed is harmlessly left alone; a genuinely
+          // never-dealt RUNNING tournament is visible to normal resume as
+          // soon as the exact old manager has left the ownership map.
         }
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }
 
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  /**
+   * Subscribe before taking the initial outbox snapshot.  New eliminations
+   * normally pay in their own atomic manager path; this process-wide channel
+   * exists for the one exceptional state that must survive a crash or a lost
+   * response: a committed, exact-generation bounty obligation still pending.
+   */
+  private startTournamentBountyObligationSubscription(): void {
+    if (this.tournamentBountyObligationChannel) return;
+    if (currentTournamentDataAuthority() !== null) {
+      throw new Error('Tournament recovery subscriptions must start outside tournament authority');
+    }
+    // The shared Realtime socket can reconnect inside any manager's async
+    // chain. Capture this process-owned receiver at registration so incoming
+    // notifications cannot inherit that unrelated tournament or lease.
+    // Manager methods still establish and enforce their own exact authority.
+
+    const onObligationChange = AsyncResource.bind(
+      (payload: { new?: Record<string, unknown> }): void => {
+        const row = payload.new;
+        if (!this.running || !row) return;
+        const state = String(row.state ?? '');
+        if (state === 'pending') {
+          // The database is the clock authority. Read the order-eligible,
+          // DB-relative retry delay from the sweep response instead of comparing
+          // a database timestamp with this host's wall clock.
+          this.requestPendingTournamentBountyRecovery();
+          return;
+        }
+        if (state === 'settled') {
+          const tournamentId = String(row.tournament_id ?? '');
+          this.tournamentEngines.get(tournamentId)?.requestEliminationSweep('bounty_settled');
+        }
+      },
+      'GameServer.bountyObligations.notification'
+    );
+
+    const channel = supabase
+      .channel(`tournament-bounty-obligations:${process.pid}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'tournament_bounty_obligations' },
+        onObligationChange
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'tournament_bounty_obligations' },
+        onObligationChange
+      );
+    this.tournamentBountyObligationChannel = channel;
+    channel.subscribe(
+      AsyncResource.bind((status: string) => {
+        if (this.tournamentBountyObligationChannel !== channel) return;
+        if (status === 'SUBSCRIBED') {
+          bountyRecoveryRealtimeConnected.set(1);
+          this.tournamentBountyReconnectBackoffMs = 1_000;
+          // Subscription first, snapshot second closes the boot/reconnect
+          // race.  The snapshot also reconstructs the exact due timer after a
+          // process crash, so no periodic poll is needed.
+          this.requestPendingTournamentBountyRecovery();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          bountyRecoveryRealtimeConnected.set(0);
+          reportError(
+            new Error(`Tournament bounty obligation channel entered ${status}`),
+            'GameServer.tournament_bounty_channel_error'
+          );
+          // Realtime will rejoin this channel. A direct database drain closes
+          // the delivery gap without waiting for that transport recovery.
+          this.requestPendingTournamentBountyRecovery();
+        } else if (status === 'CLOSED') {
+          bountyRecoveryRealtimeConnected.set(0);
+          this.tournamentBountyObligationChannel = null;
+          this.launchServerLifecycleJob(
+            Promise.resolve(supabase.removeChannel(channel)),
+            'GameServer.tournament_bounty_closed_channel_remove_failed'
+          );
+          this.requestPendingTournamentBountyRecovery();
+          this.scheduleTournamentBountySubscriptionReconnect();
+        }
+      }, 'GameServer.bountyObligations.status')
+    );
+    // Boot is itself a causal recovery signal. Do not make durable settlement
+    // depend on receiving SUBSCRIBED from the transport.
+    this.requestPendingTournamentBountyRecovery();
+  }
+
+  /** Recreate a channel only after it actually closes; never poll a healthy one. */
+  private scheduleTournamentBountySubscriptionReconnect(): void {
+    if (
+      !this.running ||
+      this.tournamentBountyObligationChannel ||
+      this.tournamentBountyReconnectTimer
+    ) {
+      return;
+    }
+    const delayMs = this.tournamentBountyReconnectBackoffMs;
+    this.tournamentBountyReconnectBackoffMs = Math.min(
+      60_000,
+      this.tournamentBountyReconnectBackoffMs * 2
+    );
+    this.tournamentBountyReconnectTimer = setTimeout(() => {
+      this.tournamentBountyReconnectTimer = null;
+      if (!this.running || this.tournamentBountyObligationChannel) return;
+      this.startTournamentBountyObligationSubscription();
+    }, delayMs);
+    this.tournamentBountyReconnectTimer.unref?.();
+  }
+
+  /**
+   * Admit one causal recovery signal. Future mystery-chest obligations arm a
+   * single timer for their persisted due instant; immediate work drains now.
+   * This is a durable work queue, not a cron or a discovery-loop watch list.
+   */
+  private requestPendingTournamentBountyRecovery(): void {
+    if (!this.running) return;
+    if (this.bountyRecoveryDueTimer) {
+      clearTimeout(this.bountyRecoveryDueTimer);
+      this.bountyRecoveryDueTimer = null;
+      this.bountyRecoveryDueAt = 0;
+    }
+    this.bountyRecoveryRequested = true;
+    if (this.bountyRecoverySweepInFlight) {
+      bountyRecoverySweepRunsTotal.inc(1, { outcome: 'coalesced' });
+      return;
+    }
+    this.launchServerLifecycleJob(
+      this.sweepPendingTournamentBounties(),
+      'GameServer.bounty_outbox_drain_unhandled'
+    );
+  }
+
+  /** Keep only the earliest DB-relative retry delay on this process clock. */
+  private armPendingTournamentBountyRecovery(retryAfterMs: number): void {
+    if (!this.running || !Number.isFinite(retryAfterMs)) return;
+    const dueAt = Date.now() + Math.max(0, Math.floor(retryAfterMs));
+    if (this.bountyRecoveryDueTimer && this.bountyRecoveryDueAt <= dueAt) return;
+    if (this.bountyRecoveryDueTimer) clearTimeout(this.bountyRecoveryDueTimer);
+    this.bountyRecoveryDueAt = dueAt;
+    this.bountyRecoveryDueTimer = setTimeout(
+      () => {
+        this.bountyRecoveryDueTimer = null;
+        this.bountyRecoveryDueAt = 0;
+        this.requestPendingTournamentBountyRecovery();
+      },
+      Math.max(0, dueAt - Date.now())
+    );
+    this.bountyRecoveryDueTimer.unref?.();
+  }
+
+  private startTournamentManagerWakeSubscription(): void {
+    if (this.tournamentManagerWakeChannel) return;
+    if (currentTournamentDataAuthority() !== null) {
+      throw new Error('Tournament recovery subscriptions must start outside tournament authority');
+    }
+    // The shared Realtime socket can reconnect inside any manager's async
+    // chain. Capture this process-owned receiver at registration so incoming
+    // notifications cannot inherit that unrelated tournament or lease.
+    // Manager methods still establish and enforce their own exact authority.
+
+    const onManagerWake = AsyncResource.bind((payload: { new?: Record<string, unknown> }): void => {
+      if (!this.running || this.tournamentManagerWakeChannel !== channel) return;
+      const row = payload.new;
+      // The acknowledgement UPDATE is also published. It is completion, not a
+      // new signal, and must never re-admit the generation it just consumed.
+      if (!row || row.consumed_at != null) return;
+      this.launchServerLifecycleJob(
+        this.admitTournamentManagerWake(row),
+        'GameServer.tournament_manager_realtime_wake_failed'
+      );
+    }, 'GameServer.managerWakes.notification');
+    const channel = supabase
+      .channel(`tournament-manager-wakes:${process.pid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'tournament_manager_wakes',
+        },
+        onManagerWake
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tournament_manager_wakes',
+        },
+        onManagerWake
+      )
+      // Rolling cutover: older web bundles insert directly into the vote
+      // table and therefore cannot create the new durable wake row. The new
+      // server still receives those committed votes immediately. New bundles
+      // use fn_cast_tournament_deal_vote, whose wake survives a lost frame or
+      // process crash; this compatibility listener can be removed only after
+      // the old browser build is outside its cache lifetime.
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'tournament_deal_votes',
+        },
+        AsyncResource.bind((payload: { new?: Record<string, unknown> }) => {
+          if (!this.running || this.tournamentManagerWakeChannel !== channel) return;
+          const tournamentId = String(payload.new?.tournament_id ?? '');
+          if (!tournamentId) return;
+          this.tournamentEngines.get(tournamentId)?.requestEliminationSweep('deal_vote');
+        }, 'GameServer.managerWakes.dealVote')
+      );
+    this.tournamentManagerWakeChannel = channel;
+    channel.subscribe(
+      AsyncResource.bind((status: string) => {
+        if (this.tournamentManagerWakeChannel !== channel) return;
+        if (status === 'SUBSCRIBED') {
+          tournamentManagerWakeRealtimeConnected.set(1);
+          this.tournamentManagerWakeReconnectBackoffMs = 1_000;
+          // Subscription comes first, drain second: an INSERT cannot disappear
+          // between the snapshot and the live frame. Duplicate delivery is
+          // harmless because the scheduler coalesces by tournament.
+          this.launchServerLifecycleJob(
+            this.drainTournamentManagerWakes(),
+            'GameServer.tournament_manager_wake_initial_drain_failed'
+          );
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          tournamentManagerWakeRealtimeConnected.set(0);
+          reportError(
+            new Error(`Tournament manager wake channel entered ${status}`),
+            'GameServer.tournament_manager_wake_channel_error'
+          );
+          this.launchServerLifecycleJob(
+            this.drainTournamentManagerWakes(),
+            'GameServer.tournament_manager_wake_error_drain_failed'
+          );
+        } else if (status === 'CLOSED') {
+          tournamentManagerWakeRealtimeConnected.set(0);
+          this.tournamentManagerWakeChannel = null;
+          this.launchServerLifecycleJob(
+            Promise.resolve(supabase.removeChannel(channel)),
+            'GameServer.tournament_manager_wake_closed_channel_remove_failed'
+          );
+          this.launchServerLifecycleJob(
+            this.drainTournamentManagerWakes(),
+            'GameServer.tournament_manager_wake_closed_drain_failed'
+          );
+          this.scheduleTournamentManagerWakeSubscriptionReconnect();
+        }
+      }, 'GameServer.managerWakes.status')
+    );
+    // Boot is a causal recovery signal even if the transport never reports
+    // SUBSCRIBED. This closes the process-start gap without a polling loop.
+    this.launchServerLifecycleJob(
+      this.drainTournamentManagerWakes(),
+      'GameServer.tournament_manager_wake_boot_drain_failed'
+    );
+  }
+
+  /** Recreate the durable-wake channel only after an actual close event. */
+  private scheduleTournamentManagerWakeSubscriptionReconnect(): void {
+    if (
+      !this.running ||
+      this.tournamentManagerWakeChannel ||
+      this.tournamentManagerWakeReconnectTimer
+    ) {
+      return;
+    }
+    const delayMs = this.tournamentManagerWakeReconnectBackoffMs;
+    this.tournamentManagerWakeReconnectBackoffMs = Math.min(
+      60_000,
+      this.tournamentManagerWakeReconnectBackoffMs * 2
+    );
+    this.tournamentManagerWakeReconnectTimer = setTimeout(() => {
+      this.tournamentManagerWakeReconnectTimer = null;
+      if (!this.running || this.tournamentManagerWakeChannel) return;
+      this.startTournamentManagerWakeSubscription();
+    }, delayMs);
+    this.tournamentManagerWakeReconnectTimer.unref?.();
+  }
+
+  /**
+   * Preserve one failed durable-read cause with bounded backoff. This timer is
+   * armed only by that failure and is cancelled by shutdown or a newer direct
+   * signal; it never scans a healthy queue periodically.
+   */
+  private scheduleTournamentManagerWakeDrainRetry(): void {
+    if (!this.running) return;
+    this.tournamentManagerWakeDrainRequested = true;
+    if (this.tournamentManagerWakeDrainRetryTimer) return;
+
+    const generation = ++this.tournamentManagerWakeDrainRetryGeneration;
+    const delayMs = this.tournamentManagerWakeDrainRetryBackoffMs;
+    this.tournamentManagerWakeDrainRetryBackoffMs = Math.min(
+      30_000,
+      this.tournamentManagerWakeDrainRetryBackoffMs * 2
+    );
+    this.tournamentManagerWakeDrainRetryTimer = setTimeout(() => {
+      if (generation !== this.tournamentManagerWakeDrainRetryGeneration) return;
+      this.tournamentManagerWakeDrainRetryTimer = null;
+      if (!this.running) return;
+      this.launchServerLifecycleJob(
+        this.drainTournamentManagerWakes(),
+        'GameServer.tournament_manager_wake_read_retry_failed'
+      );
+    }, delayMs);
+    this.tournamentManagerWakeDrainRetryTimer.unref?.();
+  }
+
+  /** A clean global proof page retires the exact failed-read retry cause. */
+  private resetTournamentManagerWakeDrainRetry(): void {
+    this.tournamentManagerWakeDrainRetryBackoffMs = 250;
+    if (!this.tournamentManagerWakeDrainRetryTimer) return;
+    clearTimeout(this.tournamentManagerWakeDrainRetryTimer);
+    this.tournamentManagerWakeDrainRetryTimer = null;
+    this.tournamentManagerWakeDrainRetryGeneration++;
+  }
+
+  /**
+   * Admit one durable browser-action wake and acknowledge it only after the
+   * owning manager exists and its process-wide scheduler has accepted the
+   * signal. A managerless row deliberately remains pending for adoption.
+   */
+  private async admitTournamentManagerWake(row: Record<string, unknown>): Promise<boolean> {
+    const id = Number(row.id);
+    const generation = Number(row.generation);
+    const tournamentId = String(row.tournament_id ?? '');
+    if (
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      !Number.isSafeInteger(generation) ||
+      generation <= 0 ||
+      !tournamentId ||
+      row.consumed_at != null
+    ) {
+      return false;
+    }
+    const manager = this.tournamentEngines.get(tournamentId);
+    if (!manager || !manager.isRunning()) return false;
+
+    // Queue admission is not completion. Leave the row pending until the
+    // manager finishes a full reason-aware sweep; a crash, lifecycle abort or
+    // cooperative budget yield must be replayed by the next manager.
+    return manager.requestEliminationSweep(String(row.reason ?? ''), id, generation);
+  }
+
+  /** Acknowledge durable action wakes only after their full sweep completed. */
+  async acknowledgeTournamentManagerWakes(
+    tournamentId: string,
+    wakeReceipts: TournamentManagerWakeReceipt[]
+  ): Promise<{ ok: boolean; current: TournamentManagerWakeDatabaseState[] }> {
+    if (wakeReceipts.length === 0) return { ok: true, current: [] };
+    const exactIds = new Set<number>();
+    for (const wake of wakeReceipts) {
+      if (
+        !Number.isSafeInteger(wake.id) ||
+        wake.id <= 0 ||
+        !Number.isSafeInteger(wake.generation) ||
+        wake.generation <= 0 ||
+        exactIds.has(wake.id)
+      ) {
+        return { ok: false, current: [] };
+      }
+      exactIds.add(wake.id);
+    }
+
+    const current: TournamentManagerWakeDatabaseState[] = [];
+    try {
+      for (const chunk of chunkTournamentManagerWakeReceipts(wakeReceipts)) {
+        const { data, error } = await supabase.rpc('fn_ack_tournament_manager_wakes', {
+          p_tournament_id: tournamentId,
+          p_wake_ids: chunk.map((wake) => wake.id),
+          p_wake_generations: chunk.map((wake) => wake.generation),
+        });
+        const result = (data ?? {}) as {
+          ok?: boolean;
+          reason?: string;
+          current_receipts?: unknown;
+        };
+        const rows = Array.isArray(result.current_receipts) ? result.current_receipts : [];
+        const parsed = rows
+          .map((value) => value as Record<string, unknown>)
+          .map((value) => ({
+            id: Number(value.id),
+            generation: Number(value.generation),
+            consumed: value.consumed === true,
+          }));
+        const expectedIds = new Set(chunk.map((wake) => wake.id));
+        const validContract =
+          parsed.length === chunk.length &&
+          parsed.every(
+            (wake) =>
+              Number.isSafeInteger(wake.id) &&
+              expectedIds.delete(wake.id) &&
+              Number.isSafeInteger(wake.generation) &&
+              wake.generation > 0
+          ) &&
+          expectedIds.size === 0;
+        if (!error && result.ok === true && validContract) {
+          current.push(...parsed);
+          continue;
+        }
+        reportError(
+          new Error(
+            `[GameServer] exact tournament manager wake acknowledgement failed for ${tournamentId}: ${error?.message ?? result.reason ?? (validContract ? 'database refusal' : 'invalid acknowledgement contract')}`
+          ),
+          'GameServer.tournament_manager_wake_ack_failed'
+        );
+        return { ok: false, current };
+      }
+      return { ok: true, current };
+    } catch (err) {
+      reportError(err, 'GameServer.tournament_manager_wake_ack_threw');
+      return { ok: false, current };
+    }
+  }
+
+  /**
+   * Crash/lost-frame defence for the Realtime-first bridge. Bounded globally,
+   * and optionally narrowed to the manager that has just become runnable.
+   */
+  private async drainTournamentManagerWakes(tournamentId?: string): Promise<void> {
+    if (tournamentId) {
+      const drained = await this.drainTournamentManagerWakePages(tournamentId);
+      if (!drained) this.scheduleTournamentManagerWakeDrainRetry();
+      return;
+    }
+
+    // A fresh direct signal pre-empts an older failed-read delay. If this read
+    // also fails, it re-arms the same backoff chain below.
+    if (this.tournamentManagerWakeDrainRetryTimer) {
+      clearTimeout(this.tournamentManagerWakeDrainRetryTimer);
+      this.tournamentManagerWakeDrainRetryTimer = null;
+      this.tournamentManagerWakeDrainRetryGeneration++;
+    }
+    // Every global cause latches, including one received after the current
+    // pass issued its final SELECT but before it released ownership.
+    this.tournamentManagerWakeDrainRequested = true;
+    if (this.tournamentManagerWakeDrainInFlight) return;
+    this.tournamentManagerWakeDrainInFlight = true;
+    try {
+      while (this.running && this.tournamentManagerWakeDrainRequested) {
+        this.tournamentManagerWakeDrainRequested = false;
+        const drained = await this.drainTournamentManagerWakePages();
+        if (!drained) {
+          this.scheduleTournamentManagerWakeDrainRetry();
+          break;
+        }
+        this.resetTournamentManagerWakeDrainRetry();
+      }
+    } finally {
+      this.tournamentManagerWakeDrainInFlight = false;
+    }
+
+    // Close the final-page edge: a signal that landed after the while check
+    // but before ownership cleared must start the next pass itself.
+    if (
+      this.running &&
+      this.tournamentManagerWakeDrainRequested &&
+      !this.tournamentManagerWakeDrainRetryTimer
+    ) {
+      this.launchServerLifecycleJob(
+        this.drainTournamentManagerWakes(),
+        'GameServer.tournament_manager_wake_redrain_failed'
+      );
+    }
+  }
+
+  /** One bounded, keyset-paged snapshot of durable manager wake receipts. */
+  private async drainTournamentManagerWakePages(tournamentId?: string): Promise<boolean> {
+    const pageSize = tournamentId ? 50 : 200;
+    let afterId = 0;
+    for (;;) {
+      let query = supabase
+        .from('tournament_manager_wakes')
+        .select('id,tournament_id,reason,generation,created_at,consumed_at')
+        .is('consumed_at', null)
+        .gt('id', afterId)
+        .order('id', { ascending: true })
+        .limit(pageSize);
+      if (tournamentId) query = query.eq('tournament_id', tournamentId);
+      const response = await (async () => {
+        try {
+          return await query;
+        } catch (err) {
+          reportError(err, 'GameServer.tournament_manager_wake_drain_read_threw');
+          return null;
+        }
+      })();
+      if (!response) return false;
+      const { data, error } = response;
+      if (error) {
+        reportError(error, 'GameServer.tournament_manager_wake_drain_read_failed');
+        return false;
+      }
+      const rows = data || [];
+      for (const row of rows) {
+        if (!this.running) return true;
+        await this.admitTournamentManagerWake(row as Record<string, unknown>);
+      }
+      if (rows.length < pageSize) return true;
+      afterId = Number(rows[rows.length - 1]?.id ?? 0);
+      if (!Number.isSafeInteger(afterId) || afterId <= 0) {
+        reportError(
+          new Error('Tournament wake drain received a non-monotonic page cursor'),
+          'GameServer.tournament_manager_wake_drain_cursor_invalid'
+        );
+        return false;
+      }
+      // Yield between bounded pages. This continues the same work signal;
+      // it is not a timer, poll, cron, or later reconciliation pass.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
+  /**
+   * Drain durable bounty obligations from Realtime/startup/thaw signals. The
+   * database claims at most twenty rows per statement; if more work is due we
+   * yield once and continue the SAME signal. A future mystery reveal arms the
+   * exact persisted due instant. Nothing here runs from table/tournament
+   * discovery and there is no polling interval.
+   */
+  private async sweepPendingTournamentBounties(): Promise<void> {
+    if (this.bountyRecoverySweepInFlight) return;
+
+    this.bountyRecoverySweepInFlight = true;
+    bountyRecoverySweepInflight.set(1);
+    const startedAt = Date.now();
+    try {
+      while (this.running && this.bountyRecoveryRequested) {
+        this.bountyRecoveryRequested = false;
+        if (isMaintenanceFrozen()) {
+          bountyRecoverySweepRunsTotal.inc(1, { outcome: 'frozen' });
+          break;
+        }
+
+        const { data, error } = await supabase.rpc('fn_sweep_pending_tournament_bounties', {
+          p_tournament_id: null,
+          p_limit: 20,
+        });
+        if (error) {
+          bountyRecoverySweepRunsTotal.inc(1, { outcome: 'error' });
+          reportError(error, 'GameServer.bounty_outbox_recovery_failed');
+          this.armPendingTournamentBountyRecovery(this.bountyRecoveryTransportBackoffMs);
+          this.bountyRecoveryTransportBackoffMs = Math.min(
+            60_000,
+            this.bountyRecoveryTransportBackoffMs * 2
+          );
+          break;
+        }
+        const answer = (Array.isArray(data) ? data[0] : data) as {
+          ok?: boolean;
+          pending?: number;
+          processed?: number;
+          failed?: number;
+          reason?: string;
+          retry_after_ms?: number | string | null;
+          settled_tournament_ids?: unknown;
+        } | null;
+        if (answer?.ok !== true) {
+          bountyRecoverySweepRunsTotal.inc(1, { outcome: 'error' });
+          reportError(
+            new Error(
+              `[GameServer] bounty outbox recovery refused: ${answer?.reason ?? 'empty response'}`
+            ),
+            'GameServer.bounty_outbox_recovery_refused'
+          );
+          this.armPendingTournamentBountyRecovery(this.bountyRecoveryTransportBackoffMs);
+          this.bountyRecoveryTransportBackoffMs = Math.min(
+            60_000,
+            this.bountyRecoveryTransportBackoffMs * 2
+          );
+          break;
+        }
+
+        this.bountyRecoveryTransportBackoffMs = 1_000;
+        const pending = Math.max(0, Number(answer.pending) || 0);
+        const processed = Math.max(0, Number(answer.processed) || 0);
+        const failed = Math.max(0, Number(answer.failed) || 0);
+        if (pending === 0 || processed > 0) this.bountyRecoveryContentionBackoffMs = 50;
+        bountyRecoveryPending.set(pending);
+        bountyRecoverySweepRunsTotal.inc(1, { outcome: failed > 0 ? 'partial' : 'completed' });
+
+        // A successful payout can unblock a different manager from the one
+        // that owned the recovery RPC. Wake it directly as well as through
+        // the durable Realtime UPDATE, so same-process progress is immediate.
+        const settledTournamentIds = Array.isArray(answer.settled_tournament_ids)
+          ? [...new Set(answer.settled_tournament_ids.map((id) => String(id)))].slice(0, 20)
+          : [];
+        for (const tournamentId of settledTournamentIds) {
+          this.tournamentEngines.get(tournamentId)?.requestEliminationSweep('bounty_settled');
+        }
+
+        if (failed > 0) {
+          reportError(
+            new Error(
+              `[GameServer] bounty outbox recovery left ${failed} failed attempt(s); ${pending} pending`
+            ),
+            'GameServer.bounty_outbox_recovery_partial'
+          );
+        }
+        if (pending === 0) continue;
+
+        const retryAfterMs = Number(answer.retry_after_ms);
+        if (!Number.isFinite(retryAfterMs) || retryAfterMs < 0) {
+          reportError(
+            new Error('[GameServer] pending bounty outbox has no valid retry_after_ms'),
+            'GameServer.bounty_outbox_due_time_missing'
+          );
+          this.armPendingTournamentBountyRecovery(1_000);
+          break;
+        }
+        if (retryAfterMs > 25) {
+          this.armPendingTournamentBountyRecovery(retryAfterMs);
+          break;
+        }
+
+        if (processed === 0) {
+          // SKIP LOCKED can prove that work exists while another engine or
+          // manager still owns the exact row. Back off this causal signal with
+          // jitter so competing processes do not synchronize into a new RPC
+          // storm. Any committed UPDATE still pre-empts this with an immediate
+          // Realtime signal.
+          const contentionDelayMs = Math.max(
+            25,
+            Math.floor(this.bountyRecoveryContentionBackoffMs * (0.75 + Math.random() * 0.5))
+          );
+          this.bountyRecoveryContentionBackoffMs = Math.min(
+            1_000,
+            this.bountyRecoveryContentionBackoffMs * 2
+          );
+          this.armPendingTournamentBountyRecovery(contentionDelayMs);
+          break;
+        }
+
+        // The bounded page filled or a PKO predecessor just became eligible.
+        // Continue this exact work signal after yielding to table actions.
+        this.bountyRecoveryRequested = true;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    } catch (err) {
+      bountyRecoverySweepRunsTotal.inc(1, { outcome: 'error' });
+      reportError(err, 'GameServer.bounty_outbox_recovery_threw');
+      this.armPendingTournamentBountyRecovery(this.bountyRecoveryTransportBackoffMs);
+      this.bountyRecoveryTransportBackoffMs = Math.min(
+        60_000,
+        this.bountyRecoveryTransportBackoffMs * 2
+      );
+    } finally {
+      this.bountyRecoverySweepInFlight = false;
+      bountyRecoverySweepInflight.set(0);
+      bountyRecoverySweepMs.observe(Date.now() - startedAt);
+    }
+
+    // Close the narrow edge where a Realtime frame arrived after the loop's
+    // condition but before the in-flight flag cleared.
+    if (this.running && this.bountyRecoveryRequested && !isMaintenanceFrozen()) {
+      this.requestPendingTournamentBountyRecovery();
     }
   }
 
@@ -4694,7 +6906,8 @@ export class GameServer {
    * against a game that stood down for a real reason stands down again.
    */
   private async discoverSeatFirstStarts(): Promise<void> {
-    while (this.running) {
+    const generation = this.lifecycleGeneration;
+    while (this.directAdmissionIsCurrent(generation)) {
       try {
         const { data: registering, error: registeringErr } = await supabase
           // start_time is selected for the window rule below: for a seat-first
@@ -4719,6 +6932,7 @@ export class GameServer {
           );
           const paidSeats = await this.readSeatFirstPaidSeats(seatFirstRows);
           for (const t of seatFirstRows) {
+            if (!this.directAdmissionIsCurrent(generation)) break;
             // THE FREEZE IS TOTAL (Dan 2026-09-03): a seat-first start seats its
             // players and a partial fill buys horses in.
             if (isMaintenanceFrozen()) break;
@@ -4781,8 +6995,10 @@ export class GameServer {
                  the human, which is the safe direction. */
               const startMs = t.start_time ? Date.parse(String(t.start_time)) : NaN;
               const windowClosed = Number.isFinite(startMs) && startMs <= Date.now();
-              void this.fillPartialSeatFirstGame(id, seats, paid, windowClosed).catch((err) =>
-                reportError(err, 'GameServer.human_seat_first_fill_error')
+              this.launchDiscoveryJob(
+                this.fillPartialSeatFirstGame(id, seats, paid, windowClosed),
+                'GameServer.human_seat_first_fill_error',
+                { tournamentId: id }
               );
             }
 
@@ -4790,21 +7006,24 @@ export class GameServer {
 
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {
-              this.tournamentEngines.delete(id);
+              await this.stopTournamentManagerIfOwned(
+                id,
+                held,
+                'GameServer.seat_first_fast_stale_manager_stop_failed'
+              );
             }
             if (this.tournamentEngines.has(id)) continue;
 
-            console.log(
-              `[GameServer] Fast-starting seat-first game: ${t.name} (${paid}/${seats} seats sold)`
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                id,
+                'start',
+                `Fast-starting seat-first game: ${t.name} (${paid}/${seats} seats sold)`,
+                generation
+              ),
+              'GameServer.seat_first_fast_start_failed',
+              { tournamentId: id }
             );
-            const tm = new TournamentManager(id, this);
-            this.tournamentEngines.set(id, tm);
-            tm.start()
-              .then(() => this.holdIfBreakIsRunning(tm))
-              .catch((err) => {
-                reportError(err, 'GameServer.seat_first_fast_start_failed');
-                this.tournamentEngines.delete(id);
-              });
           }
         }
       } catch (err) {
@@ -5058,22 +7277,21 @@ export class GameServer {
         const liveStacks = new Set((seats || []).map((s) => String(s.user_id))).size;
         if (liveStacks > 1) continue;
 
-        /* CAS: only the holder of RUNNING may move it on, so a live engine
-           finishing this game right now always wins and this becomes a
-           no-op. Same claim the 12-hour path uses. */
-        const { data: claim, error: claimErr } = await supabase
-          .from('tournaments')
-          .update({ status: 'COMPLETING' })
-          .eq('id', id)
-          .eq('status', 'RUNNING')
-          .select('id');
-        if (claimErr) throw claimErr;
-        if (!claim || claim.length === 0) continue; // somebody else has it
-
-        console.warn(
-          `[GameServer] Seat-first game ${id.slice(0, 8)} "${t.name}" is over but never finished (${liveStacks} live stack(s), no hand for >${Math.round(STUCK_NO_HAND_MS / 60000)}m) - settling and paying out`
-        );
-        await recoverStuckCompletingTournaments('seat-first-finish-sweep', id);
+        // A zero stack is an elimination event, not permission for an external
+        // watchdog to choose a winner. Wake (or adopt) the one manager whose
+        // bounded elimination transaction owns standings and the immutable
+        // RUNNING -> COMPLETING claim.
+        const claimedManager = this.tournamentEngines.get(id);
+        if (claimedManager) {
+          claimedManager.requestEliminationSweep('seat_first_terminal_stack');
+        } else {
+          await this.ensureTournamentManagerAdmission(
+            id,
+            'resume',
+            `Resuming seat-first terminal state: ${t.name}`,
+            this.lifecycleGeneration
+          );
+        }
       } catch (err) {
         reportError(err, 'GameServer.seat_first_finish_sweep_failed', { tournamentId: id });
       }
@@ -5245,20 +7463,154 @@ export class GameServer {
   /**
    * Register a table engine (used by TournamentManager for tournament tables)
    */
-  registerTableEngine(tableId: string, engine: ServerTableEngine): void {
-    // 2026-08-15: overwriting the map slot without stopping the previous engine
-    // left TWO live engines dealing the same table against the same DB rows —
-    // reachable when a TournamentManager is re-resumed after being dropped from
-    // tournamentEngines while its table engines were never stopped.
-    const prev = this.tableEngines.get(tableId);
-    if (prev && prev !== engine) {
-      void prev.stop().catch(() => {});
+  registerTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    // A manager callback already awaiting I/O when shutdown began must not
+    // publish a dealer after stop() has taken its engine snapshot.
+    if (!this.running) return false;
+    // Admission is synchronous and fail-closed. An independent manager may
+    // discover the same table while the owning manager is still draining, but
+    // it cannot evict that generation or start a second dealer. Intentional
+    // replacement goes through replaceTableEngine(), which awaits teardown and
+    // repeats the identity check after the await.
+    if (!admitOwnedTableEngine(this.tableEngines, this.tournamentOwnedTables, tableId, engine)) {
+      return false;
     }
-    this.tournamentOwnedTables.add(tableId);
-    this.tableEngines.set(tableId, engine);
     // Tournament tables get the same treatment as cash ones. The tournament
     // break suspends the blind clock; this keeps cards off the felt.
     this.maintenanceBreak.adopt(tableId, engine);
+    return true;
+  }
+
+  /**
+   * Replace one exact tournament table-engine generation after its complete
+   * teardown. The incumbent remains in the global map while stop is pending or
+   * rejected, and a post-await identity CAS prevents a stale revival sweep from
+   * overwriting a generation installed by another owner.
+   */
+  async replaceTableEngine(
+    tableId: string,
+    expected: ServerTableEngine,
+    replacement: ServerTableEngine
+  ): Promise<boolean> {
+    if (!this.running) return false;
+    let replaced = false;
+    try {
+      replaced = await replaceOwnedTableEngine(
+        this.tableEngines,
+        this.tournamentOwnedTables,
+        tableId,
+        expected,
+        replacement
+      );
+    } catch (error) {
+      // ServerTableEngine reports cleanup failures only after releasing its
+      // process-global scheduler ownership. When that exact fence is proven,
+      // retaining the terminal object would turn a diagnostic into a permanent
+      // outage. Any failure before the fence remains quarantined.
+      if (!expected.hasReleasedProcessOwnership() || this.tableEngines.get(tableId) !== expected) {
+        throw error;
+      }
+      reportError(error, 'GameServer.tournament_table_teardown_cleanup_failed', { tableId });
+      this.tableEngines.set(tableId, replacement);
+      this.tournamentOwnedTables.add(tableId);
+      replaced = true;
+    }
+    if (!replaced) return false;
+    if (!this.running) {
+      await replacement.stop().catch(() => undefined);
+      unregisterOwnedTournamentTableEngine(
+        this.tableEngines,
+        this.tournamentOwnedTables,
+        tableId,
+        replacement,
+        () => tableStateHub.dropTable(tableId)
+      );
+      return false;
+    }
+    tableStateHub.dropTable(tableId);
+    this.maintenanceBreak.adopt(tableId, replacement);
+    return true;
+  }
+
+  /**
+   * Drop one exact stopped tournament engine from the process-wide registry.
+   * A retiring manager may finish after a successor has claimed the same table
+   * id, so this is identity-CAS rather than a table-id-only delete.
+   */
+  unregisterTournamentTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    return unregisterOwnedTournamentTableEngine(
+      this.tableEngines,
+      this.tournamentOwnedTables,
+      tableId,
+      engine,
+      () => tableStateHub.dropTable(tableId)
+    );
+  }
+
+  /**
+   * Release a terminal tournament manager's table engine after that exact
+   * instance has stopped and the caller has durably closed the table. A stale
+   * manager must never delete a replacement dealer that won the same map slot
+   * while its shutdown was awaiting I/O.
+   *
+   * Returning false means a different live instance owns the slot. A missing
+   * slot is already unregistered and is therefore an idempotent success.
+   */
+  unregisterTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    const current = this.tableEngines.get(tableId);
+    if (current === undefined) {
+      this.tournamentOwnedTables.delete(tableId);
+      tableStateHub.dropTable(tableId);
+      return true;
+    }
+    if (current !== engine) return false;
+    this.tableEngines.delete(tableId);
+    this.tournamentOwnedTables.delete(tableId);
+    tableStateHub.dropTable(tableId);
+    return true;
+  }
+
+  /**
+   * Stop whichever engine currently owns a tournament table, but only after a
+   * fresh database read proves that table is terminal. This closes the narrow
+   * race where a replacement takes GameServer's map slot while the tournament
+   * manager is awaiting its old engine's stop. The post-await unregister is
+   * still exact-instance guarded, so a second replacement can never be erased.
+   */
+  async stopClosedTournamentTableEngine(tableId: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('tables')
+      .select('status, tournament_id')
+      .eq('id', tableId)
+      .maybeSingle();
+    const row = data as { status?: string | null; tournament_id?: string | null } | null;
+    if (error || !row || row.status !== 'closed' || !row.tournament_id) {
+      reportError(
+        new Error(
+          `[GameServer] refused terminal engine stop for ${tableId}: ${error?.message ?? `status=${row?.status ?? 'missing'}, tournament=${row?.tournament_id ?? 'missing'}`}`
+        ),
+        'GameServer.terminal_table_engine_stop_unproven'
+      );
+      return false;
+    }
+
+    const current = this.tableEngines.get(tableId);
+    if (!current) {
+      // The desired map state already holds. Finish the two terminal ownership
+      // tails that no future engine-map reaper can discover once the slot is
+      // absent.
+      this.tournamentOwnedTables.delete(tableId);
+      tableStateHub.dropTable(tableId);
+      return true;
+    }
+
+    try {
+      await current.stop();
+    } catch (stopError) {
+      reportError(stopError, 'GameServer.terminal_table_engine_stop_failed', { tableId });
+      return false;
+    }
+    return this.unregisterTableEngine(tableId, current);
   }
 
   /**
@@ -5274,53 +7626,257 @@ export class GameServer {
    * as soon as its database reads complete.
    */
   async ensureCashTableEngine(tableId: string): Promise<boolean> {
+    let outcome: DirectTableAdmission;
+    try {
+      outcome = await this.ensureCashTableEngineAdmission(tableId);
+    } catch (error) {
+      reportError(error, 'GameServer.on_demand_table_admission_threw', { tableId });
+      this.scheduleDirectTableRecovery(tableId, 'on_demand_admission_threw');
+      return false;
+    }
+    this.finishDirectTableAdmission(tableId, 'on_demand_admission_failed', outcome);
+    return outcome === 'ready';
+  }
+
+  private async ensureCashTableEngineAdmission(tableId: string): Promise<DirectTableAdmission> {
+    const existingAdmission = this.directTableAdmissionOperations.get(tableId);
+    if (existingAdmission) return existingAdmission;
+
+    const generation = this.lifecycleGeneration;
+    const operation = this.awaitDealerPrerequisites(generation).then((ready) =>
+      ready ? this.performCashTableEngineAdmission(tableId, generation) : 'not_wakeable'
+    );
+    const tracked = operation.finally(() => {
+      if (this.directTableAdmissionOperations.get(tableId) === tracked) {
+        this.directTableAdmissionOperations.delete(tableId);
+      }
+    });
+    this.directTableAdmissionOperations.set(tableId, tracked);
+    return tracked;
+  }
+
+  private directAdmissionIsCurrent(generation: number): boolean {
+    return this.running && this.lifecycleGeneration === generation;
+  }
+
+  private resetDealerPrerequisiteGate(generation: number): void {
+    let resolve!: (ready: boolean) => void;
+    const promise = new Promise<boolean>((settle) => {
+      resolve = settle;
+    });
+    this.dealerPrerequisitesReady = false;
+    this.dealerPrerequisiteGate = { generation, promise, resolve, settled: false };
+  }
+
+  private settleDealerPrerequisiteGate(generation: number, ready: boolean): void {
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation || gate.settled) return;
+    gate.settled = true;
+    gate.resolve(ready);
+  }
+
+  private publishDealerPrerequisitesReady(generation: number): boolean {
+    if (!this.directAdmissionIsCurrent(generation)) return false;
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation || gate.settled) return false;
+    this.dealerPrerequisitesReady = true;
+    this.settleDealerPrerequisiteGate(generation, true);
+    return true;
+  }
+
+  private revokeDealerPrerequisites(generation: number): void {
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation) return;
+    this.dealerPrerequisitesReady = false;
+    this.settleDealerPrerequisiteGate(generation, false);
+  }
+
+  private dealerAdmissionIsCurrent(generation: number): boolean {
+    return this.directAdmissionIsCurrent(generation) && this.dealerPrerequisitesReady;
+  }
+
+  private async awaitDealerPrerequisites(generation: number): Promise<boolean> {
+    if (!this.directAdmissionIsCurrent(generation)) return false;
+    if (this.dealerAdmissionIsCurrent(generation)) return true;
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation) return false;
+    const ready = await gate.promise;
+    return ready && this.dealerAdmissionIsCurrent(generation);
+  }
+
+  private async performCashTableEngineAdmission(
+    tableId: string,
+    generation: number
+  ): Promise<DirectTableAdmission> {
+    if (!(await this.awaitDealerPrerequisites(generation))) return 'not_wakeable';
     const existingStart = this.tableEngineStartPromises.get(tableId);
     if (existingStart) return existingStart;
-    if (this.tableEngines.has(tableId)) return true;
+    const existingEngine = this.tableEngines.get(tableId);
+    if (existingEngine) {
+      if (existingEngine.isRunning()) return 'ready';
+      void this.recoverDirectTableEngine(
+        tableId,
+        existingEngine,
+        'dead_generation_seen_during_admission'
+      ).catch((recoveryError) =>
+        reportError(recoveryError, 'GameServer.dead_generation_admission_recovery_threw', {
+          tableId,
+        })
+      );
+      return 'retryable_failure';
+    }
 
-    const { data: table, error } = await supabase
-      .from('tables')
-      .select('id, tournament_id, status, game_type, is_deleted')
-      .eq('id', tableId)
-      .maybeSingle();
+    await this.awaitDirectTableLeaseRelease(tableId);
+    if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
+
+    let table: Parameters<typeof isWakeableCashTable>[0];
+    let error: { message: string } | null = null;
+    try {
+      const result = await supabase
+        .from('tables')
+        .select('id, tournament_id, status, game_type, is_deleted')
+        .eq('id', tableId)
+        .maybeSingle();
+      table = result.data;
+      error = result.error;
+    } catch (lookupError) {
+      reportError(lookupError, 'GameServer.on_demand_table_lookup_threw', { tableId });
+      return 'retryable_failure';
+    }
+
+    if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
     if (error) {
       reportError(
         new Error(`On-demand table lookup failed for ${tableId}: ${error.message}`),
         'GameServer.on_demand_table_lookup_failed'
       );
-      return false;
+      return 'retryable_failure';
     }
-    if (!isWakeableCashTable(table)) return false;
+    if (!isWakeableCashTable(table)) {
+      // No lease was acquired by this operation, so there is nothing it may
+      // safely release. A table-id/instance-only release here can delete a
+      // tournament manager's lease or a concurrent discovery grant.
+      return 'not_wakeable';
+    }
 
-    if (!(await claimTable(tableId))) return false;
+    const requestedLeaseGeneration =
+      this.directTableAdmissionLeaseGenerations.get(tableId) ?? randomUUID();
+    this.directTableAdmissionLeaseGenerations.set(tableId, requestedLeaseGeneration);
+    const lease = await claimTableLease(tableId, requestedLeaseGeneration);
+    const uncertainLeaseGeneration =
+      lease.status === 'acquired_but_proof_expired'
+        ? lease.leaseGeneration
+        : lease.status === 'retryable_failure' && lease.mayHaveCommitted
+          ? lease.requestedGeneration
+          : null;
+    if (uncertainLeaseGeneration) {
+      this.directTablePendingLeaseReleases.set(tableId, uncertainLeaseGeneration);
+      try {
+        await this.awaitDirectTableLeaseRelease(tableId);
+      } catch (releaseError) {
+        reportError(releaseError, 'GameServer.uncertain_cash_claim_release_unconfirmed', {
+          tableId,
+          leaseGeneration: uncertainLeaseGeneration,
+        });
+      }
+      return 'retryable_failure';
+    }
+    if (lease.status === 'retryable_failure') return 'retryable_failure';
+    if (lease.status === 'owned_elsewhere') return 'owned_elsewhere';
+    if (lease.status !== 'granted') return 'retryable_failure';
+    const grantedLeaseGeneration = lease.leaseGeneration;
+    if (!this.dealerAdmissionIsCurrent(generation)) {
+      // Shutdown won while the lease RPC was in flight. Hand the exact lease
+      // back before resolving so no post-snapshot dealer can escape stop().
+      const staleGeneration = lease.leaseGeneration;
+      this.directTablePendingLeaseReleases.set(tableId, staleGeneration);
+      try {
+        await this.awaitDirectTableLeaseRelease(tableId);
+      } catch (releaseError) {
+        reportError(releaseError, 'GameServer.stale_cash_admission_release_unconfirmed', {
+          tableId,
+          leaseGeneration: staleGeneration,
+        });
+      }
+      return 'not_wakeable';
+    }
     // Another authorized connection may have completed the same wake while the
-    // lease call was in flight. Never construct a second dealer.
+    // lease call was in flight. Never construct a second dealer, and hand back
+    // the exact generation acquired by this losing admission before returning
+    // the incumbent. Otherwise a tournament-table publication race leaves an
+    // invisible protocol-2 row alive.
     const racedStart = this.tableEngineStartPromises.get(tableId);
-    if (racedStart) return racedStart;
-    if (this.tableEngines.has(tableId)) return true;
+    if (racedStart) {
+      if (grantedLeaseGeneration) {
+        this.directTablePendingLeaseReleases.set(tableId, grantedLeaseGeneration);
+        try {
+          await this.awaitDirectTableLeaseRelease(tableId);
+        } catch (releaseError) {
+          reportError(releaseError, 'GameServer.raced_cash_start_release_unconfirmed', {
+            tableId,
+            leaseGeneration: grantedLeaseGeneration,
+          });
+        }
+      }
+      return racedStart;
+    }
+    const racedEngine = this.tableEngines.get(tableId);
+    if (racedEngine) {
+      if (grantedLeaseGeneration) {
+        this.directTablePendingLeaseReleases.set(tableId, grantedLeaseGeneration);
+        try {
+          await this.awaitDirectTableLeaseRelease(tableId);
+        } catch (releaseError) {
+          reportError(releaseError, 'GameServer.raced_cash_engine_release_unconfirmed', {
+            tableId,
+            leaseGeneration: grantedLeaseGeneration,
+          });
+        }
+      }
+      if (racedEngine.isRunning()) return 'ready';
+      void this.recoverDirectTableEngine(
+        tableId,
+        racedEngine,
+        'dead_generation_won_admission_race'
+      ).catch((recoveryError) =>
+        reportError(recoveryError, 'GameServer.dead_generation_race_recovery_threw', {
+          tableId,
+        })
+      );
+      return 'retryable_failure';
+    }
 
-    const engine = new ServerTableEngine(tableId);
+    const engine = new ServerTableEngine(tableId, {
+      scope: 'cash',
+      verified: true,
+      generation: lease.leaseGeneration,
+      proofDeadlineMonotonicMs: lease.proofDeadlineMonotonicMs,
+    });
     engine.setHub(tableStateHub);
+    this.wireDirectTableEngineRecovery(tableId, engine);
     this.tableEngines.set(tableId, engine);
+    /* The caller UUID is retryable only until one dealer object consumes it.
+       A startup failure retires that object and its exact database generation;
+       its successor must choose a new UUID so delayed work from the retired
+       dealer can never become authoritative again after re-admission. */
+    this.directTableAdmissionLeaseGenerations.delete(tableId);
     // On-demand wake during a break: the player gets the break screen, not a
     // table that deals to them alone.
     this.maintenanceBreak.adopt(tableId, engine);
-    const startPromise = engine
+    const readyPromise = this.trackDirectTableEngineReadiness(tableId, engine);
+    void engine
       .start()
-      .then(() => true)
       .catch(async (startError) => {
         this.engineStartFailures++;
-        reportError(startError, 'GameServer.on_demand_table_start_failed');
-        if (this.tableEngines.get(tableId) === engine) {
-          this.tableEngines.delete(tableId);
-          tableStateHub.dropTable(tableId);
-          await releaseTables([tableId]);
-        }
-        return false;
+        reportError(startError, 'GameServer.direct_table_start_failed');
+        await this.recoverDirectTableEngine(tableId, engine, 'direct_start_failed', true);
       })
-      .finally(() => {
-        this.tableEngineStartPromises.delete(tableId);
+      .catch((recoveryError) => {
+        reportError(recoveryError, 'GameServer.direct_table_start_recovery_threw', {
+          tableId,
+        });
+        this.scheduleDirectTableRecovery(tableId, 'direct_start_recovery_threw');
       });
     /* ═══ READY IS NOT DEALING (2026-09-05) ═══
        `start()` resolves when the dealing loop begins, i.e. once the table has
@@ -5333,14 +7889,8 @@ export class GameServer {
        above keeps running for its failure handling; only the promise the
        caller gets has changed. `ready` settles false when start fails before
        `waiting`, and true means the engine is in the map and publishing. */
-    void startPromise;
-    const readyPromise: Promise<boolean> = engine.ready.finally(() => {
-      if (this.tableEngineStartPromises.get(tableId) === readyPromise) {
-        this.tableEngineStartPromises.delete(tableId);
-      }
-    });
-    this.tableEngineStartPromises.set(tableId, readyPromise);
-    return readyPromise;
+    const readiness = await readyPromise;
+    return this.dealerAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';
   }
 
   /**

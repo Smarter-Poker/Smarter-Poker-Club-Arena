@@ -10,7 +10,7 @@
 // the casing of copy makes these fail on a styling rule rather than on the
 // behaviour they exist to protect. The words are the contract.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const authState = vi.hoisted(() => ({ userId: 'test-user-123' }));
@@ -40,6 +40,7 @@ vi.mock('@/utils/ChunkPreloader', () => ({
 
 import ClubQuickLinkTile from '@/components/home/ClubQuickLinkTile';
 import { clearClubChipBalanceCache } from '@/utils/clubQuickLink';
+import * as clubQuickLink from '@/utils/clubQuickLink';
 
 const TILE = {
   img: 'images/tiles/cashier-v8.jpg', // the tile the lobby actually ships
@@ -88,6 +89,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -168,12 +170,46 @@ describe('ClubQuickLinkTile', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
     expect(screen.getByRole('menuitem', { name: /Balance Unavailable/i })).toBeInTheDocument();
     const retry = screen.getByRole('button', { name: /Retry/i });
-    expect(retry).toHaveFocus();
+    // Finding the committed button does not flush its passive focus effect.
+    await waitFor(() => expect(retry).toHaveFocus());
     await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(inMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('focuses Retry when loading completes after the error was already rendered', async () => {
+    const user = userEvent.setup();
+    let deliverResult!: (value: null) => void;
+    let finishRead!: () => void;
+    // Let React commit the failed result separately from promise cleanup.
+    // In production these callbacks run in distinct microtasks; batching them
+    // together in every test hides a missing loading-state focus dependency.
+    vi.spyOn(clubQuickLink, 'fetchClubChipBalances').mockReturnValueOnce({
+      then(callback: (value: null) => void) {
+        deliverResult = callback;
+        return {
+          catch: () => ({
+            finally: (callback: () => void) => {
+              finishRead = callback;
+            },
+          }),
+        };
+      },
+    } as unknown as ReturnType<typeof clubQuickLink.fetchClubChipBalances>);
+    inMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 77 }], error: null });
+    const { props } = renderTile({ clubs: [A], targetClub: A });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
+    act(() => deliverResult(null));
+    expect(screen.getByRole('status')).toHaveTextContent(/Reading Wallet Balances/i);
+    expect(screen.queryByRole('button', { name: /Retry/i })).not.toBeInTheDocument();
+    act(() => finishRead());
+    expect(screen.getByRole('button', { name: /Retry/i })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(inMock).toHaveBeenCalledOnce();
   });
 
   it("never paints a previous account's balances while the next account read is pending", async () => {

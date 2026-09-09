@@ -1,3 +1,65 @@
+import { spec as crownSpec, rig as crownRig } from './rigs/crown';
+import { spec as chip_rainSpec, rig as chip_rainRig } from './rigs/chip_rain';
+import { spec as diamond_showerSpec, rig as diamond_showerRig } from './rigs/diamond_shower';
+import { spec as velvet_ropeSpec, rig as velvet_ropeRig } from './rigs/velvet_rope';
+import { spec as champagne_towerSpec, rig as champagne_towerRig } from './rigs/champagne_tower';
+import { spec as standing_ovationSpec, rig as standing_ovationRig } from './rigs/standing_ovation';
+import { spec as whaleSpec, rig as whaleRig } from './rigs/whale';
+import { spec as to_the_moonSpec, rig as to_the_moonRig } from './rigs/to_the_moon';
+import { spec as missileSpec, rig as missileRig } from './rigs/missile';
+import { spec as donkeySpec, rig as donkeyRig } from './rigs/donkey';
+import { spec as tilt_meterSpec, rig as tilt_meterRig } from './rigs/tilt_meter';
+import { spec as bad_beat_bandageSpec, rig as bad_beat_bandageRig } from './rigs/bad_beat_bandage';
+import { spec as bubble_boySpec, rig as bubble_boyRig } from './rigs/bubble_boy';
+import { spec as slot_machineSpec, rig as slot_machineRig } from './rigs/slot_machine';
+import { spec as pumpkinSpec, rig as pumpkinRig } from './rigs/pumpkin';
+import { spec as snowballSpec, rig as snowballRig } from './rigs/snowball';
+import { spec as party_popperSpec, rig as party_popperRig } from './rigs/party_popper';
+import { spec as heart_arrowSpec, rig as heart_arrowRig } from './rigs/heart_arrow';
+import { spec as slothSpec, rig as slothRig } from './rigs/sloth';
+import { spec as energy_ballSpec, rig as energy_ballRig } from './rigs/energy_ball';
+import { spec as surrenderSpec, rig as surrenderRig } from './rigs/surrender';
+import { spec as vomit_rainbowSpec, rig as vomit_rainbowRig } from './rigs/vomit_rainbow';
+import { spec as screamingSpec, rig as screamingRig } from './rigs/screaming';
+import { spec as facepalmSpec, rig as facepalmRig } from './rigs/facepalm';
+import { spec as sleepingSpec, rig as sleepingRig } from './rigs/sleeping';
+import { spec as ok_smugSpec, rig as ok_smugRig } from './rigs/ok_smug';
+import { spec as blushSpec, rig as blushRig } from './rigs/blush';
+import { spec as loser_handSpec, rig as loser_handRig } from './rigs/loser_hand';
+import { spec as thinkingSpec, rig as thinkingRig } from './rigs/thinking';
+import { spec as ratCardSpec, rig as ratCardRig } from './rigs/rat_card';
+import { spec as partyFaceSpec, rig as partyFaceRig } from './rigs/party_face';
+import { spec as fishSpec, rig as fishRig } from './rigs/fish';
+import { spec as magic_8_ballSpec, rig as magic_8_ballRig } from './rigs/magic_8_ball';
+import { spec as lightning_boltSpec, rig as lightning_boltRig } from './rigs/lightning_bolt';
+import { spec as skullSpec, rig as skullRig } from './rigs/skull';
+import { spec as ufoSpec, rig as ufoRig } from './rigs/ufo';
+import { spec as ghostSpec, rig as ghostRig } from './rigs/ghost';
+import { spec as anvilSpec, rig as anvilRig } from './rigs/anvil';
+import { spec as sharkSpec, rig as sharkRig } from './rigs/shark';
+import { spec as bearSpec, rig as bearRig } from './rigs/bear';
+import { spec as pizzaSliceSpec, rig as pizzaSliceRig } from './rigs/pizza_slice';
+import { spec as chickenSpec, rig as chickenRig } from './rigs/chicken';
+import { spec as dogeSpec, rig as dogeRig } from './rigs/doge';
+import { spec as cryingemojiSpec, rig as cryingemojiRig } from './rigs/crying_emoji';
+import { spec as laughingemojiSpec, rig as laughingemojiRig } from './rigs/laughing_emoji';
+import { spec as angryemojiSpec, rig as angryemojiRig } from './rigs/angry_emoji';
+import { spec as heartSpec, rig as heartRig } from './rigs/heart';
+import {
+  spec as coolsunglassesemojiSpec,
+  rig as coolsunglassesemojiRig,
+} from './rigs/cool_sunglasses_emoji';
+import { spec as magnetSpec, rig as magnetRig } from './rigs/magnet';
+import { spec as coffeeSpec, rig as coffeeRig } from './rigs/coffee';
+import { spec as bowlingballSpec, rig as bowlingballRig } from './rigs/bowling_ball';
+import { spec as tennisballSpec, rig as tennisballRig } from './rigs/tennis_ball';
+import { spec as footballSpec, rig as footballRig } from './rigs/football';
+import { spec as basketballSpec, rig as basketballRig } from './rigs/basketball';
+import { spec as diamondSpec, rig as diamondRig } from './rigs/diamond';
+import { spec as starSpec, rig as starRig } from './rigs/star';
+import { spec as thumbsdownSpec, rig as thumbsdownRig } from './rigs/thumbs_down';
+import { spec as thumbsupSpec, rig as thumbsupRig } from './rigs/thumbs_up';
+import { rubberDuckSpec, rubberDuckRig } from './rigs/rubber_duck';
 /**
  * THE RIG REGISTRY — which throwables play through ThrowablePlayer.
  *
@@ -8,6 +70,8 @@
  * registry never renames.
  */
 
+import { alienSpec, alienRig } from './rigs/alien';
+import { robotSpec, robotRig } from './rigs/robot';
 import type { ThrowableSpec } from './spec';
 import type { ThrowableRig } from './rig';
 import { bananaPeelSpec, bananaPeelRig } from './rigs/banana_peel';
@@ -35,6 +99,67 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  crown: { spec: crownSpec, rig: crownRig },
+  chip_rain: { spec: chip_rainSpec, rig: chip_rainRig },
+  diamond_shower: { spec: diamond_showerSpec, rig: diamond_showerRig },
+  velvet_rope: { spec: velvet_ropeSpec, rig: velvet_ropeRig },
+  champagne_tower: { spec: champagne_towerSpec, rig: champagne_towerRig },
+  standing_ovation: { spec: standing_ovationSpec, rig: standing_ovationRig },
+  whale: { spec: whaleSpec, rig: whaleRig },
+  to_the_moon: { spec: to_the_moonSpec, rig: to_the_moonRig },
+  missile: { spec: missileSpec, rig: missileRig },
+  donkey: { spec: donkeySpec, rig: donkeyRig },
+  tilt_meter: { spec: tilt_meterSpec, rig: tilt_meterRig },
+  bad_beat_bandage: { spec: bad_beat_bandageSpec, rig: bad_beat_bandageRig },
+  bubble_boy: { spec: bubble_boySpec, rig: bubble_boyRig },
+  slot_machine: { spec: slot_machineSpec, rig: slot_machineRig },
+  pumpkin: { spec: pumpkinSpec, rig: pumpkinRig },
+  snowball: { spec: snowballSpec, rig: snowballRig },
+  party_popper: { spec: party_popperSpec, rig: party_popperRig },
+  heart_arrow: { spec: heart_arrowSpec, rig: heart_arrowRig },
+  loser_hand: { spec: loser_handSpec, rig: loser_handRig },
+  blush: { spec: blushSpec, rig: blushRig },
+  ok_smug: { spec: ok_smugSpec, rig: ok_smugRig },
+  sleeping: { spec: sleepingSpec, rig: sleepingRig },
+  facepalm: { spec: facepalmSpec, rig: facepalmRig },
+  screaming: { spec: screamingSpec, rig: screamingRig },
+  vomit_rainbow: { spec: vomit_rainbowSpec, rig: vomit_rainbowRig },
+  surrender: { spec: surrenderSpec, rig: surrenderRig },
+  energy_ball: { spec: energy_ballSpec, rig: energy_ballRig },
+  sloth: { spec: slothSpec, rig: slothRig },
+  thinking: { spec: thinkingSpec, rig: thinkingRig },
+  rat_card: { spec: ratCardSpec, rig: ratCardRig },
+  party_face: { spec: partyFaceSpec, rig: partyFaceRig },
+  fish: { spec: fishSpec, rig: fishRig },
+  magic_8_ball: { spec: magic_8_ballSpec, rig: magic_8_ballRig },
+  lightning_bolt: { spec: lightning_boltSpec, rig: lightning_boltRig },
+  skull: { spec: skullSpec, rig: skullRig },
+  ufo: { spec: ufoSpec, rig: ufoRig },
+  ghost: { spec: ghostSpec, rig: ghostRig },
+  anvil: { spec: anvilSpec, rig: anvilRig },
+  shark: { spec: sharkSpec, rig: sharkRig },
+  bear: { spec: bearSpec, rig: bearRig },
+  pizza_slice: { spec: pizzaSliceSpec, rig: pizzaSliceRig },
+  chicken: { spec: chickenSpec, rig: chickenRig },
+  doge: { spec: dogeSpec, rig: dogeRig },
+  crying_emoji: { spec: cryingemojiSpec, rig: cryingemojiRig },
+  laughing_emoji: { spec: laughingemojiSpec, rig: laughingemojiRig },
+  angry_emoji: { spec: angryemojiSpec, rig: angryemojiRig },
+  heart: { spec: heartSpec, rig: heartRig },
+  cool_sunglasses_emoji: { spec: coolsunglassesemojiSpec, rig: coolsunglassesemojiRig },
+  rubber_duck: { spec: rubberDuckSpec, rig: rubberDuckRig },
+  thumbs_up: { spec: thumbsupSpec, rig: thumbsupRig },
+  thumbs_down: { spec: thumbsdownSpec, rig: thumbsdownRig },
+  star: { spec: starSpec, rig: starRig },
+  diamond: { spec: diamondSpec, rig: diamondRig },
+  basketball: { spec: basketballSpec, rig: basketballRig },
+  football: { spec: footballSpec, rig: footballRig },
+  tennis_ball: { spec: tennisballSpec, rig: tennisballRig },
+  bowling_ball: { spec: bowlingballSpec, rig: bowlingballRig },
+  coffee: { spec: coffeeSpec, rig: coffeeRig },
+  magnet: { spec: magnetSpec, rig: magnetRig },
+  alien: { spec: alienSpec, rig: alienRig },
+  robot: { spec: robotSpec, rig: robotRig },
   banana_peel: { spec: bananaPeelSpec, rig: bananaPeelRig },
   beer: { spec: beerSpec, rig: beerRig },
   bomb: { spec: bombSpec, rig: bombRig },

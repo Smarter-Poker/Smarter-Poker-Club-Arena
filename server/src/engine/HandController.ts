@@ -24,9 +24,10 @@ import {
   isFixedLimitVariant,
   isPotLimitVariant,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
 } from './BettingStructure.js';
-import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import {
   deckSizeFor,
   holeCardCount,
@@ -140,6 +141,17 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /**
+   * All-in Pineapple has no player-action discard round, but showdown is still
+   * a two-card game. The table engine computes those choices on the live horse
+   * worker before it deals the flop and installs the result here. HandController
+   * owns only validation and mutation: poker strategy must never run on the
+   * authoritative event loop.
+   */
+  private preparedPineappleRunoutDiscards: {
+    flopKey: string;
+    decisions: Map<number, number>;
+  } | null = null;
   /**
    * DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27: how many
    * boards THIS hand actually deals — 1, 2 or 3 — set in postBombPotAntes()
@@ -264,6 +276,7 @@ export class HandController {
       totalInvested: 0,
       returnedUncalled: 0,
       deadInvested: 0,
+      individualAnteInvested: 0,
       cards: [],
       is_folded: false,
       is_all_in: false,
@@ -306,6 +319,16 @@ export class HandController {
       this.state.communityCards2 = [];
       this.state.communityCards3 = [];
       this.boardDealtOutsideState = false;
+    }
+    // Heads-up has a live button/SB. An old button on an absent or sitting-out
+    // seat must not post a blind, receive a hand, or be announced as the actor.
+    // Multiway dead-button positions remain valid and are not changed here.
+    const openingPlayers = this.getActivePlayers();
+    if (
+      openingPlayers.length === 2 &&
+      !openingPlayers.some((p) => p.seat === this.state.dealerSeat)
+    ) {
+      this.state.dealerSeat = this.getNextActiveSeat(this.state.dealerSeat);
     }
     this.handStarted = true;
     // FIX-225: FSM transitions for hand start sequence
@@ -370,6 +393,20 @@ export class HandController {
       : this.getNextActiveSeat(this.state.dealerSeat);
     const bbSeat = this.getNextActiveSeat(sbSeat);
 
+    // Individual antes precede live blinds. A short ante is all-in for that
+    // contribution only; the table-wide BBA below keeps its BB-first policy.
+    if (this.config.ante && !this.config.bigBlindAnte) {
+      for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
+        const amount = Math.min(this.config.ante, player.stack);
+        player.totalInvested += amount;
+        player.deadInvested = (player.deadInvested ?? 0) + amount;
+        player.individualAnteInvested = amount;
+        player.stack -= amount;
+        this.state.pot += amount;
+        if (player.stack === 0) player.is_all_in = true;
+      }
+    }
+
     const sbPlayer = this.state.players.find((p) => p.seat === sbSeat);
     if (sbPlayer) {
       const sbAmount = Math.min(smallBlind, sbPlayer.stack);
@@ -410,11 +447,22 @@ export class HandController {
       if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
     }
 
+    // Record the normal blind deficit once, before extra posts and straddles.
+    // This changes only the pot-limit wager ceiling, never pot or eligibility.
+    this.state.potLimitBlindAdjustment =
+      Math.round((smallBlind - (sbPlayer?.bet ?? 0) + (bigBlind - (bbPlayer?.bet ?? 0))) * 100) /
+      100;
+
     // Bible V8 §4.2: Dead blinds — players returning from sit-out post SB+BB (SB is dead money)
     if (this.config.deadBlinds && this.config.deadBlinds.length > 0) {
       for (const db of this.config.deadBlinds) {
         const dbPlayer = this.state.players.find((p) => p.seat === db.seat);
-        if (dbPlayer && dbPlayer.seat !== sbSeat && dbPlayer.seat !== bbSeat) {
+        if (
+          dbPlayer &&
+          !dbPlayer.is_sitting_out &&
+          dbPlayer.seat !== sbSeat &&
+          dbPlayer.seat !== bbSeat
+        ) {
           // Dead SB goes straight to pot (dead money, not a live bet)
           const deadSBAmount = Math.min(smallBlind, dbPlayer.stack);
           dbPlayer.totalInvested += deadSBAmount;
@@ -484,39 +532,29 @@ export class HandController {
         ])
       );
     const afterBlinds = investedSnapshot();
+    // The history buckets remain blinds, then antes, regardless of payment
+    // priority. Subtract the individual ante already paid from the blind bucket.
+    for (const p of this.state.players) {
+      const blind = afterBlinds.get(p.seat)!;
+      const ante = p.individualAnteInvested ?? 0;
+      blind.total = Math.round((blind.total - ante) * 100) / 100;
+      blind.dead = Math.round((blind.dead - ante) * 100) / 100;
+    }
 
-    if (this.config.ante) {
-      if (this.config.bigBlindAnte && bbPlayer) {
-        // Bible V8 §4.3: BBA — Big blind posts ante for entire table.
-        // The seat-count multiply lives in bigBlindAnteTotal now, because a
-        // structure that authors `ante` as the TOTAL (ante == bigBlind, the
-        // modern standard) was being charged one big blind PER SEAT — 7 to 8
-        // big blinds a hand, measured live 2026-08-30. See AnteMath.ts.
-        const totalBBA = bigBlindAnteTotal(
-          this.config.ante,
-          activePlayers.length,
-          this.config.bigBlind
-        );
-        const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
-        bbPlayer.totalInvested += bbaAmount;
-        // Dead money: the BB fronts the whole table's ante. It belongs to the
-        // pot, not to the BB as an uncalled bet or a private side pot.
-        bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
-        bbPlayer.stack -= bbaAmount;
-        this.state.pot += bbaAmount;
-        if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
-      } else {
-        // Traditional ante: each player posts individually
-        for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
-          const anteAmount = Math.min(this.config.ante, player.stack);
-          player.totalInvested += anteAmount;
-          // Dead money — antes never count as a live bet toward a call.
-          player.deadInvested = (player.deadInvested ?? 0) + anteAmount;
-          player.stack -= anteAmount;
-          this.state.pot += anteAmount;
-          if (player.stack === 0) player.is_all_in = true;
-        }
-      }
+    if (this.config.ante && this.config.bigBlindAnte && bbPlayer) {
+      // The BB fronts the whole table. Unlike an individual ante, this stays
+      // shared dead money and is paid from the stack remaining after the blind.
+      const totalBBA = bigBlindAnteTotal(
+        this.config.ante,
+        activePlayers.length,
+        this.config.bigBlind
+      );
+      const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
+      bbPlayer.totalInvested += bbaAmount;
+      bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
+      bbPlayer.stack -= bbaAmount;
+      this.state.pot += bbaAmount;
+      if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
     }
 
     /** FORCED MONEY, SNAPSHOT TWO OF THREE: blinds + antes. */
@@ -628,7 +666,7 @@ export class HandController {
     }
 
     if (forced.length > 0) {
-      this.emit({ type: 'FORCED_BETS_POSTED', postings: forced } as never);
+      this.emit({ type: 'FORCED_BETS_POSTED', postings: forced });
     }
 
     // AUDIT V6: snap chips after all posting (blinds/dead blinds/straddles)
@@ -767,7 +805,7 @@ export class HandController {
           amount: p.amount,
           dead: true,
         })),
-      } as never);
+      });
     }
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
   }
@@ -868,9 +906,11 @@ export class HandController {
     // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
     // cannot legally reopen betting — e.g. a player who already acted and now
     // faces only a sub-full-raise all-in may call or fold, not re-raise. This is
-    // the authoritative server enforcement; getAvailableActions hides the button
-    // but a hand-crafted action must be rejected here too. `all_in` is exempt.
-    if (action === 'raise' && !this.canReopenBetting(player)) return false;
+    // the authoritative server enforcement; getAvailableActions hides the button.
+    // An all-in that exceeds the call is also a raise, never an exemption.
+    const raisesBet =
+      action === 'raise' || (action === 'all_in' && player.stack > bettingState.toCall + 0.005);
+    if (raisesBet && !this.canReopenBetting(player)) return false;
 
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
@@ -897,7 +937,7 @@ export class HandController {
         // wrong when the player hadn't called yet (e.g., CO raising preflop with bet=0).
         // Correct: raiseSize = newBetLevel - previousBetLevel
         const raiseSize = actualAmount - this.state.currentBet;
-        isFullRaiseFlag = true; // Normal bet/raise is always a full raise
+        isFullRaiseFlag = raiseSize >= bettingState.minRaise - 0.005;
         if (raiseSize > this.state.lastRaise) this.state.lastRaise = raiseSize;
         // Bible V8 §4.14: Keep minRaise in sync — must be at least lastRaise or BB
         this.state.minRaise = Math.max(this.config.bigBlind, this.state.lastRaise);
@@ -923,7 +963,7 @@ export class HandController {
         // A short all-in (raise increment < lastRaise) does NOT reopen betting
         if (player.bet > this.state.currentBet) {
           const rs = player.bet - this.state.currentBet;
-          isFullRaiseFlag = rs >= this.state.lastRaise;
+          isFullRaiseFlag = rs >= bettingState.minRaise - 0.005;
           if (isFullRaiseFlag) {
             this.state.lastRaise = rs;
             // Bible V8 §4.14: Keep minRaise in sync for full-raise all-ins
@@ -1278,8 +1318,8 @@ export class HandController {
     // A short all-in (raise increment < lastRaise) does NOT count as aggression.
     let lastAggressorSeat = -1;
     for (const action of stageActions) {
-      if (action.action === 'bet' || action.action === 'raise') {
-        // Normal bet/raise always reopens
+      if ((action.action === 'bet' || action.action === 'raise') && action.isFullRaise !== false) {
+        // A short stack may express its all-in as a raise; it remains short.
         lastAggressorSeat = action.seat;
       } else if (action.action === 'all_in' && action.isFullRaise) {
         // All-in only reopens if it was a full raise
@@ -1297,7 +1337,8 @@ export class HandController {
           const a = stageActions[i];
           if (
             a.seat === lastAggressorSeat &&
-            (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))
+            (((a.action === 'bet' || a.action === 'raise') && a.isFullRaise !== false) ||
+              (a.action === 'all_in' && a.isFullRaise))
           ) {
             lastAggressorActionIdx = i;
             break;
@@ -1539,6 +1580,14 @@ export class HandController {
     const deck = this.state.deck as unknown as Deck;
     const currentLength = this.state.communityCards.length;
 
+    // A caller that reached the flop before worker preparation must park here.
+    // Dealing the turn would make a stale or absent discard impossible to
+    // distinguish from a legitimate two-card Pineapple hand at settlement.
+    if (currentLength >= 3 && !this.resolvePendingPineappleDiscards()) {
+      this.reportMissingPineappleRunoutDiscards('dealNextStreet');
+      return { board: [...this.state.communityCards], stage: this.state.stage, complete: false };
+    }
+
     if (currentLength >= 5) {
       return { board: [...this.state.communityCards], stage: 'river', complete: true };
     }
@@ -1596,7 +1645,10 @@ export class HandController {
 
        Same call, same place in the street, as the path that had it. */
     if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
-      this.resolvePendingPineappleDiscards();
+      if (!this.resolvePendingPineappleDiscards()) {
+        this.reportMissingPineappleRunoutDiscards('dealNextStreet');
+        return { board: [...this.state.communityCards], stage, complete: false };
+      }
     }
 
     const complete = this.state.communityCards.length >= 5;
@@ -1616,6 +1668,13 @@ export class HandController {
    */
   public finalizeRunout(skipDistribution: boolean = false): void {
     if (this.refuseUnlessRunout('finalizeRunout')) return;
+    if (
+      this.config.gameVariant === 'pineapple' &&
+      this.state.players.some((player) => !player.is_folded && player.cards.length === 3)
+    ) {
+      this.reportMissingPineappleRunoutDiscards('finalizeRunout');
+      return;
+    }
     this.transitionStage('showdown');
     if (skipDistribution) {
       // RIT or other caller already distributed pots — just emit completion
@@ -1751,6 +1810,10 @@ export class HandController {
 
   private runOutCommunityCards(): void {
     const deck = this.state.deck as unknown as Deck;
+    if (this.state.communityCards.length >= 3 && !this.resolvePendingPineappleDiscards()) {
+      this.reportMissingPineappleRunoutDiscards('continueRunout');
+      return;
+    }
     // CORRECTION 2026-08-19 (Dan: "YOU CAN'T HAVE 8 MAX PLO6"). An earlier
     // version of this comment justified the bound below with a short-deck
     // scenario that CANNOT HAPPEN, and the claim was wrong twice over:
@@ -1810,7 +1873,10 @@ export class HandController {
       // extra-card advantage. Resolve pending discards as soon as the flop is
       // on the board, exactly where the discard belongs in the hand flow.
       if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
-        this.resolvePendingPineappleDiscards();
+        if (!this.resolvePendingPineappleDiscards()) {
+          this.reportMissingPineappleRunoutDiscards('continueRunout');
+          return;
+        }
       }
       if (this.state.communityCards.length === lengthBefore) {
         // The deck gave us nothing. Another turn of this loop would give us
@@ -1822,33 +1888,97 @@ export class HandController {
     this.completeHand();
   }
 
-  /**
-   * AUDIT V2 (2026-07-23): Force-resolve outstanding pineapple discards for
-   * players who were all-in (or otherwise skipped) before the discard phase.
-   * Keeps the best two cards for the player — the same choice any player
-   * would make for themselves — so showdown is always a legal 2-card hand.
-   */
-  private resolvePendingPineappleDiscards(): void {
-    const flop = this.state.communityCards.slice(0, 3);
-    for (const player of this.state.players) {
-      if (player.is_folded || player.cards.length !== 3) continue;
-      /* ── KEEP THE BEST HAND, NOT THE BEST FLOP (2026-08-31) ──────────────
-         This scored the flop-MADE hand and kept the highest of those. That is
-         backwards in the only situation it runs: an ALL-IN, where two more
-         cards are coming and there is no more betting, which is exactly when a
-         draw is worth the most it will ever be worth. On A(h)K(h)+2(h) against
-         7(h)8(h)3(c) it kept the pair of nothing and threw the nut flush draw
-         away, because a pair outranks a draw on the flop and the flop was all
-         it looked at.
+  /** Stable identity for the exact flop a worker priced. */
+  private pineappleFlopKey(cards: readonly Card[]): string {
+    return cards.map((card) => `${card.rank}:${card.suit}`).join('|');
+  }
 
-         It now uses the same equity-priced chooser a HORSE uses, which is the
-         point: CLAUDE.md 10.5 requires a horse and a human to be treated
-         identically, and a decision made by two different rules cannot be. */
-      const bestIdx = bestPineappleDiscard(
-        player.cards,
-        flop,
-        this.config.gameVariant ?? 'pineapple'
-      );
+  /**
+   * Immutable worker input for an all-in Pineapple discard. Before the flop is
+   * dealt, the next three cards are already fixed by this controller's shuffled
+   * deck; pricing that exact snapshot off-thread lets the existing synchronous
+   * deal/event order remain unchanged.
+   */
+  public getPineappleRunoutDiscardSnapshot(): {
+    flop: Card[];
+    players: Array<{ seat: number; cards: Card[] }>;
+  } | null {
+    if (this.config.gameVariant !== 'pineapple' || !this.handStarted) return null;
+    const players = this.state.players
+      .filter((player) => !player.is_folded && player.cards.length === 3)
+      .map((player) => ({ seat: player.seat, cards: [...player.cards] }));
+    if (players.length === 0) return null;
+
+    const existingFlop = this.state.communityCards.slice(0, 3);
+    const missing = 3 - existingFlop.length;
+    const flop =
+      missing > 0 ? [...existingFlop, ...this.getRemainingDeck().slice(0, missing)] : existingFlop;
+    if (flop.length !== 3) return null;
+    return { flop, players };
+  }
+
+  /**
+   * Install one complete off-thread result set. Partial, stale, mismatched-flop
+   * and invalid-index sets are rejected as a unit, so a later deal can never
+   * combine decisions from different hands or leave half the seats resolved.
+   */
+  public preparePineappleRunoutDiscards(
+    flop: readonly Card[],
+    decisions: ReadonlyMap<number, number>
+  ): boolean {
+    const snapshot = this.getPineappleRunoutDiscardSnapshot();
+    if (!snapshot || this.pineappleFlopKey(snapshot.flop) !== this.pineappleFlopKey(flop)) {
+      return false;
+    }
+    if (decisions.size !== snapshot.players.length) return false;
+    for (const player of snapshot.players) {
+      const index = decisions.get(player.seat);
+      if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= 3) {
+        return false;
+      }
+    }
+    this.preparedPineappleRunoutDiscards = {
+      flopKey: this.pineappleFlopKey(flop),
+      decisions: new Map(decisions),
+    };
+    return true;
+  }
+
+  /**
+   * Consume an already-computed all-in discard set. Returns false rather than
+   * choosing on the main thread when preparation is absent or stale; callers
+   * must not deal another street or settle until the live worker answers.
+   */
+  public commitPreparedPineappleRunoutDiscards(flop: readonly Card[]): boolean {
+    if (this.config.gameVariant !== 'pineapple') return true;
+    const pending = this.state.players.filter(
+      (player) => !player.is_folded && player.cards.length === 3
+    );
+    if (pending.length === 0) {
+      this.preparedPineappleRunoutDiscards = null;
+      return true;
+    }
+    if (flop.length < 3) return false;
+
+    const prepared = this.preparedPineappleRunoutDiscards;
+    const flopKey = this.pineappleFlopKey(flop.slice(0, 3));
+    if (!prepared || prepared.flopKey !== flopKey || prepared.decisions.size !== pending.length) {
+      return false;
+    }
+    for (const player of pending) {
+      const index = prepared.decisions.get(player.seat);
+      if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= 3) {
+        return false;
+      }
+    }
+
+    // Clear before emitting. Listeners are isolated, but a re-entrant snapshot
+    // must never expose a reusable decision set after its cards have changed.
+    this.preparedPineappleRunoutDiscards = null;
+    const discardStage: HandStage =
+      this.state.communityCards.length >= 3 ? this.state.stage : ('flop' as HandStage);
+    for (const player of pending) {
+      const bestIdx = prepared.decisions.get(player.seat) as number;
       const forced = player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
 
@@ -1884,18 +2014,33 @@ export class HandController {
         action: 'discard',
         amount: 0,
         timestamp: Date.now(),
-        stage: this.state.stage,
+        stage: discardStage,
       });
       this.emit({
         type: 'PLAYER_ACTION',
         seat: player.seat,
         action: 'discard',
         amount: 0,
-        stage: this.state.stage,
+        stage: discardStage,
       });
 
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
     }
+    return true;
+  }
+
+  private resolvePendingPineappleDiscards(): boolean {
+    return this.commitPreparedPineappleRunoutDiscards(this.state.communityCards.slice(0, 3));
+  }
+
+  private reportMissingPineappleRunoutDiscards(operation: string): void {
+    reportError(
+      new Error(
+        `[HandController] ${operation} refused on Pineapple hand ${this.config.handNumber}: ` +
+          'all-in discard decisions were not prepared for this exact flop'
+      ),
+      'HandController.pineapple_runout_discard_not_prepared'
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2109,7 +2254,10 @@ export class HandController {
           potsByBoard[b],
           this.config.gameVariant,
           this.state.dealerSeat,
-          perPot
+          perPot,
+          undefined,
+          // A tournament chip does not divide (2026-09-08).
+          this.config.isTournament ? 1 : 0.01
         );
         winnersPerBoard.push(boardWinners);
         this.pendingPerPotAwards.push(
@@ -2168,7 +2316,9 @@ export class HandController {
                 `awarded to the contenders instead`
             ),
             'HandController.pot_eligibility_snapshot_stale'
-          )
+          ),
+        // A tournament chip does not divide (2026-09-08).
+        this.config.isTournament ? 1 : 0.01
       );
       this.pendingPerPotAwards = perPot;
     }
@@ -2231,7 +2381,10 @@ export class HandController {
           })),
           this.config.gameVariant,
           this.state.dealerSeat,
-          recoveredPerPot
+          recoveredPerPot,
+          undefined,
+          // A tournament chip does not divide (2026-09-08).
+          this.config.isTournament ? 1 : 0.01
         );
         if (winners.length > 0) this.pendingPerPotAwards = recoveredPerPot;
       }
@@ -2837,7 +2990,11 @@ export class HandController {
     // here as well as rejected in validateAction so the button never appears.
     const wagersCapped =
       isFixedLimitVariant(this.config.gameVariant) &&
-      isFixedLimitCapped(this.state.actionHistory, this.state.stage);
+      isFixedLimitCapped(
+        this.state.actionHistory,
+        this.state.stage,
+        fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+      );
     if (toCall === 0) {
       actions.push('check');
 
@@ -2881,18 +3038,12 @@ export class HandController {
       // bet, big bet, capped round) for it to drift against.
       const bettingState = this.buildBettingState(player);
       const probe = this.clampToStructure(player, 'all_in', undefined, bettingState);
-      // A clamped pot-limit shove is a RAISE by the time performAction runs
-      // (that is where the "all_in is exempt" note stops applying - the clamp
-      // has already rewritten the action), so it must also pass the
-      // reopen-betting rule. A player who has acted and faces only a
-      // sub-full-raise may call or fold, never raise: TDA 44 / Bible V8
-      // 4.14. Offering all_in there is what the fuzzer caught. (The fixed-limit
-      // branch of the clamp already degrades such a raise to a call, so this
-      // only still bites in pot-limit.)
-      const wasClamped = probe.action !== 'all_in';
+      const raisesBet =
+        probe.action === 'raise' ||
+        (probe.action === 'all_in' && player.stack > bettingState.toCall + 0.005);
       const legal =
         validateAction(probe.action, probe.amount, player.stack, bettingState).valid &&
-        (!wasClamped || probe.action !== 'raise' || this.canReopenBetting(player));
+        (!raisesBet || this.canReopenBetting(player));
       if (legal) {
         actions.push('all_in');
       }
@@ -2907,8 +3058,9 @@ export class HandController {
    * currently facing a full raise made since their last action. This mirrors the
    * full-aggressor logic used by isBettingRoundComplete so both agree.
    *
-   * Note: this gates the explicit `raise` action only. A player may always go
-   * `all_in` for their remaining stack even when it does not reopen betting.
+   * An all-in exceeding the call obeys the same reopening rule. A short
+   * all-in call remains legal. Cumulative short raises are relative to each
+   * player's last matched wager, not just the last aggressor's identity.
    */
   /**
    * The street `advanceStage` is about to move into. Mirrors the order its own
@@ -2956,13 +3108,23 @@ export class HandController {
         {
           // Small bet preflop and flop, big bet turn and river.
           betSize: fixedLimitBetSize(this.config.bigBlind, this.state.stage),
-          capped: isFixedLimitCapped(this.state.actionHistory, this.state.stage),
+          raiseSize: fixedLimitStreetBounds(
+            this.state.actionHistory,
+            this.state.stage,
+            fixedLimitBetSize(this.config.bigBlind, this.state.stage),
+            this.state.currentBet
+          ).raiseSize,
+          capped: isFixedLimitCapped(
+            this.state.actionHistory,
+            this.state.stage,
+            fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+          ),
         }
       );
     }
 
     return calculateBettingState(
-      this.state.pot,
+      isPotLimitVariant(variant) ? potLimitBettingPot(this.state) : this.state.pot,
       this.state.currentBet,
       player.bet,
       this.config.bigBlind,
@@ -3047,7 +3209,10 @@ export class HandController {
     let lastFullAggressorIdx = -1;
     for (let i = 0; i < stageActions.length; i++) {
       const a = stageActions[i];
-      if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise)) {
+      if (
+        ((a.action === 'bet' || a.action === 'raise') && a.isFullRaise !== false) ||
+        (a.action === 'all_in' && a.isFullRaise)
+      ) {
         lastFullAggressorSeat = a.seat;
         lastFullAggressorIdx = i;
       }
@@ -3062,6 +3227,17 @@ export class HandController {
         playerLastIdx = i;
         break;
       }
+    }
+
+    // TDA 47: reopening is measured from this player's last wager. No-limit
+    // and pot-limit require a full increment; fixed-limit requires half the
+    // street's fixed bet. An intervening caller does not inherit another
+    // player's rights, and turn/river use the big bet rather than the blind.
+    const reopenIncrement = isFixedLimitVariant(this.config.gameVariant)
+      ? fixedLimitBetSize(this.config.bigBlind, this.state.stage) / 2
+      : Math.max(this.config.bigBlind, this.state.lastRaise);
+    if (playerLastIdx !== -1 && this.state.currentBet - player.bet >= reopenIncrement - 0.005) {
+      return true;
     }
 
     if (lastFullAggressorSeat !== -1 && lastFullAggressorSeat !== player.seat) {

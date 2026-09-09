@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import sharp from 'sharp';
 const out = mkdtempSync(join(tmpdir(), 'throwable-preview-test-'));
 const script = resolve('scripts/dev/preview-throwable.mjs');
 function run(...args: string[]) {
@@ -10,15 +11,26 @@ function run(...args: string[]) {
 }
 afterAll(() => rmSync(out, { recursive: true, force: true }));
 describe('throwable darkroom commands', () => {
-  it('accepts space-separated selection and produces unique SVG IDs', () => {
-    const result = run('--only', 'beer,trophy', out, '--html-only');
+  it('previews a draft without modifying the live registry', () => {
+    const before = readFileSync('src/throwables/registry.ts', 'utf8');
+    const result = run('--drafts', '--only=rat_card', out, '--html-only');
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Draft preview mode');
+    expect(readFileSync(join(out, 'harness.html'), 'utf8')).toContain('data-id="rat_card"');
+    expect(readFileSync('src/throwables/registry.ts', 'utf8')).toBe(before);
+    expect(run('--drafts', '--only=../rat_card', out, '--html-only').status).not.toBe(0);
+  });
+
+  it('accepts space-separated selection and packages bounded atlas sprites', () => {
+    const result = run('--only', 'beer,trophy,bomb', out, '--html-only');
     expect(result.status, result.stderr).toBe(0);
     const html = readFileSync(join(out, 'harness.html'), 'utf8');
     expect(html).toContain('data-id="beer"');
     expect(html).toContain('data-id="trophy"');
     expect(html).not.toContain('data-id="rocket"');
     const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
-    expect(ids.length).toBeGreaterThan(0);
+    expect(html).toContain('<foreignObject');
+    expect(readFileSync(join(out, 'assets/beer.webp')).length).toBeGreaterThan(0);
     expect(new Set(ids).size).toBe(ids.length);
     const cuts = html
       .split('<div class="cell"')
@@ -31,6 +43,18 @@ describe('throwable darkroom commands', () => {
     const result = run(out, '--items=rocket', '--html-only');
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('rigs:    rocket');
+  });
+  it('packages hyphenated bloom assets instead of silently leaving a broken URL', async () => {
+    const result = run(out, '--items=rose', '--html-only');
+    expect(result.status, result.stderr).toBe(0);
+    const html = readFileSync(join(out, 'harness.html'), 'utf8');
+    expect(html).toContain('assets/rose-bloom.webp');
+    expect(html).not.toContain('/images/throwables/animated/rose-bloom.webp');
+    const bytes = readFileSync(join(out, 'assets/rose-bloom.webp'));
+    expect(bytes.subarray(0, 4).toString()).toBe('RIFF');
+    const metadata = await sharp(bytes).metadata();
+    expect(metadata.width).toBe(1254);
+    expect(metadata.height).toBe(1254);
   });
   it('keeps the cash bundle visible before its fade and holds bills until the burst', () => {
     const result = run(out, '--items=cash_stack', '--html-only');
@@ -48,6 +72,17 @@ describe('throwable darkroom commands', () => {
     // +367 ms steals the settle beat and used to mask the invisible bundle.
     expect(Math.min(...delays)).toBe(367);
     expect(Math.max(...delays)).toBeLessThan(2700);
+  });
+  it('preserves native non-square atlas dimensions', async () => {
+    const result = run(out, '--items=tennis_ball', '--html-only');
+    expect(result.status, result.stderr).toBe(0);
+    const html = readFileSync(join(out, 'harness.html'), 'utf8');
+    expect(html).toContain('data-atlas-width="1264"');
+    expect(html).toContain('data-atlas-height="1244"');
+    const bytes = readFileSync(join(out, 'assets/tennis_ball.webp'));
+    const metadata = await sharp(bytes).metadata();
+    expect(metadata.width).toBe(1264);
+    expect(metadata.height).toBe(1244);
   });
   it('rejects mixed known and unknown IDs', () => {
     const result = run(out, '--items=beer,does_not_exist', '--html-only');

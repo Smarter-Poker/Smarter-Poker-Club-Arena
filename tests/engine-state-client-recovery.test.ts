@@ -63,6 +63,8 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 let EngineStateClient: typeof import('../src/services/EngineStateClient').EngineStateClient;
 let EngineChannelClient: typeof import('../src/services/EngineStateClient').EngineChannelClient;
+let shouldRecoverMissedHandStartPresentation: typeof import('../src/services/EngineStateClient').shouldRecoverMissedHandStartPresentation;
+let HAND_START_GAP_RECOVERY_WINDOW_MS: number;
 let CLOSE_MUX_SUPERSEDED: number;
 
 beforeEach(async () => {
@@ -93,6 +95,8 @@ beforeEach(async () => {
   const mod = await import('../src/services/EngineStateClient');
   EngineStateClient = mod.EngineStateClient;
   EngineChannelClient = mod.EngineChannelClient;
+  shouldRecoverMissedHandStartPresentation = mod.shouldRecoverMissedHandStartPresentation;
+  HAND_START_GAP_RECOVERY_WINDOW_MS = mod.HAND_START_GAP_RECOVERY_WINDOW_MS;
   // 4901 is owned by EngineSocketMux; EngineStateClient imports it rather
   // than re-exporting it, so read it from its actual home.
   CLOSE_MUX_SUPERSEDED = (await import('../src/services/EngineSocketMux')).CLOSE_MUX_SUPERSEDED;
@@ -142,6 +146,21 @@ describe('EngineStateClient — heartbeats cannot acknowledge missing game state
 
   const resyncs = (ws: FakeWebSocket) =>
     ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'RESYNC');
+
+  it('refreshes a confirmed purchase through the current table socket without another connection', async () => {
+    const { c, ws } = await openTable();
+    try {
+      const before = resyncs(ws).length;
+      const sockets = FakeWebSocket.instances.length;
+      c.requestSnapshot();
+      expect(resyncs(ws)).toHaveLength(before + 1);
+      expect(resyncs(ws).at(-1)).toMatchObject({ type: 'RESYNC', tableId: TABLE });
+      expect(FakeWebSocket.instances).toHaveLength(sockets);
+      expect(ws.closedWith).toHaveLength(0);
+    } finally {
+      c.disconnect();
+    }
+  });
 
   it('requests the missing first snapshot and reconnects despite continuing pings', async () => {
     const { c, ws, statuses } = await openTable();
@@ -220,7 +239,7 @@ describe('EngineStateClient — heartbeats cannot acknowledge missing game state
       await heartbeats(ws, 120);
       visibility.mockReturnValue('visible');
       document.dispatchEvent(new Event('visibilitychange'));
-      await heartbeats(ws, 5);
+      await vi.advanceTimersByTimeAsync(4000);
       expect(statuses).not.toContain('reconnecting');
       ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 1, state: { pot: 0 } });
       await heartbeats(ws, 90);
@@ -354,6 +373,155 @@ describe('EngineStateClient — a token that will not load', () => {
     expect(calls).toBeGreaterThan(1);
     expect(statuses).not.toEqual(['connecting']);
     c.disconnect();
+  });
+});
+
+describe('EngineStateClient - transient event continuity', () => {
+  it('reports an EVENT sequence gap, resyncs, then delivers the real event separately', async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const { c } = client({ onEvent: (event: Record<string, unknown>) => events.push(event) });
+    void c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    await flush();
+    ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    await flush();
+
+    ws._frame({
+      type: 'EVENT',
+      tableId: TABLE,
+      seq: 1,
+      payload: { type: 'first_event' },
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    ws._frame({
+      type: 'EVENT',
+      tableId: TABLE,
+      seq: 3,
+      payload: { type: 'third_event' },
+    });
+    await vi.advanceTimersByTimeAsync(2);
+
+    expect(events.map((event) => event.type)).toEqual([
+      'first_event',
+      'engine_event_gap',
+      'third_event',
+    ]);
+    expect(events[1]).toMatchObject({
+      reason: 'event_sequence_gap',
+      expected_event_seq: 2,
+      received_event_seq: 3,
+    });
+    expect(ws.sent.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'RESYNC',
+      tableId: TABLE,
+    });
+    c.disconnect();
+  });
+
+  it('reports a reconnect boundary only after a table had authoritative state', async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const { c } = client({ onEvent: (event: Record<string, unknown>) => events.push(event) });
+    void c.connect();
+    await flush();
+    const first = live();
+    first._open();
+    await flush();
+    first._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    first._frame({
+      type: 'SNAPSHOT',
+      tableId: TABLE,
+      seq: 7,
+      state: { handNumber: 41 },
+    });
+    await flush();
+
+    // First-connect hydration never emits a continuity notice.
+    expect(events).toEqual([]);
+    first._serverClose(1001);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const second = live();
+    expect(second).not.toBe(first);
+    second._open();
+    await flush();
+    second._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    await flush();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'engine_event_gap', reason: 'reconnect' })
+    );
+    expect(second.sent.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'RESYNC',
+      tableId: TABLE,
+    });
+    c.disconnect();
+  });
+});
+
+describe('missed HAND_STARTED presentation recovery', () => {
+  type RecoveryEvidence =
+    import('../src/services/EngineStateClient').MissedHandStartPresentationEvidence;
+  const openingSnapshot = (overrides: Partial<RecoveryEvidence> = {}): RecoveryEvidence => ({
+    previousHandNumber: 40,
+    handNumber: 41,
+    continuityReportedAt: 1_000,
+    transitionObservedAt: 1_050,
+    now: 1_100,
+    engineStage: 'preflop',
+    communityCards: [],
+    communityCards2: [],
+    communityCards3: [],
+    lastActions: [null, null, null],
+    ...overrides,
+  });
+
+  it('permits only a fresh in-session opening snapshot with no action yet', () => {
+    expect(shouldRecoverMissedHandStartPresentation(openingSnapshot())).toBe(true);
+  });
+
+  it('never rewinds a reconnect that lands mid-flop into the deal animation', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(
+        openingSnapshot({
+          engineStage: 'flop',
+          communityCards: [
+            { rank: 'A', suit: 's' },
+            { rank: 'K', suit: 'h' },
+            { rank: '2', suit: 'd' },
+          ],
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('never starts a late deal after preflop action has already happened', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(openingSnapshot({ lastActions: ['call', null] }))
+    ).toBe(false);
+  });
+
+  it('keeps first hydration still even when it looks like an untouched preflop', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(openingSnapshot({ previousHandNumber: 0 }))
+    ).toBe(false);
+  });
+
+  it('expires either side of a stale continuity boundary', () => {
+    expect(
+      shouldRecoverMissedHandStartPresentation(
+        openingSnapshot({ now: 1_000 + HAND_START_GAP_RECOVERY_WINDOW_MS + 1 })
+      )
+    ).toBe(false);
+    expect(
+      shouldRecoverMissedHandStartPresentation(
+        openingSnapshot({
+          transitionObservedAt: 1_050,
+          now: 1_050 + HAND_START_GAP_RECOVERY_WINDOW_MS + 1,
+          continuityReportedAt: 1_049,
+        })
+      )
+    ).toBe(false);
   });
 });
 
@@ -779,5 +947,428 @@ it('ignores a detached table socket close while replacement auth is pending', as
     finish('replacement-token');
     c.disconnect();
     localStorage.removeItem('ca_ws_mux');
+  }
+});
+
+describe('channel account boundaries', () => {
+  it('discards old subscription intent and queued requests while signed out', async () => {
+    const getToken = vi.fn(async () => 'token');
+    const c = new EngineChannelClient({ baseUrl: 'https://engine.example', getToken });
+    try {
+      c.send({ type: 'JOIN_CLUB', clubId: 'old-club' });
+      c.send({ type: 'REQUEST_HAND_REPLAY', handId: 'old-hand', speed: 1 });
+      c.resetSession(false);
+      await flush();
+      const calls = getToken.mock.calls.length;
+      c.send({ type: 'JOIN_LOBBY' });
+      await c.connect();
+      expect(getToken).toHaveBeenCalledTimes(calls);
+      c.resetSession(true);
+      c.send({ type: 'JOIN_CLUB', clubId: 'new-club' });
+      await flush();
+      const ws = live();
+      ws._open();
+      expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+        { type: 'JOIN_CLUB', clubId: 'new-club' },
+      ]);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cannot deliver a queued financial frame to the next account listener', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'token',
+    });
+    const previous = vi.fn(),
+      current = vi.fn();
+    try {
+      c.onFinancialUpdate(previous);
+      await flush();
+      live()._open();
+      live()._frame({ type: 'FINANCIAL_UPDATE', userId: 'previous' });
+      c.resetSession(true);
+      c.onFinancialUpdate(current);
+      await flush();
+      expect(previous).not.toHaveBeenCalled();
+      expect(current).not.toHaveBeenCalled();
+      live()._open();
+      live()._frame({ type: 'FINANCIAL_UPDATE', userId: 'current' });
+      await flush();
+      expect(current).toHaveBeenCalledOnce();
+      expect(current.mock.calls[0][0].userId).toBe('current');
+    } finally {
+      c.disconnect();
+    }
+  });
+});
+
+describe('token acquisition cannot strand either connection type', () => {
+  it.each(['table', 'channel'])(
+    '%s retries a hung token request and ignores its late result',
+    async (kind) => {
+      localStorage.setItem('ca_ws_mux', '0');
+      let finishFirst!: (token: string) => void;
+      const first = new Promise<string>((resolve) => {
+        finishFirst = resolve;
+      });
+      const getToken = vi.fn().mockReturnValueOnce(first).mockResolvedValue('fresh-token');
+      const onStatus = vi.fn();
+      const c =
+        kind === 'table'
+          ? client({ getToken, onStatus, initialDelay: 1, maxDelay: 1 }).c
+          : new EngineChannelClient({
+              baseUrl: 'https://engine.example',
+              getToken,
+              onStatus,
+              initialDelay: 1,
+              maxDelay: 1,
+            });
+      try {
+        void c.connect();
+        await vi.advanceTimersByTimeAsync(16_000);
+        expect(getToken).toHaveBeenCalledTimes(2);
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        const ws = live();
+        expect(ws.protocols).toEqual(['bearer', 'fresh-token']);
+        ws._open();
+        finishFirst('stale-token');
+        await vi.advanceTimersByTimeAsync(1);
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        expect(onStatus).toHaveBeenLastCalledWith('connected');
+      } finally {
+        c.disconnect();
+        localStorage.removeItem('ca_ws_mux');
+      }
+    }
+  );
+
+  it.each(['table', 'channel'])(
+    '%s cancels the token wait on disconnect without retrying',
+    async (kind) => {
+      const getToken = vi.fn(() => new Promise<string>(() => {}));
+      const onStatus = vi.fn();
+      const c =
+        kind === 'table'
+          ? client({ getToken, onStatus }).c
+          : new EngineChannelClient({ baseUrl: 'https://engine.example', getToken, onStatus });
+      const connected = c.connect();
+      await vi.advanceTimersByTimeAsync(1);
+      c.disconnect();
+      await connected;
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(getToken).toHaveBeenCalledTimes(1);
+      expect(FakeWebSocket.instances).toHaveLength(0);
+      expect(onStatus).toHaveBeenLastCalledWith('idle');
+    }
+  );
+});
+
+describe('foreground recovery does not wait for an online event', () => {
+  function make(kind: 'table' | 'channel') {
+    return kind === 'table'
+      ? client({ initialDelay: 30_000, maxDelay: 30_000 }).c
+      : new EngineChannelClient({
+          baseUrl: 'https://engine.example',
+          getToken: async () => 'tok',
+          initialDelay: 30_000,
+          maxDelay: 30_000,
+        });
+  }
+  function wake(event: 'pageshow' | 'visibilitychange') {
+    (event === 'pageshow' ? window : document).dispatchEvent(new Event(event));
+  }
+  for (const kind of ['table', 'channel'] as const) {
+    for (const event of ['pageshow', 'visibilitychange'] as const) {
+      it(`${kind}: ${event} immediately replaces a closed connection during a long retry`, async () => {
+        const c = make(kind);
+        try {
+          void c.connect();
+          await flush();
+          live()._serverClose(1006);
+          const before = FakeWebSocket.instances.length;
+          wake(event);
+          await flush();
+          expect(FakeWebSocket.instances.length).toBe(before + 1);
+        } finally {
+          c.disconnect();
+        }
+      });
+    }
+    it(`${kind}: hidden pages and permanently disconnected clients do not reopen`, async () => {
+      const visibility = vi.spyOn(document, 'visibilityState', 'get');
+      const c = make(kind);
+      try {
+        void c.connect();
+        await flush();
+        live()._serverClose(1006);
+        const before = FakeWebSocket.instances.length;
+        visibility.mockReturnValue('hidden');
+        wake('pageshow');
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before);
+        c.disconnect();
+        visibility.mockReturnValue('visible');
+        wake('pageshow');
+        wake('visibilitychange');
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before);
+      } finally {
+        c.disconnect();
+        visibility.mockRestore();
+      }
+    });
+    it(`${kind}: a healthy open connection survives repeated wake events`, async () => {
+      const c = make(kind);
+      try {
+        void c.connect();
+        await flush();
+        const ws = live();
+        ws._open();
+        if (kind === 'table') ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        await flush();
+        const before = FakeWebSocket.instances.length;
+        wake('pageshow');
+        wake('visibilitychange');
+        await flush();
+        expect(FakeWebSocket.instances.length).toBe(before);
+        expect(ws.closedWith).toHaveLength(0);
+      } finally {
+        c.disconnect();
+      }
+    });
+  }
+});
+
+describe('foreground table state proves an open socket is usable', () => {
+  async function openExistingTable(mux: boolean) {
+    localStorage.setItem('ca_ws_mux', mux ? '1' : '0');
+    const result = client();
+    await result.c.connect();
+    const ws = live();
+    ws._open();
+    if (mux) ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 0 } });
+    return { ...result, ws };
+  }
+
+  for (const mux of [false, true]) {
+    for (const event of ['pageshow', 'online', 'visibilitychange']) {
+      it(`replaces a half-open ${mux ? 'mux' : 'dedicated'} socket within the wake budget on ${event}`, async () => {
+        const { c, ws, statuses } = await openExistingTable(mux);
+        try {
+          await vi.advanceTimersByTimeAsync(100);
+          (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+          expect(
+            ws.sent.map((raw) => JSON.parse(raw)).some((frame) => frame.type === 'RESYNC')
+          ).toBe(true);
+          await vi.advanceTimersByTimeAsync(6500);
+          expect(statuses).toContain('reconnecting');
+          expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+          expect(FakeWebSocket.instances).toHaveLength(2);
+          expect(live()).not.toBe(ws);
+        } finally {
+          c.disconnect();
+          localStorage.removeItem('ca_ws_mux');
+        }
+      });
+    }
+  }
+
+  it('accepts an unchanged authoritative snapshot without replacing the connection', async () => {
+    const { c, ws, statuses } = await openExistingTable(true);
+    try {
+      window.dispatchEvent(new Event('pageshow'));
+      await vi.advanceTimersByTimeAsync(4000);
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 0 } });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(statuses).not.toContain('reconnecting');
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('does not let repeated wake events or pings postpone a missing snapshot', async () => {
+    const { c, ws, statuses } = await openExistingTable(true);
+    try {
+      window.dispatchEvent(new Event('pageshow'));
+      for (let i = 0; i < 5; i++) {
+        await vi.advanceTimersByTimeAsync(1000);
+        window.dispatchEvent(new Event('pageshow'));
+        ws._frame({ type: 'PING', ts: Date.now() });
+      }
+      expect(statuses).toContain('reconnecting');
+      // PING proves the shared transport is alive, so only the table re-subscribes.
+      expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('does not replace a socket after the page hides or disconnects', async () => {
+    const { c, ws } = await openExistingTable(true);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    try {
+      window.dispatchEvent(new Event('pageshow'));
+      visibility.mockReturnValue('hidden');
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(ws.closedWith).toHaveLength(0);
+      visibility.mockReturnValue('visible');
+      window.dispatchEvent(new Event('pageshow'));
+      c.disconnect();
+      await vi.advanceTimersByTimeAsync(6500);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    } finally {
+      c.disconnect();
+      visibility.mockRestore();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+
+  it('preserves the announced restart window', async () => {
+    const { c, ws, statuses } = await openExistingTable(true);
+    try {
+      c.noteScheduledRestart(Date.now() + 300000);
+      window.dispatchEvent(new Event('pageshow'));
+      await vi.advanceTimersByTimeAsync(6500);
+      expect(ws.closedWith).toHaveLength(0);
+      expect(statuses).not.toContain('reconnecting');
+    } finally {
+      c.disconnect();
+      localStorage.removeItem('ca_ws_mux');
+    }
+  });
+});
+
+describe('foreground channel liveness probe', () => {
+  async function openChannel() {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    c.send({ type: 'JOIN_CLUB', clubId: 'c1' });
+    c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    const ws = live();
+    ws._open();
+    return { c, ws };
+  }
+
+  it.each(['online', 'pageshow', 'visibilitychange'])(
+    'recovers a half-open channel on %s',
+    async (event) => {
+      const { c, ws } = await openChannel();
+      try {
+        (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+        expect(ws.sent.map((raw) => JSON.parse(raw).type)).toContain('CHANNEL_PING');
+        await vi.advanceTimersByTimeAsync(6500);
+        expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+        expect(live()).not.toBe(ws);
+        live()._open();
+        expect(live().sent.map((raw) => JSON.parse(raw).type)).toEqual(['JOIN_CLUB', 'JOIN_LOBBY']);
+      } finally {
+        c.disconnect();
+      }
+    }
+  );
+
+  it('keeps a responsive channel and reasserts current subscriptions once', async () => {
+    const { c, ws } = await openChannel();
+    try {
+      ws.sent = [];
+      window.dispatchEvent(new Event('pageshow'));
+      window.dispatchEvent(new Event('pageshow'));
+      expect(ws.sent.map((raw) => JSON.parse(raw).type)).toEqual([
+        'CHANNEL_PING',
+        'JOIN_CLUB',
+        'JOIN_LOBBY',
+      ]);
+      await vi.advanceTimersByTimeAsync(4000);
+      ws._frame({ type: 'CHANNEL_PONG' });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(ws.closedWith).toHaveLength(0);
+      expect(c.getStatus()).toBe('connected');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cannot extend the first probe by repeated wake events', async () => {
+    const { c, ws } = await openChannel();
+    try {
+      for (let i = 0; i < 5; i++) {
+        window.dispatchEvent(new Event('pageshow'));
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cancels a stale probe when the client is disposed', async () => {
+    const { c } = await openChannel();
+    window.dispatchEvent(new Event('online'));
+    c.disconnect();
+    await vi.advanceTimersByTimeAsync(6500);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(c.getStatus()).toBe('idle');
+  });
+});
+
+describe('a superseded table cannot return through browser wake', () => {
+  it.each(['online', 'pageshow', 'visibilitychange'])(
+    '%s keeps the current owner',
+    async (event) => {
+      localStorage.removeItem('ca_ws_mux');
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      const first = client(),
+        second = client();
+      try {
+        await first.c.connect();
+        const ws = live();
+        ws._open();
+        ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        await second.c.connect();
+        await flush();
+        expect(first.statuses[first.statuses.length - 1]).toBe('idle');
+        expect(second.statuses[second.statuses.length - 1]).toBe('connected');
+        const before = ws.sent.filter((raw) => JSON.parse(raw).type === 'SUBSCRIBE').length;
+        (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+        await flush();
+        expect(first.statuses[first.statuses.length - 1]).toBe('idle');
+        expect(second.statuses[second.statuses.length - 1]).toBe('connected');
+        expect(ws.sent.filter((raw) => JSON.parse(raw).type === 'SUBSCRIBE')).toHaveLength(before);
+      } finally {
+        first.c.disconnect();
+        second.c.disconnect();
+      }
+    }
+  );
+});
+
+it('drops an event queued by the superseded owner before it can reach the page', async () => {
+  localStorage.removeItem('ca_ws_mux');
+  const oldEvent = vi.fn();
+  const first = client({ onEvent: oldEvent }),
+    second = client();
+  try {
+    await first.c.connect();
+    const ws = live();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    ws._frame({ type: 'EVENT', tableId: TABLE, seq: 1, payload: { type: 'HAND_STARTED' } });
+    await second.c.connect();
+    await flush();
+    expect(oldEvent).not.toHaveBeenCalled();
+    expect(second.statuses[second.statuses.length - 1]).toBe('connected');
+  } finally {
+    first.c.disconnect();
+    second.c.disconnect();
   }
 });

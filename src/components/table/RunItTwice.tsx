@@ -310,8 +310,8 @@ export interface RitResultData {
   /**
    * The engine's verdict per board (2026-09-04): post-rake share, the half
    * (low = true on the low half of a hi-lo pot) and the hand name the engine
-   * scored. Absent on payloads older than this field; the felt then falls
-   * back to its own bestFive, which cannot see a low.
+   * scored. Older payloads without the winning cards retain names and amounts
+   * without inventing card highlights.
    */
   perBoardAwards?: Array<{
     board: number;
@@ -319,6 +319,8 @@ export interface RitResultData {
     amount: number;
     low: boolean;
     handName: string | null;
+    /** Exact evaluator selection for this award, including a low half. */
+    cards?: CardImageCard[];
   }>;
   /** Gross pot (every pot on the wire). */
   potTotal: number;

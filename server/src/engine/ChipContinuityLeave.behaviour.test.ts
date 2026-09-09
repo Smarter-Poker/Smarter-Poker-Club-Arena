@@ -43,6 +43,7 @@ vi.mock('../services/supabase/cashSessions.js', async (importOriginal) => {
 });
 
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
+const { supabase } = await import('../services/supabase.js');
 const { deadlineScheduler } = await import('./DeadlineScheduler.js');
 
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -225,5 +226,123 @@ describe('a leave refused at settlement is held by the clock, then released', ()
     e.onLeaveRefusedAtSettlement(HUMAN, 500);
     e.sitOut(HUMAN, false);
     expect(e.leaveHeldByClock.has(HUMAN)).toBe(false);
+  });
+});
+
+describe('cashout follows a settlement barrier that is extended while waiting', () => {
+  for (const forced of [false, true]) {
+    it(
+      forced
+        ? 'forced cashout waits for the appended settlement'
+        : 'voluntary cashout waits for the appended settlement',
+      async () => {
+        const e = makeEngine();
+        let finishFirst!: () => void;
+        let finishSecond!: () => void;
+        const first = new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        });
+        const second = new Promise<void>((resolve) => {
+          finishSecond = resolve;
+        });
+        e.postHandTasksPromise = first;
+        cashoutVoluntary.mockResolvedValue({
+          ok: false,
+          code: 'LEAVE_LOCKED',
+          stayRemainingMs: 1000,
+        });
+        cashout.mockImplementation(async (_user, _table, _seat, opts) => {
+          opts.onFailed('test refusal preserves the seat');
+        });
+        const leaving = e.leaveTable(HUMAN, { forced });
+        e.postHandTasksPromise = Promise.all([first, second]).then(() => undefined);
+        finishFirst();
+        for (let i = 0; i < 12; i++) await Promise.resolve();
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+        finishSecond();
+        await leaving;
+        expect(forced ? cashout : cashoutVoluntary).toHaveBeenCalledTimes(1);
+      }
+    );
+  }
+});
+
+describe('a rejected settlement is not a cashout authorization', () => {
+  for (const forced of [false, true]) {
+    it(
+      forced
+        ? 'forced leave propagates settlement failure'
+        : 'voluntary leave propagates settlement failure',
+      async () => {
+        const e = makeEngine();
+        let rejectSettlement!: (error: Error) => void;
+        e.postHandTasksPromise = new Promise<void>((_resolve, reject) => {
+          rejectSettlement = reject;
+        });
+        const leaving = e.leaveTable(HUMAN, { forced });
+        const rejected = expect(leaving).rejects.toThrow('settlement failed');
+        rejectSettlement(new Error('settlement failed'));
+        await rejected;
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+      }
+    );
+  }
+});
+
+describe('a folded player still has an unsettled hand contribution', () => {
+  it.each([false, true])(
+    'defers the cashout until the live hand persists its final stack: forced=%s',
+    async (forced) => {
+      const e = makeEngine();
+      cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
+      const chain: any = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockResolvedValue({ error: null }),
+      };
+      const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
+      e.handController = {
+        getState: () => ({
+          players: [
+            {
+              user_id: HUMAN,
+              seat: 1,
+              is_folded: true,
+              is_all_in: false,
+              stack: 120,
+              total_bet: 60,
+            },
+          ],
+        }),
+        performAction: vi.fn(),
+      };
+      try {
+        const result = await e.leaveTable(HUMAN, { forced });
+        expect(result).toMatchObject({ success: true, immediate: false });
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+        expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ leave_pending: true }));
+        expect(e.handController.performAction).not.toHaveBeenCalled();
+      } finally {
+        from.mockRestore();
+      }
+    }
+  );
+});
+
+describe('a player who was not dealt into the live hand', () => {
+  it('can cash out without waiting for other players to finish', async () => {
+    const e = makeEngine();
+    cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
+    e.handController = {
+      getState: () => ({
+        players: [{ user_id: HORSE, seat: 2, is_folded: false, is_all_in: false }],
+      }),
+    };
+    const result = await e.leaveTable(HUMAN);
+    expect(result).toMatchObject({ success: true, immediate: true });
+    expect(cashoutVoluntary).toHaveBeenCalledOnce();
   });
 });

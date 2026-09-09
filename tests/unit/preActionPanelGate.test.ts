@@ -163,11 +163,83 @@ describe('THE BAR DOES NOT BLINK BETWEEN ACTORS (Dan 2026-09-07)', () => {
 
   it('both bars still collapse when the hand is not in progress', () => {
     // The between-hands case the removed clause was credited with covering is
-    // covered here, and covered honestly.
+    // covered here, and covered honestly. The bar's gate opens with
+    // `handStillTakingAction`, which is itself built on isHandInProgress -
+    // read the gate from its own first clause, not from whatever JSX happens
+    // to precede it (2026-09-04: the control strip above it stopped reading
+    // isHandInProgress directly, and this pin was anchored on that).
     const at = PAGE.indexOf('<PreActionBar');
-    const gate = PAGE.slice(PAGE.lastIndexOf('{tableState.isHandInProgress &&', at), at);
-    expect(gate).toContain('tableState.isHandInProgress');
+    const gate = PAGE.slice(PAGE.lastIndexOf('{handStillTakingAction &&', at), at);
+    expect(gate).toContain('handStillTakingAction');
     expect(gate).toContain('tableState.heroSeat > 0');
+    expect(PAGE).toMatch(/const handStillTakingAction =\s*\n?\s*tableState\.isHandInProgress &&/);
+  });
+
+  it('every "your turn" surface reads heroPromptedToAct, not the seat (Dan 2026-09-04)', () => {
+    /* "IT STILL 'PROMPTS YOU' AND STARTS THE CLOCK FOR A SPLIT SECOND INSTEAD
+       OF JUST EXECUTING THE PRE TURN ACTION YOU'VE SELECTED." The 2026-08-29
+       fix gated the ActionPanel alone; six other surfaces kept announcing the
+       turn for the engine's 900ms pre-action beat. One boolean now, and each
+       surface is pinned to it by name so the next one added cannot drift. */
+    expect(PAGE).toMatch(
+      /const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;/
+    );
+    // the HUD time-bank tile
+    expect(PAGE).toMatch(/hudSlotControl: 'timebank' \| 'rabbit' \| null = heroPromptedToAct/);
+    // the page pulse
+    expect(PAGE).toMatch(/\$\{heroPromptedToAct \? ' table-page--hero-turn' : ''\}/);
+    // the control strip (time bank button + ticking numeral)
+    expect(PAGE).toMatch(
+      /\{heroPromptedToAct && \(\s*\n\s*<div className="control-strip control-strip--transparent">/
+    );
+    // the clock warning
+    expect(PAGE).toMatch(/const isHeroOnTheClock =[\s\S]{0,400}!suppressPanelForPreAction;/);
+    // the bottom-bar reserve
+    const stateAt = PAGE.indexOf("const heroActionState: 'none' | 'waiting' | 'active'");
+    const activeArm = PAGE.slice(stateAt, PAGE.indexOf("return 'active'", stateAt));
+    expect(activeArm).toContain('!suppressPanelForPreAction');
+    // the hero's own seat ring/highlight
+    expect(PAGE).toMatch(
+      /isActive=\{\s*\n\s*seatNumber === tableState\.currentPlayerSeat &&[\s\S]{0,700}!\(displayPlayer\?\.isHero && suppressPanelForPreAction\)/
+    );
+    // the bell and the buzz defer while a pre-action is armed - through STATE,
+    // because the snapshot lands before the discrete turn_change and a ref
+    // write would not re-run the effect (2026-09-08 sweep)
+    expect(PAGE).toMatch(
+      /if \(preActionArmedRef\.current !== null\) \{\s*\n\s*setTurnAlertDeferred\(true\);/
+    );
+    expect(PAGE).toMatch(/if \(heroPromptedToAct && turnAlertDeferred\) \{/);
+    expect(PAGE).not.toMatch(/deferredTurnAlertRef/);
+    // the multi-table surfaces (tab badge, soft ping, dock countdown) read it too
+    const reportAt = PAGE.indexOf('isMyTurn: isHeroTurn,');
+    expect(reportAt).toBeGreaterThan(-1);
+    const isHeroTurnDecl = PAGE.lastIndexOf('const isHeroTurn =', reportAt);
+    expect(PAGE.slice(isHeroTurnDecl, reportAt)).toContain('heroPromptedToAct');
+    // and the gate is declared ABOVE that effect, or it would be a TDZ read
+    expect(PAGE.indexOf('const heroPromptedToAct =')).toBeLessThan(isHeroTurnDecl);
+    // the bottom-bar reserve holds 'waiting' through the beat, never 'none'
+    const stateAt2 = PAGE.indexOf("const heroActionState: 'none' | 'waiting' | 'active'");
+    const waitingArm = PAGE.slice(
+      PAGE.indexOf("return 'active'", stateAt2),
+      PAGE.indexOf("return 'waiting'", stateAt2)
+    );
+    expect(waitingArm).toContain('suppressPanelForPreAction');
+    // the bar itself stays up through the beat (pressed button and all)
+    const barAt = PAGE.indexOf('<PreActionBar');
+    const barGate = PAGE.slice(PAGE.lastIndexOf('{handStillTakingAction &&', barAt), barAt);
+    expect(barGate).toMatch(
+      /\(tableState\.currentPlayerSeat !== tableState\.heroSeat \|\|\s*\n?\s*suppressPanelForPreAction\)/
+    );
+    // and the engine's reason-less "nothing armed" frame (an older engine's
+    // execution push, which outran the snapshot) is HELD, never applied
+    const userEvAt = PAGE.indexOf("if (ev.kind === 'pre_action') {");
+    const userEv = PAGE.slice(
+      userEvAt,
+      PAGE.indexOf('setPreAction((cur) => (cur === mapped ? cur : mapped));', userEvAt)
+    );
+    expect(userEv).toMatch(
+      /if \(mapped === null && reason === null && preActionArmedRef\.current !== null\) return;/
+    );
   });
 });
 

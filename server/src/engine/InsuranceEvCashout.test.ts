@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { InsuranceEngine } from './InsuranceEngine.js';
+import { insuranceEquity } from './InsuranceEquity.js';
 import type { Card } from '../types.js';
 
 const LEADER = 'leader-1';
@@ -49,7 +50,9 @@ function offerLeader(e: InsuranceEngine, pot = 300) {
     ],
     board,
     pot,
-    'nlh'
+    'nlh',
+    false,
+    insuranceEquity(leaderCards, [oppCards], board, 'nlh')
   );
 }
 

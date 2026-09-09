@@ -1,25 +1,23 @@
 /**
  * GTO POSTFLOP V31 LOADER (2026-08-30)
  *
- * Hydrates `gto_postflop_v31` into the in-memory store the open-node consult
- * reads synchronously — the sibling of GtoPostflopLoader, which does the same
- * for `gto_postflop_compact`. Both are needed because the two source exports
- * are disjoint; neither table can answer for the other.
+ * Hydrates the active certified V31 dataset into the in-memory policy store.
+ * The RPC exposes only a dataset that passed provenance, held-out, replay and
+ * league promotion gates. The legacy `gto_postflop_v31` table is intentionally
+ * not read: it has no source seal and cannot distinguish response nodes.
  *
  * Paged at 500 rows so no single response carries an unbounded amount of
- * jsonb, and refreshed every 6 hours so the ongoing V31 aggregation reaches
- * the fleet without a deploy. That refresh matters far more here than it does
- * for V30: this table is built from empty over days, so nearly every refresh
- * is delivering cells that did not exist before.
+ * jsonb, and refreshed every 6 hours so a newly promoted immutable dataset
+ * reaches the fleet without an engine deploy. The live worker explicitly
+ * awaits the initial load; this module's timer owns periodic refresh plus
+ * bounded failed-load recovery. Evaluating and candidate datasets remain
+ * physically unavailable to this path until PostgreSQL promotes one active.
  *
- * COLLECT-THEN-SWAP, deliberately: every page is fetched before the store is
- * touched, and a failed or partial load changes nothing. The brain keeps the
- * cells it already had rather than half a table. It also means a DB-side
- * purge reaches memory on the next refresh instead of lingering forever.
+ * COLLECT-THEN-SWAP, deliberately: every page is fetched and every row is
+ * revalidated before the store is touched. A failed or partial load leaves
+ * the last known-good snapshot in place.
  *
- * Reads ONLY the compact V31 table. The 79 GB warehouse is never touched at
- * runtime — that is the whole architecture, and the reason the 2026-08-15
- * liveness incident stayed a one-off.
+ * The 80 GB warehouse is never touched at runtime.
  *
  * A failed load is loud but not fatal: the lookup reports an empty store, the
  * consult falls back to V30 and then to the heuristics.
@@ -28,71 +26,99 @@
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import {
-  setGtoPostflopV31,
+  replaceGtoPostflopV31,
+  replaceGtoPostflopV31Evaluation,
   gtoPostflopV31Count,
-  _clearGtoPostflopV31,
+  gtoPostflopV31EvaluationCount,
   type GtoPostflopV31Row,
 } from '../engine/GtoPostflopV31.js';
+import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
 const REFRESH_MS = 6 * 60 * 60_000;
-/** After the V30 loader (25s), so the two do not page the DB together. */
-const BOOT_DELAY_MS = 35_000;
+const RETRY_MS = 30_000;
+const MAX_RETRY_MS = 5 * 60_000;
 const PAGE = 500;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-let timer: NodeJS.Timeout | null = null;
-let bootTimer: NodeJS.Timeout | null = null;
-
-export async function loadGtoPostflopV31(): Promise<number> {
+async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number }> {
   try {
     const rows: GtoPostflopV31Row[] = [];
     for (let offset = 0; ; offset += PAGE) {
-      const { data, error } = await supabase
-        .from('gto_postflop_v31')
-        .select('street, game_family, position, depth_bucket, texture_class, hand_matrix, size_pct')
-        // the full primary key, so paging stays stable while the V31 driver
-        // inserts rows into the same table underneath us
-        .order('street', { ascending: true })
-        .order('game_family', { ascending: true })
-        .order('position', { ascending: true })
-        .order('depth_bucket', { ascending: true })
-        .order('texture_class', { ascending: true })
-        .range(offset, offset + PAGE - 1);
+      const { data, error } = await supabase.rpc('fn_gto_v31_active_cells', {
+        p_offset: offset,
+        p_limit: PAGE,
+      });
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
       rows.push(...(data as GtoPostflopV31Row[]));
       if (data.length < PAGE) break;
     }
-    // full success only: swap, so DB-side deletions evict from memory too
-    _clearGtoPostflopV31();
-    const applied = setGtoPostflopV31(rows);
+    // Full success only. The validator performs the atomic swap.
+    const applied = replaceGtoPostflopV31(rows);
     console.log(
-      `[GtoPostflopV31Loader] ${applied} suit-aware solver cells loaded (${gtoPostflopV31Count()} in the store)`
+      `[GtoPostflopV31Loader] ${applied} certified solver cells loaded (${gtoPostflopV31Count()} in the store)`
     );
-    return applied;
+    return { ok: true, count: applied };
   } catch (err) {
     reportError(err, 'GtoPostflopV31Loader.load');
     console.warn(
-      `[GtoPostflopV31Loader] V31 cell load FAILED - the brain falls back to V30 and the heuristics (${gtoPostflopV31Count()} cached)`
+      `[GtoPostflopV31Loader] certified V31 load FAILED - the brain keeps the last sealed snapshot or falls back (${gtoPostflopV31Count()} cached)`
     );
-    return 0;
+    return { ok: false, count: 0 };
   }
+}
+
+const refreshLoop = createAdaptiveRefreshLoop({
+  load: loadGtoPostflopV31Attempt,
+  refreshMs: REFRESH_MS,
+  retryMs: RETRY_MS,
+  maxRetryMs: MAX_RETRY_MS,
+});
+
+export async function loadGtoPostflopV31(): Promise<number> {
+  return (await refreshLoop.runNow()).count;
+}
+
+/**
+ * Hydrate one sealed, not-yet-active dataset for an offline evaluation run.
+ * This never mutates the live store and therefore cannot activate a candidate.
+ */
+export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
+  checksum: string;
+  cells: number;
+}> {
+  if (!UUID.test(datasetId)) {
+    throw new Error('invalid V31 evaluation dataset id');
+  }
+  const rows: GtoPostflopV31Row[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase.rpc('fn_gto_v31_evaluation_cells', {
+      p_dataset_id: datasetId,
+      p_offset: offset,
+      p_limit: PAGE,
+    });
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    rows.push(...(data as GtoPostflopV31Row[]));
+    if (data.length < PAGE) break;
+  }
+  if (rows.length === 0) throw new Error('V31 evaluation dataset returned no cells');
+  const checksum = rows[0].dataset_checksum;
+  if (!checksum || rows.some((row) => row.dataset_checksum !== checksum)) {
+    throw new Error('V31 evaluation dataset checksum is missing or inconsistent');
+  }
+  replaceGtoPostflopV31Evaluation(rows);
+  const cells = gtoPostflopV31EvaluationCount(checksum);
+  console.log(
+    `[GtoPostflopV31Loader] ${cells} sealed candidate cells loaded for ${checksum.slice(0, 12)}`
+  );
+  return { checksum, cells };
 }
 
 export function startGtoPostflopV31Loader(): void {
-  if (timer) return;
-  bootTimer = setTimeout(() => void loadGtoPostflopV31(), BOOT_DELAY_MS);
-  bootTimer.unref?.();
-  timer = setInterval(() => void loadGtoPostflopV31(), REFRESH_MS);
-  timer.unref?.();
+  refreshLoop.start();
 }
 
 export function stopGtoPostflopV31Loader(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
-  if (bootTimer) {
-    clearTimeout(bootTimer);
-    bootTimer = null;
-  }
+  refreshLoop.stop();
 }

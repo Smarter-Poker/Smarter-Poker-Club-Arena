@@ -160,6 +160,12 @@ The privacy policy URL is `https://smarter.poker/privacy` once the World Hub
 serves it as a page (phase 3b); today `/privacy` redirects to `/terms`, whose
 privacy tab is client-rendered and not what a store crawler reads.
 
+## Listing copy and review notes
+
+`docs/APP-STORE-LISTING.md` has the store listing (name, subtitle, description,
+keywords, content-rating and data-safety answers, the screenshot list, and
+the reviewer notes with Dan's chips sentence) written once for both stores.
+
 ## Review notes (phase 7)
 
 Give the reviewer a demo account (the service identity is NOT for this - make

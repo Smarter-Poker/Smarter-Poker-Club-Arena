@@ -81,7 +81,12 @@ export function WaitListModal({
   players,
   myPlayerId,
   onLeaveWaitList,
-  avgWaitTimeMinutes = 5,
+  /* No default (final sweep 2026-09-08). This used to default to 5, and no
+     caller ever passed it, so every player on every wait list was quoted
+     "(position - 1) x 5 min" - a number nobody measured. A wait estimate is
+     printed only when the caller supplies a real one; otherwise the position
+     stands alone, which is true. */
+  avgWaitTimeMinutes,
 }: WaitListModalProps) {
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
@@ -115,7 +120,8 @@ export function WaitListModal({
 
   // Estimated wait time
   const estimatedWait = useMemo(() => {
-    if (myPosition <= 0) return 0;
+    if (myPosition <= 0) return null;
+    if (typeof avgWaitTimeMinutes !== 'number' || !(avgWaitTimeMinutes >= 0)) return null;
     return (myPosition - 1) * avgWaitTimeMinutes;
   }, [myPosition, avgWaitTimeMinutes]);
 
@@ -158,9 +164,11 @@ export function WaitListModal({
             <div className="waitlist-modal__position-number">#{myPosition}</div>
             <div className="waitlist-modal__position-info">
               <span className="waitlist-modal__position-label">Your Position</span>
-              <span className="waitlist-modal__position-eta">
-                Est. Wait: {formatDuration(estimatedWait)}
-              </span>
+              {estimatedWait !== null && (
+                <span className="waitlist-modal__position-eta">
+                  Est. Wait: {formatDuration(estimatedWait)}
+                </span>
+              )}
             </div>
           </div>
         )}

@@ -77,7 +77,7 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
 
   it('hand history records the variant the hand was DEALT as', () => {
     expect(SETTLEMENT).toMatch(
-      /gameVariant: snap\.variant \|\| this\.tableInfo\.game_variant \|\| 'nlh'/
+      /gameVariant: snap\.variant \|\| tableInfo\.game_variant \|\| 'nlh'/
     );
   });
 
@@ -806,6 +806,63 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // And the RPC says when it rounded, so the host is told rather than
     // discovering it from the felt after everyone has been charged.
     expect(SETTINGS).toMatch(/ante_multiplier_rounded/);
+  });
+
+  it('the BOMB POT! title stands above the board, measured, never at a viewport percent on the cards', () => {
+    /* Dan 2026-09-04: "THE 'BOMB POT' THAT EXPLODES AND APPEARS ON THE TABLE
+       NEEDS TO BE HIGHER, IT COVERS THE BOARD WHILE DISPLAYING." The title
+       block was `top: 42%` of the viewport; the board is at 42.5% of the felt
+       and the bomb's flop deals in the moment the title arrives. The overlay
+       now measures the felt when the title phase begins and stands the block
+       just above the pot/board, scaling down rather than climbing onto the
+       top seats when the band is short. */
+    const CSS_OVERLAY = read('src/components/table/BombPotOverlay.css');
+    const OVERLAY = read('src/components/table/BombPotOverlay.tsx');
+    // The geometry lives in its own module (react-refresh: a component file
+    // exports only the component); the component imports and applies it.
+    const ANCHOR = read('src/lib/bombPotTitleAnchor.ts');
+    const block = CSS_OVERLAY.slice(
+      CSS_OVERLAY.indexOf('.bpo-title-block {'),
+      CSS_OVERLAY.indexOf('}', CSS_OVERLAY.indexOf('.bpo-title-block {'))
+    );
+    expect(block).not.toMatch(/top:\s*4\d%/);
+    expect(block).toMatch(/transform-origin:\s*50% 100%/);
+    // The component measures and anchors by the felt: pot/board ceiling,
+    // top-seat floor, and a scale for short bands.
+    expect(ANCHOR).toMatch(/export function measureTitleAnchor\(/);
+    expect(OVERLAY).toMatch(/from '\.\.\/\.\.\/lib\/bombPotTitleAnchor'/);
+    expect(OVERLAY).toMatch(/measureTitleAnchor\(scope, blockH\)/);
+    expect(ANCHOR).toMatch(
+      /rectOf\('\.pot-display'\),\s*\n?\s*rectOf\('\.pot-display__pile--pot'\),\s*\n?\s*rectOf\('\.community-area'\)/
+    );
+    expect(ANCHOR).toMatch(/scope\.querySelectorAll\('\.seat-wrapper'\)/);
+    expect(OVERLAY).toMatch(/bottom: `\$\{titleAnchor\.bottomPx\}px`/);
+    expect(OVERLAY).toMatch(/scale\(\$\{titleAnchor\.scale\}\)/);
+    // Scoped to this overlay's own table, so a hidden multi-table sibling
+    // (zero-size rects) can never be the anchor; measured before paint.
+    expect(OVERLAY).toMatch(/containerRef\.current\?\.closest\('\.table-page'\)/);
+    expect(OVERLAY).toMatch(/useLayoutEffect\(\(\) => \{\s*\n\s*if \(phase !== 'title'\)/);
+    // And the fallback, for a table that has not painted, is ABOVE the board.
+    expect(ANCHOR).toMatch(/export const TITLE_FALLBACK_TOP = '2\d%'/);
+    // and the block's height is measured transform-independently, or a
+    // resize re-reads its own scaled box and climbs back onto the seats
+    expect(OVERLAY).toMatch(/titleBlockRef\.current\?\.offsetHeight/);
+    expect(OVERLAY).not.toMatch(/titleBlockRef\.current\?\.getBoundingClientRect/);
+  });
+
+  it('a regular ante is seen leaving the player: the engine announces it and the felt flies it (Dan 2026-09-04)', () => {
+    /* "IF THERE IS AN ANTE, THAT NEEDS TO BE 'TAKEN FROM THE PLAYER AND ADDED
+       TO THE POT PRE FLOP'." The pot already counted it (postBlinds adds a
+       regular ante straight to state.pot); nothing showed it moving. */
+    const EVENTS = read('server/src/engine/ServerTableEngineHandEvents.ts');
+    const PAGE = read('src/pages/TablePage.tsx');
+    expect(EVENTS).toMatch(/type: 'antes_posted'/);
+    expect(EVENTS).toMatch(/\.filter\(\(p\) => p && p\.kind === 'ante' && p\.amount > 0\)/);
+    expect(PAGE).toMatch(/case 'ANTES_POSTED': \{/);
+    const at = PAGE.indexOf("case 'ANTES_POSTED': {");
+    const handler = PAGE.slice(at, PAGE.indexOf("case 'TURN_CHANGE': {", at));
+    expect(handler).toMatch(/createChipToPotEvent\(seatPos, potPos, post\.amount\)/);
+    expect(handler).toMatch(/setChipAnimations\(\(prev\) => \[\.\.\.prev, \.\.\.events\]\)/);
   });
 
   it('editing a table clears the bomb LIVE state', () => {

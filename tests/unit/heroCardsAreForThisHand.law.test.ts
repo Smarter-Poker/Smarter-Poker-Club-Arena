@@ -266,7 +266,7 @@ describe('LAW: the hand number does not wait for an event that may never arrive'
   });
 
   it('HAND_STARTED still sets it, because the event is the earliest signal', () => {
-    expect(SRC).toMatch(/if \(hn > 0\) heroHandRef\.current = hn;/);
+    expect(SRC).toMatch(/if \(startedHandNumber > 0\) heroHandRef\.current = startedHandNumber;/);
   });
 
   it('a DELETE on the hole-card channel is ignored, on purpose and in writing', () => {

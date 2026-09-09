@@ -178,6 +178,32 @@ break.
 ## Status log (updated as phases land)
 
 - Programme opened 2026-09-02. Build order above. Phase 1 in progress.
+- **2026-09-07/08 re-dive (Dan: "several issues, full redive").** Verified live
+  before anything else: 26/26 breaks clean, thaw 26/26 complete, dispatcher
+  firing hourly. Then built and shipped, each measured after deploy:
+  - engine logs survive the deploy (#3539): `/var/log/club-arena-engine/`
+    gets one gzipped file per hourly cutover (13-15 MB each) - three there
+    already;
+  - Phase 8 part 1 (#3550 + `20260908020500`): completed hand snapshots kept 6
+    hours not 7 days, pruner in 2,000-row rounds under a 20s budget, every two
+    minutes; backlog of ~3.6 M rows draining;
+  - seat-first fills (#3555): a registration for an event more than 30 minutes
+    out no longer counts as one of a horse's four games - 615 of 1,000 horses
+    had read as busy on next Sunday's bookings; "0 of 3 claimable" and
+    "CANNOT FILL" went from 200+ per half hour to zero. Boards still take a
+    median 12-22 min for their FIRST horse (only ~33% within 3 min) and ~4 min
+    from first horse to start: that first-horse wait is the deliberate
+    hold-empty share (`seatFirstHeldEmpty`, 33%/50% per 30-min bucket) and
+    the opening-horse rule, a product decision left as designed;
+  - the balancer does not move players during the break (#3560):
+    `freeze_conserved` true on every break since (was flipping false on
+    table-balance moves caught halfway by the :00 mark);
+  - money (#3534, #3569): the hourly bounty backpay sweep no longer aborts on
+    one refused pool; a spin champion owed 100 whose prize leg had fallen
+    into `settlement_suspense` is paid through the one payer; the spin
+    disbursement audit compares against buy_in x multiplier (34 false
+    positives resolved). Root cause of the suspense fall-through filed as
+    #3568 for the chip-standard workstream; stale-PR catalogue #3570.
 - 2026-09-02 ~21:45 Phase 1 merged (#2710); migrations applied; scorecard,
   freeze marks, disarmed dispatcher and deploy-start marker live.
 - 2026-09-02 23:18 Phases 2+3 merged (#2715) after two CI reds that were

@@ -56,10 +56,23 @@ async function withCleanupRetries<T>(operation: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 function serverHeaders(key: string, extra: Record<string, string> = {}): Record<string, string> {
+  const reserved = new Set([
+    'apikey',
+    'authorization',
+    'x-smarter-data-actor',
+    'x-smarter-data-protocol',
+    'x-smarter-tournament-id',
+    'x-smarter-tournament-lease-generation',
+  ]);
+  const requestHeaders = Object.fromEntries(
+    Object.entries(extra).filter(([name]) => !reserved.has(name.toLowerCase()))
+  );
   return {
+    ...requestHeaders,
     apikey: key,
     ...(key.startsWith('sb_secret_') ? {} : { Authorization: `Bearer ${key}` }),
-    ...extra,
+    'x-smarter-data-actor': 'service',
+    'x-smarter-data-protocol': '1',
   };
 }
 
@@ -272,13 +285,41 @@ async function normalizeTemporaryProfile(
   environment: CustomizationCertificationEnvironment,
   userId: string
 ): Promise<void> {
+  // 2026-09-07 (Diamond Accounting Standard DR2, DR6; docs/DIAMOND-RULINGS.md): the welcome grant a
+  // fixture is born with is RETIRED through the Mint, never zeroed by a direct PATCH. A direct write
+  // left the balance and the register disagreeing by 500 for every fixture (151 times in five days)
+  // and filed DR6 on each. fn_ca_burn journals the retirement and registers it; the PATCH below then
+  // touches no money column.
+  const balanceQuery = new URLSearchParams({ select: 'diamonds', id: `eq.${userId}` });
+  const balanceRows = await readServiceRows<{ diamonds: number | null }>(
+    environment,
+    'profiles',
+    balanceQuery
+  );
+  const born = Number(balanceRows[0]?.diamonds ?? 0);
+  if (born > 0) {
+    const retired = await callServiceRpc<JsonObject>(environment, 'fn_ca_burn', {
+      p_asset: 'diamonds',
+      p_source: 'player',
+      p_target_id: userId,
+      p_amount: born,
+      p_reason:
+        'Certification fixture: the welcome grant is retired so commerce checks start at zero',
+      p_op_id: `cert-normalize:${userId}`,
+      p_class: 'admin',
+    });
+    if (retired.ok !== true && retired.replayed !== true) {
+      throw new Error(
+        `Temporary customization normalization failed: ${String(retired.reason || '')}`
+      );
+    }
+  }
+
   const query = new URLSearchParams({ id: `eq.${userId}` });
   await serviceRequest<void>(environment, `/rest/v1/profiles?${query.toString()}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({
-      diamonds: 0,
-      diamond_balance: 0,
       diamond_multiplier: 1,
       is_vip: false,
       vip_tier: null,

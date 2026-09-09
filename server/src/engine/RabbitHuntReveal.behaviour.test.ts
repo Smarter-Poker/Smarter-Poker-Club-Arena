@@ -49,6 +49,7 @@ vi.mock('../services/supabase.js', () => ({
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 const { ServerTableEngineSettlement } = await import('./ServerTableEngineSettlement.js');
+const { reportError } = await import('../services/errorReporter.js');
 
 const HERO = 'hero-user-id';
 const VILLAIN = 'villain-user-id';
@@ -97,6 +98,7 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(reportError).mockClear();
   rpc.mockReset();
   revealInsert.mockReset();
   revealInsert.mockResolvedValue({ error: null });
@@ -166,7 +168,10 @@ describe('the charge', () => {
   it('a VIP inside the monthly pool pays nothing and is told what is left', async () => {
     const { reveal } = makeEngine();
     const r = await reveal();
-    expect(rpc).toHaveBeenCalledWith('fn_consume_rabbit_hunt', { p_user_id: HERO });
+    expect(rpc).toHaveBeenCalledWith('fn_consume_rabbit_hunt_v2', {
+      p_user_id: HERO,
+      p_request_id: expect.any(String),
+    });
     expect(r.source).toBe('vip_monthly');
     expect(r.diamonds_spent).toBe(0);
     expect(r.vip_remaining).toBe(99);
@@ -318,5 +323,106 @@ describe('an offer goes stale', () => {
     (engine.rabbitHuntOffers as Map<number, { offeredAt: number }>).get(HAND)!.offeredAt =
       Date.now() - 1000;
     expect((await reveal()).success).toBe(true);
+  });
+});
+
+describe('metadata latency cannot hold paid cards', () => {
+  it('returns the paid reveal while metadata is still pending, without a second charge', async () => {
+    let finishMetadata!: (value: { error: null }) => void;
+    revealInsert.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishMetadata = resolve;
+        })
+    );
+    const { reveal } = makeEngine();
+    let result: Reveal | undefined;
+    const pending = reveal().then((value) => {
+      result = value;
+    });
+    try {
+      // Flush promise continuations without completing the metadata request.
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      expect(result?.success).toBe(true);
+      expect(result?.cards).toHaveLength(5);
+      expect((await reveal()).source).toBe('already_revealed');
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(revealInsert).toHaveBeenCalledTimes(1);
+    } finally {
+      finishMetadata({ error: null });
+      await pending;
+    }
+  });
+
+  it.each(['returned error', 'rejection', 'synchronous throw'])(
+    'reports a metadata %s without failing a paid reveal',
+    async (failure) => {
+      const error = new Error('metadata unavailable');
+      if (failure === 'returned error') revealInsert.mockResolvedValue({ error });
+      else if (failure === 'rejection') revealInsert.mockRejectedValue(error);
+      else
+        revealInsert.mockImplementation(() => {
+          throw error;
+        });
+      const result = await makeEngine().reveal();
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      expect(result.success).toBe(true);
+      expect(reportError).toHaveBeenCalledWith(
+        error,
+        'ServerTableEngine.rabbit_hunt_reveal_log_error'
+      );
+    }
+  );
+});
+
+describe('one durable purchase for each player and hand', () => {
+  it('a committed payment with a lost response can be retried without another charge', async () => {
+    const receipts = new Map<string, Record<string, unknown>>();
+    let deductions = 0;
+    let loseResponse = true;
+    rpc.mockImplementation(async (_name: string, params: { p_request_id: string }) => {
+      let receipt = receipts.get(params.p_request_id);
+      if (!receipt) {
+        deductions++;
+        receipt = { success: true, source: 'diamonds', diamonds_spent: 5 };
+        receipts.set(params.p_request_id, receipt);
+      } else {
+        receipt = { ...receipt, diamonds_spent: 0, idempotent: true };
+      }
+      if (loseResponse) {
+        loseResponse = false;
+        throw new Error('response lost after commit');
+      }
+      return { data: receipt, error: null };
+    });
+    const { reveal } = makeEngine();
+    expect((await reveal()).success).toBe(false);
+    const retry = await reveal();
+    expect(retry.success).toBe(true);
+    expect(retry.cards).toHaveLength(5);
+    expect(retry.diamonds_spent).toBe(0);
+    expect(deductions).toBe(1);
+    expect(rpc.mock.calls[0][0]).toBe('fn_consume_rabbit_hunt_v2');
+    expect(rpc.mock.calls[1][1]).toEqual(rpc.mock.calls[0][1]);
+  });
+
+  it('the same offer has the same request ID across engine instances', async () => {
+    await makeEngine().reveal();
+    await makeEngine().reveal();
+    expect(rpc.mock.calls[0][1].p_request_id).toBe(rpc.mock.calls[1][1].p_request_id);
+    expect(rpc.mock.calls[0][1].p_request_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+  });
+
+  it('another player, table or hand cannot reuse this purchase receipt', async () => {
+    await makeEngine().reveal();
+    await makeEngine().reveal(VILLAIN);
+    await makeEngine({ tableId: 'table-2' }).reveal();
+    const next = makeEngine();
+    const offers = next.engine.rabbitHuntOffers as Map<number, unknown>;
+    offers.set(HAND + 1, offers.get(HAND));
+    await next.reveal(HERO, HAND + 1);
+    expect(new Set(rpc.mock.calls.map((call) => call[1].p_request_id)).size).toBe(4);
   });
 });

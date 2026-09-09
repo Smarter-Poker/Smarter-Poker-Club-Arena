@@ -16,6 +16,10 @@ import { chipsCannotRank, noHandWasEverDealt } from './recoveryRankEvidence.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { settleTournamentObligation } from './settleObligation.js';
+import { claimTournamentFinish } from './tournamentFinishContract.js';
+import { settleTournamentPlacesAtomically } from './atomicPlaceSettlement.js';
+import { IN_LIST_CHUNK } from '../services/supabase/chunkedIn.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 /**
  * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
@@ -27,13 +31,12 @@ import { settleTournamentObligation } from './settleObligation.js';
  *
  * Recovery, per stuck tournament (idempotent — safe to re-run):
  *   1. Load tournament + players. Normalize the payout structure to 100%.
- *   2. Any still-'playing'/'registered' players are ranked by chip count and
- *      assigned the top remaining positions (1..N). Position 1 becomes the
- *      winner. Each gets their payout-structure prize credited + logged.
- *   3. Any already-eliminated ITM player whose recorded prize is 0 but whose
- *      position pays is topped up (covers busts recorded before the pool
- *      reached its final/guaranteed size).
- *   4. Tournament flips COMPLETING → COMPLETED (CAS-guarded).
+ *   2. Refuse an unresolved multi-survivor field. A lone survivor can be
+ *      stamped winner; a field with complete standings needs no new ranking.
+ *      Every read-only result gate runs before guarantee funding.
+ *   3. The complete place-obligation set is prepared, then every place is
+ *      paid and the tournament is marked COMPLETED in one database
+ *      transaction. A refused leg pays nobody and leaves it COMPLETING.
  */
 /**
  * TOURNEY-AUDIT 2026-07-24 (sweep 4): shared cleanup for every server-side
@@ -63,13 +66,14 @@ export async function refundAndCloseCancelledTournament(
     // gates the fee reversal below. A discarded error read as "no club_id", so
     // a transient failure here silently kept every entry fee on a CANCELLED
     // event instead of reversing it, with nothing logged to say so.
-    if (fullTErr) {
+    if (fullTErr || !fullT) {
       reportError(
         new Error(
-          `[GameServer] Cancel refund: tournament row unreadable for ${tournamentId.slice(0, 8)}: ${fullTErr.message}`
+          `[GameServer] Cancel refund: tournament row unreadable for ${tournamentId.slice(0, 8)}: ${fullTErr?.message ?? 'missing tournament'}`
         ),
         'GameServer.cancel_refund_tournament_unreadable'
       );
+      return;
     }
     // AUDIT 2026-08-19 (rake/BBJ pass 2): refunds are EVIDENCE-BASED. The old
     // rule "horses paid nothing" became false the day
@@ -131,7 +135,7 @@ export async function refundAndCloseCancelledTournament(
           ),
           'GameServer.cancel_refund_evidence_failed'
         );
-        continue;
+        return;
       }
       // PAYOUT-INTEGRITY 2026-08-20: rebuys and add-ons count as money paid
       // for THIS tournament and must come back on a cancellation. The filter
@@ -155,7 +159,6 @@ export async function refundAndCloseCancelledTournament(
       gross = Math.round(gross * 100) / 100;
       refunded = Math.round(refunded * 100) / 100;
       if (gross <= 0) continue; // never paid (legacy free entry)
-      if (gross - refunded <= 0) continue; // already refunded in full
 
       // ONE SETTLE PATH (2026-09-02): a user-keyed 'refund' obligation,
       // UNIQUE on (tournament, 'refund', user). Every cancel-refund path
@@ -172,22 +175,35 @@ export async function refundAndCloseCancelledTournament(
       // partial refund twice: gross 20, refunded 5 -> total 15, seeded paid 5
       // -> it paid 10, and the player was 5 short. The total is what the
       // player paid; the function already knows what came back.
-      const refund = await settleTournamentObligation(supabase, {
-        tournamentId,
-        kind: 'refund',
-        userId: row.user_id,
-        amount: gross,
-        source: 'engine.refundAndCloseCancelledTournament',
-        memo: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
-      });
-      if (!refund.ok) {
-        reportError(
-          new Error(
-            `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refund.refused_reason}${refund.transport_error ? ` (${refund.transport_error})` : ''}`
-          ),
-          'GameServer.cancel_refund_failed'
-        );
-        continue;
+      // An already refunded player can still have unfinished fee work.
+      if (gross - refunded > 0) {
+        const refund = await settleTournamentObligation(supabase, {
+          tournamentId,
+          kind: 'refund',
+          userId: row.user_id,
+          amount: gross,
+          source: 'engine.refundAndCloseCancelledTournament',
+          memo: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
+        });
+        if (!refund.ok) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refund.refused_reason}${refund.transport_error ? ` (${refund.transport_error})` : ''}`
+            ),
+            'GameServer.cancel_refund_failed'
+          );
+          return;
+        }
+
+        if (refund.fully_settled !== true || (refund.amount_paid ?? 0) < gross) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund incomplete or unconfirmed for ${row.user_id} (${tournamentId.slice(0, 8)})`
+            ),
+            'GameServer.cancel_refund_failed'
+          );
+          return;
+        }
       }
 
       // Reverse this player's un-reversed fee rows (registration + rebuy fees
@@ -211,7 +227,7 @@ export async function refundAndCloseCancelledTournament(
             ),
             'GameServer.cancel_refund_fee_read_failed'
           );
-          continue;
+          return;
         }
         const feePaid =
           Math.round((feeRows ?? []).reduce((s, r) => s + Number(r.rake_amount || 0), 0) * 100) /
@@ -243,6 +259,7 @@ export async function refundAndCloseCancelledTournament(
               ),
               'GameServer.cancel_refund_fee_reversal_failed'
             );
+            return;
           }
         }
       }
@@ -264,6 +281,7 @@ export async function refundAndCloseCancelledTournament(
         ),
         'GameServer.cancel_refund_close_rows_failed'
       );
+      return;
     }
 
     // Close the tournament's tables
@@ -285,6 +303,149 @@ export async function refundAndCloseCancelledTournament(
   }
 }
 
+/** Drain only obligations already committed by the atomic knockout path. */
+async function drainTournamentBountyObligations(
+  tournamentId: string
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  const { data, error } = await supabase.rpc('fn_sweep_pending_tournament_bounties', {
+    p_tournament_id: tournamentId,
+    p_limit: 100,
+  });
+  const swept = (data ?? {}) as {
+    ok?: boolean;
+    pending?: number;
+    failed?: number;
+    reason?: string;
+  };
+  if (
+    error ||
+    swept.ok !== true ||
+    Number(swept.failed ?? 0) > 0 ||
+    Number(swept.pending ?? 0) > 0
+  ) {
+    return {
+      ok: false,
+      error:
+        error ??
+        new Error(
+          swept.reason ??
+            `${Number(swept.pending ?? 0)} pending and ${Number(swept.failed ?? 0)} failed knockout obligations remain`
+        ),
+    };
+  }
+  return { ok: true };
+}
+
+async function closeRecoveredTournamentTablesAndSeats(tournamentId: string): Promise<boolean> {
+  let tableRows: Array<{ id: string }>;
+  try {
+    const { data, error } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', tournamentId);
+    if (error || !data) {
+      reportError(
+        new Error(
+          `[GameServer] recoverStuckCompleting: could not list tables for committed ${tournamentId.slice(0, 8)}: ${error?.message ?? 'no rows returned'}`
+        ),
+        'GameServer.recoverStuckCompleting_table_list_failed'
+      );
+      return false;
+    }
+    tableRows = data as Array<{ id: string }>;
+  } catch (error) {
+    reportError(error, 'GameServer.recoverStuckCompleting_table_list_threw');
+    return false;
+  }
+
+  const tableIds = tableRows.map(({ id }) => id).filter(Boolean);
+  const leftAt = new Date().toISOString();
+  let complete = true;
+  for (let offset = 0; offset < tableIds.length; offset += IN_LIST_CHUNK) {
+    try {
+      const { error } = await supabase
+        .from('table_seats')
+        .update({ left_at: leftAt })
+        .in('table_id', tableIds.slice(offset, offset + IN_LIST_CHUNK))
+        .is('left_at', null);
+      if (error) {
+        complete = false;
+        reportError(
+          new Error(
+            `[GameServer] recoverStuckCompleting: committed ${tournamentId.slice(0, 8)} seat release failed: ${error.message}`
+          ),
+          'GameServer.recoverStuckCompleting_seat_release_failed'
+        );
+      }
+    } catch (error) {
+      complete = false;
+      reportError(error, 'GameServer.recoverStuckCompleting_seat_release_threw');
+    }
+  }
+
+  if (!complete) return false;
+
+  try {
+    const { error } = await supabase
+      .from('tables')
+      .update({ status: 'closed', current_players: 0 })
+      .eq('tournament_id', tournamentId);
+    if (error) {
+      complete = false;
+      reportError(
+        new Error(
+          `[GameServer] recoverStuckCompleting: committed ${tournamentId.slice(0, 8)} table closure failed: ${error.message}`
+        ),
+        'GameServer.recoverStuckCompleting_close_tables_failed'
+      );
+    }
+  } catch (error) {
+    complete = false;
+    reportError(error, 'GameServer.recoverStuckCompleting_close_tables_threw');
+  }
+
+  if (!complete) return false;
+
+  try {
+    const [{ data: terminalTables, error: tableProofError }, seatProof] = await Promise.all([
+      supabase
+        .from('tables')
+        .select('id, status, current_players')
+        .eq('tournament_id', tournamentId),
+      tableIds.length > 0
+        ? supabase
+            .from('table_seats')
+            .select('id', { count: 'exact', head: true })
+            .in('table_id', tableIds)
+            .is('left_at', null)
+        : Promise.resolve({ count: 0, error: null }),
+    ]);
+    const nonterminal = (terminalTables ?? []).filter(
+      (table) => table.status !== 'closed' || Number(table.current_players ?? 0) !== 0
+    );
+    if (
+      tableProofError ||
+      !terminalTables ||
+      terminalTables.length !== tableRows.length ||
+      nonterminal.length > 0 ||
+      seatProof.error ||
+      seatProof.count !== 0
+    ) {
+      reportError(
+        new Error(
+          `[GameServer] recoverStuckCompleting: committed ${tournamentId.slice(0, 8)} cleanup proof failed: ${tableProofError?.message ?? seatProof.error?.message ?? `${nonterminal.length} nonterminal table(s), ${seatProof.count ?? 'unknown'} live seat(s)`}`
+        ),
+        'GameServer.recoverStuckCompleting_cleanup_proof_failed'
+      );
+      return false;
+    }
+  } catch (error) {
+    reportError(error, 'GameServer.recoverStuckCompleting_cleanup_proof_threw');
+    return false;
+  }
+  return complete;
+}
+
 export async function recoverStuckCompletingTournaments(
   reason: string,
   onlyTournamentId?: string
@@ -301,10 +462,14 @@ export async function recoverStuckCompletingTournaments(
       // the event is before it trusts an empty hand_history - see
       // recoveryRankEvidence.ts on the 7-day horse-only prune.
       .select(
-        'id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier, started_at'
-      )
-      .eq('status', 'COMPLETING');
-    if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
+        'id, name, status, prize_pool, guaranteed_prize, prize_pool_finalized, payout_structure, variant, tournament_type, satellite_target_id, spin_multiplier, started_at, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage'
+      );
+    // The periodic sweep stays bounded to active recovery work. An explicit
+    // tournament recovery also accepts COMPLETED so the same explicit request
+    // can finish only the idempotent table/seat closure after a lost receipt.
+    q = onlyTournamentId
+      ? q.eq('id', onlyTournamentId).in('status', ['COMPLETING', 'COMPLETED'])
+      : q.eq('status', 'COMPLETING');
     const { data: stuck, error: stuckErr } = await q;
     // PAYOUT-INTEGRITY 2026-08-25: an unreadable list is not an empty one. The
     // discarded error made a failed scan indistinguishable from "nothing is
@@ -320,6 +485,20 @@ export async function recoverStuckCompletingTournaments(
     }
     for (const t of stuck ?? []) {
       try {
+        if ((t as { status?: string }).status === 'COMPLETED') {
+          const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
+          if (!cleanupComplete) {
+            throw new Error(
+              `durably completed tournament ${t.id.slice(0, 8)} could not prove table and seat cleanup`
+            );
+          }
+          continue;
+        }
+        // Recovery holds service_role, which deliberately bypasses the SQL
+        // maintenance trigger. Completed cleanup above is non-financial; a
+        // COMPLETING row below can fund a guarantee and settle real chips, so
+        // it waits intact for the first recovery pass after thaw.
+        if (isMaintenanceFrozen()) continue;
         /**
          * ═══════════════════════════════════════════════════════════════════
          *  A SATELLITE PAYS SEATS, NOT CASH — AND THIS PATH DID NOT KNOW
@@ -348,95 +527,35 @@ export async function recoverStuckCompletingTournaments(
         if (
           String((t as { variant?: string }).variant ?? '').toLowerCase() === 'satellite' ||
           String((t as { tournament_type?: string }).tournament_type ?? '').toUpperCase() ===
-            'SATELLITE'
+            'SATELLITE' ||
+          Boolean((t as { satellite_target_id?: string | null }).satellite_target_id)
         ) {
           /**
-           * A STUCK SATELLITE MUST GO SOMEWHERE (2026-08-30).
+           * COMPLETING is a durable finish claim, never a temporary discovery
+           * label. The old recovery changed it back to RUNNING whenever it saw
+           * one or more survivors. Once tournament_finish_receipts existed,
+           * that produced an impossible split-brain state: the immutable
+           * receipt still named a champion while discovery dealt the same
+           * tournament again. fn_claim_tournament_finish correctly refuses a
+           * receipt paired with RUNNING, so the next finish was then stranded.
            *
-           * "Left COMPLETING for processSatelliteAwards" was a promise nobody
-           * kept: a COMPLETING tournament is not RUNNING, so discovery never
-           * resumes a manager for it, and processSatelliteAwards only runs
-           * inside a manager's finish path. Observed live: one satellite sat
-           * with 3 players still 'playing' and another with its ENTIRE
-           * 24-player field alive and zero hands dealt — both looping through
-           * this skip forever, no manager, no felt, no exit.
-           *
-           * The rule that resolves it: a satellite that is NOT decided is not
-           * completing. Two or more entrants alive means play remains — flip
-           * it back to RUNNING and discovery resumes a manager within a cycle;
-           * the event then finishes through the normal path, awards included.
-           * A DECIDED satellite (fewer than two alive) is left COMPLETING and
-           * reported, as before, for the awards pass its manager owes it —
-           * flipping that one would deal cards at a settled event.
+           * Read at most two live rows: zero means standings must already name
+           * the champion, one can prove the sole survivor, and two is enough to
+           * prove the event is undecided. No application-side tournament status
+           * write exists anywhere in this branch.
            */
-          const { count: aliveCount, error: aliveErr } = await supabase
-            .from('tournament_players')
-            .select('id', { count: 'exact', head: true })
-            .eq('tournament_id', t.id)
-            .in('status', ['playing', 'registered']);
-          if (!aliveErr && typeof aliveCount === 'number' && aliveCount >= 2) {
-            const { error: reviveErr } = await supabase
-              .from('tournaments')
-              .update({ status: 'RUNNING' })
-              .eq('id', t.id)
-              .eq('status', 'COMPLETING');
-            reportError(
-              new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
-              ),
-              'GameServer.recoverStuckCompleting_satellite_revived'
-            );
-            continue;
-          }
-          /**
-           * A DECIDED SATELLITE MUST ALSO GO SOMEWHERE (2026-08-31, phase 5).
-           *
-           * The 2026-08-30 rule above resolved the UNDECIDED case and left
-           * this one exactly as it found it: reported, then `continue`, on
-           * every recovery cycle, forever. The comment two blocks up already
-           * admits why that is terminal - "a COMPLETING tournament is not
-           * RUNNING, so discovery never resumes a manager for it, and
-           * processSatelliteAwards only runs inside a manager's finish path."
-           * Nothing else drives it. Grepped: no pg_cron job, no edge
-           * function, no workflow, no other caller anywhere transitions a
-           * COMPLETING satellite. The pool was collected and the seats are
-           * never awarded.
-           *
-           * Worse, leaving the row COMPLETING is not merely inert, it is
-           * ACTIVELY BLOCKING: finishTournament claims the event with
-           * `.eq('status', 'RUNNING')`, so even if a manager did resume, the
-           * claim would return no row and the awards pass would be skipped.
-           *
-           * Three outcomes, and every stuck satellite now takes one:
-           *
-           *   ALREADY AWARDED  -> COMPLETED. Phase 3's payout record is what
-           *     makes "did this satellite already pay?" answerable at all;
-           *     before it there was nothing to ask. A seat carrying this
-           *     satellite's id in the target counts too, for events that ran
-           *     before the record existed.
-           *
-           *   ONE SURVIVOR     -> RUNNING. The manager resumes, the
-           *     elimination sweep sees remainingCount <= 1 on its first tick
-           *     and runs the finish path, awards included. It cannot deal a
-           *     card on the way: minPlayersToDeal() is 2 for a tournament
-           *     table, so the loop parks in `idle_not_enough_players`. That
-           *     answers the "flipping that one would deal cards at a settled
-           *     event" worry in the block above - measured, not assumed.
-           *     The survivor holds no position yet, so stamping them first
-           *     cannot collide with an existing place.
-           *
-           *   NOBODY ALIVE, NOTHING AWARDED -> a CRITICAL alert, and it stays
-           *     COMPLETING. Here the engine would fall back to treating the
-           *     LAST ELIMINATED player as the winner, which in a normal
-           *     finish is second place. Guessing a winner and then moving
-           *     money on the guess is not a repair. A human decides this one.
-           *
-           * Idempotent if it re-drives: every cash leg is keyed
-           * `tourney:{id}:prize:place:{n}` (or `:satremainder:{user}:{n}`)
-           * and the seat leg dedupes on the target's unique registration, so
-           * a satellite that already paid pays nobody twice.
-           */
-          const [{ count: recordCount }, { count: seatCount }] = await Promise.all([
+          const [liveResult, receiptResult, payoutEvidence, seatEvidence] = await Promise.all([
+            supabase
+              .from('tournament_players')
+              .select('id, user_id, status, position')
+              .eq('tournament_id', t.id)
+              .in('status', ['playing', 'registered'])
+              .limit(2),
+            supabase
+              .from('tournament_finish_receipts')
+              .select('winner_user_id, finish_kind, certified_at')
+              .eq('tournament_id', t.id)
+              .maybeSingle(),
             supabase
               .from('tournament_payouts')
               .select('id', { count: 'exact', head: true })
@@ -446,57 +565,486 @@ export async function recoverStuckCompletingTournaments(
               .select('id', { count: 'exact', head: true })
               .eq('source_satellite_id', t.id),
           ]);
-          const alreadyAwarded = (recordCount ?? 0) > 0 || (seatCount ?? 0) > 0;
+          if (liveResult.error || !liveResult.data) {
+            reportError(
+              liveResult.error ?? new Error('satellite survivor rows were not returned'),
+              'GameServer.recoverStuckCompleting_satellite_survivors_unreadable'
+            );
+            continue;
+          }
+          if (receiptResult.error) {
+            reportError(
+              receiptResult.error,
+              'GameServer.recoverStuckCompleting_satellite_finish_receipt_unreadable'
+            );
+            continue;
+          }
+          if (payoutEvidence.error || seatEvidence.error) {
+            // These counts are diagnostics only. The atomic finalizer validates
+            // exact legacy payout/seat evidence inside its transaction, so a
+            // failed count must not become a second economic authority.
+            reportError(
+              payoutEvidence.error ?? seatEvidence.error ?? new Error('award evidence unreadable'),
+              'GameServer.recoverStuckCompleting_satellite_evidence_unreadable'
+            );
+          }
+          const recordCount = payoutEvidence.error ? null : payoutEvidence.count;
+          const seatCount = seatEvidence.error ? null : seatEvidence.count;
+          const alreadyAwarded =
+            recordCount === null || seatCount === null ? null : recordCount > 0 || seatCount > 0;
+          const liveRows = liveResult.data as Array<{
+            id: string;
+            user_id: string;
+            status: string;
+            position: number | null;
+          }>;
+          const finishReceipt = receiptResult.data as {
+            winner_user_id?: string | null;
+            finish_kind?: string | null;
+            certified_at?: string | null;
+          } | null;
 
-          if (alreadyAwarded) {
-            const { error: closeErr } = await supabase
-              .from('tournaments')
-              .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-              .eq('id', t.id)
-              .eq('status', 'COMPLETING');
+          if (liveRows.length >= 2) {
+            // There is no safe TS-side "undo" for a finish claim. A future
+            // automatic reopen requires one database transaction that locks
+            // the field and proves there is no immutable receipt or settlement
+            // batch. Until such a domain door exists, preserve every receipt
+            // and every chip by failing closed.
+            await raiseFinancialAlert(
+              'critical',
+              'Satellite.completing_with_live_field',
+              'A satellite is COMPLETING with at least two live entrants. Recovery refused to erase a possible immutable finish claim or resume dealing from application code.',
+              {
+                tournament_id: t.id,
+                tournament_name: (t as { name?: string }).name ?? null,
+                reason,
+                alive_count_lower_bound: liveRows.length,
+                finish_receipt_winner: finishReceipt?.winner_user_id ?? null,
+              }
+            );
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite that ALREADY AWARDED (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s)) - ${closeErr ? `close failed: ${closeErr.message}` : 'closed COMPLETING -> COMPLETED'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an undecided satellite with at least two live entrants${finishReceipt?.winner_user_id ? ` and immutable finish receipt ${finishReceipt.winner_user_id.slice(0, 8)}` : ''}; left COMPLETING with no status or money mutation.`
               ),
-              'GameServer.recoverStuckCompleting_satellite_closed'
+              'GameServer.recoverStuckCompleting_satellite_live_field_conflict'
             );
             continue;
           }
 
-          if (typeof aliveCount === 'number' && aliveCount === 1) {
-            const { error: reviveErr } = await supabase
-              .from('tournaments')
-              .update({ status: 'RUNNING' })
-              .eq('id', t.id)
-              .eq('status', 'COMPLETING');
+          let proposedWinnerId: string | null = null;
+          let survivorToStamp: {
+            id: string;
+            user_id: string;
+            status: string;
+            position: number | null;
+          } | null = null;
+
+          if (liveRows.length === 1) {
+            const survivor = liveRows[0];
+            if (survivor.status !== 'playing') {
+              reportError(
+                new Error(
+                  `[GameServer] recoverStuckCompleting (${reason}): sole satellite entrant ${survivor.user_id.slice(0, 8)} is still registered and has not proven a result; left COMPLETING without a winner claim.`
+                ),
+                'GameServer.recoverStuckCompleting_satellite_survivor_never_played'
+              );
+              continue;
+            }
+            if (
+              survivor.position !== null &&
+              (!Number.isInteger(Number(survivor.position)) || Number(survivor.position) !== 1)
+            ) {
+              reportError(
+                new Error(
+                  `[GameServer] recoverStuckCompleting (${reason}): sole satellite survivor ${survivor.user_id.slice(0, 8)} already holds conflicting position ${String(survivor.position)}; left COMPLETING.`
+                ),
+                'GameServer.recoverStuckCompleting_satellite_survivor_position_conflict'
+              );
+              continue;
+            }
+
+            const [fieldResult, handResult] = await Promise.all([
+              supabase
+                .from('tournament_players')
+                .select('id, user_id, status, position, eliminated_at')
+                .eq('tournament_id', t.id),
+              supabase
+                .from('hand_history')
+                .select('id')
+                .eq('tournament_id', t.id)
+                .limit(1)
+                .maybeSingle(),
+            ]);
+            if (fieldResult.error || !fieldResult.data) {
+              reportError(
+                fieldResult.error ?? new Error('satellite final field was not returned'),
+                'GameServer.recoverStuckCompleting_satellite_field_unreadable'
+              );
+              continue;
+            }
+            if (handResult.error) {
+              reportError(
+                handResult.error,
+                'GameServer.recoverStuckCompleting_satellite_hand_evidence_unreadable'
+              );
+              continue;
+            }
+            if (
+              noHandWasEverDealt({
+                startedAt: (t as { started_at?: string | null }).started_at ?? null,
+                anyHandDealt: Boolean(handResult.data),
+              })
+            ) {
+              reportError(
+                new Error(
+                  `[GameServer] recoverStuckCompleting (${reason}): sole satellite survivor exists but no hand result exists; left COMPLETING without naming a winner.`
+                ),
+                'GameServer.recoverStuckCompleting_satellite_no_hand_ever_dealt'
+              );
+              continue;
+            }
+
+            // Every other row must already be a uniquely ranked, timestamped
+            // elimination. The sole survivor is the only missing result fact;
+            // recovery never reconstructs a multi-player order from chips.
+            const fieldRows = fieldResult.data as Array<{
+              id: string;
+              user_id: string;
+              status: string;
+              position: number | null;
+              eliminated_at: string | null;
+            }>;
+            const eliminated = fieldRows.filter((row) => row.id !== survivor.id);
+            const observedPositions = eliminated
+              .map((row) => Number(row.position))
+              .sort((a, b) => a - b);
+            const expectedPositions = Array.from(
+              { length: eliminated.length },
+              (_, index) => index + 2
+            );
+            const exactEliminatedField =
+              fieldRows.length >= 1 &&
+              eliminated.every(
+                (row) =>
+                  row.status === 'eliminated' &&
+                  Boolean(row.eliminated_at) &&
+                  Number.isInteger(Number(row.position)) &&
+                  Number(row.position) >= 2
+              ) &&
+              observedPositions.every((position, index) => position === expectedPositions[index]);
+            if (!exactEliminatedField) {
+              reportError(
+                new Error(
+                  `[GameServer] recoverStuckCompleting (${reason}): sole survivor ${survivor.user_id.slice(0, 8)} is proven, but the eliminated satellite standings are not exact 2..${fieldRows.length}; left COMPLETING before any money path.`
+                ),
+                'GameServer.recoverStuckCompleting_satellite_standings_unproved'
+              );
+              continue;
+            }
+            proposedWinnerId = survivor.user_id;
+            survivorToStamp = survivor;
+          } else {
+            /**
+             * With no live entrant, recovery may only reuse the champion
+             * already persisted as winner/place 1. The last eliminated row is
+             * normally the runner-up and is never a winner heuristic.
+             */
+            const { data: canonicalWinner, error: winnerErr } = await supabase
+              .from('tournament_players')
+              .select('user_id')
+              .eq('tournament_id', t.id)
+              .eq('status', 'winner')
+              .eq('position', 1)
+              .maybeSingle();
+            if (winnerErr) {
+              reportError(winnerErr, 'GameServer.recoverStuckCompleting_satellite_winner_unproved');
+            } else if (canonicalWinner?.user_id) {
+              proposedWinnerId = canonicalWinner.user_id;
+            }
+          }
+
+          if (!proposedWinnerId) {
+            await raiseFinancialAlert(
+              'critical',
+              'Satellite.stuck_completing_unawarded',
+              'A satellite is stuck COMPLETING with no survivor and no canonical winner. Prior payout or seat rows cannot identify a champion, so the atomic award plan was not allowed to move money.',
+              {
+                tournament_id: t.id,
+                tournament_name: (t as { name?: string }).name ?? null,
+                reason,
+                alive_count: liveRows.length,
+                prize_pool: (t as { prize_pool?: number }).prize_pool ?? null,
+                satellite_target_id:
+                  (t as { satellite_target_id?: string }).satellite_target_id ?? null,
+                payout_record_count: recordCount,
+                target_seat_count: seatCount,
+              }
+            );
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite with ONE SURVIVOR and no awards - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING so its manager can run processSatelliteAwards'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE with no survivor and no canonical winner; refused to guess a champion or enter either money path.`
               ),
-              'GameServer.recoverStuckCompleting_satellite_revived_decided'
+              'GameServer.recoverStuckCompleting_satellite_skipped'
             );
             continue;
           }
 
-          await raiseFinancialAlert(
-            'critical',
-            'Satellite.stuck_completing_unawarded',
-            'A satellite is stuck COMPLETING with no survivor and no seats or payouts awarded. Its pool was collected and nobody has been paid. Deciding the winner is a human call: the engine would fall back to the LAST ELIMINATED player, which in a normal finish is second place.',
+          if (finishReceipt?.winner_user_id && finishReceipt.winner_user_id !== proposedWinnerId) {
+            await raiseFinancialAlert(
+              'critical',
+              'Satellite.finish_receipt_winner_conflict',
+              'The immutable satellite finish receipt names a different champion than the durable final field. Recovery changed no result, money, or tournament status.',
+              {
+                tournament_id: t.id,
+                proposed_winner: proposedWinnerId,
+                receipt_winner: finishReceipt.winner_user_id,
+                reason,
+              }
+            );
+            reportError(
+              new Error(
+                `satellite finish receipt names ${finishReceipt.winner_user_id.slice(0, 8)}, but the durable field names ${proposedWinnerId.slice(0, 8)}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_winner_claim_conflict'
+            );
+            continue;
+          }
+
+          const satClaim = await claimTournamentFinish(
+            supabase,
+            t.id,
+            proposedWinnerId,
+            'engine.recoverStuckCompletingSatellite'
+          );
+          if (!satClaim.ok || !satClaim.winnerUserId) {
+            const { data: committed, error: committedError } = await supabase
+              .from('tournaments')
+              .select('status')
+              .eq('id', t.id)
+              .maybeSingle();
+            if (!committedError && committed?.status === 'COMPLETED') {
+              const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
+              if (!cleanupComplete) {
+                throw new Error(
+                  `durably completed satellite ${t.id.slice(0, 8)} could not prove table and seat cleanup after a lost finish-claim receipt`
+                );
+              }
+              continue;
+            }
+            reportError(
+              new Error(
+                `satellite finish claim refused: ${satClaim.reason}${satClaim.transportError ? ` (${satClaim.transportError})` : ''}${committedError ? `; completion proof read failed (${committedError.message})` : ''}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_claim_failed'
+            );
+            continue;
+          }
+          if (satClaim.winnerUserId !== proposedWinnerId) {
+            reportError(
+              new Error(
+                `satellite finish claim resumed canonical winner ${satClaim.winnerUserId.slice(0, 8)}, not proven candidate ${proposedWinnerId.slice(0, 8)}; changed nothing`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_winner_claim_conflict'
+            );
+            continue;
+          }
+
+          if (satClaim.alreadyCompleted || satClaim.status === 'COMPLETED') {
+            const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
+            if (!cleanupComplete) {
+              throw new Error(
+                `durably completed satellite ${t.id.slice(0, 8)} could not prove table and seat cleanup`
+              );
+            }
+            continue;
+          }
+
+          if (survivorToStamp) {
+            if (isMaintenanceFrozen()) continue;
+            // The claim transaction has already frozen the exact champion.
+            // Stamp only that one result row, guarded by its previous live
+            // state and position. This moves no chips and never changes the
+            // tournament lifecycle state; a lost response is resolved only by
+            // re-reading the exact winner/place-1 fact.
+            let winnerStampQuery = supabase
+              .from('tournament_players')
+              .update({ status: 'winner', position: 1 })
+              .eq('id', survivorToStamp.id)
+              .eq('user_id', proposedWinnerId)
+              .eq('status', 'playing');
+            winnerStampQuery =
+              survivorToStamp.position === null
+                ? winnerStampQuery.is('position', null)
+                : winnerStampQuery.eq('position', 1);
+            const { data: winnerStamp, error: winnerStampErr } =
+              await winnerStampQuery.select('id');
+            if (winnerStampErr || !winnerStamp || winnerStamp.length !== 1) {
+              const { data: winnerProof, error: winnerProofErr } = await supabase
+                .from('tournament_players')
+                .select('id, user_id')
+                .eq('tournament_id', t.id)
+                .eq('status', 'winner')
+                .eq('position', 1)
+                .limit(2);
+              const exactWinnerPersisted =
+                !winnerProofErr &&
+                winnerProof?.length === 1 &&
+                winnerProof[0]?.id === survivorToStamp.id &&
+                winnerProof[0]?.user_id === proposedWinnerId;
+              if (!exactWinnerPersisted) {
+                reportError(
+                  new Error(
+                    `satellite winner stamp was not proven for ${proposedWinnerId.slice(0, 8)}: ${winnerStampErr?.message ?? `${winnerStamp?.length ?? 0} row(s) changed`}${winnerProofErr ? `; proof failed (${winnerProofErr.message})` : ''}`
+                  ),
+                  'GameServer.recoverStuckCompleting_satellite_winner_stamp_failed'
+                );
+                continue;
+              }
+            }
+          }
+
+          // No separately committed bounty or rake action may start until the
+          // complete result is re-proven. fn_settle_satellite_finish_atomic
+          // repeats this invariant under its own tournament lock before it
+          // delivers a seat or cash entitlement.
+          const { data: terminalRows, error: terminalRowsErr } = await supabase
+            .from('tournament_players')
+            .select('user_id, status, position')
+            .eq('tournament_id', t.id);
+          const terminalPositions = (terminalRows ?? [])
+            .map((row) => Number(row.position))
+            .sort((a, b) => a - b);
+          const exactTerminalField =
+            !terminalRowsErr &&
+            Boolean(terminalRows?.length) &&
+            terminalRows!.every(
+              (row) =>
+                (row.status === 'winner' || row.status === 'eliminated') &&
+                Number.isInteger(Number(row.position))
+            ) &&
+            terminalPositions.every((position, index) => position === index + 1) &&
+            terminalRows!.filter((row) => row.status === 'winner' && Number(row.position) === 1)
+              .length === 1 &&
+            terminalRows!.find((row) => row.status === 'winner' && Number(row.position) === 1)
+              ?.user_id === proposedWinnerId;
+          if (!exactTerminalField) {
+            reportError(
+              new Error(
+                `satellite terminal standings are not a unique exact 1..N result for ${proposedWinnerId.slice(0, 8)}: ${terminalRowsErr?.message ?? `${terminalRows?.length ?? 0} row(s) read`}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_terminal_field_unproved'
+            );
+            continue;
+          }
+
+          if (isMaintenanceFrozen()) continue;
+          if (t.is_bounty || t.is_pko || t.is_mystery_bounty) {
+            const swept = await drainTournamentBountyObligations(t.id);
+            if (swept.ok === false) {
+              reportError(
+                swept.error,
+                'GameServer.recoverStuckCompleting_satellite_bounty_pending'
+              );
+              continue;
+            }
+            if (t.is_mystery_bounty && t.mystery_bounty_stage !== 'pending') {
+              const { data: mystery, error: mysteryErr } = await supabase.rpc(
+                'fn_mystery_bounty_settle',
+                {
+                  p_tournament_id: t.id,
+                  p_winner_user_id: proposedWinnerId,
+                }
+              );
+              if (mysteryErr || mystery?.ok !== true || mystery?.balanced === false) {
+                reportError(
+                  mysteryErr ?? new Error(mystery?.reason ?? 'mystery settlement refused'),
+                  'GameServer.recoverStuckCompleting_satellite_mystery_failed'
+                );
+                continue;
+              }
+            }
+            const { data: bountyFinal, error: bountyFinalErr } = await supabase.rpc(
+              'fn_finalize_bounty_pool',
+              {
+                p_tournament_id: t.id,
+                p_winner_user_id: proposedWinnerId,
+              }
+            );
+            if (bountyFinalErr || bountyFinal?.ok !== true) {
+              reportError(
+                bountyFinalErr ?? new Error(bountyFinal?.reason ?? 'bounty finalizer refused'),
+                'GameServer.recoverStuckCompleting_satellite_bounty_finalize_failed'
+              );
+              continue;
+            }
+          }
+
+          if (isMaintenanceFrozen()) continue;
+          const { data: rake, error: rakeErr } = await supabase.rpc('fn_settle_tournament_rake', {
+            p_tournament_id: t.id,
+            p_source: 'recovery_satellite',
+          });
+          if (rakeErr || rake?.ok !== true) {
+            reportError(
+              rakeErr ?? new Error(rake?.reason ?? 'satellite rake settlement refused'),
+              'GameServer.recoverStuckCompleting_satellite_rake_failed'
+            );
+            continue;
+          }
+
+          if (isMaintenanceFrozen()) continue;
+          const { data: satelliteData, error: satelliteError } = await supabase.rpc(
+            'fn_settle_satellite_finish_atomic',
             {
-              tournament_id: t.id,
-              tournament_name: (t as { name?: string }).name ?? null,
-              reason,
-              alive_count: aliveCount ?? null,
-              prize_pool: (t as { prize_pool?: number }).prize_pool ?? null,
-              satellite_target_id:
-                (t as { satellite_target_id?: string }).satellite_target_id ?? null,
+              p_tournament_id: t.id,
+              p_source: 'engine.recoverStuckCompletingSatellite',
             }
           );
-          reportError(
-            new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE - it awards seats, not structure cash. Decided, nothing awarded, no survivor to re-drive: left COMPLETING and raised a critical alert.`
-            ),
-            'GameServer.recoverStuckCompleting_satellite_skipped'
+          const satelliteSettlement = (
+            Array.isArray(satelliteData) ? satelliteData[0] : satelliteData
+          ) as {
+            ok?: boolean;
+            settled?: boolean;
+            already_settled?: boolean;
+            award_depth?: number;
+            amount_settled?: number;
+            reason?: string;
+            detail?: string;
+          } | null;
+          let acceptedDurableCompletion = false;
+          if (
+            satelliteError ||
+            satelliteSettlement?.ok !== true ||
+            satelliteSettlement?.settled !== true
+          ) {
+            // A lost RPC response is not proof of rollback. COMPLETED is
+            // accepted only because the database transition guard proves the
+            // exact atomic satellite batch before permitting that state.
+            const { data: committed, error: committedError } = await supabase
+              .from('tournaments')
+              .select('status')
+              .eq('id', t.id)
+              .maybeSingle();
+            if (committedError || committed?.status !== 'COMPLETED') {
+              reportError(
+                new Error(
+                  `atomic satellite settlement refused: ${satelliteError?.message ?? satelliteSettlement?.reason ?? 'unknown'}${satelliteSettlement?.detail ? ` (${satelliteSettlement.detail})` : ''}${committedError ? `; completion proof read failed (${committedError.message})` : ''}`
+                ),
+                'GameServer.recoverStuckCompleting_satellite_completion_failed'
+              );
+              continue;
+            }
+            acceptedDurableCompletion = true;
+          }
+
+          const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
+          if (!cleanupComplete) {
+            throw new Error(
+              `atomic satellite settlement committed for ${t.id.slice(0, 8)}, but table and seat cleanup could not be proven`
+            );
+          }
+          console.log(
+            `[GameServer] Recovered satellite ${t.id.slice(0, 8)} with its atomic award plan${acceptedDurableCompletion ? ' after a lost RPC receipt' : ''} (${recordCount ?? 'unreadable'} prior payout record(s), ${seatCount ?? 'unreadable'} prior seat(s), already awarded evidence: ${String(alreadyAwarded)})`
           );
           continue;
         }
@@ -511,26 +1059,68 @@ export async function recoverStuckCompletingTournaments(
          * players negotiated. The emitting side already knows this rescue can
          * reach a dealt event; the guard belongs on this side too.
          */
-        const { data: dealRows, error: dealErr } = await supabase
-          .from('tournament_payouts')
-          .select('id')
-          .eq('tournament_id', t.id)
-          .eq('source', 'final_table_deal')
-          .limit(1);
+        const [dealPayouts, dealObligations] = await Promise.all([
+          supabase
+            .from('tournament_payouts')
+            .select('id')
+            .eq('tournament_id', t.id)
+            .eq('source', 'final_table_deal')
+            .limit(1),
+          supabase
+            .from('tournament_obligations')
+            .select('id')
+            .eq('tournament_id', t.id)
+            .eq('kind', 'final_table_deal')
+            .limit(1),
+        ]);
 
-        if (dealErr) {
+        if (
+          dealPayouts.error ||
+          dealObligations.error ||
+          !Array.isArray(dealPayouts.data) ||
+          !Array.isArray(dealObligations.data)
+        ) {
           // Unreadable is UNKNOWN. Paying structure cash over a deal that may
           // exist is exactly the thing this guard is for.
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealErr.message}) - skipped rather than risk paying over a deal`
+              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealPayouts.error?.message ?? dealObligations.error?.message ?? 'invalid result'}) - skipped rather than risk paying over a deal`
             ),
             'GameServer.recoverStuckCompleting_deal_check_failed'
           );
           continue;
         }
 
-        if ((dealRows?.length ?? 0) > 0) {
+        if ((dealPayouts.data?.length ?? 0) > 0 || (dealObligations.data?.length ?? 0) > 0) {
+          // The event may have completed after this sweep selected its stale
+          // COMPLETING snapshot. A committed deal authorizes table/seat
+          // cleanup, never the structure-payment path below it.
+          const { data: committed, error: committedError } = await supabase
+            .from('tournaments')
+            .select('status')
+            .eq('id', t.id)
+            .maybeSingle();
+          if (committedError) {
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting (${reason}): deal evidence exists for ${t.id.slice(0, 8)} but terminal status is unreadable (${committedError.message}); refusing structure money and leaving all state unchanged`
+              ),
+              'GameServer.recoverStuckCompleting_deal_status_unreadable'
+            );
+            continue;
+          }
+          if (committed?.status === 'COMPLETED') {
+            const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
+            if (!cleanupComplete) {
+              throw new Error(
+                `durably completed final-table deal ${t.id.slice(0, 8)} could not prove table and seat cleanup`
+              );
+            }
+            console.log(
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} has a durably completed final-table deal; closed its seats/tables without entering the structure money path`
+            );
+            continue;
+          }
           reportError(
             new Error(
               `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal - structure prizes would be new money on top of it. Skipped.`
@@ -540,36 +1130,10 @@ export async function recoverStuckCompletingTournaments(
           continue;
         }
 
-        // SHORT-FIELD RESIDUAL 2026-08-27: the rescue must price by the same
-        // structure a normal finish would, and a normal finish now trims the
-        // structure to the size of the field so the residual lands on a place
-        // somebody actually reached. A stuck tournament is COMPLETING, so
-        // entry is long closed and this count can no longer move. Its own
-        // query rather than the roster fetched below, because that fetch has
-        // an error path which must keep reading exactly as it does; a failed
-        // count here simply leaves the structure untrimmed, which is the
-        // behaviour this rescue had before.
-        const { count: fieldCount } = await supabase
-          .from('tournament_players')
-          .select('id', { count: 'exact', head: true })
-          .eq('tournament_id', t.id);
-
-        // Parse + normalize payout structure
-        const payouts: Array<{ place: number; percentage: number }> =
-          resolvePayoutStructure(
-            t as any,
-            typeof fieldCount === 'number' && fieldCount >= 1 ? fieldCount : undefined
-          ) ?? [];
-        // PAYOUT-INTEGRITY 2026-08-20: this used to be a THIRD independent
-        // prize formula (alongside eliminatePlayer and finishTournament), so a
-        // tournament rescued here could be paid a cent differently from one
-        // that finished normally -- and differently again from what
-        // fn_tournament_payout_reconcile expects, which would then report a
-        // false overpay. All three now share computePlacePrize: normalise to
-        // 100%, round each place, last paid place absorbs the residual.
-        const prizeFor = (place: number): number =>
-          computePlacePrize(Number(t.prize_pool || 0), payouts, place);
-
+        /* Everything through the collision check is evidence gathering only.
+           The guarantee RPC can debit a treasury and finalize the pool, so it
+           must not run until this recovery has proved that it has a result it
+           is authorized to settle. */
         const { data: players, error: playersErr } = await supabase
           .from('tournament_players')
           .select('id, user_id, status, position, prize, chips')
@@ -581,25 +1145,37 @@ export async function recoverStuckCompletingTournaments(
          *
          * The error was discarded and `players ?? []` turned an unreadable
          * field into an empty one. `alive` was then empty, so step 2 paid
-         * NOBODY and step 3 topped up nobody — and step 4 went right on to
+         * NOBODY and step 3 topped up nobody - and step 4 went right on to
          * flip COMPLETING -> COMPLETED. That is terminal: this watchdog only
          * ever looks at COMPLETING, so the tournament it just silently
          * emptied can never be rescued again, by it or by anything else. One
          * timeout permanently destroys the winner's prize and every unpaid
-         * ITM place, on the exact code path written to stop that happening
-         * (see this function's docblock: a COMPLETED bounty MTT that paid $40
-         * of a $100 pool is what it was written for).
+         * ITM place, on the exact code path written to stop that happening.
          *
          * Throw so the per-tournament catch reports it and the tournament
          * stays COMPLETING for the next pass. Every step below is idempotent,
          * so retrying costs nothing.
          */
-        if (playersErr) {
+        if (playersErr || !Array.isArray(players)) {
           throw new Error(
-            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} - refusing to complete a tournament we cannot pay`
+            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr?.message ?? 'invalid result'} - refusing to complete a tournament we cannot pay`
           );
         }
         const rows = players ?? [];
+
+        // SHORT-FIELD RESIDUAL 2026-08-27: the rescue must price by the same
+        // structure a normal finish would, and a normal finish now trims the
+        // structure to the size of the field so the residual lands on a place
+        // somebody actually reached. A stuck tournament is COMPLETING, so
+        // entry is long closed and this count can no longer move. The fully
+        // checked roster above is the authoritative field. A second
+        // count used to discard its own error and silently fall back to an
+        // untrimmed structure; that made a read failure change real prizes.
+        const fieldCount = rows.length;
+
+        // Parse + normalize payout structure
+        const payouts: Array<{ place: number; percentage: number }> =
+          resolvePayoutStructure(t as any, fieldCount >= 1 ? fieldCount : undefined) ?? [];
 
         /**
          * ═══════════════════════════════════════════════════════════════════
@@ -659,58 +1235,35 @@ export async function recoverStuckCompletingTournaments(
           continue;
         }
 
-        /**
-         * @returns true when this call actually moved chips; false when the
-         *          obligation had already been paid in full.
-         *
-         * 2026-08-29: the boolean used to be discarded, and that is the whole
-         * of the step-3 defect below. "Already done" and "just done" are
-         * different answers, and step 3 was recording the second when it had
-         * the first. The obligation RPC reports `paid` (chips moved by THIS
-         * call), which is that signal.
-         *
-         * ONE SETTLE PATH (2026-09-02). This used to call `fn_credit_and_log`
-         * under the finish path's exact key so the two deduped; it is the path
-         * that produced the phantom ledger rows of 2026-08-22 and, on
-         * 2026-08-30, paid a 20,880 pool to nine chip leaders of an event that
-         * was still being played. Both paths now settle the SAME obligation
-         * row - (tournament, 'place', N) - so the dedupe is a database
-         * constraint and not a shared string.
-         *
-         * A refusal THROWS here, deliberately, unlike the finish path. Every
-         * step below is idempotent and the tournament is already in
-         * COMPLETING; throwing leaves it there for the next pass, whereas
-         * continuing would stamp `prize` on a row that was never paid. The
-         * helper has already raised the critical alert for an escrow_short.
-         */
-        const credit = async (
-          userId: string,
-          amount: number,
-          desc: string,
-          obligation: { kind: 'place' | 'late_reg_adjustment'; place: number }
-        ): Promise<boolean> => {
-          if (amount <= 0) return false;
-          const res = await settleTournamentObligation(supabase, {
-            tournamentId: t.id,
-            kind: obligation.kind,
-            place: obligation.place,
-            userId,
-            amount,
-            source: 'engine.recoverStuckCompleting',
-            memo: desc,
-          });
-          if (!res.ok) {
-            throw new Error(
-              `settle ${obligation.kind} place ${obligation.place} failed for ${userId}: ${res.refused_reason}${res.transport_error ? ` (${res.transport_error})` : ''}`
-            );
-          }
-          return res.paid > 0;
-        };
-
-        // 2. Rank the still-alive players by chips and pay their places
+        // 2. Rank the still-alive players by chips. Do not move money here:
+        // every result must be durable before the atomic settlement begins.
         const alive = rows
           .filter((r) => r.status === 'playing' || r.status === 'registered')
           .sort((a, b) => Number(b.chips || 0) - Number(a.chips || 0));
+
+        /**
+         * A recovery snapshot can prove a champion only when one survivor is
+         * left. With two or more, chip count is merely the current order, not
+         * final finishing evidence, even when every stack is distinct and the
+         * payout ladder is deep enough to include them all. Stamping that
+         * order also creates a non-atomic series of result writes whose retry
+         * collides with the positions it wrote before a process exit.
+         *
+         * Existing complete standings have no survivors and pass through.
+         * One survivor may safely be stamped winner after every other
+         * read-only proof below succeeds. Anything larger requires resumed
+         * play or an operator-supplied result, so leave it COMPLETING without
+         * funding the guarantee.
+         */
+        if (alive.length > 1) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} "${t.name}" has ${alive.length} survivors. Chip stacks do not prove their final order, so recovery will not invent multiple finishing places. No payout or guarantee funding is authorized; left COMPLETING for resumed play or operator review.`
+            ),
+            'GameServer.recoverStuckCompleting_multiple_survivors_unresolved'
+          );
+          continue;
+        }
 
         /**
          * ═══════════════════════════════════════════════════════════════════
@@ -740,7 +1293,7 @@ export async function recoverStuckCompletingTournaments(
          *
          * A tournament with no `playing` row is not a decided tournament, it
          * is one that never dealt. Pay nobody, say so, and leave it COMPLETING
-         * for the reconciler or a human — the same stance this function
+         * for human review or a future evidence-driven recovery - the same stance this function
          * already takes for a position collision below.
          */
         const anyDealtIn = alive.some((r) => r.status === 'playing');
@@ -847,7 +1400,7 @@ export async function recoverStuckCompletingTournaments(
          *
          * A collision means we genuinely do not know who is owed which place,
          * and guessing moves money. Report and leave the tournament COMPLETING
-         * for the reconciler or a human; every caller re-runs this watchdog.
+         * for human review or a future evidence-driven recovery; every caller re-runs this watchdog.
          */
         /* 2026-08-29: this tested `status === 'eliminated'` only, and
            finishTournament stamps the champion `status: 'winner', position: 1`.
@@ -886,108 +1439,204 @@ export async function recoverStuckCompletingTournaments(
           continue;
         }
 
+        /* All ranking and result evidence is now proven. Close the same
+           guarantee-funding window as the live finish path through the
+           canonical idempotent transaction, then re-read the authoritative
+           row. No amount-dependent result may be written unless the stored
+           pool is final, covers the advertised floor and agrees with the RPC. */
+        if (isMaintenanceFrozen()) continue;
+        const { data: guaranteeData, error: guaranteeErr } = await supabase.rpc(
+          'fn_apply_prize_guarantee',
+          { p_tournament_id: t.id, p_source: 'engine.recoverStuckCompleting' }
+        );
+        const guarantee = (guaranteeData ?? {}) as {
+          ok?: boolean;
+          reason?: string;
+          prize_pool?: number | string;
+        };
+        if (guaranteeErr || guarantee.ok !== true) {
+          throw new Error(
+            `could not fund/finalize prize pool for ${t.id.slice(0, 8)}: ${guaranteeErr?.message ?? guarantee.reason ?? 'unknown refusal'}`
+          );
+        }
+
+        const { data: fundedRow, error: fundedReadErr } = await supabase
+          .from('tournaments')
+          .select('prize_pool, guaranteed_prize, prize_pool_finalized')
+          .eq('id', t.id)
+          .maybeSingle();
+        const fundedPool = Number(fundedRow?.prize_pool);
+        const fundedGuarantee = Number(fundedRow?.guaranteed_prize ?? 0);
+        const rpcPool = Number(guarantee.prize_pool);
+        if (
+          fundedReadErr ||
+          !fundedRow ||
+          !Number.isFinite(fundedPool) ||
+          !Number.isFinite(rpcPool) ||
+          fundedRow.prize_pool_finalized !== true ||
+          fundedPool + 0.005 < fundedGuarantee ||
+          Math.abs(fundedPool - rpcPool) >= 0.005
+        ) {
+          throw new Error(
+            `funded prize pool is not provably final for ${t.id.slice(0, 8)} (${fundedReadErr?.message ?? `rpc=${rpcPool}, row=${fundedPool}, guarantee=${fundedGuarantee}, finalized=${String(fundedRow?.prize_pool_finalized)}`})`
+          );
+        }
+        (t as { prize_pool?: number }).prize_pool = fundedPool;
+        (t as { guaranteed_prize?: number }).guaranteed_prize = fundedGuarantee;
+        (t as { prize_pool_finalized?: boolean }).prize_pool_finalized = true;
+
+        /* Stamp only the one survivor the read-only evidence proved. Prize is
+           deliberately zero here: final chronology must be normalized before
+           any entitlement is derived from a position. */
         for (let i = 0; i < alive.length; i++) {
           const place = i + 1;
-          const prize = prizeFor(place);
-          // The place obligation itself - the SAME row the finish path pays,
-          // so whichever path got there first, the other moves nothing.
-          await credit(
-            alive[i].user_id,
-            prize,
-            `Tournament prize (recovery): position ${place} - ${t.name || 'tournament'}`,
-            { kind: 'place', place }
-          );
-          // PAYOUT-INTEGRITY 2026-08-25: the credit is only half of it. When
-          // this UPDATE was discarded, a paid survivor kept status='playing'
-          // and prize=0, so the very next pass ranked them as ALIVE again and
-          // could hand them a different place (the credit dedupes on the key,
-          // the POSITION does not) — and step 3 read their prize as 0 forever.
-          // Throwing leaves the tournament COMPLETING; the credit above is
-          // idempotent, so the retry re-runs it for free.
-          const { error: stampErr } = await supabase
+          const { data: stamped, error: stampErr } = await supabase
             .from('tournament_players')
             .update({
               status: place === 1 ? 'winner' : 'eliminated',
               position: place,
-              prize,
+              prize: 0,
               eliminated_at: place === 1 ? null : new Date().toISOString(),
             })
-            .eq('id', alive[i].id);
-          if (stampErr) {
+            .eq('id', alive[i].id)
+            .select('id')
+            .maybeSingle();
+          if (stampErr || !stamped) {
             throw new Error(
-              `paid place ${place} to ${alive[i].user_id.slice(0, 8)} but could not record it: ${stampErr.message}`
+              `could not record place ${place} for ${alive[i].user_id.slice(0, 8)} before settlement: ${stampErr?.message ?? 'row not found'}`
             );
           }
         }
 
-        // 3. Top up already-eliminated ITM players recorded with a zero prize
-        for (const r of rows) {
-          if (r.status !== 'eliminated' || !r.position) continue;
-          const owed = prizeFor(r.position);
-          const recorded = Number(r.prize || 0);
-          if (owed > recorded) {
-            const diff = Math.round((owed - recorded) * 100) / 100;
-            /**
-             * ── THE TOP-UP IS AN OBLIGATION, NOT A KEY (2026-09-02) ────────
-             *
-             * History, because it explains the shape. On 2026-08-29 this
-             * used `tourney:{id}:prize:place:{N}` -- the SAME key
-             * `eliminatePlayer` already paid this place under -- so on a
-             * PARTIAL shortfall (the late-reg pool grew, more is owed, the
-             * smaller amount was already paid under that key) the credit
-             * deduped to NOTHING, the boolean was discarded, and the next
-             * statement stamped `prize = owed`: a payment recorded that never
-             * happened. The fix that day was a `prizeadj` key carrying the
-             * AMOUNT, matching `recalculateEliminatedPrizes`.
-             *
-             * The chip standard (2.2, payer 4) found the other edge of that
-             * blade: an amount in the key means a re-run with a NEW amount is
-             * a NEW payment stacked on the old one, and nothing reconciled the
-             * two. So the amount is out of the key and into the row. The
-             * obligation (tournament, 'late_reg_adjustment', N) is told what
-             * this place is OWED in total; the database raises `amount_owed`
-             * to it and pays only what has not yet been paid. This path and
-             * `recalculateEliminatedPrizes` settle the same row, so they
-             * still dedupe against each other - by constraint now.
-             *
-             * `diff` is kept for the log line and the alert: it is what we
-             * EXPECT to move. What actually moved is `res.paid`, and that is
-             * what `credited` reports.
-             *
-             * Step 2 above settles the place obligation itself and MUST
-             * collide with the main path; this settles the top-up.
-             */
-            const credited = await credit(
-              r.user_id,
-              owed,
-              `Tournament prize top-up (recovery): position ${r.position} - ${t.name || 'tournament'}`,
-              { kind: 'late_reg_adjustment', place: Number(r.position) }
-            );
+        /* Publish the complete chronology in one database transaction before
+           using any position to calculate money. A prior process may have
+           left a provisional late-registration ladder that is contiguous yet
+           wrong; the RPC compares every row to canonical bust-time order and
+           refuses if historical payout evidence contradicts that result. */
+        const { data: normalizedData, error: normalizedErr } = await supabase.rpc(
+          'fn_normalize_tournament_final_standings',
+          {
+            p_tournament_id: t.id,
+          }
+        );
+        const normalized = (normalizedData ?? {}) as {
+          ok?: boolean;
+          reason?: string;
+          detail?: string;
+        };
+        if (normalizedErr || normalized.ok !== true) {
+          throw new Error(
+            `atomic final-standings normalization refused for ${t.id.slice(0, 8)}: ${normalizedErr?.message ?? normalized.reason ?? 'unknown'}${normalized.detail ? ` (${normalized.detail})` : ''}`
+          );
+        }
 
-            if (!credited) {
-              // The adjustment had already been paid in full, so the row is
-              // genuinely owed `owed` and the stamp below is correct. The
-              // obligation row carries what was paid; there is no key
-              // collision left to suspect.
+        const { data: normalizedRows, error: normalizedRowsErr } = await supabase
+          .from('tournament_players')
+          .select('id, user_id, status, position, prize')
+          .eq('tournament_id', t.id);
+        if (normalizedRowsErr || !normalizedRows || normalizedRows.length !== fieldCount) {
+          throw new Error(
+            `could not re-read the normalized final field for ${t.id.slice(0, 8)}: ${normalizedRowsErr?.message ?? `expected ${fieldCount} rows, read ${normalizedRows?.length ?? 0}`}`
+          );
+        }
+
+        // PAYOUT-INTEGRITY 2026-08-20: derive every exact-cent entitlement
+        // only from the normalized final positions and the funded pool.
+        const prizeFor = (place: number): number =>
+          computePlacePrize(Number(t.prize_pool || 0), payouts, place);
+        for (const row of normalizedRows) {
+          if (
+            (row.status !== 'eliminated' && row.status !== 'winner') ||
+            !Number.isInteger(Number(row.position))
+          ) {
+            throw new Error(`normalized result row ${row.id} is not terminal and ranked`);
+          }
+          const place = Number(row.position);
+          const owed = prizeFor(place);
+          if (Math.abs(owed - Number(row.prize || 0)) < 0.005) continue;
+          const { data: updated, error: entitlementErr } = await supabase
+            .from('tournament_players')
+            .update({ prize: owed })
+            .eq('id', row.id)
+            .select('id')
+            .maybeSingle();
+          if (entitlementErr || !updated) {
+            throw new Error(
+              `could not record final entitlement for place ${place} (${row.user_id.slice(0, 8)}) before settlement: ${entitlementErr?.message ?? 'row not found'}`
+            );
+          }
+        }
+
+        // The winner is the immutable identity on the completion receipt. Do
+        // not infer it from array order, and do not let a duplicate/missing
+        // position-one row cross the money boundary.
+        const { data: canonicalWinner, error: canonicalWinnerErr } = await supabase
+          .from('tournament_players')
+          .select('user_id')
+          .eq('tournament_id', t.id)
+          .eq('status', 'winner')
+          .eq('position', 1)
+          .maybeSingle();
+        if (canonicalWinnerErr || !canonicalWinner?.user_id) {
+          reportError(
+            canonicalWinnerErr ?? new Error('recovery cannot prove exactly one champion'),
+            'GameServer.recoverStuckCompleting_winner_missing'
+          );
+          continue;
+        }
+        const finishClaim = await claimTournamentFinish(
+          supabase,
+          t.id,
+          canonicalWinner.user_id,
+          'engine.recoverStuckCompleting'
+        );
+        if (!finishClaim.ok || finishClaim.winnerUserId !== canonicalWinner.user_id) {
+          reportError(
+            new Error(`recovery finish claim refused: ${finishClaim.reason}`),
+            'GameServer.recoverStuckCompleting_claim_failed'
+          );
+          continue;
+        }
+
+        // 3.4 A bounty event is not complete until every knockout obligation,
+        // mystery chest and champion residual has a durable database receipt.
+        // This is also the process-restart resume lane for a manager that died
+        // after claiming RUNNING -> COMPLETING.
+        if (t.is_bounty || t.is_pko || t.is_mystery_bounty) {
+          const swept = await drainTournamentBountyObligations(t.id);
+          if (swept.ok === false) {
+            reportError(swept.error, 'GameServer.recoverStuckCompleting_bounty_pending');
+            continue;
+          }
+          if (t.is_mystery_bounty && t.mystery_bounty_stage !== 'pending') {
+            const { data: mystery, error: mysteryErr } = await supabase.rpc(
+              'fn_mystery_bounty_settle',
+              {
+                p_tournament_id: t.id,
+                p_winner_user_id: canonicalWinner.user_id,
+              }
+            );
+            if (mysteryErr || mystery?.ok !== true || mystery?.balanced === false) {
               reportError(
-                new Error(
-                  `[recovery:${t.id.slice(0, 8)}] top-up of ${diff} for place ${r.position} was already settled on its late_reg_adjustment obligation; recording the prize only`
-                ),
-                'TournamentRecovery.top_up_already_credited'
+                mysteryErr ?? new Error(mystery?.reason ?? 'mystery settlement refused'),
+                'GameServer.recoverStuckCompleting_mystery_failed'
               );
+              continue;
             }
-            // Same rule as the survivor stamp above: a top-up that is paid but
-            // not recorded leaves prize < owed, so every later pass recomputes
-            // the same shortfall and re-attempts it forever.
-            const { error: topUpErr } = await supabase
-              .from('tournament_players')
-              .update({ prize: owed })
-              .eq('id', r.id);
-            if (topUpErr) {
-              throw new Error(
-                `topped up place ${r.position} for ${r.user_id.slice(0, 8)} but could not record it: ${topUpErr.message}`
-              );
+          }
+          const { data: bountyFinal, error: bountyFinalErr } = await supabase.rpc(
+            'fn_finalize_bounty_pool',
+            {
+              p_tournament_id: t.id,
+              p_winner_user_id: canonicalWinner.user_id,
             }
+          );
+          if (bountyFinalErr || bountyFinal?.ok !== true) {
+            reportError(
+              bountyFinalErr ?? new Error(bountyFinal?.reason ?? 'bounty finalizer refused'),
+              'GameServer.recoverStuckCompleting_bounty_finalize_failed'
+            );
+            continue;
           }
         }
 
@@ -997,7 +1646,9 @@ export async function recoverStuckCompletingTournaments(
         // only ran on the happy path). fn_settle_tournament_rake is
         // PK-claimed and idempotent, so calling it here can never double-pay
         // against a finish that already settled; it only closes the hole
-        // where nobody did. Non-fatal: the sweep re-drives any failure.
+        // where nobody did. A refusal is fatal to this invocation: it leaves
+        // the durable COMPLETING state intact and no place money is attempted.
+        if (isMaintenanceFrozen()) continue;
         try {
           const { data: rakeRes, error: rakeErr } = await supabase.rpc(
             'fn_settle_tournament_rake',
@@ -1006,10 +1657,11 @@ export async function recoverStuckCompletingTournaments(
           if (rakeErr || !rakeRes?.ok) {
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason} - sweep will re-drive`
+                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason}; left COMPLETING and attempted no place settlement`
               ),
               'GameServer.recoverStuckCompleting_rake_settle_failed'
             );
+            continue;
           } else if (!rakeRes.already_settled && Number(rakeRes.amount) > 0) {
             console.log(
               `[GameServer] recoverStuckCompleting: rake settled for ${t.id.slice(0, 8)}: ${rakeRes.amount} -> ${rakeRes.destination}`
@@ -1017,37 +1669,57 @@ export async function recoverStuckCompletingTournaments(
           }
         } catch (rakeEx) {
           reportError(rakeEx, 'GameServer.recoverStuckCompleting_rake_settle_threw');
+          continue;
         }
 
-        // 4. Complete (CAS-guarded)
-        // PAYOUT-INTEGRITY 2026-08-25: the completion is the claim that
-        // everything above landed. A discarded error printed "Recovered ..."
-        // over a tournament still sitting in COMPLETING, so the log said the
-        // watchdog had done its job on every single pass while it had not.
-        const { error: completeErr } = await supabase
-          .from('tournaments')
-          .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-          .eq('id', t.id)
-          .eq('status', 'COMPLETING');
-        if (completeErr) {
-          throw new Error(`could not mark COMPLETED: ${completeErr.message}`);
-        }
-        const { error: closeErr } = await supabase
-          .from('tables')
-          .update({ status: 'closed' })
-          .eq('tournament_id', t.id)
-          .neq('status', 'closed');
-        if (closeErr) {
-          reportError(
-            new Error(
-              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} paid and COMPLETED but tables not closed: ${closeErr.message}`
-            ),
-            'GameServer.recoverStuckCompleting_close_tables_failed'
+        // 4. Commit every place payment and COMPLETING -> COMPLETED as one
+        // database transaction. Prepare runs first and commits the exact
+        // obligation set, so a process exit or retry resumes from durable
+        // obligations. A refusal/partial payment rolls every place back and
+        // leaves the tournament COMPLETING.
+        if (isMaintenanceFrozen()) continue;
+        const settlement = await settleTournamentPlacesAtomically(
+          supabase,
+          t.id,
+          'engine.recoverStuckCompleting'
+        );
+        let durableCompletionAcceptedAfterLostReceipt = false;
+        if (!settlement.ok || !settlement.completed) {
+          // All responses can be lost after the transaction commits. Re-read
+          // durable truth before treating a transport result as a rollback.
+          const { data: committed, error: committedError } = await supabase
+            .from('tournaments')
+            .select('status')
+            .eq('id', t.id)
+            .maybeSingle();
+          if (committedError || committed?.status !== 'COMPLETED') {
+            throw new Error(
+              `atomic place settlement did not complete ${t.id.slice(0, 8)}: ${settlement.reason || (settlement.ok ? 'success response omitted completion proof' : 'unknown')}${settlement.detail ? ` (${settlement.detail})` : ''}${settlement.transport_error ? ` (${settlement.transport_error})` : ''}${committedError ? `; completion proof read failed (${committedError.message})` : ''}`
+            );
+          }
+          durableCompletionAcceptedAfterLostReceipt = true;
+          console.warn(
+            `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} atomic place receipt was lost after commit; durable COMPLETED accepted`
           );
         }
-        console.log(
-          `[GameServer] Recovered stuck COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}): paid ${alive.length} remaining player(s)`
-        );
+
+        // Tables close only after the database has confirmed that every place
+        // landed and the tournament is terminal.
+        const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
+        if (!cleanupComplete) {
+          throw new Error(
+            `atomic place settlement committed for ${t.id.slice(0, 8)}, but table and seat cleanup could not be proven`
+          );
+        }
+        if (durableCompletionAcceptedAfterLostReceipt) {
+          console.log(
+            `[GameServer] Recovered stuck COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}): durable COMPLETED accepted and table/seat cleanup proven after a lost atomic receipt; place/payment counts unavailable`
+          );
+        } else {
+          console.log(
+            `[GameServer] Recovered stuck COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}): atomically settled ${settlement.places} place(s), moved ${settlement.paid}`
+          );
+        }
       } catch (err) {
         reportError(err, 'GameServer.recoverStuckCompleting_per_tournament');
       }

@@ -48,13 +48,17 @@ const root = join(__dirname, '..', '..');
 const PAGE = readFileSync(join(root, 'src', 'pages', 'TablePage.tsx'), 'utf8');
 
 /** The window effect, comments stripped so no pin can be met by prose. */
-const EFFECT = sliceEnclosingBlock(PAGE, 'const commitInFlight = seatFirstPending', 0, 1)
+const EFFECT = sliceEnclosingBlock(PAGE, 'const commitInFlight =', 0, 1)
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
 describe('the clock stops when the money moves', () => {
   it('a commit in flight is not an open sheet', () => {
-    expect(EFFECT).toContain('seatFirstPending || seatFirstPendingRef.current');
+    expect(EFFECT.replace(/\s+/g, ' ')).toContain(
+      'seatFirstPending || seatFirstPendingRef.current'
+    );
+    expect(EFFECT).toContain('cashBuyInRecovery !== null');
+    expect(EFFECT).toContain('if (cashBuyInPendingRef.current) return;');
     expect(EFFECT).toMatch(/!commitInFlight/);
   });
 
@@ -76,12 +80,14 @@ describe('and it checks again in the instant it would eject', () => {
     /* A whole second sits between the effect running and the timeout firing,
        and the RPC can land inside it. That second is exactly the race that
        took Dan off a seat he had paid for. */
-    expect(EFFECT).toContain('if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;');
+    expect(EFFECT.replace(/\s+/g, ' ')).toContain(
+      'if (buyInProcessingRef.current || seatFirstPendingRef.current || heroSeatRef.current > 0) return;'
+    );
   });
 
   it('the last look happens BEFORE anything is released or navigated', () => {
     const fireIdx = EFFECT.indexOf(
-      'if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;'
+      'if (buyInProcessingRef.current || seatFirstPendingRef.current || heroSeatRef.current > 0)'
     );
     expect(fireIdx).toBeGreaterThan(-1);
     for (const after of ['setShowBuyInModal(false)', 'setSeatFirstConfirm(null)', 'navigate(']) {

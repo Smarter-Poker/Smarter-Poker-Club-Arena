@@ -3,8 +3,9 @@
  *
  * Hydrates the PioSolver push/fold charts (memory_charts_gold, 240 rows,
  * ~330KB) into the in-memory store the horse brain reads synchronously.
- * Same shape as HorseLaneLoader: load shortly after boot, refresh on a slow
- * timer so a re-solved chart reaches the fleet without a deploy.
+ * The live worker explicitly awaits the authoritative initial load before it
+ * publishes READY. This module's start/stop pair owns the slow periodic
+ * refresh plus bounded recovery after a failed load; requests never overlap.
  *
  * The refresh is HOURLY and the table is 240 rows — this loader must never
  * become the 2026-08-15 incident (a dashboard count on the 79GB solver
@@ -13,8 +14,9 @@
  * table, never a live read.
  *
  * A failed load is loud but not fatal: the brain's chart lookups return null
- * and the heuristics that ran yesterday keep deciding. The solver upgrades
- * the brain; its absence must never lobotomize it.
+ * and the heuristics that ran yesterday keep deciding while bounded retries
+ * recover the store. The solver upgrades the brain; its absence must never
+ * lobotomize it.
  */
 
 import { supabase } from './supabase/client.js';
@@ -25,14 +27,13 @@ import {
   solverPolicyArtifactStatus,
 } from '../gto/SolverPolicyArtifactLoader.js';
 import { assertCompleteGtoChartCorpus } from '../gto/GtoChartCorpus.js';
+import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
 const REFRESH_MS = 60 * 60_000;
-const BOOT_DELAY_MS = 15_000;
+const RETRY_MS = 30_000;
+const MAX_RETRY_MS = 5 * 60_000;
 
-let timer: NodeJS.Timeout | null = null;
-let bootTimer: NodeJS.Timeout | null = null;
-
-export async function loadGtoCharts(): Promise<number> {
+async function loadGtoChartsAttempt(): Promise<{ ok: boolean; count: number }> {
   try {
     const { data, error } = await supabase
       .from('memory_charts_gold')
@@ -48,32 +49,32 @@ export async function loadGtoCharts(): Promise<number> {
       `[GtoChartLoader] ${applied} solver charts loaded (${gtoChartCount()} rows, ` +
         `${solverPolicyArtifactStatus().charts.count} canonical policies)`
     );
-    return applied;
+    return { ok: true, count: applied };
   } catch (err) {
     recordChartPolicyRefreshError(err);
     reportError(err, 'GtoChartLoader.load');
     console.warn(
       `[GtoChartLoader] chart load FAILED - the brain falls back to heuristics (${gtoChartCount()} cached)`
     );
-    return 0;
+    return { ok: false, count: 0 };
   }
+}
+
+const refreshLoop = createAdaptiveRefreshLoop({
+  load: loadGtoChartsAttempt,
+  refreshMs: REFRESH_MS,
+  retryMs: RETRY_MS,
+  maxRetryMs: MAX_RETRY_MS,
+});
+
+export async function loadGtoCharts(): Promise<number> {
+  return (await refreshLoop.runNow()).count;
 }
 
 export function startGtoChartLoader(): void {
-  if (timer) return;
-  bootTimer = setTimeout(() => void loadGtoCharts(), BOOT_DELAY_MS);
-  bootTimer.unref?.();
-  timer = setInterval(() => void loadGtoCharts(), REFRESH_MS);
-  timer.unref?.();
+  refreshLoop.start();
 }
 
 export function stopGtoChartLoader(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
-  if (bootTimer) {
-    clearTimeout(bootTimer);
-    bootTimer = null;
-  }
+  refreshLoop.stop();
 }

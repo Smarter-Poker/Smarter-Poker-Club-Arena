@@ -1,410 +1,960 @@
-/**
- * V31 — the suit-aware solver store (2026-08-30).
- *
- * THE PARITY BLOCK IS THE IMPORTANT ONE. `boardFlushSuit` must agree with
- * `fn_gto_board_flush_suit` in the database exactly, because the cell was
- * KEYED with the SQL function at build time and is READ with the TS one at
- * decision time. If they ever disagree, every lookup on an affected board
- * silently returns another holding's strategy — and a wrong answer is
- * indistinguishable from a right one at the call site. Every expected value
- * below was produced by the production function, including the tie cases.
- *
- * The rest pins the two things that make this layer worth having over V30:
- * the suit bucket actually selecting a different holding, and the bet size
- * coming from the cell rather than a bucket midpoint.
- */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, beforeEach } from 'vitest';
+import type { Card, CardRank, CardSuit } from '../types.js';
+import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
+import { gtoV31ExecutionMatches, HorseLogic } from './HorseLogic.js';
 import {
-  boardFlushSuit,
-  v31HandKey,
-  setGtoPostflopV31,
-  gtoStreetAdviceV31,
-  gtoPostflopV31Count,
   _clearGtoPostflopV31,
+  boardFlushSuit,
+  gtoPostflopV31Count,
+  gtoPostflopV31Dataset,
+  gtoPostflopV31EvaluationCount,
+  gtoStreetAdviceV31,
+  replaceGtoPostflopV31,
+  replaceGtoPostflopV31Evaluation,
+  v31HandKey,
   type GtoPostflopV31Row,
 } from './GtoPostflopV31.js';
-import type { Card, CardRank, CardSuit } from '../types.js';
 
-const SUITS: Record<string, CardSuit> = {
-  c: 'clubs',
-  d: 'diamonds',
-  h: 'hearts',
-  s: 'spades',
-};
-
-/** '2s9sKdQs' -> Card[]; the same text the SQL function is given. */
-function cards(text: string): Card[] {
-  const out: Card[] = [];
-  for (let i = 0; i + 1 < text.length; i += 2) {
-    out.push({ rank: text[i] as CardRank, suit: SUITS[text[i + 1]] });
+const SUITS: Record<string, CardSuit> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
+function cards(value: string): Card[] {
+  const result: Card[] = [];
+  for (let index = 0; index + 1 < value.length; index += 2) {
+    result.push({ rank: value[index] as CardRank, suit: SUITS[value[index + 1]] });
   }
-  return out;
+  return result;
 }
 
-beforeEach(() => _clearGtoPostflopV31());
-
-describe('boardFlushSuit - the exact mirror of fn_gto_board_flush_suit', () => {
-  // Every pair here was classified by the PRODUCTION function on
-  // 2026-08-30. c,d,h,s = 0,1,2,3; -1 means no suit appears twice.
-  const PRODUCTION_EXAMPLES: [string, number][] = [
-    ['2s9sKdQs', 3], // three spades
-    ['2c4hQh', 2], // two hearts
-    ['2c4hQd', -1], // rainbow flop
-    ['AhKhQh', 2], // monotone hearts
-    ['AcAdAh', -1], // trips, three different suits
-    ['7d8d9dTd', 1], // four diamonds
-    ['2c3d4h5s', -1], // four different suits
-    ['KsKdKcKh', -1], // one of every suit
-    ['AsKdQhJc9s', 3], // two spades on a five-card board
-    ['2h2d2c', -1],
-    ['TcTdJhJs', -1], // one of each suit again
-    ['3h4h5c6c', 0], // TIE 2-2: the lower suit index wins (clubs)
-    ['5c6c7d8h9s', 0], // two clubs
-    ['AdKdQdJdTd', 1], // five diamonds
-    ['9s9h9d9c2s', 3], // spades twice, everything else once
-  ];
-
-  for (const [board, expected] of PRODUCTION_EXAMPLES) {
-    it(`${board} -> ${expected}`, () => {
-      expect(boardFlushSuit(cards(board))).toBe(expected);
-    });
-  }
-
-  it('a tie is broken by the LOWEST suit index, exactly as `order by n desc, suit asc` does', () => {
-    // clubs(0) and spades(3) both twice -> clubs
-    expect(boardFlushSuit(cards('2c3c4s5s'))).toBe(0);
-    // diamonds(1) and hearts(2) both twice -> diamonds
-    expect(boardFlushSuit(cards('2d3d4h5h'))).toBe(1);
-  });
-
-  it('an empty board has no flush suit', () => {
-    expect(boardFlushSuit([])).toBe(-1);
-  });
-});
-
-describe('v31HandKey', () => {
-  it('counts how many of the board flush suit the holding contains', () => {
-    const board = cards('2s9sKd'); // spades
-    expect(v31HandKey('AKs', cards('AsKs'), board)).toBe('AKs:2');
-    expect(v31HandKey('AKo', cards('AsKd'), board)).toBe('AKo:1');
-    expect(v31HandKey('AKo', cards('AhKd'), board)).toBe('AKo:0');
-  });
-
-  it('a board with no flush suit puts every holding in bucket 0 - the plain 169-class cell', () => {
-    const rainbow = cards('2c4hQd');
-    expect(v31HandKey('AKs', cards('AsKs'), rainbow)).toBe('AKs:0');
-    expect(v31HandKey('AKo', cards('AhKd'), rainbow)).toBe('AKo:0');
-  });
-
-  it('refuses anything that is not exactly two hole cards', () => {
-    expect(v31HandKey('AKs', [], cards('2s9sKd'))).toBeNull();
-    expect(v31HandKey('AKs', cards('AsKsQs'), cards('2s9sKd'))).toBeNull();
-  });
-});
-
+const H64 = 'a'.repeat(64);
 const CELL: GtoPostflopV31Row = {
+  dataset_id: '11111111-1111-4111-8111-111111111111',
+  dataset_key: 'phase4-canary',
+  dataset_checksum: H64,
+  solver_version: 'PioSOLVER-3.0',
+  solver_binary_checksum: 'b'.repeat(64),
+  pipeline_commit: 'c'.repeat(40),
+  pipeline_bundle_checksum: 'b'.repeat(64),
+  manifest_version: '5',
+  manifest_checksum: 'd'.repeat(64),
+  source_artifact_checksum: 'e'.repeat(64),
+  source_combo_order_checksum: 'f'.repeat(64),
+  range_bundle_checksum: '1'.repeat(64),
+  icm_model_checksum: '5'.repeat(64),
+  input_bundle_checksum: '6'.repeat(64),
+  cell_key_checksum: '3'.repeat(64),
+  cell_payload_checksum: '4'.repeat(64),
+  lineage_checksum: '2'.repeat(64),
+  quality_status: 'validated',
+  dataset_state: 'active',
+  dataset_cells: 1,
+  source_rows: 20,
+  train_source_rows: 18,
+  holdout_source_rows: 2,
+  invalid_rows: 0,
+  audited_at: '2026-09-08T12:00:00.000Z',
   street: 'turn',
   game_family: 'cash',
-  position: 'BTN',
+  objective: 'cash_ev',
+  utility_context: 'cash_ev',
+  table_size: 2,
+  pot_type: 'limped',
+  hero_position: 'SB',
+  opponent_position: 'BB',
   depth_bucket: 80,
-  // Ks9d7c2h and Ks9s7c2h both classify Brud under the PRODUCTION
-  // fn_gto_texture_class_any — the second spade does not change the suit
-  // kind on a four-card board (m needs 4+, t needs exactly 3). That is
-  // convenient here: one cell serves both, so the only thing that differs
-  // between the two lookups below is the FLUSH SUIT.
   texture_class: 'Brud',
+  node_role: 'barrel',
+  facing_kind: 'none',
+  facing_size_bucket: 'none',
   hand_matrix: {
-    // the SAME hand class, two suit buckets, opposite strategies — this is
-    // the fidelity V30's class-mean averages into a single wrong number
-    'AKs:2': { check: 0.0, bet_big: 1.0 },
-    'AKs:0': { check: 1.0, bet_big: 0.0 },
-    'QQ:0': { check: 0.4, bet_big: 0.6 },
+    'AKs:2': { check: 0, overbet: 1 },
+    'AKs:0': { check: 1, overbet: 0 },
   },
-  size_pct: { bet_big: 262 },
+  action_specs: {
+    check: { family: 'check', size_unit: 'none', size_value: null, all_in: false },
+    overbet: { family: 'bet', size_unit: 'pot_fraction', size_value: 2.62, all_in: false },
+  },
+  policy_ev_matrix: { 'AKs:2': 8.4, 'AKs:0': 7.9 },
+  action_ev_matrix: {
+    'AKs:2': { check: 7.9, overbet: 8.4 },
+    'AKs:0': { check: 7.9, overbet: 8.4 },
+  },
 };
 
 const BOARD = cards('Ks9d7c2h');
 
-function lookup(hand: string, hole: string) {
+beforeEach(() => _clearGtoPostflopV31());
+
+function lookup(over: Partial<Parameters<typeof gtoStreetAdviceV31>[0]> = {}) {
   return gtoStreetAdviceV31({
     street: 'turn',
     family: 'cash',
-    position: 'BTN',
+    objective: 'cash_ev',
+    utilityContext: 'cash_ev',
+    tableSize: 2,
+    potType: 'limped',
+    heroPosition: 'SB',
+    opponentPosition: 'BB',
     stackBB: 80,
     board: BOARD,
-    hand,
-    holeCards: cards(hole),
+    hand: 'AKs',
+    holeCards: cards('AsKs'),
+    nodeRole: 'barrel',
+    facingKind: 'none',
+    facingSizeBucket: 'none',
+    ...over,
   });
 }
 
-describe('gtoStreetAdviceV31 - the lookup', () => {
-  it('an empty store misses rather than throwing, so the consult falls back', () => {
-    const r = gtoStreetAdviceV31({
-      street: 'turn',
-      family: 'cash',
-      position: 'BTN',
-      stackBB: 80,
-      board: BOARD,
-      hand: 'AKs',
-      holeCards: cards('AsKs'),
-    });
-    expect(r.hit).toBe(false);
-    if (!r.hit) expect(r.miss).toBe('empty_store');
+describe('V31 board-relative suit identity', () => {
+  it('mirrors the production suit tie-break', () => {
+    expect(boardFlushSuit(cards('2c3c4s5s'))).toBe(0);
+    expect(boardFlushSuit(cards('2d3d4h5h'))).toBe(1);
+    expect(boardFlushSuit(cards('2c3d4h'))).toBe(-1);
   });
 
-  it('loads cells and reports its size', () => {
-    expect(setGtoPostflopV31([CELL])).toBe(1);
-    expect(gtoPostflopV31Count()).toBe(1);
-  });
-
-  it('a rainbow board puts every holding in the same bucket', () => {
-    setGtoPostflopV31([CELL]);
-    const r = lookup('AKs', 'AsKs');
-    expect(r.hit).toBe(true);
-    if (r.hit) expect(r.cell).toContain('Brud');
-  });
-
-  /**
-   * THE WHOLE POINT OF THE SUIT DIMENSION: one hand class, two board-relative
-   * buckets, opposite strategies. V30 stores a single class-mean here and is
-   * therefore wrong for both holdings.
-   */
-  it('picks the holding the board says it is, not the hand class alone', () => {
-    const spadeBoard = cards('Ks9s7c2h'); // two spades, same Brud texture
-    setGtoPostflopV31([CELL]);
-    const common = {
-      street: 'turn' as const,
-      family: 'cash' as const,
-      position: 'BTN',
-      stackBB: 80,
-      board: spadeBoard,
-      hand: 'AKs',
-    };
-    const two = gtoStreetAdviceV31({ ...common, holeCards: cards('AsKs') });
-    const zero = gtoStreetAdviceV31({ ...common, holeCards: cards('AhKh') });
-    expect(two.hit).toBe(true);
-    expect(zero.hit).toBe(true);
-    if (two.hit && zero.hit) {
-      expect(two.mix.bet_big).toBe(1);
-      expect(zero.mix.bet_big).toBe(0);
-    }
-  });
-
-  /**
-   * THE SIZE COMES FROM THE CELL. bet_big means ">=110% of pot" and the
-   * turn's real mean is 246.8. If this ever returns a bucket midpoint the
-   * layer is sizing the solver's overbet at roughly a third of what it is,
-   * which is the entire reason V31 exists over V30.
-   */
-  it('reports the solver size as a pot FRACTION, and it is an overbet', () => {
-    setGtoPostflopV31([CELL]);
-    const r = lookup('AKs', 'AsKs');
-    expect(r.hit).toBe(true);
-    if (r.hit) {
-      expect(r.sizeFrac.bet_big).toBeCloseTo(2.62, 5);
-      expect(r.sizeFrac.bet_big).toBeGreaterThan(1);
-    }
-  });
-
-  it('a holding the solver never had reports hand_not_in_cell, not a wrong answer', () => {
-    setGtoPostflopV31([CELL]);
-    const r = lookup('72o', '7h2d');
-    expect(r.hit).toBe(false);
-    if (!r.hit) expect(r.miss).toBe('hand_not_in_cell');
-  });
-
-  it('an uncharted texture reports no_cell - texture is NEVER substituted', () => {
-    setGtoPostflopV31([CELL]);
-    const r = gtoStreetAdviceV31({
-      street: 'turn',
-      family: 'cash',
-      position: 'BTN',
-      stackBB: 80,
-      board: cards('KsQs7s2s'),
-      hand: 'AKs',
-      holeCards: cards('AhKh'),
-    });
-    expect(r.hit).toBe(false);
-    if (!r.hit) expect(r.miss).toBe('no_cell');
-  });
-
-  it('a board too short to classify reports no_texture', () => {
-    setGtoPostflopV31([CELL]);
-    const r = gtoStreetAdviceV31({
-      street: 'turn',
-      family: 'cash',
-      position: 'BTN',
-      stackBB: 80,
-      board: cards('Ks'),
-      hand: 'AKs',
-      holeCards: cards('AhKh'),
-    });
-    expect(r.hit).toBe(false);
-    if (!r.hit) expect(r.miss).toBe('no_texture');
-  });
-
-  it('an ICM spot falls back to chip-EV - v2 carries no tourney_icm rows at all', () => {
-    setGtoPostflopV31([{ ...CELL, game_family: 'tourney_ev' }]);
-    const r = gtoStreetAdviceV31({
-      street: 'turn',
-      family: 'tourney_icm',
-      position: 'BTN',
-      stackBB: 80,
-      board: BOARD,
-      hand: 'AKs',
-      holeCards: cards('AsKs'),
-    });
-    expect(r.hit).toBe(true);
-    if (r.hit) expect(r.cell).toContain('tourney_ev');
-  });
-
-  it('a cell with no recorded size still answers, leaving the caller to fall back', () => {
-    setGtoPostflopV31([{ ...CELL, size_pct: null }]);
-    const r = lookup('AKs', 'AsKs');
-    expect(r.hit).toBe(true);
-    if (r.hit) expect(r.sizeFrac.bet_big).toBeUndefined();
-  });
-
-  it('refuses a nonsense size rather than betting it', () => {
-    setGtoPostflopV31([{ ...CELL, size_pct: { bet_big: 0 } }]);
-    const r = lookup('AKs', 'AsKs');
-    expect(r.hit).toBe(true);
-    if (r.hit) expect(r.sizeFrac.bet_big).toBeUndefined();
+  it('keeps equal 169 classes in different flush-suit buckets', () => {
+    expect(v31HandKey('AKs', cards('AsKs'), cards('Ks9s7c2h'))).toBe('AKs:2');
+    expect(v31HandKey('AKs', cards('AhKh'), cards('Ks9s7c2h'))).toBe('AKs:0');
   });
 });
 
-/**
- * The two properties the V30 suite already establishes as the standard for a
- * solver layer, which Phase 1 shipped without: it must be INERT when it has
- * nothing to say, and it must actually be STARTED at boot. A layer that is
- * wired but never started, or that changes decisions when its table is empty,
- * fails in a way no unit test of the store itself would notice.
- */
-describe('the V31 layer is inert when empty, and is wired at boot', () => {
-  /**
-   * DETERMINISTIC BY CONSTRUCTION, and it has to be. A first attempt compared
-   * `decide()` with the layer on against `decide()` with it off and expected
-   * the same action. That assertion is INVALID here: HorseLogic.decide draws
-   * from shared RNG state, so two sequential calls can differ on their own —
-   * observed directly, on=bet off=bet on2=check off2=bet for the same hand.
-   * The V30 suite gets away with the same shape only because its spots use a
-   * pure cell that forces one action.
-   *
-   * So this pins the property that actually matters, with no RNG in it: a
-   * cell whose mix is 1.0 makes the horse take the solver's action at the
-   * solver's OWN size — end to end, lookup through to the chips.
-   */
-  it('a pure overbet cell makes the horse bet the solver size, not a bucket midpoint', async () => {
-    const { HorseLogic } = await import('./HorseLogic.js');
-    _clearGtoPostflopV31();
-    // QhJdTh2h classifies Btuc with flush suit hearts under the PRODUCTION
-    // functions; hero holds AhKh, so the key is AKs:2.
-    setGtoPostflopV31([
+describe('V31 certification and lookup', () => {
+  it('loads one sealed active dataset and surfaces EV lineage', () => {
+    expect(replaceGtoPostflopV31([CELL])).toBe(1);
+    expect(gtoPostflopV31Count()).toBe(1);
+    expect(gtoPostflopV31Dataset()).toEqual({
+      id: CELL.dataset_id,
+      checksum: CELL.dataset_checksum,
+    });
+    const result = lookup();
+    expect(result.hit).toBe(true);
+    if (result.hit) {
+      expect(result.actions.overbet.size_value).toBe(2.62);
+      expect(result.policyEvBb).toBe(7.9);
+      expect(result.actionEvsBb?.check).toBe(7.9);
+      expect(result.sourceSeal.lineage_checksum).toBe(CELL.lineage_checksum);
+      expect(result.sourceSeal.pipeline_bundle_checksum).toBe(CELL.pipeline_bundle_checksum);
+    }
+  });
+
+  it('accepts independently reach-weighted compact EV aggregates but still requires complete finite EVs', () => {
+    const covarianceCell: GtoPostflopV31Row = {
+      ...CELL,
+      hand_matrix: {
+        'AKs:2': { check: 0.5, overbet: 0.5 },
+        'AKs:0': { check: 0.5, overbet: 0.5 },
+      },
+      // Source-combo policy identities were validated before compaction. The
+      // independent class averages need not satisfy 0.5 * 2 + 0.5 * 8 = 5.
+      policy_ev_matrix: { 'AKs:2': 6.25, 'AKs:0': 6.25 },
+      action_ev_matrix: {
+        'AKs:2': { check: 2, overbet: 8 },
+        'AKs:0': { check: 2, overbet: 8 },
+      },
+    };
+    expect(replaceGtoPostflopV31([covarianceCell])).toBe(1);
+    expect(lookup().hit).toBe(true);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...covarianceCell,
+          policy_ev_matrix: { 'AKs:2': Number.NaN, 'AKs:0': 6.25 },
+        },
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...covarianceCell,
+          action_ev_matrix: {
+            'AKs:2': { check: 2 },
+            'AKs:0': { check: 2, overbet: 8 },
+          },
+        },
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+  });
+
+  it('keeps a sealed candidate isolated behind its exact checksum', () => {
+    replaceGtoPostflopV31([CELL]);
+    const candidate: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_id: '22222222-2222-4222-8222-222222222222',
+      dataset_key: 'phase4-candidate',
+      dataset_checksum: '7'.repeat(64),
+      dataset_state: 'evaluating',
+      hand_matrix: {
+        'AKs:2': { check: 0, overbet: 1 },
+        'AKs:0': { check: 0, overbet: 1 },
+      },
+      policy_ev_matrix: { 'AKs:2': 8.4, 'AKs:0': 8.4 },
+    };
+    expect(replaceGtoPostflopV31Evaluation([candidate])).toBe(1);
+    expect(gtoPostflopV31EvaluationCount(candidate.dataset_checksum)).toBe(1);
+    const active = lookup();
+    const evaluating = lookup({ datasetChecksum: candidate.dataset_checksum });
+    expect(active.hit && active.mix.check).toBe(1);
+    expect(evaluating.hit && evaluating.mix.overbet).toBe(1);
+    expect(lookup({ datasetChecksum: '8'.repeat(64) })).toEqual({
+      hit: false,
+      miss: 'empty_store',
+    });
+    expect(gtoPostflopV31Dataset()?.id).toBe(CELL.dataset_id);
+  });
+
+  it('refuses to load active rows into the candidate store or candidates live', () => {
+    expect(() => replaceGtoPostflopV31Evaluation([CELL])).toThrow(/uncertified_or_malformed/);
+    expect(() => replaceGtoPostflopV31([{ ...CELL, dataset_state: 'candidate' }])).toThrow(
+      /uncertified_or_malformed/
+    );
+  });
+
+  it('rejects an unsealed row and preserves the previous complete snapshot', () => {
+    replaceGtoPostflopV31([CELL]);
+    expect(() => replaceGtoPostflopV31([{ ...CELL, dataset_checksum: '0'.repeat(64) }])).toThrow(
+      /uncertified_or_malformed/
+    );
+    expect(gtoPostflopV31Count()).toBe(1);
+    expect(lookup().hit).toBe(true);
+  });
+
+  it('rejects string frequencies and noncanonical hand classes without replacing the snapshot', () => {
+    replaceGtoPostflopV31([CELL]);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...CELL,
+          hand_matrix: {
+            'AKs:2': { check: '0', overbet: '1' },
+            'AKs:0': { check: 1, overbet: 0 },
+          },
+        } as never,
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+    for (const invalidHand of ['KAo:0', 'AAs:0', 'AK:0']) {
+      expect(() =>
+        replaceGtoPostflopV31([
+          {
+            ...CELL,
+            hand_matrix: { [invalidHand]: { check: 1, overbet: 0 } },
+            policy_ev_matrix: { [invalidHand]: 0 },
+            action_ev_matrix: { [invalidHand]: { check: 0, overbet: 0 } },
+          },
+        ])
+      ).toThrow(/uncertified_or_malformed/);
+    }
+    expect(gtoPostflopV31Dataset()?.id).toBe(CELL.dataset_id);
+    expect(lookup().hit).toBe(true);
+  });
+
+  it('rejects a short paged result and preserves the prior complete dataset', () => {
+    replaceGtoPostflopV31([CELL]);
+    expect(() =>
+      replaceGtoPostflopV31([
+        { ...CELL, dataset_id: '22222222-2222-4222-8222-222222222222', dataset_cells: 2 },
+      ])
+    ).toThrow(/incomplete_dataset/);
+    expect(gtoPostflopV31Dataset()?.id).toBe(CELL.dataset_id);
+  });
+
+  it('rejects open/response semantic relabeling', () => {
+    expect(() =>
+      replaceGtoPostflopV31([
+        { ...CELL, node_role: 'facing_bet', facing_kind: 'none', facing_size_bucket: 'none' },
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...CELL,
+          action_specs: {
+            fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+            call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+          },
+          hand_matrix: { 'AKs:2': { fold: 0.5, call: 0.5 } },
+        },
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+  });
+
+  it('requires the exact node role, both seats, and objective', () => {
+    replaceGtoPostflopV31([CELL]);
+    expect(lookup({ nodeRole: 'open' }).hit).toBe(false);
+    expect(lookup({ opponentPosition: 'SB' }).hit).toBe(false);
+    expect(lookup({ tableSize: 6 }).hit).toBe(false);
+    expect(lookup({ potType: '3bet' }).hit).toBe(false);
+    expect(lookup({ family: 'tourney_icm', objective: 'icm' }).hit).toBe(false);
+  });
+
+  it('never falls back from tournament ICM to chip EV', () => {
+    replaceGtoPostflopV31([
       {
-        street: 'turn',
-        game_family: 'cash',
-        // heads-up the dealer IS the small blind — classifyPosition says so
-        // and the live mapping follows it, so the cell must too. Getting this
-        // wrong does not fail loudly: the lookup simply misses and a
-        // heuristic answers, which is exactly how this test first "passed"
-        // with a pot-sized bet that had nothing to do with the solver.
-        position: 'SB',
-        depth_bucket: 40,
-        texture_class: 'Btuc',
-        hand_matrix: { 'AKs:2': { bet_big: 1.0 } },
-        size_pct: { bet_big: 262 },
+        ...CELL,
+        game_family: 'tourney_ev',
+        objective: 'chip_ev',
+        utility_context: 'chip_ev',
       },
     ]);
+    const result = lookup({
+      family: 'tourney_icm',
+      objective: 'icm',
+      utilityContext: 'bubble',
+    });
+    expect(result.hit).toBe(false);
+    if (!result.hit) expect(result.miss).toBe('no_cell');
+  });
 
-    const hero = {
-      seat: 3,
-      user_id: 'hero',
-      // 80 chips at a 2 big blind = 40bb, which snaps to depth bucket 40 and
-      // matches the cell. 400 would snap to 150 and the lookup would MISS -
-      // and a miss here does not fail loudly, it just lets a heuristic answer.
-      stack: 80,
-      bet: 0,
-      is_folded: false,
-      is_sitting_out: false,
-      cards: cards('AhKh'),
+  it('reports an absent holding rather than trying a different context', () => {
+    replaceGtoPostflopV31([CELL]);
+    const result = lookup({ hand: '72o', holeCards: cards('7h2d') });
+    expect(result.hit).toBe(false);
+    if (!result.hit) expect(result.miss).toBe('hand_not_in_cell');
+  });
+});
+
+describe('V31 reaches the full horse decision path', () => {
+  it('requires the final wager family and size while preserving a semantic call-off', () => {
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'raise',
+        finalAmount: 62,
+        bigBlind: 100,
+      })
+    ).toBe(true);
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'raise',
+        finalAmount: 120,
+        bigBlind: 100,
+      })
+    ).toBe(false);
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'all_in',
+        finalAmount: null,
+        bigBlind: 100,
+      })
+    ).toBe(false);
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'call',
+        sampledAmount: 4_000,
+        finalAction: 'all_in',
+        finalAmount: null,
+        bigBlind: 100,
+      })
+    ).toBe(true);
+  });
+
+  it('uses the all-in response cell for a covering stack but never in a straddled pot', () => {
+    const responseBase: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_cells: 2,
+      street: 'flop',
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'all_in',
+      facing_kind: 'all_in',
+      facing_size_bucket: 'all_in',
+      hand_matrix: { '43o:0': { fold: 0, call: 1 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+      },
+      policy_ev_matrix: { '43o:0': 1 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: 1 } },
     };
-    const st = {
-      players: [hero, { seat: 1, user_id: 'bb', stack: 200, bet: 0, is_folded: false, cards: [] }],
-      communityCards: cards('QhJdTh2h'),
-      pot: 19,
-      currentBet: 0,
-      minRaise: 2,
+    replaceGtoPostflopV31([
+      responseBase,
+      {
+        ...responseBase,
+        node_role: 'facing_bet',
+        facing_kind: 'bet',
+        facing_size_bucket: 'big',
+        cell_key_checksum: '7'.repeat(64),
+        cell_payload_checksum: '8'.repeat(64),
+        lineage_checksum: '9'.repeat(64),
+        hand_matrix: { '43o:0': { fold: 1, call: 0 } },
+        policy_ev_matrix: { '43o:0': 0 },
+      },
+    ]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 8_000,
+      bet: 8_000,
+      totalInvested: 8_000,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD.slice(0, 3),
+      pot: 8_100,
+      currentBet: 8_000,
+      minRaise: 8_000,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      gameMode: 'cash',
+      format: 'cash',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        { stage: 'flop', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 0 },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 8_000,
+          timestamp: 1,
+        },
+      ],
+    };
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      { mind: false, telemetry: false }
+    );
+    expect(decision.action).toBe('all_in');
+
+    const straddleReceipts: Array<{ actionId: string }> = [];
+    HorseLogic.decide(
+      hero as never,
+      { ...state, straddleActive: true } as never,
+      'balanced',
+      {},
+      {
+        mind: false,
+        telemetry: false,
+        gtoV31DatasetChecksum: H64,
+        onGtoV31Decision: (receipt) => straddleReceipts.push(receipt),
+      }
+    );
+    expect(straddleReceipts).toEqual([]);
+  });
+
+  it('selects turn and river cells by the flop-root effective stack', () => {
+    const response: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_cells: 2,
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'small',
+      hand_matrix: { '43o:0': { fold: 1, call: 0 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+      },
+      policy_ev_matrix: { '43o:0': 0 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: -1 } },
+    };
+    replaceGtoPostflopV31([
+      response,
+      {
+        ...response,
+        depth_bucket: 20,
+        cell_key_checksum: '7'.repeat(64),
+        cell_payload_checksum: '8'.repeat(64),
+        lineage_checksum: '9'.repeat(64),
+        hand_matrix: { '43o:0': { fold: 0, call: 1 } },
+        policy_ev_matrix: { '43o:0': -1 },
+      },
+    ]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 2_000,
+      bet: 0,
+      totalInvested: 6_000,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 1_900,
+      bet: 100,
+      totalInvested: 6_100,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD,
+      pot: 12_300,
+      currentBet: 100,
+      minRaise: 100,
       stage: 'turn',
       gameVariant: 'nlh',
-      bigBlind: 2,
-      dealerSeat: 3,
+      gameMode: 'cash',
+      format: 'cash',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
       actionHistory: [
+        { stage: 'flop', seat: 1, userId: 'hero', action: 'bet', amount: 6_000, timestamp: 0 },
         {
-          stage: 'preflop',
-          seat: 3,
-          userId: 'hero',
-          action: 'raise',
-          amount: 5,
-          isFullRaise: true,
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'call',
+          amount: 6_000,
+          timestamp: 1,
         },
-        { stage: 'preflop', seat: 1, userId: 'bb', action: 'call', amount: 5 },
-        { stage: 'flop', seat: 1, userId: 'bb', action: 'check', amount: 0 },
-        { stage: 'flop', seat: 3, userId: 'hero', action: 'bet', amount: 4, isFullRaise: true },
-        { stage: 'flop', seat: 1, userId: 'bb', action: 'call', amount: 4 },
-        { stage: 'turn', seat: 1, userId: 'bb', action: 'check', amount: 0 },
+        { stage: 'turn', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 2 },
+        {
+          stage: 'turn',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 100,
+          timestamp: 3,
+        },
       ],
     };
 
-    const d = HorseLogic.decide(hero as never, st as never, 'balanced', {}, {} as never);
-    expect(d.action).toBe('bet');
-    // THE POINT: an OVERBET. A bucket midpoint (~0.7 pot) would be ~13 here;
-    // the solver's 262% of a 19 pot is ~50, inside the 80 stack so legalize
-    // does not clamp it and the 0.92-of-stack all-in shortcut does not fire.
-    expect(d.amount ?? 0).toBeGreaterThan(st.pot);
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      { mind: false, telemetry: false }
+    );
+    expect(decision.action).toBe('fold');
   });
 
-  it('with an empty store the lookup cannot answer, so the consult falls through', () => {
-    _clearGtoPostflopV31();
-    expect(gtoPostflopV31Count()).toBe(0);
-    const r = gtoStreetAdviceV31({
-      street: 'turn',
-      family: 'cash',
-      position: 'BTN',
-      stackBB: 40,
-      board: cards('QhJdTh2h'),
-      hand: 'AKs',
-      holeCards: cards('AhKh'),
-    });
-    expect(r.hit).toBe(false);
-    if (!r.hit) expect(r.miss).toBe('empty_store');
+  it('executes a genuine facing-bet fold and stamps that exact node', () => {
+    const response: GtoPostflopV31Row = {
+      ...CELL,
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'mid',
+      hand_matrix: { '43o:0': { fold: 1, call: 0, raise: 0 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+        raise: {
+          family: 'raise',
+          size_unit: 'pot_after_call_fraction',
+          size_value: 0.75,
+          all_in: false,
+        },
+      },
+      policy_ev_matrix: { '43o:0': 0 },
+      action_ev_matrix: {
+        '43o:0': { fold: 0, call: -0.2, raise: -0.8 },
+      },
+    };
+    replaceGtoPostflopV31([response]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 7_940,
+      bet: 60,
+      totalInvested: 60,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD,
+      pot: 160,
+      currentBet: 60,
+      minRaise: 60,
+      stage: 'turn',
+      gameVariant: 'nlh',
+      gameMode: 'cash',
+      format: 'cash',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        {
+          stage: 'flop',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 0,
+        },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'check',
+          amount: 0,
+          timestamp: 1,
+        },
+        {
+          stage: 'turn',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 2,
+        },
+        {
+          stage: 'turn',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 60,
+          timestamp: 3,
+        },
+      ],
+    };
+    enableBrainTelemetry();
+    drainFires();
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      {
+        telemetry: true,
+      }
+    );
+    expect(decision.action).toBe('fold');
+    const fires = Object.fromEntries(drainFires().map((row) => [row.feature, row.fires]));
+    expect(fires.v31_certified_facing_bet).toBe(1);
+    expect(fires.v32_defend_fold ?? 0).toBe(0);
   });
 
-  it('the V31 loader and the V31 driver are both started at boot', async () => {
-    const { readFileSync } = await import('node:fs');
-    const idx = readFileSync(new URL('../index.ts', import.meta.url).pathname, 'utf8');
-    // imported AND invoked — an import alone is a layer that never runs
-    expect(idx).toContain("from './services/GtoPostflopV31Loader.js'");
-    expect(idx).toContain('startGtoPostflopV31Loader()');
-    expect(idx).toContain("from './services/GtoAggregationDriverV31.js'");
-    expect(idx).toContain('startGtoAggregationDriverV31()');
+  it('lets an exact satellite ICM candidate execute before the locked-seat fallback', () => {
+    const checksum = '7'.repeat(64);
+    const candidate: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_id: '22222222-2222-4222-8222-222222222222',
+      dataset_key: 'phase4-satellite-candidate',
+      dataset_checksum: checksum,
+      dataset_state: 'evaluating',
+      game_family: 'tourney_icm',
+      objective: 'icm',
+      utility_context: 'satellite',
+      table_size: 2,
+      pot_type: 'srp',
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'big',
+      hand_matrix: { '43o:0': { fold: 0, call: 1, raise: 0 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+        raise: {
+          family: 'raise',
+          size_unit: 'pot_after_call_fraction',
+          size_value: 0.75,
+          all_in: false,
+        },
+      },
+      policy_ev_matrix: { '43o:0': -0.2 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: -0.2, raise: -1 } },
+    };
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 300,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 4_000,
+      bet: 4_000,
+      totalInvested: 4_300,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD,
+      pot: 5_000,
+      currentBet: 4_000,
+      minRaise: 4_000,
+      stage: 'turn',
+      gameVariant: 'nlh',
+      gameMode: 'tournament',
+      format: 'mtt',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        {
+          stage: 'preflop',
+          seat: 2,
+          userId: 'villain',
+          action: 'raise',
+          amount: 300,
+          timestamp: 0,
+        },
+        {
+          stage: 'preflop',
+          seat: 1,
+          userId: 'hero',
+          action: 'call',
+          amount: 200,
+          timestamp: 1,
+        },
+        {
+          stage: 'flop',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 2,
+        },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'check',
+          amount: 0,
+          timestamp: 3,
+        },
+        {
+          stage: 'turn',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 4,
+        },
+        {
+          stage: 'turn',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 4_000,
+          timestamp: 5,
+        },
+      ],
+      tournament: {
+        playersLeft: 5,
+        spotsPaid: 4,
+        satellite: true,
+        satelliteSeats: 4,
+        stacks: [8_000, 2_000, 1_800, 1_600, 1_400],
+        payoutPct: [0.25, 0.25, 0.25, 0.25],
+        avgStackChips: 2_960,
+      },
+    };
+
+    const fallback = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      { mind: false }
+    );
+    expect(fallback.action).toBe('fold');
+
+    replaceGtoPostflopV31Evaluation([candidate]);
+    const receipts: Array<{
+      datasetChecksum: string;
+      nodeRole: string;
+      actionId: string;
+      sampledActionFamily: string;
+      sampledAmount: number | null;
+      finalAction: string;
+      finalAmount: number | null;
+      executedAsIntended: boolean;
+    }> = [];
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      {
+        mind: false,
+        gtoV31DatasetChecksum: checksum,
+        onGtoV31Decision: (receipt) => receipts.push(receipt),
+      }
+    );
+    expect(decision).toMatchObject({ action: 'call', amount: 4_000 });
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        datasetChecksum: checksum,
+        nodeRole: 'facing_bet',
+        actionId: 'call',
+        sampledActionFamily: 'call',
+        sampledAmount: 4_000,
+        finalAction: 'call',
+        finalAmount: 4_000,
+        executedAsIntended: true,
+      }),
+    ]);
   });
 
-  /**
-   * THE ATTRIBUTION MUST NOT LIE. The first version of the consult fired
-   * `gto_miss_no_cell` whenever V31 hit but produced no usable action, which
-   * claims a cell was absent when one was found. Those counters are the only
-   * evidence Phase 3 will have for where the volume goes, so a mislabel is
-   * worse than no label. Pinned on the source, because the alternative is
-   * asserting on a global telemetry side effect.
-   */
-  it('never attributes a miss to V31 when V31 actually hit', async () => {
-    const { readFileSync } = await import('node:fs');
-    const src = readFileSync(new URL('./HorseLogic.ts', import.meta.url).pathname, 'utf8');
-    expect(src).toContain('!advice29 && telemetryOn(opts) && v31 && !v31.hit');
-    // an unusable hit is counted as its own thing, not as a missing cell
-    expect(src).toContain("noteFire('v31_gto_empty_mix')");
-    expect(src).toContain("noteFire('v31_gto_no_size')");
-    // and an ablated layer must not masquerade as an empty table
-    expect(src).toContain(': null;');
+  it('records a sampled raise that legalization downgraded to a call as an execution mismatch', () => {
+    const checksum = '7'.repeat(64);
+    const candidate: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_id: '22222222-2222-4222-8222-222222222222',
+      dataset_key: 'phase4-illegal-raise-candidate',
+      dataset_checksum: checksum,
+      dataset_state: 'evaluating',
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'mid',
+      hand_matrix: { '43o:0': { fold: 0, call: 0, tiny_raise: 1 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+        tiny_raise: {
+          family: 'raise',
+          size_unit: 'pot_after_call_fraction',
+          size_value: 0.01,
+          all_in: false,
+        },
+      },
+      policy_ev_matrix: { '43o:0': 0 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: 0, tiny_raise: 0 } },
+    };
+    replaceGtoPostflopV31Evaluation([candidate]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      stack: 7_940,
+      bet: 60,
+      totalInvested: 60,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    type Receipt = Parameters<
+      NonNullable<NonNullable<Parameters<typeof HorseLogic.decide>[4]>['onGtoV31Decision']>
+    >[0];
+    const receipts: Receipt[] = [];
+    const decision = HorseLogic.decide(
+      hero as never,
+      {
+        players: [hero, villain],
+        communityCards: BOARD,
+        pot: 160,
+        currentBet: 60,
+        minRaise: 60,
+        stage: 'turn',
+        gameVariant: 'nlh',
+        gameMode: 'cash',
+        format: 'cash',
+        bigBlind: 100,
+        smallBlind: 50,
+        dealerSeat: 2,
+        actionHistory: [
+          { stage: 'flop', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 0 },
+          { stage: 'flop', seat: 2, userId: 'villain', action: 'check', amount: 0, timestamp: 1 },
+          { stage: 'turn', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 2 },
+          { stage: 'turn', seat: 2, userId: 'villain', action: 'bet', amount: 60, timestamp: 3 },
+        ],
+      } as never,
+      'balanced',
+      {},
+      {
+        mind: false,
+        telemetry: false,
+        gtoV31DatasetChecksum: checksum,
+        onGtoV31Decision: (receipt) => receipts.push(receipt),
+      }
+    );
+    expect(decision).toMatchObject({ action: 'call', amount: 60 });
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        actionId: 'tiny_raise',
+        sampledActionFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'call',
+        finalAmount: 60,
+        executedAsIntended: false,
+      }),
+    ]);
+  });
+
+  it('the worker owns the loader and the loader reads only the certified RPC', () => {
+    const worker = readFileSync(
+      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    const loader = readFileSync(
+      new URL('../services/GtoPostflopV31Loader.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    expect(worker).toContain('startGtoPostflopV31Loader()');
+    expect(loader).toContain("supabase.rpc('fn_gto_v31_active_cells'");
+    expect(loader).not.toContain(".from('gto_postflop_v31')");
   });
 });

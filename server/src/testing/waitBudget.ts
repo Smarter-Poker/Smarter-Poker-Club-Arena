@@ -51,19 +51,46 @@
 // CLAUDE.md 1.1.7: a number tuned to hardware and written down as a constant
 // outlives the hardware. These two are allowed to be constants only because
 // the law pins their RELATIONSHIP, which is the part that actually matters.
+//
+// ---------------------------------------------------------------------------
+// RAISED 2026-09-08, and this is the same lesson one turn later.
+//
+// The 10s/10s pair became 20s under a 30s ceiling, which fixed the anonymous
+// death: an exhausted wait now prints what it was waiting for. It did not fix
+// the FAILURE, because 20s was still chosen against a healthy box.
+//
+// Measured today, on two pull requests that touch no server code at all
+// (fix/club-members-reads-name-their-columns changes only src/, tests/ and a
+// migration; fix/horses-indistinguishable-relanded has an empty server/ diff):
+//
+//   InsuranceRitExclusivity > both enabled: chooser runs it ONCE
+//     CI run 34181190799   gave up after 21,568ms   (budget 20,000)
+//     CI run 34166186107   gave up after 20,358ms   (budget 20,000)
+//     locally, twice, same commit:  the whole 5-test file in 4.41s
+//
+// A branch that cannot touch the engine cannot make the engine slow. This is
+// the box: 18 runners on 16 cores, and this file's own header records a
+// `sleep(400)` measured at 30,675ms on it - a 76x stretch. Against that, 20s
+// is a coin flip and 30s is not much better.
+//
+// So the pair is 60s under a 90s ceiling: three times the worst observed
+// exhaustion, with 30s of headroom for the diagnostic. A ceiling costs
+// nothing when a test passes - it is a maximum, not a sleep, and the same
+// suite already contains a legitimate 68.7s test - so the only thing bought
+// by keeping it small is a red build on somebody else's branch.
 // ---------------------------------------------------------------------------
 
 /**
  * The ceiling. `vitest.config.ts` imports this - do not restate the number
  * there, or the two drift and the gap below silently closes again.
  */
-export const TEST_TIMEOUT_MS = 30_000;
+export const TEST_TIMEOUT_MS = 90_000;
 
 /**
  * What a wall-clock wait may spend. Strictly less than TEST_TIMEOUT_MS so an
  * exhausted wait still gets to run its assertion and say what was missing.
  */
-export const WAIT_BUDGET_MS = 20_000;
+export const WAIT_BUDGET_MS = 60_000;
 
 /** How often a wait re-checks. Small enough to be invisible when it passes. */
 export const WAIT_POLL_MS = 25;

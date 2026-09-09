@@ -559,17 +559,15 @@ it('union financial overview uses complete recorded statements and explicit paym
   ).toContain('AS snapshot_complete');
 });
 
-it('tournament payment completion uses durable outstanding debt rather than RPC success', () => {
+it('tournament payment completion requires durable debt or terminal batch proof', () => {
   const sql = read(
     'supabase/migrations/20260907215613_tournament_settlement_reports_remaining_debt.sql'
   );
   expect(sql).toContain("'remaining', GREATEST(0, v_ob.amount_owed - v_ob.amount_paid - v_pay)");
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain(
-    'if (bp.fully_settled === true)'
-  );
-  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain(
-    "this.broadcast('bubble_protection_pending'"
-  );
+  const manager = read('server/src/tournament/TournamentManagerEliminations.ts');
+  expect(manager).toContain('const settlement = await settleTournamentPlacesAtomically(');
+  expect(manager).toContain('if (!settlement.ok || !settlement.completed)');
+  expect(manager).toContain('Tournament.atomic_place_settlement_failed');
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain(
     'FAIL stale smaller replay hides debt'
   );
@@ -735,5 +733,19 @@ it('weekly invoice payment acknowledges every cent and rejects malformed amounts
   expect(sql).toContain('payment amount must be positive finite whole cents');
   expect(
     has('tests/sql/union-statement-payment-rollback-probe.sql', 'FAIL one cent short marked paid')
+  ).toBe(true);
+});
+
+it('final guarantee funding follows recorded tournament scope', () => {
+  const sql = read(
+    'supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql'
+  );
+  expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
+  expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
+  expect(
+    has(
+      'scripts/ci/probes/guarantee-funding-scope.sql',
+      'FAIL guarantee follows current club union instead of event union'
+    )
   ).toBe(true);
 });

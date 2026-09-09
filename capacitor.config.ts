@@ -55,6 +55,12 @@ const config: CapacitorConfig = {
     Keyboard: {
       resize: 'none',
     },
+    PushNotifications: {
+      // A notification that arrives while the app is in the foreground is
+      // still shown (badge + sound + banner); src/lib/native/push.ts routes
+      // the tap. Without this iOS swallows foreground pushes silently.
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
     CapacitorUpdater: {
       // OTA (Capgo). autoUpdate is on so a merged web change reaches every
       // installed app on next launch without a store review. The channel and

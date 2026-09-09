@@ -1,0 +1,11 @@
+{
+  "fullClientFiles": 1185,
+  "fullClientTests": 16333,
+  "laterSelectorTests": 5,
+  "typescript": "passed after npm ci",
+  "productionBuild": "passed, behind-main=0, dirty selector fix",
+  "atlasFiles": 39,
+  "builtAtlasBytesMatch": true,
+  "sourcePNGsInBuild": 0,
+  "published": false
+}

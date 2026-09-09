@@ -1,10 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  TOURNAMENT ADD-ON MODAL — 60-Second Add-On Window
+ *  TOURNAMENT ADD-ON MODAL - Persisted Add-On Window
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Displays to all tournament players when the add-on period starts
- * (60 seconds after re-entry period ends).
+ * after re-entry closes (or from sit-down for Free Buy events).
  * Shows add-on cost, chips received, wallet balance, and countdown timer.
  */
 
@@ -27,6 +27,8 @@ interface AddOnModalProps {
   addOnFee?: number;
   addOnChips: number;
   walletBalance: number;
+  /** Absolute server-persisted deadline, in epoch milliseconds. */
+  endsAtMs?: number | null;
   timeRemaining: number; // seconds
   /**
    * Resolve TRUE when the chips were actually added, FALSE when the purchase
@@ -39,17 +41,26 @@ interface AddOnModalProps {
   onDecline: () => void;
 }
 
+function secondsUntilAddOnDeadline(endsAtMs: number | null, fallbackSeconds: number): number {
+  return Number.isFinite(endsAtMs)
+    ? Math.max(0, Math.ceil(((endsAtMs as number) - Date.now()) / 1000))
+    : Math.max(0, Math.ceil(fallbackSeconds));
+}
+
 export default function AddOnModal({
   isVisible,
   addOnCost,
   addOnFee = 0,
   addOnChips,
   walletBalance,
+  endsAtMs = null,
   timeRemaining: initialTime,
   onAccept,
   onDecline,
 }: AddOnModalProps) {
-  const [countdown, setCountdown] = useState(initialTime);
+  const [countdown, setCountdown] = useState(() =>
+    secondsUntilAddOnDeadline(endsAtMs, initialTime)
+  );
   const [processing, setProcessing] = useState(false);
   const [decided, setDecided] = useState(false);
   const [result, setResult] = useState<'accepted' | 'declined' | 'insufficient' | 'failed' | null>(
@@ -70,6 +81,7 @@ export default function AddOnModal({
   // the modal never actually showed them.
   const priceKnown = totalCost > 0;
   const canAfford = priceKnown && walletBalance >= totalCost;
+  const canAccept = canAfford && countdown > 0;
 
   useEffect(() => {
     if (!isVisible) {
@@ -83,33 +95,39 @@ export default function AddOnModal({
     }
 
     decidedRef.current = false;
-    setCountdown(initialTime);
-    timerRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          // Time expired — auto-decline
-          if (timerRef.current) clearInterval(timerRef.current);
-          if (!decidedRef.current) {
-            decidedRef.current = true;
-            setDecided(true);
-            setResult('declined');
-            onDeclineRef.current();
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const tick = () => {
+      const remaining = secondsUntilAddOnDeadline(endsAtMs, initialTime);
+      setCountdown(remaining);
+      if (remaining > 0 || decidedRef.current) return;
+
+      // The persisted deadline expired - auto-decline exactly once. Deriving
+      // from Date.now() avoids extending the offer when browser timers were
+      // throttled while the tab was in the background.
+      decidedRef.current = true;
+      setDecided(true);
+      setResult('declined');
+      if (timerRef.current) clearInterval(timerRef.current);
+      onDeclineRef.current();
+    };
+    tick();
+    if (!decidedRef.current) timerRef.current = setInterval(tick, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isVisible, initialTime]);
+  }, [isVisible, initialTime, endsAtMs]);
 
   const handleAccept = async () => {
     // The confirm sound used to fire BEFORE this guard, so a locked-out or
     // double tap still played "purchase confirmed" at the player.
-    if (processingRef.current || processing || decided || !canAfford) return;
+    if (
+      processingRef.current ||
+      processing ||
+      decided ||
+      !canAfford ||
+      secondsUntilAddOnDeadline(endsAtMs, initialTime) <= 0
+    )
+      return;
     processingRef.current = true;
     soundService.playBuyInConfirm();
     haptic.medium();
@@ -319,19 +337,19 @@ export default function AddOnModal({
               <button
                 type="button"
                 onClick={handleAccept}
-                disabled={!canAfford || processing}
+                disabled={!canAccept || processing}
                 style={{
                   flex: 1,
                   padding: '12px 0',
                   borderRadius: 10,
                   border: 'none',
-                  background: canAfford
+                  background: canAccept
                     ? 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)'
                     : '#374151',
                   color: '#fff',
                   fontSize: 14,
                   fontWeight: 700,
-                  cursor: canAfford ? 'pointer' : 'not-allowed',
+                  cursor: canAccept ? 'pointer' : 'not-allowed',
                   opacity: processing ? 0.6 : 1,
                   minHeight: 48,
                 }}

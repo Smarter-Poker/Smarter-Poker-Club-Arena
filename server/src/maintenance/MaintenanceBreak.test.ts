@@ -95,13 +95,32 @@ class FakeStore implements MaintenanceBreakStore {
     return this.row;
   }
   async save(s: PersistedMaintenanceBreak) {
+    if (this.row && this.row.ownershipToken !== s.ownershipToken) {
+      throw new Error('MAINTENANCE_OWNERSHIP_LOST');
+    }
     this.row = { ...s };
     this.saves++;
   }
-  async clear() {
+  async claim(expectedOwnershipToken: string, newOwnershipToken: string) {
+    if (!this.row || this.row.ownershipToken !== expectedOwnershipToken) return null;
+    this.row = { ...this.row, ownershipToken: newOwnershipToken };
+    return this.row;
+  }
+  async clear(expected: PersistedMaintenanceBreak) {
+    if (JSON.stringify(this.row) !== JSON.stringify(expected)) return;
     this.row = null;
     this.clears++;
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
 }
 
 function build(engineCount = 3) {
@@ -130,6 +149,91 @@ afterEach(() => vi.useRealTimers());
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('the announcement', () => {
+  it('makes the durable promise before any player can see it', async () => {
+    const { mb, store, emitted } = build(1);
+    const saving = deferred<void>();
+    store.save = async (state) => {
+      await saving.promise;
+      store.row = { ...state };
+      store.saves++;
+    };
+
+    const announcing = mb.announceLastHand();
+    await Promise.resolve();
+    expect(emitted).toHaveLength(0);
+
+    saving.resolve();
+    await announcing;
+    expect(store.row?.phase).toBe('last_hand');
+    expect(emitted.map((frame) => frame.payload.phase)).toEqual(['last_hand']);
+  });
+
+  it('keeps the original seven-minute window when the durable save waits behind an entry', async () => {
+    vi.setSystemTime(new Date('2026-09-07T18:53:00.000Z'));
+    const announcedAt = Date.now();
+    const { mb, store, emitted } = build(1);
+    const saving = deferred<void>();
+    store.save = async (state) => {
+      await saving.promise;
+      store.row = { ...state };
+      store.saves++;
+    };
+
+    const announcing = mb.announceLastHand();
+    await vi.advanceTimersByTimeAsync(30_000);
+    saving.resolve();
+    await announcing;
+
+    const lastHand = emitted.at(-1)?.payload;
+    expect(lastHand?.phase).toBe('last_hand');
+    expect(lastHand?.restart_in_ms).toBe(90_000);
+    expect(lastHand?.resume_expected_at).toBe(
+      announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS
+    );
+
+    await vi.advanceTimersByTimeAsync(89_999);
+    expect(store.row?.phase).toBe('last_hand');
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(store.row).toMatchObject({
+      phase: 'counting_down',
+      announcedAt,
+      breakStartedAt: announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS,
+      breakEndsAt:
+        announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS,
+    });
+    expect(emitted.at(-1)?.payload).toMatchObject({
+      phase: 'counting_down',
+      break_ends_at:
+        announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS,
+    });
+  });
+
+  it('unwinds every local hold when the durable announcement cannot be made', async () => {
+    const { mb, engines, store, emitted } = build(2);
+    store.save = async () => {
+      throw new Error('database unavailable');
+    };
+
+    await expect(mb.announceLastHand()).rejects.toThrow('database unavailable');
+    expect(mb.isActive()).toBe(false);
+    expect(emitted).toHaveLength(0);
+    for (const engine of engines.values()) expect(engine.paused).toBe(false);
+  });
+
+  it('accepts a lost save response only after exact durable read-back', async () => {
+    const { mb, store, emitted } = build(1);
+    store.save = async (state) => {
+      store.row = { ...state };
+      throw new Error('response lost after commit');
+    };
+
+    await mb.announceLastHand();
+    expect(mb.isActive()).toBe(true);
+    expect(store.row?.phase).toBe('last_hand');
+    expect(emitted.map((frame) => frame.payload.phase)).toEqual(['last_hand']);
+  });
+
   it('holds every table BEFORE its next hand, not merely after the current one', async () => {
     const { mb, engines } = build();
     await mb.announceLastHand();
@@ -181,6 +285,63 @@ describe('the announcement', () => {
 });
 
 describe('the countdown', () => {
+  it('publishes durableConfirmed only for the exact phase that has committed', async () => {
+    const { mb, engines, store } = build(1);
+    expect(mb.snapshot().durableConfirmed).toBe(false);
+
+    await mb.announceLastHand();
+    expect(mb.snapshot()).toMatchObject({
+      active: true,
+      phase: 'last_hand',
+      durableConfirmed: true,
+    });
+
+    parkAll(engines);
+    const savingCountdown = deferred<void>();
+    store.save = async (state) => {
+      await savingCountdown.promise;
+      store.row = { ...state };
+      store.saves++;
+    };
+    const countingDown = mb.beginCountdown();
+    await Promise.resolve();
+
+    // The prior last-hand row is durable, but it cannot certify the new
+    // countdown timestamps while their write is unresolved.
+    expect(mb.snapshot()).toMatchObject({
+      active: true,
+      phase: 'counting_down',
+      durableConfirmed: false,
+      readyForRestart: false,
+    });
+
+    savingCountdown.resolve();
+    await countingDown;
+    expect(mb.snapshot()).toMatchObject({
+      phase: 'counting_down',
+      durableConfirmed: true,
+      readyForRestart: true,
+    });
+  });
+
+  it('ends the visible break and resumes play when countdown persistence fails', async () => {
+    const { mb, engines, store, emitted } = build(1);
+    await mb.announceLastHand();
+    parkAll(engines);
+    store.save = async () => {
+      throw new Error('countdown write failed');
+    };
+
+    await expect(mb.beginCountdown()).rejects.toThrow('countdown write failed');
+    expect(mb.isActive()).toBe(false);
+    expect([...engines.values()][0].paused).toBe(false);
+    expect(emitted.map((frame) => frame.payload.type)).toEqual([
+      'maintenance_break',
+      'maintenance_break_ended',
+    ]);
+    expect(store.row).toBeNull();
+  });
+
   it('starts five minutes only once, and writes an absolute end time', async () => {
     const { mb, engines, store } = build();
     await mb.announceLastHand();
@@ -451,6 +612,7 @@ describe('the end of the break', () => {
       breakStartedAt: originalStart,
       breakEndsAt: Date.now() + 2 * 60 * 1000,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
     };
     let thawSeconds = 0;
     const mb = new MaintenanceBreak({
@@ -522,6 +684,36 @@ describe('the end of the break', () => {
 
     expect(store.row).toBeNull();
     expect([...engines.values()][1].paused).toBe(false);
+  });
+
+  it('can declare the next hour when its prior exact clear failed', async () => {
+    const { mb, store } = build(1);
+    const clear = store.clear.bind(store);
+    let refuseFirstClear = true;
+    store.clear = async (expected) => {
+      if (refuseFirstClear) {
+        refuseFirstClear = false;
+        throw new Error('lost connection before exact clear');
+      }
+      await clear(expected);
+    };
+
+    await mb.announceLastHand();
+    const processToken = store.row!.ownershipToken;
+    await mb.beginCountdown();
+    await mb.end();
+
+    // The orphan is expired but still belongs to this process generation.
+    expect(store.row?.ownershipToken).toBe(processToken);
+    expect(mb.isActive()).toBe(false);
+
+    await mb.announceLastHand();
+    expect(mb.isActive()).toBe(true);
+    expect(store.row?.ownershipToken).toBe(processToken);
+
+    await mb.beginCountdown();
+    await mb.end();
+    expect(store.row).toBeNull();
   });
 });
 
@@ -775,6 +967,27 @@ describe('the resume arrives in installments (2026-09-05)', () => {
 });
 
 describe('surviving the restart', () => {
+  it('rotates ownership so the retiring process cannot overwrite or clear the adopted row', async () => {
+    const { mb, store } = build(1);
+    await mb.announceLastHand();
+    const retiredState = { ...store.row! };
+
+    const replacement = new MaintenanceBreak({
+      engines: () => new Map<string, FakeEngine>().entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+    });
+    await replacement.start();
+
+    expect(store.row?.ownershipToken).not.toBe(retiredState.ownershipToken);
+    await expect(store.save({ ...retiredState, phase: 'counting_down' })).rejects.toThrow(
+      'MAINTENANCE_OWNERSHIP_LOST'
+    );
+    await store.clear(retiredState);
+    expect(store.row?.ownershipToken).not.toBe(retiredState.ownershipToken);
+  });
+
   it('re-parks every table for what is LEFT of a break the previous engine declared', async () => {
     const { mb, engines, store } = build(3);
     store.row = {
@@ -783,6 +996,7 @@ describe('surviving the restart', () => {
       breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() + 2 * 60 * 1000,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
     };
 
     await mb.start();
@@ -805,6 +1019,7 @@ describe('surviving the restart', () => {
       breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() + 30_000,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
     };
     await mb.start();
     expect([...engines.values()][0].paused).toBe(true);
@@ -824,12 +1039,91 @@ describe('surviving the restart', () => {
       breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() - 60_000,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'expired-owner',
     };
     await mb.start();
 
     expect(mb.isActive()).toBe(false);
     expect([...engines.values()][0].paused).toBe(false);
     expect(store.clears).toBe(1);
+  });
+
+  it('owns a foreign expired row before cleanup so a failed clear cannot poison the next hour', async () => {
+    const { mb, store } = build(1);
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: Date.now() - 10 * 60 * 1000,
+      breakStartedAt: Date.now() - 7 * 60 * 1000,
+      breakEndsAt: Date.now() - 3 * 60 * 1000,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'retired-process-token',
+    };
+    const clear = store.clear.bind(store);
+    let refuseFirstClear = true;
+    store.clear = async (expected) => {
+      if (refuseFirstClear) {
+        refuseFirstClear = false;
+        throw new Error('cleanup connection lost');
+      }
+      await clear(expected);
+    };
+
+    await mb.start();
+    const adoptedToken = store.row!.ownershipToken;
+    expect(adoptedToken).not.toBe('retired-process-token');
+    expect(mb.isActive()).toBe(false);
+
+    await mb.announceLastHand();
+    expect(mb.isActive()).toBe(true);
+    expect(store.row?.ownershipToken).toBe(adoptedToken);
+    await mb.beginCountdown();
+    await mb.end();
+    expect(store.row).toBeNull();
+  });
+
+  it('adopts a committed ownership claim whose HTTP response was lost', async () => {
+    const { mb, engines, store } = build(1);
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: Date.now() - 2 * 60 * 1000,
+      breakStartedAt: Date.now() - 30_000,
+      breakEndsAt: Date.now() + 3 * 60 * 1000,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'retired-process-token',
+    };
+    const claim = store.claim.bind(store);
+    store.claim = async (expected, replacement) => {
+      await claim(expected, replacement);
+      throw new Error('claim response lost after commit');
+    };
+
+    await mb.start();
+
+    expect(store.row?.ownershipToken).not.toBe('retired-process-token');
+    expect(mb.isActive()).toBe(true);
+    expect(mb.snapshot().durableConfirmed).toBe(true);
+    expect([...engines.values()][0].paused).toBe(true);
+  });
+
+  it('never adopts or clears a row another process changed during the claim', async () => {
+    const { mb, engines, store } = build(1);
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: Date.now() - 2 * 60 * 1000,
+      breakStartedAt: Date.now() - 30_000,
+      breakEndsAt: Date.now() + 3 * 60 * 1000,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'observed-token',
+    };
+    store.claim = async () => {
+      store.row = { ...store.row!, ownershipToken: 'newer-process-token' };
+      return null;
+    };
+
+    await expect(mb.start()).rejects.toThrow('maintenance_break_ownership_changed_before_adoption');
+    expect(store.row?.ownershipToken).toBe('newer-process-token');
+    expect(store.clears).toBe(0);
+    expect([...engines.values()][0].paused).toBe(false);
   });
 
   it('deals normally when the break row cannot be read at all', async () => {
@@ -866,6 +1160,7 @@ describe('surviving the restart', () => {
       breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() + 4 * 60 * 1000,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-retry',
     };
     let loads = 0;
     store.load = async () => {
@@ -948,6 +1243,37 @@ describe('the schedule', () => {
     // Never zero or negative: a scheduler that returns those spins the loop.
     expect(ms).toBeGreaterThan(0);
   });
+
+  it('re-arms the next wall-clock hour when the durable announcement fails', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const mb = new MaintenanceBreak({
+      engines: () => new Map([['t0', new FakeEngine()]]).entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: {
+        load: async () => null,
+        save: async () => {
+          throw new Error('database refused the announcement');
+        },
+        claim: async () => null,
+        clear: async () => {},
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    await mb.start();
+    expect(timers, 'the first :53 was not armed').toHaveLength(1);
+    timers[0].fn();
+
+    await vi.waitFor(() => {
+      expect(timers, 'one failed hour cancelled every future maintenance break').toHaveLength(2);
+    });
+    expect(mb.isActive(), 'a failed durable promise stayed visible/in force').toBe(false);
+    expect(timers[1].ms).toBeGreaterThan(0);
+  });
 });
 
 /**
@@ -1007,6 +1333,182 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
           guard.trim().slice(-120)
       ).toMatch(/maintenancePaused/);
     }
+  });
+});
+
+describe('the maintenance owner cannot outlive shutdown', () => {
+  const deferred = <T>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  };
+
+  it('joins an in-progress boot and cannot arm its schedule after stop wins', async () => {
+    const loading = deferred<PersistedMaintenanceBreak | null>();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const engine = new FakeEngine();
+    const mb = new MaintenanceBreak({
+      engines: () => new Map([['t0', engine]]).entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: {
+        load: () => loading.promise,
+        save: async () => {},
+        claim: async () => null,
+        clear: async () => {},
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    const firstStart = mb.start();
+    expect(mb.start()).toBe(firstStart);
+    const firstStop = mb.stop();
+    expect(mb.stop()).toBe(firstStop);
+    let stopped = false;
+    void firstStop.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped, 'stop returned while the boot read was still alive').toBe(false);
+
+    loading.resolve(null);
+    await Promise.all([firstStart, firstStop]);
+    expect(timers, 'the losing starter armed a post-shutdown announcement').toHaveLength(0);
+
+    mb.adopt('late', engine);
+    expect(engine.paused, 'a stopped owner still adopted a late engine').toBe(false);
+    await expect(mb.start()).rejects.toThrow(/cannot be restarted/i);
+  });
+
+  it('joins an announced break persist and cannot arm the countdown after stop', async () => {
+    const saving = deferred<void>();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    let saveStarted = false;
+    const mb = new MaintenanceBreak({
+      engines: () => new Map([['t0', new FakeEngine()]]).entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: {
+        load: async () => null,
+        save: () => {
+          saveStarted = true;
+          return saving.promise;
+        },
+        claim: async () => null,
+        clear: async () => {},
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    await mb.start();
+    expect(timers).toHaveLength(1);
+    timers[0].fn();
+    expect(saveStarted).toBe(true);
+
+    const stopping = mb.stop();
+    let stopped = false;
+    void stopping.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped, 'stop returned while the scheduled save was still alive').toBe(false);
+
+    saving.resolve();
+    await stopping;
+    expect(
+      timers,
+      'the announcement armed either its countdown or the next wall-clock pass after shutdown'
+    ).toHaveLength(1);
+  });
+
+  it('joins a thaw already in flight and never resumes an engine after stop', async () => {
+    const thawing = deferred<void>();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const engines = new Map<string, FakeEngine>([['t0', new FakeEngine()]]);
+    let thawStarted = false;
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: new FakeStore(),
+      thaw: () => {
+        thawStarted = true;
+        return thawing.promise;
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    await mb.announceLastHand();
+    timers.shift()!.fn();
+    await Promise.resolve();
+    await Promise.resolve();
+    const endTimer = timers.find((timer) => timer.ms === MaintenanceBreak.BREAK_DURATION_MS);
+    expect(endTimer).toBeDefined();
+    endTimer!.fn();
+    expect(thawStarted).toBe(true);
+
+    const stopping = mb.stop();
+    thawing.resolve();
+    await stopping;
+    expect(
+      engines.get('t0')!.resumeCount,
+      'shutdown allowed the thaw continuation to wake play'
+    ).toBe(0);
+  });
+
+  it('clears and invalidates every pending resume-wave timer', async () => {
+    type Timer = { fn: () => void; ms: number };
+    const timers: Timer[] = [];
+    const cleared = new Set<Timer>();
+    const engines = new Map<string, FakeEngine>();
+    for (let i = 0; i < 60; i++) engines.set(`t${i}`, new FakeEngine());
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: new FakeStore(),
+      setTimer: ((fn: () => void, ms: number) => {
+        const timer = { fn, ms };
+        timers.push(timer);
+        return timer as unknown as NodeJS.Timeout;
+      }) as any,
+      clearTimer: ((timer: NodeJS.Timeout) => {
+        cleared.add(timer as unknown as Timer);
+      }) as any,
+    });
+
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    await mb.end();
+    const waveTimers = timers.filter(
+      (timer) =>
+        timer.ms > 0 &&
+        timer.ms <= MaintenanceBreak.RESUME_SPREAD_MS &&
+        timer.ms % MaintenanceBreak.RESUME_WAVE_GAP_MS === 0
+    );
+    expect(waveTimers).toHaveLength(2);
+    const resumedBeforeStop = [...engines.values()].reduce(
+      (n, engine) => n + engine.resumeCount,
+      0
+    );
+
+    await mb.stop();
+    expect(waveTimers.every((timer) => cleared.has(timer))).toBe(true);
+    for (const timer of waveTimers) timer.fn();
+    expect([...engines.values()].reduce((n, engine) => n + engine.resumeCount, 0)).toBe(
+      resumedBeforeStop
+    );
   });
 });
 

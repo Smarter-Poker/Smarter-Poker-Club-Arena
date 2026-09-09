@@ -87,7 +87,9 @@ describe('every dead write now names a column that exists', () => {
   it('leaving a table is recorded with action and metadata', () => {
     const src = read('src/services/TableService.ts');
     expect(src).toContain("action: 'leave'");
-    expect(src).toContain('chips_cashed_out: chipsToReturn');
+    expect(src).toContain('chips_cashed_out: confirmedAmount');
+    expect(src).toContain('cashout_pending: engineOwnsCashout');
+    expect(src).not.toContain('chips_cashed_out: chipsToReturn');
     expect(src).not.toMatch(/activity_type:\s*'leave'/);
   });
 

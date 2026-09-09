@@ -15,7 +15,6 @@ import {
   STRONG_PASS_EQ,
 } from './GtoFacingDefenseV32.js';
 import { setGtoPostflop, _clearGtoPostflop } from './GtoPostflop.js';
-import { setGtoPostflopV31, _clearGtoPostflopV31 } from './GtoPostflopV31.js';
 import type { Card, CardRank, CardSuit } from '../types.js';
 
 const SUITS: Record<string, CardSuit> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
@@ -37,15 +36,16 @@ function mulberry(a: number) {
 
 beforeEach(() => {
   _clearGtoPostflop();
-  _clearGtoPostflopV31();
 });
 
-describe('bet size buckets mirror fn_aggregate_gto_v31_next exactly', () => {
-  it('the aggregator edges: <60 small, <110 mid, else big', () => {
+describe('bet size buckets match the V30 compact store action domain', () => {
+  it('uses only unambiguous tails and refuses the size-lost middle band', () => {
     expect(betBucketForFraction(0.33)).toBe('bet_small');
     expect(betBucketForFraction(0.599)).toBe('bet_small');
-    expect(betBucketForFraction(0.6)).toBe('bet_mid');
-    expect(betBucketForFraction(1.099)).toBe('bet_mid');
+    expect(betBucketForFraction(0.6)).toBeNull();
+    expect(betBucketForFraction(0.999)).toBeNull();
+    expect(betBucketForFraction(1)).toBeNull();
+    expect(betBucketForFraction(1.099)).toBeNull();
     expect(betBucketForFraction(1.1)).toBe('bet_big');
     expect(betBucketForFraction(2.62)).toBe('bet_big');
   });
@@ -183,47 +183,19 @@ describe('solverBettingRange - the range is what BET, not what was dealt', () =>
   });
 });
 
-describe('the suit dimension works on the DEFENCE side too', () => {
-  it('V31: AKs:2 on a two-spade board expands to exactly As Ks', () => {
-    const spadeBoard = cards('Ks9s7c2h');
-    const tex = textureClass(spadeBoard)!;
-    setGtoPostflopV31([
-      {
-        street: 'turn',
-        game_family: 'cash',
-        position: 'BTN',
-        depth_bucket: 80,
-        texture_class: tex,
-        hand_matrix: {
-          'AKs:2': { bet_big: 1.0 },
-          'AKs:0': { check: 1.0 },
-          // filler so MIN_RANGE_COMBOS is met after suit filtering (a :0
-          // class on a two-spade board keeps only its spade-free combos)
-          'QQ:0': { bet_big: 1.0 },
-          'JJ:0': { bet_big: 1.0 },
-          'TT:0': { bet_big: 1.0 },
-          '88:0': { bet_big: 1.0 },
-        },
-        size_pct: { bet_big: 240 },
-      } as never,
-    ]);
-    const r = solverBettingRange({
+describe('the fallback names its evidence honestly', () => {
+  it('labels open-node Bayes inference as legacy derived, never exact V31', () => {
+    loadV30();
+    const range = solverBettingRange({
       street: 'turn',
       family: 'cash',
       bettorPosition: 'BTN',
       stackBB: 80,
-      board: spadeBoard,
+      board: BOARD,
       heroCards: cards('2c3c'),
       betFraction: 2.0,
-    })!;
-    expect(r.source).toBe('v31');
-    const aks = r.combos.filter(([a, b]) => `${a.rank}${b.rank}` === 'AK');
-    // AKs:2 -> both cards the flush suit -> As Ks only... Ks is ON THE BOARD,
-    // so ZERO AK combos survive. The suit bucket plus card removal together.
-    expect(aks.length).toBe(0);
-    // AKs:0 checks — its non-spade combos must NOT be in the betting range
-    const anyAK = r.combos.some(([a, b]) => `${a.rank}${b.rank}` === 'AK');
-    expect(anyAK).toBe(false);
+    });
+    expect(range?.source).toBe('v30_legacy_derived');
   });
 });
 
@@ -353,11 +325,11 @@ describe('gtoFacingDefense - the line itself', () => {
 });
 
 describe('the raw bet defines the RANGE, the effective call defines the PRICE', () => {
-  it('a three-pot jam into a short hero consults the OVERBET range, not mid', () => {
+  it('a three-pot jam into a short hero consults the OVERBET range, not small', () => {
     loadV30();
-    // Effective numbers alone: pot 160, toCall 60 -> frac 0.6 -> bet_mid,
-    // which this cell does not have. The RAW fraction says bet_big, which
-    // it does. Only the rawBetFraction path can answer here.
+    // Effective numbers alone: pot 160, toCall 60 -> frac 0.6 -> unknown.
+    // The RAW fraction says bet_big, which this cell has. Only the exact raw
+    // bet path can answer here.
     const withRaw = gtoFacingDefense({
       street: 'turn',
       family: 'cash',
@@ -382,6 +354,6 @@ describe('the raw bet defines the RANGE, the effective call defines the PRICE', 
       toCall: 60,
       rand: mulberry(11),
     });
-    expect(withoutRaw).toBeNull(); // frac 0.6 -> bet_mid -> no such range here
+    expect(withoutRaw).toBeNull(); // frac 0.6 -> intentionally unsupported
   });
 });

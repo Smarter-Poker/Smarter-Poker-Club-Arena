@@ -1,6 +1,18 @@
 # CONTINUATION HANDOFF - Club Arena Engine-Restart & Platform-Hardening Programme
 
-Last updated: 2026-09-03 ~00:15 UTC (addendum, section 0); body 2026-09-02 ~22:25 UTC. Author: the "cowork-maintbreak" agent
+## 2026-09-09 Release Blocker Addendum
+
+The 23:55 cutover on September 8 did not occur. A foreign expired 22:53
+maintenance record survived the database outage and rejected the replacement
+engine's next announcement. The guarded renewal fix is installed as migration
+20260909002144, tested with 42 isolated PostgreSQL checks and 82 maintenance
+tests. The next scheduled announcement/cutover still needs live acceptance.
+Read [the incident and installation evidence](audits/2026-09-09-expired-maintenance-owner.md)
+before claiming current server PRs have deployed. Recent direct metrics show
+four database CPU cores under sustained pressure; the older two-core statement
+in the September 8 addendum is superseded by those measurements.
+
+Last updated: 2026-09-08 ~02:20 UTC (addendum 00); 2026-09-03 (addendum 0); body 2026-09-02 ~22:25 UTC. Author: the "cowork-maintbreak" agent
 session (session_01Mcyo7VW3Wdw5oC6qzm4C5y). This file REPLACES the prior
 engine-restart handoff (that record is preserved in git history at
 docs/HANDOFF_CURRENT_STATE.md before this commit, and the prior programme is
@@ -11,6 +23,85 @@ plan with per-phase acceptance criteria. This handoff is the live state; that
 doc is the map.
 
 ---
+
+---
+
+0.  ADDENDUM 2026-09-08 02:20 UTC - THE RE-DIVE. READ BEFORE ADDENDUM 0.
+
+---
+
+Dan, 2026-09-07: "We've had several issues, do a full redive and ensure
+everything is working properly before doing anything else." Then: build,
+fix and enhance everything found. Everything below is MERGED to main and
+serving in production (verified: every merge sha is an ancestor of the
+running engine build), and each item was measured after deploy.
+
+STATE OF THE PROGRAMME'S OWN SURFACES (measured 2026-09-08 01:55 UTC):
+
+- 26/26 breaks in 26h opened the gate cleanly (unparked 0), thaw complete in
+  1 call on every one, recovery ~60s, hands in freeze 0-1, kill-rebuilds 0.
+- freeze_conserved TRUE on every break since the balancer fix (#3560); it had
+  been flipping false on table-balance moves caught halfway by the :00 mark.
+- The DB dispatcher (ca-deploy-dispatch, :41) fires hourly (HTTP 204) and
+  dedupes correctly against GitHub's own :45 cron; one restart per hour.
+- Engine logs survive every deploy: /var/log/club-arena-engine/ holds one
+  gzipped file per hourly cutover (~14 MB), 14 days / 6 GB retention (#3539).
+
+WHAT WAS FOUND AND FIXED (PR -> measurement):
+
+- #3534 the hourly bounty backpay sweep aborted whole on one escrow-short pool
+  (14 consecutive failures) -> each pool in its own exception block; 4/4 runs
+  succeed since.
+- #3550 + 20260908020500 (#3627): hand_state_snapshots was 9.2 GB / 3.7 M rows
+  because COMPLETED snapshots were kept 7 days and nothing reads one. Now 6h,
+  pruned in 2,000-row rounds under a 20s budget, every 2 minutes (the "\_2m"
+  job had been on a 5-minute schedule). Draining ~8k rows/run under load.
+  hand_history (10 GB) is ALREADY within Dan's 7-day horse retention - the
+  fleet deals ~530k hands/day now, 2.4x August. The biggest object is
+  solved_spots_gold: 80 GB, almost all TOAST, the horse brain's solver
+  artifact, read (7.7M idx scans) not churned - Phase 8's next target.
+- #3555 seat-first boards could not fill: 615 of 1,000 horses read as "at
+  capacity" because a REGISTRATION for an event days away counted as one of
+  the horse's four games (108 booked for next Sunday). Bookings now count only
+  inside a 30-minute start horizon. "0 of 3 claimable" / "CANNOT FILL" went
+  from 200+ per half hour to 0. Boards still wait a median 12-22 min for
+  their FIRST horse (~33% within 3 min) and ~4 min from first horse to start:
+  that first wait is the deliberate hold-empty share for humans
+  (seatFirstHeldEmpty, 33%/50% per 30-min bucket) - Dan's design, left alone.
+- #3560 the tournament balancer moved players between PARKED tables inside
+  the freeze (26 seats / 571k in one break). Gated; pinned in
+  theFreezeIsTotal.law.test.ts.
+- #3569 a spin champion owed 100 was refused (escrow_short) because the
+  auto-ledger's spin_prize leg was rejected and fell through to
+  settlement_suspense. Settled through the one payer (proven rolled back,
+  applied with the numbers asserted). The spin disbursement audit compares
+  spins against buy_in x multiplier (34 hourly false positives resolved).
+- Hygiene: 5 stale revert-guard issues closed; 19 un-landable PRs catalogued
+  in #3570 by owner and cause.
+
+FILED, NOT FIXED (other workstreams, with evidence):
+
+- #3568 (chip-standard): fn_ca_autoledger swallows the SQLSTATE of a rejected
+  leg and parks it in settlement_suspense with no alert - 1,776 legs / 672k
+  chips per day flow there. Two "cancelled spin kept its draw" alerts (23:50)
+  belong to the same workstream's open PR #3563.
+- Hourly crons still time out under load (ca-stats-witness-audit-15m 5/4h,
+  ca-pay-backed-payout-shortfalls 3/4h - it evaluates two expensive functions
+  for EVERY completed tournament ever, hourly; refresh-player-stats deadlocks
+  2/4h). Root cause is the 2-core database. pg_stat_statements since 09-02:
+  the Supabase Realtime WAL poller is the single largest consumer (5,022 min,
+  285ms x 1.06M calls) because table_seats (12.5M writes), tournament_players,
+  agent_commissions, tables and tournaments are all in the publication AND all
+  subscribed by client code, so nothing can be dropped from it; hand_history
+  INSERTs are the next (~8,850 min, 200-400ms each through 11 indexes and the
+  ca_hand_player_idx fanout). That is the Phase 8 that remains: fewer
+  published high-churn tables (lobby off realtime, onto the engine WS),
+  fewer hand_history indexes, partitioning.
+- Engine instability windows 04-07 and 16-19 UTC daily (autoheal reports
+  unhealthy; 16:52 on 09-07 was unreachable ~60s). The saved logs now make
+  the next one diagnosable.
+
+NEXT: Phase 8 proper (above), then Phase 6 pins, Phase 5, Phase 7, Phase 9.
 
 0. ADDENDUM 2026-09-03 00:15 UTC - READ THIS FIRST, IT SUPERSEDES SECTIONS 1,
    10, 19, 20, 21, 22 WHERE THEY DISAGREE (second cowork session, same file)

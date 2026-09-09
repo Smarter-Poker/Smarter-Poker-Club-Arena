@@ -10,6 +10,7 @@ import { useRef, useState } from 'react';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { masterBus } from '../../core/MasterBus';
+import { isNativePlatform } from '../../lib/appBase';
 import { fmt, formatDate } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import { VipArt } from './ItemArt';
@@ -44,18 +45,77 @@ export default function MembershipTab({
   const inFlightRef = useRef(false);
   const intentKeyRef = useRef<string | null>(null);
 
+  /* ONE KEY PER PURCHASE, HELD ACROSS RETRIES (2026-09-09).
+     This minted a fresh uuid on every claim and destroyed it in `finally`,
+     so a committed purchase whose response was lost - the exact case an
+     idempotency key exists for - charged the player again on the next tap.
+     Lifetime VIP is 19,999 diamonds. `inFlightRef` only ever blocked
+     OVERLAPPING taps, never the sequential retry.
+     The key is now keyed to WHAT is being bought: the same plan keeps its
+     key until that purchase succeeds (or is terminally refused), and a
+     different plan gets its own. Same shape as `bustRebuyKeyRef` on the
+     table, which discriminates on a settled, user-chosen value. */
+  const intentPlanRef = useRef<string | null>(null);
   const claimIntent = (key: string): boolean => {
     if (inFlightRef.current) return false;
     inFlightRef.current = true;
-    intentKeyRef.current = uuid();
+    if (intentPlanRef.current !== key || !intentKeyRef.current) {
+      intentPlanRef.current = key;
+      intentKeyRef.current = uuid();
+    }
     setBusy(key);
     return true;
   };
 
-  const releaseIntent = () => {
+  /** Release the in-flight latch. `spent` retires the key: the purchase
+   *  either succeeded or was refused terminally, so the next press is a new
+   *  purchase. An ambiguous failure keeps it, and the server replays. */
+  const releaseIntent = (spent = false) => {
     inFlightRef.current = false;
-    intentKeyRef.current = null;
+    if (spent) {
+      intentKeyRef.current = null;
+      intentPlanRef.current = null;
+    }
     setBusy(null);
+  };
+
+  /* THE APP STORE BUILD (2026-09-08). Inside the Capacitor app a subscription
+     is sold through StoreKit / Play Billing (startCheckout branches to
+     src/lib/native/purchases.ts), and Apple 3.1.2 requires two things a web
+     page never needed: a Restore Purchases button and a way to reach the
+     store's own subscription management screen. Both are native-only; the
+     web keeps its Stripe copy and its /hub/diamond-store link untouched. */
+  const native = isNativePlatform();
+
+  const restorePurchases = async () => {
+    if (!claimIntent('restore')) return;
+    try {
+      const { restoreNativePurchases } = await import('../../lib/native/purchases');
+      const result = await restoreNativePurchases(userId);
+      if (result.ok) {
+        toast.success('Purchases Restored');
+        onWalletChanged();
+      } else {
+        toast.error(
+          result.error === 'store_not_configured'
+            ? 'Purchases Are Not Set Up On This Build Yet.'
+            : 'Could Not Restore Purchases.'
+        );
+      }
+    } catch {
+      toast.error('Could Not Restore Purchases.');
+    } finally {
+      releaseIntent(true);
+    }
+  };
+
+  const manageSubscription = async () => {
+    try {
+      const { openNativeSubscriptionManagement } = await import('../../lib/native/purchases');
+      await openNativeSubscriptionManagement();
+    } catch {
+      toast.error('Could Not Open Subscription Settings.');
+    }
   };
 
   /*
@@ -100,7 +160,8 @@ export default function MembershipTab({
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not start checkout');
-      releaseIntent();
+      // The hosted checkout never opened, so the key was never presented.
+      releaseIntent(true);
     }
   };
 
@@ -133,9 +194,11 @@ export default function MembershipTab({
         variant: 'default',
       }))
     ) {
-      releaseIntent();
+      // Declined at the confirm dialog: nothing was sent, so nothing is spent.
+      releaseIntent(true);
       return;
     }
+    let spent = false;
     try {
       await storeFetch('/api/store/purchase-vip-with-diamonds', {
         body: { plan: planKey, idempotencyKey: intentKeyRef.current },
@@ -148,10 +211,16 @@ export default function MembershipTab({
         source: 'vip-purchase',
       });
       onWalletChanged();
+      spent = true;
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
+      /* Keep the key unless the server gave a terminal answer. A transport
+         failure or a 5xx may be a purchase that COMMITTED and lost its
+         response; presenting the same key again is what makes the second tap
+         a replay instead of a second charge. */
+      spent = (err as { definitive?: boolean })?.definitive === true;
     } finally {
-      releaseIntent();
+      releaseIntent(spent);
     }
   };
 
@@ -237,10 +306,14 @@ export default function MembershipTab({
                     onClick={() => buyWithCard(plan.checkoutPlan as string)}
                   >
                     {busy === `card-${plan.checkoutPlan}`
-                      ? 'Opening Checkout...'
+                      ? native
+                        ? 'Opening Store...'
+                        : 'Opening Checkout...'
                       : wallet.isVip
                         ? 'Switch To This Plan'
-                        : 'Subscribe With Card'}
+                        : native
+                          ? 'Subscribe'
+                          : 'Subscribe With Card'}
                   </button>
                 )}
                 <button
@@ -258,13 +331,33 @@ export default function MembershipTab({
         ))}
       </div>
 
-      <div className={styles.infoNote}>
-        Card Subscriptions Renew Automatically And Can Be Canceled Anytime.{' '}
-        <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
-          Manage Subscription
-        </a>
-        . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
-      </div>
+      {native ? (
+        <div className={styles.infoNote}>
+          Subscriptions Renew Automatically Through Your App Store Account And Can Be Canceled
+          Anytime.{' '}
+          <button type="button" className={styles.inlineLink} onClick={manageSubscription}>
+            Manage Subscription
+          </button>
+          {' Or '}
+          <button
+            type="button"
+            className={styles.inlineLink}
+            disabled={busy !== null}
+            onClick={restorePurchases}
+          >
+            {busy === 'restore' ? 'Restoring...' : 'Restore Purchases'}
+          </button>
+          . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
+        </div>
+      ) : (
+        <div className={styles.infoNote}>
+          Card Subscriptions Renew Automatically And Can Be Canceled Anytime.{' '}
+          <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
+            Manage Subscription
+          </a>
+          . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
+        </div>
+      )}
     </>
   );
 }

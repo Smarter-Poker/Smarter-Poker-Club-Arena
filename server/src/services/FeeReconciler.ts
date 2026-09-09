@@ -40,6 +40,7 @@ import { processBBJPayout, setBBJPayoutQueue } from './supabase/bbj.js';
 import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
+import { enqueuePendingWrite } from './supabase/pendingWrites.js';
 
 /**
  * 'bbj_payout' (BBJ audit 2026-09-05): a jackpot the engine DETECTED but could
@@ -140,7 +141,10 @@ const RECONCILE_BATCH = 250;
  * Registered with bbj.ts below so processBBJPayout can call it without a
  * static import in the other direction (bbj.ts is imported by this module).
  */
-export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string): Promise<void> {
+export async function queueUnpaidBBJPayout(
+  params: BBJPayoutParams,
+  note: string
+): Promise<boolean> {
   let handId: string | null = null;
   try {
     const { data: hh } = await supabase
@@ -176,21 +180,23 @@ export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string
         `[BBJ] Claimed jackpot payout for table ${params.tableId} hand #${params.handNumber} ` +
           `(${params.dealtInPlayerIds.length} recipients): ${note}`
       );
-      return;
+      return true;
     }
     if (/duplicate|unique/i.test(error.message || '')) {
       /* WRITE-AHEAD MADE THIS THE ORDINARY PATH (phase 2.1). The claim is
          written before the first attempt, so a later call finds its own row.
          Refresh the note so the open row carries the CURRENT reason rather
          than "not yet attempted". */
-      await supabase
+      const { error: refreshError, count } = await supabase
         .from('pending_fee_distributions')
-        .update({ last_error: note.slice(0, 500) })
+        .update({ last_error: note.slice(0, 500) }, { count: 'exact' })
         .eq('table_id', params.tableId)
         .eq('hand_number', params.handNumber)
         .eq('kind', 'bbj_payout')
         .is('resolved_at', null);
-      return;
+      if (!refreshError && count === 1) return true;
+      queueError = refreshError?.message || 'No single open jackpot claim was confirmed';
+      break;
     }
     queueError = error.message || String(error);
     if (!TRANSIENT_DB_ERROR.test(queueError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
@@ -201,10 +207,11 @@ export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string
   reportError(
     new Error(
       `[BBJ] Could not queue the unpaid jackpot for table ${params.tableId} hand #${params.handNumber}: ` +
-        `${queueError}. The financial alert is now the only record of it.`
+        `${queueError}. Durable queue persistence is not confirmed.`
     ),
     'FeeReconciler.bbj_payout_queue_failed'
   );
+  return false;
 }
 
 /**
@@ -255,8 +262,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     // thing that failed. Measured over 2026-08-20..22, 938 of 988 of these
     // alerts said `supabase_timeout` — the exact condition the net exists to
     // survive. The insert is idempotent by index, so repeating it is free.
-    let lastError = '';
-    for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+    const insertOnce = async (): Promise<{ done: boolean; error: string }> => {
       const { error } = await supabase.from('pending_fee_distributions').insert({
         table_id: fee.tableId,
         club_id: fee.clubId,
@@ -274,14 +280,62 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
         kind,
         last_error: fee.lastError,
       });
-      if (!error) return;
+      if (!error) return { done: true, error: '' };
       // Already queued by an earlier attempt (possibly one that committed and
       // then timed out on us). Nothing is lost; the drain loop owns it now.
-      if (/duplicate|unique/i.test(error.message || '')) return;
+      if (/duplicate|unique/i.test(error.message || '')) return { done: true, error: '' };
+      return { done: false, error: error.message || String(error) };
+    };
 
-      lastError = error.message || String(error);
+    let lastError = '';
+    for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+      const res = await insertOnce();
+      if (res.done) return;
+      lastError = res.error;
       if (!TRANSIENT_DB_ERROR.test(lastError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
       await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
+    }
+
+    /* THIS LADDER IS ALSO SHORTER THAN THE EVENT IT WAS WRITTEN FOR
+       (2026-09-08). Four attempts over ~10.7s, and the comment above
+       QUEUE_BACKOFF_MS says plainly what it is for: "buys the reload time to
+       finish". A PostgREST schema-cache reload on this database takes ~28s. On
+       2026-09-08 two migrations exhausted it 23 times.
+
+       Not a single one of those 23 had lost a chip - every fee was banked, and
+       the check that would have said so could not run either (see
+       feeIsAccountedFor). So the fix is in two halves: only a definite "no"
+       may alarm, and the patience moves off this path. */
+    if (TRANSIENT_DB_ERROR.test(lastError)) {
+      const queued = enqueuePendingWrite({
+        key: `fee:${fee.tableId}:${fee.handId ?? fee.handNumber}:${kind}`,
+        describedAs: `unbanked ${kind} queue insert for hand ${fee.handId ?? fee.handNumber}`,
+        attempt: async () => {
+          const res = await insertOnce();
+          if (res.done) return { done: true };
+          // A permanent rejection ends retrying only after the original fee
+          // is checked and any unconfirmed banking reaches the existing alarm.
+          if (!TRANSIENT_DB_ERROR.test(res.error)) {
+            await alarmUnqueueableFee(kind, fee, res.error);
+            return { done: true, refused: true };
+          }
+          return { done: false, error: res.error };
+        },
+        onGiveUp: async (finalError, elapsedMs, attempts) => {
+          await alarmUnqueueableFee(
+            kind,
+            fee,
+            `${finalError} (after ${attempts} off-path attempts over ${Math.round(elapsedMs / 1000)}s)`
+          );
+        },
+      });
+      if (queued) {
+        console.warn(
+          `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} could not reach ` +
+            `the database ("${lastError}"); handed to the off-path retry. No alarm unless it too gives up.`
+        );
+        return;
+      }
     }
 
     // ASK BEFORE ALARMING (2026-08-22).
@@ -296,7 +350,27 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     // not harmless: 988 unresolved criticals is how the nine real ones stay
     // invisible. Check whether the fee actually landed before declaring the
     // chips unrecoverable.
-    if (await feeIsAccountedFor(kind, fee)) {
+    await alarmUnqueueableFee(kind, fee, lastError);
+  } catch (err) {
+    reportError(err, 'FeeReconciler.queue_threw');
+  }
+}
+
+/**
+ * The last word on a fee that could not be queued: ask whether the chips are
+ * really missing, and alarm only if the answer is a definite no.
+ *
+ * Split out of queueUnbankedFee on 2026-09-08 so the off-path retry can reach
+ * the same ending when its own budget is spent.
+ */
+async function alarmUnqueueableFee(
+  kind: PendingFeeKind,
+  fee: UnbankedFee,
+  lastError: string
+): Promise<void> {
+  try {
+    const verdict = await feeIsAccountedFor(kind, fee);
+    if (verdict === 'yes') {
       console.warn(
         `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} reported ` +
           `"${lastError}", but the fee is already queued or banked - no chips at risk, ` +
@@ -304,11 +378,29 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       );
       return;
     }
+    /* STILL FAILS CLOSED (and this is deliberate, 2026-09-08).
+       `unknown` means the check itself could not run - so it is NOT evidence
+       that the fee is banked, and it does not suppress the alarm. That rule
+       predates this change and stays: chips have already left the pot, and
+       silence about them is the one outcome worse than a false alarm.
 
+       What changed is WHEN we arrive here. The 23 criticals of 2026-09-08 were
+       raised 10.7 seconds into a 28-second schema-cache reload, and all 23 were
+       false. The queue insert is now handed to the off-path retry first, so by
+       the time this runs the database has been unreachable for the whole
+       PENDING_WRITE_BUDGET_MS - about three minutes. An alarm after that is
+       worth Dan's attention; one after ten seconds was not.
+
+       And the alarm no longer overstates itself. `verifiedUnbanked: true` used
+       to be written whether or not the verification had run. */
+    const verified = verdict === 'no';
     const detail =
       `[A5] Could not queue unbanked ${kind} for hand ${fee.handId ?? fee.handNumber} ` +
       `(rake ${fee.rake}, bbj ${fee.bbj}): ${lastError}. These chips left the pot and ` +
-      `are now recoverable only by hand.`;
+      `are now recoverable only by hand.` +
+      (verified
+        ? ''
+        : ` The database could not be asked whether the fee is already banked, so this is unverified.`);
     reportError(new Error(detail), 'FeeReconciler.queue_failed');
     // Sentry alone is not enough for a money alarm: financial_alerts is the
     // durable, queryable channel an operator actually reads, and this is the
@@ -342,10 +434,11 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       tournamentId: fee.tournamentId ?? null,
       bigBlind: fee.bigBlind ?? null,
       dbError: lastError,
-      verifiedUnbanked: true,
+      verifiedUnbanked: verified,
+      verificationUnavailable: !verified,
     });
   } catch (err) {
-    reportError(err, 'FeeReconciler.queue_threw');
+    reportError(err, 'FeeReconciler.alarm_threw');
   }
 }
 
@@ -368,58 +461,112 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
  * returns false, so the alarm is raised. Suppressing a money alert on a guess
  * would be worse than the noise it removes.
  */
-async function feeIsAccountedFor(kind: PendingFeeKind, fee: UnbankedFee): Promise<boolean> {
-  try {
-    // Cheapest check, and the one that is true most often.
-    if (Number(fee.handNumber) > 0) {
-      const { data: queued } = await supabase
-        .from('pending_fee_distributions')
-        .select('id')
-        .eq('table_id', fee.tableId)
-        .eq('hand_number', fee.handNumber)
-        .eq('kind', kind)
-        .limit(1)
-        .maybeSingle();
-      if (queued) return true;
-    }
+/**
+ * "Yes it landed", "no it did not", or "I could not ask".
+ *
+ * THE THIRD ANSWER IS THE POINT (2026-09-08). This used to return a boolean and
+ * discard every error - `const { data } = await ...` never looked at `error`,
+ * and the catch returned false. So while PostgREST was reloading its schema
+ * cache, the check that decides whether chips are really missing could not run
+ * either, answered "no" for every hand, and turned a survivable window into 23
+ * critical money alarms. All 23 were false: every one of those fees was banked,
+ * 58.27 rake and 7.90 BBJ, none of it ever at risk.
+ *
+ * Dan, binding: "HAVE THE PUSH NOTIFICATIONS STOP UPDATING ME FOR 0.00 OR
+ * FIXES, ONLY CRITICAL ERRORS THAT NEED MY ATTENTION." A critical raised because
+ * we could not reach the database is exactly a 0.00. Only a definite `no` may
+ * alarm now; `unknown` keeps retrying instead.
+ */
+type AccountedVerdict = 'yes' | 'no' | 'unknown';
 
-    if (kind === 'rake') {
-      if (fee.handId) {
-        const { data } = await supabase
-          .from('rake_records')
-          .select('id')
-          .eq('hand_id', fee.handId)
-          .limit(1)
-          .maybeSingle();
-        if (data) return true;
+async function feeIsAccountedFor(
+  kind: PendingFeeKind,
+  fee: UnbankedFee
+): Promise<AccountedVerdict> {
+  /** A read that errored proves nothing - least of all that chips are gone. */
+  let couldNotAsk = false;
+  // PostgrestBuilder is thenable, not a Promise, so PromiseLike is the type.
+  const asked = async (
+    run: () => PromiseLike<{ data: unknown; error: unknown }>
+  ): Promise<boolean> => {
+    try {
+      const { data, error } = await run();
+      if (error) {
+        couldNotAsk = true;
+        return false;
       }
-      if (Number(fee.handNumber) > 0) {
-        // global_hand_id carries the hand number; scoped by table so it cannot
-        // match another table's hand.
-        const { data } = await supabase
-          .from('rake_records')
-          .select('id')
-          .eq('table_id', fee.tableId)
-          .eq('global_hand_id', fee.handNumber)
-          .limit(1)
-          .maybeSingle();
-        return !!data;
-      }
+      return !!data;
+    } catch {
+      couldNotAsk = true;
       return false;
     }
+  };
 
-    if (!(Number(fee.handNumber) > 0)) return false;
-    const { data } = await supabase
-      .from('bbj_contributions')
-      .select('id')
-      .eq('table_id', fee.tableId)
-      .eq('hand_number', fee.handNumber)
-      .limit(1)
-      .maybeSingle();
-    return !!data;
-  } catch {
-    return false;
+  // Cheapest check, and the one that is true most often.
+  if (Number(fee.handNumber) > 0) {
+    if (
+      await asked(() =>
+        supabase
+          .from('pending_fee_distributions')
+          .select('id')
+          .eq('table_id', fee.tableId)
+          .eq('hand_number', fee.handNumber)
+          .eq('kind', kind)
+          .limit(1)
+          .maybeSingle()
+      )
+    )
+      return 'yes';
   }
+
+  if (kind === 'rake') {
+    if (fee.handId) {
+      if (
+        await asked(() =>
+          supabase
+            .from('rake_records')
+            .select('id')
+            .eq('hand_id', fee.handId)
+            .limit(1)
+            .maybeSingle()
+        )
+      )
+        return 'yes';
+    }
+    if (Number(fee.handNumber) > 0) {
+      // global_hand_id carries the hand number; scoped by table so it cannot
+      // match another table's hand.
+      if (
+        await asked(() =>
+          supabase
+            .from('rake_records')
+            .select('id')
+            .eq('table_id', fee.tableId)
+            .eq('global_hand_id', fee.handNumber)
+            .limit(1)
+            .maybeSingle()
+        )
+      )
+        return 'yes';
+    }
+    return couldNotAsk ? 'unknown' : 'no';
+  }
+
+  if (Number(fee.handNumber) > 0) {
+    if (
+      await asked(() =>
+        supabase
+          .from('bbj_contributions')
+          .select('id')
+          .eq('table_id', fee.tableId)
+          .eq('hand_number', fee.handNumber)
+          .limit(1)
+          .maybeSingle()
+      )
+    )
+      return 'yes';
+  }
+  return couldNotAsk ? 'unknown' : 'no';
 }
 
 /**
@@ -461,7 +608,12 @@ export async function reconcilePendingFees(): Promise<{
     /* A jackpot that landed from the QUEUE rather than live. The table is told
        when it does, so the celebration still happens - late, but it happens
        (phase 2.2). */
-    let paidLate: { tableId: string; handNumber: number; totalPayout?: number } | null = null;
+    let paidLate: {
+      tableId: string;
+      handNumber: number;
+      totalPayout?: number;
+      kind?: 'main' | 'mini';
+    } | null = null;
 
     // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
     //
@@ -492,7 +644,7 @@ export async function reconcilePendingFees(): Promise<{
 
     try {
       if (row.kind === 'rake') {
-        const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
+        const { data: rdData, error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
           p_table_id: row.table_id,
           p_club_id: row.club_id,
           p_hand_id: resolvedHandId,
@@ -509,8 +661,15 @@ export async function reconcilePendingFees(): Promise<{
           p_returned_uncalled: row.returned_uncalled ?? null,
           p_rake_method: row.rake_method ?? 'DEALT_EQUAL',
         });
-        ok = !rdErr;
-        failureMessage = rdErr?.message ?? '';
+        const receipt = Array.isArray(rdData) ? (rdData.length === 1 ? rdData[0] : null) : rdData;
+        ok =
+          !rdErr &&
+          typeof receipt?.applied === 'boolean' &&
+          typeof receipt?.already_processed === 'boolean' &&
+          receipt.applied !== receipt.already_processed &&
+          typeof receipt.rake_record_id === 'string' &&
+          receipt.rake_record_id.trim() !== '';
+        failureMessage = rdErr?.message ?? (ok ? '' : 'Rake banking receipt was not confirmed');
       } else if (row.kind === 'bbj_payout') {
         // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
         // not land. The parameter set was frozen at hit time (who was dealt
@@ -527,11 +686,27 @@ export async function reconcilePendingFees(): Promise<{
           !p.clubId ||
           !p.loserUserId ||
           !p.winnerUserId ||
+          p.tableId !== row.table_id ||
+          p.clubId !== row.club_id ||
+          !Number.isSafeInteger(row.hand_number) ||
+          row.hand_number <= 0 ||
+          (p.handNumber != null && p.handNumber !== row.hand_number) ||
+          typeof p.loserUserId !== 'string' ||
+          typeof p.winnerUserId !== 'string' ||
+          p.loserUserId === p.winnerUserId ||
           !Array.isArray(p.dealtInPlayerIds) ||
-          typeof p.payoutTotalPercent !== 'number'
+          p.dealtInPlayerIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+          typeof p.payoutTotalPercent !== 'number' ||
+          !Number.isFinite(p.payoutTotalPercent) ||
+          p.payoutTotalPercent < 0 ||
+          (p.kind !== 'mini' && p.payoutTotalPercent === 0) ||
+          p.payoutTotalPercent > 100 ||
+          (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
+          (p.kind === 'mini' && !p.tierId)
         ) {
           ok = false;
-          failureMessage = 'bbj_payout row is missing its parameters';
+          failureMessage =
+            'bbj_payout row is missing its parameters or has an invalid operation identity';
         } else {
           const { data: seats } = await supabase
             .from('table_seats')
@@ -551,6 +726,9 @@ export async function reconcilePendingFees(): Promise<{
               dealtInPlayerIds: p.dealtInPlayerIds,
               seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
               payoutTotalPercent: p.payoutTotalPercent,
+              kind: p.kind,
+              tierId: p.tierId,
+              metadata: p.metadata,
             },
             { fromQueue: true }
           );
@@ -567,6 +745,7 @@ export async function reconcilePendingFees(): Promise<{
             paidLate = {
               tableId: p.tableId,
               handNumber: Number(p.handNumber ?? row.hand_number),
+              kind: p.kind,
               totalPayout: outcome.status === 'paid' ? outcome.result.totalPayout : undefined,
             };
           }
@@ -600,16 +779,20 @@ export async function reconcilePendingFees(): Promise<{
     };
     if (ok) patch.resolved_at = new Date().toISOString();
 
-    const { error: updErr } = await supabase
+    const { error: updErr, count: updatedCount } = await supabase
       .from('pending_fee_distributions')
-      .update(patch)
+      .update(patch, { count: 'exact' })
       .eq('id', row.id);
+    const marked = !updErr && updatedCount === 1;
 
-    if (updErr) {
+    if (!marked) {
       // The fee itself is banked (or not) regardless of this bookkeeping write.
       // Leaving the row open is the safe direction: the next cycle re-drives it,
       // and both underlying operations are idempotent.
-      reportError(updErr, 'FeeReconciler.mark_failed');
+      reportError(
+        updErr ?? new Error(`Expected one queue row acknowledgement, received ${updatedCount}`),
+        'FeeReconciler.mark_failed'
+      );
     }
 
     /* THE CELEBRATION STILL HAPPENS, LATE (BBJ phase 2.2). A jackpot the live
@@ -632,6 +815,7 @@ export async function reconcilePendingFees(): Promise<{
         const { tableStateHub } = await import('../transport/TableStateHub.js');
         tableStateHub.emitEvent(paidLate.tableId, {
           type: 'bbj_payout_paid',
+          kind: paidLate.kind ?? 'main',
           table_id: paidLate.tableId,
           hand_number: paidLate.handNumber,
           totalPayout: paidLate.totalPayout,
@@ -643,7 +827,9 @@ export async function reconcilePendingFees(): Promise<{
       }
     }
 
-    if (ok) {
+    if (!marked) {
+      summary.stillFailing++;
+    } else if (ok) {
       summary.resolved++;
     } else if (attempts >= MAX_RECONCILE_ATTEMPTS) {
       summary.exhausted++;

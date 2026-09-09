@@ -1,3 +1,4 @@
+import { isThrowableEventId } from '../throwables/identity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THROWABLE SERVICE — 49-Item Dynamic Throwables (2026-08-20 rebuild)
@@ -19,6 +20,9 @@
  */
 
 import { supabase } from '../lib/supabase';
+import stillManifest from '../throwables/stills.generated.json';
+
+const premiumStills: Record<string, Record<string, string>> = stillManifest;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -51,7 +55,15 @@ export type ThrowPhysics = 'arc' | 'fastball' | 'lob' | 'float' | 'drop' | 'swoo
  * - burst    confetti-pop scatter (cash, champagne, fireworks)
  */
 export type ThrowImpact =
-  'splat' | 'splash' | 'bounce' | 'thud' | 'explode' | 'shatter' | 'zap' | 'sparkle' | 'burst';
+  | 'splat'
+  | 'splash'
+  | 'bounce'
+  | 'thud'
+  | 'explode'
+  | 'shatter'
+  | 'zap'
+  | 'sparkle'
+  | 'burst';
 
 export type ThrowWeight = 'light' | 'medium' | 'heavy';
 
@@ -125,6 +137,324 @@ const T = (
 });
 
 const THROWABLES: Throwable[] = [
+  T('crown', 'Crown Me', 'cheers', 'fastball', 'thud', 'crown_cue', 'light', false, '#D7AD49', 0),
+  T(
+    'chip_rain',
+    'Chip Rain',
+    'cheers',
+    'fastball',
+    'thud',
+    'chip_rain_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'diamond_shower',
+    'Diamond Shower',
+    'cheers',
+    'fastball',
+    'thud',
+    'diamond_shower_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'velvet_rope',
+    'Velvet Rope',
+    'cheers',
+    'fastball',
+    'thud',
+    'velvet_rope_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'champagne_tower',
+    'Champagne Tower',
+    'cheers',
+    'fastball',
+    'thud',
+    'champagne_tower_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'standing_ovation',
+    'Standing Ovation',
+    'cheers',
+    'fastball',
+    'thud',
+    'standing_ovation_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T('whale', 'Whale', 'cheers', 'fastball', 'thud', 'whale_cue', 'light', false, '#D7AD49', 0),
+  T(
+    'to_the_moon',
+    'To The Moon',
+    'cheers',
+    'fastball',
+    'thud',
+    'to_the_moon_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'missile',
+    'Missile',
+    'premium',
+    'fastball',
+    'thud',
+    'missile_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T('donkey', 'Donkey', 'premium', 'fastball', 'thud', 'donkey_cue', 'light', false, '#D7AD49', 0),
+  T(
+    'tilt_meter',
+    'Tilt Meter',
+    'premium',
+    'fastball',
+    'thud',
+    'tilt_meter_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'bad_beat_bandage',
+    'Bad Beat Bandage',
+    'premium',
+    'fastball',
+    'thud',
+    'bad_beat_bandage_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'bubble_boy',
+    'Bubble Boy',
+    'premium',
+    'fastball',
+    'thud',
+    'bubble_boy_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'slot_machine',
+    'Slot Machine',
+    'premium',
+    'fastball',
+    'thud',
+    'slot_machine_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'pumpkin',
+    'Pumpkin',
+    'premium',
+    'fastball',
+    'thud',
+    'pumpkin_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'snowball',
+    'Snowball',
+    'premium',
+    'fastball',
+    'thud',
+    'snowball_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'party_popper',
+    'Party Popper',
+    'premium',
+    'fastball',
+    'thud',
+    'party_popper_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'heart_arrow',
+    'Heart Arrow',
+    'premium',
+    'fastball',
+    'thud',
+    'heart_arrow_cue',
+    'light',
+    false,
+    '#D7AD49',
+    0
+  ),
+  T(
+    'rat_card',
+    'Cheating Rat',
+    'premium',
+    'fastball',
+    'thud',
+    'card_slap',
+    'light',
+    false,
+    '#929CA8',
+    0
+  ),
+  T(
+    'party_face',
+    'Party Face',
+    'reactions',
+    'fastball',
+    'burst',
+    'party_toot',
+    'light',
+    false,
+    '#E7AF34',
+    0
+  ),
+  T(
+    'thinking',
+    'Thinking Face',
+    'reactions',
+    'fastball',
+    'thud',
+    'thinking_pop',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'loser_hand',
+    'Loser Hand',
+    'reactions',
+    'fastball',
+    'thud',
+    'loser_hand_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T('blush', 'Blush', 'reactions', 'fastball', 'thud', 'blush_cue', 'light', false, '#FFD93D', 0),
+  T(
+    'ok_smug',
+    'Smug OK',
+    'reactions',
+    'fastball',
+    'thud',
+    'ok_smug_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'sleeping',
+    'Sleeping',
+    'reactions',
+    'fastball',
+    'thud',
+    'sleeping_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'facepalm',
+    'Facepalm',
+    'reactions',
+    'fastball',
+    'thud',
+    'facepalm_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'screaming',
+    'Screaming',
+    'reactions',
+    'fastball',
+    'thud',
+    'screaming_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'vomit_rainbow',
+    'Rainbow Reaction',
+    'reactions',
+    'fastball',
+    'thud',
+    'vomit_rainbow_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'surrender',
+    'Surrender',
+    'reactions',
+    'fastball',
+    'thud',
+    'surrender_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T(
+    'energy_ball',
+    'Energy Ball',
+    'premium',
+    'fastball',
+    'thud',
+    'energy_ball_cue',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
+  T('sloth', 'Sloth', 'premium', 'fastball', 'thud', 'sloth_cue', 'light', false, '#FFD93D', 0),
+  T('fish', 'Fish', 'throws', 'fastball', 'splash', 'fish_flop', 'light', false, '#58BDEB', 0),
   // ── REACTIONS (8) — floaty emoji, sparkle finishes ────────────────────────────
   T(
     'thumbs_up',
@@ -784,6 +1114,8 @@ const imageUrlCache = new Map<string, string>();
  * the fallback when the transform endpoint is unavailable.
  */
 export function getThrowableRawUrl(id: string): string {
+  const premium = premiumStills[id]?.['640'];
+  if (premium) return `${import.meta.env.BASE_URL}${premium}`;
   const key = `${id}@raw`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -817,6 +1149,8 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
   //   <=96px  -> 192  (selector tiles at 84)
   //   >96px   -> 320  (flight 84-116, impact 112-152, bomb-pot hero ~210)
   const bucket = displayPx !== undefined && displayPx <= 96 ? 192 : 320;
+  const premium = premiumStills[id]?.[String(bucket)];
+  if (premium) return `${import.meta.env.BASE_URL}${premium}`;
   const key = `${id}@${bucket}`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -833,6 +1167,7 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
 }
 
 const VIP_FREE_THROWS_PER_MONTH = 500;
+const MEMBER_FREE_THROWS_PER_MONTH = 30;
 const DIAMOND_COST_PER_THROW = 1;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -840,7 +1175,42 @@ const DIAMOND_COST_PER_THROW = 1;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ThrowableServiceClass {
-  /** All 49 throwables */
+  private pendingUses = new Map<string, string>();
+
+  /** Keep an uncertain charge's identity across retries and panel remounts. */
+  private useRequest(key: string): string {
+    const pending = this.pendingUses.get(key);
+    if (pending) return pending;
+    let saved: string | null = null;
+    try {
+      saved = sessionStorage.getItem(key);
+    } catch {
+      // Storage can be disabled; the in-memory identity still protects retries.
+    }
+    const id =
+      saved && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved)
+        ? saved
+        : crypto.randomUUID();
+    this.pendingUses.set(key, id);
+    try {
+      sessionStorage.setItem(key, id);
+    } catch {
+      // Best effort persistence; never make storage access a payment dependency.
+    }
+    return id;
+  }
+
+  private finishUse(key: string, id: string): void {
+    if (this.pendingUses.get(key) !== id) return;
+    this.pendingUses.delete(key);
+    try {
+      if (sessionStorage.getItem(key) === id) sessionStorage.removeItem(key);
+    } catch {
+      // In-memory state has already been released.
+    }
+  }
+
+  /** All current catalogue entries. */
   getThrowables(): Throwable[] {
     return THROWABLES;
   }
@@ -888,6 +1258,7 @@ class ThrowableServiceClass {
         .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
 
       const profile = profileResult.data;
+      if (!profile) throw new Error('Profile unavailable');
       const isVip =
         !!profile?.is_vip &&
         (profile.vip_tier === 'lifetime' ||
@@ -903,16 +1274,7 @@ class ThrowableServiceClass {
         };
       }
 
-      if (!isVip) {
-        return {
-          isVip: false,
-          freeThrowsRemaining: 0,
-          packThrowsRemaining,
-          diamondCost: packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
-        };
-      }
-
-      // Get this month's usage for VIP
+      // Every member receives the calendar-month allowance; VIP raises it to 500.
       const monthStart = new Date();
       monthStart.setUTCDate(1);
       monthStart.setUTCHours(0, 0, 0, 0);
@@ -925,10 +1287,11 @@ class ThrowableServiceClass {
 
       if (error || count === null) throw error || new Error('Allowance count unavailable');
       const used = count;
-      const remaining = Math.max(0, VIP_FREE_THROWS_PER_MONTH - used);
+      const limit = isVip ? VIP_FREE_THROWS_PER_MONTH : MEMBER_FREE_THROWS_PER_MONTH;
+      const remaining = Math.max(0, limit - used);
 
       return {
-        isVip: true,
+        isVip,
         freeThrowsRemaining: remaining,
         packThrowsRemaining,
         diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
@@ -950,13 +1313,15 @@ class ThrowableServiceClass {
   async useThrowable(
     userId: string,
     throwableId: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; requestId?: string }> {
     const throwable = THROWABLE_MAP.get(throwableId);
     if (!throwable) {
       return { success: false, error: 'Throwable not found' };
     }
 
     try {
+      const requestKey = `throwable-pending:${userId}:${throwableId}`;
+      const requestId = this.useRequest(requestKey);
       // ── Atomic server path (2026-08-17) ──────────────────────────────────
       // fn_use_throwable serialises the free-allowance check per user
       // (advisory xact lock) and does charge+record in ONE transaction,
@@ -965,11 +1330,15 @@ class ThrowableServiceClass {
       // failure between deduct_diamonds and the usage insert charged a
       // diamond and recorded nothing. Allowance and price are
       // server-authoritative there.
-      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable', {
+      // The v1 wrapper creates a new UUID on every call. Retrying a lost
+      // response through it could charge twice. v2 replays the same receipt.
+      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable_v2', {
         p_throwable_id: throwableId,
+        p_request_id: requestId,
       });
-      if (!atomicErr && atomic) {
-        if ((atomic as any).success === true) return { success: true };
+      if (!atomicErr && atomic && typeof (atomic as any).success === 'boolean') {
+        this.finishUse(requestKey, requestId);
+        if ((atomic as any).success === true) return { success: true, requestId };
         return {
           success: false,
           error: (atomic as any).error || 'Throw failed',
@@ -988,12 +1357,17 @@ class ThrowableServiceClass {
    * Create throw event for WebSocket broadcast / local render.
    * Accepts legacy (pre-2026-08-20) ids from old clients and bridges them.
    */
-  createThrowEvent(fromSeat: number, toSeat: number, throwableId: string): ThrowEvent | null {
+  createThrowEvent(
+    fromSeat: number,
+    toSeat: number,
+    throwableId: string,
+    eventId?: string
+  ): ThrowEvent | null {
     const throwable = this.getThrowableById(throwableId);
     if (!throwable) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id: isThrowableEventId(eventId) ? eventId.toLowerCase() : crypto.randomUUID(),
       fromSeat,
       toSeat,
       throwableId: throwable.id,

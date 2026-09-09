@@ -110,9 +110,17 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     // react — e.g. refresh the shop when an item turned out to be sold out.
     const err = new Error(data?.error || `Request failed (HTTP ${response.status})`) as Error & {
       status?: number;
+      /** TERMINAL, so a money key may safely be retired and a fresh attempt
+       *  started (2026-09-09). 408/409/425/429, every 5xx and every transport
+       *  exception are deliberately AMBIGUOUS: the first command may still be
+       *  committing, and retrying one of those with a new key can charge the
+       *  player twice. Same rule, same list, as UnionApiService - which is
+       *  where this was already written down and not read. */
+      definitive?: boolean;
       data?: Record<string, unknown>;
     };
     err.status = response.status;
+    err.definitive = [400, 401, 403, 404, 405, 422].includes(response.status);
     err.data = data && typeof data === 'object' ? data : undefined;
     throw err;
   }

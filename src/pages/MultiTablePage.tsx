@@ -77,6 +77,7 @@ import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
 import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 import { openInBrowser } from '../lib/openExternal';
+import { isNativePlatform } from '../lib/appBase';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -113,6 +114,7 @@ interface TableInstance {
   /** Absolute epoch-ms the hero's turn clock started (with the deadline it
    *  drives the depleting timer bar under the tab — PokerBros parity). */
   turnStartMs?: number;
+  actionContext?: string;
   pot: number;
   /**
    * Hero's hole cards at this table as ONE comma-joined string ("Ah,Qc"; ""
@@ -2114,7 +2116,13 @@ export default function MultiTablePage() {
       tileActionLockRef.current.set(tblId, now);
       setTilePending((p) => ({ ...p, [tblId]: true }));
       try {
-        const res = await submitAction(tblId, user?.id || '', action, amount);
+        const res = await submitAction(
+          tblId,
+          user?.id || '',
+          action,
+          amount,
+          tables.find((t) => t.id === tblId)?.actionContext
+        );
         if (!res?.success) {
           toast.error(res?.error || 'Action Failed', 3500);
         } else if (soundService.isEnabled()) {
@@ -2132,7 +2140,7 @@ export default function MultiTablePage() {
         closeTileRaise(tblId);
       }
     },
-    [user?.id, toast, closeTileRaise]
+    [user?.id, toast, closeTileRaise, tables]
   );
 
   // Close any open tile raise slider the moment that table's turn ends —
@@ -3032,6 +3040,12 @@ export default function MultiTablePage() {
    */
   const openHubTab = useCallback((path: string): boolean => {
     if (!isHubPath(path)) return false;
+    // In the app store build the webview's origin is the app itself, not
+    // smarter.poker: a frame of a Hub page would be cross-origin, HubFrame's
+    // same-origin listeners would throw, and the Hub session would not be
+    // there. Decline, and the header's fallback (leaveForHub) opens the page
+    // in the in-app browser over the running tables instead.
+    if (isNativePlatform()) return false;
     const prev = tablesRef.current;
     const idx = activeIndexRef.current;
     const cur = prev[idx];
@@ -4460,7 +4474,16 @@ export default function MultiTablePage() {
                             const pot = table.pot ?? 0;
                             // Standard pot-raise size: call first, then raise
                             // the pot that call creates (server re-validates).
-                            const size = Math.round(toCall + (pot + toCall * 2) * frac);
+                            // TO THE CENT, not to the chip (2026-09-09).
+                            // `Math.round` here sent a real wager: at 0.05/0.10
+                            // an exact 0.65 pot raise went as 1 (a 2.2x-pot bet
+                            // the player never chose) and a 0.375 half-pot went
+                            // as 0, so `capped <= 0` silently removed the
+                            // button. The single-table definition
+                            // (ActionPanel.potSizedRaiseTo) is exact, and its
+                            // own comment claims to be the only one.
+                            const size =
+                              Math.round((toCall + (pot + toCall * 2) * frac) * 100) / 100;
                             const stack = table.heroStack ?? 0;
                             const capped = stack > 0 ? Math.min(size, stack) : size;
                             if (capped <= 0) return null;

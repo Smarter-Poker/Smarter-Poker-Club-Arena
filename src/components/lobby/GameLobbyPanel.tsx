@@ -35,6 +35,7 @@ import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
+import { formatTableChips } from '../../utils/format';
 
 export interface GameLobbyPanelProps {
   entry: LobbyEntry;
@@ -350,16 +351,18 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
     const t = entry.raw as LobbyTournamentRow;
     const st = entry.status;
+    // The lobby labels a filled seat-first game Running before the engine
+    // starts it. Only the authoritative RUNNING row enables this exception.
+    const hasStarted = String(t.status || '').toUpperCase() === 'RUNNING';
     if (entry.kind === 'spin') {
       if (registered)
         return { label: 'Return To Game', kind: 'gold' as const, run: () => onSpinJoin(t, 'spin') };
       if (st === 'completed' || st === 'closed')
         return { label: 'Game Over', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
-      /* Full is full, whatever the status says: a 2/2 spin still waiting to
-         flip to RUNNING has no seat either (QA 2026-08-22 found live 2/2
-         games offering an active CTA because this only checked 'running'). */
-      if (full) return { label: 'Game Full', kind: 'disabled' as const };
+      /* Capacity blocks buying a seat while filling. Once running, the
+         action is Watch, which never needs an empty seat. */
+      if (full && !hasStarted) return { label: 'Game Full', kind: 'disabled' as const };
       /* A RUNNING SPIN CANNOT BE JOINED (2026-08-28 audit). This branch had
          no `running` case, so a spin already in progress whose seat count had
          dipped below capacity (a bust-out closes a seat row and
@@ -394,8 +397,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       if (st === 'completed' || st === 'closed')
         return { label: 'Game Over', kind: 'disabled' as const };
       const full = entry.players >= entry.capacity;
-      // Same rule as spins: no seat exists at 2/2, whatever the status label.
-      if (full) return { label: 'Table Full', kind: 'disabled' as const };
+      // As with spins, a full running table remains open to spectators.
+      if (full && !hasStarted) return { label: 'Table Full', kind: 'disabled' as const };
       // Same rule as the spin branch above — one list of dead states.
       if (!seatFirstJoinable(entry))
         return { label: 'Watch', kind: 'secondary' as const, run: () => onSpinJoin(t, 'sng') };
@@ -726,7 +729,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   {avgPot != null && avgPot > 0 && (
                     <div>
                       <dt>Avg Pot</dt>
-                      <dd className="glp__mono">{Math.round(avgPot).toLocaleString()}</dd>
+                      <dd className="glp__mono">{formatTableChips(avgPot)}</dd>
                     </div>
                   )}
                   <div>
@@ -1055,9 +1058,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                 <td>{p.percentage}%</td>
                                 {Number(tournament.prize_pool) > 0 && (
                                   <td>
-                                    {Math.floor(
-                                      ((Number(tournament.prize_pool) || 0) * p.percentage) / 100
-                                    ).toLocaleString()}
+                                    {/* To the cent (2026-09-09). This is the
+                                        advertised payout table; flooring each
+                                        place advertised 98 against the 98.72
+                                        the settlement actually pays. */}
+                                    {formatTableChips(
+                                      Math.round(
+                                        (Number(tournament.prize_pool) || 0) * p.percentage
+                                      ) / 100
+                                    )}
                                   </td>
                                 )}
                               </tr>

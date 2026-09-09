@@ -1,0 +1,127 @@
+/* Every pose uses the same landing clock and a deterministic hard handoff. */
+.thr-robot__neutral {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-robot-neutral calc(0.367s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-robot-neutral {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-robot__scan {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-robot-scan calc(1.5s * var(--animation-speed, 1)) steps(6, end)
+    calc(0.367s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-robot-scan {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  20%,
+  60% {
+    transform: rotate(-4deg);
+  }
+  40%,
+  80% {
+    transform: rotate(4deg);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-robot__short {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-robot-short calc(0.4s * var(--animation-speed, 1)) steps(1, end)
+    calc(1.867s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-robot-short {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-3px);
+  }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(3px);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-robot__off {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-robot-off calc(1.4s * var(--animation-speed, 1)) linear
+    calc(2.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-robot-off {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  57% {
+    transform: rotate(0deg);
+  }
+  80%,
+  99.9% {
+    transform: rotate(14deg) translateY(7px);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-robot__neutral {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .thr-robot__scan {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .thr-robot__short {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .thr-robot__off {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

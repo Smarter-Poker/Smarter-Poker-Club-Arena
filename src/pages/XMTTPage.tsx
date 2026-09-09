@@ -27,6 +27,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { resolvePageClubId } from '../utils/resolvePageClubId';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -183,17 +184,18 @@ export default function XMTTPage() {
     if (!user) return;
     let isMounted = true;
     const init = async () => {
+      /* Two faults here, both removed by the shared resolver:
+
+         1. The no-param fallback was `.limit(1)` with NO `.order()` — "a"
+            membership rather than "the" one, so a multi-club player could get
+            a different club's events on consecutive loads.
+         2. The param was stored RAW and un-resolved, leaving a slug or a
+            6-digit code in `clubId` state for later queries to choke on. The
+            resolver always hands back a UUID. */
       const qClub = searchParams.get('club') || searchParams.get('clubId');
-      let targetClub = qClub;
-      if (!targetClub) {
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle();
-        targetClub = mem?.club_id || null;
-      }
+      const targetClub = qClub
+        ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
+        : await resolvePageClubId({ userId: user.id });
       if (targetClub && isMounted) {
         setClubId(targetClub);
         await loadTournaments(targetClub);
@@ -225,8 +227,6 @@ export default function XMTTPage() {
     };
     const unsubs = [
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_STARTED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
       // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
       masterBus.subscribeDebounced('TOURNAMENT_CANCELLED', refresh, 500),
       // TOURNAMENT_LEVEL_CHANGE removed 2026-08-28: nothing emits it on the

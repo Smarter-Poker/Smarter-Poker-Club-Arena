@@ -1,3 +1,4 @@
+import { isThrowableEventId } from '../throwables/identity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  useTableChat — Chat State & Handlers
@@ -73,7 +74,7 @@ export interface UseTableChatReturn {
   isChatBanned: boolean;
   // Reaction parsing
   activeReactions: ReactionEvent[];
-  parseIncomingMessage: (content: string, senderId: string) => boolean;
+  parseIncomingMessage: (content: string, senderId: string, throwId?: unknown) => boolean;
   // Unread tracking
   unreadCount: number;
   clearUnread: () => void;
@@ -88,7 +89,12 @@ export function useTableChat(
   // consumer matched the message and dropped it, so nobody else ever saw the
   // throw they had just paid a diamond for. This callback hands a parsed throw
   // to the animation layer.
-  onThrowReceived?: (fromSeat: number, toSeat: number, throwableId: string) => void
+  onThrowReceived?: (
+    fromSeat: number,
+    toSeat: number,
+    throwableId: string,
+    throwId?: string
+  ) => void
 ): UseTableChatReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatBanned, setIsChatBanned] = useState(false);
@@ -400,7 +406,7 @@ export function useTableChat(
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
   const parseIncomingMessage = useCallback(
-    (content: string, senderId: string): boolean => {
+    (content: string, senderId: string, throwId?: unknown): boolean => {
       // Check for reaction messages
       const reactionMatch = content.match(REACTION_MSG_REGEX);
       if (reactionMatch) {
@@ -431,17 +437,21 @@ export function useTableChat(
       const throwMatch = content.match(THROW_MSG_REGEX);
       if (throwMatch) {
         if (senderId && senderId !== userId) {
-          // DoS guard, same ceiling as reactions.
-          if (pendingTimersRef.current.size < 20) {
-            const throwableId = throwMatch[1];
-            const toSeat = parseInt(throwMatch[2], 10);
-            // players[] is seat-ordered (index 0 = seat 1), matching the rest of
-            // the table; resolve the thrower's seat from their id.
-            const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
-            const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
-            if (Number.isFinite(toSeat) && toSeat > 0) {
-              onThrowReceivedRef.current?.(fromSeat, toSeat, throwableId);
-            }
+          // Throw playback has its own active limit and FIFO backlog.
+          // Reaction timers must never discard an incoming throw.
+          const throwableId = throwMatch[1];
+          const toSeat = parseInt(throwMatch[2], 10);
+          // players[] is seat-ordered (index 0 = seat 1), matching the rest of
+          // the table; resolve the thrower's seat from their id.
+          const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
+          const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
+          if (Number.isFinite(toSeat) && toSeat > 0) {
+            onThrowReceivedRef.current?.(
+              fromSeat,
+              toSeat,
+              throwableId,
+              isThrowableEventId(throwId) ? throwId.toLowerCase() : undefined
+            );
           }
         }
         return true; // Don't add to chat

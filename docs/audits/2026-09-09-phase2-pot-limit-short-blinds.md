@@ -57,3 +57,7 @@ Both https://ca-static.smarter.poker/build-info.json and https://smarter.poker/h
 ## Remaining Phase Gates
 
 Publish through ordinary hooks, CI, automatic merge and scheduled engine adoption. Resolve and verify #3879. Complete the remaining rules register, including malformed Omaha caller handling, published cash blind rotation, showdown display/history parity, runout consent and independent certification status. All 18 Phase 2 requirements retain their full coverage obligation. No partial case closes this phase or the 216-requirement programme.
+
+## Current-Main Build Gate
+
+Normal merge of origin/main preserved the two intervening fixes. On 95a24d314, npm run build exited 0 and provenance reported behind-main=0. Local source-map upload was disabled through the existing Sentry plugin environment condition. No deployment was performed by this local build. The 81 server tests include the final real action-dispatch assertion and correctly initialized turn state; all assertions remain intact.

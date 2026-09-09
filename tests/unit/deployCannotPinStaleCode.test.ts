@@ -198,7 +198,7 @@ describe('the maintenance certificate has no stale-code escape hatch', () => {
     );
     const remoteCommands = workflowCutover
       .split('\n')
-      .filter((line) => !/^\s*#/.test(line) && line.includes('~/hssh '));
+      .filter((line) => !/^\s*#/.test(line) && line.includes('hssh '));
     expect(remoteCommands).toHaveLength(2);
     expect(remoteCommands[0]).toContain('ENGINE_UP_SCRIPT=');
     expect(remoteCommands[0]).toContain('engine-up-with-maintenance-certificate.sh');

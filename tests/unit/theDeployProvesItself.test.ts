@@ -345,7 +345,7 @@ esac
       "if: always() && steps.cutover.outcome != 'skipped' && steps.cutover.outputs.mutation_started == 'true'"
     );
     expect(cutover.indexOf('echo "mutation_started=false"')).toBeLessThan(
-      cutover.indexOf('~/hssh "IMAGE=')
+      cutover.indexOf('hssh "IMAGE=')
     );
     expect(cutover).toMatch(/if \[ "\$CUTOVER_STATUS" = "75" \]; then[\s\S]*?exit 0/);
     expect(cutover).toMatch(
@@ -359,7 +359,7 @@ esac
         'echo "mutation_started=true"',
         cutover.indexOf('if [ "$CUTOVER_STATUS" = "76"')
       )
-    ).toBeGreaterThan(cutover.indexOf('~/hssh "IMAGE='));
+    ).toBeGreaterThan(cutover.indexOf('hssh "IMAGE='));
 
     const fixture = mkdtempSync(resolve(tmpdir(), 'deploy-cutover-state-'));
     const output = resolve(fixture, 'github-output');

@@ -1009,6 +1009,36 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # `migration-resolver-is-shell-neutral.law.test.ts` executes the same
+      # resolver under every shell that calls it in production. The estate
+      # runners are intentionally minimal and do not all preinstall zsh, so
+      # declare and provision that test dependency instead of silently
+      # skipping half of the compatibility contract.
+      - name: Provision shell compatibility test dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v zsh >/dev/null 2>&1; then
+            zsh --version
+            exit 0
+          fi
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo "::error::zsh is required by the shell-neutral migration resolver test, and this runner has no apt-get"
+            exit 1
+          fi
+          if [ "$(id -u)" = "0" ]; then
+            APT=(apt-get)
+          elif command -v sudo >/dev/null 2>&1 && sudo -n true; then
+            APT=(sudo apt-get)
+          else
+            echo "::error::zsh is required by the shell-neutral migration resolver test, and this runner cannot install it"
+            exit 1
+          fi
+          "${APT[@]}" update -qq
+          "${APT[@]}" install -y -qq zsh
+          command -v zsh >/dev/null 2>&1
+          zsh --version
+
       - name: Run Test Suite
         run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
 

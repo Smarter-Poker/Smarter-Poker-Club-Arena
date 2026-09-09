@@ -219,10 +219,16 @@ case "$1:$2" in
           echo restore-image >> "$ORDER_FILE"
           rm -f "$IMAGE_PROMOTED_MARKER"
         else
-          [ "$HARD_KILL_AT" != "before_image_promotion" ] || kill -KILL "$PPID"
+          if [ "$HARD_KILL_AT" = "before_image_promotion" ]; then
+            kill -KILL "$PPID"
+            exit 137
+          fi
           echo promote-image >> "$ORDER_FILE"
           touch "$IMAGE_PROMOTED_MARKER"
-          [ "$HARD_KILL_AT" != "after_image_promotion" ] || kill -KILL "$PPID"
+          if [ "$HARD_KILL_AT" = "after_image_promotion" ]; then
+            kill -KILL "$PPID"
+            exit 137
+          fi
         fi
         ;;
       *) exit 2 ;;

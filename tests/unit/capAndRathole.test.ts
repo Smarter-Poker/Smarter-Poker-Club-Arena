@@ -37,8 +37,9 @@ describe('Cap', () => {
     // scalar is now resolved by the shared cash-only helper, so anchoring on
     // that helper's private `capBB` implementation would no longer inspect
     // the human wager path this test protects.
-    const cap = sliceStatement(TURNS, 'const capChips =');
+    const cap = sliceStatement(TURNS, 'const capChips = cashHandCapChips(');
     const remaining = sliceStatement(TURNS, 'const capRemaining =');
+    expect(cap).toContain('cashHandCapChips(');
     expect(cap).toContain('this.isTournamentTable()');
     expect(remaining).toContain('totalInvested');
     expect(remaining).not.toMatch(/player\.bet/);

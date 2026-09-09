@@ -173,10 +173,18 @@ describe('LAW 2: the hand write is a difference, declared, and written once', ()
   const postHandTasks = sliceMethod(settle, 'protected async postHandTasks(');
   const acceptedHandCall = sliceCall(postHandTasks, 'logHandHistory(');
 
-  it('every seat carries the stack it was dealt from', () => {
+  it('every seat carries the stack it was dealt from, to the cent', () => {
+    /* `cents(...)` since 2026-09-09. Both fields land in
+       `hand_history.players[].stack` - jsonb, no scale, no CHECK possible -
+       and from there in `club_member_table_state.last_stack` and
+       `club_member_daily_stats.profit`, which had 720 and 1,328 non-cent
+       rows between them. The writer this replaced rounded (services/supabase/
+       tables.ts `rounded()`); the replacement dropped it, which is how those
+       rows appeared. The dealt-from value is still the one asserted. */
     expect(acceptedHandCall).toMatch(
-      /stack_before:\s*snap\.dealtStacks\.get\(p\.user_id\)\s*\?\?\s*p\.stack/
+      /stack_before:\s*cents\(snap\.dealtStacks\.get\(p\.user_id\)\s*\?\?\s*p\.stack\)/
     );
+    expect(acceptedHandCall).toMatch(/stack:\s*cents\(p\.stack\)/);
   });
 
   it('rake and BBJ are declared to the write', () => {

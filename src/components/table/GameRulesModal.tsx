@@ -7,6 +7,8 @@
 import React, { useState, useEffect } from 'react';
 import './GameRulesModal.css';
 import { CardImage } from './CardImage';
+import { bettingStructureFor } from '../../lib/bettingStructure';
+import { holeCardCountFor } from '../../lib/holeCardCount';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -336,12 +338,22 @@ export function GameRulesModal({
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('rules');
 
-  // Parse variant strings safely
-  const vUpper = (variant || '').toUpperCase();
-  const isPLO = vUpper.includes('PLO') || vUpper.includes('OMAHA');
+  // TablePage supplies canonical codes; retain the existing display-label aliases.
+  const vUpper = (variant || '').trim().toUpperCase();
+  const isOmaha = vUpper === 'FLO8' || vUpper.includes('PLO') || vUpper.includes('OMAHA');
+  const isHiLo = isOmaha && (vUpper.endsWith('8') || /HI[ -]?LO|8 OR BETTER/.test(vUpper));
   const isPineapple = vUpper.includes('PINEAPPLE');
-  const isShortDeck = vUpper.includes('SHORT DECK') || vUpper.includes('6+');
-  const isPotLimit = vUpper.includes('PLO') || vUpper.includes('POT LIMIT');
+  const isShortDeck = /SHORT[ _-]DECK|6\+/.test(vUpper);
+  const structure = bettingStructureFor(vUpper);
+  const isFixedLimit = structure === 'fixed_limit' || vUpper.includes('FIXED LIMIT');
+  const isPotLimit = !isFixedLimit && (structure === 'pot_limit' || vUpper.includes('POT LIMIT'));
+  const holeCards = isOmaha
+    ? Math.max(
+        4,
+        holeCardCountFor(vUpper),
+        Number(vUpper.match(/(?:PLO|OMAHA)\s*([456])\b/)?.[1] ?? 0)
+      )
+    : holeCardCountFor(vUpper);
 
   useEffect(() => {
     if (isOpen) {
@@ -671,18 +683,17 @@ export function GameRulesModal({
           {activeTab === 'rules' && (
             <div className="rules-modal__content">
               <ul className="rules-modal__bullet-list">
-                {isPLO ? (
+                {isOmaha ? (
                   <>
                     <li>
                       Omaha Poker Hands Are Always Formed Of <strong>Five Cards</strong>. Unlike In
-                      Hold'em, Players Must Use <strong>Exactly Two</strong> From Their Hand and{' '}
+                      Hold'em, Players Must Use <strong>Exactly Two</strong> From Their Hand And{' '}
                       <strong>Exactly Three</strong> From The Community Cards To Form Their
                       Five-Card Hand.
                     </li>
                     <li>
-                      In This Variant, Each Player receives{' '}
-                      {vUpper.match(/\d+/) ? vUpper.match(/\d+/)?.[0] : '4/5/6'} Face Down ("Hole")
-                      Cards Before Any Betting Begins.
+                      In This Variant, Each Player Receives {holeCards} Face Down ("Hole") Cards
+                      Before Any Betting Begins.
                     </li>
                     <li>
                       There Follow Up To Four <strong>Betting Rounds</strong> During Which Players
@@ -691,8 +702,8 @@ export function GameRulesModal({
                       One, And "River" Of One.
                     </li>
                     <li>
-                      At The End Of The Betting Rounds, Remaining Players Use A Combination of{' '}
-                      <strong>Exactly Two Of Their Hole Cards</strong> and{' '}
+                      At The End Of The Betting Rounds, Remaining Players Use A Combination Of{' '}
+                      <strong>Exactly Two Of Their Hole Cards</strong> And{' '}
                       <strong>Exactly Three Community Cards</strong> To Form The Best Poker Hand.
                     </li>
                   </>
@@ -706,9 +717,10 @@ export function GameRulesModal({
                       Each Player Is Initially Dealt <strong>Three Hole Cards</strong> Face Down.
                     </li>
                     <li>
-                      Depending On The Specific Pineapple Variant (Crazy, Lazy, Or Standard),
-                      Players Will Be Required To <strong>Discard One Hole Card</strong> At A
-                      Specific Point In The Hand (E.G., Pre-Flop Or Post-Flop).
+                      This Table Plays Crazy Pineapple. Players{' '}
+                      <strong>Discard One Hole Card</strong> After Flop Betting And Before The Turn.
+                      If Betting Ends All-In Earlier, The Discard Happens After The Flop Is Dealt
+                      And Before Any Further Board Cards.
                     </li>
                     <li>
                       After The Discard, The Hand Proceeds Identically To Standard Texas Hold'em.
@@ -717,7 +729,7 @@ export function GameRulesModal({
                 ) : isShortDeck ? (
                   <>
                     <li>
-                      Short Deck (Or 6+ Hold'em) Is Played Identically To Texas Hold'em, But With a{' '}
+                      Short Deck (Or 6+ Hold'em) Is Played Identically To Texas Hold'em, But With A{' '}
                       <strong>36-Card Deck</strong>. All 2S, 3S, 4S, And 5S Are Removed.
                     </li>
                     <li>
@@ -753,7 +765,46 @@ export function GameRulesModal({
                     <li>At Showdown, The Best 5-Card Poker Hand Wins The Pot.</li>
                   </>
                 )}
+                {isHiLo && (
+                  <>
+                    <li>
+                      Each Pot Splits Between The Best High Hand And A Qualifying Low Hand. A Low
+                      Requires Five Different Ranks, All Eight Or Lower, With Aces Low. Straights
+                      And Flushes Do Not Count Against A Low. With No Qualifying Low, The High Hand
+                      Wins The Whole Pot.
+                    </li>
+                    <li>
+                      High And Low Each Use Exactly Two Hole Cards And Three Board Cards, And May
+                      Use Different Cards. An Indivisible Chip Goes To The High Half.
+                    </li>
+                  </>
+                )}
               </ul>
+              {isCashTable && (
+                <div>
+                  <h3 className="rules-modal__section-title">Cash Button And Blinds</h3>
+                  <ul className="rules-modal__bullet-list">
+                    <li>
+                      With Three Or More Players, The Button Moves Clockwise Among Eligible Players,
+                      Skipping Empty Seats. New Players Wait For The Big Blind Or Post A Live Big
+                      Blind To Enter, And Cannot Enter On The Button Or Small Blind In An
+                      Established Game. A Sole Eligible Player Keeps The Button Until Other Players
+                      Have Been Dealt In. A New Table Assigns Its First Button; At A New Heads-Up
+                      Table, The First Button Is Drawn At Random.
+                    </li>
+                    <li>
+                      Heads-Up, The Button Posts The Small Blind, Acts First Before The Flop, And
+                      Acts Last After The Flop. When Play Becomes Heads-Up, The Big Blind Advances
+                      To The Next Remaining Player So The Previous Big Blind Does Not Pay It Twice.
+                      A New Opponent Enters In The Big Blind.
+                    </li>
+                    <li>
+                      A Returning Player Who Missed Blinds Owes A Dead Small Blind And A Live Big
+                      Blind. Dead Blind Chips Do Not Count Toward The Current Call.
+                    </li>
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
@@ -762,12 +813,35 @@ export function GameRulesModal({
               ──────────────────────────────────────────────────────────────────────── */}
           {activeTab === 'limits' && (
             <div className="rules-modal__content">
-              {isPotLimit ? (
+              {isFixedLimit ? (
+                <>
+                  <p className="rules-modal__text">
+                    In Fixed Limit Games, Bets And Raises Use The Small Bet Before The Flop And On
+                    The Flop, And Twice That Amount On The Turn And River. The Small Bet Is The Big
+                    Blind. Posted Stakes Show Small Bet / Big Bet.
+                  </p>
+                  <p className="rules-modal__text">
+                    Each Street Allows One Bet And Three Raises, Including Heads-Up. A Short All-In
+                    Below Half A Full Bet Can Be Completed To The Full Bet; At Half A Bet Or More,
+                    The Next Raise Adds A Full Bet. Reaching Half A Full Bet Reopens Betting For A
+                    Player Who Already Acted.
+                  </p>
+                  <p className="rules-modal__text">
+                    A Player May Call All-In For Less. They Can Win Only The Pots Covered By Their
+                    Contribution; Other Eligible Players Contest The Side Pots.
+                  </p>
+                </>
+              ) : isPotLimit ? (
                 <>
                   <p className="rules-modal__text">
                     In Pot Limit Games, The Minimum Bet Is The Size Of The Big Blind And The Maximum
                     Raise Is The "Pot" (Combined Chips Already In The Pot Plus The Player's Call
                     Amount).
+                  </p>
+                  <p className="rules-modal__text">
+                    Before The Flop, Pot-Limit Sizing Counts The Normal Small And Big Blinds At
+                    Their Full Posted Amounts Even When A Blind Is All-In For Less. After The Flop,
+                    Only Chips Actually In The Pot Count.
                   </p>
                   <p className="rules-modal__text">
                     For Example, In A 1/2 Pot Limit Game, The Blinds Are 1/2 And The First Player To
@@ -796,7 +870,7 @@ export function GameRulesModal({
               ) : (
                 <>
                   <p className="rules-modal__text">
-                    In No Limit Games, The Minimum Bet Is The Size Of The Big Blind. There is{' '}
+                    In No Limit Games, The Minimum Bet Is The Size Of The Big Blind. There Is{' '}
                     <strong>No Maximum Bet Limit</strong>; A Player May Bet Any Amount Of Their
                     Current Chip Stack At Any Time.
                   </p>

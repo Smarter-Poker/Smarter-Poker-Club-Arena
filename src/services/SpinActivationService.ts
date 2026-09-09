@@ -82,7 +82,15 @@ export interface SpinOwnerState {
   bonus_count?: number;
 }
 
-async function call<T>(body: Record<string, unknown>): Promise<T> {
+/**
+ * A caller that moves money passes its OWN key, held across retries
+ * (2026-09-09). This helper used to mint `uuid()` inline on every request,
+ * so `activate` - which seeds a spin pool out of a real wallet - had no
+ * idempotency at all: a committed activation whose response was lost seeded
+ * the pool a second time on the next press. A read (`get_state`) needs no
+ * key and still gets a fresh one.
+ */
+async function call<T>(body: Record<string, unknown>, idempotencyKey?: string): Promise<T> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -94,7 +102,7 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-Idempotency-Key': uuid(),
+      'X-Idempotency-Key': idempotencyKey || uuid(),
     },
     body: JSON.stringify(body),
   });
@@ -138,17 +146,31 @@ export const spinActivationApi = {
     });
   },
 
-  activate(clubId: string, seedAmount: number, offeredMaxStake: number, sourceWallet: string) {
-    return call<{ result: Record<string, unknown> }>({
-      action: 'activate',
-      clubId,
-      seedAmount,
-      offeredMaxStake,
-      sourceWallet,
-    });
+  /** `idempotencyKey` is the caller's, minted once for the purchase and
+   *  reused on every retry of it - see the note on `call`. */
+  activate(
+    clubId: string,
+    seedAmount: number,
+    offeredMaxStake: number,
+    sourceWallet: string,
+    idempotencyKey?: string
+  ) {
+    return call<{ result: Record<string, unknown> }>(
+      {
+        action: 'activate',
+        clubId,
+        seedAmount,
+        offeredMaxStake,
+        sourceWallet,
+      },
+      idempotencyKey
+    );
   },
 
-  deactivate(clubId: string) {
-    return call<{ result: Record<string, unknown> }>({ action: 'deactivate', clubId });
+  deactivate(clubId: string, idempotencyKey?: string) {
+    return call<{ result: Record<string, unknown> }>(
+      { action: 'deactivate', clubId },
+      idempotencyKey
+    );
   },
 };

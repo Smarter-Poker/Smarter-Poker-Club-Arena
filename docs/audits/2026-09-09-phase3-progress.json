@@ -182,7 +182,7 @@
       "id": "S06",
       "requirement": "Persist one Spin draw, probability table version and entrants before reveal. Replay and failover cannot reroll.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction"
     },
     {
       "id": "S07",
@@ -365,8 +365,8 @@
       "passed": 9
     },
     "broader_verification": {
-      "tests_passed": 1343,
-      "files_passed": 126
+      "tests_passed": 1348,
+      "files_passed": 127
     },
     "server_typescript": "passed",
     "ci_merge_deployment": "pending"
@@ -566,5 +566,43 @@
         "service_execute": false
       }
     ]
+  },
+  "second_correction": {
+    "controls": ["S06"],
+    "related_boundaries": ["S09", "AX09"],
+    "tests": "server/src/tournament/SpinRevealSettlementBoundary.test.ts",
+    "baseline": {
+      "failed": 3,
+      "passed": 1
+    },
+    "malformed_receipt_baseline": {
+      "failed": 1,
+      "passed": 4
+    },
+    "after": {
+      "passed": 5
+    },
+    "scope": "Announce only after successful reserve settlement and adoption of a valid already-booked result; preserve existing animation and replay holds. Full versioned odds, funding and recovery remain pending."
+  },
+  "verification": {
+    "new_behavioral_tests_passed": 14,
+    "tournament_maintenance_pause_suite": {
+      "tests_passed": 1348,
+      "files_passed": 127
+    },
+    "server_typescript": "passed",
+    "server_build": "passed",
+    "postgres17_probe": {
+      "script": "scripts/dev/probe-tournament-manager-fencing-pg17.sh",
+      "exit_code": 0,
+      "executed": "Stage-A legacy and canonical authority and capacity receipts",
+      "not_executed": "Stage-B cutover-only retirement, because that migration is absent"
+    },
+    "production_database_activity": "read_only_catalog_and_operational_metadata"
+  },
+  "publication": {
+    "status": "blocked_pending_explicit_phase3_authorization",
+    "source_pushed": false,
+    "reason": "Automatic approval review rejected the Phase 3 cherry-pick and push because explicit publication authorization covered Phase 2 only."
   }
 }

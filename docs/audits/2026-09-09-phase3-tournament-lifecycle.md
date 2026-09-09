@@ -10,7 +10,25 @@ TournamentManagerBase now retains the pause during either break, preserves its l
 
 The nine new tests use the real ServerTableEngine pause/resume methods and the real TournamentManagerBase barrier. Six of the original eight cases failed before correction and all eight passed after it; a ninth case verifies release of an add-on pause inherited from a now-ended bubble. Cases include duplicate/late completion, retirement, a missing completion, both break kinds, the delayed re-pause, no-new-event resume, and overlapping break deadlines.
 
-The tournament, maintenance and engine-pause suite passed 1343 tests in 126 files. Server TypeScript passed. One existing source assertion required the obsolete ownsPause condition; it was updated in the same change and points to the new behavioral coverage. This is a partial K06 finding with related K05/BX11 boundaries, not closure of all clocks, synchronized elimination ranking, operator pauses or failover.
+The final tournament, maintenance and engine-pause suite, including the Spin correction below, passed 1348 tests in 127 files. Server TypeScript and the server production build passed. One existing source assertion required the obsolete ownsPause condition; it was updated in the same change and points to the new behavioral coverage. This is a partial K06 finding with related K05/BX11 boundaries, not closure of all clocks, synchronized elimination ranking, operator pauses or failover.
+
+## Second Confirmed Correction: Announce The Booked Spin Result
+
+The installed draw function selects a multiplier without persisting a tournament outcome. The settlement function books that outcome durably and returns its original multiplier on an idempotent replay. The engine previously announced the local draw before settlement. A reproduced retry announced 2x while settlement confirmed an already-booked 10x result. A failed settlement also left an announced but unbooked result.
+
+The early reveal now follows successful reserve settlement and adoption of the booked multiplier, while still preceding the row projection and table-building work. Existing animation holds and reconnect replay deadlines remain in place. An already-settled receipt without a usable booked multiplier causes the existing bounded retry and stand-down path instead of announcing the unconfirmed local draw.
+
+Five new tests execute the production launch fragment with controlled external I/O: an unresolved settlement cannot announce; a different booked multiplier controls the announced prize and payout ladder; three failed attempts announce nothing; a malformed idempotent receipt stands down; and a matching result announces once while preserving the board's starting stack. The original four cases failed three and passed one before correction. The malformed receipt case then failed before its validation was added. All five now pass. The existing source-order assertion was updated to the demonstrated durable-result prerequisite; its table-build ordering and reveal payload checks remain.
+
+This is a partial S06 correction with related S09/AX09 recovery boundaries. It does not certify the entire versioned odds contract, reserve funding, cancellation policy or full crash recovery.
+
+## Isolated PostgreSQL Verification
+
+The existing `scripts/dev/probe-tournament-manager-fencing-pg17.sh` completed with exit 0 against a temporary local PostgreSQL 17 cluster. Its Stage-A legacy/canonical authority and capacity receipts passed. The Stage-B migration was absent, so its cutover-only retirement probe did not execute. This is a bounded local database result, not full financial concurrency coverage or a production database mutation.
+
+## Publication Boundary
+
+Both Phase 3 corrections are prepared locally. Automatic approval review rejected cherry-picking and pushing Phase 3 source because the user's explicit publication authorization covered Phase 2 only. No Phase 3 source was pushed. Phase 3 publication requires explicit authorization; local implementation and verification remain reviewable.
 
 ## Live Database Review Begun
 

@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Spin Reveals Follow The Booked Result
+
+The engine could announce a locally drawn 2x outcome before an idempotent reserve receipt restored a booked 10x outcome, or announce before settlement failed. The early reveal now follows successful settlement and booked-multiplier validation, retaining the existing hold and reconnect window and preceding table work. Five production-fragment cases cover unresolved, replayed, failed, malformed and matching receipts. The complete tournament/maintenance/pause suite passes 1348 tests in 127 files; server TypeScript and build pass. Re-read: yes. No migration or financial repair. Phase 3 publication is blocked pending explicit authorization; see docs/audits/2026-09-09-phase3-tournament-lifecycle.md.
+
 ## 2026-09-09: Poker Consent, Card Selection And Published Rules
 
 RIT decisions require offer participation and remain final; events carry the stored run count and evaluator-selected winning cards. Omaha subsets retain exact two-plus-three selection. Cash button prediction/dealing agree through newcomers and heads-up transitions. Rules show all live variants, limits, low qualifiers and the cash blind convention. Re-read: yes. Both TypeScript projects pass; focused rules, money, privacy, independent evaluator and display tests pass. No database migration or financial repair. See docs/audits/2026-09-09-phase2-final-boundaries.md for coverage and pending ordinary release gates.

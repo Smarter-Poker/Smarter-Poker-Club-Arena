@@ -211,7 +211,7 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
           element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' })
         );
         await expect(selectedTab).toBeVisible();
-        const footer = page.getByRole('navigation', { name: 'Club Arena' });
+        const footer = page.getByRole('navigation', { name: 'Poker Arena' });
         if (await footer.isVisible().catch(() => false)) {
           const [targetBox, footerBox] = await Promise.all([
             selectedTab.boundingBox(),

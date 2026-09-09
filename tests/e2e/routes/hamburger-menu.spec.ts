@@ -39,7 +39,7 @@ async function openHamburgerMenu(page: any) {
   } catch {
     return false;
   }
-  const drawer = page.getByRole('dialog', { name: 'Club Arena' });
+  const drawer = page.getByRole('dialog', { name: 'Poker Arena' });
   for (let attempt = 0; attempt < 2; attempt += 1) {
     // Resolve the opener again on retry. Session/profile hydration can replace
     // the header immediately after the first click; a successful click on that
@@ -113,7 +113,7 @@ test.describe('Hamburger Menu — Open / Close', () => {
     // The drawer should be visible (check for the canonical first section)
     const gameModes = page.getByRole('heading', { name: 'Play' });
     await expect(gameModes).toBeVisible({ timeout: 3000 });
-    await expect(page.getByRole('dialog', { name: 'Club Arena' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Poker Arena' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Close' })).toBeFocused();
 
     // Escape removes the focusable dialog tree and restores the opener.
@@ -177,7 +177,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
       // Use the interactive control's accessible name. The button also owns a
       // short description, so its name begins with the destination label.
       const menuItem = page
-        .getByRole('dialog', { name: 'Club Arena' })
+        .getByRole('dialog', { name: 'Poker Arena' })
         .getByRole('button', {
           name: new RegExp(`^${escapeRegExp(link.label)}(?:\\s|$)`),
         })
@@ -201,7 +201,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     if (!(await openMenuOrSkip(page))) return;
 
     const unions = page
-      .getByRole('dialog', { name: 'Club Arena' })
+      .getByRole('dialog', { name: 'Poker Arena' })
       .getByRole('button', { name: /^Unions(?:\s|$)/ });
     await expect(unions).toHaveCount(0);
 

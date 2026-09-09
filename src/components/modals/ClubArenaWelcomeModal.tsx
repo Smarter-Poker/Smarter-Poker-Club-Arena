@@ -45,7 +45,7 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
         }}
       >
         <header className={styles.header}>
-          <h2>Welcome To Club Arena</h2>
+          <h2>Welcome To Poker Arena</h2>
         </header>
 
         <div className={styles.content}>
@@ -111,7 +111,7 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
           </label>
 
           <button className={styles.enterButton} onClick={onAccept} disabled={!hasAgreed}>
-            Enter Club Arena
+            Enter Poker Arena
           </button>
         </footer>
       </div>

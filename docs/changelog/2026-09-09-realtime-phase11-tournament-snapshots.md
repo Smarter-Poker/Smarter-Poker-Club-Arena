@@ -52,3 +52,16 @@ for both routed and embedded mounts.
 Physical iPad/PWA acceptance remains open. A Chrome page or a server metric is
 not physical-device acceptance. No live seats, registrations, balances, or push
 notifications are modified as test probes.
+
+## Ordering Review
+
+PR4043 merged as c79e2687f8446d47488dd8c17990cc6abf263f5d. A final
+ordering regression then reproduced a narrower issue: an entry patch arriving
+while the tournament header query was pending could overwrite a newer entry
+query result (600 instead of 700 in the isolated case). The entry and table
+patch buffers now open immediately before their own queries. They preserve
+updates received during that query without replaying earlier updates over a
+newer database answer. The added case failed before this correction.
+
+The correction uses a fresh branch from main because PR4043 had already merged.
+Publication verification must include this correction as well as PR4043.

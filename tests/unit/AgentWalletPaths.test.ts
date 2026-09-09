@@ -100,6 +100,20 @@ describe.each(['self', 'send'])('canonical %s transfer', (kind) => {
     await expect(submit()).rejects.toThrow(/Sign In/);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  if (kind === 'send') {
+    it('rejects another destination and preserves the original retry identity', async () => {
+      mocks.rpc.mockResolvedValueOnce({
+        data: { ...receipt(), destination: 'agent_wallet' },
+        error: null,
+      });
+      await expect(submit()).rejects.toThrow(/Confirm/);
+      expect(mocks.emit).not.toHaveBeenCalled();
+      const original = mocks.rpc.mock.calls[0][1].p_op_id;
+      mocks.rpc.mockResolvedValueOnce({ data: receipt(), error: null });
+      await expect(submit()).resolves.toBe(true);
+      expect(mocks.rpc.mock.calls[1][1].p_op_id).toBe(original);
+    });
+  }
   it('rejects an unrelated receipt without clearing the original identity', async () => {
     mocks.rpc.mockResolvedValue({ data: { ...receipt(), amount: 6 }, error: null });
     await expect(submit()).rejects.toThrow();

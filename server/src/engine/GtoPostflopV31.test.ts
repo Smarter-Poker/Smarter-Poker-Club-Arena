@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, beforeEach } from 'vitest';
 import type { Card, CardRank, CardSuit } from '../types.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
-import { HorseLogic } from './HorseLogic.js';
+import { gtoV31ExecutionMatches, HorseLogic } from './HorseLogic.js';
 import {
   _clearGtoPostflopV31,
   boardFlushSuit,
@@ -218,6 +218,35 @@ describe('V31 certification and lookup', () => {
     expect(lookup().hit).toBe(true);
   });
 
+  it('rejects string frequencies and noncanonical hand classes without replacing the snapshot', () => {
+    replaceGtoPostflopV31([CELL]);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...CELL,
+          hand_matrix: {
+            'AKs:2': { check: '0', overbet: '1' },
+            'AKs:0': { check: 1, overbet: 0 },
+          },
+        } as never,
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+    for (const invalidHand of ['KAo:0', 'AAs:0', 'AK:0']) {
+      expect(() =>
+        replaceGtoPostflopV31([
+          {
+            ...CELL,
+            hand_matrix: { [invalidHand]: { check: 1, overbet: 0 } },
+            policy_ev_matrix: { [invalidHand]: 0 },
+            action_ev_matrix: { [invalidHand]: { check: 0, overbet: 0 } },
+          },
+        ])
+      ).toThrow(/uncertified_or_malformed/);
+    }
+    expect(gtoPostflopV31Dataset()?.id).toBe(CELL.dataset_id);
+    expect(lookup().hit).toBe(true);
+  });
+
   it('rejects a short paged result and preserves the prior complete dataset', () => {
     replaceGtoPostflopV31([CELL]);
     expect(() =>
@@ -284,6 +313,45 @@ describe('V31 certification and lookup', () => {
 });
 
 describe('V31 reaches the full horse decision path', () => {
+  it('requires the final wager family and size while preserving a semantic call-off', () => {
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'raise',
+        finalAmount: 62,
+        bigBlind: 100,
+      })
+    ).toBe(true);
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'raise',
+        finalAmount: 120,
+        bigBlind: 100,
+      })
+    ).toBe(false);
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'all_in',
+        finalAmount: null,
+        bigBlind: 100,
+      })
+    ).toBe(false);
+    expect(
+      gtoV31ExecutionMatches({
+        sampledFamily: 'call',
+        sampledAmount: 4_000,
+        finalAction: 'all_in',
+        finalAmount: null,
+        bigBlind: 100,
+      })
+    ).toBe(true);
+  });
+
   it('uses the all-in response cell for a covering stack but never in a straddled pot', () => {
     const responseBase: GtoPostflopV31Row = {
       ...CELL,
@@ -742,7 +810,16 @@ describe('V31 reaches the full horse decision path', () => {
     expect(fallback.action).toBe('fold');
 
     replaceGtoPostflopV31Evaluation([candidate]);
-    const receipts: Array<{ datasetChecksum: string; nodeRole: string; actionId: string }> = [];
+    const receipts: Array<{
+      datasetChecksum: string;
+      nodeRole: string;
+      actionId: string;
+      sampledActionFamily: string;
+      sampledAmount: number | null;
+      finalAction: string;
+      finalAmount: number | null;
+      executedAsIntended: boolean;
+    }> = [];
     const decision = HorseLogic.decide(
       hero as never,
       state as never,
@@ -760,6 +837,109 @@ describe('V31 reaches the full horse decision path', () => {
         datasetChecksum: checksum,
         nodeRole: 'facing_bet',
         actionId: 'call',
+        sampledActionFamily: 'call',
+        sampledAmount: 4_000,
+        finalAction: 'call',
+        finalAmount: 4_000,
+        executedAsIntended: true,
+      }),
+    ]);
+  });
+
+  it('records a sampled raise that legalization downgraded to a call as an execution mismatch', () => {
+    const checksum = '7'.repeat(64);
+    const candidate: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_id: '22222222-2222-4222-8222-222222222222',
+      dataset_key: 'phase4-illegal-raise-candidate',
+      dataset_checksum: checksum,
+      dataset_state: 'evaluating',
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'mid',
+      hand_matrix: { '43o:0': { fold: 0, call: 0, tiny_raise: 1 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+        tiny_raise: {
+          family: 'raise',
+          size_unit: 'pot_after_call_fraction',
+          size_value: 0.01,
+          all_in: false,
+        },
+      },
+      policy_ev_matrix: { '43o:0': 0 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: 0, tiny_raise: 0 } },
+    };
+    replaceGtoPostflopV31Evaluation([candidate]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      stack: 7_940,
+      bet: 60,
+      totalInvested: 60,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    type Receipt = Parameters<
+      NonNullable<NonNullable<Parameters<typeof HorseLogic.decide>[4]>['onGtoV31Decision']>
+    >[0];
+    const receipts: Receipt[] = [];
+    const decision = HorseLogic.decide(
+      hero as never,
+      {
+        players: [hero, villain],
+        communityCards: BOARD,
+        pot: 160,
+        currentBet: 60,
+        minRaise: 60,
+        stage: 'turn',
+        gameVariant: 'nlh',
+        gameMode: 'cash',
+        format: 'cash',
+        bigBlind: 100,
+        smallBlind: 50,
+        dealerSeat: 2,
+        actionHistory: [
+          { stage: 'flop', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 0 },
+          { stage: 'flop', seat: 2, userId: 'villain', action: 'check', amount: 0, timestamp: 1 },
+          { stage: 'turn', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 2 },
+          { stage: 'turn', seat: 2, userId: 'villain', action: 'bet', amount: 60, timestamp: 3 },
+        ],
+      } as never,
+      'balanced',
+      {},
+      {
+        mind: false,
+        telemetry: false,
+        gtoV31DatasetChecksum: checksum,
+        onGtoV31Decision: (receipt) => receipts.push(receipt),
+      }
+    );
+    expect(decision).toMatchObject({ action: 'call', amount: 60 });
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        actionId: 'tiny_raise',
+        sampledActionFamily: 'raise',
+        sampledAmount: 62.2,
+        finalAction: 'call',
+        finalAmount: 60,
+        executedAsIntended: false,
       }),
     ]);
   });

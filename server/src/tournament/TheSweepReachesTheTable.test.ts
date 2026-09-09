@@ -1,0 +1,207 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ELIMINATION SWEEP COULD NOT REACH THE TABLE (2026-09-09)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Measured on production 2026-09-09 at 00:45 UTC: 285 of 390 RUNNING
+ * tournaments had not dealt in twenty minutes and ZERO had completed in twelve,
+ * on a platform that normally finishes hundreds an hour. The engine's own
+ * ghost-seat detector said it 433 times in fifteen minutes - "the elimination
+ * sweep is not reaching this table" - and 907 knockout candidates sat `pending`
+ * for over two hours behind it.
+ *
+ * Nobody was hurt: every stalled seat was a horse, `fn_unaccounted_seat_exits()`
+ * returned zero rows for all time, and no wallet went negative. What was lost
+ * was a tournament's ability to END.
+ *
+ * Four causes. Two are in Postgres and ship in
+ * `20260909005925_a_busted_player_without_a_seat_can_still_be_eliminated.sql`.
+ * The two pinned here are in this process, and each one is a way for the sweep
+ * to make no progress for ever while looking busy.
+ */
+
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const SRC = (p: string) => readFileSync(resolve(__dirname, p), 'utf8');
+const ELIM = SRC('./TournamentManagerEliminations.ts');
+const BASE = SRC('./TournamentManagerBase.ts');
+
+describe('the busted batch is taken before the RPC that caps its input', () => {
+  /**
+   * `fn_open_tournament_rebuy_decisions` raises `invalid rebuy-decision
+   * candidate set` for `cardinality(p_user_ids) > 50`. The whole `busted` array
+   * was passed to it, and the SWEEP_MUTATION_BATCH_SIZE slice that bounds this
+   * stage did not happen until forty lines later. Any tournament that reached
+   * fifty-one concurrent zero-chip `playing` players therefore raised inside the
+   * RPC on every pass, eliminated nobody, and came back with a list that could
+   * only have grown. Three live tournaments held 609 stuck rows this way.
+   */
+  it('slices to the mutation batch before tryTournamentRebuys and the decision RPC', () => {
+    const sliceAt = ELIM.indexOf('bustedTotal = busted.length');
+    const rebuysAt = ELIM.indexOf('await this.tryTournamentRebuys(');
+    const decisionsAt = ELIM.indexOf("'fn_open_tournament_rebuy_decisions'");
+    expect(sliceAt, 'the batch bound must exist').toBeGreaterThan(0);
+    expect(rebuysAt).toBeGreaterThan(sliceAt);
+    expect(decisionsAt).toBeGreaterThan(sliceAt);
+  });
+
+  it('the slice is bounded by SWEEP_MUTATION_BATCH_SIZE, which is under the RPC cap of 50', () => {
+    const block = ELIM.slice(
+      ELIM.indexOf('const bustedTotal = busted.length'),
+      ELIM.indexOf('await this.tryTournamentRebuys(')
+    );
+    expect(block).toMatch(/busted\.length > TournamentManagerBase\.SWEEP_MUTATION_BATCH_SIZE/);
+    expect(block).toMatch(/\.slice\(0, TournamentManagerBase\.SWEEP_MUTATION_BATCH_SIZE\)/);
+    expect(block).toMatch(/bustBatchHasMore = true/);
+    // Read the constant from source rather than importing the module: this file
+    // is a static pin and must not drag the engine's whole graph in with it.
+    const declared = BASE.match(/SWEEP_MUTATION_BATCH_SIZE\s*=\s*(\d+)/);
+    expect(declared, 'SWEEP_MUTATION_BATCH_SIZE must be declared').toBeTruthy();
+    expect(Number(declared![1])).toBeLessThanOrEqual(50);
+    expect(Number(declared![1])).toBeGreaterThan(0);
+  });
+
+  it('the whole-field spare-the-top-stack rule reads the total, not the slice', () => {
+    // `playingCount === busted.length` would stop matching the moment the batch
+    // narrowed the pass, and the guard exists to stop place 1 being paid twice.
+    expect(ELIM).toMatch(/if \(playingCount === bustedTotal && bustedOrdered\.length > 0\)/);
+    expect(ELIM).not.toMatch(/if \(playingCount === busted\.length && bustedOrdered\.length > 0\)/);
+  });
+});
+
+describe('one un-eliminable player does not hold the queue for ever', () => {
+  /**
+   * The assignment loop aborts the pass on a refusal, and it must - a refusal
+   * can mean the CAS missed because another generation took the place, and
+   * handing out a stale place is how two players get paid for one finish. But
+   * every candidate holds ZERO chips, so the chip sort is a tie and the order
+   * was stable: the same refused player was first on every five-second sweep,
+   * for ever, and the nineteen behind him were never attempted.
+   */
+  it('records who refused so the next pass tries somebody else first', () => {
+    expect(ELIM).toMatch(/private readonly bustRefusalStreak = new Map<string, number>\(\)/);
+    const loop = ELIM.slice(
+      ELIM.indexOf('const eliminated = await this.eliminatePlayer('),
+      ELIM.indexOf('takenPositions.add(place);')
+    );
+    expect(loop).toMatch(/this\.bustRefusalStreak\.set\(/);
+    expect(loop, 'the abort itself is deliberate and stays').toMatch(/return;/);
+  });
+
+  it('clears the streak the moment a player is actually eliminated', () => {
+    expect(ELIM).toMatch(/this\.bustRefusalStreak\.delete\(bustedOrdered\[i\]\.user_id\)/);
+  });
+
+  it('orders refused players last, then by the hand the bust happened in', () => {
+    // The chip tiebreak became the LAST resort on 2026-09-09: every candidate
+    // here holds zero, so chips decided nothing, and the resulting arbitrary
+    // order stranded 49 PKO bounties behind the settlement watermark. The
+    // refusal streak still wins - it is the deadlock breaker - then the hand
+    // number, which is the witness to who actually busted first.
+    const order = ELIM.slice(
+      ELIM.indexOf('let bustedOrdered = [...busted].sort'),
+      ELIM.indexOf('TOURNEY-AUDIT 2026-07-24')
+    );
+    expect(order).toMatch(/this\.bustRefusalStreak\.get\(a\.user_id\) \?\? 0/);
+    expect(order).toMatch(/bustRank\(a\.user_id\) - bustRank\(b\.user_id\)/);
+    expect(order).toMatch(/\(a\.chips \?\? 0\) - \(b\.chips \?\? 0\)/);
+    expect(order.indexOf('bustRefusalStreak')).toBeLessThan(order.indexOf('bustRank(a.user_id)'));
+  });
+
+  it('reads the bust order from the knockout candidates, and treats a failed read as unknown', () => {
+    expect(ELIM).toMatch(
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number'\)/
+    );
+    expect(ELIM).toMatch(/'Tournament\.bust_order_unreadable'/);
+    // UNKNOWN must not sort to the front and claim a place it cannot prove.
+    expect(ELIM).toMatch(/bustHandNumbers\.get\(userId\) \?\? Number\.MAX_SAFE_INTEGER/);
+  });
+});
+
+describe('the launch proof tells a bust from an uncredited stack', () => {
+  /**
+   * `chips > 0` on every roster row cannot distinguish "the stacks were never
+   * credited" from "they were credited and then played for". Eight Spins sat in
+   * REGISTERING because of it, one for ten hours, retrying every thirty seconds
+   * - 478 refusals in half an hour. Each roster summed to EXACTLY
+   * 3 x starting_chips with one seat at zero, because the table had already
+   * dealt (one of them 73 hands) before the launch was proven.
+   */
+  it('no longer refuses a roster row merely for holding zero', () => {
+    expect(BASE).not.toMatch(
+      /the playing roster does not have positive chips and an exact table seat/
+    );
+    expect(BASE).toMatch(/the playing roster does not have a finite stack and an exact table seat/);
+  });
+
+  it('refuses a NEGATIVE or non-finite stack, which is impossible rather than busted', () => {
+    const guard = BASE.slice(
+      BASE.indexOf('the playing roster does not have a finite stack') - 700,
+      BASE.indexOf('the playing roster does not have a finite stack')
+    );
+    expect(guard).toMatch(/Number\(row\.chips\) < 0/);
+    expect(guard).not.toMatch(/Number\(row\.chips\) <= 0/);
+  });
+
+  it('asserts conservation instead: the roster must hold what its seats were bought for', () => {
+    expect(BASE).toMatch(/const expectedFloor = roster\.length \* startingChips;/);
+    expect(BASE).toMatch(/if \(startingChips > 0 && rosterChips < expectedFloor\)/);
+    // The original hazard - a field with no money on it - is still refused.
+    expect(BASE).toMatch(/the playing roster holds no chips at all/);
+  });
+
+  it('applies the same rule to the felt, and still requires a funded total there', () => {
+    expect(BASE).toMatch(/Number\(seat\.stack\) < 0/);
+    expect(BASE).toMatch(/const seatChips = seats\.reduce\(/);
+    expect(BASE).toMatch(/the felt holds \$\{seatChips\} chips, short of the/);
+  });
+
+  it('leaves the deferred-stack window alone: conservation is only asserted once credit is claimed done', () => {
+    for (const marker of [
+      'const rosterChips = roster.reduce(',
+      'const seatChips = seats.reduce(',
+    ]) {
+      const before = BASE.slice(BASE.indexOf(marker) - 400, BASE.indexOf(marker));
+      expect(before, marker).toMatch(/if \(!stacksMayBeDeferred\)/);
+    }
+  });
+});
+
+describe('the migration that ships beside this one', () => {
+  const MIGRATION = readFileSync(
+    resolve(
+      __dirname,
+      '../../../supabase/migrations/20260909005925_a_busted_player_without_a_seat_can_still_be_eliminated.sql'
+    ),
+    'utf8'
+  );
+
+  it('resolves duplicate pending generations to the newest instead of refusing', () => {
+    expect(MIGRATION).not.toMatch(
+      /RETURN jsonb_build_object\('ok',false,'reason','multiple_pending_knockout_generations'\)/
+    );
+    expect(MIGRATION).toMatch(/SET state='rebought'/);
+    expect(MIGRATION).toMatch(/SELECT max\(c2\.seat_joined_at\)/);
+  });
+
+  it('only compares seat generations when the player still holds a seat', () => {
+    expect(MIGRATION).toMatch(
+      /IF v_latest_joined_at IS NOT NULL\s*\n\s*AND v_candidate\.seat_joined_at IS DISTINCT FROM v_latest_joined_at THEN/
+    );
+  });
+
+  it('keeps the function closed to every browser role', () => {
+    expect(MIGRATION).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_eliminate_tournament_player_atomic/
+    );
+    expect(MIGRATION).toMatch(/GRANT EXECUTE ON FUNCTION[\s\S]*?TO service_role;/);
+    expect(MIGRATION).not.toMatch(/TO (authenticated|anon)\b/);
+  });
+
+  it('is one transaction, per the production DDL policy', () => {
+    expect(MIGRATION.match(/^BEGIN;/gm) ?? []).toHaveLength(1);
+    expect(MIGRATION.match(/^COMMIT;/gm) ?? []).toHaveLength(1);
+  });
+});

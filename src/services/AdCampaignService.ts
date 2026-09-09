@@ -80,6 +80,31 @@ export interface SubmitCampaignInput {
   scope?: 'platform' | 'own_club';
 }
 
+export interface SponsorCampaignInput {
+  advertiserName: string;
+  headline: string;
+  slot: AdSlot;
+  imageUrl: string;
+  /** The sponsor's own https address. Stored on the campaign, never served to a browser. */
+  externalUrl: string;
+  startsAt: Date;
+  days: number;
+  contactEmail?: string | null;
+  goalImpressions?: number | null;
+  pacing?: 'even' | 'asap';
+}
+
+export type SponsorCreateResult =
+  { ok: true; campaignId: string } | { ok: false; reason: string; detail?: string };
+
+export interface AdCampaignDay {
+  day: string;
+  impressions: number;
+  viewable: number;
+  clicks: number;
+  viewers: number;
+}
+
 export type SubmitResult =
   | { ok: true; campaignId: string; diamondsCharged: number; balance: number | null }
   | { ok: false; reason: string; detail?: string; minDays?: number; maxDays?: number };
@@ -287,6 +312,57 @@ export const AdCampaignService = {
       throw error;
     }
     return ((data || []) as Record<string, unknown>[]).map(mapCampaign);
+  },
+
+  /**
+   * Platform staff open a flight for an outside advertiser. No diamonds change
+   * hands: a sponsor is invoiced off-platform by a person, so the money is not
+   * this system's business. It lands in the SAME review queue a club's flight
+   * does, because one approval path is easier to trust than two.
+   */
+  async createSponsor(input: SponsorCampaignInput): Promise<SponsorCreateResult> {
+    const { data, error } = await supabase.rpc('fn_sponsor_campaign_create', {
+      p_advertiser_name: input.advertiserName,
+      p_headline: input.headline,
+      p_slot: input.slot,
+      p_image_url: input.imageUrl,
+      p_external_url: input.externalUrl,
+      p_starts_at: input.startsAt.toISOString(),
+      p_days: input.days,
+      p_contact_email: input.contactEmail ?? null,
+      p_goal_impressions: input.goalImpressions ?? null,
+      p_pacing: input.pacing ?? 'even',
+    });
+    if (error) {
+      reportError(error, 'AdCampaignService.createSponsor');
+      return { ok: false, reason: 'rpc_failed', detail: error.message };
+    }
+    const r = (data ?? {}) as Record<string, unknown>;
+    if (r.ok === true) return { ok: true, campaignId: String(r.campaign_id) };
+    return { ok: false, reason: String(r.reason ?? 'unknown') };
+  },
+
+  /**
+   * Day-by-day numbers for one campaign, computed at the moment they are asked
+   * for. Deliberately not a rollup table and not a scheduled job: a number that
+   * is recomputed on read cannot quietly go stale, and section 11 routes every
+   * scheduled trigger through Open Claw anyway.
+   */
+  async report(campaignId: string): Promise<AdCampaignDay[]> {
+    const { data, error } = await supabase.rpc('fn_ad_campaign_report', {
+      p_campaign_id: campaignId,
+    });
+    if (error) {
+      reportError(error, 'AdCampaignService.report');
+      throw error;
+    }
+    return ((data || []) as Record<string, unknown>[]).map((r) => ({
+      day: String(r.day),
+      impressions: Number(r.impressions ?? 0),
+      viewable: Number(r.viewable ?? 0),
+      clicks: Number(r.clicks ?? 0),
+      viewers: Number(r.viewers ?? 0),
+    }));
   },
 };
 

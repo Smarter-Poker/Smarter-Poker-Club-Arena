@@ -1,202 +1,145 @@
-/**
- * A GUARANTEE IS A PROMISE - PHASE 6.
- *
- * applyPrizeGuarantee had exactly two triggers, and between them they miss an
- * entire shape of event:
- *
- *   start()        only when late_reg_levels <= 0
- *   level change   only when currentLevel >= late_reg_levels
- *
- * An event with a late-reg window that FINISHES BELOW THAT LEVEL calls it zero
- * times. Twelve of the fourteen short events died exactly there. Nine were
- * freerolls, whose pool is 0 by construction and whose guarantee is the only
- * money they will ever have: they ranked a full field - 313 and 326 players
- * among them - stamped a winner, and paid nobody a chip.
- *
- * TournamentManagerBase's own comment promises `fn_sweep_unfunded_guarantees`
- * as the safety net for this. It was never written. These pins hold the net
- * that replaced it.
- */
-import { describe, it, expect } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+/** An advertised guarantee is funded inside the same transaction that pays it. */
+import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
-const HERE = path.dirname(new URL(import.meta.url).pathname);
-const ELIM = fs.readFileSync(path.join(HERE, 'TournamentManagerEliminations.ts'), 'utf8');
-const RECOVERY = fs.readFileSync(path.join(HERE, 'tournamentRecovery.ts'), 'utf8');
-const RECONCILER = fs.readFileSync(path.join(HERE, '../services/FeeReconciler.ts'), 'utf8');
-const GAMESERVER = fs.readFileSync(path.join(HERE, '../GameServer.ts'), 'utf8');
+const migrations = join(process.cwd(), '..', 'supabase', 'migrations');
+const stripSqlComments = (sql: string): string =>
+  sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
 
-/** The file with comments stripped, so a pin cannot pass on prose. */
-function executable(src: string): string {
-  return src
-    .split('\n')
-    .filter((l) => {
-      const t = l.trimStart();
-      return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
-    })
-    .join('\n');
-}
-const CODE = executable(ELIM);
-const RECOVERY_CODE = sliceMethod(
-  executable(RECOVERY),
-  'export async function recoverStuckCompletingTournaments('
-);
-
-describe('the finish path funds the guarantee', () => {
-  it('calls applyPrizeGuarantee with a finish-specific source', () => {
-    expect(CODE).toMatch(/applyPrizeGuarantee\('finish_fallback'\)/);
-  });
-
-  it('funds BEFORE the winner prize is priced, or it would price off a stale pool', () => {
-    const fund = CODE.indexOf("applyPrizeGuarantee('finish_fallback')");
-    const price = CODE.indexOf('let winnerPrize = 0;');
-    expect(fund).toBeGreaterThan(-1);
-    expect(price).toBeGreaterThan(-1);
-    expect(fund).toBeLessThan(price);
-  });
-
-  it('uses the validated funding receipt instead of the stale local snapshot', () => {
-    const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/from\('tournaments'\)/);
-    expect(window).toMatch(/select\('prize_pool, guaranteed_prize, prize_pool_finalized'\)/);
-    expect(window).toMatch(/prize_pool_finalized !== true/);
-    expect(window).toMatch(/refreshedPool \+ 0\.005 < refreshedGuarantee/);
-  });
-
-  it('is NOT gated on prize_pool or buy_in_amount - the two filters that hid the freerolls', () => {
-    const tail = CODE.slice(CODE.indexOf('const isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).not.toMatch(/prize_pool\s*[><]/);
-    expect(window).not.toMatch(/buy_in_amount/);
-  });
-
-  it('skips satellites, which award seats rather than structure cash', () => {
-    const tail = CODE.slice(CODE.indexOf('const isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/!isSatelliteFinish/);
-  });
-
-  it('a funding failure leaves the tournament COMPLETING instead of paying below the promise', () => {
-    const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/catch/);
-    expect(window).toMatch(/guarantee_finish_fallback_failed/);
-    expect(window).toMatch(/funded === null[\s\S]*?tournamentFinished = false;[\s\S]*?return;/);
-    expect(window).toMatch(
-      /guarantee_finish_fallback_failed[\s\S]*?tournamentFinished = false;[\s\S]*?return;/
-    );
-  });
-
-  it('re-prices zero-recorded finishers after a late guarantee arrives', () => {
-    const recalcStart = CODE.indexOf('recalculateEliminatedPrizes(finalPrizePool: number)');
-    const recalcEnd = CODE.indexOf('protected tournamentFinished', recalcStart);
-    const recalc = CODE.slice(recalcStart, recalcEnd);
-    const finishTail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
-    const finishWindow = finishTail.slice(
-      0,
-      finishTail.indexOf('settleTournamentPlacesAtomically(')
-    );
-
-    expect(recalc).not.toMatch(/\.gt\('prize',\s*0\)/);
-    expect(recalc).toMatch(/payouts\.find/);
-    expect(finishWindow).toMatch(/recalculateEliminatedPrizes\(refreshedPool\)/);
-    expect(finishWindow.indexOf('fn_normalize_tournament_final_standings')).toBeLessThan(
-      finishWindow.indexOf('recalculateEliminatedPrizes(refreshedPool)')
-    );
-  });
-});
-
-describe('the recovery path proves a result before it funds the guarantee', () => {
-  it('keeps satellite and final-table-deal exits ahead of normal guarantee funding', () => {
-    const satelliteExit = RECOVERY_CODE.indexOf(
-      'GameServer.recoverStuckCompleting_satellite_skipped'
-    );
-    const dealExit = RECOVERY_CODE.indexOf('GameServer.recoverStuckCompleting_chopped_skipped');
-    const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
-
-    expect(satelliteExit).toBeGreaterThan(-1);
-    expect(dealExit).toBeGreaterThan(satelliteExit);
-    expect(funding).toBeGreaterThan(dealExit);
-  });
-
-  it('runs every read-only ranking and result gate before the money-moving RPC', () => {
-    const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
-    const readOnlyProofs = [
-      RECOVERY_CODE.indexOf(".select('id, user_id, status, position, prize, chips')"),
-      RECOVERY_CODE.indexOf('if (playersErr || !Array.isArray(players))'),
-      RECOVERY_CODE.indexOf('resolvePayoutStructure('),
-      RECOVERY_CODE.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })'),
-      RECOVERY_CODE.indexOf('if (alive.length > 1)'),
-      RECOVERY_CODE.indexOf('if (alive.length > 0 && !anyDealtIn)'),
-      RECOVERY_CODE.indexOf('if (chipsCannotRank(alive))'),
-      RECOVERY_CODE.indexOf('if (handErr)'),
-      RECOVERY_CODE.indexOf('noHandWasEverDealt({'),
-      RECOVERY_CODE.indexOf('if (collisions.length > 0)'),
-    ];
-
-    expect(funding).toBeGreaterThan(-1);
-    for (const proof of readOnlyProofs) {
-      expect(proof).toBeGreaterThan(-1);
-      expect(proof).toBeLessThan(funding);
+function newestFunction(name: string, requiredFragment?: string): string {
+  let newest = '';
+  for (const file of readdirSync(migrations)
+    .filter((entry) => entry.endsWith('.sql'))
+    .sort()) {
+    const sql = stripSqlComments(readFileSync(join(migrations, file), 'utf8'));
+    let start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+    while (start >= 0) {
+      const body = sql.indexOf('AS $', start);
+      if (body < 0) throw new Error(`${file}: ${name} has no body`);
+      const tagEnd = sql.indexOf('$', body + 4);
+      const tag = sql.slice(body + 3, tagEnd + 1);
+      const end = sql.indexOf(`${tag};`, tagEnd + 1);
+      if (end < 0) throw new Error(`${file}: ${name} has an incomplete body`);
+      const definition = sql.slice(start, end + tag.length + 1);
+      if (!requiredFragment || definition.includes(requiredFragment)) newest = definition;
+      start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, end + tag.length + 1);
     }
-  });
+  }
+  if (!newest) throw new Error(`${name} is missing`);
+  return newest;
+}
 
-  it('proves the funded row before amount-dependent pricing, result writes and settlement', () => {
-    const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
-    const finalProof = RECOVERY_CODE.indexOf('fundedRow.prize_pool_finalized !== true', funding);
-    const floorProof = RECOVERY_CODE.indexOf('fundedPool + 0.005 < fundedGuarantee', finalProof);
-    const pricing = RECOVERY_CODE.indexOf('const prizeFor =', floorProof);
-    const resultWrite = RECOVERY_CODE.indexOf('const owed = prizeFor(place)', pricing);
-    const settlement = RECOVERY_CODE.indexOf('settleTournamentPlacesAtomically(', resultWrite);
+const places = newestFunction('fn_settle_tournament_places');
+const deal = newestFunction('fn_settle_tournament_final_table_deal');
+const terminal = newestFunction(
+  'fn_complete_tournament_terminal',
+  'public.fn_settle_tournament_places('
+);
+const terminalSeatAuthority = newestFunction('fn_complete_tournament_terminal');
+const eliminations = blankNonCode(
+  readFileSync('src/tournament/TournamentManagerEliminations.ts', 'utf8')
+);
+const recovery = blankNonCode(
+  sliceMethod(
+    readFileSync('src/tournament/tournamentRecovery.ts', 'utf8'),
+    'export async function recoverStuckCompletingTournaments('
+  )
+);
+const reconciler = readFileSync('src/services/FeeReconciler.ts', 'utf8');
+const gameServer = readFileSync('src/GameServer.ts', 'utf8');
 
-    expect(finalProof).toBeGreaterThan(funding);
-    expect(floorProof).toBeGreaterThan(finalProof);
-    expect(pricing).toBeGreaterThan(floorProof);
-    expect(resultWrite).toBeGreaterThan(pricing);
-    expect(settlement).toBeGreaterThan(resultWrite);
-  });
-});
-
-describe('a winner paid nothing says so', () => {
-  it('alerts when the winner prize is zero', () => {
-    expect(CODE).toMatch(/winnerPrize <= 0 && !isSatelliteFinish/);
-    expect(CODE).toMatch(/Tournament\.winner_paid_nothing/);
-  });
-
-  it('the alert is emitted before the atomic batch is asked to settle', () => {
-    const zero = CODE.indexOf('winnerPrize <= 0 && !isSatelliteFinish');
-    const settle = CODE.indexOf('settleTournamentPlacesAtomically(');
-    expect(zero).toBeGreaterThan(-1);
-    expect(settle).toBeGreaterThan(zero);
-  });
-
-  it('an unfunded guarantee is critical; a genuinely poolless event is a warning', () => {
-    const tail = CODE.slice(CODE.indexOf('winnerPrize <= 0 && !isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('settleTournamentPlacesAtomically('));
-    expect(window).toMatch(/gtd > 0 \? 'critical' : 'warning'/);
-  });
-});
-
-describe('something finally asks whether the guarantee was kept', () => {
-  it('the reconciler exposes the check', () => {
-    expect(RECONCILER).toMatch(/export async function auditGuaranteesKept/);
-    expect(RECONCILER).toMatch(/fn_tournament_guarantee_check/);
-  });
-
-  it('it is wired into the periodic sweep beside the other audits', () => {
-    expect(GAMESERVER).toMatch(/auditGuaranteesKept\(24\)/);
-    expect(GAMESERVER).toMatch(/auditGuaranteesKept,/);
-  });
-
-  it('it detects and never repairs - no credit call in the audit path', () => {
-    const fn = RECONCILER.slice(
-      RECONCILER.indexOf('export async function auditGuaranteesKept'),
-      RECONCILER.indexOf('export async function auditSatelliteConservation')
+describe('ordinary finish funds the guarantee inside its cash transaction', () => {
+  it.each([
+    [places, 'engine.fn_settle_tournament_places'],
+    [deal, 'engine.fn_settle_tournament_final_table_deal'],
+  ])('funds and proves the locked pool before deriving a payout', (authority, source) => {
+    const satelliteRefusal =
+      authority.indexOf('satellite_has_its_own_settlement') >= 0
+        ? authority.indexOf('satellite_has_its_own_settlement')
+        : authority.indexOf('is a satellite');
+    const fund = authority.indexOf('public.fn_apply_prize_guarantee(');
+    const sourceAt = authority.indexOf(`'${source}'`, fund);
+    const receiptProof = authority.indexOf("v_guarantee_result->>'overlay_journaled'", fund);
+    const refresh = authority.indexOf('INTO v_t', receiptProof);
+    const finalized = authority.indexOf('prize_pool_finalized', refresh);
+    const poolFloor = authority.indexOf('guaranteed_prize', finalized);
+    const pricing = Math.min(
+      ...[
+        authority.indexOf('fn_ca_tournament_place_amounts', poolFloor),
+        authority.indexOf('v_total_chips', poolFloor),
+      ].filter((index) => index >= 0)
     );
-    expect(fn).not.toMatch(/fn_credit_and_log/);
-    expect(fn).not.toMatch(/fn_apply_prize_guarantee/);
+
+    expect(satelliteRefusal).toBeGreaterThan(-1);
+    expect(fund).toBeGreaterThan(satelliteRefusal);
+    expect(sourceAt).toBeGreaterThan(fund);
+    expect(receiptProof).toBeGreaterThan(sourceAt);
+    expect(refresh).toBeGreaterThan(receiptProof);
+    expect(finalized).toBeGreaterThan(refresh);
+    expect(poolFloor).toBeGreaterThan(finalized);
+    expect(pricing).toBeGreaterThan(poolFloor);
+  });
+
+  it.each([places, deal])('raises on a refused or unjournaled overlay', (authority) => {
+    expect(authority).toMatch(
+      /v_guarantee_result := public\.fn_apply_prize_guarantee\([\s\S]*?overlay_journaled[\s\S]*?RAISE EXCEPTION/
+    );
+    expect(authority).toMatch(
+      /prize_pool_finalized[\s\S]*?prize_pool[\s\S]*?guaranteed_prize[\s\S]*?RAISE EXCEPTION/
+    );
+  });
+
+  it('keeps guarantee funding, every payout, bounty, rake, closure and receipt in one terminal call', () => {
+    const placesCall = terminal.indexOf('public.fn_settle_tournament_places(');
+    const dealCall = terminal.indexOf('public.fn_settle_tournament_final_table_deal(');
+    const complete = terminal.indexOf("SET status = 'COMPLETED'");
+    const receipt = terminal.indexOf('tournament_terminal_settlements', complete);
+    expect(placesCall).toBeGreaterThan(-1);
+    expect(dealCall).toBeGreaterThan(placesCall);
+    expect(complete).toBeGreaterThan(dealCall);
+    expect(receipt).toBeGreaterThan(complete);
+    expect(terminalSeatAuthority).toMatch(
+      /fn_ca_open_tournament_seat_exit_authority[\s\S]*?fn_complete_tournament_terminal_pre_seat_guard/
+    );
+  });
+});
+
+describe('the process never funds a guarantee as a separate commit', () => {
+  it('live finish and recovery request the terminal receipt only', () => {
+    expect(eliminations).toMatch(/requestTournamentTerminalReceipt\(/);
+    expect(recovery).toMatch(/requestTournamentTerminalReceipt\(/);
+    expect(eliminations).not.toMatch(/fn_apply_prize_guarantee|applyPrizeGuarantee\(/);
+    expect(recovery).not.toMatch(/fn_apply_prize_guarantee|applyPrizeGuarantee\(/);
+  });
+
+  it('recovery proves result evidence before asking the atomic authority', () => {
+    const field = recovery.indexOf('fieldIsStillLive(');
+    const survivors = recovery.indexOf('if (live.length > 1)', field);
+    const hand = recovery.indexOf('await hasHandEvidence(tournament)', survivors);
+    const settle = recovery.indexOf('requestTournamentTerminalReceipt(', hand);
+    expect(field).toBeGreaterThan(-1);
+    expect(survivors).toBeGreaterThan(field);
+    expect(hand).toBeGreaterThan(survivors);
+    expect(settle).toBeGreaterThan(hand);
+    expect(recovery.slice(0, settle)).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
+  });
+});
+
+describe('the independent guarantee audit detects but never repairs', () => {
+  it('is wired beside the other periodic integrity checks', () => {
+    expect(reconciler).toMatch(/export async function auditGuaranteesKept/);
+    expect(reconciler).toMatch(/fn_tournament_guarantee_check/);
+    expect(gameServer).toMatch(/auditGuaranteesKept\(24\)/);
+    expect(gameServer).toMatch(/auditGuaranteesKept,/);
+  });
+
+  it('contains no guarantee or wallet payer', () => {
+    const audit = reconciler.slice(
+      reconciler.indexOf('export async function auditGuaranteesKept'),
+      reconciler.indexOf('export async function auditSatelliteConservation')
+    );
+    expect(audit).not.toMatch(/fn_credit_and_log|fn_apply_prize_guarantee|credit_player_wallet/);
   });
 });

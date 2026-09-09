@@ -46,22 +46,23 @@ const read = (p: string) => readFileSync(resolve(__dirname, '../../src', p), 'ut
 const table = read('pages/TablePage.tsx');
 
 describe('a pre-start seat-first seat leaves through its refund', () => {
-  it('handleLeaveTable routes seat-first holders to fn_leave_seat_and_refund', () => {
+  it('handleLeaveTable routes seat-first holders to the replay-safe refund service', () => {
     const body = sliceMethod(table, 'const handleLeaveTable = async () => {');
     expect(body).toContain('seatFirstBuyIn && tableState.heroSeat > 0');
-    expect(body).toContain("supabase.rpc('fn_leave_seat_and_refund'");
+    expect(body).toContain('tournamentService.leaveTournamentSeatAndRefund');
     /* It must return before ever reaching the engine-first path. Matched on
        the CALL, not the name — the rationale comment above names
        `tableService.leaveTable` too, and matching that would compare a
        comment against code. */
-    expect(body.indexOf("supabase.rpc('fn_leave_seat_and_refund'")).toBeLessThan(
+    expect(body.indexOf('tournamentService.leaveTournamentSeatAndRefund')).toBeLessThan(
       body.indexOf('await tableService.leaveTable(')
     );
   });
 
   it('both refusal paths report, so an unknown reason is searchable', () => {
-    expect(table).toContain('TablePage.leave_seat_refund_refused');
-    expect(table).toContain('TablePage.leave_table_seat_first_refused');
+    expect(table).toContain("'TablePage.leave_seat_refund'");
+    expect(table).toContain("'TablePage.leave_table_seat_first'");
+    expect(table.match(/tournamentUnregisterWasAlreadyStarted\(err\)/g)).toHaveLength(2);
   });
 });
 
@@ -80,12 +81,12 @@ describe('releasing a seat releases every claim on it', () => {
        menu's Leave Table, and the button's own label for the footer's Leave
        Seat — so both windows grow with their code. */
     const menuExit = sliceMethod(table, 'const handleLeaveTable = async () => {');
-    expect(menuExit).toContain('leave_table_seat_first_refused');
+    expect(menuExit).toContain("'TablePage.leave_table_seat_first'");
     expect(menuExit, 'the menu exit leaves pendingSeat set').toContain('setPendingSeat(null)');
     expect(menuExit).toContain('setSeatFirstConfirm(null)');
     expect(menuExit).toContain('heroSeatRef.current = 0;');
 
-    const footerExit = sliceBetween(table, 'leave_seat_refund_refused', 'Leave Seat');
+    const footerExit = sliceBetween(table, 'spectator-footer-bar__cta--leave', 'Leave Seat');
     expect(footerExit, 'the footer exit leaves pendingSeat set').toContain('setPendingSeat(null)');
     expect(footerExit).toContain('setSeatFirstConfirm(null)');
     expect(footerExit).toContain('heroSeatRef.current = 0;');

@@ -23,7 +23,23 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { parsePayoutStructure } from '../../server/src/tournament/payoutStructure.js';
+
+const ELIMINATIONS = readFileSync(
+  join(process.cwd(), 'server/src/tournament/TournamentManagerEliminations.ts'),
+  'utf8'
+);
+const CASH_MIGRATION = readdirSync(join(process.cwd(), 'supabase/migrations'))
+  .filter((name) => name.endsWith('_tournament_cash_settlement_has_one_atomic_authority.sql'))
+  .sort()
+  .at(-1);
+const CASH_SQL = CASH_MIGRATION
+  ? readFileSync(join(process.cwd(), 'supabase/migrations', CASH_MIGRATION), 'utf8')
+  : '';
+const codeOnly = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('parsePayoutStructure: unusable is null, never an empty structure', () => {
   it('returns null for a string that is not JSON, so the caller can tell UNKNOWN from zero', () => {
@@ -38,6 +54,16 @@ describe('parsePayoutStructure: unusable is null, never an empty structure', () 
 
   it('returns null when every percentage is zero', () => {
     expect(parsePayoutStructure([{ place: 1, percentage: 0 }])).toBeNull();
+  });
+
+  it('rejects a zero terminal row and a fractional place instead of moving the bubble', () => {
+    expect(
+      parsePayoutStructure([
+        { place: 1, percentage: 100 },
+        { place: 2, percentage: 0 },
+      ])
+    ).toBeNull();
+    expect(parsePayoutStructure([{ place: 1.5, percentage: 100 }])).toBeNull();
   });
 
   it('returns null for an empty array and for a non-array', () => {
@@ -65,5 +91,31 @@ describe('parsePayoutStructure: unusable is null, never an empty structure', () 
     );
     expect(asArray).toEqual(asString);
     expect(asArray!.length).toBe(2);
+  });
+});
+
+describe('a gapped ladder uses its deepest paid place as the bubble threshold', () => {
+  it('places the stone bubble after 5th, not after four structure rows', () => {
+    const parsed = parsePayoutStructure([
+      { place: 1, percentage: 40 },
+      { place: 2, percentage: 25 },
+      { place: 3, percentage: 20 },
+      { place: 5, percentage: 15 },
+    ]);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.length).toBe(4);
+    expect(Math.max(...parsed!.map((p) => p.place)) + 1).toBe(6);
+  });
+
+  it('drives hand-for-hand and terminal Bubble Promise settlement from the deepest paid place', () => {
+    const source = codeOnly(ELIMINATIONS);
+    expect(source).toMatch(/function deepestCanonicalPaidPlace\(/);
+    expect(source).toMatch(/payoutCount = deepestCanonicalPaidPlace\(paidPlaces\)/);
+    expect(source).not.toMatch(/const payoutCount = paidPlaces\?\.length/);
+    expect(source).not.toMatch(/Array\.isArray\(payouts\) \? payouts\.length : 0/);
+    expect(CASH_SQL).toMatch(/SELECT max\(\(a->>'place'\)::integer\) \+ 1\s+INTO v_bubble_place/);
+    expect(CASH_SQL).toContain(
+      'Bubble protection is part of the tournament pool, not a house overlay.'
+    );
   });
 });

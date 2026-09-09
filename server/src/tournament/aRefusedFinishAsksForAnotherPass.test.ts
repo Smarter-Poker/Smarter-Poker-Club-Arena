@@ -78,12 +78,21 @@ describe('a refused finish asks for another pass', () => {
     expect(REARM).not.toMatch(/setInterval\(/);
   });
 
-  it('the caller can only read the flag because finishTournament still releases it', () => {
-    // If a future edit stops clearing `tournamentFinished` on the fail-closed
-    // exits, the re-arm above silently becomes a no-op and this defect returns
-    // wearing the fix. That coupling is the thing worth pinning.
-    expect(FINISH).toMatch(/this\.tournamentFinished = false;/);
-    expect(FINISH.match(/this\.tournamentFinished = false;/g)?.length ?? 0).toBeGreaterThan(10);
+  it('releases the centralized guard only for a proven refusal', () => {
+    // Atomic completion has one classified failure boundary instead of the old
+    // collection of application-side payout exits. A definitive database
+    // refusal gives the finish back to the scheduler; an unknown outcome keeps
+    // ownership stopped so a possibly committed settlement is never replayed.
+    expect(FINISH).toMatch(
+      /const releaseFinishGuard = \(\): void => \{[\s\S]*?this\.tournamentFinished = false;[\s\S]*?this\.requestUrgentEliminationSweepAfter\(/
+    );
+
+    const ordinaryFailure = FINISH.slice(
+      FINISH.indexOf('let receipt: VerifiedTournamentCompletionReceipt;')
+    );
+    expect(ordinaryFailure).toMatch(
+      /const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;[\s\S]*?const outcomeUnknown =[\s\S]*?TerminalSettlementOutcomeUnknownError \|\| !provenRefusal;[\s\S]*?if \(provenRefusal\) releaseFinishGuard\(\);[\s\S]*?if \(!provenRefusal\) \{[\s\S]*?this\.fenceUnknownTerminalOutcome\('Tournament\.atomic_finish_manager_stop_failed'\);[\s\S]*?\}/
+    );
   });
 
   it('the freeze branch defers rather than dropping the finish on the floor', () => {

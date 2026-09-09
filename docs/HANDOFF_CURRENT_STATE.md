@@ -999,9 +999,9 @@ GitHub Actions secrets (already set, used by auto-deploy-hetzner.yml):
 DATABASE_URL (IPv4 Supavisor pooler - was set because the DB host is
 IPv6-only from Actions), SUPABASE_DB_PASSWORD, plus the Hetzner SSH secrets.
 
-Engine host SSH: ~/.ssh/hetzner_engine_key (READ-ONLY diagnosis is enough;
+Engine host SSH: ~~/.ssh/hetzner_engine_key (READ-ONLY diagnosis is enough;
 root@5.161.252.33). The daily-horse-audit task references a DIFFERENT key
-(~/.ssh/hetzner_deploy_ed25519_new) - both exist; hetzner_engine_key is the one
+(~~/.ssh/hetzner_deploy_ed25519_new) - both exist; hetzner_engine_key is the one
 proven to work for docker logs.
 
 Supabase vault: secret name ca_deploy_dispatch_token is EXPECTED-BUT-ABSENT by

@@ -46,7 +46,14 @@ ALTER FUNCTION fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numer
   return
  passed=0
  for tournament in [False,True]:
-  event=f"UPDATE tables SET tournament_id='{CLUB.strip(chr(39))}' WHERE id={TABLE};" if tournament else ""
+  event=(
+   f"INSERT INTO tournaments(id,status,prize_pool_finalized) "
+   f"VALUES('{CLUB.strip(chr(39))}','running',false);"
+   f"INSERT INTO tournament_players(tournament_id,user_id,status,chips) VALUES"
+   f"('{CLUB.strip(chr(39))}','{A}','playing',100),"
+   f"('{CLUB.strip(chr(39))}','{B}','playing',100);"
+   f"UPDATE tables SET tournament_id='{CLUB.strip(chr(39))}' WHERE id={TABLE};"
+  ) if tournament else ""
   for name,stacks in [("duplicate",payload(a=95,b=110,duplicate=True)),("mixed",payload(mixed=True)),("missing_id","'[{}]'::jsonb"),("string_amount",f"""'[{{"user_id":"{A}","stack":"100"}}]'::jsonb""")]:
    run("BEGIN;"+ddl+SETUP+event+f"""
  DO $check$ DECLARE before_state jsonb; after_state jsonb; caught boolean:=false;

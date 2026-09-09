@@ -1,0 +1,21 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "One three-seat Spin authority hard-codes and authenticates the exact 10,000,000-frequency, 2.76-EV product ladder before money, requires three exact paid starting stacks before a new draw, then replays an existing immutable draw after play without re-imposing the pre-hand stack distribution or calling lower money primitives. It books and proves the paid identities, retains the reserve lock through its funded draw, settles the draw, reads back the stamped tournament contract, and returns exact reserve, journal, and escrow evidence. Every tournament seat create or revive enters below the global terminal lock; manager assignment and each rebuy commit seat, roster, exact count and immutable accepted-hand evidence together. Paid-seat triggers reject zero or wrong starting stacks before every caller bypass; old repair and split rebuy paths are absent from the schema.",
+  "tables": ["tournament_spin_settlement_cutover"],
+  "functions": [
+    "fn_assign_tournament_player_seat_atomic",
+    "fn_ca_assign_tournament_player_seat_locked",
+    "fn_ca_tournament_seat_cap",
+    "fn_ca_choose_tournament_seat_locked",
+    "fn_ca_latest_committed_knockout_candidate",
+    "fn_ca_lock_tournament_seat_acquisition",
+    "fn_ca_process_tournament_chip_purchase_money_v1",
+    "process_tournament_rebuy",
+    "fn_spin_draw_and_settle",
+    "fn_spin_reserve_receipt_is_immutable",
+    "fn_spin_reserve_row_requires_exact_journal",
+    "fn_spin_tournament_contract_is_draw",
+    "fn_tournament_live_seat_acquisition_requires_authority"
+  ],
+  "columns": {}
+}

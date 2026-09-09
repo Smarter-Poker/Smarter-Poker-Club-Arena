@@ -39,21 +39,19 @@ describe('the drain waits for the money', () => {
     expect(code.indexOf('e.hasSettlementInFlight()')).toBeLessThan(code.indexOf('!e.isRunning()'));
   });
 
-  it('the in-flight flag is cleared by the promise, not by the next hand', () => {
+  it('every in-flight write stays visible until its own promise settles', () => {
     const base = read('ServerTableEngineBase.ts');
-    expect(base).toContain('protected settlementInFlight: Promise<void> | null = null;');
+    expect(base).toContain('protected settlementInFlight: Set<Promise<void>> = new Set();');
     expect(base).toContain(
-      'hasSettlementInFlight(): boolean {\n    return this.settlementInFlight !== null;'
+      'hasSettlementInFlight(): boolean {\n    return (this.settlementInFlight?.size ?? 0) > 0;'
     );
-    // identity-checked, so a stale promise cannot clear a newer barrier
-    expect(base).toContain(
-      'if (this.settlementInFlight === tracked) this.settlementInFlight = null;'
-    );
-    // .then(clear).catch(clear), not .then(clear, clear): the two-arg form
-    // handles rejection identically but noUnhandledRejections.law reads
-    // `void ....then(` and asks for a visible .catch. Changed 2026-09-06 when
-    // that law caught this file.
-    expect(base).toContain('void tracked.then(clear).catch(clear);');
+    // A gameplay timeout may let a newer hand start while the older promise
+    // still writes. A set retains both instead of replacing the first.
+    expect(base).toContain('settlements.add(p);');
+    expect(base).toContain('settlements.delete(tracked);');
+    // Rejection is not equivalent to a durable boundary.
+    expect(base).toContain('if (failed) this.terminalBoundaryPersistenceFailed = true;');
+    expect(base).toContain('.catch(() => clear(true));');
   });
 
   it('both settle paths register their barrier with the tracker', () => {

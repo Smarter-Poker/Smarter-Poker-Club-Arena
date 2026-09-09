@@ -17,14 +17,12 @@
  *      (fn_take_seat_and_buy_in), so a player can never be charged without a
  *      seat or hold a seat without paying.
  *   3. Larger SNG fields and MTTs are untouched: they are events, not tables.
- *   4. An early sitter's stack is re-synced at start, because the tier drawn
- *      then may carry a different starting stack than the placeholder they
- *      sat down with (spin tiers run 300/400/500).
+ *   4. Every paid seat is born with exactly the board's positive starting
+ *      stack. The process never repairs or tops it up later.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceMethod } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -47,6 +45,13 @@ const ATOMIC_CREATION = readFileSync(
   resolve(
     __dirname,
     '../../supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql'
+  ),
+  'utf8'
+);
+const SPIN_CUTOVER = readFileSync(
+  resolve(
+    __dirname,
+    '../../supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -216,23 +221,78 @@ describe('the client buys the seat instead of opening a cash buy-in', () => {
   });
 });
 
-describe('an early sitter is not left on the placeholder stack', () => {
-  it('start credits seated stacks to the drawn tier', () => {
-    // The sync moved into creditSeatStacks() on 2026-08-21 so it could be
-    // called from a timer AFTER the wheel (Dan: "AFTER THE SPIN COMPLETES,
-    // CHIP STACKS GET ADDED"). It is the same write, made idempotent and
-    // reusable; tests/unit/spinPostReveal.test.ts pins the new ordering.
-    expect(BASE).toMatch(/seat_stack_credit_failed|Credited .* seat\(s\) to/);
-    const credit = sliceMethod(BASE, 'protected async creditSeatStacks');
-    expect(credit).toMatch(/from\('table_seats'\)/);
-    expect(credit).toMatch(/\.update\(\{ stack: target \}\)/);
-    expect(credit).toMatch(/Number\(tournament\?\.starting_chips\)/);
+describe('a paid seat owns its exact starting stack at creation', () => {
+  it('the database rejects every non-positive tournament seat before caller bypasses', () => {
+    expect(SPIN_CUTOVER).toContain('TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK');
+    const invariant = SPIN_CUTOVER.indexOf('TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK');
+    const engineBypass = SPIN_CUTOVER.indexOf('public.fn_caller_is_engine()', invariant);
+    expect(invariant).toBeGreaterThan(-1);
+    expect(engineBypass).toBeGreaterThan(invariant);
   });
 
-  it('a seat still holds ZERO chips until the tier is known', () => {
-    // The reservation model: stack depth belongs to the tier (300/400/500),
-    // so there is no honest number to seat a player with before the draw.
-    // Crediting at start put stacks on the felt mid-spin.
-    expect(BASE).toMatch(/deferStacksForSpinReveal/);
+  it('every canonical seat-first seat must equal positive tournaments.starting_chips', () => {
+    expect(SPIN_CUTOVER).toContain('SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS');
+    expect(SPIN_CUTOVER).toMatch(
+      /lower\(COALESCE\(v_variant,\s*''\)\)\s*=\s*'spin'[\s\S]*?COALESCE\(v_max_players,\s*0\)\s*<=\s*2/
+    );
+    expect(SPIN_CUTOVER).toMatch(/NEW\.stack IS DISTINCT FROM v_starting_chips/);
+  });
+
+  it('the process has no stack top-up or deferred-credit authority', () => {
+    expect(BASE).not.toMatch(/creditSeatStacks/);
+    expect(BASE).not.toMatch(/deferStacksForSpinReveal/);
+    expect(BASE).not.toMatch(/seat_stack_credit_failed/);
+  });
+});
+
+describe('the stack repair fleet is retired behind one serialized proof', () => {
+  it('the Spin entry and draw authorities both require exact live starting stacks', () => {
+    expect(SPIN_CUTOVER).toContain('v_exact_seat_stacks');
+    expect(SPIN_CUTOVER).toContain('v_exact_roster_stacks');
+    expect(SPIN_CUTOVER).toMatch(/s\.stack IS NOT DISTINCT FROM v_t\.starting_chips/);
+    expect(SPIN_CUTOVER).toMatch(/tp\.chips IS NOT DISTINCT FROM v_t\.starting_chips/);
+  });
+
+  it('the seat trigger propagates booking failure instead of catching and continuing', () => {
+    const triggerAt = SPIN_CUTOVER.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_seat_change_syncs_seat_first_count()'
+    );
+    const triggerEnd = SPIN_CUTOVER.indexOf('$seat_change$;', triggerAt);
+    expect(triggerAt).toBeGreaterThan(-1);
+    expect(triggerEnd).toBeGreaterThan(triggerAt);
+    const trigger = SPIN_CUTOVER.slice(triggerAt, triggerEnd);
+    expect(trigger).toContain('PERFORM public.fn_sync_seat_first_player_count(v_tid);');
+    expect(trigger).not.toMatch(/EXCEPTION\s+WHEN\s+OTHERS/i);
+    expect(trigger).not.toMatch(/IN\s*\(\s*'spin'\s*,\s*'sng'\s*\)/i);
+  });
+
+  it('takes the cron advisory lock, proves no re-scheduler or backlog, then drops the repair', () => {
+    const retirementAt = SPIN_CUTOVER.indexOf('DO $retire_stack_repair$');
+    const retirementEnd = SPIN_CUTOVER.indexOf('$retire_stack_repair$;', retirementAt);
+    expect(retirementAt).toBeGreaterThan(-1);
+    expect(retirementEnd).toBeGreaterThan(retirementAt);
+    const retirement = SPIN_CUTOVER.slice(retirementAt, retirementEnd);
+    expect(retirement).toContain(
+      "pg_advisory_xact_lock(hashtext('credit-stalled-seat-first-stacks'))"
+    );
+    expect(retirement).toContain('a stored function can still recreate or call the stack repair');
+    for (const table of [
+      'public.tournaments',
+      'public.tables',
+      'public.table_seats',
+      'public.tournament_players',
+      'public.hand_history',
+    ]) {
+      expect(retirement).toContain(`LOCK TABLE ${table} IN SHARE MODE`);
+    }
+    expect(retirement).toContain('cron.unschedule(v_job.jobid)');
+    const dropRepair = SPIN_CUTOVER.indexOf(
+      'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT',
+      retirementEnd
+    );
+    expect(dropRepair).toBeGreaterThan(retirementEnd);
+    expect(retirement).not.toMatch(/EXECUTE\s+'DROP FUNCTION/i);
+    expect(retirement).toContain('stack repair backlog is not zero');
+    expect(retirement).toContain('seat-first stack invariant is not clean');
   });
 });

@@ -61,8 +61,8 @@ describe('Leave Table (the menu door)', () => {
     // whole outcome).
     expect(body).not.toMatch(/setLeaveNotice\((?!null)/);
     const refusals = body.match(/goToLobbyKeepingSeat\(/g) ?? [];
-    // stay clock, seat-first refused, seat-first threw, engine refused, threw
-    expect(refusals.length).toBeGreaterThanOrEqual(5);
+    // stay clock, seat-first refusal/error, engine refusal, engine error
+    expect(refusals.length).toBeGreaterThanOrEqual(4);
     // and the engine's own reason still leads the message
     expect(body).toMatch(/goToLobbyKeepingSeat\(\s*`\$\{result\.error\}/);
   });
@@ -100,6 +100,11 @@ describe('the tab X (the other door)', () => {
 });
 
 describe('the helpers that make it true', () => {
+  it('bootstrap never repairs tournament seat ownership with a raw client write', () => {
+    expect(PAGE).not.toMatch(/DUPLICATE_SEATS_DETECTED|Duplicate_seat_cleanup/);
+    expect(PAGE).not.toMatch(/\.from\('table_seats'\)[\s\S]{0,500}\.update\(\{\s*left_at:/);
+  });
+
   it('showLobbyNow navigates to the exit destination, once per leave', () => {
     const helper = slice('const showLobbyNow = ', 'const goToLobbyKeepingSeat = ');
     expect(helper).toMatch(/if \(leaveNavigatedRef\.current\) return;/);
@@ -163,14 +168,14 @@ describe('the lobby comes first, the cash-out follows', () => {
     expect(body.slice(engine)).not.toMatch(/navigate\(/);
   });
 
-  it('the seat-first refund door navigates before its RPC too', () => {
+  it('the seat-first refund door navigates before its replay-safe service call too', () => {
     const body = slice(
       'if (seatFirstBuyIn && tableState.heroSeat > 0) {',
       'const heroPlayer = tableState.players'
     );
-    const rpc = body.indexOf("supabase.rpc('fn_leave_seat_and_refund'");
-    expect(rpc).toBeGreaterThan(-1);
-    expect(body.slice(0, rpc)).toMatch(/showLobbyNow\(\);/);
+    const refund = body.indexOf('tournamentService.leaveTournamentSeatAndRefund');
+    expect(refund).toBeGreaterThan(-1);
+    expect(body.slice(0, refund)).toMatch(/showLobbyNow\(\);/);
     expect(body).not.toMatch(/navigate\(`\/clubs\/\$\{backTo\}`\)/);
   });
 

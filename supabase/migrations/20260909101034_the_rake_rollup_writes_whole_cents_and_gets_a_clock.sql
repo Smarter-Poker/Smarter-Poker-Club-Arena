@@ -85,14 +85,12 @@ $old$  ,
                       WHERE rd.union_id = c_union AND rd.day = gs::date);
   IF v_n > 0 THEN RAISE EXCEPTION '% day(s) of the rake rollup are still missing', v_n; END IF;
 
-  /* nothing has ever scheduled the builder: the only refresh path is a side
-     effect of fn_union_settle_player_pnl happening to run over a stale range */
-  PERFORM cron.schedule('union-rake-rollup-catchup-daily', '20 1 * * *',
-    $c$SELECT CASE WHEN pg_try_advisory_lock(hashtext('union-rake-rollup-catchup'))
-                THEN (SELECT public.fn_union_rake_rollup_catchup_all(14))::text
-                ELSE 'busy' END$c$);
-  SELECT count(*) INTO v_n FROM cron.job WHERE jobname = 'union-rake-rollup-catchup-daily' AND active;
-  IF v_n <> 1 THEN RAISE EXCEPTION 'the rollup catch-up did not get a schedule'; END IF;
+  /* WITHDRAWN 2026-09-09. This block scheduled a daily catch-up, and the
+     repository refused the push: a schedule that repairs something is a
+     band-aid (10.12). The work moved to the one caller that needs it - the
+     weekly cascade warms the days it is about to read, before it takes its
+     first treasury lock - in the migration
+     the_settlement_warms_its_own_cache_before_it_takes_a_treasury_lock. */
 
   /* =================================================================== */
   /* A PERIOD IS MINTED ON THE WEEK THE UNION ACTUALLY SETTLES ON.       */

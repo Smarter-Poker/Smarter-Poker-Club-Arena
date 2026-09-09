@@ -1,72 +1,116 @@
-import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { spinTier, spinBlindsForLevel } from '../config/spinSpec.js';
+import { describe, expect, it, vi } from 'vitest';
+import { spinPostRevealMs } from '../config/spinSpec.js';
+import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
 
-// Execute the real presentation transformation after the atomic receipt has
-// already supplied its committed multiplier. Money fields never enter this
-// patch; they reach memory separately from the validated receipt.
+// Execute the real start fragment, including the RPC loop and the presentation
+// transformation. Only external I/O is stubbed; the booked receipt remains the
+// sole source of multiplier-specific blinds and payouts.
 const source = readFileSync(join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'), 'utf8');
-const begin = source.indexOf('const tier = spinTier(spinMultiplier);');
-const end = source.indexOf('let spinPresentationWritten = false;', begin);
+const begin = source.indexOf('const buyIn = Number(tournament.buy_in_amount) || 0;');
+const end = source.indexOf('let spinPresentationWritten = playedSpinRecovery !== null;', begin);
 if (begin < 0 || end <= begin) throw new Error('Spin start fragment could not be located');
 const compiled = ts.transpileModule(
-  'function run() { ' +
+  'async function run() { ' +
     source.slice(begin, end) +
     '\nreturn spinPresentationPatch; }\nreturn run.call(this);',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
+
+class TestTournamentLifecycleAbortedError extends Error {}
+
 const execute = new Function(
-  'spinMultiplier',
-  'spinTier',
-  'spinBlindsForLevel',
-  'playedSpinRecovery',
   'tournament',
+  'supabase',
+  'spinRuleManifest',
+  'readFundedSpinDraw',
+  'launchId',
+  'reportError',
+  'console',
+  'playedSpinRecovery',
+  'lifecycle',
+  'TournamentLifecycleAbortedError',
+  'tableStateHub',
+  'spinPostRevealMs',
   compiled
 );
 
-describe('the committed Spin tier determines the presentation patch', () => {
+function receipt(booked: number) {
+  const ruleManifest = spinRuleManifest(1, 1000);
+  const tier = ruleManifest.tiers.find((candidate) => candidate.multiplier === booked)!;
+  return {
+    ok: true,
+    replay: true,
+    tournament_id: 'test-spin',
+    launch_id: 'launch',
+    buy_in: 1,
+    multiplier: booked,
+    prize_pool: booked,
+    pool_covered: booked,
+    operator_shortfall: 0,
+    starting_chips: 1000,
+    blind_structure: tier.blind_structure,
+    payout_structure: tier.payout_structure,
+    locked: [],
+    entrants: [1, 2, 3].map((i) => ({ user_id: `user-${i}`, registration_id: `entry-${i}` })),
+    rule_manifest: ruleManifest,
+    rule_sha256: 'a'.repeat(64),
+    rule_provenance: 'at_draw',
+  };
+}
+
+async function run(drawn: number, booked: number) {
+  const rpc = vi.fn(async () => ({ data: receipt(booked), error: null }));
+  const patch = await execute.call(
+    {
+      tournamentId: 'test-spin',
+      tournamentLeaseGeneration: 'lease',
+      seatFirstTableIds: [],
+      spinRevealLagMs: 0,
+      spinRevealAt: 0,
+      assertLifecycleCurrent: vi.fn(),
+    },
+    { buy_in_amount: 1, starting_chips: 1000, spin_multiplier: drawn },
+    { rpc },
+    spinRuleManifest,
+    readFundedSpinDraw,
+    'launch',
+    vi.fn(),
+    { log: vi.fn() },
+    null,
+    { generation: 1 },
+    TestTournamentLifecycleAbortedError,
+    { emitEvent: vi.fn() },
+    spinPostRevealMs
+  );
+  return { patch, rpc };
+}
+
+describe('the booked Spin tier determines the presentation patch', () => {
   it.each([
-    [10, [80, 20]],
-    [2, [100]],
-    [25, [80, 12, 8]],
-  ])('%sx produces its canonical payout display', (committed, percentages) => {
-    const patch = execute.call(
-      { spinRevealLagMs: 12, spinRevealAt: 0 },
-      committed,
-      spinTier,
-      spinBlindsForLevel,
-      null,
-      {}
-    );
-    expect(patch.payout_structure).toEqual(
-      (percentages as number[]).map((percentage, i) => ({ place: i + 1, percentage }))
-    );
-    expect(patch.blind_structure).toHaveLength(12);
-    expect(
-      patch.blind_structure.every((level: { duration: number }) => level.duration === 180)
-    ).toBe(true);
-    expect(patch).not.toHaveProperty('spin_multiplier');
-    expect(patch).not.toHaveProperty('prize_pool');
-    expect(patch).not.toHaveProperty('starting_chips');
-  });
+    [2, 10, [80, 20]],
+    [10, 2, [100]],
+    [2, 25, [80, 12, 8]],
+    [25, 10, [80, 20]],
+    [10, 10, [80, 20]],
+  ])(
+    'projection %s and booked %s produce the booked payout',
+    async (drawn, booked, percentages) => {
+      const { patch, rpc } = await run(drawn, booked);
 
-  it('preserves the historical reveal timestamps when recovering an already-played Spin', () => {
-    const historical = {
-      spin_reveal_lag_ms: 741,
-      spin_reveal_at: '2026-09-09T12:34:56.789Z',
-    };
-    const patch = execute.call(
-      { spinRevealLagMs: 99_999, spinRevealAt: Date.parse('2026-09-09T23:59:59.999Z') },
-      10,
-      spinTier,
-      spinBlindsForLevel,
-      { recovery: true },
-      historical
-    );
-
-    expect(patch.spin_reveal_lag_ms).toBe(historical.spin_reveal_lag_ms);
-    expect(patch.spin_reveal_at).toBe(historical.spin_reveal_at);
-  });
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(patch.payout_structure).toEqual(
+        (percentages as number[]).map((percentage, i) => ({ place: i + 1, percentage }))
+      );
+      expect(patch.blind_structure).toHaveLength(12);
+      expect(
+        patch.blind_structure.every((level: { duration: number }) => level.duration === 180)
+      ).toBe(true);
+      expect(patch).not.toHaveProperty('spin_multiplier');
+      expect(patch).not.toHaveProperty('prize_pool');
+      expect(patch).not.toHaveProperty('starting_chips');
+    }
+  );
 });

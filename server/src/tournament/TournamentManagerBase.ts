@@ -1,3 +1,9 @@
+import {
+  continueBookedSpinBlinds,
+  readFundedSpinDraw,
+  spinRuleManifest,
+  type FundedSpinDraw,
+} from './SpinDrawReceipt.js';
 /**
  * TournamentManager, layer 1/3 — state, lifecycle, blinds, breaks.
  *
@@ -15,13 +21,11 @@ import { supabase } from '../services/supabase.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
-  SPIN_TIERS,
   SPIN_REVEAL,
   spinRevealToDealMs,
   spinRevealTotalMs,
   spinPostRevealMs,
   SPIN_SEATS as SPEC_SPIN_SEATS,
-  spinTier,
   spinRakeRate,
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
@@ -75,7 +79,6 @@ import {
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
-import { parseSpinSettlementReceipt, type SpinSettlementReceipt } from './spinSettlementReceipt.js';
 import {
   parsePlayedSpinLaunchRecoveryProof,
   type PlayedSpinLaunchRecoveryProof,
@@ -3287,54 +3290,48 @@ export abstract class TournamentManagerBase {
       // multiplier, readable by any lobby client doing division. The only
       // draw a client cannot read early is one that has not happened yet, so
       // the multiplier is decided HERE, at start, and settled in the same
-      // transaction by fn_spin_draw_and_settle:
+      // transaction by fn_spin_draw_and_settle_atomic:
       //   collected  = seats x buy_in      (no fee on top — a Spin is not 10+1)
       //   house_rake = rake_rate x collected, FIXED, to rake_records
       //   reserve_in = the remainder, into the pool
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         const buyIn = Number(tournament.buy_in_amount) || 0;
-        const seats = SPEC_SPIN_SEATS;
-        const rakeRate = spinRakeRate(buyIn);
-        let spinReceipt: SpinSettlementReceipt | null = null;
-        let spinFailure = 'atomic authority returned no receipt';
+        const ruleManifest = spinRuleManifest(buyIn, Number(tournament.starting_chips) || 0);
+        let fundedSpin: FundedSpinDraw | null = null;
+        let drawFailure = 'atomic authority returned no funded receipt';
 
         /*
          * THE DRAW, ENTRY BOOKING, RESERVE DEBIT, JOURNAL AND TOURNAMENT
          * CONTRACT COMMIT TOGETHER (2026-09-08).
          *
-         * The old process called fn_spin_draw_multiplier, exposed the wheel,
-         * then called fn_spin_settle_game. A crash or a second Spin between
-         * those calls left a real draw without its exact journal or let the
-         * next game consume the balance the first draw had only observed.
-         * The combined authority owns the tournament and reserve locks, is
-         * replay-safe by tournament id, and returns the immutable evidence the
-         * process must prove before it may reveal or deal.
+         * The combined authority freezes the exact entrants and rule manifest,
+         * owns the launch and reserve locks, and commits an immutable funded
+         * receipt with the draw. A response loss replays that receipt instead
+         * of drawing or settling again. Played-Spin recovery must receive the
+         * same receipt, but it does not reveal or project the presentation a
+         * second time.
          */
-        for (let attempt = 1; attempt <= 3 && !spinReceipt; attempt++) {
+        for (let attempt = 1; attempt <= 3 && !fundedSpin; attempt++) {
           try {
-            const settlement = await supabase.rpc('fn_spin_draw_and_settle', {
+            const { data, error } = await supabase.rpc('fn_spin_draw_and_settle_atomic', {
               p_tournament_id: this.tournamentId,
-              p_tiers: SPIN_TIERS.map((tier) => ({
-                multiplier: tier.multiplier,
-                freq: tier.freq,
-                reserveThresholdX: tier.reserveThresholdX,
-              })),
+              p_launch_id: launchId,
+              p_lease_generation: this.tournamentLeaseGeneration,
+              p_rule_manifest: ruleManifest,
             });
             this.assertLifecycleCurrent(lifecycle);
-            const { data: rawReceipt, error: settlementError } = settlement;
-            if (settlementError) {
-              throw new Error(settlementError.message || 'atomic_spin_settlement_error');
+            if (error || !data?.ok) {
+              throw new Error(error?.message || data?.reason || 'spin_draw_receipt_unavailable');
             }
-            spinReceipt = parseSpinSettlementReceipt(rawReceipt, {
+            fundedSpin = readFundedSpinDraw(data, {
               tournamentId: this.tournamentId,
+              launchId,
               buyIn,
-              seats,
-              rakeRate,
             });
-          } catch (error: any) {
-            if (error instanceof TournamentLifecycleAbortedError) throw error;
-            spinFailure = error?.message ? String(error.message) : String(error);
+          } catch (err: any) {
+            if (err instanceof TournamentLifecycleAbortedError) throw err;
+            drawFailure = err?.message ? String(err.message) : String(err);
             if (attempt < 3) {
               await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
               this.assertLifecycleCurrent(lifecycle);
@@ -3342,22 +3339,22 @@ export abstract class TournamentManagerBase {
           }
         }
         this.assertLifecycleCurrent(lifecycle);
-        if (!spinReceipt) {
+        if (!fundedSpin) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic Spin draw and settlement was not proven after 3 attempts (${spinFailure}) - standing down before reveal and RUNNING; the incomplete launch receipt will replay the same database authority`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Immutable funded Spin receipt was not proven after 3 attempts (${drawFailure}) - standing down before reveal and RUNNING; the incomplete launch will replay the same database authority`
             ),
-            'Tournament.spin_settle_failed'
+            'Tournament.spin_draw_unavailable'
           );
           this.running = false;
           return;
         }
 
-        const spinMultiplier = spinReceipt.multiplier;
-        const prizePool = spinReceipt.prizePool;
-        const lockedTiers = spinReceipt.lockedTiers;
+        const spinMultiplier = fundedSpin.multiplier;
+        const prizePool = fundedSpin.prizePool;
+        const lockedTiers = fundedSpin.locked;
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x atomically committed - pool ${prizePool}, rake ${spinReceipt.houseRake}, reserve ${spinReceipt.reserveBalance}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x immutable funded receipt proven (${fundedSpin.provenance}, ${fundedSpin.ruleHash.slice(0, 12)}) - pool ${prizePool}`
         );
 
         /**
@@ -3435,31 +3432,11 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
-        // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
-        // Stack 1000, spinSpec SPIN_STACKS), written at creation and held by
-        // the seat from the moment the buy-in is paid. This comment used to
-        // read "300 chips at 2x, 500 chips at 500x", describing the retired
-        // behaviour where the wheel decided how many chips you played with.
-        // The code below never did that; the sentence did, and spinSpec warns
-        // in as many words not to reintroduce it. Since the draw moved to
-        // start, creation writes only a smallest-tier placeholder, so the
-        // blinds MUST be rewritten here — before
-        // createTablesAndSeatPlayers below reads them — or a 500x would run
-        // on 1-minute levels.
-        // Settlement may adopt an already-booked multiplier. Derive every
-        // tier-dependent field from that final value, including payout shares.
-        const tier = spinTier(spinMultiplier);
-        const spinBlinds = Array.from({ length: 12 }, (_, i) => {
-          const b = spinBlindsForLevel(i + 1);
-          return {
-            level: i + 1,
-            smallBlind: b.small,
-            bigBlind: b.big,
-            ante: 0,
-            duration: (tier?.levelMinutes ?? 3) * 60,
-          };
-        });
+        // Recovery takes every tier-dependent play rule from the immutable
+        // funded receipt. It never substitutes rules from the current binary.
+        // The board-owned stack was already funded and is independently
+        // checked below against both the roster and every occupied seat.
+        const spinBlinds = fundedSpin.blinds;
 
         // The atomic database authority already owns and stamped
         // prize_pool, spin_multiplier and spin_locked_tiers. This follow-up is
@@ -3470,10 +3447,7 @@ export abstract class TournamentManagerBase {
         const spinPresentationPatch = {
           is_premium_spin: spinMultiplier >= 100,
           blind_structure: spinBlinds,
-          payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
-            place: i + 1,
-            percentage: Math.round(pct * 10000) / 100,
-          })),
+          payout_structure: fundedSpin.payouts,
           /* THE ONE NUMBER DAN ASKS ABOUT, WRITTEN DOWN (2026-08-31 audit).
              How far behind the third payment the wheel actually went out.
              It was computed on every spin, logged to the console and sent to
@@ -3510,7 +3484,12 @@ export abstract class TournamentManagerBase {
               ? new Date(this.spinRevealAt).toISOString()
               : null,
         };
-        let spinPresentationWritten = false;
+        /* A played Spin already projected the exact receipt before its first
+           hand. Recovery proves and adopts that immutable receipt in memory,
+           but must not rewrite presentation timestamps or emit the wheel a
+           second time. A fresh launch still proves the presentation write
+           before it may complete. */
+        let spinPresentationWritten = playedSpinRecovery !== null;
         let spinPresentationLastError = '';
         const spinPresentationProjection = Object.keys(spinPresentationPatch).join(',');
         for (let attempt = 1; attempt <= 3 && !spinPresentationWritten; attempt++) {
@@ -5386,8 +5365,8 @@ export abstract class TournamentManagerBase {
         String(t?.variant ?? '').toLowerCase() === 'spin' ||
         String(t?.tournament_type ?? '').toUpperCase() === 'SPIN';
       if (isSpin) {
-        const b = spinBlindsForLevel(i + 1);
         const lastRow = blindStructure[blindStructure.length - 1] ?? {};
+        const b = continueBookedSpinBlinds(lastRow, i + 1) ?? spinBlindsForLevel(i + 1);
         return {
           ...lastRow,
           level: i + 1,

@@ -50,7 +50,7 @@ const tsCode = (src: string) =>
 
 const MIGRATION = 'supabase/migrations/20260822030000_union_level_spin_reserve_wallet.sql';
 const ATOMIC_MIGRATION =
-  'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql';
+  'supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql';
 
 const migration = sqlCode(read(MIGRATION));
 const atomicMigration = sqlCode(read(ATOMIC_MIGRATION));
@@ -158,10 +158,12 @@ describe('Spin reserve ownership', () => {
     expect(migration).toMatch(/'merge', r\.balance/);
   });
 
-  it('keeps reserve ownership inside the one atomic database authority', () => {
-    const call = sliceCall(engine, "supabase.rpc('fn_spin_draw_and_settle'");
+  it('keeps reserve ownership inside the launch-bound atomic database authority', () => {
+    const call = sliceCall(engine, "supabase.rpc('fn_spin_draw_and_settle_atomic'");
     expect(call).toMatch(/p_tournament_id:\s*this\.tournamentId/);
-    expect(call).toMatch(/p_tiers:\s*SPIN_TIERS\.map/);
+    expect(call).toMatch(/p_launch_id:\s*launchId/);
+    expect(call).toMatch(/p_lease_generation:\s*this\.tournamentLeaseGeneration/);
+    expect(call).toMatch(/p_rule_manifest:\s*ruleManifest/);
     expect(call).not.toMatch(/p_club_id|p_union_id|union_id/);
 
     // The two old process-side doors remain database primitives during the
@@ -170,20 +172,22 @@ describe('Spin reserve ownership', () => {
 
     const authority = (() => {
       const start = atomicMigration.indexOf(
-        'CREATE OR REPLACE FUNCTION public.fn_spin_draw_and_settle('
+        'CREATE OR REPLACE FUNCTION public.fn_spin_draw_and_settle_atomic('
       );
       expect(start).toBeGreaterThan(-1);
       const source = atomicMigration.slice(start);
-      const open = source.indexOf('AS $spin_authority$');
-      const close = source.indexOf('$spin_authority$;', open + 1);
+      const open = source.indexOf('AS $function$');
+      const close = source.indexOf('$function$;', open + 1);
       expect(open).toBeGreaterThan(-1);
       expect(close).toBeGreaterThan(open);
       return source.slice(open, close);
     })();
     expect(authority).toMatch(
-      /SELECT t\.id, t\.club_id[\s\S]*INTO v_t[\s\S]*FROM public\.tournaments t[\s\S]*WHERE t\.id = p_tournament_id[\s\S]*FOR UPDATE/
+      /SELECT \* INTO v_t FROM public\.tournaments WHERE id = p_tournament_id/
     );
-    expect(authority).toMatch(/v_owner\s*:=\s*public\.fn_spin_reserve_pool\(v_t\.club_id\)/);
-    expect(authority).toMatch(/public\.fn_spin_settle_game\(\s*p_tournament_id, v_t\.club_id/);
+    expect(authority).toMatch(/public\.fn_spin_draw_multiplier\(v_t\.club_id, v_t\.buy_in_amount/);
+    expect(authority).toMatch(
+      /public\.fn_spin_settle_game\(p_tournament_id, v_t\.club_id,\s*v_t\.buy_in_amount/
+    );
   });
 });

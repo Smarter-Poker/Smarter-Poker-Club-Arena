@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
@@ -21,7 +21,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(paidEvidence).toBeGreaterThan(-1);
     expect(claim).toBeGreaterThan(paidEvidence);
     for (const mutation of [
-      "supabase.rpc('fn_spin_draw_and_settle'",
+      "supabase.rpc('fn_spin_draw_and_settle_atomic'",
       'await this.createTablesAndSeatPlayers(tournament)',
     ]) {
       const mutationAt = start.indexOf(mutation);
@@ -81,7 +81,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(begin).toContain('return null;');
 
     const refusal = start.indexOf('if (!launchClaim || launchClaim.completed)');
-    const firstMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle'");
+    const firstMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     expect(refusal).toBeGreaterThan(-1);
     expect(refusal).toBeLessThan(firstMutation);
     expect(start.slice(refusal, firstMutation)).toMatch(
@@ -93,7 +93,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(begin).toContain("result.completed === true && result.status === 'RUNNING'");
 
     const completedReceipt = start.indexOf('if (!launchClaim || launchClaim.completed)');
-    const firstSetupMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle'");
+    const firstSetupMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     const firstDealerAdmission = start.indexOf('this.admitManagedTableEngine(');
 
     expect(completedReceipt).toBeGreaterThan(-1);
@@ -144,11 +144,19 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(prove).toContain('Number(row.chips) < 0');
     expect(prove).toContain('const expectedFloor = fundingFieldSize * startingChips;');
     expect(prove).toContain('launchStacksMeetFundingFloor(');
+    expect(prove).toContain('Number(row.chips) !== startingChips');
+    expect(prove).toContain(
+      "return refuse('an ordinary seat-first roster does not hold its exact starting stacks')"
+    );
     expect(prove).toContain('the playing roster holds no chips at all');
     expect(prove).toContain('durableTables.length !== this.tableEngines.size');
     expect(prove).toContain('ownedSeats.length !== 1');
     expect(prove).toContain('seat.table_id !== player.table_id');
+    expect(prove).toContain('Number(seat.stack) !== Number(player.chips)');
     expect(prove).toContain('Number(seat.stack) < 0');
+    expect(prove).toMatch(
+      /seatFirstLaunch\s*&&\s*playedSpinRecovery === null\s*&&\s*Number\(seat\.stack\) !== startingChips/
+    );
     expect(prove).toContain('const seatChips = seats.reduce(');
     expect(prove).toContain('occupiedCoordinates.has(coordinate)');
     expect(prove).toContain('Number(durableTable.current_players) !== liveCount');
@@ -164,7 +172,9 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('uses the incomplete receipt retry path instead of delayed repair work', () => {
-    expect(start).toMatch(/if \(!spinReceipt\) \{[\s\S]*this\.running = false;[\s\S]*return;/);
+    const refusedDraw = sliceEnclosingBlock(start, 'if (!fundedSpin)');
+    expect(refusedDraw).toContain('this.running = false;');
+    expect(refusedDraw).toContain('return;');
     expect(start).toMatch(/if \(!spinPresentationWritten\) \{\s*this\.running = false;\s*return;/);
     expect(source).not.toContain('scheduleSpinRowRepair');
     expect(source).not.toContain('spin_row_repair_exhausted');

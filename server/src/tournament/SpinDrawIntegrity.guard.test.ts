@@ -44,33 +44,36 @@ const BASE = fs.readFileSync(
 /** Strip comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const CODE = code(BASE);
+const RECEIPT_CODE = code(
+  fs.readFileSync(path.join(process.cwd(), 'src/tournament/SpinDrawReceipt.ts'), 'utf8')
+);
 
-describe('an atomic Spin receipt that cannot be proven is UNKNOWN', () => {
+describe('an immutable funded Spin receipt that cannot be proven is UNKNOWN', () => {
   it('never assigns a multiplier from the tier table as a fallback', () => {
     // The exact line that made the wheel lie: `spinMultiplier = SPIN_TIERS[0].multiplier`.
     expect(CODE).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
   });
 
-  it('reads the combined RPC error and validates its complete receipt', () => {
-    const call = CODE.slice(CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle'") - 400);
-    expect(call).toMatch(/error:\s*settlementError/);
-    expect(CODE).toMatch(/if\s*\(\s*settlementError\s*\)\s*\{/);
-    expect(CODE).toMatch(/parseSpinSettlementReceipt\(rawReceipt/);
+  it('reads the combined RPC error and validates its complete funded receipt', () => {
+    const call = sliceEnclosingBlock(CODE, 'fn_spin_draw_and_settle_atomic');
+    expect(call).toMatch(/const\s*\{\s*data,\s*error\s*\}/);
+    expect(call).toContain('if (error || !data?.ok)');
+    expect(CODE).toContain('readFundedSpinDraw(data,');
     expect(CODE).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
   });
 
   it('has no empty catch around the draw', () => {
     // `catch { }` / `catch (e) { }` with nothing in it is what swallowed it.
     const drawBlock = CODE.slice(
-      CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle'"),
-      CODE.indexOf('Tournament.spin_settle_failed')
+      CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'"),
+      CODE.indexOf('Tournament.spin_draw_unavailable')
     );
     expect(drawBlock).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
   });
 
   it('stands the start down rather than resolving to a value', () => {
-    expect(CODE).toMatch(/Tournament\.spin_settle_failed/);
-    const failure = sliceEnclosingBlock(CODE, 'if (!spinReceipt)');
+    expect(CODE).toMatch(/Tournament\.spin_draw_unavailable/);
+    const failure = sliceEnclosingBlock(CODE, 'if (!fundedSpin)');
     // The stand-down pattern the short-field and unpaid-seat gates already use.
     expect(failure).toMatch(/this\.running\s*=\s*false/);
     // And the old error tag, which named a state that no longer exists, is gone.
@@ -78,8 +81,9 @@ describe('an atomic Spin receipt that cannot be proven is UNKNOWN', () => {
   });
 
   it('takes the multiplier only from the parsed immutable receipt', () => {
-    expect(CODE).toMatch(/const spinMultiplier = spinReceipt\.multiplier/);
-    expect(CODE).not.toMatch(/spinMultiplier\s*=\s*Number\(rawReceipt/);
+    expect(CODE).toMatch(/const spinMultiplier = fundedSpin\.multiplier/);
+    expect(RECEIPT_CODE).toContain('!positive(r.multiplier)');
+    expect(CODE).not.toMatch(/spinMultiplier\s*=\s*Number\(data/);
   });
 });
 
@@ -106,6 +110,10 @@ describe('the committed draw and presentation reach memory before RUNNING', () =
     );
     expect(patch).not.toMatch(/prize_pool|spin_multiplier|spin_locked_tiers|starting_chips/);
     expect(CODE).toMatch(/const spinMemoryPatch = \{[\s\S]*prize_pool:[\s\S]*spin_multiplier:/);
+  });
+
+  it('recovery skips the presentation rewrite after proving the immutable receipt', () => {
+    expect(CODE).toContain('let spinPresentationWritten = playedSpinRecovery !== null;');
   });
 });
 
@@ -204,7 +212,7 @@ describe('the draw reaches memory WHOLE (2026-08-31)', () => {
       CODE.indexOf('let spinPresentationWritten')
     );
     expect(patch).toMatch(/payout_structure:/);
-    // Derived from the drawn tier, never a literal winner-take-all.
-    expect(patch).toMatch(/tier\?\.payouts/);
+    // Adopt the frozen booked tier, never a local winner-take-all fallback.
+    expect(patch).toContain('payout_structure: fundedSpin.payouts');
   });
 });

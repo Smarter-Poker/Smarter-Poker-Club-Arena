@@ -137,14 +137,14 @@ describe('v_spin_reserve_health', () => {
 describe('the engine no longer starts a Spin on an unchecked write', () => {
   const engine = tsCode(read('server/src/tournament/TournamentManagerBase.ts'));
 
-  it('validates the combined money receipt, then reads back presentation separately', () => {
+  it('validates the immutable funded-rule receipt, then reads back presentation separately', () => {
     const settlementLoop = sliceBlockAfter(
       engine,
-      'for (let attempt = 1; attempt <= 3 && !spinReceipt; attempt++)'
+      'for (let attempt = 1; attempt <= 3 && !fundedSpin; attempt++)'
     );
-    expect(settlementLoop).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle'/);
-    expect(settlementLoop).toMatch(/error:\s*settlementError/);
-    expect(settlementLoop).toMatch(/parseSpinSettlementReceipt\(rawReceipt/);
+    expect(settlementLoop).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle_atomic'/);
+    expect(settlementLoop).toMatch(/const \{ data, error \}/);
+    expect(settlementLoop).toMatch(/readFundedSpinDraw\(data/);
 
     const presentationLoop = sliceBlockAfter(
       engine,
@@ -158,7 +158,7 @@ describe('the engine no longer starts a Spin on an unchecked write', () => {
   });
 
   it('stands down before cards when money or presentation cannot be proven', () => {
-    for (const anchor of ['if (!spinReceipt)', 'if (!spinPresentationWritten)']) {
+    for (const anchor of ['if (!fundedSpin)', 'if (!spinPresentationWritten)']) {
       const standDown = sliceBlockAfter(engine, anchor);
       expect(standDown).toMatch(/this\.running = false/);
       expect(standDown).toMatch(/return;/);

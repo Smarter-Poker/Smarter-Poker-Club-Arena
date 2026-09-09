@@ -16,6 +16,13 @@ const migration = readFileSync(
   ),
   'utf8'
 );
+const fundedDrawRecovery = readFileSync(
+  join(
+    here,
+    '../../../supabase/migrations/20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql'
+  ),
+  'utf8'
+);
 
 describe('a played Spin with one vacated bust has one narrow launch path', () => {
   it('asks PostgreSQL before lowering the field and keeps Heads-Up outside the branch', () => {
@@ -97,5 +104,17 @@ describe('a played Spin with one vacated bust has one narrow launch path', () =>
     expect(migration).toContain('AND f.draw_count = 1');
     expect(migration).toContain('AND f.exact_entry_journals = 1');
     expect(migration).toContain('AND f.exact_draw_journals = 1');
+  });
+
+  it('replays the one atomic funded receipt only through that same played-game proof', () => {
+    expect(start).toContain("supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    expect(fundedDrawRecovery).toContain(
+      'v_recovery := public.fn_prove_played_spin_launch_recovery(p_tournament_id)'
+    );
+    expect(fundedDrawRecovery).toContain("OR (v_played_recovery AND p.status = ''eliminated'')");
+    expect(fundedDrawRecovery).toContain('spin_paid_entry_unproven');
+    expect(fundedDrawRecovery).toContain('spin_receipt_roster_mismatch');
+    expect(fundedDrawRecovery).not.toContain('cron.schedule');
+    expect(fundedDrawRecovery).not.toContain('CREATE TRIGGER');
   });
 });

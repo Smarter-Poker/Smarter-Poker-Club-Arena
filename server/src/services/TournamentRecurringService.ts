@@ -4087,46 +4087,10 @@ export class TournamentRecurringService {
         );
       }
 
-      /**
-       * Dan 2026-08-23: TELL THE LOBBY THE SEATS ARE SOLD.
-       *
-       * The horses above take REAL seats, and that fixed the game logic. It
-       * did not fix the shop window: `current_players` is a stored column, a
-       * seat row does not touch it, and this was the one seat-first path that
-       * never synced it. Measured live before this fix: 16 open Spins
-       * advertising "0/3" while holding 32 paid seats between them - two of
-       * three sold, ONE SEAT FROM DEALING, and the lobby said empty. Nine SNGs
-       * the same. The fourteen Spins that read correctly all got there through
-       * topUpWithHorses, which does sync.
-       *
-       * That is the same complaint as the MTT ramp, arriving from the opposite
-       * direction: "PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
-       * PLAYERS IN THEM." Here the players were already in them. Only the
-       * number was wrong, and the number is the entire thing a player decides
-       * on.
-       *
-       * Derived from the seat rows, never incremented: registrations and seats
-       * disagree constantly for these formats, which is why a counter that
-       * counts registrations had spins reading 3/3 on two bought seats
-       * (refusing every further sit-down as 'tournament_full') and 0/3 on
-       * three (never starting).
-       *
-       * Best-effort by design. A failed sync must not fail table creation -
-       * the seats are real either way, and the next top-up pass syncs again.
-       */
-      if (seated > 0) {
-        const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
-          p_tournament_id: tournament.id,
-        });
-        if (syncErr) {
-          reportError(
-            new Error(
-              `[TournamentRecurring] seat-count sync failed for ${tournament.name}: ${syncErr.message}`
-            ),
-            'TournamentRecurring.seat_first_count_sync_failed'
-          );
-        }
-      }
+      // Every successful horse-seat transaction fires the strict AFTER-seat
+      // count/Spin-booking invariant before its receipt returns. A separate
+      // service-role sync here used to be a best-effort reconciler and could
+      // acquire the terminal lock only after the seat row was already locked.
 
       return tableId;
     } catch (err: any) {
@@ -5148,39 +5112,17 @@ export class TournamentRecurringService {
             Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
           )
         ) {
-          /**
-           * liveCount === 0 above, so there is nobody seated at all - human or
-           * horse - and the board is genuinely open for a human to start. The
-           * seat-count reconciliation still runs, because a board advertising a
-           * stale count is the other way a seat-first game gets stuck.
-           *
-           * The `humanSeated` probe that used to live here (two queries per
-           * skipped board, every 5 seconds, on every held board) is gone: it was
-           * guarded on `liveCount > 0`, which this branch now excludes, so it
-           * could never once return true. A human who sits makes liveCount 1 and
-           * never reaches this branch at all.
-           */
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
+          // With no seat mutation there is nothing to reconcile. The stored
+          // count is maintained in the same transaction as every canonical
+          // create/revive/exit, so this held board simply remains available.
           this.noteSeatFirstHeld(tournamentId);
           return 0;
         }
 
         const shortfall = targetPlayers - liveCount;
         if (shortfall <= 0) {
-          /**
-           * Nothing to add - but the COUNTER may still be stale, and a stale
-           * counter is precisely what stops the game starting. The old code
-           * returned here, before the reconciliation at the foot of this
-           * function, so a full field whose count had drifted could never
-           * repair itself. That is the loop that held 39 live tournaments.
-           */
-          if (seatFirst) {
-            await supabase.rpc('fn_sync_seat_first_player_count', {
-              p_tournament_id: tournamentId,
-            });
-          }
+          // No seat changed. Canonical seat transactions already commit the
+          // exact count, so an idle sweep has no write authority here.
           return 0;
         }
 
@@ -5288,11 +5230,7 @@ export class TournamentRecurringService {
          * were opened against a stale base and every one sat DIRTY on this one
          * comment - nothing else across 27 files conflicted at all.
          */
-        if (seatFirst) {
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
-        } else {
+        if (!seatFirst) {
           // Re-read rather than trusting `liveCount + added`: a human may have
           // registered while we were seating horses.
           const { count: finalCount } = await supabase

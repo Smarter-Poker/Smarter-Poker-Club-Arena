@@ -1,4 +1,4 @@
--- 20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql
+-- 20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -49,10 +49,13 @@ BEGIN
      OR to_regclass('public.tables') IS NULL
      OR to_regclass('public.table_seats') IS NULL
      OR to_regclass('public.tournament_players') IS NULL
+     OR to_regclass('public.tournament_launch_receipts') IS NULL
      OR to_regclass('public.hand_history') IS NULL
      OR to_regclass('cron.job') IS NULL
      OR to_regprocedure('public.fn_ca_autoledger()') IS NULL
      OR to_regprocedure('public.fn_ca_guard_seat_creation()') IS NULL
+     OR to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL
+     OR to_regprocedure('public.fn_lock_daily_mission_user(uuid)') IS NULL
      OR to_regprocedure('public.fn_seat_change_syncs_seat_first_count()') IS NULL
      OR to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NULL
      OR to_regprocedure('public.fn_spin_book_entry(uuid)') IS NULL
@@ -62,7 +65,15 @@ BEGIN
      OR to_regprocedure('public.fn_tournament_primary_table(uuid)') IS NULL
      OR to_regprocedure('public.fn_ca_declare_ledger(text,text,uuid,uuid,text,text[])') IS NULL
      OR to_regprocedure('public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)') IS NULL
-     OR to_regprocedure('public.fn_sync_seat_first_player_count(uuid)') IS NULL THEN
+     OR to_regprocedure('public.fn_sync_seat_first_player_count(uuid)') IS NULL
+     OR to_regprocedure('public.fn_take_seat_and_buy_in(uuid,integer)') IS NULL
+     OR to_regprocedure('public.fn_seat_horse_in_seat_first_game(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.fn_seat_late_registrant(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.fn_register_for_tournament(uuid)') IS NULL
+     OR to_regprocedure('public.fn_register_for_tournament(uuid,boolean)') IS NULL
+     OR to_regprocedure('public.fn_register_for_tournament_with_ticket(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.fn_register_horse_for_tournament(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.fn_register_horse_for_tournament(uuid,uuid,boolean)') IS NULL THEN
     RAISE EXCEPTION 'atomic Spin cutover dependencies are missing';
   END IF;
 
@@ -119,7 +130,7 @@ CREATE TABLE public.tournament_spin_settlement_cutover (
   authority                  text PRIMARY KEY
                                   CHECK (authority = 'fn_spin_draw_and_settle:v1'),
   migration_version          text NOT NULL
-                                  CHECK (migration_version = '20260908153223'),
+                                  CHECK (migration_version = '20260909014433'),
   installed_at               timestamptz NOT NULL,
   audited_tournament_ids     uuid[] NOT NULL,
   production_requires_receipt boolean GENERATED ALWAYS AS
@@ -139,7 +150,7 @@ INSERT INTO public.tournament_spin_settlement_cutover (
   authority, migration_version, installed_at, audited_tournament_ids)
 SELECT
   'fn_spin_draw_and_settle:v1',
-  '20260908153223',
+  '20260909014433',
   transaction_timestamp(),
   ARRAY(
     SELECT expected.id
@@ -234,6 +245,7 @@ BEGIN
   v_path := current_setting('app.money_path', true);
   IF v_path IN ('atomic_table_buyin', 'fn_take_seat_and_buy_in',
                 'fn_seat_horse_in_seat_first_game', 'fn_seat_late_registrant',
+                'fn_assign_tournament_player_seat_atomic',
                 'fn_horse_seat_from_treasury') THEN
     RETURN NEW;
   END IF;
@@ -252,6 +264,763 @@ REVOKE ALL ON FUNCTION public.fn_ca_guard_seat_creation()
   FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON FUNCTION public.fn_ca_guard_seat_creation() IS
   'BEFORE-seat authority. Every live tournament seat is positive; every canonical seat-first seat exactly equals tournaments.starting_chips before any caller authorization is considered.';
+
+-- A tournament seat can be born only below one root lock. The old seat-first
+-- purchase wrappers, registration wrappers and manager SQL all reached a
+-- tournament/table/seat row before fn_sync_seat_first_player_count tried to
+-- acquire the terminal-settlement lock. Terminal completion takes that global
+-- lock first and then the same parents, so the AFTER-seat sync formed the
+-- opposite half of a real deadlock. This helper is deliberately owner-only:
+-- public doors below enter here before delegating, and raw service-role DML is
+-- rejected by the BEFORE trigger installed after them.
+--
+-- Daily Missions must stay ahead of every tournament/roster/seat row for a
+-- registered -> playing transition. A hand owns that player mutex first. The
+-- helper therefore preserves the complete order:
+--
+--   terminal global -> maintenance shared -> daily-mission user
+--     -> launch receipt -> tournament
+--
+-- It uses ordinary blocking row locks. There is no NOWAIT/deadlock retry or
+-- watcher; every canonical writer joins the same hierarchy at its true root.
+CREATE OR REPLACE FUNCTION public.fn_ca_lock_tournament_seat_acquisition(
+  p_tournament_id uuid,
+  p_table_id uuid,
+  p_user_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $seat_acquisition_lock$
+DECLARE
+  v_tournament_id uuid:=p_tournament_id;
+  v_table_tournament_id uuid;
+  v_status text;
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM pg_advisory_xact_lock_shared(530090,1);
+
+  IF public.fn_entry_purchases_frozen() THEN
+    RETURN jsonb_build_object('ok',false,'reason','platform_frozen');
+  END IF;
+
+  IF p_user_id IS NOT NULL THEN
+    PERFORM public.fn_lock_daily_mission_user(p_user_id);
+  END IF;
+
+  IF p_table_id IS NOT NULL THEN
+    SELECT tb.tournament_id INTO v_table_tournament_id
+      FROM public.tables tb
+     WHERE tb.id=p_table_id;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('ok',false,'reason','table_not_found');
+    END IF;
+    IF v_table_tournament_id IS NULL THEN
+      RETURN jsonb_build_object('ok',false,'reason','not_a_tournament_table');
+    END IF;
+    IF v_tournament_id IS NOT NULL
+       AND v_tournament_id IS DISTINCT FROM v_table_tournament_id THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','table_tournament_mismatch');
+    END IF;
+    v_tournament_id:=v_table_tournament_id;
+  END IF;
+
+  IF v_tournament_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','tournament_or_table_required');
+  END IF;
+
+  -- Launch completion already owns receipt -> tournament. Re-entering these
+  -- locks from every seat root makes the historical aa_ launch-proof trigger
+  -- a no-op lock acquisition rather than a late inversion.
+  PERFORM r.tournament_id
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id=v_tournament_id
+   ORDER BY r.tournament_id
+   FOR UPDATE;
+
+  SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+    FROM public.tournaments t
+   WHERE t.id=v_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_not_found');
+  END IF;
+  IF v_status NOT IN ('ANNOUNCED','REGISTERING','RUNNING') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','tournament_not_seatable','status',v_status);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok',true,'tournament_id',v_tournament_id,
+    'table_id',p_table_id,'status',v_status);
+END;
+$seat_acquisition_lock$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_lock_tournament_seat_acquisition(
+  uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+COMMENT ON FUNCTION public.fn_ca_lock_tournament_seat_acquisition(
+  uuid,uuid,uuid) IS
+  'Owner-only root lock for every tournament seat create/revive path. Global terminal lock, maintenance boundary, Daily Missions player lock, launch receipt and tournament parent are acquired before child rows.';
+
+-- Preserve each audited implementation under a private name, then put the
+-- root lock above it. ALTER RENAME is structural ownership, not a function-
+-- body overlay: the installed implementation stays byte-for-byte and there is
+-- no pg_get_functiondef/string replacement escape hatch.
+DO $wrap_take_seat_for_terminal_authority$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_take_seat_and_buy_in_before_terminal_seat_gate(uuid,integer)')
+     IS NULL THEN
+    ALTER FUNCTION public.fn_take_seat_and_buy_in(uuid,integer)
+      RENAME TO fn_take_seat_and_buy_in_before_terminal_seat_gate;
+  END IF;
+END;
+$wrap_take_seat_for_terminal_authority$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_take_seat_and_buy_in_before_terminal_seat_gate(uuid,integer)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_take_seat_and_buy_in(
+  p_table_id uuid,
+  p_seat_number integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','extensions','pg_temp'
+SET statement_timeout TO '30s'
+AS $take_seat_terminal_gate$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    NULL,p_table_id,auth.uid());
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_take_seat_and_buy_in_before_terminal_seat_gate(
+    p_table_id,p_seat_number);
+END;
+$take_seat_terminal_gate$;
+
+REVOKE ALL ON FUNCTION public.fn_take_seat_and_buy_in(uuid,integer)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_take_seat_and_buy_in(uuid,integer)
+  TO authenticated,service_role;
+
+DO $wrap_horse_seat_for_terminal_authority$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(uuid,uuid)')
+     IS NULL THEN
+    ALTER FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid)
+      RENAME TO fn_seat_horse_in_seat_first_game_before_terminal_seat_gate;
+  END IF;
+END;
+$wrap_horse_seat_for_terminal_authority$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(uuid,uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_seat_horse_in_seat_first_game(
+  p_tournament_id uuid,
+  p_user_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $horse_seat_terminal_gate$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,NULL,p_user_id);
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(
+    p_tournament_id,p_user_id);
+END;
+$horse_seat_terminal_gate$;
+
+REVOKE ALL ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid)
+  TO service_role;
+
+DO $wrap_late_seat_for_terminal_authority$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_seat_late_registrant_before_terminal_seat_gate(uuid,uuid)')
+     IS NULL THEN
+    ALTER FUNCTION public.fn_seat_late_registrant(uuid,uuid)
+      RENAME TO fn_seat_late_registrant_before_terminal_seat_gate;
+  END IF;
+END;
+$wrap_late_seat_for_terminal_authority$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_seat_late_registrant_before_terminal_seat_gate(uuid,uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_seat_late_registrant(
+  p_tournament_id uuid,
+  p_user_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $late_seat_terminal_gate$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,NULL,p_user_id);
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_seat_late_registrant_before_terminal_seat_gate(
+    p_tournament_id,p_user_id);
+END;
+$late_seat_terminal_gate$;
+
+REVOKE ALL ON FUNCTION public.fn_seat_late_registrant(uuid,uuid)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_seat_late_registrant(uuid,uuid)
+  TO service_role;
+
+DO $wrap_registration_for_terminal_authority$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_register_for_tournament_before_terminal_seat_gate(uuid,boolean)')
+     IS NULL THEN
+    ALTER FUNCTION public.fn_register_for_tournament(uuid,boolean)
+      RENAME TO fn_register_for_tournament_before_terminal_seat_gate;
+  END IF;
+END;
+$wrap_registration_for_terminal_authority$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_for_tournament_before_terminal_seat_gate(uuid,boolean)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_register_for_tournament(
+  p_tournament_id uuid,
+  p_seat_first_internal boolean
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $registration_terminal_gate$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,NULL,auth.uid());
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_register_for_tournament_before_terminal_seat_gate(
+    p_tournament_id,p_seat_first_internal);
+END;
+$registration_terminal_gate$;
+
+REVOKE ALL ON FUNCTION public.fn_register_for_tournament(uuid,boolean)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_register_for_tournament(uuid,boolean)
+  TO service_role;
+
+-- Recompile the authenticated compatibility door against the new public
+-- two-argument wrapper. This removes any dependency/cached-plan ambiguity
+-- after ALTER FUNCTION renamed the prior implementation in this transaction.
+CREATE OR REPLACE FUNCTION public.fn_register_for_tournament(
+  p_tournament_id uuid
+)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $registration_terminal_gate_compat$
+  SELECT public.fn_register_for_tournament(p_tournament_id,false)
+$registration_terminal_gate_compat$;
+
+REVOKE ALL ON FUNCTION public.fn_register_for_tournament(uuid)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_register_for_tournament(uuid)
+  TO authenticated,service_role;
+
+-- 20260909014421 adds noncash ticket admission. Its owner-only core already
+-- takes the terminal global lock before money rows, but it did not prelock the
+-- launch receipt before its tournament row. Wrap the authenticated door here;
+-- every late ticket seat now reaches the same receipt -> tournament prefix.
+DO $wrap_ticket_registration_for_terminal_authority$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_register_for_tournament_with_ticket_before_terminal_gate(uuid,uuid)')
+     IS NULL THEN
+    ALTER FUNCTION public.fn_register_for_tournament_with_ticket(uuid,uuid)
+      RENAME TO fn_register_for_tournament_with_ticket_before_terminal_gate;
+  END IF;
+END;
+$wrap_ticket_registration_for_terminal_authority$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_for_tournament_with_ticket_before_terminal_gate(uuid,uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_register_for_tournament_with_ticket(
+  p_tournament_id uuid,
+  p_ticket_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $ticket_registration_terminal_gate$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,NULL,auth.uid());
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_register_for_tournament_with_ticket_before_terminal_gate(
+    p_tournament_id,p_ticket_id);
+END;
+$ticket_registration_terminal_gate$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_for_tournament_with_ticket(uuid,uuid)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION
+  public.fn_register_for_tournament_with_ticket(uuid,uuid)
+  TO authenticated,service_role;
+
+-- The service-only three-argument horse registration door can also choose a
+-- ticket and late-seat the beneficiary. The two-argument compatibility door
+-- delegates to this exact signature, so one wrapper closes both call paths.
+DO $wrap_horse_registration_for_terminal_authority$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_register_horse_for_tournament_before_terminal_gate(uuid,uuid,boolean)')
+     IS NULL THEN
+    ALTER FUNCTION public.fn_register_horse_for_tournament(uuid,uuid,boolean)
+      RENAME TO fn_register_horse_for_tournament_before_terminal_gate;
+  END IF;
+END;
+$wrap_horse_registration_for_terminal_authority$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_horse_for_tournament_before_terminal_gate(uuid,uuid,boolean)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_register_horse_for_tournament(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_allow_wallet_charge boolean
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','extensions','pg_temp'
+SET statement_timeout TO '30s'
+AS $horse_registration_terminal_gate$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,NULL,p_user_id);
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_register_horse_for_tournament_before_terminal_gate(
+    p_tournament_id,p_user_id,p_allow_wallet_charge);
+END;
+$horse_registration_terminal_gate$;
+
+REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament(
+  uuid,uuid,boolean) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_register_horse_for_tournament(
+  uuid,uuid,boolean) TO service_role;
+
+-- The rolling two-argument horse caller has no separate implementation. Keep
+-- it as an explicit direct delegate to the newly terminal-ordered 3-arg root.
+CREATE OR REPLACE FUNCTION public.fn_register_horse_for_tournament(
+  p_tournament_id uuid,
+  p_user_id uuid
+)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $horse_registration_terminal_gate_compat$
+  SELECT public.fn_register_horse_for_tournament(
+    p_tournament_id,p_user_id,true)
+$horse_registration_terminal_gate_compat$;
+
+REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament(uuid,uuid)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_register_horse_for_tournament(uuid,uuid)
+  TO service_role;
+
+-- The manager used to create/revive a seat, update its roster link and then
+-- write tables.current_players in three independent PostgREST transactions.
+-- A failure between them produced a live seat with a lying roster or a roster
+-- pointing at no seat. This service-only RPC owns the exact assignment as one
+-- database transaction. It derives the stack from the locked roster and
+-- tournament; callers cannot mint or choose chips.
+CREATE OR REPLACE FUNCTION public.fn_assign_tournament_player_seat_atomic(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_table_id uuid,
+  p_seat_number integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $atomic_tournament_seat_assignment$
+DECLARE
+  v_gate jsonb;
+  v_t public.tournaments%ROWTYPE;
+  v_tp public.tournament_players%ROWTYPE;
+  v_table public.tables%ROWTYPE;
+  v_live public.table_seats%ROWTYPE;
+  v_destination public.table_seats%ROWTYPE;
+  v_live_count integer;
+  v_stack numeric;
+  v_seat_id uuid;
+  v_current_players integer;
+  v_rows integer;
+  v_assigned_at timestamptz;
+  v_previous_money_path text:=current_setting('app.money_path',true);
+BEGIN
+  IF NOT public.fn_caller_is_engine() THEN
+    RAISE EXCEPTION 'fn_assign_tournament_player_seat_atomic requires service authority'
+      USING ERRCODE='28000';
+  END IF;
+  IF p_tournament_id IS NULL OR p_user_id IS NULL OR p_table_id IS NULL
+     OR p_seat_number IS NULL OR p_seat_number NOT BETWEEN 1 AND 10 THEN
+    RAISE EXCEPTION 'tournament, player, table and legal seat are required'
+      USING ERRCODE='22023';
+  END IF;
+
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,p_table_id,p_user_id);
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments t
+   WHERE t.id=p_tournament_id;
+  IF upper(COALESCE(v_t.status::text,'')) NOT IN ('REGISTERING','RUNNING') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','tournament_not_assignable',
+      'status',upper(COALESCE(v_t.status::text,'')));
+  END IF;
+
+  -- Lock the beneficiary and every roster row claiming the requested
+  -- coordinate before any table/seat row. This matches terminal settlement's
+  -- tournament -> roster -> tables -> seats child order.
+  PERFORM tp.id
+    FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id
+     AND (tp.user_id=p_user_id
+       OR (tp.table_id=p_table_id AND tp.seat_number=p_seat_number))
+   ORDER BY tp.id
+   FOR UPDATE;
+
+  SELECT * INTO v_tp FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_not_registered');
+  END IF;
+  IF v_tp.status::text NOT IN ('registered','playing') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','player_not_assignable','status',v_tp.status::text);
+  END IF;
+
+  IF v_tp.status::text='registered' THEN
+    v_stack:=COALESCE(v_t.starting_chips,0)
+             +GREATEST(COALESCE(v_tp.chips,0),0);
+  ELSE
+    v_stack:=COALESCE(v_tp.chips,0);
+  END IF;
+  IF v_stack::text IN ('NaN','Infinity','-Infinity')
+     OR v_stack<=0 OR v_stack<>trunc(v_stack)
+     OR v_stack>2147483647 THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_stack_invalid');
+  END IF;
+
+  SELECT * INTO v_table FROM public.tables tb
+   WHERE tb.id=p_table_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_table.tournament_id IS DISTINCT FROM p_tournament_id THEN
+    RETURN jsonb_build_object('ok',false,'reason','table_tournament_mismatch');
+  END IF;
+  IF lower(COALESCE(v_table.status::text,'')) NOT IN
+       ('waiting','running','active')
+     OR COALESCE(v_table.is_deleted,false)
+     OR p_seat_number>COALESCE(NULLIF(v_table.max_players,0),9) THEN
+    RETURN jsonb_build_object('ok',false,'reason','table_not_assignable');
+  END IF;
+
+  PERFORM s.id
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_user_id AND s.left_at IS NULL
+   ORDER BY s.id
+   FOR UPDATE OF s;
+  SELECT count(*)::integer INTO v_live_count
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_user_id AND s.left_at IS NULL;
+  IF v_live_count>1 THEN
+    RAISE EXCEPTION 'tournament player already owns multiple live seats'
+      USING ERRCODE='P0404';
+  END IF;
+  IF v_live_count=1 THEN
+    SELECT s.* INTO v_live
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_user_id AND s.left_at IS NULL
+     FOR UPDATE OF s;
+    IF v_live.table_id IS DISTINCT FROM p_table_id
+       OR v_live.seat_number IS DISTINCT FROM p_seat_number THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','player_already_seated_elsewhere',
+        'table_id',v_live.table_id,'seat_number',v_live.seat_number);
+    END IF;
+    SELECT count(*)::integer INTO v_current_players
+      FROM public.table_seats s
+     WHERE s.table_id=p_table_id AND s.left_at IS NULL;
+    IF v_live.stack IS DISTINCT FROM v_stack
+       OR v_tp.status::text<>'playing'
+       OR v_tp.chips IS DISTINCT FROM v_stack::integer
+       OR v_tp.table_id IS DISTINCT FROM p_table_id
+       OR v_tp.seat_number IS DISTINCT FROM p_seat_number
+       OR v_table.current_players IS DISTINCT FROM v_current_players
+       OR v_live.joined_at IS NULL THEN
+      RAISE EXCEPTION 'existing tournament assignment is not an exact receipt'
+        USING ERRCODE='P0404';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',true,'replayed',true,'tournament_id',p_tournament_id,
+      'user_id',p_user_id,'table_id',p_table_id,
+      'seat_id',v_live.id,'seat_number',p_seat_number,'stack',v_stack,
+      'current_players',v_current_players,'assigned_at',v_live.joined_at);
+  END IF;
+
+  SELECT * INTO v_destination FROM public.table_seats s
+   WHERE s.table_id=p_table_id AND s.seat_number=p_seat_number
+   FOR UPDATE;
+  IF FOUND AND v_destination.left_at IS NULL THEN
+    RETURN jsonb_build_object('ok',false,'reason','seat_taken');
+  END IF;
+
+  -- A departed occupant can still carry a stale roster coordinate. Correct
+  -- that link inside this assignment transaction; never overwrite a live
+  -- seat or leave two active roster rows claiming one chair.
+  UPDATE public.tournament_players tp
+     SET table_id=NULL,seat_number=NULL
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.user_id<>p_user_id
+     AND tp.table_id=p_table_id AND tp.seat_number=p_seat_number;
+
+  v_assigned_at:=clock_timestamp();
+  PERFORM set_config(
+    'app.money_path','fn_assign_tournament_player_seat_atomic',true);
+  BEGIN
+    IF v_destination.id IS NULL THEN
+      INSERT INTO public.table_seats(
+        table_id,user_id,seat_number,stack,status,joined_at,left_at,
+        is_sitting_out,is_away,leave_pending,scheduled_leave_hands)
+      VALUES(
+        p_table_id,p_user_id,p_seat_number,v_stack,'active',v_assigned_at,NULL,
+        false,false,false,NULL)
+      RETURNING id INTO v_seat_id;
+    ELSE
+      UPDATE public.table_seats s
+         SET user_id=p_user_id,member_id=NULL,stack=v_stack,
+             status='active',joined_at=v_assigned_at,left_at=NULL,
+             is_sitting_out=false,is_away=false,leave_pending=false,
+             sit_out_at=NULL,scheduled_leave_hands=NULL,
+             entry_hold=NULL,entry_post_agreed=false,auto_rebuy=false
+       WHERE s.id=v_destination.id AND s.left_at IS NOT NULL
+       RETURNING id INTO v_seat_id;
+      IF v_seat_id IS NULL THEN
+        RAISE EXCEPTION 'vacated tournament seat changed during assignment'
+          USING ERRCODE='40001';
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM set_config(
+      'app.money_path',COALESCE(v_previous_money_path,''),true);
+    RAISE;
+  END;
+  PERFORM set_config(
+    'app.money_path',COALESCE(v_previous_money_path,''),true);
+
+  UPDATE public.tournament_players tp
+     SET status='playing',chips=v_stack::integer,
+         table_id=p_table_id,seat_number=p_seat_number
+   WHERE tp.id=v_tp.id AND tp.status::text IN ('registered','playing');
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION 'tournament roster changed during seat assignment'
+      USING ERRCODE='40001';
+  END IF;
+
+  SELECT count(*)::integer INTO v_current_players
+    FROM public.table_seats s
+   WHERE s.table_id=p_table_id AND s.left_at IS NULL;
+  UPDATE public.tables tb
+     SET current_players=v_current_players,updated_at=now()
+   WHERE tb.id=p_table_id;
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION 'tournament table vanished during seat assignment'
+      USING ERRCODE='40001';
+  END IF;
+
+  IF (SELECT count(*) FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_user_id AND s.left_at IS NULL)<>1
+     OR NOT EXISTS(
+       SELECT 1 FROM public.table_seats s
+        WHERE s.id=v_seat_id AND s.table_id=p_table_id
+          AND s.user_id=p_user_id AND s.seat_number=p_seat_number
+          AND s.left_at IS NULL AND s.stack=v_stack)
+     OR NOT EXISTS(
+       SELECT 1 FROM public.tournament_players tp
+        WHERE tp.id=v_tp.id AND tp.status::text='playing'
+          AND tp.chips=v_stack::integer AND tp.table_id=p_table_id
+          AND tp.seat_number=p_seat_number)
+     OR NOT EXISTS(
+       SELECT 1 FROM public.tables tb
+        WHERE tb.id=p_table_id AND tb.tournament_id=p_tournament_id
+          AND tb.current_players=v_current_players) THEN
+    RAISE EXCEPTION 'atomic tournament seat assignment final proof is not exact'
+      USING ERRCODE='P0404';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok',true,'replayed',false,'tournament_id',p_tournament_id,
+    'user_id',p_user_id,'table_id',p_table_id,'seat_id',v_seat_id,
+    'seat_number',p_seat_number,'stack',v_stack,
+    'current_players',v_current_players,'assigned_at',v_assigned_at);
+END;
+$atomic_tournament_seat_assignment$;
+
+REVOKE ALL ON FUNCTION public.fn_assign_tournament_player_seat_atomic(
+  uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_assign_tournament_player_seat_atomic(
+  uuid,uuid,uuid,integer) TO service_role;
+
+-- A service-role PostgREST INSERT/UPDATE used to bypass fn_ca_guard_seat_creation
+-- before checking app.money_path. Caller identity is not lock provenance. This
+-- earliest BEFORE trigger requires the transaction to already own the exact
+-- global lock; it never acquires that lock after PostgreSQL has locked NEW/OLD.
+CREATE OR REPLACE FUNCTION
+  public.fn_tournament_live_seat_acquisition_requires_authority()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $tournament_seat_acquisition_guard$
+DECLARE
+  v_tournament_id uuid;
+  v_tournament_status text;
+  v_key bigint:=hashtextextended(
+    'ca:tournament-terminal-settlement:v1',0);
+  v_owns_global boolean;
+BEGIN
+  IF TG_OP='INSERT' THEN
+    IF NEW.left_at IS NOT NULL OR NEW.user_id IS NULL THEN
+      RETURN NEW;
+    END IF;
+  ELSE
+    IF NEW.left_at IS NOT NULL OR NEW.user_id IS NULL
+       OR (OLD.left_at IS NULL
+         AND OLD.user_id IS NOT DISTINCT FROM NEW.user_id
+         AND OLD.table_id IS NOT DISTINCT FROM NEW.table_id
+         AND OLD.seat_number IS NOT DISTINCT FROM NEW.seat_number) THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  SELECT tb.tournament_id,upper(COALESCE(t.status::text,''))
+    INTO v_tournament_id,v_tournament_status
+    FROM public.tables tb
+    LEFT JOIN public.tournaments t ON t.id=tb.tournament_id
+   WHERE tb.id=NEW.table_id;
+  IF v_tournament_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT EXISTS(
+    SELECT 1 FROM pg_catalog.pg_locks l
+     WHERE l.pid=pg_backend_pid()
+       AND l.locktype='advisory'
+       AND l.database=(
+         SELECT d.oid FROM pg_catalog.pg_database d
+          WHERE d.datname=current_database())
+       AND l.classid=(((v_key>>32)&4294967295)::oid)
+       AND l.objid=((v_key&4294967295)::oid)
+       AND l.objsubid=1
+       AND l.mode='ExclusiveLock'
+       AND l.granted)
+    INTO v_owns_global;
+  IF NOT COALESCE(v_owns_global,false) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_SEAT_ACQUISITION_REQUIRES_TERMINAL_AUTHORITY'
+      USING ERRCODE='55000',
+            HINT='Use a canonical tournament seat purchase, registration, move, or assignment RPC.';
+  END IF;
+  IF v_tournament_status NOT IN ('ANNOUNCED','REGISTERING','RUNNING') THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_SEAT_ACQUISITION_CLOSED: tournament %, status %',
+      v_tournament_id,v_tournament_status
+      USING ERRCODE='55000';
+  END IF;
+  RETURN NEW;
+END;
+$tournament_seat_acquisition_guard$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_tournament_live_seat_acquisition_requires_authority()
+  FROM PUBLIC,anon,authenticated,service_role;
+
+DROP TRIGGER IF EXISTS a0_tournament_live_seat_root_guard
+  ON public.table_seats;
+CREATE TRIGGER a0_tournament_live_seat_root_guard
+  BEFORE INSERT OR UPDATE OF table_id,user_id,seat_number,left_at
+  ON public.table_seats
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_tournament_live_seat_acquisition_requires_authority();
+
+COMMENT ON FUNCTION
+  public.fn_tournament_live_seat_acquisition_requires_authority() IS
+  'Earliest BEFORE-seat fail-closed guard. A tournament seat create/revive or live identity/table change must enter with the terminal global transaction lock already held; raw service-role DML cannot bypass it.';
 
 -- The third paid seat is the entry authority. This is still a private helper
 -- because fn_sync_seat_first_player_count invokes it inside the transaction
@@ -529,9 +1298,12 @@ DECLARE
   v_is_spin    boolean := false;
   v_cap        integer := 0;
   v_variant    text := '';
-  v_attempt    integer := 0;
   v_book       jsonb;
 BEGIN
+  -- This is an AFTER-seat helper. It must never acquire a new global lock
+  -- after PostgreSQL already owns the changed seat row. Every legitimate
+  -- create/revive root pre-acquires terminal -> mission -> launch -> tournament,
+  -- and the earliest BEFORE trigger refuses a raw writer that did not.
   SELECT (lower(COALESCE(t.variant, '')) = 'spin'
           OR COALESCE(t.max_players, 0) <= 2),
          lower(COALESCE(t.variant, '')) = 'spin',
@@ -539,91 +1311,100 @@ BEGIN
          COALESCE(t.variant, '')
     INTO v_seat_first, v_is_spin, v_cap, v_variant
     FROM public.tournaments t
-   WHERE t.id = p_tournament_id;
+   WHERE t.id = p_tournament_id
+   FOR UPDATE;
 
-  <<retry>>
-  LOOP
-    v_attempt := v_attempt + 1;
-    BEGIN
-      v_table := public.fn_tournament_primary_table(p_tournament_id);
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
 
-      IF v_table IS NULL THEN
-        IF COALESCE(v_seat_first, false) THEN
-          SELECT count(*) INTO v_seats
-            FROM public.table_seats s
-            JOIN public.tables tb ON tb.id = s.table_id
-           WHERE tb.tournament_id = p_tournament_id
-             AND s.left_at IS NULL;
-          UPDATE public.tournaments SET current_players = v_seats
-           WHERE id = p_tournament_id
-             AND current_players IS DISTINCT FROM v_seats;
-          RETURN v_seats;
-        END IF;
-        RETURN NULL;
-      END IF;
+  -- Freeze the complete table/seat set before choosing the occupied table.
+  -- UUID order is deterministic across every transaction using this owner.
+  PERFORM tb.id
+    FROM public.tables tb
+   WHERE tb.tournament_id = p_tournament_id
+     AND lower(COALESCE(tb.status, '')) <> 'closed'
+   ORDER BY tb.id
+   FOR UPDATE;
 
+  PERFORM s.id
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id = s.table_id
+   WHERE tb.tournament_id = p_tournament_id
+     AND lower(COALESCE(tb.status, '')) <> 'closed'
+     AND s.left_at IS NULL
+   ORDER BY s.table_id, s.seat_number, s.id
+   FOR UPDATE OF s;
+
+  v_table := public.fn_tournament_primary_table(p_tournament_id);
+
+  IF v_table IS NULL THEN
+    IF COALESCE(v_seat_first, false) THEN
       SELECT count(*) INTO v_seats
-        FROM public.table_seats
-       WHERE table_id = v_table AND left_at IS NULL;
-
-      UPDATE public.tables SET current_players = v_seats
-       WHERE id = v_table
+        FROM public.table_seats s
+        JOIN public.tables tb ON tb.id = s.table_id
+       WHERE tb.tournament_id = p_tournament_id
+         AND s.left_at IS NULL;
+      UPDATE public.tournaments SET current_players = v_seats
+       WHERE id = p_tournament_id
          AND current_players IS DISTINCT FROM v_seats;
-
-      IF COALESCE(v_seat_first, false) THEN
-        UPDATE public.tournaments SET current_players = v_seats
-         WHERE id = p_tournament_id
-           AND current_players IS DISTINCT FROM v_seats;
-      END IF;
-
-      IF v_is_spin AND v_cap > 0 AND v_seats >= v_cap THEN
-        v_book := public.fn_spin_book_entry(p_tournament_id);
-        IF COALESCE((v_book->>'ok')::boolean, false) IS NOT TRUE THEN
-          RAISE EXCEPTION 'paid third seat could not book Spin %: %',
-            p_tournament_id,v_book USING ERRCODE = 'P0404';
-        END IF;
-      END IF;
-
-      IF COALESCE(v_seat_first, false)
-         AND v_cap > 0 AND v_seats >= v_cap THEN
-        BEGIN
-          PERFORM realtime.send(
-            jsonb_build_object(
-              'tournament_id', p_tournament_id,
-              'variant', v_variant,
-              'max_players', v_cap,
-              'paid_seats', v_seats,
-              'filled_at', now()
-            ),
-            'seat_first_ready',
-            'seat_first',
-            false
-          );
-        EXCEPTION WHEN OTHERS THEN
-          RAISE WARNING
-            'fn_sync_seat_first_player_count: realtime.send failed for %: %',
-            p_tournament_id, SQLERRM;
-        END;
-      END IF;
-
       RETURN v_seats;
-    EXCEPTION
-      WHEN deadlock_detected OR lock_not_available THEN
-        IF v_attempt >= 3 THEN
-          RAISE;
-        END IF;
-        PERFORM pg_sleep(0.05 * v_attempt);
+    END IF;
+    RETURN NULL;
+  END IF;
+
+  SELECT count(*) INTO v_seats
+    FROM public.table_seats
+   WHERE table_id = v_table AND left_at IS NULL;
+
+  UPDATE public.tables SET current_players = v_seats
+   WHERE id = v_table
+     AND current_players IS DISTINCT FROM v_seats;
+
+  IF COALESCE(v_seat_first, false) THEN
+    UPDATE public.tournaments SET current_players = v_seats
+     WHERE id = p_tournament_id
+       AND current_players IS DISTINCT FROM v_seats;
+  END IF;
+
+  IF v_is_spin AND v_cap > 0 AND v_seats >= v_cap THEN
+    v_book := public.fn_spin_book_entry(p_tournament_id);
+    IF COALESCE((v_book->>'ok')::boolean, false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'paid third seat could not book Spin %: %',
+        p_tournament_id,v_book USING ERRCODE = 'P0404';
+    END IF;
+  END IF;
+
+  IF COALESCE(v_seat_first, false)
+     AND v_cap > 0 AND v_seats >= v_cap THEN
+    BEGIN
+      PERFORM realtime.send(
+        jsonb_build_object(
+          'tournament_id', p_tournament_id,
+          'variant', v_variant,
+          'max_players', v_cap,
+          'paid_seats', v_seats,
+          'filled_at', now()
+        ),
+        'seat_first_ready',
+        'seat_first',
+        false
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING
+        'fn_sync_seat_first_player_count: realtime.send failed for %: %',
+        p_tournament_id, SQLERRM;
     END;
-  END LOOP;
+  END IF;
+
+  RETURN v_seats;
 END;
 $seat_count$;
 
 REVOKE ALL ON FUNCTION public.fn_sync_seat_first_player_count(uuid)
-  FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_sync_seat_first_player_count(uuid)
-  TO service_role;
+  FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON FUNCTION public.fn_sync_seat_first_player_count(uuid) IS
-  'Seat-first count sync. A paid third Spin seat books its exact reserve contribution in the same transaction; booking refusal propagates. Realtime announcement alone is best-effort.';
+  'Owner-only AFTER-seat invariant. The true seat root owns terminal/mission/launch/tournament locks before row DML; this helper never acquires a late global lock. Paid-third-seat booking refusal propagates.';
 
 -- The AFTER-seat hook is part of the purchase transaction, not a storefront
 -- counter updater. The historical body caught every error, committed the paid
@@ -1417,7 +2198,7 @@ BEGIN
        'Authoritative missing Spin draw journal for 781cc0ee; reserve row d6eba15c already moved exactly 3.00 and no suspense leg or payout existed.',
        v_balance_after + 3,v_balance_after,v_tid,
        'spin:' || v_tid::text || ':draw',
-       jsonb_build_object('migration','20260908153223',
+       jsonb_build_object('migration','20260909014433',
                           'reserve_draw_id',v_draw_id,
                           'historical_correction',true));
 
@@ -1554,7 +2335,7 @@ BEGIN
      SET resolved = true,
          resolved_at = COALESCE(f.resolved_at,now()),
          resolution = COALESCE(NULLIF(f.resolution,'') || ' | ','')
-           || 'Accepted historical Spin payout: immutable reserve draw and total payout are both 10.00. Legacy prize_pool remained 3.00; winner 9.40 plus runner-up 0.60 is final. No clawback and no further 0.60 payment. Root fixed by fn_spin_draw_and_settle (20260908153223).'
+           || 'Accepted historical Spin payout: immutable reserve draw and total payout are both 10.00. Legacy prize_pool remained 3.00; winner 9.40 plus runner-up 0.60 is final. No clawback and no further 0.60 payment. Root fixed by fn_spin_draw_and_settle (20260909014433).'
    WHERE f.context->>'tournament_id' = v_tid::text
       OR f.context#>>'{rows,0,tournament_id}' = v_tid::text
       OR f.message ILIKE '%' || v_tid::text || '%'
@@ -1565,7 +2346,7 @@ BEGIN
          resolved_at = COALESCE(i.resolved_at,now()),
          auto_repair_status = 'not_applicable',
          root_cause = 'Legacy Spin row retained prize_pool 3.00 after an exact 10.00 reserve draw and 10.00 total payout.',
-         correction_ref = '20260908153223:accepted-no-clawback-no-further-payment',
+         correction_ref = '20260909014433:accepted-no-clawback-no-further-payment',
          resolution = 'Accepted historical payout; no chips moved. Winner obligation normalized from 10.00 owed / 9.40 paid to its final 9.40 receipt; runner-up remains paid 0.60.'
    WHERE i.tournament_id = v_tid
       OR i.metadata->>'tournament_id' = v_tid::text;
@@ -1768,12 +2549,18 @@ BEGIN
     RAISE EXCEPTION 'stack repair cron remains scheduled';
   END IF;
 
-  EXECUTE 'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT';
+END;
+$retire_stack_repair$;
+
+DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT;
+
+DO $verify_stack_repair_retired$
+BEGIN
   IF to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NOT NULL THEN
     RAISE EXCEPTION 'stack repair function remains executable';
   END IF;
 END;
-$retire_stack_repair$;
+$verify_stack_repair_retired$;
 
 -- ROLLING CUTOVER, STAGE 1. The database migration lands before the new
 -- server. Keep the old engine's three service-role RPC grants intact until
@@ -1809,6 +2596,8 @@ COMMENT ON FUNCTION public.fn_spin_book_entry(uuid) IS
   'Stage-1 rolling compatibility door and paid-third-seat primitive. Becomes owner-only in post-publish stage 2.';
 
 INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES
+  ('fn_assign_tournament_player_seat_atomic','approved',
+   'Service-only tournament seat+roster+table-count assignment. It derives the locked roster stack and enters through the terminal/mission/launch parent lock root; callers cannot choose chips.'),
   ('fn_spin_draw_and_settle','approved',
    'Sole service-role Spin draw and reserve settlement authority; one locked transaction and exact receipt.'),
   ('fn_spin_draw_multiplier','legacy',
@@ -1828,7 +2617,7 @@ BEGIN
   IF (SELECT count(*)
         FROM public.tournament_spin_settlement_cutover c
        WHERE c.authority = 'fn_spin_draw_and_settle:v1'
-         AND c.migration_version = '20260908153223'
+         AND c.migration_version = '20260909014433'
          AND c.installed_at = transaction_timestamp()
          AND c.audited_tournament_ids <@ ARRAY[
            '781cc0ee-6a1d-4e31-acaf-4e737661bba1'::uuid,
@@ -1874,6 +2663,221 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Spin reserve exact-journal trigger is not armed';
   END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)'::regprocedure;
+  IF position('ca:tournament-terminal-settlement:v1' IN v_source)=0
+     OR position('pg_advisory_xact_lock_shared(530090,1)' IN v_source)=0
+     OR position('public.fn_lock_daily_mission_user(p_user_id)' IN v_source)=0
+     OR position('FROM public.tournament_launch_receipts r' IN v_source)=0
+     OR position('FROM public.tournaments t' IN v_source)=0
+     OR position('ca:tournament-terminal-settlement:v1' IN v_source)
+          > position('pg_advisory_xact_lock_shared(530090,1)' IN v_source)
+     OR position('pg_advisory_xact_lock_shared(530090,1)' IN v_source)
+          > position('public.fn_lock_daily_mission_user(p_user_id)' IN v_source)
+     OR position('public.fn_lock_daily_mission_user(p_user_id)' IN v_source)
+          > position('FROM public.tournament_launch_receipts r' IN v_source)
+     OR position('FROM public.tournament_launch_receipts r' IN v_source)
+          > position('FROM public.tournaments t' IN v_source)
+     OR v_source LIKE '%NOWAIT%'
+     OR v_source LIKE '%deadlock_detected%'
+     OR v_source LIKE '%lock_not_available%'
+     OR v_source LIKE '%pg_sleep%' THEN
+    RAISE EXCEPTION 'tournament seat root lock order is incomplete or retry based';
+  END IF;
+  IF has_function_privilege(
+       'service_role',
+       'public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'owner-only tournament seat root lock is exposed';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger tr
+     WHERE tr.tgrelid='public.table_seats'::regclass
+       AND tr.tgname='a0_tournament_live_seat_root_guard'
+       AND tr.tgfoid=
+         'public.fn_tournament_live_seat_acquisition_requires_authority()'::regprocedure
+       AND tr.tgtype=23
+       AND NOT tr.tgisinternal AND tr.tgenabled<>'D'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_trigger tr
+     WHERE tr.tgrelid='public.table_seats'::regclass
+       AND tr.tgname='aa_tournament_live_seat_proof_lock'
+       AND 'a0_tournament_live_seat_root_guard'<tr.tgname
+       AND NOT tr.tgisinternal AND tr.tgenabled<>'D'
+  ) THEN
+    RAISE EXCEPTION 'earliest tournament seat acquisition guard is not armed';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_tournament_live_seat_acquisition_requires_authority()'::regprocedure;
+  IF v_source NOT LIKE '%FROM pg_catalog.pg_locks l%'
+     OR v_source NOT LIKE '%l.pid=pg_backend_pid()%'
+     OR v_source NOT LIKE '%l.objsubid=1%'
+     OR v_source NOT LIKE '%TOURNAMENT_SEAT_ACQUISITION_REQUIRES_TERMINAL_AUTHORITY%'
+     OR v_source LIKE '%pg_try_advisory%'
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_tournament_live_seat_acquisition_requires_authority()',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'tournament seat acquisition guard can acquire late or is exposed';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)'::regprocedure;
+  IF position('public.fn_ca_lock_tournament_seat_acquisition(' IN v_source)=0
+     OR position('FROM public.tournament_players tp' IN v_source)=0
+     OR position('FROM public.tables tb' IN v_source)=0
+     OR position('FROM public.table_seats s' IN v_source)=0
+     OR position('public.fn_ca_lock_tournament_seat_acquisition(' IN v_source)
+          > position('FROM public.tournament_players tp' IN v_source)
+     OR position('FROM public.tournament_players tp' IN v_source)
+          > position('FROM public.tables tb' IN v_source)
+     OR position('FROM public.tables tb' IN v_source)
+          > position('FROM public.table_seats s' IN v_source)
+     OR v_source NOT LIKE '%UPDATE public.tournament_players tp%'
+     OR v_source NOT LIKE '%UPDATE public.tables tb%'
+     OR v_source NOT LIKE '%INSERT INTO public.table_seats%'
+     OR v_source NOT LIKE '%v_stack:=COALESCE(v_t.starting_chips,0)%'
+     OR has_function_privilege(
+       'anon',
+       'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)',
+       'EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'atomic tournament seat assignment lost its lock/write/ACL contract';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_take_seat_and_buy_in(uuid,integer)'::regprocedure;
+  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+     OR v_source NOT LIKE '%fn_take_seat_and_buy_in_before_terminal_seat_gate%'
+     OR has_function_privilege(
+       'anon','public.fn_take_seat_and_buy_in(uuid,integer)','EXECUTE')
+     OR NOT has_function_privilege(
+       'authenticated','public.fn_take_seat_and_buy_in(uuid,integer)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role','public.fn_take_seat_and_buy_in(uuid,integer)','EXECUTE') THEN
+    RAISE EXCEPTION 'human seat-first root is not terminal ordered or has wrong ACL';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_seat_horse_in_seat_first_game(uuid,uuid)'::regprocedure;
+  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+     OR v_source NOT LIKE '%fn_seat_horse_in_seat_first_game_before_terminal_seat_gate%'
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_seat_horse_in_seat_first_game(uuid,uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_seat_horse_in_seat_first_game(uuid,uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'horse seat-first root is not terminal ordered or has wrong ACL';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_seat_late_registrant(uuid,uuid)'::regprocedure;
+  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+     OR v_source NOT LIKE '%fn_seat_late_registrant_before_terminal_seat_gate%'
+     OR has_function_privilege(
+       'authenticated','public.fn_seat_late_registrant(uuid,uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role','public.fn_seat_late_registrant(uuid,uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'late-seat root is not terminal ordered or has wrong ACL';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_register_for_tournament(uuid,boolean)'::regprocedure;
+  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+     OR v_source NOT LIKE '%fn_register_for_tournament_before_terminal_seat_gate%'
+     OR has_function_privilege(
+       'authenticated','public.fn_register_for_tournament(uuid,boolean)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role','public.fn_register_for_tournament(uuid,boolean)','EXECUTE') THEN
+    RAISE EXCEPTION 'wallet registration root is not terminal ordered or has wrong ACL';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_register_for_tournament(uuid)'::regprocedure;
+  IF v_source NOT LIKE '%public.fn_register_for_tournament(p_tournament_id,false)%'
+     OR has_function_privilege(
+       'anon','public.fn_register_for_tournament(uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'authenticated','public.fn_register_for_tournament(uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role','public.fn_register_for_tournament(uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated registration compatibility root bypasses terminal order';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_register_for_tournament_with_ticket(uuid,uuid)'::regprocedure;
+  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+     OR v_source NOT LIKE '%fn_register_for_tournament_with_ticket_before_terminal_gate%'
+     OR has_function_privilege(
+       'anon','public.fn_register_for_tournament_with_ticket(uuid,uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.fn_register_for_tournament_with_ticket(uuid,uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_register_for_tournament_with_ticket(uuid,uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'ticket registration root is not terminal ordered or has wrong ACL';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_register_horse_for_tournament(uuid,uuid,boolean)'::regprocedure;
+  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+     OR v_source NOT LIKE '%fn_register_horse_for_tournament_before_terminal_gate%'
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_register_horse_for_tournament(uuid,uuid,boolean)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_register_horse_for_tournament(uuid,uuid,boolean)','EXECUTE') THEN
+    RAISE EXCEPTION 'horse registration root is not terminal ordered or has wrong ACL';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_register_horse_for_tournament(uuid,uuid)'::regprocedure;
+  IF v_source NOT LIKE '%public.fn_register_horse_for_tournament(%'
+     OR v_source NOT LIKE '%p_tournament_id,p_user_id,true%'
+     OR has_function_privilege(
+       'authenticated','public.fn_register_horse_for_tournament(uuid,uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role','public.fn_register_horse_for_tournament(uuid,uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'horse registration compatibility root bypasses terminal order';
+  END IF;
+
+  IF has_function_privilege(
+       'service_role',
+       'public.fn_take_seat_and_buy_in_before_terminal_seat_gate(uuid,integer)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(uuid,uuid)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_seat_late_registrant_before_terminal_seat_gate(uuid,uuid)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_register_for_tournament_before_terminal_seat_gate(uuid,boolean)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_register_for_tournament_with_ticket_before_terminal_gate(uuid,uuid)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_register_horse_for_tournament_before_terminal_gate(uuid,uuid,boolean)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'a pre-terminal tournament seat implementation remains callable';
+  END IF;
+
   SELECT md5(pg_get_functiondef(
            'public.fn_ca_autoledger()'::regprocedure))
     INTO v_autoledger_hash;
@@ -1886,10 +2890,16 @@ BEGIN
    WHERE oid = 'public.fn_sync_seat_first_player_count(uuid)'::regprocedure;
   IF v_source NOT LIKE '%v_book := public.fn_spin_book_entry%'
      OR v_source NOT LIKE '%paid third seat could not book Spin%'
+     OR v_source LIKE '%ca:tournament-terminal-settlement:v1%'
+     OR v_source NOT LIKE '%FOR UPDATE%'
      OR v_source LIKE '%IN (''spin'', ''sng'')%'
+     OR v_source LIKE '%deadlock_detected%'
+     OR v_source LIKE '%pg_sleep%'
      OR v_source LIKE '%spin_entry_refused:%'
-     OR v_source LIKE '%spin_entry_threw:%' THEN
-    RAISE EXCEPTION 'paid-third-seat booking still catches and continues';
+     OR v_source LIKE '%spin_entry_threw:%'
+     OR has_function_privilege(
+       'service_role','public.fn_sync_seat_first_player_count(uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'paid-third-seat helper catches, retries, locks globally, or is exposed';
   END IF;
   SELECT prosrc INTO v_source FROM pg_proc
    WHERE oid = 'public.fn_ca_guard_seat_creation()'::regprocedure;

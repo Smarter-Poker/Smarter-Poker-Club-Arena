@@ -57,8 +57,9 @@ BEGIN
   PERFORM public.dblink_connect('terminal_holder',v_conn);
   PERFORM public.dblink_connect('rolling_caller',v_conn);
 
-  -- fn_collect_bounty validates its parties only after taking the same lock.
-  -- NULL inputs move no money and make this a pure concurrency observation.
+  -- fn_collect_bounty validates tournament existence only after taking the
+  -- same lock. NULL inputs move no money and make this a pure concurrency
+  -- observation.
   PERFORM public.dblink_send_query('terminal_holder',$remote$
     SELECT 1 AS done
       FROM (SELECT pg_advisory_xact_lock(
@@ -79,7 +80,7 @@ BEGIN
   PERFORM done FROM public.dblink_get_result('terminal_holder') AS x(done integer);
   SELECT result INTO v_result
     FROM public.dblink_get_result('rolling_caller') AS x(result jsonb);
-  IF v_result->>'reason' <> 'missing_party' THEN
+  IF v_result->>'reason' <> 'tournament_not_found' THEN
     RAISE EXCEPTION 'FAIL live bounty lock probe returned %',v_result;
   END IF;
 

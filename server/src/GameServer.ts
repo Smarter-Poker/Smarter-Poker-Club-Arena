@@ -32,11 +32,6 @@ import {
 } from './observability/SettlementHealth.js';
 import {
   supabase,
-  startHandHistoryRetry,
-  stopHandHistoryRetry,
-  onHandHistoryRecovered,
-  drainHandHistoryQueue,
-  handHistoryQueueDepth,
   startHandProjectionWorker,
   stopHandProjectionWorker,
 } from './services/supabase.js';
@@ -96,7 +91,6 @@ import {
   type LiveTournamentRow,
   type TournamentTableRow,
 } from './services/liveTournamentTableRecovery.js';
-import { tablesASweepMayClose } from './services/tableCloseGuard.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
@@ -2062,37 +2056,10 @@ export class GameServer {
       this.statsHealth.start();
       this.startBombLedgerRepairSweep();
 
-      // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
-      // writes go to zero platform-wide for 30-120s at a time under load (see
-      // the note above insertHandHistoryRow); a hand's payload only exists in
-      // memory at settlement, so a failed write is held and re-attempted here
-      // rather than losing the hand and leaving its rake unattributable.
+      // Step 8b: accepted-hand settlement stores history and projection work in
+      // one database transaction. The projection worker drains that durable
+      // outbox; there is no process-local hand-history recovery owner.
       startHandProjectionWorker();
-      startHandHistoryRetry();
-      // Tell the table when a hand the queue was holding finally lands, so the
-      // client can open the right replay. Without this the client falls back to
-      // "my most recent hand", which for a recovered hand is always wrong.
-      onHandHistoryRecovered(({ tableId, handNumber, handId }) => {
-        tableStateHub.emitEvent(tableId, {
-          type: 'hand_history_saved',
-          table_id: tableId,
-          hand_number: handNumber,
-          hand_id: handId,
-          recovered: true,
-          timestamp: Date.now(),
-        });
-        // A tournament bust wake is deliberately withheld until the knockout
-        // hand is queryable: eliminatePlayer derives bounty/PKO attribution
-        // and its hand_id from hand_history. If the inline write fell into the
-        // retry queue, re-wake the owning manager at the exact moment the row
-        // lands. Recovery is rare, so an O(managers) ownership lookup here is
-        // cheaper and safer than maintaining another mutable table index.
-        for (const manager of this.tournamentEngines.values()) {
-          if (!manager.getTableIds().includes(tableId)) continue;
-          manager.requestEliminationSweep();
-          break;
-        }
-      });
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
       this.leaderBootComplete = true;
@@ -2543,45 +2510,6 @@ export class GameServer {
       ownershipFailures.push(error);
     }
     await stopHandProjectionWorker();
-
-    // ── Flush the hand_history retry queue ──────────────────────────────────
-    //
-    // REVIEW FIX 2026-08-20: this block used to run near the TOP of stop(),
-    // before releaseTables() and before the pauseAfterHand drain below. That
-    // was exactly backwards. `pauseAfterHand` parks each table AFTER its
-    // current hand, so every table settles one more hand during that window —
-    // and a rolling deploy, with its connection churn, is precisely when those
-    // writes fail. Each of those hands was enqueued into a queue whose timer
-    // had already been cleared and which nothing would ever drain again. They
-    // were discarded at process exit with no log and no alert, because the
-    // alert had already run minutes earlier against an empty queue.
-    //
-    // It belongs here: after every engine has stopped and no new hand can
-    // settle. The deadline is now passed INTO the drain, which checks it per
-    // entry, so it is a real bound rather than a between-passes hope.
-    if (handHistoryQueueDepth() > 0) {
-      const deadline = Date.now() + 6_000;
-      console.log(`[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`);
-      while (handHistoryQueueDepth() > 0 && Date.now() < deadline) {
-        const before = handHistoryQueueDepth();
-        const summary = await drainHandHistoryQueue(deadline);
-        // `joined` means we awaited a drain someone else started; that one may
-        // have finished its own batch without touching ours, so a single
-        // no-progress pass is not proof there is nothing left to do.
-        if (!summary.joined && handHistoryQueueDepth() >= before) break;
-      }
-      if (handHistoryQueueDepth() > 0) {
-        reportError(
-          new Error(
-            `[GameServer] shutting down with ${handHistoryQueueDepth()} hand_history row(s) ` +
-              `still unwritten - those hands will have no history row.`
-          ),
-          'GameServer.hand_history_queue_lost_on_shutdown'
-        );
-      }
-    }
-    onHandHistoryRecovered(null);
-    stopHandHistoryRetry();
 
     /**
      * Distributed ownership is released only after all code that can deal or
@@ -3609,13 +3537,11 @@ export class GameServer {
           // Nine freerolls ranked a full field, crowned a winner and paid
           // nobody, silently. Detects only; the finish path does the funding.
           await auditGuaranteesKept(24);
-          // Restart-orphaned fees (2026-08-31): pendingHands is in-memory, so
-          // a process death between the inline write and the drain loses the
-          // claim entirely — and fn_bbj_repair_unbanked cannot see it because
-          // it heals BBJ *from* rake_records. Measured: 20 cash hands / 72.30
-          // chips in 24h, clustered at restarts. This files them back into
-          // the durable queue; banking still goes through the hand-gated,
-          // idempotent atomic_distribute_rake below.
+          // Historical pre-atomic fees (2026-08-31): a process death between
+          // the old independent hand and fee writes could leave no durable fee
+          // claim. Measured: 20 cash hands / 72.30 chips in 24h, clustered at
+          // restarts. This sweep files those historical rows into the durable
+          // database queue; accepted hands now commit both records atomically.
           // 6 hours, not 48: MEASURED 2026-08-31, the 48h scan takes 12.9s and
           // PostgREST cancels at ~8s, so the very first production run of this
           // sweep died with 57014 and it had never healed anything. The SQL now
@@ -4387,216 +4313,11 @@ export class GameServer {
             // structure) before completing.
             await recoverStuckCompletingTournaments('startup-cleanup');
 
-            // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
-            // A crashed/abandoned tournament left its tables status='running' forever
-            // (finishTournament only closes tables in the in-memory engine map). Any
-            // open table whose tournament is COMPLETED/CANCELLED gets closed here.
-            try {
-              const orphanPageSize = 500;
-
-              /**
-               * Candidate from evidence, not history (2026-09-07).
-               *
-               * This sweep briefly keyset-paged every tournament table so it could
-               * still find an already-closed table with a leaked live seat. That
-               * made each engine boot scan the complete historical table estate and
-               * then rewrite every terminal row, even when `status='closed'` and
-               * `current_players=0` were already exact. The returned rows were then
-               * reported as repairs, so a clean restart looked like a large cleanup.
-               *
-               * The evidence set is the union of (a) tournament tables whose own
-               * terminal fields need work and (b) table ids on live seats. The
-               * second set preserves the closed-table/leaked-seat case without
-               * reading or writing unrelated history. Both reads are keyset-paged;
-               * a failure makes the whole sweep UNKNOWN and therefore closes
-               * nothing.
-               */
-              const orphanCandidates = new Map<string, { tableId: string; tournamentId: string }>();
-              let afterTableId: string | null = null;
-              while (true) {
-                let nonterminalTableQuery = supabase
-                  .from('tables')
-                  .select('id, tournament_id, status, current_players')
-                  .not('tournament_id', 'is', null)
-                  .or(
-                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
-                  )
-                  .order('id', { ascending: true })
-                  .limit(orphanPageSize);
-                if (afterTableId) {
-                  nonterminalTableQuery = nonterminalTableQuery.gt('id', afterTableId);
-                }
-                const { data: nonterminalTables, error: openTableError } =
-                  await nonterminalTableQuery;
-                if (openTableError) {
-                  throw new Error(`orphan table list failed: ${openTableError.message}`);
-                }
-                if (!nonterminalTables || nonterminalTables.length === 0) break;
-                for (const table of nonterminalTables) {
-                  orphanCandidates.set(String(table.id), {
-                    tableId: String(table.id),
-                    tournamentId: String(table.tournament_id),
-                  });
-                }
-                afterTableId = String(nonterminalTables[nonterminalTables.length - 1].id);
-                if (nonterminalTables.length < orphanPageSize) break;
-              }
-
-              let afterSeatId: string | null = null;
-              while (true) {
-                let liveSeatQuery = supabase
-                  .from('table_seats')
-                  .select('id, table_id')
-                  .is('left_at', null)
-                  .order('id', { ascending: true })
-                  .limit(orphanPageSize);
-                if (afterSeatId) liveSeatQuery = liveSeatQuery.gt('id', afterSeatId);
-                const { data: liveSeats, error: liveSeatListError } = await liveSeatQuery;
-                if (liveSeatListError) {
-                  throw new Error(`orphan live-seat list failed: ${liveSeatListError.message}`);
-                }
-                if (!liveSeats || liveSeats.length === 0) break;
-                afterSeatId = String(liveSeats[liveSeats.length - 1].id);
-
-                const liveSeatTableIds = [
-                  ...new Set(liveSeats.map((seat) => String(seat.table_id))),
-                ];
-                for (let i = 0; i < liveSeatTableIds.length; i += 100) {
-                  const { data: tournamentTables, error: liveSeatTableError } = await supabase
-                    .from('tables')
-                    .select('id, tournament_id, status, current_players')
-                    .in('id', liveSeatTableIds.slice(i, i + 100))
-                    .not('tournament_id', 'is', null);
-                  if (liveSeatTableError) {
-                    throw new Error(
-                      `orphan live-seat table lookup failed: ${liveSeatTableError.message}`
-                    );
-                  }
-                  for (const table of tournamentTables ?? []) {
-                    orphanCandidates.set(String(table.id), {
-                      tableId: String(table.id),
-                      tournamentId: String(table.tournament_id),
-                    });
-                  }
-                }
-                if (liveSeats.length < orphanPageSize) break;
-              }
-
-              const orphanRows = [...orphanCandidates.values()].sort((a, b) =>
-                a.tableId.localeCompare(b.tableId)
-              );
-              let closedOrphans = 0;
-              let releasedOrphanSeats = 0;
-              for (let i = 0; i < orphanRows.length; i += 100) {
-                const batchRows = orphanRows.slice(i, i + 100);
-
-                /**
-                 * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
-                 * (2026-08-31). The candidate evidence above can become stale;
-                 * `tablesASweepMayClose` is the rule in one place: a sweep may
-                 * only close a table whose tournament is already COMPLETED or
-                 * CANCELLED, and an unreadable status leaves the table alone.
-                 */
-                const { data: freshStatuses, error: freshErr } = await supabase
-                  .from('tournaments')
-                  .select('id, status')
-                  .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
-                if (freshErr) {
-                  reportError(
-                    new Error(
-                      `[GameServer] orphan sweep status re-read failed: ${freshErr.message}`
-                    ),
-                    'GameServer.orphan_status_reread_failed'
-                  );
-                  continue; // unreadable is UNKNOWN, and UNKNOWN never closes
-                }
-                const statusByTournament = new Map<string, string>(
-                  (freshStatuses ?? []).map((t) => [
-                    String((t as { id: string }).id),
-                    String((t as { status?: string }).status ?? ''),
-                  ])
-                );
-                const batch = tablesASweepMayClose(batchRows, statusByTournament);
-                if (batch.length === 0) continue;
-
-                const { data: releasedSeats, error: seatErr } = await supabase
-                  .from('table_seats')
-                  .update({ left_at: new Date().toISOString() })
-                  .in('table_id', batch)
-                  .is('left_at', null)
-                  .select('id');
-                if (seatErr) {
-                  reportError(
-                    new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
-                    'GameServer.orphan_seat_release_failed'
-                  );
-                  continue;
-                }
-                releasedOrphanSeats += releasedSeats?.length ?? 0;
-
-                // Do not turn a clean historical row into a write. The final
-                // read below proves both changed and already-correct candidates.
-                const { data: closedRows, error: closeError } = await supabase
-                  .from('tables')
-                  .update({ status: 'closed', current_players: 0 })
-                  .in('id', batch)
-                  .or(
-                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
-                  )
-                  .select('id');
-                if (closeError) {
-                  reportError(
-                    new Error(`[GameServer] orphan table close failed: ${closeError.message}`),
-                    'GameServer.orphan_table_close_failed'
-                  );
-                  continue;
-                }
-
-                const [seatProof, tableProof] = await Promise.all([
-                  supabase
-                    .from('table_seats')
-                    .select('id', { count: 'exact', head: true })
-                    .in('table_id', batch)
-                    .is('left_at', null),
-                  supabase.from('tables').select('id, status, current_players').in('id', batch),
-                ]);
-                if (seatProof.error || seatProof.count !== 0) {
-                  reportError(
-                    new Error(
-                      `[GameServer] orphan seat release proof failed: ${seatProof.error?.message ?? `${seatProof.count ?? 'unknown'} live seat(s) remain`}`
-                    ),
-                    'GameServer.orphan_seat_release_unproven'
-                  );
-                  continue;
-                }
-                const terminalTables = tableProof.data ?? [];
-                if (
-                  tableProof.error ||
-                  terminalTables.length !== batch.length ||
-                  terminalTables.some(
-                    (table) => table.status !== 'closed' || table.current_players !== 0
-                  )
-                ) {
-                  reportError(
-                    new Error(
-                      `[GameServer] orphan table close proof failed: ${tableProof.error?.message ?? `${terminalTables.length}/${batch.length} rows read back terminal`}`
-                    ),
-                    'GameServer.orphan_table_close_unproven'
-                  );
-                  continue;
-                }
-                closedOrphans += closedRows?.length ?? 0;
-              }
-
-              if (closedOrphans > 0 || releasedOrphanSeats > 0) {
-                console.log(
-                  `[GameServer] Reconciled ${closedOrphans} terminal tournament table state(s) and released ${releasedOrphanSeats} leaked seat(s)`
-                );
-              }
-              console.log('[GameServer] Stale data cleanup complete');
-            } catch (orphanErr) {
-              reportError(orphanErr, 'GameServer.orphan_table_sweep');
-            }
+            // Terminal table and seat closeout is now owned by the atomic
+            // settlement/cancellation transaction. Migration 20260909014545
+            // closes the exact historical backlog once under the same write
+            // barrier, records every affected id, and arms the permanent
+            // seat-exit guard. Process startup never repairs this state.
           } catch (bgErr) {
             reportError(bgErr, 'GameServer.background_stale_cleanup_error');
           }
@@ -7499,8 +7220,14 @@ export class GameServer {
     try {
       await current.stop();
     } catch (stopError) {
-      reportError(stopError, 'GameServer.terminal_table_engine_stop_failed', { tableId });
-      return false;
+      if (!current.hasReleasedProcessOwnership()) {
+        reportError(stopError, 'GameServer.terminal_table_engine_stop_failed', { tableId });
+        return false;
+      }
+      // Durable table closure makes the snapshot recovery-only. Preserve the
+      // diagnostic while allowing only the exact, fully released generation
+      // captured above to leave the process registry.
+      reportError(stopError, 'GameServer.terminal_table_engine_stop_cleanup_failed', { tableId });
     }
     return this.unregisterTableEngine(tableId, current);
   }

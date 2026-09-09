@@ -1,230 +1,205 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+/**
+ * A winner is not priced or paid by the game process. Live play submits one
+ * observed identity to the database terminal authority and will present an
+ * outcome only from the authority's verified, immutable receipt.
+ */
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { blankNonCode, sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
-const eliminations = readFileSync(
-  join(process.cwd(), 'src/tournament/TournamentManagerEliminations.ts'),
-  'utf8'
+const here = dirname(fileURLToPath(import.meta.url));
+const migrations = join(here, '..', '..', '..', 'supabase', 'migrations');
+const read = (name: string) => readFileSync(join(here, name), 'utf8');
+const finish = sliceMethod(
+  read('TournamentManagerEliminations.ts'),
+  'finishTournament(winnerId: string): Promise<void>'
 );
-const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
+const terminalRpc = read('terminalSettlementRpc.ts');
+const receiptVerifier = read('completionSettlementReceipt.ts');
 
-describe('winner pricing uses confirmed guarantee funding', () => {
-  it('re-reads and proves the funded row before deriving any prize', () => {
-    const funding = finish.indexOf("this.applyPrizeGuarantee('finish_fallback')");
-    const refresh = finish.indexOf(
-      ".select('prize_pool, guaranteed_prize, prize_pool_finalized')",
-      funding
+const stripSqlComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
+
+function newestFunction(name: string, requiredFragment?: string): string {
+  let newest = '';
+  for (const filename of readdirSync(migrations)
+    .filter((entry) => entry.endsWith('.sql'))
+    .sort()) {
+    const source = stripSqlComments(readFileSync(join(migrations, filename), 'utf8'));
+    let start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+    while (start >= 0) {
+      const body = source.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/);
+      if (!body || body.index == null) throw new Error(`${filename}: ${name} has no body`);
+      const tag = body[1];
+      const bodyStart = start + body.index + body[0].length;
+      const end = source.indexOf(`${tag};`, bodyStart);
+      if (end < 0) throw new Error(`${filename}: ${name} has an incomplete body`);
+      const definition = source.slice(start, end + tag.length + 1);
+      if (!requiredFragment || definition.includes(requiredFragment)) newest = definition;
+      start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, end + tag.length + 1);
+    }
+  }
+  if (!newest) throw new Error(`${name} is missing`);
+  return newest;
+}
+
+const settlePlaces = newestFunction('fn_settle_tournament_places');
+const terminalAuthority = newestFunction(
+  'fn_complete_tournament_terminal',
+  'public.fn_settle_tournament_places('
+);
+
+describe('winner funding has one atomic authority', () => {
+  it('the process supplies identity only and never prices, funds, or pays a winner', () => {
+    expect(finish).toContain(
+      "requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
     );
-    const finalizedProof = finish.indexOf('refreshed.prize_pool_finalized !== true', refresh);
-    const guaranteeProof = finish.indexOf('refreshedPool + 0.005 < refreshedGuarantee', refresh);
-    const receiptMatch = finish.indexOf('Math.abs(refreshedPool - funded) >= 0.005', refresh);
-    const price = finish.indexOf('resolvePayoutStructure(', receiptMatch);
+    const source = blankNonCode(finish);
+    expect(source.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
+    expect(source).not.toMatch(
+      /applyPrizeGuarantee|fn_apply_prize_guarantee|resolvePayoutStructure|computePlacePrize|settleTournamentObligation|credit_player_wallet|wallet_transactions/
+    );
+    expect(source).not.toMatch(/\.from\(['"](?:tournaments|tournament_players)['"]\)/);
+  });
+
+  it('funds and proves the advertised guarantee before the database derives a place', () => {
+    const funding = settlePlaces.indexOf('public.fn_apply_prize_guarantee(');
+    const journal = settlePlaces.indexOf("v_guarantee_result->>'overlay_journaled'", funding);
+    const refresh = settlePlaces.indexOf('INTO v_t FROM public.tournaments', journal);
+    const finalized = settlePlaces.indexOf('prize_pool_finalized', refresh);
+    const floor = settlePlaces.indexOf('guaranteed_prize', finalized);
+    const ladder = settlePlaces.indexOf('fn_ca_tournament_place_amounts', floor);
 
     expect(funding).toBeGreaterThanOrEqual(0);
-    expect(refresh).toBeGreaterThan(funding);
-    expect(finalizedProof).toBeGreaterThan(refresh);
-    expect(guaranteeProof).toBeGreaterThan(refresh);
-    expect(receiptMatch).toBeGreaterThan(refresh);
-    expect(price).toBeGreaterThan(Math.max(finalizedProof, guaranteeProof, receiptMatch));
+    expect(journal).toBeGreaterThan(funding);
+    expect(refresh).toBeGreaterThan(journal);
+    expect(finalized).toBeGreaterThan(refresh);
+    expect(floor).toBeGreaterThan(finalized);
+    expect(ladder).toBeGreaterThan(floor);
+    expect(settlePlaces.slice(funding, ladder)).toMatch(/RAISE EXCEPTION/);
   });
 
-  it('leaves the durable COMPLETING claim retryable when funding has no receipt', () => {
-    const refusal = sliceEnclosingBlock(finish, 'if (funded === null)');
+  it('keeps guarantee, places, bounty, rake, closure, COMPLETED, and receipt in one call', () => {
+    const cash = terminalAuthority.indexOf('public.fn_settle_tournament_places(');
+    const bounty = terminalAuthority.indexOf('public.fn_finalize_bounty_pool(', cash);
+    const rake = terminalAuthority.indexOf('public.fn_settle_tournament_rake(', cash);
+    const seatClose = terminalAuthority.indexOf('UPDATE public.table_seats', cash);
+    const complete = terminalAuthority.indexOf("SET status = 'COMPLETED'", seatClose);
+    const tableClose = terminalAuthority.indexOf('UPDATE public.tables', complete);
+    const receipt = terminalAuthority.indexOf(
+      'INSERT INTO public.tournament_terminal_settlements',
+      complete
+    );
 
-    expect(refusal).toContain("'Tournament.finish_guarantee_unconfirmed'");
-    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
+    expect(cash).toBeGreaterThanOrEqual(0);
+    expect(bounty).toBeGreaterThan(cash);
+    expect(rake).toBeGreaterThan(cash);
+    expect(seatClose).toBeGreaterThan(Math.max(bounty, rake));
+    expect(complete).toBeGreaterThan(seatClose);
+    expect(tableClose).toBeGreaterThan(complete);
+    expect(receipt).toBeGreaterThan(complete);
+    expect(terminalAuthority).not.toMatch(/EXCEPTION WHEN OTHERS/);
+  });
+});
+
+describe('live finish accepts only a verified immutable receipt', () => {
+  it('fails closed when tournament identity is unavailable', () => {
+    const start = finish.indexOf('if (!tournament)');
+    const end = finish.indexOf('this.tournamentFinished = true', start);
+    const refusal = finish.slice(start, end);
+    expect(refusal).toContain("'Tournament.finish_identity_unavailable'");
+    expect(refusal).toMatch(/return;/);
     expect(blankNonCode(refusal)).not.toMatch(
-      /resolvePayoutStructure|computePlacePrize|settleTournamentPlacesAtomically/
+      /requestTournamentTerminalReceipt|processSatelliteAwards/
     );
   });
 
-  it('rejects a stale, underfunded, or unfinalized read-back', () => {
-    const refusal = sliceEnclosingBlock(finish, 'refreshed.prize_pool_finalized !== true', 0, 1);
-
-    expect(refusal).toContain('refreshErr');
-    expect(refusal).toContain('!refreshed');
-    expect(refusal).toContain('!Number.isFinite(refreshedPool)');
-    expect(refusal).toContain('refreshed.prize_pool_finalized !== true');
-    expect(refusal).toContain('refreshedPool + 0.005 < refreshedGuarantee');
-    expect(refusal).toContain('Math.abs(refreshedPool - funded) >= 0.005');
-    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
-  });
-
-  it('uses the same funding receipt path even when the published guarantee is zero', () => {
-    const formatCheck = finish.indexOf('const isSatelliteFinish');
-    const funding = finish.indexOf("this.applyPrizeGuarantee('finish_fallback')", formatCheck);
-    const price = finish.indexOf('resolvePayoutStructure(', funding);
-    const gate = finish.slice(formatCheck, funding);
-
-    expect(formatCheck).toBeGreaterThanOrEqual(0);
-    expect(funding).toBeGreaterThan(formatCheck);
-    expect(price).toBeGreaterThan(funding);
-    expect(blankNonCode(gate)).not.toMatch(/guaranteed_prize\s*>|prize_pool\s*>/);
-  });
-});
-
-describe('winner completion requires an atomic COMPLETED receipt', () => {
-  it('has no per-winner application payment or terminal status write', () => {
-    const code = blankNonCode(finish);
-
-    expect(code).not.toMatch(/settleTournamentObligation|fn_settle_tournament_obligation/);
-    expect(finish).not.toMatch(
-      /\.from\('tournaments'\)[\s\S]{0,300}?\.update\(\{[\s\S]{0,200}?status:\s*'COMPLETED'/
-    );
-  });
-
-  it('accepts the batch only with ok and completed, then runs cleanup-only work', () => {
-    const atomic = finish.indexOf('settleTournamentPlacesAtomically(');
-    const proof = finish.indexOf('if (!settlement.ok || !settlement.completed)', atomic);
-    const durableRead = finish.indexOf('this.readDurableTournamentStatus()', proof);
-    const refusalReturn = finish.indexOf('return;', durableRead);
-    const cleanup = finish.lastIndexOf('this.cleanupCommittedTournament()');
-
-    expect(atomic).toBeGreaterThanOrEqual(0);
-    expect(proof).toBeGreaterThan(atomic);
-    expect(durableRead).toBeGreaterThan(proof);
-    expect(refusalReturn).toBeGreaterThan(durableRead);
-    expect(cleanup).toBeGreaterThan(refusalReturn);
-  });
-
-  it('treats a lost response as success only after durable COMPLETED is re-proven', () => {
-    const refusal = sliceEnclosingBlock(finish, 'if (!settlement.ok || !settlement.completed)');
-    const durableRead = refusal.indexOf('this.readDurableTournamentStatus()');
-    const completed = refusal.indexOf("committed.status === 'COMPLETED'", durableRead);
-    const cleanup = refusal.indexOf('this.cleanupCommittedTournament()', completed);
-    const alert = refusal.indexOf('raiseFinancialAlert(', cleanup);
-
-    expect(durableRead).toBeGreaterThanOrEqual(0);
-    expect(completed).toBeGreaterThan(durableRead);
-    expect(cleanup).toBeGreaterThan(completed);
-    expect(alert).toBeGreaterThan(cleanup);
-  });
-});
-
-describe('fallback winner pricing needs a complete published structure', () => {
-  it('does not invent winner-take-all when a funded pool has no usable ladder', () => {
-    const condition = finish.indexOf('else if (Number(tournament.prize_pool || 0) > 0)');
-    const error = finish.indexOf("'Tournament.payout_structure_unavailable_at_finish'", condition);
-    const refusal = sliceEnclosingBlock(
-      finish,
-      "'Tournament.payout_structure_unavailable_at_finish'"
-    );
-
-    expect(condition).toBeGreaterThanOrEqual(0);
-    expect(error).toBeGreaterThan(condition);
-    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
-    expect(blankNonCode(refusal)).not.toMatch(
-      /winnerStamp|settleTournamentPlacesAtomically|cleanupCommittedTournament/
-    );
-  });
-});
-
-describe('all satellite identities take the seat-award path', () => {
-  it('recognizes target, variant and tournament type before any cash pricing', () => {
+  it('separates every satellite identity from the ordinary cash door', () => {
     const identity = finish.indexOf('const isSatelliteFinish');
-    const price = finish.indexOf('resolvePayoutStructure(', identity);
+    const satellite = finish.indexOf('if (isSatelliteFinish)', identity);
+    const cash = finish.indexOf('requestTournamentTerminalReceipt(', satellite);
+    const identityWindow = finish.slice(identity, satellite);
+    const satelliteWindow = finish.slice(satellite, cash);
 
-    expect(identity).toBeGreaterThanOrEqual(0);
-    expect(finish.slice(identity, price)).toContain("variant ?? '').toLowerCase() === 'satellite'");
-    expect(finish.slice(identity, price)).toContain(
-      "tournament_type || '').toUpperCase() === 'SATELLITE'"
-    );
-    expect(finish.slice(identity, price)).toContain('satellite_target_id');
-    expect(finish.slice(identity, price)).toContain('if (!isSatelliteFinish)');
+    expect(identityWindow).toContain("variant ?? '').toLowerCase() === 'satellite'");
+    expect(identityWindow).toContain("tournament_type ?? '').toUpperCase() === 'SATELLITE'");
+    expect(identityWindow).toContain('satellite_target_id || tournament.satellite_target');
+    expect(satelliteWindow).toContain('processSatelliteAwards(tournament, winnerId)');
+    expect(satelliteWindow).not.toContain('requestTournamentTerminalReceipt(');
+    expect(cash).toBeGreaterThan(satellite);
   });
 
-  it('routes satellites to the atomic seat finalizer and normal events to place settlement', () => {
-    const satelliteStart = finish.indexOf('if (isSatelliteFinish)');
-    const settlementBranch = finish.slice(
-      satelliteStart,
-      finish.indexOf('let refreshedPool', satelliteStart)
+  it('releases only a proven refusal and stops on an ambiguous outcome', () => {
+    const ordinary = finish.slice(
+      finish.indexOf('let receipt: VerifiedTournamentCompletionReceipt')
     );
-
-    expect(settlementBranch).toContain('processSatelliteAwards(tournament, winnerId)');
-    expect(settlementBranch).toContain('return;');
-    expect(settlementBranch).not.toContain('settleTournamentPlacesAtomically(');
-    expect(finish.indexOf('if (isSatelliteFinish)')).toBeLessThan(
-      finish.indexOf('settleTournamentPlacesAtomically(')
+    const refusal = ordinary.indexOf('settlementErr instanceof TerminalSettlementRefusedError');
+    const unknown = ordinary.indexOf(
+      'settlementErr instanceof TerminalSettlementOutcomeUnknownError',
+      refusal
     );
-  });
-});
+    const release = ordinary.indexOf('if (provenRefusal) releaseFinishGuard()', unknown);
+    const stop = ordinary.indexOf('if (!provenRefusal) await this.stopAndWait()', release);
+    const cleanup = ordinary.indexOf('await this.cleanupCommittedTournament(receipt)', stop);
 
-describe('finish proves the final roster before atomic settlement', () => {
-  it('fails closed when the unresolved-player roster is unreadable', () => {
-    const read = finish.indexOf('const { data: stillPlaying, error: stillPlayingErr }');
-    const guard = finish.indexOf('if (stillPlayingErr || !Array.isArray(stillPlaying))', read);
-    const stamp = finish.indexOf('const { error: winnerStampErr', guard);
-    const refusal = finish.slice(guard, stamp);
-
-    expect(read).toBeGreaterThanOrEqual(0);
-    expect(guard).toBeGreaterThan(read);
-    expect(stamp).toBeGreaterThan(guard);
-    expect(refusal).toContain("'Tournament.unresolved_players_read_failed'");
-    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
+    expect(refusal).toBeGreaterThanOrEqual(0);
+    expect(unknown).toBeGreaterThan(refusal);
+    expect(release).toBeGreaterThan(unknown);
+    expect(stop).toBeGreaterThan(release);
+    expect(cleanup).toBeGreaterThan(stop);
   });
 
-  it('accepts only readable, positive-integer, unique finishing positions', () => {
-    const read = finish.indexOf('const { data: finishTaken, error: finishTakenErr }');
-    const accepted = finish.indexOf('const finishTakenPositions = new Set<number>', read);
-    const guard = finish.slice(read, accepted);
-
-    expect(read).toBeGreaterThanOrEqual(0);
-    expect(accepted).toBeGreaterThan(read);
-    expect(guard).toContain('finishTakenErr');
-    expect(guard).toContain('!Array.isArray(finishTaken)');
-    expect(guard).toContain('!Number.isInteger(Number(r.position))');
-    expect(guard).toContain('Number(r.position) < 1');
-    expect(guard).toContain(
-      'new Set(finishTaken.map((r) => Number(r.position))).size !== finishTaken.length'
+  it('presents the winner and amount from the receipt, never the candidate', () => {
+    const cleanup = sliceMethod(
+      read('TournamentManagerEliminations.ts'),
+      'private async cleanupCommittedTournament('
     );
-    expect(guard).toContain("'Tournament.finish_positions_unconfirmed'");
-    expect(guard).toMatch(/this\.tournamentFinished = false;\s*return;/);
-  });
-
-  it('requires each fallback assignment and the post-assignment roster read to succeed', () => {
-    const assignment = finish.indexOf('const eliminated = await this.eliminatePlayer(');
-    const assignmentGuard = finish.indexOf('if (!eliminated)', assignment);
-    const verificationRead = finish.indexOf(
-      'const { data: remainingPlayers, error: remainingPlayersErr }',
-      assignmentGuard
-    );
-    const verificationGuard = finish.indexOf(
-      'if (remainingPlayersErr || !Array.isArray(remainingPlayers) || remainingPlayers.length > 0)',
-      verificationRead
-    );
-    const stamp = finish.indexOf('const { error: winnerStampErr', verificationGuard);
-    const refusal = finish.slice(assignmentGuard, verificationRead);
-    const verification = finish.slice(verificationGuard, stamp);
-
-    expect(assignment).toBeGreaterThanOrEqual(0);
-    expect(finish.slice(assignment, assignmentGuard)).toContain(', finishNext, true)');
-    expect(assignmentGuard).toBeGreaterThan(assignment);
-    expect(refusal).toContain("'Tournament.finish_fallback_place_deferred'");
-    expect(refusal).toContain('this.requestUrgentEliminationSweepAfter(');
-    expect(verificationRead).toBeGreaterThan(assignmentGuard);
-    expect(verificationGuard).toBeGreaterThan(verificationRead);
-    expect(verification).toContain("'Tournament.finish_players_unresolved'");
-    expect(verification).toMatch(/this\.tournamentFinished = false;/);
-    expect(verification).toContain('this.requestUrgentEliminationSweepAfter(');
-    expect(verification).toMatch(/return;/);
-    expect(stamp).toBeGreaterThan(verificationGuard);
+    expect(cleanup).toContain('receipt.winnerAmount');
+    expect(cleanup).toContain('userId: receipt.winnerId');
+    expect(cleanup).toContain('this.committedFinishReceipt = receipt');
+    expect(blankNonCode(cleanup)).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
   });
 });
 
-describe('winner entitlement write has exact cardinality', () => {
-  it('requires exactly one winner row before any settlement can run', () => {
-    const stamp = finish.indexOf('const { error: winnerStampErr, count: winnerStampCount }');
-    const guard = finish.indexOf('if (winnerStampErr || winnerStampCount !== 1)', stamp);
-    const normalize = finish.indexOf("'fn_normalize_tournament_final_standings'", guard);
-    const write = finish.slice(stamp, guard);
-    const refusal = finish.slice(guard, normalize);
+describe('lost responses are resolved by the same immutable request', () => {
+  it('replays one exact request, then serializes behind the terminal transaction', () => {
+    const request = terminalRpc.indexOf('const request = {');
+    const loop = terminalRpc.indexOf('for (let attempt = 1;', request);
+    const invoke = terminalRpc.indexOf(
+      "supabase.rpc('fn_complete_tournament_terminal', request)",
+      loop
+    );
+    const resolver = terminalRpc.indexOf(
+      "supabase.rpc('fn_resolve_tournament_terminal_outcome'",
+      invoke
+    );
+    expect(request).toBeGreaterThanOrEqual(0);
+    expect(loop).toBeGreaterThan(request);
+    expect(invoke).toBeGreaterThan(loop);
+    expect(resolver).toBeGreaterThan(invoke);
+    expect(terminalRpc).toContain('verifyTournamentCompletionReceipt(');
+  });
 
-    expect(stamp).toBeGreaterThanOrEqual(0);
-    expect(write).toContain("{ count: 'exact' }");
-    expect(guard).toBeGreaterThan(stamp);
-    expect(refusal).toContain("'Tournament.winner_row_stamp_failed'");
-    expect(refusal).toMatch(/this\.tournamentFinished = false;\s*return;/);
-    expect(normalize).toBeGreaterThan(guard);
+  it('calls a miss a refusal only when the serialized result proves no receipt', () => {
+    expect(terminalRpc).toMatch(
+      /terminal_committed === false[\s\S]*?definitively_not_committed === true[\s\S]*?outcome\.receipt === null[\s\S]*?throw new TerminalSettlementRefusedError/
+    );
+    expect(terminalRpc).toMatch(/throw new TerminalSettlementOutcomeUnknownError\(/);
+    expect(terminalRpc).toContain('Terminal settlement outcome is unknown after');
+  });
+
+  it('rejects partial, duplicated, mismatched, or unfunded receipt evidence', () => {
+    expect(receiptVerifier).toMatch(/receipt\.fully_settled !== true/);
+    expect(receiptVerifier).toMatch(/receipt\.status !== 'COMPLETED'/);
+    expect(receiptVerifier).toMatch(/tournamentId !== expectedTournamentId/);
+    expect(receiptVerifier).toMatch(/receipt\.mode !== expectedMode/);
+    expect(receiptVerifier).toMatch(/users\.has\(userId\) \|\|[\s\S]*?places\.has\(place\)/);
+    expect(receiptVerifier).toMatch(
+      /prizeBalance !== 0[\s\S]*?bountyBalance !== 0[\s\S]*?feeBalance !== 0/
+    );
+    expect(receiptVerifier).toMatch(/payoutCents !== Math\.round\(cashPayoutTotal \* 100\)/);
+    expect(receiptVerifier).toMatch(/rake\.attributed !== true/);
   });
 });

@@ -50,7 +50,7 @@ const tsCode = (src: string) =>
 
 const MIGRATION = 'supabase/migrations/20260822030000_union_level_spin_reserve_wallet.sql';
 const ATOMIC_MIGRATION =
-  'supabase/migrations/20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql';
+  'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql';
 
 const migration = sqlCode(read(MIGRATION));
 const atomicMigration = sqlCode(read(ATOMIC_MIGRATION));

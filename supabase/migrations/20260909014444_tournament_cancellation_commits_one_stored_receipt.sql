@@ -1,4 +1,4 @@
--- 20260908153239_tournament_cancellation_commits_one_stored_receipt
+-- 20260909014444_tournament_cancellation_commits_one_stored_receipt
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-09-08 03:44:40 UTC.
 --
@@ -134,7 +134,7 @@ DO $own_settle_source$
 DECLARE
   c_source constant text := 'atomic_cancel_tournament';
   c_note constant text :=
-    '20260908153239: atomic cancellation receipt authority';
+    '20260909014444: atomic cancellation receipt authority';
   v_note text;
 BEGIN
   SELECT s.note INTO v_note
@@ -2212,7 +2212,7 @@ BEGIN
   IF (SELECT count(*)
         FROM public.ca_settle_sources s
        WHERE s.source = 'atomic_cancel_tournament'
-         AND s.note = '20260908153239: atomic cancellation receipt authority') <> 1 THEN
+         AND s.note = '20260909014444: atomic cancellation receipt authority') <> 1 THEN
     RAISE EXCEPTION
       'atomic cancellation source ownership proof failed after function publish'
       USING ERRCODE = 'P0404';

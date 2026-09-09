@@ -10,7 +10,7 @@ const SQL = readFileSync(
     ROOT,
     'supabase',
     'migrations',
-    '20260908153207_satellite_settlement_has_one_atomic_authority.sql'
+    '20260909014421_satellite_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );
@@ -38,6 +38,14 @@ function taggedBody(tag: string): string {
   return SQL.slice(first + delimiter.length, second);
 }
 
+function functionDefinition(name: string): string {
+  const start = SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  const end = SQL.indexOf('\nREVOKE ALL ON FUNCTION', start);
+  expect(start, `${name} definition`).toBeGreaterThan(-1);
+  expect(end, `${name} revoke`).toBeGreaterThan(start);
+  return SQL.slice(start, end);
+}
+
 const UNREGISTER = taggedBody('entitlement_unregister_core');
 const UNREGISTER_RECEIPT = taggedBody('unregistration_receipt');
 const RETURN_TICKET = taggedBody('return_satellite_ticket');
@@ -45,6 +53,14 @@ const ADMISSION = taggedBody('ticket_admission_for');
 const SELECTOR = taggedBody('find_tournament_entry_ticket_for');
 const TICKET_GUARD = taggedBody('satellite_entry_ticket_guard');
 const ADMIN_REMOVE = taggedBody('admin_remove_wrapper');
+const HUMAN_REGISTRATION = functionDefinition(
+  'fn_register_for_tournament_before_atomic_capacity_20260907'
+);
+const HORSE_REGISTRATION = functionDefinition(
+  'fn_register_horse_for_tournament_before_maintenance_gate'
+);
+const CASH_REDEEM = taggedBody('redeem_cash_ticket_only');
+const CASH_CANCEL = taggedBody('cancel_cash_ticket_only');
 
 describe('satellite-funded tournament unregistration is ticket-only', () => {
   it('permits unregistration only before the scheduled start', () => {
@@ -123,6 +139,31 @@ describe('satellite-funded tournament unregistration is ticket-only', () => {
     expect(PROBE).toContain('fn_cancel_tournament_ticket');
     expect(PROBE).toContain('wallet_chips_from_satellite_entitlements');
     expect(PROBE).toContain('zero wallet rows');
+  });
+
+  it('removes registration compensation from complete source-controlled cores', () => {
+    for (const core of [HUMAN_REGISTRATION, HORSE_REGISTRATION]) {
+      expect(core).toContain('EXCEPTION WHEN unique_violation THEN');
+      expect(core).toContain("USING ERRCODE = '40001'");
+      expect(core).not.toContain('credit_player_wallet(');
+      expect(core).not.toContain('tourn_reg_race:');
+    }
+    expect(SQL).not.toMatch(/EXECUTE\s+replace\s*\(/i);
+  });
+
+  it('hard-refuses noncash tickets before either cashier wallet write', () => {
+    for (const cashier of [CASH_REDEEM, CASH_CANCEL]) {
+      const refusal = cashier.indexOf("v_t.redemption_mode='tournament_entry_only'");
+      const wallet = cashier.indexOf('UPDATE public.club_members');
+      expect(refusal).toBeGreaterThan(-1);
+      expect(wallet).toBeGreaterThan(refusal);
+    }
+    expect(CASH_REDEEM).toContain(
+      'Tournament-Entry Tickets Can Only Be Used To Enter A Tournament'
+    );
+    expect(CASH_CANCEL).toContain(
+      'Returned Tournament-Entry Tickets Cannot Be Cancelled For Chips'
+    );
   });
 
   it('declares every new ticket boundary in the schema fragment', () => {

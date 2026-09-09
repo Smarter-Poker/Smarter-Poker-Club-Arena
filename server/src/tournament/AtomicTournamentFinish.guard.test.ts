@@ -15,7 +15,7 @@ const SOURCE = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'),
 const SETTLEMENT = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'
+    '../../../supabase/migrations/20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );
@@ -43,31 +43,30 @@ describe('the live cash finish has one authoritative payer', () => {
   it('releases only a proven refusal and stops on an ambiguous commit result', () => {
     const finish = code(sliceMethod(SOURCE, 'protected async finishTournament'));
     const failure = finish.slice(finish.indexOf('catch (settlementErr)'));
-    expect(failure).toContain(
-      'const outcomeUnknown = settlementErr instanceof TerminalSettlementOutcomeUnknownError'
+    expect(failure).toMatch(
+      /const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;[\s\S]*const outcomeUnknown =[\s\S]*settlementErr instanceof TerminalSettlementOutcomeUnknownError \|\| !provenRefusal;/
     );
-    expect(failure).toContain('if (!outcomeUnknown) releaseFinishGuard()');
-    expect(failure).toContain('if (outcomeUnknown) await this.stopAndWait()');
+    expect(failure).toContain('if (provenRefusal) releaseFinishGuard()');
+    expect(failure).toContain('if (!provenRefusal) await this.stopAndWait()');
   });
 
-  it('a failed bubble announcement cannot bypass mandatory postcommit shutdown', () => {
-    const finish = code(sliceMethod(SOURCE, 'protected async finishTournament'));
-    const bubble = finish.indexOf("await this.broadcast('bubble_protection_paid'");
-    const contained = finish.indexOf(
-      "reportError(broadcastErr, 'Tournament.bubble_protection_broadcast_failed')",
-      bubble
-    );
-    const shutdown = finish.indexOf('for (const [tableId, engine] of this.tableEngines)', bubble);
+  it('a failed bubble announcement cannot bypass receipt-driven shutdown', () => {
+    const cleanup = code(sliceMethod(SOURCE, 'private async cleanupCommittedTournament'));
+    const delivery = code(sliceMethod(SOURCE, 'private async broadcastCommittedOutcome'));
+    const bubble = cleanup.indexOf('await this.announceCommittedBubble(receipt)');
+    const shutdown = cleanup.indexOf('cleanupCommittedTablesAndManager(', bubble);
+    expect(delivery).toContain('catch (error)');
+    expect(delivery).toContain('return false');
     expect(bubble).toBeGreaterThan(-1);
-    expect(contained).toBeGreaterThan(bubble);
-    expect(shutdown).toBeGreaterThan(contained);
+    expect(shutdown).toBeGreaterThan(bubble);
   });
 });
 
 describe('running-state bookkeeping cannot pay a place', () => {
-  it('elimination stamps the prize preview but does not settle a place', () => {
+  it('elimination gives the atomic roster owner a prize preview but does not settle a place', () => {
     const eliminate = code(sliceMethod(SOURCE, 'protected async eliminatePlayer'));
-    expect(eliminate).toMatch(/status:\s*'eliminated',[\s\S]*position,[\s\S]*prize,/);
+    expect(eliminate).toContain("'fn_eliminate_tournament_player_atomic'");
+    expect(eliminate).toMatch(/p_position:\s*position,[\s\S]*p_prize:\s*prize/);
     expect(eliminate).not.toMatch(/kind:\s*'place'/);
     expect(eliminate).not.toMatch(/kind:\s*'late_reg_adjustment'/);
   });
@@ -82,7 +81,9 @@ describe('running-state bookkeeping cannot pay a place', () => {
   it('final-deal closeout consumes payout evidence without paying it again', () => {
     const deal = code(sliceMethod(SOURCE, 'private async settleFinalTableDeal'));
     expect(deal).toMatch(/receipt:\s*VerifiedTournamentCompletionReceipt/);
-    expect(deal).toMatch(/\[\.\.\.receipt\.dealShares\]\.sort\(\(a, b\) => a\.place - b\.place\)/);
+    expect(deal).toMatch(
+      /\[\.\.\.receipt\.dealShares\]\s*\.sort\(\(a, b\) => a\.place - b\.place\)/
+    );
     expect(deal).not.toMatch(/Number\(b\.chips\)/);
     expect(deal).not.toMatch(/\.from\('tournament_players'\)[\s\S]{0,240}?\.update\(/);
     expect(deal).not.toMatch(/settleTournamentObligation/);
@@ -152,26 +153,14 @@ describe('a terminal cash receipt proves every presentation cache', () => {
     expect(settle).toMatch(/post-settlement bubble prize-cache proof failed/);
   });
 
-  it('the immediate bubble door stays shut until the field and pool are final', () => {
+  it('the application has no immediate bubble payer before terminal settlement', () => {
     const eliminate = code(sliceMethod(SOURCE, 'protected async eliminatePlayer'));
-    const bubbleCall = eliminate.indexOf("'fn_settle_tournament_bubble_protection'");
-    expect(bubbleCall).toBeGreaterThan(-1);
-    expect(eliminate.slice(0, bubbleCall)).toMatch(/this\.prizePoolFinalized/);
-    expect(eliminate.slice(0, bubbleCall)).toMatch(
-      /bubbleField !== undefined && bubbleField >= position[\s\S]*?\? resolvePayoutStructure\(tournament as any, bubbleField\)[\s\S]*?: null/
-    );
-
-    const start = SETTLEMENT.indexOf(
-      'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_bubble_protection('
-    );
-    const end = SETTLEMENT.indexOf(
-      'REVOKE ALL ON FUNCTION public.fn_settle_tournament_bubble_protection',
-      start
-    );
-    const settleBubble = SETTLEMENT.slice(start, end).replace(/--.*$/gm, '');
-    expect(settleBubble).toMatch(/t\.prize_pool_finalized/);
-    expect(settleBubble).toMatch(
-      /COALESCE\(v_t\.prize_pool_finalized, false\) IS NOT TRUE[\s\S]*?RAISE EXCEPTION/
+    const finish = code(sliceMethod(SOURCE, 'protected async finishTournament'));
+    expect(eliminate).not.toContain('fn_settle_tournament_bubble_protection');
+    expect(eliminate).not.toContain('bubble_protection_paid');
+    expect(finish).toContain('requestTournamentTerminalReceipt(');
+    expect(code(sliceMethod(SOURCE, 'private async announceCommittedBubble'))).toContain(
+      "broadcastCommittedOutcome('bubble_protection_paid'"
     );
   });
 });

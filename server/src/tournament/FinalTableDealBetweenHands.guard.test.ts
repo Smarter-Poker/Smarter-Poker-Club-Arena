@@ -21,59 +21,58 @@ describe('a final-table deal is settled only from a physically parked table', ()
     expect(authority).toContain('managerEngine.isRunning()');
   });
 
-  it('arms on one poll and requires a later physical park', () => {
-    const acquire = sliceMethod(eliminations, 'acquireFinalTableDealPause(): Promise<boolean>');
-    const arm = acquire.indexOf('pauseForFinalTableDeal(');
-    const firstReturn = acquire.indexOf('return false', arm);
-    const proof = acquire.indexOf('isParkedForFinalTableDeal()', firstReturn);
-    expect(arm).toBeGreaterThanOrEqual(0);
-    expect(firstReturn).toBeGreaterThan(arm);
-    expect(proof).toBeGreaterThan(firstReturn);
-  });
-
-  it('parks before guarantee funding and re-proves after awaited reads before money', () => {
+  it('hands the exact engine to the hard terminal boundary', () => {
     const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
-    const acquire = check.indexOf('acquireFinalTableDealPause()');
-    const guarantee = check.indexOf("applyPrizeGuarantee('final_table_deal')");
-    const firstReproof = check.indexOf('finalTableDealPauseIsStillAuthoritative()', guarantee);
-    const finalInputs = check.indexOf('{ data: finalAlive, error: finalAliveErr }', firstReproof);
-    const finalReproof = check.indexOf('finalTableDealPauseIsStillAuthoritative()', finalInputs);
-    const money = check.indexOf('settleFinalTableDealAtomically(', finalReproof);
-    expect(acquire).toBeGreaterThanOrEqual(0);
-    expect(guarantee).toBeGreaterThan(acquire);
-    expect(firstReproof).toBeGreaterThan(guarantee);
-    expect(finalInputs).toBeGreaterThan(firstReproof);
-    expect(finalReproof).toBeGreaterThan(finalInputs);
-    expect(money).toBeGreaterThan(finalReproof);
+    const authority = check.indexOf('authoritativeFinalTableDealEngine()');
+    const latch = check.indexOf('this.finalTableDealHandled = true', authority);
+    const boundary = check.indexOf(
+      'completeFinalTableDealAtBoundary(tableId, engine, tableSize)',
+      latch
+    );
+    expect(authority).toBeGreaterThanOrEqual(0);
+    expect(latch).toBeGreaterThan(authority);
+    expect(boundary).toBeGreaterThan(latch);
   });
 
-  it('releases only the exact engine and every non-committed refusal releases the hold', () => {
-    const release = sliceMethod(eliminations, 'releaseFinalTableDealPause(): void');
+  it('parks before every final input and lets only the terminal receipt move money', () => {
+    const boundary = sliceMethod(
+      eliminations,
+      'completeFinalTableDealAtBoundary(\n    tableId: string,'
+    );
+    const park = boundary.indexOf('parkForTerminalCloseout(');
+    const finalInputs = boundary.indexOf(".select('user_id, chips')", park);
+    const votes = boundary.indexOf(".from('tournament_deal_votes')", finalInputs);
+    const money = boundary.indexOf('requestTournamentTerminalReceipt(', votes);
+    expect(park).toBeGreaterThanOrEqual(0);
+    expect(finalInputs).toBeGreaterThan(park);
+    expect(votes).toBeGreaterThan(finalInputs);
+    expect(money).toBeGreaterThan(votes);
+    expect(boundary.slice(0, money)).not.toMatch(
+      /applyPrizeGuarantee|settleTournamentRake|settleFinalTableDealAtomically|\.update\(|\.rpc\(/
+    );
+  });
+
+  it('releases only on a proven refusal and stops ownership for every unknown outcome', () => {
     const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
-    expect(release).toContain('this.gameServer.getTableEngine(held.tableId) !== held.engine');
-    expect(release).toContain('held.engine.resumeFromFinalTableDeal()');
-    expect(check).toMatch(
-      /!deal\.ok \|\| !deal\.completed[\s\S]*?committed\.status === 'COMPLETED'[\s\S]*?releaseFinalTableDealPause\(\)/
-    );
-    expect(check).toMatch(
-      /this\.tournamentFinished = false;[\s\S]*?this\.finalTableDealHandled = false;[\s\S]*?releaseFinalTableDealPause\(\)/
+    const proven = check.indexOf('err instanceof TerminalSettlementRefusedError');
+    const stop = check.indexOf('await this.stopAndWait()', proven);
+    const release = check.indexOf('engine.releaseTerminalCloseoutPause()', stop);
+    expect(proven).toBeGreaterThanOrEqual(0);
+    expect(stop).toBeGreaterThan(proven);
+    expect(release).toBeGreaterThan(stop);
+    expect(check.slice(proven, release)).toContain('if (!provenRefusal)');
+    expect(check.slice(release)).toMatch(
+      /this\.finalTableDealHandled = false;[\s\S]*?this\.tournamentFinished = false/
     );
   });
 
-  it('wires the independent authority into every engine pause and resume gate', () => {
-    expect(engineBase).toContain('protected finalTableDealPaused: boolean = false');
-    expect(engineBase).toMatch(
-      /resumeFromMaintenance\(\)[\s\S]*?handForHandPaused \|\| this\.finalTableDealPaused/
-    );
-    expect(engineBase).toMatch(
-      /resumeDealing\(\)[\s\S]*?maintenancePaused \|\| this\.finalTableDealPaused/
-    );
-    expect(engineBase).toMatch(/isPausedByDesign\(\)[\s\S]*?this\.finalTableDealPaused/);
-    expect(engineBase).toMatch(
-      /isParkedForFinalTableDeal\(\)[\s\S]*?!this\.hasSettlementInFlight\(\)[\s\S]*?this\.isBetweenHands\(\)/
-    );
-    expect(dealing).toMatch(
-      /this\.maintenancePaused \|\|[\s\S]*?this\.finalTableDealPaused \|\|[\s\S]*?await this\.awaitPauseGate\(\)/
-    );
+  it('wires the terminal authority into every engine pause and resume gate', () => {
+    expect(engineBase).toContain('protected terminalCloseoutPaused: boolean = false');
+    expect(engineBase).toContain('async parkForTerminalCloseout(maxWaitMs: number)');
+    expect(engineBase).toContain('releaseTerminalCloseoutPause(): void');
+    expect(engineBase).toMatch(/resumeFromMaintenance\(\)[\s\S]*?this\.terminalCloseoutPaused/);
+    expect(engineBase).toMatch(/resumeDealing\(\)[\s\S]*?this\.terminalCloseoutPaused/);
+    expect(engineBase).toMatch(/isPausedByDesign\(\)[\s\S]*?this\.terminalCloseoutPaused/);
+    expect(dealing).toMatch(/this\.terminalCloseoutPaused[\s\S]*?await this\.awaitPauseGate\(\)/);
   });
 });

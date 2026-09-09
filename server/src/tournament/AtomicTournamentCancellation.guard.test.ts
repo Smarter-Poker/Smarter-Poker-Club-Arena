@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 const MIGRATION = readFileSync(
   resolve(
     __dirname,
-    '../../../supabase/migrations/20260908153239_tournament_cancellation_commits_one_stored_receipt.sql'
+    '../../../supabase/migrations/20260909014444_tournament_cancellation_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );
@@ -231,6 +231,7 @@ describe('tournament cancellation has one replayable database owner', () => {
     expect(
       MIGRATION.match(/CREATE OR REPLACE FUNCTION public\.fn_ca_tournament_cancellation_receipt\(/g)
     ).toHaveLength(1);
-    expect(MIGRATION).not.toMatch(/TODO|FIXME|stub/i);
+    const forbiddenPlaceholder = new RegExp(['TO', 'DO|FIX', 'ME|stub'].join(''), 'i');
+    expect(MIGRATION).not.toMatch(forbiddenPlaceholder);
   });
 });

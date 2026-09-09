@@ -617,11 +617,14 @@ describe('a paused table parks whatever it was doing', () => {
      * step that publishes the bundle, so a cosmetic red here stops every
      * deploy on the platform.
      */
-    const release = sliceMethod(ENGINE_BASE, 'releasePauseGate()');
+    // Use the declaration as the anchor. Terminal closeout now calls this
+    // helper before its declaration, so the shorter anchor would slice that
+    // caller rather than the method it is supposed to guard.
+    const release = sliceMethod(ENGINE_BASE, 'private releasePauseGate(): void');
     expect(release).toMatch(/this\.holdBeforeNextHand = false/);
     expect(release).toMatch(/this\.pauseMaxWaitMs = null/);
     // And resumeDealing must still route through it rather than half-resuming.
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
     expect(resume).toMatch(/this\.releasePauseGate\(\)/);
   });
 
@@ -634,12 +637,16 @@ describe('a paused table parks whatever it was doing', () => {
      * hand inside the break AND destroyed the break's pause budget on the way
      * through, so the table self-resumed two minutes into a five minute break.
      */
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
-    expect(resume).toMatch(/if \(this\.maintenancePaused \|\| this\.finalTableDealPaused\)/);
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
+    expect(resume).toMatch(
+      /if \(this\.maintenancePaused \|\| this\.finalTableDealPaused \|\| this\.terminalCloseoutPaused\)/
+    );
     // The maintenance resume is the mirror image: it must not lift a
     // hand-for-hand pause it did not set.
-    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance()');
-    expect(maint).toMatch(/if \(this\.handForHandPaused \|\| this\.finalTableDealPaused\) return/);
+    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance(): void');
+    expect(maint).toMatch(
+      /if \(this\.handForHandPaused \|\| this\.finalTableDealPaused \|\| this\.terminalCloseoutPaused\) return/
+    );
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

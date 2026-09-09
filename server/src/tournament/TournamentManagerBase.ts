@@ -50,7 +50,6 @@ import { selectInChunks } from '../services/supabase/chunkedIn.js';
  */
 import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
-import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
 import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
@@ -75,9 +74,9 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
-import { mayTakeSeat } from './seatClaim.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { parseSpinSettlementReceipt, type SpinSettlementReceipt } from './spinSettlementReceipt.js';
+import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
 import type { GameServer } from '../GameServer.js';
 import { tournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
 import {
@@ -2940,25 +2939,20 @@ export abstract class TournamentManagerBase {
       // debiting anyone — proven the hard way when an agent-seated entry
       // played two full spins for free (kingfish, 2026-08-20; charged
       // retroactively, RPC since dropped). Every legitimate path
-      // (fn_register_for_tournament for humans,
-      // fn_register_horse_for_tournament for horses) writes a
-      // 'tournament_buyin' DEBIT to wallet_transactions in the same
-      // transaction as the registration, so a paid seat always has its
-      // ledger row — that row is the evidence this gate demands.
-      //
-      // An unpaid registration is REMOVED (loudly), the head-count is
-      // corrected, and the start stands down: the discovery loop refills the
-      // seat with a paying horse on its next pass. Removing rather than
-      // refusing forever is what keeps "never start unpaid" from becoming
-      // "never start at all" — the freeloading row cannot pay, so waiting on
-      // it would deadlock the game.
+      // (fn_register_for_tournament for humans and
+      // fn_register_horse_for_tournament for horses) commits an immutable
+      // refund entitlement in the same transaction as its charge and roster.
+      // That entitlement, not a denormalized wallet scan, is the evidence this
+      // gate demands. A mismatch is quarantined for operator review. The
+      // launch path never deletes a roster, vacates a seat or reconciles a
+      // counter in separate requests.
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         const buyIn = Number(tournament.buy_in_amount || 0);
         if (buyIn > 0) {
           /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
              This discarded its `error`. On failure `regs` is null, so
-             `regIds` is [], the debits query below falls to its sentinel
-             UUID, `debits` is [], and `unpaid` is [] — the gate PASSES,
+             `regIds` is [], the entitlement query below falls to its sentinel
+             UUID, its rows are empty, and `unpaid` is [] — the gate PASSES,
              having verified exactly zero payments. That is the precise hole
              this block exists to close (the free-spin incident recorded
              above), reopened by any transient failure. The very next read
@@ -2979,25 +2973,25 @@ export abstract class TournamentManagerBase {
             new Set((regs ?? []).map((r: any) => r.table_id).filter(Boolean) as string[])
           );
 
-          const { data: debits, error: debitErr } = await supabase
-            .from('wallet_transactions')
+          const { data: paidEntitlements, error: entitlementErr } = await supabase
+            .from('tournament_refund_entitlements')
             // `created_at` is read for the REVEAL ANCHOR, not for the gate:
             // Dan 2026-08-21, "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD
             // PLAYER PAYS FOR HIS SEAT", and the last of these rows IS that
             // moment. See stampSpinRevealAnchor below.
-            .select('user_id, amount, created_at')
-            .eq('related_entity_id', this.tournamentId)
-            .eq('category', 'tournament_buyin')
-            .eq('type', 'debit')
+            .select('user_id, gross, created_at')
+            .eq('tournament_id', this.tournamentId)
+            .eq('entitlement_kind', 'wallet_charge')
+            .eq('charge_category', 'tournament_buyin')
             .in('user_id', regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000']);
           this.assertLifecycleCurrent(lifecycle);
 
-          if (debitErr) {
+          if (entitlementErr) {
             // Evidence unreadable ≠ evidence of non-payment. Stand down and
             // try again next pass rather than kicking players over a blip.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry check unreadable (${debitErr.message}) - standing down, will retry`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry entitlement check unreadable (${entitlementErr.message}) - standing down, will retry`
               ),
               'Tournament.spin_paid_check_unreadable'
             );
@@ -3006,77 +3000,27 @@ export abstract class TournamentManagerBase {
           }
 
           const paidBy = new Map<string, number>();
-          for (const d of debits ?? []) {
-            paidBy.set(d.user_id, (paidBy.get(d.user_id) || 0) + Number(d.amount || 0));
+          for (const entitlement of paidEntitlements ?? []) {
+            paidBy.set(
+              entitlement.user_id,
+              (paidBy.get(entitlement.user_id) || 0) + Number(entitlement.gross || 0)
+            );
           }
           const unpaid = regIds.filter((id) => (paidBy.get(id) || 0) + 1e-9 < buyIn);
 
           if (unpaid.length > 0) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) with no ${buyIn}-chip buy-in ledger row (${unpaid
+                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) without an exact ${buyIn}-chip funded entitlement (${unpaid
                   .map((u) => u.slice(0, 8))
-                  .join(', ')}) - removing them; a spin NEVER starts until 3 players have paid`
+                  .join(
+                    ', '
+                  )}). The field is quarantined; a Spin never starts until every seat has paid.`
               ),
-              'Tournament.spin_unpaid_registration_removed'
+              'Tournament.spin_unpaid_registration_quarantined'
             );
-            await supabase
-              .from('tournament_players')
-              .delete()
-              .eq('tournament_id', this.tournamentId)
-              .in('user_id', unpaid);
-            this.assertLifecycleCurrent(lifecycle);
-            /**
-             * RELEASE THEIR SEATS TOO, OR THIS GAME NEVER RUNS AGAIN
-             * (2026-08-28).
-             *
-             * Removing the registration alone left the `table_seats` row
-             * standing, and a seat-first game's fill is counted from those
-             * rows — `readSeatFirstPaidSeats`, `fn_sync_seat_first_player_count`
-             * and the stall watchdog all read `left_at IS NULL`. So the game
-             * still read 3/3 SOLD with only 2 registrations:
-             *
-             *   - the fast lane force-starts it, `start()` now fails the
-             *     field check ABOVE this gate (2 < 3) and stands down before
-             *     ever reaching here again;
-             *   - `topUpWithHorses` sees no shortfall — the seats are full —
-             *     and adds nobody;
-             *   - the stall watchdog is gated on `paid < seats`, so it is
-             *     silent too.
-             *
-             * The result was a 5-second loop, forever, with money taken and
-             * a single console.log as the only trace. Vacating the seat is
-             * what lets a paying horse take it on the next pass, which is
-             * what the comment below has always promised.
-             */
-            const { error: seatReleaseErr } = await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString(), is_sitting_out: false })
-              .in('user_id', unpaid)
-              .is('left_at', null)
-              .in(
-                'table_id',
-                (
-                  await supabase.from('tables').select('id').eq('tournament_id', this.tournamentId)
-                ).data?.map((r: { id: string }) => r.id) ?? []
-              );
-            this.assertLifecycleCurrent(lifecycle);
-            if (seatReleaseErr) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Could not release unpaid seat(s): ${seatReleaseErr.message}. The game will read full and cannot refill until this clears.`
-                ),
-                'Tournament.spin_unpaid_seat_release_failed'
-              );
-            }
-            // Both counters derive from the seat rows; resync rather than
-            // arithmetic on a counter this gate has just proven unreliable.
-            await supabase.rpc('fn_sync_seat_first_player_count', {
-              p_tournament_id: this.tournamentId,
-            });
-            this.assertLifecycleCurrent(lifecycle);
             this.running = false;
-            return; // discovery refills with PAYING horses and restarts
+            return;
           }
 
           /**
@@ -3092,8 +3036,8 @@ export abstract class TournamentManagerBase {
            * server hold, so any drift came straight off the wheel.
            */
           this.stampSpinRevealAnchor(
-            (debits ?? [])
-              .map((d: { created_at?: string }) => Date.parse(String(d?.created_at ?? '')))
+            (paidEntitlements ?? [])
+              .map((entry: { created_at?: string }) => Date.parse(String(entry?.created_at ?? '')))
               .filter((t: number) => Number.isFinite(t))
           );
         }
@@ -3450,14 +3394,10 @@ export abstract class TournamentManagerBase {
         );
       }
 
-      // Migrate registrations (registered -> playing).
-      //
-      // EARLY BIRD (2026-08-22 parity): fn_register_for_tournament credits the
-      // early-bird bonus into tournament_players.chips AT REGISTRATION, so a
-      // 'registered' row's chips column is the pre-credited bonus (0 for
-      // everyone else). Seating must therefore ADD the starting stack to that
-      // bonus — the old single-statement UPDATE overwrote it with
-      // starting_chips and silently destroyed every bonus ever granted.
+      // Snapshot the exact roster that this launch must put on the felt. Do not
+      // promote registrations in a separate transaction: the atomic seat RPC
+      // derives starting stack + early-bird bonus from the locked row and
+      // commits registered -> playing with its seat and coordinates.
       let expectedLaunchPlayerIds: string[] = [];
       {
         const { data: regRows, error: regRowsErr } = await supabase
@@ -3487,31 +3427,6 @@ export abstract class TournamentManagerBase {
               `[Tournament:${this.tournamentId.slice(0, 8)}] Registration migration roster was not a complete unique field - standing down before table construction`
             ),
             'Tournament.launch_roster_migration_invalid'
-          );
-          this.running = false;
-          return;
-        }
-        const migrationResults = await Promise.all(
-          (regRows ?? [])
-            .filter((row) => row.status === 'registered')
-            .map((row: { user_id: string; chips: number | null }) => {
-              const bonus = Math.max(0, Math.floor(Number(row.chips) || 0));
-              return supabase
-                .from('tournament_players')
-                .update({ status: 'playing', chips: tournament.starting_chips + bonus })
-                .eq('tournament_id', this.tournamentId)
-                .eq('user_id', row.user_id)
-                .eq('status', 'registered');
-            })
-        );
-        this.assertLifecycleCurrent(lifecycle);
-        const migrationFailure = migrationResults.find((result) => result.error)?.error;
-        if (migrationFailure) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Registration migration was not complete (${migrationFailure.message}) - standing down before table construction`
-            ),
-            'Tournament.launch_roster_migration_failed'
           );
           this.running = false;
           return;
@@ -3835,7 +3750,10 @@ export abstract class TournamentManagerBase {
       this.assertLifecycleCurrent(lifecycle);
       for (const [tableId, engine] of this.tableEngines) {
         this.admitManagedTableEngine(tableId, engine);
-        this.startManagedTableEngine(engine, 'TournamentthistournamentIdslic.Table_engine_error');
+        this.startManagedTableEngine(
+          engine,
+          `Tournament.${this.tournamentId.slice(0, 8)}.table_engine_error`
+        );
       }
       await this.drainTableEngineStartJobs();
       this.assertLifecycleCurrent(lifecycle);
@@ -3884,7 +3802,7 @@ export abstract class TournamentManagerBase {
       ) {
         return;
       }
-      reportError(err, 'TournamentthistournamentIdslic.Start_failed');
+      reportError(err, `Tournament.${this.tournamentId.slice(0, 8)}.start_failed`);
       this.running = false;
       this.unregisterEliminationScheduler();
     }
@@ -4002,7 +3920,7 @@ export abstract class TournamentManagerBase {
               this.admitManagedTableEngine(tableId, engine);
               this.startManagedTableEngine(
                 engine,
-                'TournamentthistournamentIdslic.Resume_rebuilt_table_error'
+                `Tournament.${this.tournamentId.slice(0, 8)}.resume_rebuilt_table_error`
               );
             }
           } catch (rebuildErr) {
@@ -4017,7 +3935,10 @@ export abstract class TournamentManagerBase {
           this.wireEliminationWake(engine);
           this.tableEngines.set(table.id, engine);
           this.admitManagedTableEngine(table.id, engine);
-          this.startManagedTableEngine(engine, 'TournamentthistournamentIdslic.Resume_table_error');
+          this.startManagedTableEngine(
+            engine,
+            `Tournament.${this.tournamentId.slice(0, 8)}.resume_table_error`
+          );
         }
         // Re-apply a button that was DRAWN but never dealt. Awaited before the
         // first hand can plausibly land, and a no-op for every table that has
@@ -4233,7 +4154,7 @@ export abstract class TournamentManagerBase {
       ) {
         return;
       }
-      reportError(err, 'TournamentthistournamentIdslic.Resume_failed');
+      reportError(err, `Tournament.${this.tournamentId.slice(0, 8)}.resume_failed`);
       this.running = false;
       this.unregisterEliminationScheduler();
     }
@@ -4807,9 +4728,9 @@ export abstract class TournamentManagerBase {
   protected async createTablesAndSeatPlayers(tournament: any): Promise<void> {
     const { data: players, error: playersErr } = await supabase
       .from('tournament_players')
-      .select('user_id, chips')
+      .select('user_id, chips, status')
       .eq('tournament_id', this.tournamentId)
-      .eq('status', 'playing');
+      .in('status', ['registered', 'playing']);
 
     if (playersErr) throw new Error(`Tournament roster read failed: ${playersErr.message}`);
     if (!players || players.length === 0) throw new Error('No players');
@@ -5011,7 +4932,7 @@ export abstract class TournamentManagerBase {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (error || !table) {
-        reportError(error, 'TournamentthistournamentIdslic.Failed_to_create_table');
+        reportError(error, `Tournament.${this.tournamentId.slice(0, 8)}.failed_to_create_table`);
         throw new Error(
           `Tournament table ${i + 1} was not created: ${error?.message || 'insert returned no row'}`
         );
@@ -5052,44 +4973,6 @@ export abstract class TournamentManagerBase {
     // is how a full adopted table was handed an eleventh player.
     let cursor = 0;
     for (let i = 0; i < toSeat.length; i++) {
-      /**
-       * THE SNAPSHOT IS NOT THE CHECK (2026-08-25).
-       *
-       * `alreadySeated` is read ONCE, above, and this loop then writes one
-       * seat per statement for the whole field — five minutes on a 497-entrant
-       * freeroll. A second pass over the same tournament (a re-entered start,
-       * a resume, a second engine instance) takes its own snapshot inside that
-       * window, sees every not-yet-written player as unseated, and seats them
-       * again at a different table. `idx_unique_active_user_per_table` is
-       * scoped to ONE table, so it cannot object.
-       *
-       * Live footprint on `bae46dbf` 2026-08-25: 72 players holding 144 live
-       * seats, 46 of the pairs exactly 14 tables apart — two round-robin
-       * cursors, this loop, running twice. Both seats were dealt and both
-       * stacks diverged.
-       *
-       * So the seat is claimed against the DATABASE, immediately before the
-       * write. A player who has acquired a seat since the snapshot is skipped.
-       * An unreadable answer aborts this launch attempt; its incomplete receipt
-       * makes the next admission retry reconstruct and prove the same setup,
-       * while a guess here could create a double stack.
-       */
-      const claim = await mayTakeSeat(supabase, this.tournamentId, toSeat[i].user_id);
-      if (!claim.allowed) {
-        if (claim.unknown) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} - ${claim.reason}. Aborting this launch attempt rather than risking a second live seat.`
-            ),
-            'Tournament.seat_claim_unreadable'
-          );
-          throw new Error(
-            `Tournament seat claim for ${toSeat[i].user_id} was unreadable: ${claim.reason}`
-          );
-        }
-        continue;
-      }
-
       // Next table, from the cursor, that has a genuinely free seat number
       // within its own capacity.
       let tableId: string | null = null;
@@ -5124,82 +5007,35 @@ export abstract class TournamentManagerBase {
         throw new Error('Tournament launch seating capacity was exhausted');
       }
 
-      const taken = occupiedSeats.get(tableId) ?? new Set<number>();
-      taken.add(seatNumber);
-      occupiedSeats.set(tableId, taken);
-
-      const { error: seatErr } = await supabase.from('table_seats').insert({
-        table_id: tableId,
-        user_id: toSeat[i].user_id,
-        seat_number: seatNumber,
-        stack: toSeat[i].chips || tournament.starting_chips,
-        joined_at: new Date().toISOString(),
-      });
-      if (seatErr) {
-        // Un-burn the seat. If we don't, this seat is permanently unavailable in `occupiedSeats`
-        // even though it was never written to the database, which leads to `seating_capacity_exhausted`
-        // when we skip too many players.
-        taken.delete(seatNumber);
-
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${toSeat[i].user_id.slice(0, 8)}: ${seatErr.message}`
-          ),
-          'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id'
-        );
-        throw new Error(`Tournament seat insert failed: ${seatErr.message}`);
-      }
-
       /**
-       * THE ROSTER MUST KNOW WHERE THE PLAYER IS SITTING (2026-08-24).
-       *
-       * This wrote the table_seats row and stopped, leaving
-       * tournament_players.table_id NULL for the entire start-seated field.
-       * Only ensureLateRegSeated and the table-move path ever set it, so the
-       * column was a lie for anyone who entered before the cards were in the
-       * air: measured in production, 166 of 297 live entrants, every one of
-       * them genuinely seated. Everything that navigates by that column was
-       * broken for more than half the field, including TournamentDetails'
-       * "go to my table" links, which resolved to /table/undefined.
-       *
-       * Written after the seat and skipped when the seat insert failed, so the
-       * roster can never claim a seat the player does not hold.
+       * One database transaction owns duplicate detection, stack derivation,
+       * vacated-seat reuse, registered -> playing, roster coordinates and the
+       * exact table count. No raw INSERT/UPDATE fallback or compensation is
+       * legal here. A refused/unknown result leaves the launch receipt
+       * incomplete, so the next lifecycle admission rereads durable state.
        */
-      const { error: rosterErr } = await supabase
-        .from('tournament_players')
-        .update({ table_id: tableId, seat_number: seatNumber })
-        .eq('tournament_id', this.tournamentId)
-        .eq('user_id', toSeat[i].user_id);
-      if (rosterErr) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] seated ${toSeat[i].user_id.slice(0, 8)} but could not record the table on the roster: ${rosterErr.message}`
-          ),
-          'Tournament.roster_table_id_write_failed'
+      try {
+        const receipt = await assignTournamentPlayerSeatAtomically({
+          tournamentId: this.tournamentId,
+          userId: toSeat[i].user_id,
+          tableId,
+          seatNumber,
+        });
+        const taken = occupiedSeats.get(tableId) ?? new Set<number>();
+        taken.add(receipt.seatNumber);
+        occupiedSeats.set(tableId, taken);
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic launch seat certified for ${receipt.userId.slice(0, 8)} at table ${receipt.tableId.slice(0, 8)} seat ${receipt.seatNumber} (${receipt.stack} chips, table count ${receipt.currentPlayers})`
         );
-        throw new Error(`Tournament roster seat linkage failed: ${rosterErr.message}`);
-      }
-    }
-
-    // Update player counts
-    for (const tableId of tableIds) {
-      const { count, error: countErr } = await supabase
-        .from('table_seats')
-        .select('*', { count: 'exact', head: true })
-        .eq('table_id', tableId)
-        .is('left_at', null);
-      if (countErr || count == null) {
+      } catch (seatError) {
+        reportError(seatError, 'Tournament.atomic_launch_seat_refused_or_unknown', {
+          tournamentId: this.tournamentId,
+          playerId: toSeat[i].user_id,
+          tableId,
+          seatNumber,
+        });
         throw new Error(
-          `Tournament table ${tableId} live-seat count failed: ${countErr?.message || 'count unavailable'}`
-        );
-      }
-      const { error: countWriteErr } = await supabase
-        .from('tables')
-        .update({ current_players: count })
-        .eq('id', tableId);
-      if (countWriteErr) {
-        throw new Error(
-          `Tournament table ${tableId} player-count write failed: ${countWriteErr.message}`
+          `Tournament atomic seat assignment failed for ${toSeat[i].user_id}: ${(seatError as Error)?.message ?? seatError}`
         );
       }
     }
@@ -5638,7 +5474,7 @@ export abstract class TournamentManagerBase {
               new Error(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindMsg}`
               ),
-              'TournamentthistournamentIdslic.Blind_update_failed_for_table_'
+              `Tournament.${this.tournamentId.slice(0, 8)}.blind_update_failed_for_table`
             );
           }
 
@@ -5675,7 +5511,7 @@ export abstract class TournamentManagerBase {
             new Error(
               `[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`
             ),
-            'TournamentthistournamentIdslic.Level_persist_failed'
+            `Tournament.${this.tournamentId.slice(0, 8)}.level_persist_failed`
           );
 
         // FIX-B (chip race) 2026-07-19 — DISABLED. Two independent audits found
@@ -5735,7 +5571,7 @@ export abstract class TournamentManagerBase {
               if (!this.lifecycleIsCurrent(lifecycle)) return;
             }
           } catch (crErr) {
-            reportError(crErr, 'TournamentthistournamentIdslic.Chip_race_error');
+            reportError(crErr, `Tournament.${this.tournamentId.slice(0, 8)}.chip_race_error`);
           }
         }
 

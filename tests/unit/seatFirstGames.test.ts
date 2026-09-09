@@ -51,7 +51,7 @@ const ATOMIC_CREATION = readFileSync(
 const SPIN_CUTOVER = readFileSync(
   resolve(
     __dirname,
-    '../../supabase/migrations/20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    '../../supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -285,9 +285,12 @@ describe('the stack repair fleet is retired behind one serialized proof', () => 
       expect(retirement).toContain(`LOCK TABLE ${table} IN SHARE MODE`);
     }
     expect(retirement).toContain('cron.unschedule(v_job.jobid)');
-    expect(retirement).toContain(
-      'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT'
+    const dropRepair = SPIN_CUTOVER.indexOf(
+      'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT',
+      retirementEnd
     );
+    expect(dropRepair).toBeGreaterThan(retirementEnd);
+    expect(retirement).not.toMatch(/EXECUTE\s+'DROP FUNCTION/i);
     expect(retirement).toContain('stack repair backlog is not zero');
     expect(retirement).toContain('seat-first stack invariant is not clean');
   });

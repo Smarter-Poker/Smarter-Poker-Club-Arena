@@ -15,7 +15,7 @@ three-seat contribution twice while evaluating affordability.
 
 ## Root Repair
 
-Migration `20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing`
+Migration `20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing`
 installs one database-owned Spin money boundary:
 
 - The earlier platform-wide strict `fn_ca_autoledger` makes each

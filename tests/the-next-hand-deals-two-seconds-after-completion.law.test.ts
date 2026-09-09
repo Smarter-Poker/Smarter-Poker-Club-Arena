@@ -71,7 +71,18 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     const deal = DEALING.indexOf("this.setLoopPhase('dealing');");
     expect(awaited).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-    expect(DEALING.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()).toBe(
+    const betweenRestAndDeal = DEALING.slice(
+      awaited + 'await this.awaitNextHandRest();'.length,
+      deal
+    );
+    // A terminal closeout is allowed to take ownership while the rest timer is
+    // pending. Its gate has no normal-path wait: it only parks when the
+    // terminal authority is actually armed. Remove those exact fail-closed
+    // gates and the lifecycle re-proof remains the sole ordinary-path work.
+    const terminalGate =
+      /if \(this\.terminalCloseoutPaused\) \{\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    expect(betweenRestAndDeal.match(terminalGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
+    expect(betweenRestAndDeal.replace(terminalGate, '').trim()).toBe(
       'if (!this.lifecycleCanMutate()) return;'
     );
   });

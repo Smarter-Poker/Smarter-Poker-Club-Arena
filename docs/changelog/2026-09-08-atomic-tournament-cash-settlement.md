@@ -13,7 +13,7 @@ to insert.
 
 ## Root Repair
 
-Migration `20260908153151_tournament_cash_settlement_has_one_atomic_authority`
+Migration `20260909014410_tournament_cash_settlement_has_one_atomic_authority`
 installs one database-owned transaction boundary for each cash finish:
 
 - `fn_settle_tournament_places` locks the tournament, complete roster, and

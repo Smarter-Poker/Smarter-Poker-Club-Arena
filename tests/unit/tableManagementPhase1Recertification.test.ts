@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest';
 const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
-const CANCELLATION = '20260908153239_tournament_cancellation_commits_one_stored_receipt.sql';
+const CANCELLATION = '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql';
+const SEAT_EXIT = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
 const cancellation = readFileSync(resolve(MIGRATIONS, CANCELLATION), 'utf8');
+const seatExit = readFileSync(resolve(MIGRATIONS, SEAT_EXIT), 'utf8');
 const migrationSources = readdirSync(MIGRATIONS)
   .filter((name) => name.endsWith('.sql'))
   .sort()
@@ -72,12 +74,12 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     const update = latestDefinition('fn_update_managed_game(');
     const close = latestDefinition('fn_close_managed_game(');
 
-    expect(update.file).toBe(RECERTIFICATION);
+    expect(update.file).toBe(SEAT_EXIT);
     expect(close.file).toBe(CANCELLATION);
     for (const definition of [update.source, close.source]) {
       expect(definition).toContain('FROM public.tournament_players tp');
       expect(definition).not.toContain('tp.user_id IS NOT NULL');
-      expect(definition).toContain("'reason', 'players_registered'");
+      expect(definition).toMatch(/'reason'\s*,\s*'players_registered'/);
     }
   });
 
@@ -90,6 +92,12 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     );
     expect(cancellation).not.toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_close_managed_game(text, uuid)\n  TO authenticated'
+    );
+    expect(seatExit).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_update_managed_game(text,uuid,jsonb)\n  FROM PUBLIC,anon,authenticated;'
+    );
+    expect(seatExit).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_update_managed_game(text,uuid,jsonb)\n  TO service_role;'
     );
   });
 });

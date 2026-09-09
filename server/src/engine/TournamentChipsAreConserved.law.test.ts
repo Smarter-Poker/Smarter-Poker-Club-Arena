@@ -117,23 +117,13 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
 });
 
 describe('LAW 3: a conservation refusal from the database is never written around', () => {
-  it('the rolling-compatibility stack RPC returns false on a refusal, with no per-seat fallback', () => {
-    // 2026-09-04 (chip standard, felt erasure): the per-seat fallback this
-    // pin used to bound is gone - it was the absolute write that erased
-    // credits. The refusal is still recognised and still returns; what
-    // follows it is the bounded retry of the SAME atomic call, never a loop
-    // of absolute seat writes.
-    const src = code(read('../services/supabase/tables.ts'));
-    const fn = src.slice(src.indexOf('export async function syncStacks('));
-    const refusal = fn.indexOf('/^conservation violation/i');
-    expect(refusal).toBeGreaterThan(-1);
-    const after = fn.slice(refusal);
-    expect(after).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
-    expect(
-      after.slice(0, after.indexOf("'DB.settle_hand_stacks_conservation_refused'") + 900)
-    ).toMatch(/return false;/);
-    expect(fn).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
-    expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
+  it('the runtime has no rolling stack-only door or per-seat fallback', () => {
+    const tables = code(read('../services/supabase/tables.ts'));
+    const history = code(read('../services/supabase/handHistory.ts'));
+    expect(tables).not.toMatch(/\bsyncStacks\b/);
+    expect(tables).not.toContain('fn_ca_settle_hand_stacks_absolute');
+    expect(tables).not.toMatch(/\.update\(\s*\{\s*stack/);
+    expect(history).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
   });
 });
 

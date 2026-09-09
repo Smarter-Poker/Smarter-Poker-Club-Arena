@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const root = (path: string) => resolve(__dirname, '..', path);
 const sql = readFileSync(
   root(
-    'supabase/migrations/20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'
+    'supabase/migrations/20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );
@@ -20,30 +20,23 @@ function taggedBody(tag: string): string {
 }
 
 describe('a funded guarantee is escrow money in the same transaction', () => {
-  const hardening = taggedBody('harden_guarantee_escrow_journal');
+  const hardening = taggedBody('guarantee_receipt');
 
-  it('patches only the audited authority baseline and rejects a split identity', () => {
-    expect(hardening).toContain("md5(v_definition) <> '6c758a4b130d057c49c7e941461ce74c'");
-    expect(hardening).toContain('guarantee_overlay_identity_conflict');
-    expect(hardening).toContain('v_claim_needle');
-    expect(hardening).toContain('v_claim_replacement');
-    expect(hardening).toContain(
-      'v_hardened := replace(v_hardened,v_claim_needle,v_claim_replacement)'
-    );
+  it('uses one source-controlled canonical wrapper, never a dynamic body patch', () => {
+    expect(sql).toContain('RENAME TO fn_ca_apply_prize_guarantee_core');
+    expect(hardening).toContain('public.fn_ca_apply_prize_guarantee_core(');
+    expect(sql).not.toMatch(/EXECUTE\s+(?:replace\(|v_hardened)/i);
+    expect(sql).not.toContain('$harden_guarantee_escrow_journal$');
   });
 
-  it('journals the claimed overlay before prize-pool finalization and verifies exact delta', () => {
-    const escrow = hardening.indexOf('perform public.fn_ca_escrow_apply(');
-    const finalized = hardening.lastIndexOf('set prize_pool = v_final');
-    expect(escrow).toBeGreaterThan(-1);
-    expect(finalized).toBeGreaterThan(escrow);
-    expect(hardening).toContain('p_overlay_in => v_overlay');
-    expect(hardening).toContain('v_escrow_before.overlay_in + v_overlay');
-    expect(hardening).toContain('v_escrow_before.prize_balance + v_overlay');
-    expect(hardening).toContain('guarantee_first_escrow_mismatch');
+  it('re-proves the exact journal identity and live enforced escrow before success', () => {
+    expect(hardening).toContain("'tourney:'||p_tournament_id::text||':guarantee_overlay'");
+    expect(hardening).toContain("l.to_type='prize_liability'");
+    expect(hardening).toContain("l.category='overlay'");
+    expect(hardening).toContain('COALESCE(v_escrow.enforced,false) IS NOT TRUE');
+    expect(hardening).toContain("(v_result->>'escrow_after')::numeric");
+    expect(hardening).toContain('v_ledger_count<>1');
     expect(hardening).toContain("'overlay_journaled'");
-    expect(sql).toContain("position('update public.clubs' IN v_guarantee)");
-    expect(sql).toContain("position('fn_ca_escrow_apply(' IN v_guarantee)");
     expect(sql).toContain('fn_apply_prize_guarantee lost its atomic escrow journal ordering');
   });
 

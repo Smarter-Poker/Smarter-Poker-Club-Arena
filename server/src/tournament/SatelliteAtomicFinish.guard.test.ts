@@ -128,14 +128,15 @@ describe('the engine and ACL expose only the atomic doors', () => {
     expect(MANAGER).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     const finish = ELIMINATIONS.slice(ELIMINATIONS.indexOf('protected async finishTournament'));
     const satellite = finish.indexOf('if (isSatelliteFinish) {');
-    const legacyRake = finish.indexOf('settleTournamentRake(tournament)');
+    const ordinary = finish.indexOf('let receipt: VerifiedTournamentCompletionReceipt', satellite);
     expect(satellite).toBeGreaterThan(-1);
-    expect(satellite).toBeLessThan(legacyRake);
-    expect(finish.slice(satellite, legacyRake)).toContain(
+    expect(ordinary).toBeGreaterThan(satellite);
+    expect(finish.slice(satellite, ordinary)).toContain(
       'await this.processSatelliteAwards(tournament, winnerId)'
     );
-    expect(finish.slice(satellite, legacyRake)).toContain('await this.stopAndWait()');
-    expect(finish.slice(satellite, legacyRake)).toContain('return;');
+    expect(finish.slice(satellite, ordinary)).toContain('await this.stopAndWait()');
+    expect(finish.slice(satellite, ordinary)).toContain('return;');
+    expect(finish).not.toContain('settleTournamentRake(tournament)');
   });
 
   it('keeps browser roles out and gives service no table mutation grants', () => {

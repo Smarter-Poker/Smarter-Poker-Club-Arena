@@ -50,7 +50,7 @@ const HAND_STACK_HARDENER = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260908153329_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+    '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );
@@ -114,9 +114,19 @@ describe('every device is told when a seat changes hands', () => {
 
 describe('a busted seat is vacated at EVERY tournament format', () => {
   const bustedFlow = sliceEnclosingBlock(DEALING, 'if (justBustedPlayers.length > 0) {');
-  const hardenerStart = HAND_STACK_HARDENER.indexOf('v_sync_replacement text := $replacement$');
-  const hardenerEnd = HAND_STACK_HARDENER.indexOf('v_result_needle text :=', hardenerStart);
+  const hardenerStart = HAND_STACK_HARDENER.indexOf(
+    'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute('
+  );
+  const hardenerEnd = HAND_STACK_HARDENER.indexOf('$function$;', hardenerStart);
   const atomicWrite = HAND_STACK_HARDENER.slice(hardenerStart, hardenerEnd);
+  const zeroStackVacateStart = atomicWrite.indexOf(
+    '-- A named zero-stack tournament seat is finished on the felt'
+  );
+  const zeroStackVacateEnd = atomicWrite.indexOf(
+    'SELECT count(*) INTO v_table_live_seat_count',
+    zeroStackVacateStart
+  );
+  const zeroStackVacate = atomicWrite.slice(zeroStackVacateStart, zeroStackVacateEnd);
 
   it('keeps only the rebuy-window decision inside the rebuy gate', () => {
     expect(bustedFlow).toContain('if (t && (t.is_rebuy ||');
@@ -147,15 +157,16 @@ describe('a busted seat is vacated at EVERY tournament format', () => {
     expect(HAND_STACK_HARDENER).toContain("'tournament_zero_stack_seats_vacated'");
   });
 
-  it('installs the atomic write by hardening and executing the inspected RPC body', () => {
-    expect(HAND_STACK_HARDENER).toContain('SELECT pg_get_functiondef(p.oid) INTO v_definition');
+  it('installs a complete source-controlled atomic body, never a catalog patch', () => {
     expect(HAND_STACK_HARDENER).toContain(
-      "'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure"
+      'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute('
     );
-    expect(HAND_STACK_HARDENER).toContain(
-      'v_hardened := replace(v_hardened,v_sync_needle,v_sync_replacement);'
+    expect(HAND_STACK_HARDENER).not.toContain('v_hardened := replace(');
+    expect(HAND_STACK_HARDENER).not.toContain('EXECUTE v_hardened;');
+    expect(zeroStackVacateStart).toBeGreaterThan(-1);
+    expect(zeroStackVacateEnd).toBeGreaterThan(zeroStackVacateStart);
+    expect(blankNonCode(zeroStackVacate)).not.toMatch(
+      /is_rebuy|is_reentry|tournament_type|variant/
     );
-    expect(HAND_STACK_HARDENER).toContain('EXECUTE v_hardened;');
-    expect(blankNonCode(atomicWrite)).not.toMatch(/is_rebuy|is_reentry|tournament_type|variant/);
   });
 });

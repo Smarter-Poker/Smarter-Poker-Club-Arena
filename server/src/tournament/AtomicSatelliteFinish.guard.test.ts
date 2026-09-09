@@ -47,16 +47,12 @@ function latestMigrationContaining(needle: string): string {
   return readFileSync(join(MIGRATIONS, files.at(-1)!), 'utf8');
 }
 
-const SQL = latestMigrationContaining(
-  'CREATE OR REPLACE FUNCTION public.fn_settle_satellite_tournament('
-);
+const SQL = latestMigrationContaining('$settle_satellite$');
 const CASH_SQL = readFileSync(
-  join(MIGRATIONS, '20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'),
+  join(MIGRATIONS, '20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'),
   'utf8'
 );
-const TERMINAL_SQL = latestMigrationContaining(
-  'CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal('
-);
+const TERMINAL_SQL = latestMigrationContaining('$complete_terminal$');
 function taggedBody(tag: string): string {
   const delimiter = `$${tag}$`;
   const first = SQL.indexOf(delimiter);
@@ -227,13 +223,17 @@ describe('every full ticket has one immutable delivery line', () => {
     expect(ROLLBACK_PROBE).toContain('orphan target escrow close marker was not refused');
     expect(ROLLBACK_PROBE).toContain('rollback successful zero-fee matrix case');
     expect(ROLLBACK_PROBE).toContain('rollback successful multi-seat matrix case');
-    expect(ROLLBACK_PROBE).toContain('a NULL RUNNING target level was not refused');
+    expect(ROLLBACK_PROBE).toContain("'level-fallback-null-current'");
+    expect(ROLLBACK_PROBE).toContain(
+      'NULL-current level-fallback fixtures accepted valid NULL bounds'
+    );
     expect(ROLLBACK_PROBE).toContain('a negative RUNNING target level was not refused');
     expect(ROLLBACK_PROBE).toContain('a negative target capacity was not refused');
     expect(ROLLBACK_PROBE).toContain('a negative target late-registration bound was not refused');
     expect(ROLLBACK_PROBE).toContain('a negative target rebuy bound was not refused');
+    expect(ROLLBACK_PROBE).toContain('funded satellite target accepted later economic repricing');
     expect(ROLLBACK_PROBE).toContain(
-      'later target repricing changed the immutable settlement receipt'
+      'refused target repricing changed the immutable settlement receipt'
     );
     expect(ROLLBACK_PROBE).toContain(
       'duplicate target fee registration passed exact receipt verification'
@@ -460,9 +460,12 @@ describe('all financial effects share one database transaction', () => {
     expect(SQL).toContain('EXISTS (SELECT 1 FROM pg_policy pol WHERE pol.polrelid = c.oid)');
   });
 
-  it('describes the deferred legacy-door retirement honestly in the manifest fragment', () => {
+  it('keeps rolling compatibility explicit without making it canonical schema', () => {
     expect(MANIFEST).toContain('"tournament_satellite_settlement_cutover"');
-    expect(MANIFEST).toContain('retirement is deferred to a separately gated stage two');
+    expect(CATALOG_PROBE).toContain(
+      'rolling compatibility door was retired before the engine cutover'
+    );
+    expect(MANIFEST).not.toContain('fn_award_satellite_seat');
     expect(MANIFEST).not.toContain('inert refusal');
   });
 
@@ -522,9 +525,9 @@ describe('the server treats the atomic receipt as the only success signal', () =
     expect(branch).not.toContain("status: 'COMPLETED'");
     expect(branch).not.toContain('settleTournamentRake(');
     expect(branch).not.toContain('settleTournamentPlacesAtomically(');
-    expect(branch).toContain('cleanupCommittedTournament()');
+    expect(branch).toContain('cleanupCommittedSatellite(receipt)');
     expect(ELIMINATIONS).toContain(
-      'protected abstract processSatelliteAwards(tournament: any, winnerId: string): Promise<number>'
+      'protected abstract processSatelliteAwards(\n    tournament: any,\n    winnerId: string\n  ): Promise<VerifiedSatelliteSettlementReceipt>'
     );
   });
 });

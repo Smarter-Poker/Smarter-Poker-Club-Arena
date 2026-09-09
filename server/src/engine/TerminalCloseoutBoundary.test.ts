@@ -198,8 +198,8 @@ describe('the terminal tournament boundary owns the next deal', () => {
     expect(barrier).toContain('this.postHandTasksPromise = null');
     const base = readFileSync(join(__dirname, 'ServerTableEngineBase.ts'), 'utf8');
     expect(base).toContain('protected settlementInFlight: Set<Promise<void>> = new Set();');
-    expect(base).toContain('this.settlementInFlight.add(p)');
-    expect(base).toContain('this.settlementInFlight.delete(tracked)');
+    expect(base).toContain('settlements.add(p)');
+    expect(base).toContain('settlements.delete(tracked)');
   });
 
   it('rechecks the terminal owner after every awaited pre-deal boundary', () => {
@@ -221,7 +221,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
     const timeBankGate = method.indexOf('discardPreparedHandForTerminalCloseout()', timeBanks);
     const generation = method.indexOf('this.beginTerminalBoundaryPersistence()');
     const finalGate = method.lastIndexOf('discardPreparedHandForTerminalCloseout()', generation);
-    const start = method.indexOf('this.handController!.start()', generation);
+    const start = method.indexOf('controllerForHand.start()', generation);
     expect(allocatedGate).toBeGreaterThan(allocate);
     expect(timeBankGate).toBeGreaterThan(timeBanks);
     expect(finalGate).toBeGreaterThan(timeBankGate);
@@ -233,6 +233,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
   it('finishes teardown after a snapshot flush rejects', async () => {
     const engine = Object.create(ServerTableEngineBase.prototype) as any;
     const dispose = vi.fn();
+    const failure = new Error('snapshot unavailable');
     engine.running = true;
     engine.tableId = '00000000-0000-4000-8000-000000000001';
     engine.handCount = 17;
@@ -246,7 +247,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
     engine.clearLooseHandTimers = vi.fn();
     engine.unsubscribeManualBomb = vi.fn();
     engine.clearTurnTimer = vi.fn();
-    engine.flushSnapshot = vi.fn().mockRejectedValue(new Error('snapshot unavailable'));
+    engine.flushSnapshot = vi.fn().mockRejectedValue(failure);
     engine.snapshotTimer = null;
     engine.handController = {};
     engine.preciseTimer = { dispose };
@@ -262,9 +263,10 @@ describe('the terminal tournament boundary owns the next deal', () => {
     engine.engineTelemetry = { dispose };
     (ServerTableEngineBase as any).liveEngines.set(engine.tableId, engine);
 
-    await expect(engine.stop()).resolves.toBeUndefined();
+    await expect(engine.stop()).rejects.toMatchObject({ errors: [failure] });
 
     expect(engine.running).toBe(false);
+    expect(engine.flushSnapshot).toHaveBeenCalledWith(true);
     expect(engine.handController).toBeNull();
     expect(engine.tableFSM.transition).toHaveBeenNthCalledWith(1, 'closing');
     expect(engine.tableFSM.transition).toHaveBeenLastCalledWith('closed');

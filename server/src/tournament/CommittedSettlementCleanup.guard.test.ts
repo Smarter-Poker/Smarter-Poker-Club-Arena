@@ -24,19 +24,9 @@ const eliminations = code(read('src/tournament/TournamentManagerEliminations.ts'
 const recovery = code(read('src/tournament/tournamentRecovery.ts'));
 const gameServer = code(read('src/GameServer.ts'));
 const managerBase = code(read('src/tournament/TournamentManagerBase.ts'));
-const finishCertificate = code(
-  read('../supabase/migrations/20260908042600_completed_means_financially_certified.sql')
+const seatExitMigration = read(
+  '../supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
 );
-
-const sqlFunction = (source: string, name: string): string => {
-  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
-  if (start < 0) throw new Error(`SQL function ${name} is missing`);
-  const bodyStart = source.indexOf('AS $function$', start);
-  const end = source.indexOf('$function$;', bodyStart);
-  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
-  return source.slice(start, end + '$function$;'.length);
-};
-
 describe('Bubble Protection has no application-layer prepayment path', () => {
   it('records the elimination and leaves Bubble money to the terminal atomic batch', () => {
     const eliminate = sliceMethod(
@@ -55,63 +45,62 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
   const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
 
   it('does not announce completion before the atomic receipt exists', () => {
-    const settlement = finish.indexOf('settleTournamentPlacesAtomically(');
+    const settlement = finish.indexOf('requestTournamentTerminalReceipt(');
+    const complete = finish.indexOf('COMPLETE - winner', settlement);
     expect(settlement).toBeGreaterThan(-1);
     expect(finish.slice(0, settlement)).toMatch(/FINALIZING\.\.\. candidate winner/);
-    expect(finish.slice(0, settlement)).not.toMatch(/COMPLETE!/);
+    expect(finish.slice(0, settlement)).not.toMatch(/COMPLETE - winner/);
+    expect(complete).toBeGreaterThan(settlement);
   });
 
-  it('treats a replayed immutable COMPLETED claim as cleanup-only work', () => {
-    const replay = sliceMethod(
-      finish,
-      "if (finishClaim.alreadyCompleted || finishClaim.status === 'COMPLETED')"
+  it('treats an already-held immutable receipt as cleanup-only work', () => {
+    const replay = sliceMethod(finish, 'if (this.committedFinishReceipt)');
+    expect(replay).toMatch(
+      /cleanupCommittedTournament\(this\.committedFinishReceipt\)[\s\S]*?return;/
     );
-    expect(replay).toMatch(/cleanupCommittedTournament\(\)[\s\S]*?return;/);
     expect(replay).not.toMatch(
-      /settleTournamentPlacesAtomically|settleSatelliteFinishAtomically|settleTournamentObligation|\.rpc\(/
+      /requestTournamentTerminalReceipt|settleSatelliteFinishAtomically|settleTournamentObligation|\.rpc\(/
     );
   });
 
-  it('checks durable COMPLETED after an apparently failed atomic call before alarming', () => {
-    const refusal = sliceMethod(finish, 'if (!settlement.ok || !settlement.completed)');
-    const durableRead = refusal.indexOf('readDurableTournamentStatus()');
-    const cleanup = refusal.indexOf('cleanupCommittedTournament()');
+  it('releases only a proven refusal and stops ownership for every unknown result', () => {
+    const refusal = sliceEnclosingBlock(finish, "'Tournament.atomic_finish_outcome_unknown'");
+    const proof = refusal.indexOf('settlementErr instanceof TerminalSettlementRefusedError');
     const alarm = refusal.indexOf('raiseFinancialAlert(');
-    expect(durableRead).toBeGreaterThanOrEqual(0);
-    expect(cleanup).toBeGreaterThan(durableRead);
-    expect(alarm).toBeGreaterThan(cleanup);
+    const release = refusal.indexOf('if (provenRefusal) releaseFinishGuard()');
+    const stop = refusal.indexOf('if (!provenRefusal) await this.stopAndWait()');
+    expect(proof).toBeGreaterThanOrEqual(0);
+    expect(alarm).toBeGreaterThan(proof);
+    expect(release).toBeGreaterThan(alarm);
+    expect(stop).toBeGreaterThan(release);
+    expect(refusal).not.toMatch(/readDurableTournamentStatus|\.from\(|\.rpc\(/);
   });
 
   it('uses the same idempotent cleanup after an ordinary successful receipt', () => {
-    expect(finish).toMatch(/cleanupCommittedTournament\(\)/);
+    expect(finish).toMatch(/cleanupCommittedTournament\(receipt\)/);
     expect(finish).not.toMatch(/\.from\('table_seats'\)/);
     expect(finish).not.toMatch(/this\.broadcast\('tournament_winner'/);
   });
 
-  it('proves one durable winner, releases seats, closes tables and stops the manager', () => {
-    const cleanup = sliceMethod(eliminations, 'cleanupCommittedTournament(): Promise<boolean>');
+  it('uses only receipt identity to announce and stop exact process owners', () => {
+    const cleanup = sliceMethod(
+      eliminations,
+      'cleanupCommittedTournament(\n    receipt: VerifiedTournamentCompletionReceipt'
+    );
     const tables = sliceMethod(
       eliminations,
-      'cleanupCommittedTablesAndManager(): Promise<boolean>'
+      'cleanupCommittedTablesAndManager(\n    closedTableIds: readonly string[]'
     );
-    expect(cleanup).toMatch(
-      /\.from\('tournament_players'\)[\s\S]*?\.eq\('status', 'winner'\)[\s\S]*?\.eq\('position', 1\)/
-    );
-    expect(cleanup).toMatch(/winnerRows\.length !== 1/);
+    expect(cleanup).toContain('receipt.winnerId');
+    expect(cleanup).toContain('receipt.winnerAmount');
+    expect(cleanup).toContain('receipt.tableClosure.closedTableIds');
     expect(cleanup).toMatch(/this\.broadcastCommittedOutcome\('tournament_winner'/);
-    expect(tables).toMatch(/await engine\.stop\(\)/);
-    expect(tables).toMatch(
-      /\.from\('table_seats'\)[\s\S]*?left_at:[\s\S]*?\.is\('left_at', null\)/
-    );
-    expect(tables).toMatch(
-      /\.from\('tables'\)[\s\S]*?status: 'closed'[\s\S]*?\.eq\('tournament_id', this\.tournamentId\)/
-    );
+    expect(tables).toMatch(/await managerEngine\.stop\(\)/);
+    expect(tables).toContain('this.gameServer.unregisterTableEngine(tableId, managerEngine)');
+    expect(tables).toContain('this.gameServer.stopClosedTournamentTableEngine(tableId)');
     expect(tables).toMatch(/await this\.cleanupBroadcastChannel\(\)[\s\S]*?this\.stop\(\)/);
-    expect(cleanup).not.toMatch(
-      /settleTournamentPlacesAtomically|settleTournamentObligation|\.rpc\(/
-    );
-    expect(tables).not.toMatch(
-      /settleTournamentPlacesAtomically|settleTournamentObligation|\.rpc\(/
+    expect(`${cleanup}\n${tables}`).not.toMatch(
+      /settleTournamentPlacesAtomically|settleTournamentObligation|\.rpc\(|\.insert\(|\.update\(|\.delete\(|\.from\(/
     );
   });
 
@@ -120,49 +109,56 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
       eliminations,
       'broadcastCommittedOutcome(eventType: string, payload: unknown): Promise<boolean>'
     );
-    const normal = sliceMethod(eliminations, 'cleanupCommittedTournament(): Promise<boolean>');
-    const deal = sliceMethod(eliminations, 'cleanupCommittedFinalTableDeal(): Promise<boolean>');
+    const normal = sliceMethod(
+      eliminations,
+      'cleanupCommittedTournament(\n    receipt: VerifiedTournamentCompletionReceipt'
+    );
+    const deal = sliceMethod(
+      eliminations,
+      'settleFinalTableDeal(\n    receipt: VerifiedTournamentCompletionReceipt'
+    );
+    const satellite = sliceMethod(
+      eliminations,
+      'cleanupCommittedSatellite(\n    receipt: VerifiedSatelliteSettlementReceipt'
+    );
     expect(eliminations).toMatch(/COMMITTED_BROADCAST_ATTEMPTS = 3/);
     expect(delivery).toMatch(/if \(await this\.broadcast\(eventType, payload\)\) return true/);
     expect(delivery).toMatch(/committed_outcome_broadcast_exhausted/);
     expect(delivery).toMatch(/return false/);
-    for (const cleanup of [normal, deal]) {
+    for (const cleanup of [normal, deal, satellite]) {
       const announce = cleanup.indexOf('broadcastCommittedOutcome(');
-      const physical = cleanup.indexOf('cleanupCommittedTablesAndManager()');
+      const physical = cleanup.indexOf('cleanupCommittedTablesAndManager(');
       expect(announce).toBeGreaterThan(-1);
       expect(physical).toBeGreaterThan(announce);
     }
   });
 
-  it('keeps the manager and engine handles alive when any engine fails to stop', () => {
+  it('retires only released exact owners and retains failures that still own the process', () => {
     const tables = sliceMethod(
       eliminations,
-      'cleanupCommittedTablesAndManager(): Promise<boolean>'
+      'cleanupCommittedTablesAndManager(\n    closedTableIds: readonly string[]'
     );
     const stopFailure = sliceEnclosingBlock(tables, 'committed_cleanup_engine_stop_failed');
-    const durableTableList = tables.indexOf(".from('tables')");
-    const managerStop = tables.indexOf('await engine.stop()');
-    const failedStopRetryGate = tables.indexOf(
-      'managerEngine && !stoppedManagerEngineIds.has(tableId)'
-    );
+    const receiptIds = tables.indexOf('const receiptTableIds = new Set(tableIds)');
+    const provenanceGate = tables.indexOf('if (receiptTableIds.has(tableId)) continue');
+    const managerStop = tables.indexOf('await managerEngine.stop()');
     const incompleteReturn = tables.indexOf('if (!cleanupComplete) return false;');
-    const durableTableClose = tables.indexOf(".update({ status: 'closed' })");
     const unregister = tables.indexOf('this.gameServer.unregisterTableEngine(');
     const terminalStop = tables.indexOf('this.gameServer.stopClosedTournamentTableEngine(tableId)');
     const clearHandles = tables.indexOf('this.tableEngines.clear()');
     const stopManager = tables.indexOf('this.stop()');
 
-    expect(managerStop).toBeGreaterThan(durableTableList);
-    expect(tables.slice(durableTableList, managerStop)).toMatch(
-      /if \(!durableTableIds\.has\(tableId\)\)[\s\S]*?cleanupComplete = false;[\s\S]*?continue;/
+    expect(receiptIds).toBeGreaterThanOrEqual(0);
+    expect(provenanceGate).toBeGreaterThan(receiptIds);
+    expect(managerStop).toBeGreaterThan(provenanceGate);
+    expect(tables).toContain('!managerEngine.hasReleasedProcessOwnership()');
+    expect(stopFailure).not.toMatch(/this\.tableEngines\.delete|this\.tableEngines\.clear/);
+    expect(tables).toContain('committed_cleanup_engine_stop_cleanup_failed');
+    expect(tables).toMatch(
+      /committed_cleanup_engine_stop_cleanup_failed[\s\S]*?released = this\.gameServer\.unregisterTableEngine\(tableId, managerEngine\)/
     );
-    expect(stopFailure).not.toMatch(/stoppedManagerEngineIds\.add/);
-    expect(failedStopRetryGate).toBeGreaterThanOrEqual(0);
-    expect(tables.slice(failedStopRetryGate, incompleteReturn)).toMatch(
-      /cleanupComplete = false;[\s\S]*?continue;/
-    );
-    expect(unregister).toBeGreaterThan(durableTableClose);
-    expect(terminalStop).toBeGreaterThan(durableTableClose);
+    expect(unregister).toBeGreaterThan(managerStop);
+    expect(terminalStop).toBeGreaterThan(unregister);
     expect(clearHandles).toBeGreaterThan(incompleteReturn);
     expect(stopManager).toBeGreaterThan(clearHandles);
   });
@@ -181,6 +177,12 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
     expect(terminalProof).toBeGreaterThan(statusRead);
     expect(stop).toBeGreaterThan(terminalProof);
     expect(exactUnregister).toBeGreaterThan(stop);
+    expect(terminalStop).toMatch(
+      /if \(!current\.hasReleasedProcessOwnership\(\)\)[\s\S]*?terminal_table_engine_stop_failed[\s\S]*?return false;/
+    );
+    expect(terminalStop).toMatch(
+      /terminal_table_engine_stop_cleanup_failed[\s\S]*?this\.unregisterTableEngine\(tableId, current\)/
+    );
   });
 });
 
@@ -188,111 +190,82 @@ describe('a committed final-table deal cannot be stranded by a lost receipt or t
   const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
   const settleDeal = sliceMethod(
     eliminations,
-    'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<boolean>'
+    'settleFinalTableDeal(\n    receipt: VerifiedTournamentCompletionReceipt'
   );
 
   it('services cleanup-only retries before either in-memory completion latch', () => {
     const pending = checkDeal.indexOf('committedFinalTableDealCleanupPending');
     const handled = checkDeal.indexOf('this.finalTableDealHandled || this.tournamentFinished');
-    const money = checkDeal.indexOf('settleFinalTableDealAtomically(');
     expect(pending).toBeGreaterThanOrEqual(0);
     expect(handled).toBeGreaterThan(pending);
-    expect(money).toBeGreaterThan(handled);
-    expect(checkDeal.slice(pending, handled)).toMatch(/cleanupCommittedFinalTableDeal\(\)/);
+    expect(checkDeal.slice(pending, handled)).toMatch(
+      /settleFinalTableDeal\(this\.committedFinalTableDealReceipt\)/
+    );
   });
 
-  it('turns an apparently failed deal into cleanup-only work when COMPLETED is durable', () => {
-    const refusal = sliceMethod(checkDeal, 'if (!deal.ok || !deal.completed)');
-    expect(refusal).toMatch(
-      /readDurableTournamentStatus\(\)[\s\S]*?status === 'COMPLETED'[\s\S]*?cleanupCommittedFinalTableDeal\(\)/
+  it('turns every already-held receipt into cleanup-only work', () => {
+    const committed = sliceMethod(checkDeal, 'if (committedReceipt)');
+    expect(committed).toMatch(
+      /committedFinalTableDealReceipt = committedReceipt[\s\S]*?settleFinalTableDeal\(committedReceipt\)/
     );
-    expect(refusal).not.toMatch(/settleFinalTableDealAtomically\([^)]/);
+    expect(committed).not.toMatch(/requestTournamentTerminalReceipt|\.rpc\(|\.from\(/);
   });
 
-  it('recovers a tail exception after durable completion without replaying money', () => {
-    const catchBlock = sliceEnclosingBlock(checkDeal, "'Tournament.final_table_deal_threw'");
-    expect(catchBlock).toMatch(
-      /readDurableTournamentStatus\(\)[\s\S]*?status === 'COMPLETED'[\s\S]*?cleanupCommittedFinalTableDeal\(\)/
-    );
-    expect(catchBlock).not.toMatch(/settleFinalTableDealAtomically|settleTournamentRake/);
+  it('never releases the hard gate for an unclassified or outcome-unknown error', () => {
+    const unknown = checkDeal.indexOf('if (!provenRefusal)');
+    const release = checkDeal.indexOf('engine.releaseTerminalCloseoutPause()');
+    const refusal = checkDeal.slice(unknown, release);
+    expect(unknown).toBeGreaterThanOrEqual(0);
+    expect(refusal).toContain('await this.stopAndWait()');
+    expect(refusal).toContain('return false;');
+    expect(release).toBeGreaterThan(unknown);
   });
 
   it('keeps the ordinary receipt tail on the same idempotent table and manager cleanup', () => {
-    expect(settleDeal).toMatch(/cleanupCommittedTablesAndManager\(\)/);
+    expect(settleDeal).toMatch(/cleanupCommittedTablesAndManager\(/);
     expect(settleDeal).not.toMatch(/\.from\('table_seats'\)|\.from\('tables'\)/);
   });
 
-  it('can reconstruct the deal announcement from durable rows without any money RPC', () => {
-    const cleanup = sliceMethod(eliminations, 'cleanupCommittedFinalTableDeal(): Promise<boolean>');
-    expect(cleanup).toMatch(
-      /\.from\('tournament_payouts'\)[\s\S]*?\.eq\('source', 'final_table_deal'\)/
+  it('reconstructs the deal announcement only from the immutable receipt', () => {
+    expect(settleDeal).toContain('receipt.dealShares');
+    expect(settleDeal).toContain('receipt.winnerId');
+    expect(settleDeal).toContain('receipt.tableClosure.closedTableIds');
+    expect(settleDeal).toMatch(/this\.broadcastCommittedOutcome\('final_table_deal'/);
+    expect(settleDeal).not.toMatch(
+      /\.from\(|\.rpc\(|settleFinalTableDealAtomically|settleTournamentRake/
     );
-    expect(cleanup).toMatch(
-      /\.from\('tournament_players'\)[\s\S]*?\.eq\('status', 'winner'\)[\s\S]*?\.eq\('position', 1\)/
-    );
-    expect(cleanup).toMatch(/this\.broadcastCommittedOutcome\('final_table_deal'/);
-    expect(cleanup).toMatch(/cleanupCommittedTablesAndManager\(\)/);
-    expect(cleanup).not.toMatch(/\.rpc\(|settleFinalTableDealAtomically|settleTournamentRake/);
   });
 });
 
-describe('standalone recovery accepts durable completion after a lost receipt', () => {
+describe('standalone recovery delegates terminal mutation and cleanup to one receipt authority', () => {
   const recover = sliceMethod(recovery, 'export async function recoverStuckCompletingTournaments(');
-  const refusal = sliceMethod(recover, 'if (!settlement.ok || !settlement.completed)');
 
-  it('reads the tournament status and proceeds only when COMPLETED is proven', () => {
-    expect(refusal).toMatch(
-      /\.from\('tournaments'\)[\s\S]*?\.select\('status'\)[\s\S]*?\.eq\('id', t\.id\)/
+  it('uses the same whole-domain receipt helpers as live play', () => {
+    expect(recover.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
+    expect(recover.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+    expect(recover).not.toMatch(
+      /settleTournamentPlacesAtomically|settleTournamentObligation|settleFinalTableDealAtomically/
     );
-    expect(refusal).toMatch(/committed\?\.status !== 'COMPLETED'[\s\S]*?throw new Error/);
   });
 
-  it('keeps table closure after the durable proof and never opens a second money path', () => {
-    const refusalAt = recover.indexOf('if (!settlement.ok || !settlement.completed)');
-    const closeAt = recover.indexOf('closeRecoveredTournamentTablesAndSeats(t.id)', refusalAt);
-    expect(closeAt).toBeGreaterThan(refusalAt);
-    expect(recover.match(/settleTournamentPlacesAtomically\(/g)).toHaveLength(1);
+  it('never performs post-receipt seat, table, status, or money cleanup', () => {
+    expect(recover).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
+    expect(recover).not.toMatch(/closeRecoveredTournamentTablesAndSeats|cleanupCommitted/);
   });
 
-  it('checks every cleanup result before continuing or logging success', () => {
-    const assigned =
-      recover.match(
-        /const cleanupComplete = await closeRecoveredTournamentTablesAndSeats\(t\.id\)/g
-      ) ?? [];
-    const allCalls = recover.match(/closeRecoveredTournamentTablesAndSeats\(t\.id\)/g) ?? [];
-    const guarded =
-      recover.match(
-        /const cleanupComplete = await closeRecoveredTournamentTablesAndSeats\(t\.id\);\s*if \(!cleanupComplete\) \{/g
-      ) ?? [];
-    expect(assigned.length).toBeGreaterThan(0);
-    expect(assigned).toHaveLength(allCalls.length);
-    expect(guarded).toHaveLength(assigned.length);
-    const successLog = recover.indexOf('atomically settled ${settlement.places} place(s)');
-    const finalCheck = recover.lastIndexOf('if (!cleanupComplete)', successLog);
-    expect(successLog).toBeGreaterThan(finalCheck);
+  it('logs only from a verified immutable receipt', () => {
+    const request = recover.indexOf('const receipt = await requestTournamentTerminalReceipt(');
+    const success = recover.indexOf('[GameServer] Recovered tournament', request);
+    expect(request).toBeGreaterThan(-1);
+    expect(success).toBeGreaterThan(request);
+    expect(recover.slice(request, success)).not.toMatch(/\.from\(|\.rpc\(/);
   });
 
-  it('closes a durably completed deal instead of paying the structure over it', () => {
-    const dealEvidence = sliceMethod(
-      recover,
-      'if ((dealPayouts.data?.length ?? 0) > 0 || (dealObligations.data?.length ?? 0) > 0)'
+  it('classifies a refusal separately and raises a critical alert for an unknown outcome', () => {
+    expect(recover).toMatch(/error instanceof TerminalSettlementRefusedError/);
+    expect(recover).toMatch(
+      /reportUnknownRecoveryOutcome\(tournament, winnerId, reason, 'tournament'/
     );
-    expect(dealEvidence).toMatch(
-      /\.from\('tournaments'\)[\s\S]*?\.select\('status'\)[\s\S]*?status === 'COMPLETED'[\s\S]*?closeRecoveredTournamentTablesAndSeats\(t\.id\)/
-    );
-    expect(dealEvidence).not.toMatch(/settleTournamentPlacesAtomically|computePlacePrize/);
-    expect(dealEvidence).not.toMatch(/settleFinalTableDealAtomically/);
-    expect(dealEvidence.trimEnd()).toMatch(/continue;\s*}$/);
-  });
-
-  it('the recovery closure releases seats as well as closing every table', () => {
-    const close = sliceMethod(recovery, 'async function closeRecoveredTournamentTablesAndSeats(');
-    expect(close).toMatch(/\.from\('tables'\)[\s\S]*?\.select\('id'\)/);
-    expect(close).toMatch(/\.from\('table_seats'\)[\s\S]*?\.is\('left_at', null\)/);
-    expect(close).toMatch(/\.from\('tables'\)[\s\S]*?status: 'closed'/);
-    expect(close).toMatch(/\.select\('id, status, current_players'\)/);
-    expect(close).toMatch(/count: 'exact', head: true[\s\S]*?seatProof\.count !== 0/);
-    expect(close).not.toMatch(/\.rpc\(|settleTournament/);
   });
 });
 
@@ -339,55 +312,28 @@ describe('the seat-first watchdog leaves terminal ownership with the tournament 
   });
 });
 
-describe('the startup orphan cleanup is evidence-bounded and evidence checked', () => {
-  const cleanup = sliceEnclosingBlock(gameServer, 'const orphanPageSize = 500');
+describe('the startup orphan reconciler is retired behind a one-time write barrier', () => {
+  const cleanup = sliceMethod(gameServer, 'private async cleanupStaleData(');
 
-  it('keyset-pages only nonterminal table state plus live-seat evidence', () => {
-    const candidateRead = cleanup.slice(
-      cleanup.indexOf('let nonterminalTableQuery'),
-      cleanup.indexOf('const { data: nonterminalTables')
-    );
-    expect(candidateRead).toMatch(/\.not\('tournament_id', 'is', null\)/);
-    expect(candidateRead).toMatch(
-      /\.or\([\s\S]*?status\.neq\.closed[\s\S]*?current_players\.neq\.0/
-    );
-    expect(candidateRead).toMatch(/\.order\('id', \{ ascending: true \}\)/);
-    expect(cleanup).toMatch(
-      /nonterminalTableQuery = nonterminalTableQuery\.gt\('id', afterTableId\)/
-    );
-    expect(cleanup).toMatch(
-      /\.from\('table_seats'\)[\s\S]*?\.is\('left_at', null\)[\s\S]*?\.order\('id'/
-    );
-    expect(cleanup).toMatch(/liveSeatQuery = liveSeatQuery\.gt\('id', afterSeatId\)/);
-    expect(cleanup).toMatch(
-      /\.from\('tables'\)[\s\S]*?\.in\('id', liveSeatTableIds\.slice\(i, i \+ 100\)\)/
-    );
-    expect(cleanup).not.toMatch(
-      /\.select\('id, tournament_id'\)[\s\S]*?\.not\('tournament_id', 'is', null\)[\s\S]*?\.order\('id'/
-    );
+  it('never scans or writes tournament seat or table orphans at process startup', () => {
+    expect(cleanup).not.toMatch(/orphanPageSize|releasedOrphanSeats|closedOrphans/);
+    expect(cleanup).not.toMatch(/from\('table_seats'\)/);
+    expect(cleanup).not.toMatch(/nonterminalTableQuery|liveSeatQuery/);
   });
 
-  it('fails closed and counts only rows that were actually changed', () => {
-    expect(cleanup).toMatch(/openTableError[\s\S]*?throw new Error/);
-    expect(cleanup).toMatch(/liveSeatListError[\s\S]*?throw new Error/);
-    expect(cleanup).toMatch(/liveSeatTableError[\s\S]*?throw new Error/);
-    expect(cleanup).toMatch(/freshErr[\s\S]*?continue/);
-    expect(cleanup).toMatch(/seatErr[\s\S]*?continue/);
-    expect(cleanup).toMatch(
-      /\.from\('table_seats'\)[\s\S]*?\.update\(\{ left_at:[\s\S]*?\.is\('left_at', null\)[\s\S]*?\.select\('id'\)/
+  it('moves the historical repair into the atomic migration and records exact identities', () => {
+    expect(seatExitMigration).toContain(
+      'LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE'
     );
-    expect(cleanup).toMatch(/releasedOrphanSeats \+= releasedSeats\?\.length \?\? 0/);
-    expect(cleanup).toMatch(
-      /\.update\(\{ status: 'closed', current_players: 0 \}\)[\s\S]*?\.or\([\s\S]*?status\.neq\.closed[\s\S]*?current_players\.neq\.0[\s\S]*?\.select\('id'\)/
+    expect(seatExitMigration).toContain(
+      'CREATE TABLE public.tournament_seat_exit_authority_cutover'
     );
-    expect(cleanup).toMatch(
-      /\.select\('id', \{ count: 'exact', head: true \}\)[\s\S]*?\.is\('left_at', null\)/
+    expect(seatExitMigration).toContain('repaired_seat_ids uuid[] NOT NULL');
+    expect(seatExitMigration).toContain('repaired_table_ids uuid[] NOT NULL');
+    expect(seatExitMigration).toContain('public.fn_ca_has_committed_tournament_receipt(t.id)');
+    expect(seatExitMigration).toContain(
+      'terminal seat-exit cutover receipt lost its exact repair state'
     );
-    expect(cleanup).toMatch(/seatProof\.error \|\| seatProof\.count !== 0[\s\S]*?continue/);
-    expect(cleanup).toMatch(/\.select\('id, status, current_players'\)/);
-    expect(cleanup).toMatch(/terminalTables\.length !== batch\.length/);
-    expect(cleanup).toMatch(/closedOrphans \+= closedRows\?\.length \?\? 0/);
-    expect(cleanup).not.toMatch(/closedOrphans \+= batch\.length/);
   });
 });
 
@@ -404,56 +350,49 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
     expect(rebuys).not.toMatch(/rebuyDecisionGraceUntil|\.setTimeout\(|setTimeout\(/);
   });
 
-  it('gates a normal finish before claiming or attempting atomic settlement', () => {
+  it('gates a normal finish before attempting the terminal receipt', () => {
     const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
-    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen()) return;');
-    const claim = finish.indexOf('claimTournamentFinish(');
-    const atomic = finish.indexOf('settleTournamentPlacesAtomically(');
-    const lastFreeze = finish.lastIndexOf('if (isMaintenanceFrozen())');
+    const firstFreeze = finish.indexOf(
+      'if (isMaintenanceFrozen() || this.tournamentFinished) return;'
+    );
+    const terminal = finish.indexOf('requestTournamentTerminalReceipt(');
     expect(firstFreeze).toBeGreaterThanOrEqual(0);
-    expect(claim).toBeGreaterThan(firstFreeze);
-    expect(lastFreeze).toBeGreaterThan(claim);
-    expect(atomic).toBeGreaterThan(lastFreeze);
+    expect(terminal).toBeGreaterThan(firstFreeze);
     expect(finish).not.toMatch(/\.from\('tournaments'\)\s*\.update\(\{[\s\S]*?status:/);
-
-    const claimSql = sqlFunction(finishCertificate, 'fn_claim_tournament_finish(');
-    const receipt = claimSql.indexOf('INSERT INTO public.tournament_finish_receipts');
-    const ownerToken = claimSql.indexOf("set_config('app.tournament_finish_claim'", receipt);
-    const status = claimSql.indexOf("SET status = 'COMPLETING'", ownerToken);
-    expect(receipt).toBeGreaterThanOrEqual(0);
-    expect(ownerToken).toBeGreaterThan(receipt);
-    expect(status).toBeGreaterThan(ownerToken);
+    expect(finish.slice(0, terminal)).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
   });
 
   it('lets cleanup-only deal retries run while gating every new deal attempt', () => {
     const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
     const pending = checkDeal.indexOf('committedFinalTableDealCleanupPending');
-    const cleanup = checkDeal.indexOf('cleanupCommittedFinalTableDeal()', pending);
+    const cleanup = checkDeal.indexOf(
+      'settleFinalTableDeal(this.committedFinalTableDealReceipt)',
+      pending
+    );
     const firstFreeze = checkDeal.indexOf('isMaintenanceFrozen()', cleanup);
-    const atomic = checkDeal.indexOf('settleFinalTableDealAtomically(');
-    const lastFreeze = checkDeal.lastIndexOf('isMaintenanceFrozen()');
+    const boundary = checkDeal.indexOf('completeFinalTableDealAtBoundary(', firstFreeze);
     expect(cleanup).toBeGreaterThan(pending);
     expect(firstFreeze).toBeGreaterThan(cleanup);
-    expect(lastFreeze).toBeGreaterThanOrEqual(firstFreeze);
-    expect(atomic).toBeGreaterThan(lastFreeze);
+    expect(boundary).toBeGreaterThan(firstFreeze);
   });
 
-  it('gates standalone recovery before guarantee, rake or atomic place money', () => {
+  it('gates standalone recovery before any field read or atomic receipt request', () => {
     const recover = sliceMethod(
       recovery,
       'export async function recoverStuckCompletingTournaments('
     );
-    const completedCleanup = recover.indexOf("status?: string }).status === 'COMPLETED'");
-    const firstFreeze = recover.indexOf('if (isMaintenanceFrozen()) continue;', completedCleanup);
-    const guarantee = recover.indexOf("'fn_apply_prize_guarantee'", firstFreeze);
-    const rake = recover.indexOf("'fn_settle_tournament_rake'", guarantee);
-    const atomic = recover.indexOf('settleTournamentPlacesAtomically(', firstFreeze);
-    const lastFreeze = recover.lastIndexOf('if (isMaintenanceFrozen()) continue;', atomic);
-    expect(completedCleanup).toBeGreaterThanOrEqual(0);
-    expect(firstFreeze).toBeGreaterThan(completedCleanup);
-    expect(guarantee).toBeGreaterThan(firstFreeze);
-    expect(rake).toBeGreaterThan(guarantee);
-    expect(lastFreeze).toBeGreaterThan(rake);
-    expect(atomic).toBeGreaterThan(lastFreeze);
+    const loop = recover.indexOf('for (const candidate of stuck');
+    const freeze = recover.indexOf('if (isMaintenanceFrozen()) continue;', loop);
+    const field = recover.indexOf('readRecoveryField(tournament.id)', freeze);
+    const satellite = recover.indexOf('requestSatelliteSettlementReceipt(', freeze);
+    const terminal = recover.indexOf('requestTournamentTerminalReceipt(', freeze);
+    expect(loop).toBeGreaterThanOrEqual(0);
+    expect(freeze).toBeGreaterThan(loop);
+    expect(field).toBeGreaterThan(freeze);
+    expect(satellite).toBeGreaterThan(field);
+    expect(terminal).toBeGreaterThan(field);
+    expect(recover).not.toMatch(
+      /fn_apply_prize_guarantee|fn_settle_tournament_rake|settleTournamentPlacesAtomically/
+    );
   });
 });

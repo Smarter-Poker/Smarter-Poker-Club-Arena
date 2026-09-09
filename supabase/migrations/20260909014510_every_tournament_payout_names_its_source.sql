@@ -1,4 +1,4 @@
--- 20260908153313_every_tournament_payout_names_its_source.sql
+-- 20260909014510_every_tournament_payout_names_its_source.sql
 --
 -- BAND-AID REGISTER #10: 32 tournament payout rows totalling 161.30 chips
 -- were recorded as `unclassified`. They were not 32 unknown payments. Every

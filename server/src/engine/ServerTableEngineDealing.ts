@@ -193,6 +193,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (
           this.maintenancePaused ||
           this.finalTableDealPaused ||
+          this.terminalCloseoutPaused ||
           (this.handForHandPaused && this.holdBeforeNextHand)
         ) {
           this.setLoopPhase('parked_for_pause');
@@ -605,20 +606,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               }
             })()
           );
-        } else {
-          // THE TOURNAMENT COUNTERPART — see releaseDeadTournamentSeats().
-          // A cash table has swept its own dead seats on every idle tick since
-          // 2026-08-15; a tournament table had nothing of its own and relied
-          // entirely on the former manager polling sweep reaching it.
-          //
-          // Placed HERE, above the active-player filter, for the same reason
-          // the add-on sweep is: a chair freed this tick has to be free for
-          // THIS hand, not the next one.
-          await this.withStepBudget(
-            'release_dead_tournament_seats',
-            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-            this.releaseDeadTournamentSeats()
-          );
         }
 
         /* DEFERRED SIT-OUTS ORPHANED BY A HAND THAT NEVER SETTLED (2026-08-28).
@@ -714,7 +701,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
              HERE rather than beside the rebuy pause at the end of the hand, and
              the reason is worth writing down: settlement fires postHandTasks
-             WITHOUT awaiting it, and postHandTasks is what runs syncStacks. So
+             WITHOUT awaiting it, and postHandTasks commits the accepted hand. So
              at the end of a hand the busted stack may not have reached the
              database yet, and a check there would read a stale non-zero stack
              and skip the removal — permanently, because on the next pass the
@@ -806,6 +793,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.announcePendingSeatMoves()
         );
+        if (this.terminalCloseoutPaused) {
+          await this.awaitPauseGate();
+          if (!this.running) break;
+          continue;
+        }
 
         // THE REST ENDS HERE (Dan 2026-09-07). Everything above this line
         // since the hand-free broadcast - the settlement barrier, the roster
@@ -813,12 +805,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // this waits out whatever of it is left, records how long the felt
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
+        if (this.terminalCloseoutPaused) {
+          await this.awaitPauseGate();
+          if (!this.running) break;
+          continue;
+        }
 
         /* The event loop may have resumed after the local lease deadline but
            before its raw timeout callback got CPU. Re-prove authority at the
            sole new-hand edge; a stale dealer cannot allocate a hand number,
            move the button, post blinds, or deal one more card. */
         if (!this.lifecycleCanMutate()) return;
+        if (this.terminalCloseoutPaused) {
+          await this.awaitPauseGate();
+          if (!this.running) break;
+          continue;
+        }
 
         // Deal hand (self-transition: running → running for next hand)
         this.setLoopPhase('dealing');
@@ -831,7 +833,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // starts the five minutes. Same gate as the top of the loop — see
         // awaitPauseGate on the base class.
         if (
-          (this.handForHandPaused || this.maintenancePaused || this.finalTableDealPaused) &&
+          (this.handForHandPaused ||
+            this.maintenancePaused ||
+            this.finalTableDealPaused ||
+            this.terminalCloseoutPaused) &&
           this.running
         ) {
           this.setLoopPhase('parked_for_pause');
@@ -1107,104 +1112,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                  * not: a seat with no chips in it is finished at every format.
                  */
 
-                /**
-                 * BUSTED PLAYERS DO NOT LINGER (Dan 2026-08-30, verbatim):
-                 * "THE PLAYER WITH NO CHIPS INSTANTLY REMOVED FROM THE
-                 * TOURNAMENT, AND 'OFFERED THE REBUY' ON THERE SCREEN.
-                 * BUSTED PLAYERS ARE 'LINGERING' WAY TO LONG ON THE TABLE,
-                 * PREVENTING THE NEXT HAND FROM MOVING ON..."
-                 *
-                 * The seat is vacated the moment the hand that busted them
-                 * settles — the felt is clear for the next deal. Their
-                 * TOURNAMENT life is untouched here: the elimination
-                 * sweep's rebuy grace still holds their entry open, the
-                 * client's rebuy offer still stands, and a taken rebuy is
-                 * seatless by design (process_tournament_rebuy) — the
-                 * seating sweep places them wherever a player is needed,
-                 * same table and seat included.
-                 *
-                 * `.lte('stack', 0)` is the race guard: a rebuy that landed
-                 * on this seat between the bust and this write raised the
-                 * stack, and that seat stays exactly where it is.
-                 */
-                try {
-                  const bustedIds = justBustedPlayers
-                    .map((p) => p.user_id)
-                    .filter(Boolean) as string[];
-                  if (bustedIds.length > 0) {
-                    const { error: vacateErr } = await supabase
-                      .from('table_seats')
-                      .update({ left_at: new Date().toISOString() })
-                      .eq('table_id', this.tableId)
-                      .in('user_id', bustedIds)
-                      .is('left_at', null)
-                      .lte('stack', 0);
-                    if (vacateErr) {
-                      reportError(
-                        new Error(
-                          `[ServerTableEngine:${this.tableId}] busted-seat vacate failed: ${vacateErr.message} - the seat lingers one sweep instead`
-                        ),
-                        'ServerTableEngine.busted_seat_vacate_failed'
-                      );
-                    } else {
-                      /**
-                       * THE VACATED BUST MUST ALSO BE VISIBLE TO THE SWEEP
-                       * (2026-08-30, same-day regression fix).
-                       *
-                       * The elimination sweep detects busts ONLY via
-                       * `tournament_players.chips <= 0`, and its chip sync
-                       * reads OPEN seats. Vacating the seat here (the fix
-                       * above, shipped earlier today) removed the 0-stack
-                       * row before the next sync ran, so `chips` froze at
-                       * the last pre-bust positive value and the player was
-                       * never eliminated: 10 of 16 RUNNING MTTs in
-                       * production hung with one seated survivor, blinds
-                       * escalating past level 100, champion never paid.
-                       *
-                       * So the bust writes its own zero, in the same breath
-                       * as the vacate. Guarded on status='playing' so a
-                       * player already eliminated (or finished) is not
-                       * touched. A rebuy that lands later overwrites the 0
-                       * via process_tournament_rebuy exactly as it always
-                       * did, and the sweep's rebuy decision window still
-                       * holds their entry open before eliminating them.
-                       */
-                      const { error: zeroErr } = await supabase
-                        .from('tournament_players')
-                        .update({ chips: 0 })
-                        .eq('tournament_id', this.tableInfo!.tournament_id!)
-                        .in('user_id', bustedIds)
-                        .eq('status', 'playing');
-                      if (zeroErr) {
-                        reportError(
-                          new Error(
-                            `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} - the seatless-phantom sweep guard will catch them`
-                          ),
-                          'ServerTableEngine.busted_chip_zero_failed'
-                        );
-                      }
-                      for (const p of justBustedPlayers) {
-                        if (!p.user_id) continue;
-                        this.hub?.emitEvent(this.tableId, {
-                          type: 'seat_left',
-                          table_id: this.tableId,
-                          user_id: p.user_id,
-                          reason: 'busted_awaiting_rebuy_decision',
-                          timestamp: Date.now(),
-                        } as never);
-                      }
-                    }
-                  }
-                } catch (vacateThrew) {
-                  reportError(vacateThrew, 'ServerTableEngine.busted_seat_vacate_threw');
+                // The hand-stack RPC commits stack=0, tournament_players=0,
+                // the physical seat exit and the table count in one database
+                // transaction. The engine only publishes that committed fact
+                // and wakes the rebuy/elimination state machine; it never
+                // performs a second compensating seat or roster write.
+                for (const player of justBustedPlayers) {
+                  if (!player.user_id) continue;
+                  this.hub?.emitEvent(this.tableId, {
+                    type: 'seat_left',
+                    table_id: this.tableId,
+                    user_id: player.user_id,
+                    reason: 'busted_awaiting_rebuy_decision',
+                    timestamp: Date.now(),
+                  } as never);
                 }
 
-                // The settlement hint can race ahead of the fallback
-                // tournament_players zero above when a mirror/history write
-                // failed. Emit a second coalesced hint only after the direct
-                // zero/vacate attempt, so a sweep that ran early is not the
-                // player's last wake. This callback remains fire-and-forget;
-                // the manager independently proves durable knockout evidence.
                 if (this.handCompleteCallback && justBustedPlayers.length > 0) {
                   try {
                     this.handCompleteCallback(
@@ -1302,7 +1225,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const backoffMs = Math.min(3000 * Math.pow(2, this.consecutiveErrors - 1), 30000);
 
         if (!isTransient) {
-          reportError(err, 'ServerTableEnginethistableId.Error_attempt_thisconsecutiveE');
+          reportError(
+            err,
+            `ServerTableEngine.${this.tableId}.deal_error_attempt_${this.consecutiveErrors}`
+          );
         } else {
           console.warn(
             `[ServerTableEngine:${this.tableId}] Transient network error during deal cycle:`,
@@ -1313,7 +1239,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (this.consecutiveErrors >= 10) {
           reportError(
             new Error(`[ServerTableEngine:${this.tableId}] Too many errors - stopping`),
-            'ServerTableEnginethistableId.Too_many_errors__stopping'
+            `ServerTableEngine.${this.tableId}.too_many_errors_stopping`
           );
           // FIX 2026-08-22: was `this.running = false` alone, which left a
           // half-dead engine — deadlines armed, hand safety timer live,
@@ -1586,6 +1512,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // about to be dealt; a number held for longer than that is discarded and a
     // fresh one taken here, so the ascending-by-deal-order property holds.
     this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());
+    if (this.discardPreparedHandForTerminalCloseout()) return;
     this.handsDealtThisSession++;
     const handNumber = this.handCount;
     const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
@@ -2629,6 +2556,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
     );
     const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
+    if (this.discardPreparedHandForTerminalCloseout()) return;
     /**
      * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
      *
@@ -2664,7 +2592,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
         //    the restart-fidelity time-bank restore again. ──
         //
-        // The intent was right: syncStacks writes time_bank_remaining,
+        // The intent was right: the accepted-hand envelope writes time_bank_remaining,
         // loadSeatedPlayers reads it back, and this line threw it away, so a
         // restart refilled everyone's bank for free. The implementation was
         // wrong in a way that made things strictly WORSE than the refill:
@@ -2744,6 +2672,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // Wait for hand to complete
     return new Promise<void>((resolve) => {
       const controllerForHand = this.handController!;
+      let persistenceGeneration: number | undefined;
       // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
       // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.
       // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
@@ -2836,7 +2765,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // write) vanished into index.ts's unhandled-rejection swallow while the
         // hand silently stopped advancing. Catch it here so at minimum it is
         // reported and the watchdog can see the table stop making progress.
-        void this.handleHandEvent(event, players).catch((err) =>
+        void this.handleHandEvent(event, players, persistenceGeneration).catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.handleHandEvent_rejected', {
             eventType: event.type,
             handNumber: this.handCount,
@@ -2878,6 +2807,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
         // inherit a stale all-in reveal flag from an abnormal exit.
         this.runoutRevealActive = false;
+        if (this.discardPreparedHandForTerminalCloseout()) {
+          releaseHandWait('terminal_closeout_before_start');
+          return;
+        }
+        persistenceGeneration = this.beginTerminalBoundaryPersistence();
+        // Start the exact controller whose listener and release fence were
+        // installed above. A mutable field is not ownership evidence.
         controllerForHand.start();
 
         // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.
@@ -2886,7 +2822,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.snapshotDirty = true;
         void this.flushSnapshot();
       } catch (err) {
-        reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
+        if (persistenceGeneration !== undefined) {
+          this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
+        }
+        reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start_hand`);
         releaseHandWait('hand_start_failed');
       }
     });
@@ -3114,9 +3053,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * the set of places still free. An engine that released the seat first would
    * strand exactly that — which is the shape of the 2026-08-20 incident where
    * a tournament disbursed 107% of its pool because two paths disagreed about
-   * who owned a finishing place. The tournament side already has its authority
-   * (a 5-second elimination sweep, with releaseDeadTournamentSeats escalating
-   * anything it fails to reach); this must not become a second one.
+   * who owned a finishing place. Tournament settlement and elimination now
+   * change the exact roster row and its exact seat generation in one database
+   * transaction; this cash-only path must not become a second authority.
    *
    * Operates on `this.seatedPlayers`, which the caller has just reloaded from
    * the database — no second read, and no risk of acting on the pre-hand
@@ -3345,161 +3284,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left - insufficient treasury funds`
         );
       }
-    }
-  }
-
-  /**
-   * ═════════════════════════════════════════════════════════════════════════
-   *  GHOST SEATS IN TOURNAMENTS (2026-08-28)
-   * ═════════════════════════════════════════════════════════════════════════
-   *
-   * The tournament counterpart of recoverBustedSeatedHorses() above, which a
-   * tournament table has never had. A cash table sweeps its own dead seats
-   * every idle tick; a tournament table had exactly one thing looking after
-   * it — the 5-second elimination sweep in TournamentManager — and when that
-   * sweep is late, or is looking at a table this process has no engine for,
-   * the chair simply stays occupied.
-   *
-   * WHAT A GHOST SEAT COSTS, and why this is not cosmetic. It holds a chair
-   * at a table other players are waiting to fill. It counts toward the
-   * four-table limit, so the account cannot be seated anywhere else. And it
-   * cannot act, so every orbit spends a full turn timer folding a player who
-   * is not there.
-   *
-   * ── THE DIVISION OF LABOUR IS DELIBERATE ──
-   *
-   * This method NEVER eliminates anybody. Eliminating is assigning a
-   * finishing place and paying a prize against it, and the places have to be
-   * handed out from one place that can see the whole field — the sweep does
-   * that, with a lot of hard-won care about distinct positions and
-   * double-pays. An engine that eliminated locally would be a second writer
-   * of finishing places, which is the exact shape of the 206 duplicated
-   * places found on 2026-08-27.
-   *
-   * So this method only does what is unambiguous and local: if the field
-   * already says you are OUT, you do not keep the chair. The status write
-   * happened somewhere else; only the release was lost.
-   *
-   * ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ──
-   *
-   * There is no is_horse test here, and there must not be one. A human whose
-   * seat release failed is sitting in the same ghost chair for the same
-   * reason, and the reported case being a horse (ShoveWhale, 22 minutes) says
-   * nothing about who it happens to. Same rule, same sweep, same everybody.
-   */
-  private ghostSeatFirstSeen: Map<string, number> = new Map();
-
-  /** A bust that the sweep has not resolved within this long is escalated. */
-  private static readonly GHOST_SEAT_ESCALATE_MS = 120_000;
-
-  protected async releaseDeadTournamentSeats(): Promise<void> {
-    const tournamentId = this.tableInfo?.tournament_id;
-    if (!tournamentId || this.seatedPlayers.length === 0) return;
-
-    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
-    const { data: entrants, error } = await supabase
-      .from('tournament_players')
-      .select('user_id, status')
-      .eq('tournament_id', tournamentId)
-      .in('user_id', seatedIds);
-
-    // An unreadable roster is UNKNOWN, not "everybody is fine". Releasing a
-    // chair on a failed read would take a live player off the felt mid-hand,
-    // which is far worse than a ghost that waits one more tick.
-    if (error || !entrants) return;
-
-    const statusById = new Map<string, string>();
-    for (const row of entrants) {
-      const r = row as { user_id?: string; status?: string };
-      if (r.user_id) statusById.set(r.user_id, r.status || '');
-    }
-
-    const now = Date.now();
-    const stillSeated = new Set<string>();
-    const released: string[] = [];
-
-    for (const player of this.seatedPlayers) {
-      const status = statusById.get(player.user_id);
-      stillSeated.add(player.user_id);
-
-      // ── CASE 1: the field says they are out, and the chair proves nobody
-      // told the table. Release it. This is the lost-release case: the status
-      // write committed and releaseTournamentSeat() did not, or the process
-      // died between the two.
-      if (status === 'eliminated' || status === 'winner') {
-        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
-        this.chipContinuity.forget(player.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
-        this.straddleEngine.removePlayer(this.tableId, player.user_id);
-        this.preActionEngine.removePlayer(this.tableId, player.user_id);
-        this.ghostSeatFirstSeen.delete(player.user_id);
-        released.push(player.user_id);
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Ghost seat released: ${player.username} is ${status} but was still holding seat ${player.seat_number}`
-        );
-        continue;
-      }
-
-      // ── CASE 2: no roster row at all for a seated player. They are not in
-      // this tournament, so the seat is a leftover from a table this id was
-      // recycled through. Same release, different cause.
-      if (status === undefined) {
-        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
-        this.chipContinuity.forget(player.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
-        this.straddleEngine.removePlayer(this.tableId, player.user_id);
-        this.preActionEngine.removePlayer(this.tableId, player.user_id);
-        this.ghostSeatFirstSeen.delete(player.user_id);
-        released.push(player.user_id);
-        reportError(
-          new Error(
-            `[ServerTableEngine:${this.tableId}] seat held by ${player.user_id.slice(0, 8)} who has no row in tournament ${tournamentId.slice(0, 8)} - released`
-          ),
-          'ServerTableEngine.tournament_seat_without_entrant'
-        );
-        continue;
-      }
-
-      // ── CASE 3: busted, still 'playing'. NOT ours to resolve — the sweep
-      // owes them a finishing place and possibly a prize, and it may simply
-      // be a few seconds behind, or they may be inside their rebuy window.
-      // But a bust that nobody has resolved in two minutes is the reported
-      // defect, and it should be loud rather than silent. Escalated once, to
-      // the same watchdog that already catches horse_seat_unactable.
-      if (player.stack <= 0) {
-        const firstSeen = this.ghostSeatFirstSeen.get(player.user_id);
-        if (firstSeen === undefined) {
-          this.ghostSeatFirstSeen.set(player.user_id, now);
-        } else if (
-          now - firstSeen >= ServerTableEngineDealing.GHOST_SEAT_ESCALATE_MS &&
-          now - firstSeen < ServerTableEngineDealing.GHOST_SEAT_ESCALATE_MS + 60_000
-        ) {
-          reportError(
-            new Error(
-              `[ServerTableEngine:${this.tableId}] ${player.username} has held seat ${player.seat_number} at 0 chips for ${Math.round(
-                (now - firstSeen) / 1000
-              )}s in tournament ${tournamentId.slice(0, 8)} and is still 'playing' - the elimination sweep is not reaching this table`
-            ),
-            'ServerTableEngine.tournament_ghost_seat'
-          );
-        }
-      } else {
-        this.ghostSeatFirstSeen.delete(player.user_id);
-      }
-    }
-
-    // A chair freed above has to be free for the hand about to be dealt, not
-    // the one after it — the same reason the add-on sweep runs where it does.
-    if (released.length > 0) {
-      this.seatedPlayers = this.seatedPlayers.filter((sp) => !released.includes(sp.user_id));
-    }
-
-    // Anybody who left the table by any other route stops being tracked, or
-    // this map grows for the life of the process.
-    for (const [userId] of this.ghostSeatFirstSeen) {
-      if (!stillSeated.has(userId)) this.ghostSeatFirstSeen.delete(userId);
     }
   }
 }

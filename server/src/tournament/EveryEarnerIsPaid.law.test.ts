@@ -37,7 +37,7 @@ const migration = readFileSync(
 const atomicCashMigration = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'
+    '../../../supabase/migrations/20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );
@@ -102,10 +102,10 @@ describe('the repair payer remains untouched during the rolling stage-one instal
   });
 });
 
-describe('the engine has no payout watcher or repair timer', () => {
-  it('does not call either retired payout path', () => {
-    expect(gameServer).not.toContain("'fn_payout_guarantee_check'");
-    expect(gameServer).not.toContain('lastPayoutGuaranteeCheckAt');
+describe('the rolling audit detects but never repairs a payout', () => {
+  it('calls the read-only check but never the retired repair payer', () => {
+    expect(gameServer).toContain("'fn_payout_guarantee_check'");
+    expect(gameServer).toContain('lastPayoutGuaranteeCheckAt');
     expect(gameServer).not.toContain("'fn_pay_backed_payout_shortfalls'");
     expect(gameServer).not.toContain('lastBackedPayoutAt');
   });

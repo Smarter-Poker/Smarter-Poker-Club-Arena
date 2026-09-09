@@ -2,6 +2,7 @@
   "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
   "functions": [
     "fn_apply_prize_guarantee",
+    "fn_ca_apply_prize_guarantee_core",
     "fn_ca_settle_final_table_deal_share_raw",
     "fn_ca_settle_tournament_bubble_raw",
     "fn_ca_settle_tournament_place_raw",

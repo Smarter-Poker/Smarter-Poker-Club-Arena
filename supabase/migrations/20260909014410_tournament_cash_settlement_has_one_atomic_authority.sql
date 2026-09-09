@@ -1,4 +1,4 @@
--- 20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql
+-- 20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -26,160 +26,80 @@ SET LOCAL statement_timeout = '120s';
 -- exact escrow credit and pool finalization are one transaction. A duplicate
 -- overlay identity while the locked event is not finalized is impossible for
 -- a committed invocation and therefore raises instead of becoming a repair.
-DO $harden_guarantee_escrow_journal$
-DECLARE
-  v_definition text;
-  v_hardened text;
-  v_declaration_needle text := $needle$  v_balance_after numeric; v_bank_name text; v_updated integer;$needle$;
-  v_declaration_replacement text := $replacement$  v_balance_after numeric; v_bank_name text; v_updated integer;
-  v_escrow_before public.tournament_escrow%ROWTYPE;
-  v_escrow_after public.tournament_escrow%ROWTYPE;
-  v_escrow_existed boolean := false;
-  v_shadow_overlay numeric;$replacement$;
-  v_claim_needle text := $needle$    if v_claimed = 0 then
-      update public.tournaments set prize_pool_finalized = true where id = p_tournament_id;
-      return jsonb_build_object('ok', true, 'already_funded', true, 'prize_pool', v_t.pool);
-    end if;$needle$;
-  v_claim_replacement text := $replacement$    if v_claimed = 0 then
-      raise exception
-        'guarantee_overlay_identity_conflict: tournament % is not finalized but already has an overlay row',
-        p_tournament_id using errcode = 'P0404';
-    end if;$replacement$;
-  v_finalize_needle text := $needle$  update public.tournaments
-     set prize_pool = v_final, prize_pool_finalized = true
-   where id = p_tournament_id;$needle$;
-  v_finalize_replacement text := $replacement$  if v_overlay > 0 then
-    select * into v_escrow_before
-      from public.tournament_escrow e
-     where e.tournament_id = p_tournament_id
-     for update;
-    v_escrow_existed := found;
-
-    -- The overlay row is the idempotency identity. fn_ca_escrow_apply is the
-    -- only escrow mutation door, and no exception is caught: a missing or
-    -- malformed journal rolls the bank debit and overlay identity back too.
-    perform public.fn_ca_escrow_apply(
-      p_tournament_id,
-      'guarantee overlay ' || p_tournament_id::text,
-      p_overlay_in => v_overlay);
-
-    select * into v_escrow_after
-      from public.tournament_escrow e
-     where e.tournament_id = p_tournament_id
-     for update;
-    if not found then
-      raise exception 'guarantee_escrow_missing: tournament %', p_tournament_id
-        using errcode = 'P0404';
-    end if;
-
-    if v_escrow_existed then
-      if v_escrow_after.overlay_in is distinct from
-           round(v_escrow_before.overlay_in + v_overlay, 2)
-         or v_escrow_after.prize_balance is distinct from
-           round(v_escrow_before.prize_balance + v_overlay, 2)
-         or v_escrow_after.gross_in is distinct from v_escrow_before.gross_in
-         or v_escrow_after.fee_entries_in is distinct from v_escrow_before.fee_entries_in
-         or v_escrow_after.satellite_fee_in is distinct from v_escrow_before.satellite_fee_in
-         or v_escrow_after.bounty_in is distinct from v_escrow_before.bounty_in
-         or v_escrow_after.satellite_in is distinct from v_escrow_before.satellite_in
-         or v_escrow_after.prize_out is distinct from v_escrow_before.prize_out
-         or v_escrow_after.bounty_out is distinct from v_escrow_before.bounty_out
-         or v_escrow_after.fee_out is distinct from v_escrow_before.fee_out
-         or v_escrow_after.refund_prize is distinct from v_escrow_before.refund_prize
-         or v_escrow_after.refund_bounty is distinct from v_escrow_before.refund_bounty
-         or v_escrow_after.refund_fee is distinct from v_escrow_before.refund_fee
-         or v_escrow_after.reserve_out is distinct from v_escrow_before.reserve_out
-         or v_escrow_after.reserve_in is distinct from v_escrow_before.reserve_in then
-        raise exception
-          'guarantee_escrow_mismatch: tournament %, overlay %, before %, after %',
-          p_tournament_id,v_overlay,to_jsonb(v_escrow_before),to_jsonb(v_escrow_after)
-          using errcode = 'P0404';
-      end if;
-    else
-      select e.overlay_in into v_shadow_overlay
-        from public.fn_ca_tournament_escrow(p_tournament_id) e;
-      if v_shadow_overlay is null
-         or v_escrow_after.overlay_in is distinct from round(v_shadow_overlay,2)
-         or v_escrow_after.overlay_in < v_overlay
-         or v_escrow_after.prize_balance is distinct from round(
-              (v_escrow_after.gross_in - v_escrow_after.fee_entries_in
-               - v_escrow_after.bounty_in) + v_escrow_after.overlay_in
-              + v_escrow_after.satellite_in - v_escrow_after.reserve_out
-              + v_escrow_after.reserve_in - v_escrow_after.prize_out
-              - v_escrow_after.refund_prize, 2) then
-        raise exception
-          'guarantee_first_escrow_mismatch: tournament %, overlay %, shadow %, escrow %',
-          p_tournament_id,v_overlay,v_shadow_overlay,to_jsonb(v_escrow_after)
-          using errcode = 'P0404';
-      end if;
-    end if;
-  end if;
-
-  update public.tournaments
-     set prize_pool = v_final, prize_pool_finalized = true
-   where id = p_tournament_id;$replacement$;
-  v_return_needle text := $needle$    'treasury_after', v_balance_after);$needle$;
-  v_return_replacement text := $replacement$    'treasury_after', v_balance_after,
-    'overlay_journaled', coalesce(v_overlay,0) = 0
-      or v_escrow_after.tournament_id = p_tournament_id,
-    'escrow_overlay_in', v_escrow_after.overlay_in,
-    'escrow_prize_balance', v_escrow_after.prize_balance);$replacement$;
-  v_current_return_needle text := $needle$    'escrow_after', CASE WHEN v_escrow_after_found THEN v_escrow_after ELSE NULL END,
-    'already_finalized',$needle$;
-  v_current_return_replacement text := $replacement$    'escrow_after', CASE WHEN v_escrow_after_found THEN v_escrow_after ELSE NULL END,
-    'overlay_journaled', v_overlay = 0 OR
-      (v_ledger_inserted = 1 AND v_escrow_after_found AND v_escrow_enforced),
-    'already_finalized',$replacement$;
+DO $name_guarantee_core$
 BEGIN
-  SELECT pg_get_functiondef(p.oid) INTO v_definition
-    FROM pg_proc p
-   WHERE p.oid =
-     'public.fn_apply_prize_guarantee(uuid,text)'::regprocedure;
-  -- A later production hardening already owns the bank, explicit ledger leg,
-  -- escrow delta and failure rollback. Preserve that stronger authority and
-  -- add only the explicit receipt field consumed by the settlement callers.
-  IF v_definition LIKE '%fn_apply_prize_guarantee_before_atomic_proof%'
-     AND v_definition LIKE '%guarantee bank did not debit the exact overlay%'
-     AND v_definition LIKE '%guarantee overlay journal key already exists unexpectedly%'
-     AND v_definition LIKE '%guarantee bank debit did not credit live escrow exactly%'
-     AND v_definition LIKE '%atomic_guarantee_funding_aborted%' THEN
-    IF v_definition NOT LIKE '%''overlay_journaled''%' THEN
-      IF length(v_definition)-length(replace(
-           v_definition,v_current_return_needle,'')) <> length(v_current_return_needle) THEN
-        RAISE EXCEPTION
-          'current guarantee receipt insertion point did not match once';
-      END IF;
-      v_hardened:=replace(
-        v_definition,v_current_return_needle,v_current_return_replacement);
-      EXECUTE v_hardened;
-    END IF;
-    RETURN;
+  IF to_regprocedure(
+       'public.fn_ca_apply_prize_guarantee_core(uuid,text)') IS NOT NULL THEN
+    RAISE EXCEPTION 'canonical guarantee core name is already occupied';
   END IF;
-  IF v_definition IS NULL
-     OR md5(v_definition) <> '6c758a4b130d057c49c7e941461ce74c'
-     OR (length(v_definition)-length(replace(
-           v_definition,v_declaration_needle,'')))
-          / length(v_declaration_needle) <> 1
-     OR (length(v_definition)-length(replace(
-           v_definition,v_claim_needle,'')))
-          / length(v_claim_needle) <> 1
-     OR (length(v_definition)-length(replace(
-           v_definition,v_finalize_needle,'')))
-          / length(v_finalize_needle) <> 1
-     OR (length(v_definition)-length(replace(
-           v_definition,v_return_needle,'')))
-          / length(v_return_needle) <> 1 THEN
-    RAISE EXCEPTION
-      'guarantee authority changed since the audited escrow-journal baseline';
+  IF to_regprocedure(
+       'public.fn_apply_prize_guarantee(uuid,text)') IS NULL THEN
+    RAISE EXCEPTION 'atomic guarantee authority is missing';
   END IF;
-  v_hardened := replace(v_definition,v_declaration_needle,
-                        v_declaration_replacement);
-  v_hardened := replace(v_hardened,v_claim_needle,v_claim_replacement);
-  v_hardened := replace(v_hardened,v_finalize_needle,v_finalize_replacement);
-  v_hardened := replace(v_hardened,v_return_needle,v_return_replacement);
-  EXECUTE v_hardened;
+  ALTER FUNCTION public.fn_apply_prize_guarantee(uuid,text)
+    RENAME TO fn_ca_apply_prize_guarantee_core;
 END;
-$harden_guarantee_escrow_journal$;
+$name_guarantee_core$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_apply_prize_guarantee_core(uuid,text)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_apply_prize_guarantee(
+  p_tournament_id uuid,
+  p_source text DEFAULT 'engine'
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $guarantee_receipt$
+DECLARE
+  v_result jsonb;
+  v_overlay numeric;
+  v_ledger_count integer;
+  v_escrow public.tournament_escrow%ROWTYPE;
+BEGIN
+  v_result:=public.fn_ca_apply_prize_guarantee_core(
+    p_tournament_id,p_source);
+  IF COALESCE((v_result->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_result;
+  END IF;
+  v_overlay:=COALESCE((v_result->>'overlay')::numeric,0);
+  IF v_overlay::text IN ('NaN','Infinity','-Infinity')
+     OR v_overlay<0 OR v_overlay IS DISTINCT FROM round(v_overlay,2) THEN
+    RAISE EXCEPTION 'guarantee core returned invalid overlay %',v_overlay
+      USING ERRCODE='P0404';
+  END IF;
+  IF v_overlay>0 THEN
+    SELECT count(*) INTO v_ledger_count
+      FROM public.chip_ledger l
+     WHERE l.idempotency_key=
+             'tourney:'||p_tournament_id::text||':guarantee_overlay'
+       AND l.tournament_id=p_tournament_id
+       AND l.to_type='prize_liability'
+       AND l.to_entity_id=p_tournament_id
+       AND l.category='overlay'
+       AND l.amount=v_overlay
+       AND l.from_entity_id=(v_result->>'bank_entity_id')::uuid
+       AND l.from_type=CASE WHEN v_result->>'bank_type'='union'
+                            THEN 'union_bank' ELSE 'club_treasury' END;
+    SELECT * INTO v_escrow
+      FROM public.tournament_escrow e
+     WHERE e.tournament_id=p_tournament_id
+     FOR UPDATE;
+    IF v_ledger_count<>1 OR NOT FOUND
+       OR COALESCE(v_escrow.enforced,false) IS NOT TRUE
+       OR v_result->>'escrow_after' IS NULL
+       OR v_escrow.prize_balance IS DISTINCT FROM
+            (v_result->>'escrow_after')::numeric THEN
+      RAISE EXCEPTION
+        'guarantee overlay is not one exact journaled escrow credit'
+        USING ERRCODE='P0404';
+    END IF;
+  END IF;
+  RETURN v_result||jsonb_build_object('overlay_journaled',true);
+END;
+$guarantee_receipt$;
 
 REVOKE ALL ON FUNCTION public.fn_apply_prize_guarantee(uuid,text)
   FROM PUBLIC, anon, authenticated;
@@ -1219,6 +1139,10 @@ DECLARE
   v_guarantee_result jsonb;
   v_rows integer;
 BEGIN
+  -- Every rolling and terminal money authority enters one transaction lane
+  -- before it can own an event, obligation, bank, or recipient row.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
   IF p_tournament_id IS NULL OR p_observed_winner_id IS NULL THEN
     RAISE EXCEPTION 'place settlement requires tournament and observed winner ids'
       USING ERRCODE = '22004';
@@ -2086,6 +2010,10 @@ DECLARE
     'own_bounty','mystery_bounty_residual'
   ];
 BEGIN
+  -- Share the same first lock as the whole-event terminal authority. Re-entry
+  -- from that authority is transaction-local and immediate.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
   IF p_tournament_id IS NULL THEN
     RAISE EXCEPTION 'final-table deal requires a tournament id'
       USING ERRCODE = '22004';
@@ -3718,6 +3646,7 @@ DECLARE
   v_deal text;
   v_raw text;
   v_guarantee text;
+  v_guarantee_core text;
   v_legacy_hash text;
 BEGIN
   IF has_function_privilege('service_role',
@@ -3782,27 +3711,21 @@ BEGIN
     FROM pg_proc p
    WHERE p.oid =
      'public.fn_apply_prize_guarantee(uuid,text)'::regprocedure;
+  SELECT p.prosrc INTO v_guarantee_core
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_ca_apply_prize_guarantee_core(uuid,text)'::regprocedure;
   IF v_guarantee IS NULL
      OR v_guarantee NOT LIKE '%overlay_journaled%'
-     OR NOT (
-       (
-         v_guarantee LIKE '%fn_ca_escrow_apply(%'
-         AND v_guarantee LIKE '%p_overlay_in => v_overlay%'
-         AND v_guarantee LIKE '%guarantee_overlay_identity_conflict%'
-         AND v_guarantee LIKE '%guarantee_escrow_mismatch%'
-         AND position('update public.clubs' IN v_guarantee)>0
-         AND position('fn_ca_escrow_apply(' IN v_guarantee)
-              >position('update public.clubs' IN v_guarantee)
-         AND position('set prize_pool = v_final' IN v_guarantee)
-              >position('fn_ca_escrow_apply(' IN v_guarantee)
-       ) OR (
-         v_guarantee LIKE '%fn_apply_prize_guarantee_before_atomic_proof%'
-         AND v_guarantee LIKE '%guarantee bank did not debit the exact overlay%'
-         AND v_guarantee LIKE '%guarantee overlay journal key already exists unexpectedly%'
-         AND v_guarantee LIKE '%guarantee bank debit did not credit live escrow exactly%'
-         AND v_guarantee LIKE '%atomic_guarantee_funding_aborted%'
-       )
-     ) THEN
+     OR v_guarantee NOT LIKE '%fn_ca_apply_prize_guarantee_core%'
+     OR v_guarantee NOT LIKE '%tourney:%guarantee_overlay%'
+     OR v_guarantee NOT LIKE '%guarantee overlay is not one exact journaled escrow credit%'
+     OR v_guarantee_core IS NULL
+     OR v_guarantee_core NOT LIKE '%fn_apply_prize_guarantee_before_atomic_proof%'
+     OR v_guarantee_core NOT LIKE '%guarantee bank did not debit the exact overlay%'
+     OR v_guarantee_core NOT LIKE '%guarantee overlay journal key already exists unexpectedly%'
+     OR v_guarantee_core NOT LIKE '%guarantee bank debit did not credit live escrow exactly%'
+     OR v_guarantee_core NOT LIKE '%atomic_guarantee_funding_aborted%' THEN
     RAISE EXCEPTION
       'fn_apply_prize_guarantee lost its atomic escrow journal ordering';
   END IF;

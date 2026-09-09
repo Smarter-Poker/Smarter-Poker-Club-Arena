@@ -92,28 +92,41 @@ describe('the money-path migrations that guard the bounty chests', () => {
     const owning = all().filter((m) => m.body.includes('FUNCTION public.fn_mystery_bounty_pay'));
     expect(owning.length, 'no migration defines fn_mystery_bounty_pay').toBeGreaterThan(0);
     const latest = owning[owning.length - 1].body;
-    const delegatesToLockedImplementation = latest.includes(
+    const creditedImplementation = owning.find((m) =>
+      m.body.includes('A RECIPIENT IS ONLY "PAID" IF THE CREDIT ACTUALLY MOVED')
+    )?.body;
+    expect(
+      creditedImplementation,
+      'the credit-checked mystery bounty payer migration is missing'
+    ).toBeDefined();
+
+    // The original correction must keep the paid marker inside the branch
+    // whose wallet credit actually moved.
+    expect(creditedImplementation).toMatch(
+      /IF COALESCE\(v_credited, false\) THEN[\s\S]*?SET paid_at = now\(\)/
+    );
+    expect(creditedImplementation).toMatch(/v_refused/);
+
+    // The outbox hardening edits that exact credited branch in the stored
+    // function body, strengthening it to require the exact paid amount before
+    // the same recipient UPDATE. It then seals the implementation behind a
+    // tournament-first wrapper.
+    const hardening = all().find((m) =>
+      m.body.includes('fn_mystery_bounty_pay exact-credit substitution did not match exactly once')
+    )?.body;
+    expect(hardening, 'the atomic mystery payer hardening is missing').toBeDefined();
+    expect(hardening).toMatch(
+      /v_old := \$old\$IF COALESCE\(v_credited, false\) THEN[\s\S]*?v_new := \$new\$IF COALESCE\(v_credited, false\)[\s\S]*?UPDATE public\.tournament_bounty_award_recipients/
+    );
+    expect(hardening).toContain(
       'RETURN public.fn_mystery_bounty_pay_unguarded_20260907(p_award_id)'
     );
-    const payingImplementation = delegatesToLockedImplementation
-      ? (owning.at(-2)?.body ?? '')
-      : latest;
 
-    if (delegatesToLockedImplementation) {
-      // The current public entry point serializes on the tournament before it
-      // invokes the prior, credit-checked implementation. Follow that explicit
-      // delegation instead of mistaking the lock wrapper for the payer body.
-      expect(latest).toMatch(
-        /PERFORM 1 FROM public\.tournaments[\s\S]*?FOR UPDATE;[\s\S]*?fn_mystery_bounty_pay_unguarded_20260907/
-      );
-    }
-
-    // The stamp must sit inside the credited branch.
-    expect(payingImplementation).toMatch(
-      /IF COALESCE\(v_credited, false\) THEN[\s\S]{0,400}?SET paid_at = now\(\)/
+    // The latest terminal lock wrapper must still delegate only to that
+    // hardened payer after it owns the tournament and payout-visible rows.
+    expect(latest).toMatch(
+      /PERFORM 1 FROM public\.tournaments[\s\S]*?FOR UPDATE;[\s\S]*?RETURN public\.fn_mystery_bounty_pay_unguarded_20260907\(p_award_id\)/
     );
-    // And an award must not be completed over a refusal.
-    expect(payingImplementation).toMatch(/v_refused/);
   });
 });
 

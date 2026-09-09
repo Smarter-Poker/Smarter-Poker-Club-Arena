@@ -114,16 +114,6 @@ VALUES
    'running','live',1,'tournament',
    '20000000-0000-0000-0000-000000000001');
 
-INSERT INTO public.table_seats
-  (id,table_id,seat_number,user_id,stack,status,left_at,leave_pending,
-   is_sitting_out,is_away,sit_out_at,scheduled_leave_hands,club_id)
-VALUES
-  ('83000000-0000-0000-0000-000000000001',
-   '82000000-0000-0000-0000-000000000001',1,
-   '10000000-0000-0000-0000-000000000001',35,'active',NULL,true,true,
-   true,'2026-09-08 04:59:00+00'::timestamptz,2,
-   '20000000-0000-0000-0000-000000000001');
-
 SET LOCAL session_replication_role = origin;
 
 CREATE FUNCTION pg_temp.atomic_terminal_probe_state(p_tournament_id uuid)
@@ -300,6 +290,22 @@ BEGIN
   END IF;
 END;
 $live_marker_guard$;
+
+-- The marker guard above deliberately uses an empty table so the exact
+-- terminal-marker authority is reached before the independent not-empty
+-- close guard.  Add the live seat only after that focused assertion; terminal
+-- completion below must close it atomically with every money row.
+SET LOCAL session_replication_role = replica;
+INSERT INTO public.table_seats
+  (id,table_id,seat_number,user_id,stack,status,left_at,leave_pending,
+   is_sitting_out,is_away,sit_out_at,scheduled_leave_hands,club_id)
+VALUES
+  ('83000000-0000-0000-0000-000000000001',
+   '82000000-0000-0000-0000-000000000001',1,
+   '10000000-0000-0000-0000-000000000001',35,'active',NULL,true,true,
+   true,'2026-09-08 04:59:00+00'::timestamptz,2,
+   '20000000-0000-0000-0000-000000000001');
+SET LOCAL session_replication_role = origin;
 
 CREATE FUNCTION pg_temp.reject_atomic_terminal_table_close()
 RETURNS trigger

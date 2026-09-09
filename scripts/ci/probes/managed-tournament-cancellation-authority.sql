@@ -89,6 +89,7 @@ SET LOCAL session_replication_role = origin;
 DO $source_and_success$
 DECLARE
   v_atomic text;
+  v_wrapper text;
   v_close text;
   v_gateway text;
   v_result jsonb;
@@ -96,6 +97,8 @@ BEGIN
   IF current_user <> 'postgres'
      OR to_regclass('public.tournament_cancellation_receipts') IS NULL
      OR to_regprocedure('public.atomic_cancel_tournament(uuid,uuid)') IS NULL
+     OR to_regprocedure(
+          'public.atomic_cancel_tournament_pre_seat_guard(uuid,uuid)') IS NULL
      OR to_regprocedure('public.fn_close_managed_game(text,uuid)') IS NULL
      OR to_regprocedure(
           'public.fn_execute_managed_game_command(uuid,text,uuid,text,integer,jsonb)')
@@ -105,6 +108,9 @@ BEGIN
   END IF;
 
   SELECT p.prosrc INTO v_atomic FROM pg_proc p
+   WHERE p.oid=
+     'public.atomic_cancel_tournament_pre_seat_guard(uuid,uuid)'::regprocedure;
+  SELECT p.prosrc INTO v_wrapper FROM pg_proc p
    WHERE p.oid='public.atomic_cancel_tournament(uuid,uuid)'::regprocedure;
   SELECT p.prosrc INTO v_close FROM pg_proc p
    WHERE p.oid='public.fn_close_managed_game(text,uuid)'::regprocedure;
@@ -123,7 +129,10 @@ BEGIN
      OR v_close NOT LIKE '%atomic_cancel_tournament(p_game_id, v_uid)%'
      OR v_close NOT LIKE '%players_registered%'
      OR v_atomic NOT LIKE '%fn_can_create_games(v_t.club_id,v_uid)%'
-     OR v_atomic LIKE '%is_club_admin(v_t.club_id,v_uid)%' THEN
+     OR v_atomic LIKE '%is_club_admin(v_t.club_id,v_uid)%'
+     OR v_wrapper NOT LIKE '%managed_game_command_receipts%'
+     OR v_wrapper NOT LIKE '%r.status=''processing''%'
+     OR v_wrapper NOT LIKE '%p_admin_id IS NOT DISTINCT FROM v_uid%' THEN
     RAISE EXCEPTION 'FAIL installed managed cancellation source bypasses authority or lock order';
   END IF;
 
@@ -151,6 +160,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL synthetic affiliated club does not enforce union governance';
   END IF;
 
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
   PERFORM set_config(
     'request.jwt.claim.sub','91000000-0000-0000-0000-000000000001',true);
   v_result:=public.fn_execute_managed_game_command(
@@ -223,7 +233,7 @@ BEGIN
     PERFORM public.atomic_cancel_tournament(
       '94000000-0000-0000-0000-000000000003',
       '91000000-0000-0000-0000-000000000002');
-  EXCEPTION WHEN insufficient_privilege THEN
+  EXCEPTION WHEN SQLSTATE '28000' OR insufficient_privilege THEN
     v_caught:=true;
   END;
   IF NOT v_caught

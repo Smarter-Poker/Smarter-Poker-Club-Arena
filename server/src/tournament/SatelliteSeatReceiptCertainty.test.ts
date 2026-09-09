@@ -13,16 +13,16 @@ const eliminations = readFileSync(join(__dirname, 'TournamentManagerEliminations
 const request = readFileSync(join(__dirname, 'satelliteSettlementRpc.ts'), 'utf8');
 
 describe('only an exact atomic satellite receipt confirms settlement', () => {
-  it('keeps the manager adapter arithmetic-free and returns the certified winner value', () => {
+  it('keeps the manager adapter arithmetic-free and returns the entire certified receipt', () => {
     const adapter = sliceMethod(
       manager,
-      'processSatelliteAwards(_tournament: any, winnerId: string): Promise<number>'
+      'processSatelliteAwards(\n    _tournament: any,\n    winnerId: string\n  ): Promise<VerifiedSatelliteSettlementReceipt>'
     );
 
     expect(adapter).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
     expect(adapter).toContain('verified.ticketAwardCount');
     expect(adapter).toContain('verified.cashTicketCount');
-    expect(adapter).toContain('return verified.winnerAmount');
+    expect(adapter).toContain('return verified');
     expect(adapter).not.toMatch(/supabase|\.from\(|\.rpc\(|Math\.|prize_pool|satellite_seats/);
   });
 
@@ -39,7 +39,7 @@ describe('an unresolved satellite commit stops process ownership', () => {
   it('branches before shared rake, bounty, standings, or cash-place work', () => {
     const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
     const start = finish.indexOf('if (isSatelliteFinish) {');
-    const end = finish.indexOf('let refreshedPool', start);
+    const end = finish.indexOf('let receipt: VerifiedTournamentCompletionReceipt', start);
     const satellite = finish.slice(start, end);
 
     expect(start).toBeGreaterThan(-1);

@@ -3,19 +3,25 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
+const { GameServer } = await import('../GameServer.js');
+const { supabase } = await import('../services/supabase.js');
 const { reportError } = await import('../services/errorReporter.js');
 
 describe('committed final-table presentation is failure-contained', () => {
-  it('still stops the engine and manager when broadcasts and cleanup reject', async () => {
+  it('still stops the exact engine and manager when presentation rejects', async () => {
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
     const stopEngine = vi.fn().mockResolvedValue(undefined);
     manager.tournamentId = '00000000-0000-4000-8000-000000000001';
     manager.tableEngines = new Map([
       ['00000000-0000-4000-8000-000000000002', { stop: stopEngine }],
     ]);
+    manager.gameServer = {
+      unregisterTableEngine: vi.fn().mockReturnValue(true),
+      stopClosedTournamentTableEngine: vi.fn(),
+    };
     manager.broadcast = vi.fn().mockRejectedValue(new Error('channel unavailable'));
-    manager.cleanupBroadcastChannel = vi.fn().mockRejectedValue(new Error('cleanup unavailable'));
-    manager.stop = vi.fn();
+    manager.cleanupBroadcastChannel = vi.fn().mockResolvedValue(undefined);
+    manager.stop = vi.fn().mockResolvedValue(undefined);
 
     await expect(
       manager.settleFinalTableDeal({
@@ -27,12 +33,86 @@ describe('committed final-table presentation is failure-contained', () => {
             amount: 100,
           },
         ],
+        tableClosure: {
+          closedTableIds: ['00000000-0000-4000-8000-000000000002'],
+        },
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
 
     expect(stopEngine).toHaveBeenCalledOnce();
     expect(manager.cleanupBroadcastChannel).toHaveBeenCalledOnce();
     expect(manager.stop).toHaveBeenCalledOnce();
+  });
+
+  it('retires an exact committed-table engine after stop reports cleanup failure', async () => {
+    const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    const tableId = '00000000-0000-4000-8000-000000000002';
+    const failure = new Error('snapshot flush failed');
+    const managerEngine = {
+      stop: vi.fn().mockRejectedValue(failure),
+      hasReleasedProcessOwnership: vi.fn().mockReturnValue(true),
+    };
+    const unregisterTableEngine = vi.fn().mockReturnValue(true);
+    const stopClosedTournamentTableEngine = vi.fn();
+    manager.tournamentId = '00000000-0000-4000-8000-000000000001';
+    manager.tableEngines = new Map([[tableId, managerEngine]]);
+    manager.gameServer = { unregisterTableEngine, stopClosedTournamentTableEngine };
+    manager.cleanupBroadcastChannel = vi.fn().mockResolvedValue(undefined);
+    manager.stop = vi.fn().mockResolvedValue(undefined);
+
+    await expect(manager.cleanupCommittedTablesAndManager([tableId])).resolves.toBe(true);
+
+    expect(managerEngine.hasReleasedProcessOwnership).toHaveBeenCalledOnce();
+    expect(unregisterTableEngine).toHaveBeenCalledOnce();
+    expect(unregisterTableEngine).toHaveBeenCalledWith(tableId, managerEngine);
+    expect(stopClosedTournamentTableEngine).not.toHaveBeenCalled();
+    expect(manager.tableEngines.size).toBe(0);
+    expect(reportError).toHaveBeenCalledWith(
+      failure,
+      'Tournament.committed_cleanup_engine_stop_cleanup_failed',
+      { tableId }
+    );
+  });
+
+  it('retires a replacement terminal engine only after released ownership is proven', async () => {
+    const tableId = '00000000-0000-4000-8000-000000000004';
+    const tournamentId = '00000000-0000-4000-8000-000000000001';
+    const failure = new Error('snapshot flush failed');
+    const current = {
+      stop: vi.fn().mockRejectedValue(failure),
+      hasReleasedProcessOwnership: vi.fn().mockReturnValue(true),
+    };
+    const unregisterTableEngine = vi.fn().mockReturnValue(true);
+    const terminalRead = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { status: 'closed', tournament_id: tournamentId },
+        error: null,
+      }),
+    };
+    const from = vi.spyOn(supabase, 'from').mockReturnValue(terminalRead as any);
+    const gameServer = {
+      tableEngines: new Map([[tableId, current]]),
+      unregisterTableEngine,
+    };
+
+    try {
+      await expect(
+        GameServer.prototype.stopClosedTournamentTableEngine.call(gameServer, tableId)
+      ).resolves.toBe(true);
+    } finally {
+      from.mockRestore();
+    }
+
+    expect(current.hasReleasedProcessOwnership).toHaveBeenCalledOnce();
+    expect(unregisterTableEngine).toHaveBeenCalledOnce();
+    expect(unregisterTableEngine).toHaveBeenCalledWith(tableId, current);
+    expect(reportError).toHaveBeenCalledWith(
+      failure,
+      'GameServer.terminal_table_engine_stop_cleanup_failed',
+      { tableId }
+    );
   });
 
   it('awaits every engine teardown when an unknown money result fails closed', async () => {

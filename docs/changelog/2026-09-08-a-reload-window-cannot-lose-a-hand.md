@@ -17,8 +17,9 @@ no-band-aids rule.
 
 ## Root Repair
 
-`syncStacks` now builds one immutable RPC payload for the hand and keeps that
-same payload inside the original awaited settlement promise. It makes at most
+The active `logHandHistory` atomic branch now builds one immutable RPC payload
+for the entire accepted hand and keeps that same payload inside the original
+awaited settlement promise. It makes at most
 13 calls with 41 seconds of scheduled delay. Even if every call consumes its
 full 15-second database deadline, the total remains below the existing
 five-minute gameplay settlement barrier.
@@ -46,8 +47,8 @@ have.
 ## Removed Band-Aid
 
 The merge does not ship `pendingWrites.ts`, `enqueuePendingWrite`,
-`drainPendingWrites`, or a pending-write timer. The stack path also has no
-per-seat fallback, `syncTournamentChips`, or table-seat count reconciler.
+`drainPendingWrites`, or a pending-write timer. The active hand path also has
+no per-seat fallback, `syncTournamentChips`, or table-seat count reconciler.
 
 Fee queue insertion remains a separately registered Tier 1 accounting item.
 This change keeps the useful tri-state evidence check so an unreadable database

@@ -80,12 +80,21 @@ describe('the hand rests before the next one', () => {
     expect(arm, 'the rest is not armed after the broadcast').toBeGreaterThan(broadcast);
     expect(awaited, 'the rest is not awaited in the dealing loop').toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-    // The sole permitted statement between the rest and the deal is the
-    // authority re-proof. A dealer whose lease expired while awaiting the
-    // rest must not start one final hand.
-    expect(
-      DEALING_CODE.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()
-    ).toBe('if (!this.lifecycleCanMutate()) return;');
+    const betweenRestAndDeal = DEALING_CODE.slice(
+      awaited + 'await this.awaitNextHandRest();'.length,
+      deal
+    );
+    // Terminal closeout may claim the table while the rest is pending. Its
+    // checks are synchronous on the normal path and only await when that
+    // fail-closed authority is armed, so they do not lengthen ordinary hands.
+    // With those exact gates removed, the lease re-proof is still the sole
+    // ordinary-path statement between the rest and the deal.
+    const terminalGate =
+      /if \(this\.terminalCloseoutPaused\) \{\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    expect(betweenRestAndDeal.match(terminalGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
+    expect(betweenRestAndDeal.replace(terminalGate, '').trim()).toBe(
+      'if (!this.lifecycleCanMutate()) return;'
+    );
   });
 
   it('it happens on EVERY hand, with nothing to branch on', () => {

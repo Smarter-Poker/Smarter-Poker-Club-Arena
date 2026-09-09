@@ -3,10 +3,16 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = (path: string) => resolve(__dirname, '..', path);
-const migration = '20260908153329_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
+const migration = '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
 const sql = readFileSync(root(`supabase/migrations/${migration}`), 'utf8');
 const satelliteSql = readFileSync(
-  root('supabase/migrations/20260908153207_satellite_settlement_has_one_atomic_authority.sql'),
+  root('supabase/migrations/20260909014421_satellite_settlement_has_one_atomic_authority.sql'),
+  'utf8'
+);
+const cashSql = readFileSync(
+  root(
+    'supabase/migrations/20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'
+  ),
   'utf8'
 );
 
@@ -19,15 +25,102 @@ function taggedBody(tag: string): string {
   return sql.slice(first + delimiter.length, second);
 }
 
+function functionDefinition(source: string, signatureStart: string): string {
+  const start = source.indexOf(signatureStart);
+  expect(start, `function ${signatureStart}`).toBeGreaterThan(-1);
+  const tail = source.slice(start);
+  const opening = tail.match(/\nAS (\$[A-Za-z0-9_]*\$)\n/);
+  expect(opening, `body delimiter for ${signatureStart}`).not.toBeNull();
+  const delimiter = opening![1];
+  const bodyStart = start + opening!.index! + opening![0].length - delimiter.length - 1;
+  const close = source.indexOf(delimiter, bodyStart + delimiter.length);
+  expect(close, `closing ${delimiter} for ${signatureStart}`).toBeGreaterThan(bodyStart);
+  return source.slice(start, close + delimiter.length);
+}
+
 const settle = taggedBody('complete_terminal');
 const receipt = taggedBody('terminal_receipt');
 const outcome = taggedBody('terminal_outcome');
-const handHardening = taggedBody('harden_hand_stack_lock_order');
-const rollingComponents = taggedBody('serialize_rolling_terminal_components');
-const collectBounty = taggedBody('harden_collect_bounty_terminal_lock');
+const handHardening = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute('
+);
+const collectBounty = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_collect_bounty('
+);
+const satelliteTargetProvenanceGuard = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_satellite_target_player_provenance_is_immutable()'
+);
+const rollingComponents: Array<[string, string]> = [
+  [
+    'fn_settle_tournament_places',
+    functionDefinition(cashSql, 'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_places('),
+  ],
+  [
+    'fn_settle_tournament_final_table_deal',
+    functionDefinition(
+      cashSql,
+      'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_final_table_deal('
+    ),
+  ],
+  [
+    'fn_finalize_bounty_pool',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_finalize_bounty_pool('),
+  ],
+  [
+    'fn_mystery_bounty_settle',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_mystery_bounty_settle('),
+  ],
+  [
+    'fn_settle_tournament_rake',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_rake('),
+  ],
+  [
+    'fn_award_satellite_seat',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_award_satellite_seat('),
+  ],
+];
+const rollingRoots: Array<[string, string]> = [
+  [
+    'fn_sweep_pending_tournament_bounties',
+    functionDefinition(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.fn_sweep_pending_tournament_bounties('
+    ),
+  ],
+  [
+    'fn_backpay_unfinalised_bounty_pools',
+    functionDefinition(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.fn_backpay_unfinalised_bounty_pools('
+    ),
+  ],
+  [
+    'fn_sweep_unsettled_tournament_rake',
+    functionDefinition(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.fn_sweep_unsettled_tournament_rake('
+    ),
+  ],
+  [
+    'fn_deliver_satellite_ticket_exact',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_deliver_satellite_ticket_exact('),
+  ],
+  [
+    'fn_settle_satellite_finish_atomic',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_settle_satellite_finish_atomic('),
+  ],
+  [
+    'fn_settle_final_table_deal_atomic',
+    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_settle_final_table_deal_atomic('),
+  ],
+];
 const mysteryEvidence = taggedBody('mystery_completion_evidence');
 const terminalMarker = taggedBody('terminal_marker_transition');
 const terminalStamp = taggedBody('stamp_terminal_evidence_markers');
+const payoutAppendOnly = taggedBody('tournament_payout_append_only');
 const terminalEvidenceGuard = taggedBody('terminal_evidence_guard');
 const terminalParentGuard = taggedBody('receipted_tournament_guard');
 
@@ -42,26 +135,33 @@ describe('non-satellite terminal completion is one database transaction', () => 
     expect(settle).toContain("COALESCE((v_cash->>'fully_settled')::boolean,false) IS NOT TRUE");
   });
 
-  it('serializes wrapper, satellite and rolling component callers on one global lock', () => {
+  it('serializes wrapper, rolling leaves and every enclosing root on one global lock', () => {
     const lock = 'ca:tournament-terminal-settlement:v1';
     expect(settle).toContain(lock);
     expect(settle.indexOf('pg_advisory_xact_lock')).toBeLessThan(
       settle.indexOf('SELECT t.* INTO v_t FROM public.tournaments')
     );
-    for (const signature of [
-      'fn_settle_tournament_places(uuid,uuid)',
-      'fn_settle_tournament_final_table_deal(uuid)',
-      'fn_finalize_bounty_pool(uuid,uuid)',
-      'fn_mystery_bounty_settle(uuid,uuid)',
-      'fn_settle_tournament_rake(uuid,text)',
-      'fn_award_satellite_seat(uuid,uuid,uuid,text,integer)',
+    for (const [name, definition] of [
+      ['fn_complete_tournament_terminal', settle] as [string, string],
+      ['fn_collect_bounty', collectBounty] as [string, string],
+      ...rollingComponents,
+      ...rollingRoots,
     ]) {
-      expect(rollingComponents).toContain(`public.${signature}`);
+      expect(definition, `${name} shares the terminal lane`).toContain(lock);
+      const globalLock = definition.indexOf('pg_advisory_xact_lock(');
+      const firstRowLock = definition.indexOf('FOR UPDATE');
+      expect(globalLock, `${name} has the global lock`).toBeGreaterThan(-1);
+      if (firstRowLock >= 0) {
+        expect(globalLock, `${name} owns global before its first row lock`).toBeLessThan(
+          firstRowLock
+        );
+      }
     }
-    expect(rollingComponents).toContain(lock);
-    expect(collectBounty).toContain(lock);
     expect(collectBounty).toMatch(
-      /v_begin_replacement[\s\S]*?BEGIN\s+PERFORM pg_advisory_xact_lock\([\s\S]*?p_collector_user_id IS NULL/
+      /BEGIN\s+PERFORM pg_advisory_xact_lock\([\s\S]*?PERFORM 1 FROM public\.tournaments/
+    );
+    expect(sql).not.toMatch(
+      /pg_get_functiondef|\bv_(?:definition|hardened|begin_needle|begin_replacement)\b/
     );
     expect(sql).toContain('rolling satellite award lost its target-before-source row-lock order');
     expect(sql).toContain("position('WHERE id = p_target_id' IN v_satellite_award_source) >");
@@ -130,10 +230,12 @@ describe('non-satellite terminal completion is one database transaction', () => 
     expect(playerMirror).toBeGreaterThan(seatLock);
     expect(seatVacate).toBeGreaterThan(playerMirror);
     expect(handHardening).toContain("tp.status::text = 'playing'");
-    expect(handHardening).toContain("md5(v_definition) <> '027f6ca632a9aca339efd1c896e7f6a6'");
+    expect(handHardening).not.toMatch(/pg_get_functiondef|\bv_(?:definition|hardened)\b/);
     expect(sql).toContain('20260908045608 zero-delta departed-seat refinement');
     expect(handHardening).toContain('jsonb_array_elements(v_canonical)');
-    expect(handHardening).not.toContain('jsonb_array_elements(p_stacks)');
+    expect(handHardening.slice(playerLock, seatLock)).not.toContain(
+      'jsonb_array_elements(p_stacks)'
+    );
     expect(handHardening).toContain("'request', v_request");
     expect(handHardening).toContain('target.value::numeric = 0');
     expect(handHardening).toContain("status = 'left'");
@@ -148,8 +250,22 @@ describe('non-satellite terminal completion is one database transaction', () => 
     expect(mysteryEvidence).toContain("'mb-residual:' || p_tournament_id::text");
     expect(mysteryEvidence).toContain("':obl:' || o.id::text || ':%'");
     expect(mysteryEvidence).toContain('expected_start_cents');
+    expect(mysteryEvidence).toContain('o.amount_owed IS DISTINCT FROM o.amount_paid');
+    expect(mysteryEvidence).toContain('o.settled_at IS NULL');
+    expect(mysteryEvidence).not.toContain('pending_credit_token');
+    expect(mysteryEvidence).not.toContain('pending_credit_key');
+    expect(mysteryEvidence).not.toContain('pending_credit_amount');
     expect(mysteryEvidence).toContain('v_legacy_credit_cents + v_obligation_cents');
     expect(mysteryEvidence).toContain("THEN 'mixed'");
+    const completedEvidence = settle.indexOf("ELSIF v_mystery_stage = 'complete' THEN");
+    const completedReceipt = settle.indexOf(
+      'INSERT INTO public.tournament_bounty_completion_receipts',
+      completedEvidence
+    );
+    const bountyFinalize = settle.indexOf('public.fn_finalize_bounty_pool(', completedEvidence);
+    expect(completedReceipt).toBeGreaterThan(completedEvidence);
+    expect(completedReceipt).toBeLessThan(bountyFinalize);
+    expect(settle).toContain('r.mystery_result IS NOT DISTINCT FROM v_mystery');
     expect(settle).toContain('public.fn_ca_mystery_bounty_completion_evidence(');
     expect(receipt).toContain('public.fn_ca_mystery_bounty_completion_evidence(');
     expect(receipt).toContain("v_h.mystery_receipt->'payment_evidence'");
@@ -231,6 +347,27 @@ describe('the stored terminal receipt is immutable and exact', () => {
     expect(sql).toContain('UPDATE OF id,tournament_id,status,current_players');
   });
 
+  it('admits returned satellite tickets only through the canonical acquisition root', () => {
+    expect(satelliteTargetProvenanceGuard).toContain(
+      "hashtextextended(\n    'ca:tournament-terminal-settlement:v1',0)"
+    );
+    expect(satelliteTargetProvenanceGuard).toContain('FROM pg_catalog.pg_locks l');
+    expect(satelliteTargetProvenanceGuard).toContain('l.pid=pg_backend_pid()');
+    expect(satelliteTargetProvenanceGuard).toContain("l.mode='ExclusiveLock'");
+    expect(satelliteTargetProvenanceGuard).toContain(
+      "IF NOT (TG_OP='INSERT' AND COALESCE(v_owns_acquisition_root,false))"
+    );
+    expect(satelliteTargetProvenanceGuard).toContain(
+      "IF TG_OP <> 'INSERT' AND OLD.source_satellite_id IS NOT NULL"
+    );
+    expect(satelliteTargetProvenanceGuard).toContain(
+      "IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN"
+    );
+    expect(satelliteTargetProvenanceGuard).toContain(
+      'terminal target tournament cannot gain satellite provenance'
+    );
+  });
+
   it('uses row-owned terminal markers to close queued child and parent snapshot races', () => {
     expect(sql.match(/ADD COLUMN terminal_closed_at timestamptz;/g)).toHaveLength(13);
     expect(terminalMarker).toContain("p_new - 'terminal_closed_at'");
@@ -258,6 +395,12 @@ describe('the stored terminal receipt is immutable and exact', () => {
     expect(terminalStamp).toContain("kind NOT IN ('contribution','jackpot_draw')");
     expect(terminalStamp).toContain('terminal_closed_at IS DISTINCT FROM v_terminal_at');
     expect(terminalStamp).not.toMatch(/EXCEPTION\s+WHEN/i);
+    expect(payoutAppendOnly).toContain('pg_trigger_depth() >= 2');
+    expect(payoutAppendOnly).toContain('ca:tournament-terminal-settlement:v1');
+    expect(payoutAppendOnly).toContain("l.mode = 'ExclusiveLock'");
+    expect(payoutAppendOnly).toContain('fn_ca_terminal_marker_transition_is_exact(');
+    expect(payoutAppendOnly).toContain('to_jsonb(OLD),to_jsonb(NEW),OLD.tournament_id');
+    expect(payoutAppendOnly).toContain('app.payout_record_correction');
 
     const oldMarker = terminalEvidenceGuard.indexOf('v_old_marker IS NOT NULL');
     const parentLookup = terminalEvidenceGuard.indexOf("SELECT upper(COALESCE(t.status::text,''))");

@@ -134,10 +134,10 @@ describe('the DB seat gate agrees with the TS seat gate', () => {
     expect(sql).toContain('fn_tournament_late_registration_open(p_target_id)');
     const admission = latestFunction('fn_tournament_late_registration_open');
     expect(admission).toMatch(
-      /COALESCE\(t\.current_level,0\)<COALESCE\(t\.late_reg_levels,t\.rebuy_levels,0\)/
+      /COALESCE\(t\.current_level,0\)\s*<\s*COALESCE\(t\.late_reg_levels,t\.rebuy_levels,0\)/
     );
-    expect(admission).toContain(
-      'clock_timestamp()<t.started_at+make_interval(mins=>t.late_reg_mins)'
+    expect(admission).toMatch(
+      /clock_timestamp\(\)\s*<\s*t\.started_at\s*\+\s*make_interval\(mins\s*=>\s*t\.late_reg_mins\)/
     );
     // The post-apply assertion that the off-by-one cannot come back.
     expect(AWARD_ASSERTIONS).toMatch(/the off-by-one level guard survived the rewrite/);
@@ -213,12 +213,9 @@ describe('the prize stamp is a checked write', () => {
 
 describe('the runtime is only a thin caller of the atomic domain finish', () => {
   it('contains no manual seat, cash, prize or status mutation path', () => {
-    const runtime = sliceMethod(
-      MANAGER,
-      'processSatelliteAwards(_tournament: any, winnerId: string): Promise<number>'
-    );
+    const runtime = sliceMethod(MANAGER, 'processSatelliteAwards(');
     expect(runtime).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
-    expect(runtime).toContain('return verified.winnerAmount');
+    expect(runtime).toContain('return verified;');
     expect(runtime).not.toMatch(
       /supabase|\.from\(|fn_award_satellite_seat|fn_settle_tournament_obligation|status:\s*'COMPLETED'|\.update\(/
     );
@@ -229,12 +226,12 @@ describe('a stuck satellite preserves its immutable finish claim', () => {
   it('an undecided COMPLETING satellite fails closed instead of reviving beside a receipt', () => {
     const recovery = fs.readFileSync(path.join(HERE, 'tournamentRecovery.ts'), 'utf8');
     expect(recovery).toMatch(/recoverStuckCompleting_satellite_live_field_conflict/);
-    expect(recovery).toMatch(/liveRows\.length >= 2/);
+    expect(recovery).toMatch(/live\.length > 1/);
     expect(recovery).not.toMatch(/recoverStuckCompleting_satellite_revived/);
     // A zero-survivor field still refuses structure cash without a canonical
     // winner, while one proven survivor resumes the atomic satellite path.
-    expect(recovery).toMatch(/recoverStuckCompleting_satellite_skipped/);
-    expect(recovery).toMatch(/requestSatelliteSettlementReceipt\(t\.id, proposedWinnerId\)/);
+    expect(recovery).toMatch(/recoverStuckCompleting_satellite_winner_unproved/);
+    expect(recovery).toMatch(/requestSatelliteSettlementReceipt\(tournament\.id, winnerId\)/);
     expect(recovery).not.toMatch(/fn_settle_satellite_finish_atomic/);
   });
 });

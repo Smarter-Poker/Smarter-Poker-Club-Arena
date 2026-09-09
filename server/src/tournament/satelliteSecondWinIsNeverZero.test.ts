@@ -46,7 +46,7 @@ describe('satellite finish ownership', () => {
     expect(awards).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
     expect(awards).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     expect(awards).not.toContain('payCash(');
-    expect(awards).toContain('return verified.winnerAmount');
+    expect(awards).toContain('return verified;');
   });
 
   it('the atomic contract begins only from COMPLETING and owns COMPLETED', () => {

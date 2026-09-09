@@ -11,15 +11,28 @@ DECLARE
 BEGIN
   IF to_regprocedure('public.fn_settle_satellite_tournament(uuid,uuid)') IS NULL
      OR to_regprocedure(
+          'public.fn_settle_satellite_tournament_pre_seat_guard(uuid,uuid)')
+          IS NULL
+     OR to_regprocedure(
+          'public.fn_tournament_late_registration_open(uuid)') IS NULL
+     OR to_regprocedure(
           'public.fn_resolve_satellite_settlement_outcome(uuid,uuid)') IS NULL THEN
     RAISE EXCEPTION 'FAIL atomic satellite authority is not installed';
   END IF;
   SELECT pg_get_functiondef(
-           'public.fn_settle_satellite_tournament(uuid,uuid)'::regprocedure)
+           'public.fn_settle_satellite_tournament_pre_seat_guard(uuid,uuid)'
+             ::regprocedure)
     INTO v_source;
   IF position('UPDATE public.table_seats' IN v_source) = 0
      OR position('UPDATE public.tables' IN v_source) = 0
      OR position('public.fn_settle_tournament_rake(' IN v_source) = 0
+     OR position(
+          'public.fn_tournament_late_registration_open(v_target_id)'
+          IN v_source) = 0
+     OR position('NULLIF(v_target.late_reg_levels, 0)' IN v_source) <> 0
+     OR position('v_target.late_reg_levels IS NULL' IN v_source) <> 0
+     OR position('v_target.rebuy_levels IS NULL' IN v_source) <> 0
+     OR position('v_target.current_level IS NULL' IN v_source) <> 0
      OR position('RETURN public.fn_ca_satellite_settlement_receipt' IN v_source) = 0
      OR position('UPDATE public.tables' IN v_source)
           < position('public.fn_settle_tournament_rake(' IN v_source) THEN
@@ -244,6 +257,8 @@ DECLARE
   v_receipt text;
   v_outcome text;
   v_elimination text;
+  v_contract_guard text;
+  v_late_registration text;
 BEGIN
   SELECT pg_get_functiondef(
            'public.fn_stamp_tournament_elimination_sequence()'::regprocedure)
@@ -252,14 +267,43 @@ BEGIN
   EXECUTE v_elimination;
 
   SELECT pg_get_functiondef(
+           'public.fn_satellite_target_contract_is_immutable()'::regprocedure)
+    INTO v_contract_guard;
+  v_contract_guard := replace(v_contract_guard,'public.','pg_temp.');
+  EXECUTE v_contract_guard;
+  EXECUTE $trigger$
+    CREATE TRIGGER satellite_target_contract_is_immutable
+      BEFORE UPDATE OF buy_in_amount,buy_in_fee,bounty_amount,rebuy_cost,addon_cost,
+        is_bounty,is_pko,is_mystery_bounty,is_premium_spin,
+        variant,tournament_type,club_id,entry_contract_locked
+      ON pg_temp.tournaments
+      FOR EACH ROW EXECUTE FUNCTION
+        pg_temp.fn_satellite_target_contract_is_immutable()
+  $trigger$;
+
+  -- Copy the installed canonical predicate rather than reimplementing its
+  -- levels-versus-minutes precedence in this rehearsal.
+  SELECT pg_get_functiondef(
+           'public.fn_tournament_late_registration_open(uuid)'::regprocedure)
+    INTO v_late_registration;
+  v_late_registration := replace(
+    v_late_registration,'public.','pg_temp.');
+  EXECUTE v_late_registration;
+
+  SELECT pg_get_functiondef(
            'public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure)
     INTO v_receipt;
   v_receipt := replace(v_receipt,'public.','pg_temp.');
   EXECUTE v_receipt;
 
   SELECT pg_get_functiondef(
-           'public.fn_settle_satellite_tournament(uuid,uuid)'::regprocedure)
+           'public.fn_settle_satellite_tournament_pre_seat_guard(uuid,uuid)'
+             ::regprocedure)
     INTO v_source;
+  v_source := replace(
+    v_source,
+    'fn_settle_satellite_tournament_pre_seat_guard',
+    'fn_settle_satellite_tournament');
   v_source := replace(v_source,'public.','pg_temp.');
   EXECUTE v_source;
 
@@ -477,26 +521,11 @@ DECLARE
   v_target_counter_caught boolean := false;
   v_target_prize_caught boolean := false;
   v_target_rake_caught boolean := false;
-  v_null_level_caught boolean := false;
   v_negative_level_caught boolean := false;
   v_negative_capacity_caught boolean := false;
   v_negative_late_reg_caught boolean := false;
   v_negative_rebuy_caught boolean := false;
 BEGIN
-  BEGIN
-    UPDATE pg_temp.tournaments SET current_level = NULL
-     WHERE id = '91000000-0000-4000-8000-000000000002';
-    PERFORM pg_temp.fn_settle_satellite_tournament(
-      '91000000-0000-4000-8000-000000000001',
-      '91000000-0000-4000-8000-000000000201');
-  EXCEPTION WHEN SQLSTATE '55000' THEN
-    v_null_level_caught := true;
-  END;
-  IF NOT v_null_level_caught THEN
-    RAISE EXCEPTION 'FAIL a NULL RUNNING target level was not refused';
-  END IF;
-  PERFORM pg_temp.assert_base_satellite_unsettled('NULL target-level refusal');
-
   BEGIN
     UPDATE pg_temp.tournaments SET current_level = -1
      WHERE id = '91000000-0000-4000-8000-000000000002';
@@ -635,6 +664,7 @@ DECLARE
   v_zero_fee_rolled_back boolean := false;
   v_multi_seat_rolled_back boolean := false;
   v_duplicate_target_fee_refused boolean := false;
+  v_reprice_refused boolean := false;
 BEGIN
   -- A zero-fee target keeps the full ticket on its prize rail. The authority
   -- must not create a synthetic zero-value target rake row.
@@ -738,16 +768,24 @@ BEGIN
         'FAIL zero-fee seat did not preserve the full ticket on target prize rails: %',
         v_receipt;
     END IF;
-    UPDATE pg_temp.tournaments
-       SET buy_in_amount=125,buy_in_fee=5
-     WHERE id='92000000-0000-4000-8000-000000000002';
+    BEGIN
+      UPDATE pg_temp.tournaments
+         SET buy_in_amount=125,buy_in_fee=5
+       WHERE id='92000000-0000-4000-8000-000000000002';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+      v_reprice_refused := true;
+    END;
+    IF NOT v_reprice_refused THEN
+      RAISE EXCEPTION
+        'FAIL funded satellite target accepted later economic repricing';
+    END IF;
     SELECT pg_temp.fn_ca_satellite_settlement_receipt(
              '92000000-0000-4000-8000-000000000001',
              '92000000-0000-4000-8000-000000000201')
       INTO v_repriced_receipt;
     IF v_repriced_receipt::text IS DISTINCT FROM v_receipt::text THEN
       RAISE EXCEPTION
-        'FAIL later target repricing changed the immutable settlement receipt';
+        'FAIL refused target repricing changed the immutable settlement receipt';
     END IF;
     RAISE EXCEPTION 'rollback successful zero-fee matrix case'
       USING ERRCODE = 'ZX001';
@@ -930,6 +968,134 @@ BEGIN
   END IF;
 END;
 $successful_matrix$;
+
+-- Prove both inverse edges that the retired hand-written predicate got wrong.
+-- A literal late_reg_levels=0 selects the canonical minutes window; a NULL
+-- rebuy_levels value is valid and must not replace that decision. A NULL
+-- late_reg_levels with a positive rebuy fallback and NULL current_level uses
+-- canonical level zero. Each complete settlement is rolled back after its
+-- immutable receipt proves whether the funded ticket became a seat or a cash
+-- substitution.
+DO $minutes_late_registration_matrix$
+DECLARE
+  v_case record;
+  v_receipt jsonb;
+  v_rolled_back boolean;
+BEGIN
+  FOR v_case IN
+    SELECT * FROM (VALUES
+      ('94000000-0000-4000-8000-000000000001'::uuid,
+       '94000000-0000-4000-8000-000000000002'::uuid,
+       '94000000-0000-4000-8000-000000000010'::uuid,
+       '94000000-0000-4000-8000-000000000201'::uuid,
+       '94000000-0000-4000-8000-000000000301'::uuid,
+       '94000000-0000-4000-8000-000000000401'::uuid,
+       interval '10 minutes',5,0,NULL,60,1,'minutes-open'),
+      ('95000000-0000-4000-8000-000000000001'::uuid,
+       '95000000-0000-4000-8000-000000000002'::uuid,
+       '95000000-0000-4000-8000-000000000010'::uuid,
+       '95000000-0000-4000-8000-000000000201'::uuid,
+       '95000000-0000-4000-8000-000000000301'::uuid,
+       '95000000-0000-4000-8000-000000000401'::uuid,
+       interval '120 minutes',1,0,NULL,60,0,'minutes-closed'),
+      ('96000000-0000-4000-8000-000000000001'::uuid,
+       '96000000-0000-4000-8000-000000000002'::uuid,
+       '96000000-0000-4000-8000-000000000010'::uuid,
+       '96000000-0000-4000-8000-000000000201'::uuid,
+       '96000000-0000-4000-8000-000000000301'::uuid,
+       '96000000-0000-4000-8000-000000000401'::uuid,
+       interval '10 minutes',NULL,NULL,4,60,1,'level-fallback-null-current')
+    ) fixture(
+      source_id,target_id,club_id,winner_id,table_id,seat_id,
+      elapsed,current_level,late_reg_levels,rebuy_levels,late_reg_mins,
+      expected_seats,label)
+  LOOP
+    v_rolled_back := false;
+    BEGIN
+      INSERT INTO pg_temp.tournaments(
+        id,name,club_id,status,variant,tournament_type,satellite_target_id,
+        satellite_target,satellite_seats,prize_pool,prize_pool_finalized,
+        is_bounty,is_pko,is_mystery_bounty,is_premium_spin,
+        buy_in_amount,buy_in_fee,max_players,current_players,current_level,
+        late_reg_levels,rebuy_levels,late_reg_mins,started_at,total_rake,
+        ended_at,on_break,break_ends_at,updated_at)
+      VALUES
+        (v_case.source_id,v_case.label || ' satellite',v_case.club_id,
+         'RUNNING','satellite','SATELLITE',v_case.target_id,NULL,1,100,true,
+         false,false,false,false,10,0,1,1,0,0,0,0,
+         clock_timestamp()-interval '20 minutes',0,NULL,false,NULL,
+         transaction_timestamp()),
+        (v_case.target_id,v_case.label || ' target',v_case.club_id,
+         'RUNNING','holdem','MTT',NULL,NULL,0,0,false,
+         false,false,false,false,100,0,100,0,v_case.current_level,
+         v_case.late_reg_levels,v_case.rebuy_levels,v_case.late_reg_mins,
+         clock_timestamp()-v_case.elapsed,0,NULL,false,NULL,
+         transaction_timestamp());
+
+      INSERT INTO pg_temp.tournament_escrow(
+        tournament_id,enforced,gross_in,fee_entries_in,satellite_fee_in,
+        bounty_in,overlay_in,satellite_in,prize_out,bounty_out,fee_out,
+        refund_prize,refund_bounty,refund_fee,prize_balance,bounty_balance,
+        fee_balance,reserve_out,reserve_in)
+      VALUES
+        (v_case.source_id,true,0,0,0,0,0,0,0,0,0,0,0,0,100,0,0,0,0),
+        (v_case.target_id,true,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+
+      INSERT INTO pg_temp.tournament_players(
+        tournament_id,user_id,username,chips,status,position,prize,
+        is_satellite_qualifier,source_satellite_id,eliminated_at,
+        elimination_sequence)
+      VALUES
+        (v_case.source_id,v_case.winner_id,v_case.label || ' winner',0,
+         'eliminated',NULL,0,NULL,NULL,clock_timestamp(),1);
+      INSERT INTO pg_temp.tables(
+        id,club_id,tournament_id,status,lifecycle,current_players,updated_at)
+      VALUES
+        (v_case.table_id,v_case.club_id,v_case.source_id,
+         'running','live',1,transaction_timestamp());
+      INSERT INTO pg_temp.table_seats(
+        id,table_id,user_id,left_at,status,leave_pending,is_sitting_out,
+        is_away,sit_out_at,scheduled_leave_hands)
+      VALUES
+        (v_case.seat_id,v_case.table_id,v_case.winner_id,NULL,'playing',
+         false,false,false,NULL,NULL);
+
+      SELECT pg_temp.fn_settle_satellite_tournament(
+               v_case.source_id,v_case.winner_id)
+        INTO v_receipt;
+      IF v_receipt->>'fully_settled' IS DISTINCT FROM 'true'
+         OR (v_receipt->>'ticket_award_count')::integer IS DISTINCT FROM 1
+         OR (v_receipt->>'seat_count')::integer
+              IS DISTINCT FROM v_case.expected_seats
+         OR (v_receipt->>'cash_ticket_count')::integer
+              IS DISTINCT FROM 1-v_case.expected_seats
+         OR v_receipt->'awards'->0->>'delivery_kind' IS DISTINCT FROM
+              (CASE WHEN v_case.expected_seats=1 THEN 'seat' ELSE 'cash' END)
+         OR (SELECT count(*) FROM pg_temp.tournament_players tp
+              WHERE tp.tournament_id=v_case.target_id
+                AND tp.source_satellite_id=v_case.source_id)
+              IS DISTINCT FROM v_case.expected_seats::bigint
+         OR (SELECT prize_pool FROM pg_temp.tournaments t
+              WHERE t.id=v_case.target_id)
+              IS DISTINCT FROM (100*v_case.expected_seats)::numeric THEN
+        RAISE EXCEPTION
+          'FAIL % canonical minutes fixture chose the wrong delivery: %',
+          v_case.label,v_receipt;
+      END IF;
+      RAISE EXCEPTION 'rollback successful canonical minutes fixture'
+        USING ERRCODE = 'ZX003';
+    EXCEPTION WHEN SQLSTATE 'ZX003' THEN
+      v_rolled_back := true;
+    END;
+    IF NOT v_rolled_back
+       OR EXISTS (
+         SELECT 1 FROM pg_temp.tournaments t
+          WHERE t.id IN (v_case.source_id,v_case.target_id)) THEN
+      RAISE EXCEPTION 'FAIL % fixture did not roll back',v_case.label;
+    END IF;
+  END LOOP;
+END;
+$minutes_late_registration_matrix$;
 
 DO $probe$
 DECLARE
@@ -1344,6 +1510,6 @@ BEGIN
   END IF;
 
   RAISE EXCEPTION
-    'AUDIT_TEST_PASS: pre-closed escrow and a stale status-aware target entrant counter, prize and fee aggregates were rejected with zero artifacts; zero-fee and two-seat target deliveries conserved their exact whole pools and escrow rails; missing, bounty and malformed-escrow targets, a missing target fee rail and an injected source-table close refusal were rejected with full rollback; a RUNNING late-registration target preserved its total entrant counter despite a historical eliminated row; NULL and mismatched terminal markers invalidated replay; removing the faults produced one exact closeout and byte-identical receipt';
+    'AUDIT_TEST_PASS: canonical minutes-open, minutes-closed and NULL-current level-fallback fixtures accepted valid NULL bounds and selected seat, cash and seat respectively; pre-closed escrow and a stale status-aware target entrant counter, prize and fee aggregates were rejected with zero artifacts; zero-fee and two-seat target deliveries conserved their exact whole pools and escrow rails; missing, bounty and malformed-escrow targets, a missing target fee rail and an injected source-table close refusal were rejected with full rollback; a RUNNING late-registration target preserved its total entrant counter despite a historical eliminated row; NULL and mismatched terminal markers invalidated replay; removing the faults produced one exact closeout and byte-identical receipt';
 END;
 $probe$;

@@ -1,4 +1,4 @@
--- Read-only post-publish proof for 20260908153223. This probe never repairs a
+-- Read-only post-publish proof for 20260909014433. This probe never repairs a
 -- row: any non-zero count is a deployment refusal that must be investigated.
 DO $spin_stack_probe$
 DECLARE

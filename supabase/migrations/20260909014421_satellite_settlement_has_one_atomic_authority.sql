@@ -1,4 +1,4 @@
--- 20260908153207_satellite_settlement_has_one_atomic_authority.sql
+-- 20260909014421_satellite_settlement_has_one_atomic_authority.sql
 --
 -- A satellite has one payer and one immutable allocation. The finalized
 -- satellite prize pool buys every complete target ticket it can. Each ticket
@@ -265,7 +265,7 @@ CREATE TABLE public.tournament_satellite_settlement_cutover (
   authority              text PRIMARY KEY
                               CHECK (authority = 'fn_settle_satellite_tournament:v2'),
   migration_version      text NOT NULL
-                              CHECK (migration_version = '20260908153207'),
+                              CHECK (migration_version = '20260909014421'),
   installed_at           timestamptz NOT NULL,
   audited_tournament_ids uuid[] NOT NULL,
   preexisting_completed_ids uuid[] NOT NULL,
@@ -292,7 +292,7 @@ INSERT INTO public.tournament_satellite_settlement_cutover (
   preexisting_completed_ids)
 SELECT
   'fn_settle_satellite_tournament:v2',
-  '20260908153207',
+  '20260909014421',
   clock_timestamp(),
   ARRAY(
     SELECT expected.id
@@ -708,60 +708,515 @@ CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement
 -- a valid registration. If identity nevertheless changes, abort the complete
 -- transaction so the debit, entitlement, reporting row and roster all roll
 -- back together.
-DO $remove_registration_compensation$
+-- Complete source-controlled definitions for both registration cores follow.
+-- Neither contains a compensating credit branch: a uniqueness failure raises
+-- and rolls the original debit, entitlement, roster, fee and pool mutation
+-- back as one transaction.
+
+-- One admission predicate owns every RUNNING entry rail. NULL level fields
+-- retain their documented fallbacks; malformed negative bounds fail closed.
+CREATE OR REPLACE FUNCTION public.fn_tournament_late_registration_open(
+  p_tournament_id uuid
+) RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $canonical_late_registration$
+  SELECT COALESCE((
+    SELECT t.status='RUNNING'
+       AND NOT COALESCE(t.prize_pool_finalized,false)
+       AND COALESCE(t.current_level,0)>=0
+       AND COALESCE(t.late_reg_levels,0)>=0
+       AND COALESCE(t.rebuy_levels,0)>=0
+       AND COALESCE(t.late_reg_mins,0)>=0
+       AND (
+         CASE
+           WHEN COALESCE(t.late_reg_levels,t.rebuy_levels,0)>0
+             THEN COALESCE(t.current_level,0)
+                    <COALESCE(t.late_reg_levels,t.rebuy_levels,0)
+           WHEN COALESCE(t.late_reg_mins,0)>0
+             THEN t.started_at IS NOT NULL
+              AND clock_timestamp()
+                    <t.started_at+make_interval(mins=>t.late_reg_mins)
+           ELSE false
+         END
+       )
+       AND (
+         t.max_players IS NULL OR t.max_players<=0 OR (
+           SELECT count(*) FROM public.tournament_players tp
+            WHERE tp.tournament_id=t.id
+         )<t.max_players
+       )
+      FROM public.tournaments t
+     WHERE t.id=p_tournament_id
+  ),false);
+$canonical_late_registration$;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_late_registration_open(uuid)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_late_registration_open(uuid)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_register_for_tournament_before_atomic_capacity_20260907(p_tournament_id uuid, p_seat_first_internal boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 DECLARE
-  v_proc regprocedure;
-  v_def text;
-  v_old text;
-  v_new text;
+  v_uid uuid := auth.uid();
+  v_t record; v_username text;
+  v_split record;
+  v_is_bounty boolean; v_head numeric := 0;
+  v_player_id uuid;
+  v_late_open boolean := false; v_ok boolean;
+  v_start_chips integer := 0;
+  v_players_before integer;
+  v_expected_cached_players integer;
+  v_rows integer;
+  v_seat jsonb := NULL;                                  -- LATE SEAT 2026-08-23
+  v_seat_reason text;                                    -- SEAT FIX 2026-08-27
+  v_led_cat text; v_led_cp text; v_led_ent text; v_led_tid text; -- CHIP STANDARD 1.2 2026-09-02
 BEGIN
-  v_proc:=to_regprocedure(
-    'public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)');
-  IF v_proc IS NULL THEN
-    RAISE EXCEPTION 'canonical human registration core is missing';
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'fn_register_for_tournament requires an authenticated caller' USING ERRCODE = '28000';
   END IF;
-  SELECT pg_get_functiondef(v_proc) INTO v_def;
-  v_old:=$old$EXCEPTION WHEN unique_violation THEN
-    IF v_split.charge > 0 THEN
-      PERFORM public.credit_player_wallet(v_uid, v_split.charge,
-        'tourn_reg_race:' || p_tournament_id::text || ':' || v_uid::text);
-    END IF;
+  SELECT id, status, buy_in_amount, buy_in_fee, max_players, current_players,
+         late_reg_levels, late_reg_mins, current_level, started_at, club_id, name, prize_pool_finalized,
+         is_bounty, is_pko, is_mystery_bounty, bounty_amount,
+         start_time, authorized_to_register, is_vip_only, early_bird_enabled, early_bird_chips,
+         variant
+    INTO v_t FROM public.tournaments WHERE id = p_tournament_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found'); END IF;
+
+  -- SEAT-FIRST GUARD 2026-08-27, REBUILT 2026-08-28. A seat-first event is
+  -- bought by taking a seat; registering into one debits the player for a
+  -- seat that is never allocated. But the seat path ITSELF registers the
+  -- player through this function, so the guard admits that caller via
+  -- p_seat_first_internal - the original guard refused it too and no human
+  -- could buy a Spin or Heads-Up seat at all. And the predicate is now the
+  -- CANONICAL seat-first test (variant 'spin' OR a positive max_players <= 2), matching
+  -- fn_take_seat_and_buy_in and fn_sync_seat_first_player_count: the original
+  -- blocked ALL sngs, which left 6-max and 9-max SNGs with no entry path in
+  -- either door.
+  IF NOT p_seat_first_internal
+     AND (lower(COALESCE(v_t.variant, '')) = 'spin'
+       OR (v_t.max_players IS NOT NULL
+         AND v_t.max_players > 0 AND v_t.max_players <= 2)) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'seat_first_variant',
+      'detail', 'This format is entered by taking a seat, not by registering. '
+                || 'Call fn_take_seat_and_buy_in for the seat you want.',
+      'variant', v_t.variant);
+  END IF;
+
+  IF v_t.status = 'RUNNING' THEN
+    v_late_open:=public.fn_tournament_late_registration_open(p_tournament_id);
+  END IF;
+  IF v_t.status NOT IN ('ANNOUNCED', 'REGISTERING') AND NOT v_late_open THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'registration_closed');
+  END IF;
+  SELECT count(*)::integer INTO v_players_before
+    FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.status::text IN ('registered','playing');
+  IF v_t.current_players IS DISTINCT FROM v_players_before THEN
+    RAISE EXCEPTION
+      'Tournament roster cache diverged before registration (cached %, actual %)',
+      v_t.current_players,v_players_before
+      USING ERRCODE='P0404';
+  END IF;
+  IF v_t.max_players IS NOT NULL AND v_t.max_players > 0
+     AND v_players_before >= v_t.max_players THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_full');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tournament_players WHERE tournament_id = p_tournament_id AND user_id = v_uid) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'already_registered');
-  END;$old$;
-  v_new:=$new$EXCEPTION WHEN unique_violation THEN
+  END IF;
+
+  -- PARITY GATE 1 (2026-08-22): owner-approved registration list.
+  IF COALESCE(v_t.authorized_to_register, false) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.tournament_registration_approvals a
+                    WHERE a.tournament_id = p_tournament_id AND a.user_id = v_uid)
+       AND NOT public.is_club_admin(v_t.club_id, v_uid) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'not_authorized_to_register');
+    END IF;
+  END IF;
+
+  -- PARITY GATE 2 (2026-08-22): VIP-only events.
+  IF COALESCE(v_t.is_vip_only, false) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.profiles pr
+                    WHERE pr.id = v_uid AND COALESCE(pr.is_vip, false)
+                      AND (pr.vip_expires_at IS NULL OR pr.vip_expires_at > now()))
+       AND NOT EXISTS (SELECT 1 FROM public.club_members m
+                        WHERE m.club_id = v_t.club_id AND m.user_id = v_uid
+                          AND m.role IN ('owner', 'co_owner', 'admin', 'agent')) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'vip_only');
+    END IF;
+  END IF;
+
+  -- PARITY 3 (2026-08-22): early bird bonus chips for pre-start registration.
+  IF COALESCE(v_t.early_bird_enabled, false)
+     AND now() < v_t.start_time
+     AND COALESCE(v_t.early_bird_chips, 0) > 0 THEN
+    v_start_chips := v_t.early_bird_chips;
+  END IF;
+
+  SELECT COALESCE(NULLIF(display_name, ''), NULLIF(username, ''), 'Player')
+    INTO v_username FROM public.profiles WHERE id = v_uid;
+
+  v_is_bounty := COALESCE(v_t.is_bounty, false) OR COALESCE(v_t.is_pko, false)
+                 OR COALESCE(v_t.is_mystery_bounty, false);
+
+  SELECT * INTO v_split FROM public.fn_tournament_entry_split(
+    v_t.buy_in_amount, v_t.buy_in_fee, v_t.bounty_amount, v_is_bounty);
+
+  IF v_is_bounty AND v_split.prize < 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'misconfigured_bounty',
+      'detail', format('bounty %s + rake %s exceeds buy-in %s',
+                       v_split.bounty, v_split.rake, v_split.charge));
+  END IF;
+
+  -- MYSTERY BOUNTY 2026-08-25: every bounty format puts the flat bounty on
+  -- the head; the mystery value is drawn from a funded inventory at the
+  -- knockout, not from a seeded PRNG at the till.
+  IF v_is_bounty THEN
+    v_head := v_split.bounty;
+  END IF;
+
+  IF v_split.charge > 0 THEN
+    -- CHIP STANDARD 1.2 (2026-09-02): THE REGISTRATION DEBIT NAMES ITS COUNTERPARTY.
+    -- trg_club_members_audit_chip_movement journals the wallet write below; with no
+    -- declaration it landed as adjustment player_wallet -> table_stack with no
+    -- tournament_id (19,538 rows / 407,412.00 a day). Declared with set_config, not
+    -- fn_ca_declare_ledger, so a vocabulary miss can never refuse a buy-in (the
+    -- writer falls back to adjustment on its own). The whole charge (prize + bounty
+    -- + fee) is ONE wallet write and so ONE row, booked against the tournament
+    -- (prize_liability) that holds all three until it completes. The four settings
+    -- are restored right after so nothing later in this transaction inherits them.
+    v_led_cat := current_setting('app.ledger_category', true);
+    v_led_cp  := current_setting('app.ledger_counterparty', true);
+    v_led_ent := current_setting('app.ledger_counterparty_entity', true);
+    v_led_tid := current_setting('app.ledger_tournament', true);
+    PERFORM set_config('app.ledger_category', 'tournament_buyin', true);
+    PERFORM set_config('app.ledger_counterparty', 'prize_liability', true);
+    PERFORM set_config('app.ledger_counterparty_entity', p_tournament_id::text, true);
+    PERFORM set_config('app.ledger_tournament', p_tournament_id::text, true);
+    v_ok := public.atomic_deduct_wallet_and_log(
+      v_uid, v_split.charge, 'tournament_buyin',
+      'Tournament buy-in: ' || COALESCE(v_t.name, 'tournament') ||
+        CASE WHEN v_is_bounty
+             THEN ' (' || v_split.prize || ' prize + ' || v_split.bounty || ' bounty + ' || v_split.rake || ' fee)'
+             WHEN v_split.rake > 0
+             THEN ' (' || v_split.prize || ' + ' || v_split.rake || ' fee)'
+             ELSE '' END,
+      NULL, NULL, p_tournament_id);
+    PERFORM set_config('app.ledger_category', COALESCE(v_led_cat, ''), true);
+    PERFORM set_config('app.ledger_counterparty', COALESCE(v_led_cp, ''), true);
+    PERFORM set_config('app.ledger_counterparty_entity', COALESCE(v_led_ent, ''), true);
+    PERFORM set_config('app.ledger_tournament', COALESCE(v_led_tid, ''), true);
+    IF NOT COALESCE(v_ok, false) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'insufficient_balance');
+    END IF;
+    PERFORM public.log_wallet_transaction(
+      v_uid, 'PLAYER', v_split.charge, 'debit', 'tournament_buyin',
+      'Tournament buy-in: ' || COALESCE(v_t.name, 'tournament'),
+      NULL, NULL, p_tournament_id);
+  END IF;
+
+  BEGIN
+    IF v_is_bounty THEN
+      INSERT INTO public.tournament_players
+        (tournament_id, user_id, username, chips, status, current_bounty, mystery_bounty_value, bounties_collected, bounty_winnings)
+      VALUES (p_tournament_id, v_uid, COALESCE(v_username,'Player'), v_start_chips, 'registered', v_head, 0, 0, 0)
+      RETURNING id INTO v_player_id;
+    ELSE
+      INSERT INTO public.tournament_players (tournament_id, user_id, username, chips, status)
+      VALUES (p_tournament_id, v_uid, COALESCE(v_username,'Player'), v_start_chips, 'registered')
+      RETURNING id INTO v_player_id;
+    END IF;
+  EXCEPTION WHEN unique_violation THEN
     RAISE EXCEPTION
       'Tournament registration identity changed after its atomic debit; retry the complete transaction'
       USING ERRCODE = '40001';
-  END;$new$;
-  IF length(v_def)-length(replace(v_def,v_old,'')) <> length(v_old) THEN
-    RAISE EXCEPTION 'human registration compensation branch did not match once';
-  END IF;
-  EXECUTE replace(v_def,v_old,v_new);
+  END;
 
-  v_proc:=to_regprocedure(
-    'public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)');
-  IF v_proc IS NULL THEN
-    RAISE EXCEPTION 'canonical horse registration core is missing';
+  IF v_split.rake > 0 AND v_t.club_id IS NOT NULL THEN
+    INSERT INTO public.rake_records
+      (hand_id, table_id, club_id, rake_amount, pot_size, num_players, bbj_contribution,
+       is_tournament, tournament_id, source, metadata)
+    VALUES (NULL, NULL, v_t.club_id, v_split.rake, v_split.charge, 1, 0, true, p_tournament_id,
+            'fn_register_for_tournament',
+            jsonb_build_object('kind','tournament_entry_fee','user_id',v_uid,'registration_id',v_player_id));
   END IF;
-  SELECT pg_get_functiondef(v_proc) INTO v_def;
-  v_old:=$old$EXCEPTION WHEN unique_violation THEN
-    IF v_split.charge > 0 THEN
-      PERFORM public.credit_player_wallet(p_user_id, v_split.charge,
-        'tourn_reg_race:' || p_tournament_id::text || ':' || p_user_id::text);
+
+  -- The roster trigger already writes the exact count while an event is
+  -- ANNOUNCED/REGISTERING, but deliberately leaves RUNNING counts to the
+  -- transaction that also seats the late entrant. Incrementing the cached
+  -- value here therefore double-counted every pre-start entry. Require the
+  -- exact state produced by that trigger (or the unchanged RUNNING state),
+  -- then publish one roster-derived value together with the funded pools.
+  v_expected_cached_players:=CASE
+    WHEN v_t.status IN ('ANNOUNCED','REGISTERING') THEN v_players_before+1
+    ELSE v_players_before
+  END;
+  UPDATE public.tournaments
+     SET current_players = v_players_before + 1,
+         prize_pool  = COALESCE(prize_pool, 0)  + v_split.prize,
+         bounty_pool = COALESCE(bounty_pool, 0) + v_split.bounty,
+         total_rake  = COALESCE(total_rake, 0)  + v_split.rake
+   WHERE id = p_tournament_id
+     AND current_players IS NOT DISTINCT FROM v_expected_cached_players;
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION
+      'Tournament roster cache changed during registration'
+      USING ERRCODE='40001';
+  END IF;
+
+  -- LATE SEAT 2026-08-23
+  IF v_late_open THEN
+    v_seat := public.fn_seat_late_registrant(p_tournament_id, v_uid);
+
+    -- SEAT FIX 2026-08-27: a late registrant who cannot be seated must not be
+    -- charged; abort so debit, roster row, rake record and pool increments
+    -- roll back together. 'already_seated_or_missing' is NOT a failure.
+    v_seat_reason := v_seat->>'reason';
+    IF NOT COALESCE((v_seat->>'ok')::boolean, false)
+       AND COALESCE(v_seat_reason, '') <> 'already_seated_or_missing' THEN
+      RAISE EXCEPTION
+        'Late registration could not seat the player (%) - no charge has been made',
+        COALESCE(v_seat_reason, 'unknown')
+        USING ERRCODE = '55000';
     END IF;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'registration_id', v_player_id,
+    'cost', v_split.charge, 'prize_contribution', v_split.prize,
+    'bounty_contribution', v_split.bounty, 'rake', v_split.rake,
+    'bounty_head', CASE WHEN v_head > 0 THEN v_head END,
+    'early_bird_chips', CASE WHEN v_start_chips > 0 THEN v_start_chips END,
+    'late_registration', v_late_open,                    -- LATE SEAT 2026-08-23
+    'seat', v_seat);                                     -- LATE SEAT 2026-08-23
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+-- The lifecycle wrapper previously duplicated the levels/minutes rule and
+-- rejected NULL current_level even though the canonical authority reads it as
+-- level zero. It now locks the contract, rejects closed lifecycles, and asks
+-- the one predicate above for every RUNNING decision.
+CREATE OR REPLACE FUNCTION
+  public.fn_register_for_tournament_before_maintenance_announcement_gate(
+    p_tournament_id uuid,
+    p_seat_first_internal boolean
+  ) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $canonical_registration_lifecycle$
+DECLARE
+  v_t record;
+BEGIN
+  SELECT t.status,COALESCE(t.prize_pool_finalized,false) AS finalized
+    INTO v_t
+    FROM public.tournaments t
+   WHERE t.id=p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_not_found');
+  END IF;
+  IF v_t.finalized THEN
+    RETURN jsonb_build_object('ok',false,'reason','registration_closed');
+  END IF;
+  IF v_t.status='RUNNING' THEN
+    IF NOT public.fn_tournament_late_registration_open(p_tournament_id) THEN
+      RETURN jsonb_build_object('ok',false,'reason','registration_closed');
+    END IF;
+  ELSIF v_t.status NOT IN ('ANNOUNCED','REGISTERING') THEN
+    RETURN jsonb_build_object('ok',false,'reason','registration_closed');
+  END IF;
+  RETURN public.fn_register_for_tournament_before_atomic_lifecycle_gate(
+    p_tournament_id,COALESCE(p_seat_first_internal,false));
+END;
+$canonical_registration_lifecycle$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_for_tournament_before_maintenance_announcement_gate(
+    uuid,boolean)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_register_horse_for_tournament_before_maintenance_gate(p_tournament_id uuid, p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+DECLARE
+  v_t record; v_username text;
+  v_split record;
+  v_is_bounty boolean; v_head numeric := 0;
+  v_player_id uuid;
+  v_is_horse boolean;
+  v_ok boolean;
+  v_start_chips integer := 0;
+  v_players_before integer;
+  v_rows integer;
+  v_led_cat text; v_led_cp text; v_led_ent text; v_led_tid text; -- CHIP STANDARD 1.2 2026-09-02
+BEGIN
+  SELECT is_horse INTO v_is_horse FROM public.profiles WHERE id = p_user_id;
+  IF NOT COALESCE(v_is_horse, false) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_a_horse');
+  END IF;
+
+  SELECT id, status, buy_in_amount, buy_in_fee, max_players, current_players,
+         club_id, name, is_bounty, is_pko, is_mystery_bounty,
+         bounty_amount, start_time, early_bird_enabled, early_bird_chips
+    INTO v_t FROM public.tournaments WHERE id = p_tournament_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found'); END IF;
+
+  IF v_t.status NOT IN ('ANNOUNCED', 'REGISTERING') THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'registration_closed');
+  END IF;
+  SELECT count(*)::integer INTO v_players_before
+    FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.status::text IN ('registered','playing');
+  IF v_t.current_players IS DISTINCT FROM v_players_before THEN
+    RAISE EXCEPTION
+      'Tournament roster cache diverged before horse registration (cached %, actual %)',
+      v_t.current_players,v_players_before
+      USING ERRCODE='P0404';
+  END IF;
+  /* ONE DEFINITION OF FULL (2026-09-06). This read `current_players >=
+     max_players`, and on a seat-first event that column is overwritten with
+     the live SEATED count - so an emptied seat read as a vacancy and this
+     function walked back through the door, up to 32 paid entries into a
+     two-handed sit-and-go. fn_enforce_tournament_capacity is the authority
+     and would now refuse the insert outright; asking here keeps the refusal a
+     reason rather than an exception, and rolls back nothing. */
+  IF public.fn_tournament_entry_cap_reached(p_tournament_id) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_full');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.tournament_players
+              WHERE tournament_id = p_tournament_id AND user_id = p_user_id) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'already_registered');
-  END;$old$;
-  v_new:=$new$EXCEPTION WHEN unique_violation THEN
+  END IF;
+
+  IF COALESCE(v_t.early_bird_enabled, false)
+     AND now() < v_t.start_time
+     AND COALESCE(v_t.early_bird_chips, 0) > 0 THEN
+    v_start_chips := v_t.early_bird_chips;
+  END IF;
+
+  SELECT COALESCE(NULLIF(display_name, ''), NULLIF(username, ''), 'Player')
+    INTO v_username FROM public.profiles WHERE id = p_user_id;
+
+  v_is_bounty := COALESCE(v_t.is_bounty, false) OR COALESCE(v_t.is_pko, false)
+                 OR COALESCE(v_t.is_mystery_bounty, false);
+
+  SELECT * INTO v_split FROM public.fn_tournament_entry_split(
+    v_t.buy_in_amount, v_t.buy_in_fee, v_t.bounty_amount, v_is_bounty);
+
+  IF v_is_bounty AND v_split.prize < 0 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'misconfigured_bounty');
+  END IF;
+
+  -- MYSTERY BOUNTY 2026-08-25: no roll here either. A horse and a human must
+  -- enter the same event on the same terms; when the two register functions
+  -- disagreed about how a bounty head was set, they were two tournaments.
+  IF v_is_bounty THEN
+    v_head := v_split.bounty;
+  END IF;
+
+  IF v_split.charge > 0 THEN
+    -- CHIP STANDARD 1.2 (2026-09-02): THE HORSE DOOR DECLARES EXACTLY AS THE HUMAN
+    -- DOOR (R11 - horses and humans are identical on every path). The wallet write
+    -- below is journaled by trg_club_members_audit_chip_movement; undeclared it landed
+    -- as adjustment player_wallet -> table_stack with no tournament. set_config, not
+    -- fn_ca_declare_ledger, for the same reason as fn_register_for_tournament: a
+    -- vocabulary miss must never refuse a buy-in. Restored right after the write.
+    v_led_cat := current_setting('app.ledger_category', true);
+    v_led_cp  := current_setting('app.ledger_counterparty', true);
+    v_led_ent := current_setting('app.ledger_counterparty_entity', true);
+    v_led_tid := current_setting('app.ledger_tournament', true);
+    PERFORM set_config('app.ledger_category', 'tournament_buyin', true);
+    PERFORM set_config('app.ledger_counterparty', 'prize_liability', true);
+    PERFORM set_config('app.ledger_counterparty_entity', p_tournament_id::text, true);
+    PERFORM set_config('app.ledger_tournament', p_tournament_id::text, true);
+    v_ok := public.atomic_deduct_wallet_and_log(
+      p_user_id, v_split.charge, 'tournament_buyin',
+      'Tournament buy-in: ' || COALESCE(v_t.name, 'tournament'),
+      NULL, NULL, p_tournament_id);
+    PERFORM set_config('app.ledger_category', COALESCE(v_led_cat, ''), true);
+    PERFORM set_config('app.ledger_counterparty', COALESCE(v_led_cp, ''), true);
+    PERFORM set_config('app.ledger_counterparty_entity', COALESCE(v_led_ent, ''), true);
+    PERFORM set_config('app.ledger_tournament', COALESCE(v_led_tid, ''), true);
+    IF NOT COALESCE(v_ok, false) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'insufficient_balance');
+    END IF;
+    PERFORM public.log_wallet_transaction(
+      p_user_id, 'PLAYER', v_split.charge, 'debit', 'tournament_buyin',
+      'Tournament buy-in: ' || COALESCE(v_t.name, 'tournament'),
+      NULL, NULL, p_tournament_id);
+  END IF;
+
+  BEGIN
+    IF v_is_bounty THEN
+      INSERT INTO public.tournament_players
+        (tournament_id, user_id, username, chips, status, current_bounty,
+         mystery_bounty_value, bounties_collected, bounty_winnings)
+      VALUES (p_tournament_id, p_user_id, COALESCE(v_username,'Player'), v_start_chips,
+              'registered', v_head, 0, 0, 0)
+      RETURNING id INTO v_player_id;
+    ELSE
+      INSERT INTO public.tournament_players (tournament_id, user_id, username, chips, status)
+      VALUES (p_tournament_id, p_user_id, COALESCE(v_username,'Player'), v_start_chips, 'registered')
+      RETURNING id INTO v_player_id;
+    END IF;
+  EXCEPTION WHEN unique_violation THEN
     RAISE EXCEPTION
       'Horse tournament registration identity changed after its atomic debit; retry the complete transaction'
       USING ERRCODE = '40001';
-  END;$new$;
-  IF length(v_def)-length(replace(v_def,v_old,'')) <> length(v_old) THEN
-    RAISE EXCEPTION 'horse registration compensation branch did not match once';
+  END;
+
+  IF v_split.rake > 0 AND v_t.club_id IS NOT NULL THEN
+    INSERT INTO public.rake_records
+      (hand_id, table_id, club_id, rake_amount, pot_size, num_players, bbj_contribution,
+       is_tournament, tournament_id, source, metadata)
+    VALUES (NULL, NULL, v_t.club_id, v_split.rake, v_split.charge, 1, 0, true, p_tournament_id,
+            'fn_register_horse_for_tournament',
+            jsonb_build_object('kind','tournament_entry_fee','user_id',p_user_id,
+                               'registration_id',v_player_id));
   END IF;
-  EXECUTE replace(v_def,v_old,v_new);
-END;
-$remove_registration_compensation$;
+
+  -- ANNOUNCED/REGISTERING roster inserts already refresh the denormalized
+  -- count in trg_sync_tournament_current_players. Publish the one exact
+  -- post-insert count instead of incrementing that trigger result again.
+  UPDATE public.tournaments
+     SET current_players = v_players_before + 1,
+         prize_pool  = COALESCE(prize_pool, 0)  + v_split.prize,
+         bounty_pool = COALESCE(bounty_pool, 0) + v_split.bounty,
+         total_rake  = COALESCE(total_rake, 0)  + v_split.rake
+   WHERE id = p_tournament_id
+     AND current_players IS NOT DISTINCT FROM v_players_before+1;
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION
+      'Tournament roster cache changed during horse registration'
+      USING ERRCODE='40001';
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'registration_id', v_player_id,
+    'cost', v_split.charge, 'prize_contribution', v_split.prize,
+    'bounty_contribution', v_split.bounty, 'rake', v_split.rake);
+END; $function$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
 
 -- The table lock above drained every tournament purchase before this cutover.
 -- Snapshot only still-open liabilities, and refuse the migration if the two
@@ -1079,56 +1534,251 @@ ALTER TABLE public.tournament_ticket_admission_authorizations
 REVOKE ALL ON TABLE public.tournament_ticket_admission_authorizations
   FROM PUBLIC, anon, authenticated, service_role;
 
--- The older cashier RPCs turn ordinary issuer-funded tickets back into wallet
--- chips. Returned satellite entries are noncash instruments. Refuse those
--- rows before either legacy RPC can touch a wallet; the table guard below is
--- the independent database backstop for every other caller.
-DO $guard_noncash_ticket_cashier_rpcs$
+-- The cashier RPCs turn ordinary issuer-funded tickets back into wallet chips.
+-- Returned satellite entries are noncash instruments. Keep both functions as
+-- complete source-controlled definitions and refuse the noncash row directly
+-- after its locking read, before authorization checks, ledger settings, wallet
+-- writes, receipt writes, or ticket mutation. The trigger below is an
+-- independent database backstop for every other caller.
+CREATE OR REPLACE FUNCTION public.fn_redeem_tournament_ticket(p_ticket_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $redeem_cash_ticket_only$
 DECLARE
-  v_proc regprocedure;
-  v_def text;
-  v_anchor text;
-  v_replacement text;
+  v_me uuid:=auth.uid();
+  v_t public.tournament_tickets%ROWTYPE;
+  v_after numeric;
+  v_context jsonb;
+  v_setting text;
+  v_receipt public.chip_transactions%ROWTYPE;
+  v_issue public.chip_transactions%ROWTYPE;
+  v_escrow_entity uuid;
 BEGIN
-  v_proc:=to_regprocedure('public.fn_redeem_tournament_ticket(uuid)');
-  IF v_proc IS NULL THEN
-    RAISE EXCEPTION 'cashier ticket redemption RPC is missing';
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('success',false,'error','Not Authenticated');
   END IF;
-  SELECT pg_get_functiondef(v_proc) INTO v_def;
-  v_anchor:=$anchor$  if not found then return jsonb_build_object('success',false,'error','Ticket Not Found'); end if;
-  if v_t.holder_id is distinct from v_me then$anchor$;
-  v_replacement:=$replacement$  if not found then return jsonb_build_object('success',false,'error','Ticket Not Found'); end if;
-  if v_t.redemption_mode='tournament_entry_only' then
-    return jsonb_build_object(
+  IF p_ticket_id IS NULL THEN
+    RETURN jsonb_build_object('success',false,'error','Choose A Ticket');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournament_tickets
+   WHERE id=p_ticket_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success',false,'error','Ticket Not Found');
+  END IF;
+  IF v_t.redemption_mode='tournament_entry_only' THEN
+    RETURN jsonb_build_object(
       'success',false,
       'error','Tournament-Entry Tickets Can Only Be Used To Enter A Tournament');
-  end if;
-  if v_t.holder_id is distinct from v_me then$replacement$;
-  IF length(v_def)-length(replace(v_def,v_anchor,'')) <> length(v_anchor) THEN
-    RAISE EXCEPTION 'cashier ticket redemption guard did not match once';
   END IF;
-  EXECUTE replace(v_def,v_anchor,v_replacement);
+  IF v_t.holder_id IS DISTINCT FROM v_me THEN
+    RETURN jsonb_build_object('success',false,'error','This Ticket Is Not Yours');
+  END IF;
+  IF v_t.status='redeemed' THEN
+    SELECT * INTO v_receipt FROM public.chip_transactions
+     WHERE transaction_type='tournament_ticket_redeem'
+       AND metadata->>'ticket_id'=p_ticket_id::text LIMIT 1;
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'success',true,'replayed',true,'value',v_t.value,
+        'your_balance',(v_receipt.metadata->>'holder_balance_after')::numeric,
+        'transaction_id',v_receipt.id);
+    END IF;
+  END IF;
+  IF v_t.status<>'issued' THEN
+    RETURN jsonb_build_object(
+      'success',false,'error','Ticket Already '||initcap(v_t.status));
+  END IF;
 
-  v_proc:=to_regprocedure('public.fn_cancel_tournament_ticket(uuid)');
-  IF v_proc IS NULL THEN
-    RAISE EXCEPTION 'cashier ticket cancellation RPC is missing';
+  SELECT * INTO v_issue FROM public.chip_transactions
+   WHERE transaction_type='tournament_ticket_issue'
+     AND metadata->>'ticket_id'=p_ticket_id::text LIMIT 1;
+  IF FOUND AND v_issue.metadata ? 'escrow_entity_id' THEN
+    IF v_issue.club_id IS DISTINCT FROM v_t.club_id
+       OR v_issue.from_user_id IS DISTINCT FROM v_t.issued_by
+       OR v_issue.to_user_id IS DISTINCT FROM v_t.holder_id
+       OR v_issue.amount IS DISTINCT FROM v_t.value
+       OR v_issue.metadata->>'escrow_entity_id'
+            IS DISTINCT FROM p_ticket_id::text THEN
+      RAISE EXCEPTION 'Ticket escrow receipt does not match its entitlement'
+        USING ERRCODE='22023';
+    END IF;
+    v_escrow_entity:=p_ticket_id;
   END IF;
-  SELECT pg_get_functiondef(v_proc) INTO v_def;
-  v_anchor:=$anchor$  if not found then return jsonb_build_object('success',false,'error','Ticket Not Found'); end if;
-  if v_t.issued_by is distinct from v_me then$anchor$;
-  v_replacement:=$replacement$  if not found then return jsonb_build_object('success',false,'error','Ticket Not Found'); end if;
-  if v_t.redemption_mode='tournament_entry_only' then
-    return jsonb_build_object(
+  SELECT jsonb_object_agg(k,COALESCE(current_setting(k,true),''))
+    INTO v_context
+    FROM unnest(ARRAY[
+      'app.ledger_category','app.ledger_counterparty',
+      'app.ledger_counterparty_entity','app.ledger_tournament']) settings(k);
+  PERFORM set_config('app.ledger_tournament','',true);
+  PERFORM set_config('app.ledger_category','ticket_redeem',true);
+  PERFORM set_config('app.ledger_counterparty','escrow',true);
+  PERFORM set_config(
+    'app.ledger_counterparty_entity',COALESCE(v_escrow_entity::text,''),true);
+  UPDATE public.club_members
+     SET chip_balance=COALESCE(chip_balance,0)+v_t.value,updated_at=now()
+   WHERE club_id=v_t.club_id AND user_id=v_me
+     AND COALESCE(status,'active') IN ('active','approved')
+   RETURNING chip_balance INTO v_after;
+  FOR v_setting IN SELECT jsonb_object_keys(v_context) LOOP
+    PERFORM set_config(v_setting,v_context->>v_setting,true);
+  END LOOP;
+  IF v_after IS NULL THEN
+    RETURN jsonb_build_object(
+      'success',false,'error','You Are No Longer A Member Of That Club');
+  END IF;
+
+  UPDATE public.tournament_tickets
+     SET status='redeemed',redeemed_at=now()
+   WHERE id=p_ticket_id;
+  INSERT INTO public.chip_transactions(
+    club_id,from_user_id,to_user_id,amount,transaction_type,notes,
+    balance_after,metadata)
+  VALUES(
+    v_t.club_id,NULL,v_me,v_t.value,'tournament_ticket_redeem',
+    'Tournament Ticket Redeemed: Escrow Released',v_after,
+    jsonb_build_object(
+      'ticket_id',p_ticket_id,'issuer_id',v_t.issued_by,
+      'holder_id',v_t.holder_id,'escrow_action','release_to_holder',
+      'holder_balance_after',v_after))
+  RETURNING * INTO v_receipt;
+
+  INSERT INTO public.wallet_transactions(
+    user_id,wallet_type,type,amount,category,description,balance_after)
+  VALUES(
+    v_me,'PLAYER','credit',v_t.value,'transfer',
+    'Tournament Ticket Redeemed: Escrow Released',v_after);
+
+  RETURN jsonb_build_object(
+    'success',true,'replayed',false,'value',v_t.value,
+    'your_balance',v_after,'transaction_id',v_receipt.id);
+END;
+$redeem_cash_ticket_only$;
+
+REVOKE ALL ON FUNCTION public.fn_redeem_tournament_ticket(uuid)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_redeem_tournament_ticket(uuid)
+  TO authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_cancel_tournament_ticket(p_ticket_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $cancel_cash_ticket_only$
+DECLARE
+  v_me uuid:=auth.uid();
+  v_t public.tournament_tickets%ROWTYPE;
+  v_after numeric;
+  v_context jsonb;
+  v_setting text;
+  v_receipt public.chip_transactions%ROWTYPE;
+  v_issue public.chip_transactions%ROWTYPE;
+  v_escrow_entity uuid;
+BEGIN
+  IF v_me IS NULL THEN
+    RETURN jsonb_build_object('success',false,'error','Not Authenticated');
+  END IF;
+  IF p_ticket_id IS NULL THEN
+    RETURN jsonb_build_object('success',false,'error','Choose A Ticket');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournament_tickets
+   WHERE id=p_ticket_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success',false,'error','Ticket Not Found');
+  END IF;
+  IF v_t.redemption_mode='tournament_entry_only' THEN
+    RETURN jsonb_build_object(
       'success',false,
       'error','Returned Tournament-Entry Tickets Cannot Be Cancelled For Chips');
-  end if;
-  if v_t.issued_by is distinct from v_me then$replacement$;
-  IF length(v_def)-length(replace(v_def,v_anchor,'')) <> length(v_anchor) THEN
-    RAISE EXCEPTION 'cashier ticket cancellation guard did not match once';
   END IF;
-  EXECUTE replace(v_def,v_anchor,v_replacement);
+  IF v_t.issued_by IS DISTINCT FROM v_me THEN
+    RETURN jsonb_build_object(
+      'success',false,'error','Only The Issuer May Cancel A Ticket');
+  END IF;
+  IF v_t.status='cancelled' THEN
+    SELECT * INTO v_receipt FROM public.chip_transactions
+     WHERE transaction_type='tournament_ticket_cancel'
+       AND metadata->>'ticket_id'=p_ticket_id::text LIMIT 1;
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'success',true,'replayed',true,'refunded',v_t.value,
+        'your_balance',(v_receipt.metadata->>'issuer_balance_after')::numeric,
+        'transaction_id',v_receipt.id);
+    END IF;
+  END IF;
+  IF v_t.status<>'issued' THEN
+    RETURN jsonb_build_object(
+      'success',false,'error','Ticket Already '||initcap(v_t.status));
+  END IF;
+
+  SELECT * INTO v_issue FROM public.chip_transactions
+   WHERE transaction_type='tournament_ticket_issue'
+     AND metadata->>'ticket_id'=p_ticket_id::text LIMIT 1;
+  IF FOUND AND v_issue.metadata ? 'escrow_entity_id' THEN
+    IF v_issue.club_id IS DISTINCT FROM v_t.club_id
+       OR v_issue.from_user_id IS DISTINCT FROM v_t.issued_by
+       OR v_issue.to_user_id IS DISTINCT FROM v_t.holder_id
+       OR v_issue.amount IS DISTINCT FROM v_t.value
+       OR v_issue.metadata->>'escrow_entity_id'
+            IS DISTINCT FROM p_ticket_id::text THEN
+      RAISE EXCEPTION 'Ticket escrow receipt does not match its entitlement'
+        USING ERRCODE='22023';
+    END IF;
+    v_escrow_entity:=p_ticket_id;
+  END IF;
+  SELECT jsonb_object_agg(k,COALESCE(current_setting(k,true),''))
+    INTO v_context
+    FROM unnest(ARRAY[
+      'app.ledger_category','app.ledger_counterparty',
+      'app.ledger_counterparty_entity','app.ledger_tournament']) settings(k);
+  PERFORM set_config('app.ledger_tournament','',true);
+  PERFORM set_config('app.ledger_category','escrow_release',true);
+  PERFORM set_config('app.ledger_counterparty','escrow',true);
+  PERFORM set_config(
+    'app.ledger_counterparty_entity',COALESCE(v_escrow_entity::text,''),true);
+  UPDATE public.club_members
+     SET chip_balance=COALESCE(chip_balance,0)+v_t.value,updated_at=now()
+   WHERE club_id=v_t.club_id AND user_id=v_me
+     AND COALESCE(status,'active') IN ('active','approved')
+   RETURNING chip_balance INTO v_after;
+  FOR v_setting IN SELECT jsonb_object_keys(v_context) LOOP
+    PERFORM set_config(v_setting,v_context->>v_setting,true);
+  END LOOP;
+  IF v_after IS NULL THEN
+    RETURN jsonb_build_object(
+      'success',false,
+      'error','You Are No Longer A Member Of That Club, So The Escrow Has Nowhere To Land');
+  END IF;
+
+  UPDATE public.tournament_tickets
+     SET status='cancelled',cancelled_at=now()
+   WHERE id=p_ticket_id;
+  INSERT INTO public.chip_transactions(
+    club_id,from_user_id,to_user_id,amount,transaction_type,notes,
+    balance_after,metadata)
+  VALUES(
+    v_t.club_id,NULL,v_me,v_t.value,'tournament_ticket_cancel',
+    'Tournament Ticket Cancelled: Escrow Refunded',v_after,
+    jsonb_build_object(
+      'ticket_id',p_ticket_id,'issuer_id',v_t.issued_by,
+      'holder_id',v_t.holder_id,'escrow_action','refund_to_issuer',
+      'issuer_balance_after',v_after))
+  RETURNING * INTO v_receipt;
+
+  RETURN jsonb_build_object(
+    'success',true,'replayed',false,'refunded',v_t.value,
+    'your_balance',v_after,'transaction_id',v_receipt.id);
 END;
-$guard_noncash_ticket_cashier_rpcs$;
+$cancel_cash_ticket_only$;
+
+REVOKE ALL ON FUNCTION public.fn_cancel_tournament_ticket(uuid)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_cancel_tournament_ticket(uuid)
+  TO authenticated,service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_satellite_entry_ticket_is_guarded()
 RETURNS trigger
@@ -2002,7 +2652,9 @@ BEGIN
     RETURN jsonb_build_object('ok',false,'reason','ticket_not_available');
   END IF;
 
-  IF COALESCE(v_t.variant,'')='spin' OR COALESCE(v_t.max_players,0)<=2 THEN
+  IF lower(COALESCE(v_t.variant,''))='spin'
+     OR (v_t.max_players IS NOT NULL
+       AND v_t.max_players>0 AND v_t.max_players<=2) THEN
     RETURN jsonb_build_object('ok',false,'reason','seat_first_variant');
   END IF;
   IF v_t.status='RUNNING' THEN
@@ -3579,6 +4231,13 @@ SELECT a.prize_in,a.bounty_in,a.fee_in,a.overlay_in,a.satellite_in,
          AS fee_balance
   FROM apportioned a;
 $exact_refund_read_model$;
+
+-- This aggregate exposes the complete internal prize, bounty and fee rails.
+-- It is an owner/service diagnostic, never a player-facing RLS bypass.
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_escrow(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_tournament_escrow(uuid)
+  TO service_role;
 
 -- Refund credits already debit escrow. Their negative rake rows reverse
 -- attribution only and must never debit a fee bank a second time.
@@ -5522,8 +6181,6 @@ BEGIN
   -- held. Only explicit terminal or full states become cash. Any other
   -- unknown lifecycle state refuses the whole settlement.
   IF COALESCE(v_target.max_players, 0) < 0
-     OR v_target.late_reg_levels IS NULL
-     OR v_target.rebuy_levels IS NULL
      OR v_target.late_reg_levels < 0
      OR v_target.rebuy_levels < 0 THEN
     RAISE EXCEPTION
@@ -5538,17 +6195,16 @@ BEGIN
   ELSIF upper(COALESCE(v_target.status, '')) IN ('ANNOUNCED','REGISTERING') THEN
     v_target_open := true;
   ELSIF upper(COALESCE(v_target.status, '')) = 'RUNNING' THEN
-    IF v_target.current_level IS NULL OR v_target.current_level < 0 THEN
+    IF v_target.current_level < 0 THEN
       RAISE EXCEPTION
-        'satellite % target % has unknown RUNNING admission level',
+        'satellite % target % has invalid RUNNING admission level',
         p_tournament_id, v_target_id USING ERRCODE = '55000';
     END IF;
+    -- The target row and both rosters are already locked. Delegate the actual
+    -- RUNNING admission decision to the same canonical authority used by every
+    -- other late-registration path, including its minutes-based fallback.
     v_target_open :=
-      COALESCE(NULLIF(v_target.late_reg_levels, 0),
-               NULLIF(v_target.rebuy_levels, 0), 0) > 0
-      AND v_target.current_level <
-          COALESCE(NULLIF(v_target.late_reg_levels, 0),
-                   NULLIF(v_target.rebuy_levels, 0), 0);
+      public.fn_tournament_late_registration_open(v_target_id);
   ELSIF upper(COALESCE(v_target.status, '')) IN
         ('COMPLETING','COMPLETED','CANCELLED','CANCELED') THEN
     v_target_open := false;
@@ -6925,7 +7581,7 @@ BEGIN
      source, settled_at)
   VALUES
     (v_tournament_id, 'satellite_remainder', 2, v_bubble.user_id,
-     85.00, 0, 'migration.20260908153207.b066', NULL)
+     85.00, 0, 'migration.20260909014421.b066', NULL)
   RETURNING id INTO v_remainder_obligation_id;
 
   v_credited := public.fn_credit_and_log(
@@ -7875,6 +8531,11 @@ DECLARE
   v_refund_plan_source text;
   v_ticket_redeem_source text;
   v_ticket_cancel_source text;
+  v_escrow_reader_source text;
+  v_late_registration_source text;
+  v_wallet_registration_source text;
+  v_horse_wallet_registration_source text;
+  v_registration_lifecycle_source text;
 BEGIN
   SELECT prosrc INTO v_source FROM pg_proc
    WHERE proname = 'fn_settle_satellite_tournament'
@@ -7931,10 +8592,27 @@ BEGIN
    WHERE oid = 'public.fn_redeem_tournament_ticket(uuid)'::regprocedure;
   SELECT prosrc INTO v_ticket_cancel_source FROM pg_proc
    WHERE oid = 'public.fn_cancel_tournament_ticket(uuid)'::regprocedure;
+  SELECT prosrc INTO v_escrow_reader_source FROM pg_proc
+   WHERE oid = 'public.fn_ca_tournament_escrow(uuid)'::regprocedure;
+  SELECT prosrc INTO v_late_registration_source FROM pg_proc
+   WHERE oid =
+     'public.fn_tournament_late_registration_open(uuid)'::regprocedure;
+  SELECT prosrc INTO v_wallet_registration_source FROM pg_proc
+   WHERE oid =
+     'public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)'::regprocedure;
+  SELECT prosrc INTO v_horse_wallet_registration_source FROM pg_proc
+   WHERE oid =
+     'public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)'::regprocedure;
+  SELECT prosrc INTO v_registration_lifecycle_source FROM pg_proc
+   WHERE oid =
+     'public.fn_register_for_tournament_before_maintenance_announcement_gate(uuid,boolean)'::regprocedure;
   IF v_source IS NULL
      OR v_source NOT LIKE '%floor(v_pool / v_ticket_cost)%'
      OR v_source NOT LIKE '%pg_advisory_xact_lock(%ca:tournament-terminal-settlement:v1%'
      OR v_source NOT LIKE '%v_bubble_position := v_ticket_award_count + 1%'
+     OR v_source NOT LIKE
+          '%public.fn_tournament_late_registration_open(v_target_id)%'
+     OR v_source LIKE '%NULLIF(v_target.late_reg_levels, 0)%'
      OR v_source NOT LIKE '%delivery_kind%'
      OR v_source NOT LIKE '%INSERT INTO public.tournament_satellite_remainders%'
      OR v_source NOT LIKE '%v_pool < v_advertised_seats * v_ticket_cost%'
@@ -7957,6 +8635,75 @@ BEGIN
      OR v_source LIKE '%EXCEPTION WHEN OTHERS%'
      OR v_source LIKE '%fn_apply_prize_guarantee%' THEN
     RAISE EXCEPTION 'atomic satellite authority lost a floor, guarantee, delivery, bubble, replay or fail-closed invariant';
+  END IF;
+  IF v_late_registration_source IS NULL
+     OR v_late_registration_source NOT LIKE
+          '%COALESCE(t.late_reg_levels,t.rebuy_levels,0)%'
+     OR v_late_registration_source NOT LIKE
+          '%COALESCE(t.current_level,0)>=0%'
+     OR v_late_registration_source NOT LIKE '%t.max_players<=0%'
+     OR v_wallet_registration_source IS NULL
+     OR v_wallet_registration_source NOT LIKE
+          '%public.fn_tournament_late_registration_open(p_tournament_id)%'
+     OR v_wallet_registration_source LIKE '%registration_state_unknown%'
+     OR v_wallet_registration_source LIKE
+          '%COALESCE(v_t.max_players, 0) <= 2%'
+     OR v_wallet_registration_source NOT LIKE '%v_t.max_players > 0%'
+     OR v_wallet_registration_source LIKE
+          '%current_players = COALESCE(current_players, 0) + 1%'
+     OR v_wallet_registration_source NOT LIKE
+          '%SET current_players = v_players_before + 1%'
+     OR v_wallet_registration_source NOT LIKE
+          '%current_players IS NOT DISTINCT FROM v_expected_cached_players%'
+     OR v_horse_wallet_registration_source IS NULL
+     OR v_horse_wallet_registration_source LIKE
+          '%current_players = COALESCE(current_players, 0) + 1%'
+     OR v_horse_wallet_registration_source NOT LIKE
+          '%SET current_players = v_players_before + 1%'
+     OR v_horse_wallet_registration_source NOT LIKE
+          '%current_players IS NOT DISTINCT FROM v_players_before+1%'
+     OR v_registration_lifecycle_source IS NULL
+     OR v_registration_lifecycle_source NOT LIKE
+          '%public.fn_tournament_late_registration_open(p_tournament_id)%'
+     OR v_registration_lifecycle_source LIKE '%registration_state_unknown%'
+     OR v_ticket_admission_source LIKE '%COALESCE(v_t.max_players,0)<=2%'
+     OR v_ticket_admission_source NOT LIKE '%v_t.max_players>0%' THEN
+    RAISE EXCEPTION
+      'wallet and ticket admission no longer share the canonical lifecycle and uncapped-event contract';
+  END IF;
+  IF v_escrow_reader_source IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid = 'public.fn_ca_tournament_escrow(uuid)'::regprocedure
+          AND p.prosecdef
+          AND p.provolatile = 's'
+          AND p.proconfig IS NOT DISTINCT FROM ARRAY['search_path=public']::text[]
+          AND has_function_privilege(
+                'service_role', p.oid, 'EXECUTE')
+          AND EXISTS (
+            SELECT 1
+              FROM aclexplode(p.proacl) acl
+             WHERE acl.grantee = 'service_role'::regrole::oid
+               AND acl.privilege_type = 'EXECUTE'
+          )
+          AND EXISTS (
+            SELECT 1
+              FROM aclexplode(p.proacl) acl
+             WHERE acl.grantee = p.proowner
+               AND acl.privilege_type = 'EXECUTE'
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM aclexplode(COALESCE(
+                     p.proacl, acldefault('f', p.proowner))) acl
+             WHERE acl.privilege_type = 'EXECUTE'
+               AND acl.grantee NOT IN (
+                     p.proowner, 'service_role'::regrole::oid)
+          )
+     ) THEN
+    RAISE EXCEPTION
+      'tournament escrow read model is not a pinned owner/service-only SECURITY DEFINER';
   END IF;
   IF v_receipt_source IS NULL
      OR v_receipt_source NOT LIKE '%v_source_table_ids IS DISTINCT FROM v_h.source_table_ids%'
@@ -8302,7 +9049,7 @@ BEGIN
   IF (SELECT count(*)
         FROM public.tournament_satellite_settlement_cutover c
          WHERE c.authority = 'fn_settle_satellite_tournament:v2'
-         AND c.migration_version = '20260908153207'
+         AND c.migration_version = '20260909014421'
          AND c.installed_at >= transaction_timestamp()
          AND c.installed_at <= clock_timestamp()
          AND array_position(c.preexisting_completed_ids, NULL) IS NULL
@@ -8327,6 +9074,12 @@ BEGIN
        'public.fn_settle_satellite_tournament(uuid,uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role',
        'public.fn_settle_satellite_tournament(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('anon',
+       'public.fn_ca_tournament_escrow(uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated',
+       'public.fn_ca_tournament_escrow(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role',
+       'public.fn_ca_tournament_escrow(uuid)', 'EXECUTE')
      OR has_function_privilege('service_role',
        'public.fn_ca_satellite_settlement_receipt(uuid,uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role',

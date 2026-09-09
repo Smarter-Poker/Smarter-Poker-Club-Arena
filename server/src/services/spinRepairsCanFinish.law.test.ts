@@ -16,7 +16,7 @@ const executableGameServer = gameServer
 const stageOne = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    '../../../supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -81,9 +81,45 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
     expect(creditorLock).toBeGreaterThan(-1);
     expect(cronLock).toBeGreaterThan(creditorLock);
     expect(unschedule).toBeGreaterThan(cronLock);
-    expect(stageOne).toContain(
-      'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT'
+    const retirementEnd = stageOne.indexOf('$retire_stack_repair$;', unschedule);
+    const dropRepair = stageOne.indexOf(
+      'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT',
+      retirementEnd
     );
+    expect(retirementEnd).toBeGreaterThan(unschedule);
+    expect(dropRepair).toBeGreaterThan(retirementEnd);
+    expect(stageOne.slice(0, dropRepair)).not.toMatch(/EXECUTE\s+'DROP FUNCTION/i);
+  });
+
+  it('uses one lock order and never retries a deadlock inside the money transaction', () => {
+    const rootAt = stageOne.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_lock_tournament_seat_acquisition('
+    );
+    const rootEnd = stageOne.indexOf('$seat_acquisition_lock$;', rootAt);
+    const root = stageOne.slice(rootAt, rootEnd);
+    const authority = root.indexOf('ca:tournament-terminal-settlement:v1');
+    const maintenance = root.indexOf('pg_advisory_xact_lock_shared(530090,1)');
+    const mission = root.indexOf('public.fn_lock_daily_mission_user(p_user_id)');
+    const launch = root.indexOf('FROM public.tournament_launch_receipts r');
+    const tournament = root.indexOf('FROM public.tournaments t', launch);
+
+    const syncAt = stageOne.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_sync_seat_first_player_count('
+    );
+    const syncEnd = stageOne.indexOf('$seat_count$;', syncAt);
+    const sync = stageOne.slice(syncAt, syncEnd);
+
+    expect(authority).toBeGreaterThan(-1);
+    expect(maintenance).toBeGreaterThan(authority);
+    expect(mission).toBeGreaterThan(maintenance);
+    expect(launch).toBeGreaterThan(mission);
+    expect(tournament).toBeGreaterThan(launch);
+    expect(root).not.toMatch(/NOWAIT|deadlock_detected|lock_not_available|pg_sleep|v_attempt/i);
+    expect(sync).not.toContain('ca:tournament-terminal-settlement:v1');
+    expect(stageOne).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_sync_seat_first_player_count\(uuid\)[\s\S]*?service_role;/
+    );
+    expect(stageOne).toContain('TOURNAMENT_SEAT_ACQUISITION_REQUIRES_TERMINAL_AUTHORITY');
   });
 
   it('preserves observability and the unfilled-game refund lifecycle in stage one', () => {

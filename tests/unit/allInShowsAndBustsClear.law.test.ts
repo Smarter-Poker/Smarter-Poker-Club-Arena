@@ -32,7 +32,7 @@ const MANAGER = fs.readFileSync(
 const TERMINAL_MIGRATION = fs.readFileSync(
   path.join(
     ROOT,
-    'supabase/migrations/20260908153329_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+    'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );
@@ -68,37 +68,50 @@ describe('a busted tournament seat is vacated the moment the hand settles', () =
     expect(publish).toMatch(/type:\s*'seat_left'/);
     expect(publish).not.toMatch(/\.from\('(?:table_seats|tournament_players)'\)/);
 
-    // Reconstruct the exact SQL replacement installed into the canonical
-    // hand-stack authority. Both writes and their proof live in one database
-    // transaction, keyed by the same v_targets roster.
-    const syncAt = TERMINAL_MIGRATION.indexOf('v_sync_replacement text :=');
-    expect(syncAt).toBeGreaterThan(-1);
-    const sync = sliceDollarQuoted(TERMINAL_MIGRATION.slice(syncAt), '$replacement$');
+    // Read the complete source-controlled definition installed as the
+    // canonical hand-stack authority. Both writes and their proof live in one
+    // database transaction, keyed by the same v_targets roster.
+    const sync = sliceDollarQuoted(
+      sliceBetween(
+        TERMINAL_MIGRATION,
+        'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute',
+        'REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute'
+      ),
+      '$function$'
+    );
     const standings = sliceSqlStatement(sync, 'UPDATE public.tournament_players');
-    const vacate = sliceSqlStatement(sync, 'UPDATE public.table_seats');
+    const vacate = sliceSqlStatement(
+      sync,
+      'UPDATE public.table_seats ts\n           SET left_at = v_zero_stack_vacated_at'
+    );
     expect(standings).toMatch(/SET chips = target\.stack/);
     expect(standings).toMatch(/tp\.status::text = 'playing'/);
     expect(vacate).toMatch(/SET left_at = v_zero_stack_vacated_at/);
     expect(vacate).toMatch(/ts\.stack = 0/);
     expect(sync.indexOf('UPDATE public.tournament_players')).toBeLessThan(
-      sync.indexOf('UPDATE public.table_seats')
+      sync.indexOf('SET left_at = v_zero_stack_vacated_at')
     );
     expect(TERMINAL_MIGRATION).toMatch(/'tournament_players_synced'/);
     expect(TERMINAL_MIGRATION).toMatch(/'tournament_zero_stack_seats_vacated'/);
-    expect(TERMINAL_MIGRATION).toMatch(/EXECUTE v_hardened/);
+    expect(TERMINAL_MIGRATION).toContain('SELECT prosrc INTO v_hand_source FROM pg_proc');
+    expect(TERMINAL_MIGRATION).toContain(
+      "'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure"
+    );
+    expect(TERMINAL_MIGRATION).toContain(
+      'hand stack authority lost canonical locks or player-chip sync'
+    );
   });
 
   it('the seating sweep never hands a zero-chip playing entrant a free stack', () => {
     // The old fallback seated chips<=0 'playing' entrants with startingChips —
     // unreachable while busted players kept their seats, a chip mint the
     // moment they do not.
-    const block = sliceBetween(
-      MANAGER,
-      "A ZERO-CHIP 'playing' ENTRANT IS NOT SEATABLE",
-      'const playerChips'
-    );
+    const block = sliceBlockAfter(MANAGER, 'for (const player of unseated)');
     expect(block).toMatch(/continue;/);
-    const chips = sliceBetween(MANAGER, 'const playerChips', ';');
-    expect(chips).not.toMatch(/<= 0\s*\?\s*startingChips/);
+    expect(block.indexOf("player.status !== 'registered'")).toBeLessThan(
+      block.indexOf('assignTournamentPlayerSeatAtomically')
+    );
+    expect(block).not.toMatch(/<= 0\s*\?\s*startingChips/);
+    expect(block).not.toMatch(/stack:\s*startingChips/);
   });
 });

@@ -1,17 +1,44 @@
 -- Run after the complete stage-one atomic authority set is installed and before
 -- the separately gated legacy-door retirement. The final PASS exception is
 -- intentional: it releases every lock and makes this safe in production.
+BEGIN;
+SET LOCAL ROLE anon;
+DO $escrow_anon_denial$
+BEGIN
+  BEGIN
+    PERFORM public.fn_ca_tournament_escrow(
+      '00000000-0000-0000-0000-000000000000'::uuid);
+    RAISE EXCEPTION
+      'FAIL anon directly invoked the SECURITY DEFINER escrow aggregate';
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE
+      'AUDIT_TEST_PASS: anon direct escrow aggregate invocation denied';
+  END;
+END;
+$escrow_anon_denial$;
+ROLLBACK;
+
 DO $probe$
 DECLARE
   v_settle text;
   v_receipt text;
   v_legacy_award text;
+  v_escrow_reader text;
+  v_late_registration text;
+  v_wallet_registration text;
+  v_horse_wallet_registration text;
+  v_registration_lifecycle text;
+  v_ticket_admission text;
   v_row record;
   v_result jsonb;
   v_immutable_refused boolean := false;
 BEGIN
   IF to_regprocedure('public.fn_settle_satellite_tournament(uuid,uuid)') IS NULL
+     OR to_regprocedure(
+          'public.fn_settle_satellite_tournament_pre_seat_guard(uuid,uuid)')
+          IS NULL
      OR to_regprocedure('public.fn_ca_satellite_settlement_receipt(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.fn_ca_tournament_escrow(uuid)') IS NULL
      OR to_regprocedure(
           'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)') IS NULL
      OR to_regclass('public.tournament_satellite_settlements') IS NULL
@@ -21,7 +48,8 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(
-           'public.fn_settle_satellite_tournament(uuid,uuid)'::regprocedure)
+           'public.fn_settle_satellite_tournament_pre_seat_guard(uuid,uuid)'
+             ::regprocedure)
     INTO v_settle;
   SELECT pg_get_functiondef(
            'public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure)
@@ -29,8 +57,31 @@ BEGIN
   SELECT pg_get_functiondef(
            'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)'::regprocedure)
     INTO v_legacy_award;
+  SELECT pg_get_functiondef(
+           'public.fn_ca_tournament_escrow(uuid)'::regprocedure)
+    INTO v_escrow_reader;
+  SELECT pg_get_functiondef(
+           'public.fn_tournament_late_registration_open(uuid)'::regprocedure)
+    INTO v_late_registration;
+  SELECT pg_get_functiondef(
+           'public.fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)'::regprocedure)
+    INTO v_wallet_registration;
+  SELECT pg_get_functiondef(
+           'public.fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)'::regprocedure)
+    INTO v_horse_wallet_registration;
+  SELECT pg_get_functiondef(
+           'public.fn_register_for_tournament_before_maintenance_announcement_gate(uuid,boolean)'::regprocedure)
+    INTO v_registration_lifecycle;
+  SELECT pg_get_functiondef(
+           'public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)'::regprocedure)
+    INTO v_ticket_admission;
   IF v_settle !~ 'v_ticket_award_count := floor\(v_pool / v_ticket_cost\)::integer'
      OR v_settle !~ 'v_bubble_position := v_ticket_award_count \+ 1'
+     OR v_settle !~ 'public\.fn_tournament_late_registration_open\(v_target_id\)'
+     OR v_settle ~ 'NULLIF\(v_target\.late_reg_levels, 0\)'
+     OR v_settle ~ 'v_target\.late_reg_levels IS NULL'
+     OR v_settle ~ 'v_target\.rebuy_levels IS NULL'
+     OR v_settle ~ 'v_target\.current_level IS NULL'
      OR v_settle !~ 'pg_advisory_xact_lock\([[:space:]]*hashtextextended\(''ca:tournament-terminal-settlement:v1'',[[:space:]]*0\)\)'
      OR v_settle ~* 'EXCEPTION\s+WHEN'
      OR v_settle ~* 'LEAST\s*\('
@@ -63,6 +114,32 @@ BEGIN
      OR v_settle !~ 'v_target.total_rake IS DISTINCT FROM v_target_escrow.fee_balance'
      OR v_settle !~ 'absence cannot authorize cash substitution'
      OR v_settle ~ 'FROM public.managed_game_contract_versions'
+     OR v_late_registration !~
+          'COALESCE\(t\.late_reg_levels,t\.rebuy_levels,0\)'
+     OR v_late_registration !~ 'COALESCE\(t\.current_level,0\)>=0'
+     OR v_late_registration !~ 't\.max_players<=0'
+     OR v_wallet_registration !~
+          'public\.fn_tournament_late_registration_open\(p_tournament_id\)'
+     OR v_wallet_registration ~ 'registration_state_unknown'
+     OR v_wallet_registration ~ 'COALESCE\(v_t\.max_players, 0\) <= 2'
+     OR v_wallet_registration !~ 'v_t\.max_players > 0'
+     OR v_wallet_registration ~
+          'current_players = COALESCE\(current_players, 0\) \+ 1'
+     OR v_wallet_registration !~
+          'SET current_players = v_players_before \+ 1'
+     OR v_wallet_registration !~
+          'current_players IS NOT DISTINCT FROM v_expected_cached_players'
+     OR v_horse_wallet_registration ~
+          'current_players = COALESCE\(current_players, 0\) \+ 1'
+     OR v_horse_wallet_registration !~
+          'SET current_players = v_players_before \+ 1'
+     OR v_horse_wallet_registration !~
+          'current_players IS NOT DISTINCT FROM v_players_before\+1'
+     OR v_registration_lifecycle !~
+          'public\.fn_tournament_late_registration_open\(p_tournament_id\)'
+     OR v_registration_lifecycle ~ 'registration_state_unknown'
+     OR v_ticket_admission ~ 'COALESCE\(v_t\.max_players,0\)<=2'
+     OR v_ticket_admission !~ 'v_t\.max_players>0'
      OR v_receipt !~ 'v_amount IS DISTINCT FROM v_h.pool'
      OR v_receipt !~ 'v_h.receipt_version IS DISTINCT FROM 2'
      OR v_receipt !~ 'v_source_table_ids IS DISTINCT FROM v_h.source_table_ids'
@@ -81,7 +158,38 @@ BEGIN
      OR position('pg_advisory_xact_lock(' IN v_legacy_award) >
           position('WHERE id = p_target_id' IN v_legacy_award)
      OR position('WHERE id = p_target_id' IN v_legacy_award) >
-          position('WHERE id = p_satellite_id' IN v_legacy_award) THEN
+          position('WHERE id = p_satellite_id' IN v_legacy_award)
+     OR v_escrow_reader !~ 'SECURITY DEFINER'
+     OR v_escrow_reader !~ 'SET search_path TO ''public'''
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid = 'public.fn_ca_tournament_escrow(uuid)'::regprocedure
+          AND p.prosecdef
+          AND p.provolatile = 's'
+          AND p.proconfig IS NOT DISTINCT FROM ARRAY['search_path=public']::text[]
+          AND has_function_privilege('service_role', p.oid, 'EXECUTE')
+          AND EXISTS (
+            SELECT 1
+              FROM aclexplode(p.proacl) acl
+             WHERE acl.grantee = 'service_role'::regrole::oid
+               AND acl.privilege_type = 'EXECUTE'
+          )
+          AND EXISTS (
+            SELECT 1
+              FROM aclexplode(p.proacl) acl
+             WHERE acl.grantee = p.proowner
+               AND acl.privilege_type = 'EXECUTE'
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM aclexplode(COALESCE(
+                     p.proacl, acldefault('f', p.proowner))) acl
+             WHERE acl.privilege_type = 'EXECUTE'
+               AND acl.grantee NOT IN (
+                     p.proowner, 'service_role'::regrole::oid)
+          )
+     ) THEN
     RAISE EXCEPTION 'FAIL installed satellite functions lost exact arithmetic or all-or-nothing proof';
   END IF;
 
@@ -93,6 +201,12 @@ BEGIN
      OR has_function_privilege(
        'authenticated',
        'public.fn_settle_satellite_tournament(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege(
+       'anon', 'public.fn_ca_tournament_escrow(uuid)', 'EXECUTE')
+     OR has_function_privilege(
+       'authenticated', 'public.fn_ca_tournament_escrow(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role', 'public.fn_ca_tournament_escrow(uuid)', 'EXECUTE')
      OR has_function_privilege(
        'service_role',
        'public.fn_ca_satellite_settlement_receipt(uuid,uuid)', 'EXECUTE') THEN

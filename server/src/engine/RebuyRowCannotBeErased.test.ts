@@ -6,7 +6,7 @@
  * wallet and writes a `table_pending_addons` row (kind 'rebuy') in the same
  * transaction, exactly like a mid-hand add-on, and only the engine's
  * `resolve_pending_addon` sweep puts the chips on the felt. That closes the
- * hole where `syncStacks` (an ABSOLUTE write from engine memory) overwrote a
+ * hole where the retired stack-only writer (an ABSOLUTE write from engine memory) overwrote a
  * relative DB credit that landed between loadSeatedPlayers and the next sync,
  * leaving the wallet debited and the felt empty.
  *
@@ -19,8 +19,8 @@
  *   2. the busted-seat stand-up keeps a seat that has a row;
  *   3. a sweep request that lands while a sweep is mid-read survives it
  *      (generation counter), so the row is delivered before the next deal and
- *      the first hand after the rebuy starts with the chips in memory - which
- *      is what syncStacks then persists.
+ *      the first hand after the rebuy starts with the chips in memory, which
+ *      the next accepted-hand transaction persists atomically with its history.
  *
  * And the negative: a bust with NO row still stands the player up after the
  * grace, and the pause runs its full course.

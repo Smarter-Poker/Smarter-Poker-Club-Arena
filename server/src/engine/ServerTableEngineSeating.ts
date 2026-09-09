@@ -109,9 +109,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * The between-hands branch applies the chips to table_seats inside the RPC,
      * and the engine only mirrors that into `player.stack` on success. So a
      * transaction that COMMITTED but whose response never arrived left the
-     * player charged, the seat credited, and the engine unaware — and the next
-     * syncStacks, which writes `stack` ABSOLUTELY from engine memory, erased
-     * the chips while the wallet stayed debited. The mid-hand branch has been
+     * player charged, the seat credited, and the engine unaware — and the old
+     * absolute hand writer erased the chips while the wallet stayed debited.
+     * The mid-hand branch has been
      * covered by the table_pending_addons ledger since the A2 fix; this branch
      * had nothing.
      *
@@ -958,7 +958,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     } else {
       // Between hands: remove immediately via atomic cashout.
       // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
-      // BEFORE postHandTasks (which runs syncStacks) finishes. A leave arriving
+      // BEFORE postHandTasks (which commits the accepted hand) finishes. A leave arriving
       // in that window would take this branch and cash out the STALE pre-hand
       // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
       // in-flight settlement to persist the final stack first.

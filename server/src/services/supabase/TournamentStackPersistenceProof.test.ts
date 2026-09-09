@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tournamentStackProofIsExact, type TournamentStackProof } from './tables.js';
+import { tournamentStackProofIsExact, type TournamentStackProof } from './handHistory.js';
 
 const TOURNAMENT_ID = '00000000-0000-4000-8000-000000000001';
 const PLAYER_A = '00000000-0000-4000-8000-000000000002';
@@ -50,6 +50,8 @@ describe('tournament hand persistence proof', () => {
         ],
       },
     ],
+    ['missing written total', { written: { [PLAYER_A]: 0 } }],
+    ['written total differs from standings', { written: { [PLAYER_A]: 0, [PLAYER_B]: 2_999 } }],
   ])('rejects %s', (_name, mutation) => {
     expect(
       tournamentStackProofIsExact({ ...exactProof(), ...mutation }, TOURNAMENT_ID, [

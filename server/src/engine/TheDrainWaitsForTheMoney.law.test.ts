@@ -47,8 +47,8 @@ describe('the drain waits for the money', () => {
     );
     // A gameplay timeout may let a newer hand start while the older promise
     // still writes. A set retains both instead of replacing the first.
-    expect(base).toContain('this.settlementInFlight.add(p);');
-    expect(base).toContain('this.settlementInFlight.delete(tracked);');
+    expect(base).toContain('settlements.add(p);');
+    expect(base).toContain('settlements.delete(tracked);');
     // Rejection is not equivalent to a durable boundary.
     expect(base).toContain('if (failed) this.terminalBoundaryPersistenceFailed = true;');
     expect(base).toContain('.catch(() => clear(true));');

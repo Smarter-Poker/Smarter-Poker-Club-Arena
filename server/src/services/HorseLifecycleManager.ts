@@ -17,7 +17,7 @@ import { supabase, atomicCashout } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
-import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
+import { selectInChunks } from './supabase/chunkedIn.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -165,7 +165,7 @@ export class HorseLifecycleManager {
       const { data: tournaments } = await supabase
         .from('tournaments')
         .select('id, name')
-        .in('status', ['FINISHED', 'CANCELLED']);
+        .in('status', ['COMPLETED', 'CANCELLED']);
 
       if (!tournaments || tournaments.length === 0) return;
 
@@ -210,26 +210,9 @@ export class HorseLifecycleManager {
             }
           }
 
-          // Clean up tournament_players for horses - chunked for the same
-          // reason as the read above, and this one had no error handling at
-          // all (not even a discarded destructure).
-          const horseIdsInField = profiles.map((p) => p.id);
-          for (let i = 0; i < horseIdsInField.length; i += IN_LIST_CHUNK) {
-            const { error: delErr } = await supabase
-              .from('tournament_players')
-              .delete()
-              .eq('tournament_id', tournament.id)
-              .in('user_id', horseIdsInField.slice(i, i + IN_LIST_CHUNK));
-            if (delErr) {
-              reportError(
-                new Error(
-                  `[HorseLifecycle] cleanup delete failed for ${String(tournament.id).slice(0, 8)} at chunk ${i}: ${delErr.message}`
-                ),
-                'HorseLifecycle.cleanup_delete_failed'
-              );
-              break;
-            }
-          }
+          // Tournament rows are settlement provenance. Availability changes
+          // on the horse profile; a lifecycle pass never deletes a finish,
+          // satellite source, payout place, ticket source or chip history.
         } catch (err) {
           reportError(err, 'Lifecycle.Error_processing_tournament_to');
         }
@@ -305,7 +288,7 @@ export class HorseLifecycleManager {
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', horse.id)
-            .eq('status', 'in_progress')
+            .in('status', ['registered', 'playing'])
             .limit(1);
 
           if (activeTournaments && activeTournaments.length > 0) continue; // Still in tournament
@@ -382,7 +365,7 @@ export class HorseLifecycleManager {
         .from('tournament_players')
         .select('id')
         .eq('user_id', horseId)
-        .in('status', ['registered', 'in_progress'])
+        .in('status', ['registered', 'playing'])
         .limit(1);
 
       const hasActiveGames =
@@ -421,8 +404,23 @@ export class HorseLifecycleManager {
         .eq('user_id', horseId)
         .is('left_at', null);
 
-      // FIX 208: Cash out each seat using direct queries (avoids PostgREST RPC cache issues)
+      // A force reset is a cash-session recovery only. A tournament manager
+      // owns tournament life, chips and seat exits; a race that seats this
+      // horse after the detector read must make this reset stand down.
       if (activeSeats && activeSeats.length > 0) {
+        const tableIds = Array.from(new Set(activeSeats.map((seat) => seat.table_id)));
+        const tableRead = await selectInChunks<{ id: string; tournament_id: string | null }>(
+          tableIds,
+          (batch) => supabase.from('tables').select('id, tournament_id').in('id', batch),
+          `HorseLifecycle.forceResetTables(${horseId.slice(0, 8)})`
+        );
+        if (
+          !tableRead.complete ||
+          tableRead.rows.length !== tableIds.length ||
+          tableRead.rows.some((table) => table.tournament_id !== null)
+        ) {
+          return false;
+        }
         for (const seat of activeSeats) {
           await atomicCashout(horseId, seat.table_id, seat.seat_number);
         }

@@ -680,10 +680,49 @@ GRANT EXECUTE ON FUNCTION public.fn_register_horse_for_tournament(uuid,uuid)
 -- The manager used to create/revive a seat, update its roster link and then
 -- write tables.current_players in three independent PostgREST transactions.
 -- A failure between them produced a live seat with a lying roster or a roster
--- pointing at no seat. This service-only RPC owns the exact assignment as one
--- database transaction. It derives the stack from the locked roster and
--- tournament; callers cannot mint or choose chips.
-CREATE OR REPLACE FUNCTION public.fn_assign_tournament_player_seat_atomic(
+-- pointing at no seat. Keep the complete write/proof body in one owner-only
+-- core so both the service manager and the authenticated rebuy transaction can
+-- use the SAME implementation after entering through the root lock above.
+CREATE OR REPLACE FUNCTION public.fn_ca_tournament_seat_cap(
+  p_tournament_id uuid
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $tournament_seat_cap$
+DECLARE
+  v_t public.tournaments%ROWTYPE;
+  v_variant text;
+  v_format text;
+  v_cap integer;
+BEGIN
+  SELECT * INTO v_t FROM public.tournaments t
+   WHERE t.id=p_tournament_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tournament not found' USING ERRCODE='P0002';
+  END IF;
+  v_variant:=lower(COALESCE(NULLIF(v_t.game_type,''),'nlh'));
+  v_format:=lower(COALESCE(v_t.variant,''));
+  v_cap:=CASE
+    WHEN v_format='spin' OR upper(COALESCE(v_t.tournament_type,''))='SPIN'
+      THEN 3
+    WHEN v_format='sng' OR upper(COALESCE(v_t.tournament_type,''))='SNG'
+      THEN LEAST(COALESCE(NULLIF(v_t.max_players,0),6),9)
+    ELSE LEAST(COALESCE(NULLIF(v_t.table_size,0),9),10)
+  END;
+  v_cap:=LEAST(v_cap,CASE v_variant
+    WHEN 'plo5' THEN 9
+    WHEN 'plo6' THEN 7
+    ELSE 10
+  END);
+  RETURN GREATEST(v_cap,2);
+END;
+$tournament_seat_cap$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_seat_cap(uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_assign_tournament_player_seat_locked(
   p_tournament_id uuid,
   p_user_id uuid,
   p_table_id uuid,
@@ -694,9 +733,8 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public','pg_temp'
 SET statement_timeout TO '30s'
-AS $atomic_tournament_seat_assignment$
+AS $locked_tournament_seat_assignment$
 DECLARE
-  v_gate jsonb;
   v_t public.tournaments%ROWTYPE;
   v_tp public.tournament_players%ROWTYPE;
   v_table public.tables%ROWTYPE;
@@ -704,26 +742,24 @@ DECLARE
   v_destination public.table_seats%ROWTYPE;
   v_live_count integer;
   v_stack numeric;
+  v_cap integer;
   v_seat_id uuid;
   v_current_players integer;
   v_rows integer;
   v_assigned_at timestamptz;
+  v_expected_club_id uuid;
+  v_expected_horse_id uuid;
+  -- Fresh tournament-seat defaults. A rebuy that keeps its live chair keeps
+  -- its own persisted bank; only a newly inserted/revived occupant starts the
+  -- same 30-second/four-use state as a physical INSERT.
+  v_time_bank_uses integer:=4;
+  v_time_bank_seconds integer:=30;
   v_previous_money_path text:=current_setting('app.money_path',true);
 BEGIN
-  IF NOT public.fn_caller_is_engine() THEN
-    RAISE EXCEPTION 'fn_assign_tournament_player_seat_atomic requires service authority'
-      USING ERRCODE='28000';
-  END IF;
   IF p_tournament_id IS NULL OR p_user_id IS NULL OR p_table_id IS NULL
      OR p_seat_number IS NULL OR p_seat_number NOT BETWEEN 1 AND 10 THEN
     RAISE EXCEPTION 'tournament, player, table and legal seat are required'
       USING ERRCODE='22023';
-  END IF;
-
-  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
-    p_tournament_id,p_table_id,p_user_id);
-  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
-    RETURN v_gate;
   END IF;
 
   SELECT * INTO v_t FROM public.tournaments t
@@ -733,6 +769,7 @@ BEGIN
       'ok',false,'reason','tournament_not_assignable',
       'status',upper(COALESCE(v_t.status::text,'')));
   END IF;
+  v_cap:=public.fn_ca_tournament_seat_cap(p_tournament_id);
 
   -- Lock the beneficiary and every roster row claiming the requested
   -- coordinate before any table/seat row. This matches terminal settlement's
@@ -776,9 +813,23 @@ BEGIN
   IF lower(COALESCE(v_table.status::text,'')) NOT IN
        ('waiting','running','active')
      OR COALESCE(v_table.is_deleted,false)
-     OR p_seat_number>COALESCE(NULLIF(v_table.max_players,0),9) THEN
+     OR p_seat_number>LEAST(
+          v_cap,GREATEST(2,COALESCE(NULLIF(v_table.max_players,0),v_cap))) THEN
     RETURN jsonb_build_object('ok',false,'reason','table_not_assignable');
   END IF;
+
+  -- A physical row is reusable, but none of its former occupant's identity or
+  -- per-session state is. Resolve every derived value while the tournament,
+  -- roster and table rows are locked, then write the same complete shape for a
+  -- new row and a revived row. Passing the old club_id through the seat stamp
+  -- trigger would make it the preferred club and could attribute this entry to
+  -- the departed occupant.
+  v_expected_club_id:=public.fn_seat_club_for_user(
+    p_user_id,p_table_id,v_tp.club_id);
+  SELECT CASE WHEN COALESCE(p.is_horse,false) THEN p.id ELSE NULL END
+    INTO v_expected_horse_id
+    FROM public.profiles p
+   WHERE p.id=p_user_id;
 
   PERFORM s.id
     FROM public.table_seats s
@@ -851,19 +902,28 @@ BEGIN
   BEGIN
     IF v_destination.id IS NULL THEN
       INSERT INTO public.table_seats(
-        table_id,user_id,seat_number,stack,status,joined_at,left_at,
-        is_sitting_out,is_away,leave_pending,scheduled_leave_hands)
+        table_id,user_id,player_id,member_id,seat_number,stack,status,
+        joined_at,left_at,is_sitting_out,is_away,leave_pending,
+        scheduled_leave_hands,horse_id,auto_rebuy,time_bank_remaining,
+        time_bank_uses_remaining,club_id,sit_out_at,entry_hold,
+        entry_post_agreed)
       VALUES(
-        p_table_id,p_user_id,p_seat_number,v_stack,'active',v_assigned_at,NULL,
-        false,false,false,NULL)
+        p_table_id,p_user_id,NULL,NULL,p_seat_number,v_stack,'active',
+        v_assigned_at,NULL,false,false,false,NULL,v_expected_horse_id,false,
+        v_time_bank_seconds,v_time_bank_uses,v_expected_club_id,NULL,NULL,
+        false)
       RETURNING id INTO v_seat_id;
     ELSE
       UPDATE public.table_seats s
-         SET user_id=p_user_id,member_id=NULL,stack=v_stack,
+         SET user_id=p_user_id,player_id=NULL,member_id=NULL,stack=v_stack,
              status='active',joined_at=v_assigned_at,left_at=NULL,
              is_sitting_out=false,is_away=false,leave_pending=false,
              sit_out_at=NULL,scheduled_leave_hands=NULL,
-             entry_hold=NULL,entry_post_agreed=false,auto_rebuy=false
+             horse_id=v_expected_horse_id,entry_hold=NULL,
+             entry_post_agreed=false,auto_rebuy=false,
+             time_bank_remaining=v_time_bank_seconds,
+             time_bank_uses_remaining=v_time_bank_uses,
+             club_id=v_expected_club_id
        WHERE s.id=v_destination.id AND s.left_at IS NOT NULL
        RETURNING id INTO v_seat_id;
       IF v_seat_id IS NULL THEN
@@ -909,7 +969,20 @@ BEGIN
        SELECT 1 FROM public.table_seats s
         WHERE s.id=v_seat_id AND s.table_id=p_table_id
           AND s.user_id=p_user_id AND s.seat_number=p_seat_number
-          AND s.left_at IS NULL AND s.stack=v_stack)
+          AND s.left_at IS NULL AND s.stack=v_stack
+          AND s.player_id IS NULL AND s.member_id IS NULL
+          AND s.horse_id IS NOT DISTINCT FROM v_expected_horse_id
+          AND s.club_id IS NOT DISTINCT FROM v_expected_club_id
+          AND s.time_bank_remaining=v_time_bank_seconds
+          AND s.time_bank_uses_remaining=v_time_bank_uses
+          AND NOT COALESCE(s.is_sitting_out,false)
+          AND NOT COALESCE(s.is_away,false)
+          AND NOT COALESCE(s.leave_pending,false)
+          AND NOT COALESCE(s.auto_rebuy,false)
+          AND s.sit_out_at IS NULL
+          AND s.scheduled_leave_hands IS NULL
+          AND s.entry_hold IS NULL
+          AND NOT s.entry_post_agreed)
      OR NOT EXISTS(
        SELECT 1 FROM public.tournament_players tp
         WHERE tp.id=v_tp.id AND tp.status::text='playing'
@@ -929,12 +1002,164 @@ BEGIN
     'seat_number',p_seat_number,'stack',v_stack,
     'current_players',v_current_players,'assigned_at',v_assigned_at);
 END;
+$locked_tournament_seat_assignment$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_assign_tournament_player_seat_locked(
+  uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
+
+-- The externally callable manager door owns authorization and the complete
+-- global/maintenance/mission/launch/tournament prefix. The private core above
+-- cannot be invoked over PostgREST, while the rebuy authority below can reuse
+-- it without pretending that a browser JWT is the engine.
+CREATE OR REPLACE FUNCTION public.fn_assign_tournament_player_seat_atomic(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_table_id uuid,
+  p_seat_number integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $atomic_tournament_seat_assignment$
+DECLARE
+  v_gate jsonb;
+BEGIN
+  IF NOT public.fn_caller_is_engine() THEN
+    RAISE EXCEPTION 'fn_assign_tournament_player_seat_atomic requires service authority'
+      USING ERRCODE='28000';
+  END IF;
+  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+    p_tournament_id,p_table_id,p_user_id);
+  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+    RETURN v_gate;
+  END IF;
+  RETURN public.fn_ca_assign_tournament_player_seat_locked(
+    p_tournament_id,p_user_id,p_table_id,p_seat_number);
+END;
 $atomic_tournament_seat_assignment$;
 
 REVOKE ALL ON FUNCTION public.fn_assign_tournament_player_seat_atomic(
   uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_assign_tournament_player_seat_atomic(
   uuid,uuid,uuid,integer) TO service_role;
+
+-- Choose one physical chair while the caller already owns the terminal root
+-- and tournament row. Capacity creation, the chosen table row and any reused
+-- chair row remain locked until the caller either commits the matching paid
+-- seat or rolls its entire purchase back. This helper never assigns chips.
+CREATE OR REPLACE FUNCTION public.fn_ca_choose_tournament_seat_locked(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_preferred_table_id uuid DEFAULT NULL,
+  p_preferred_seat_number integer DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $choose_tournament_seat_locked$
+DECLARE
+  v_capacity jsonb;
+  v_table_id uuid;
+  v_tournament_cap integer;
+  v_cap integer;
+  v_seat_number integer;
+  v_seat_id uuid;
+BEGIN
+  IF p_tournament_id IS NULL OR p_user_id IS NULL THEN
+    RAISE EXCEPTION 'tournament and player are required for seat selection'
+      USING ERRCODE='22023';
+  END IF;
+
+  v_capacity:=public.fn_ensure_late_registration_capacity(
+    p_tournament_id,0);
+  IF COALESCE((v_capacity->>'ok')::boolean,false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'tournament capacity could not be established: %',
+      COALESCE(v_capacity->>'reason','unknown') USING ERRCODE='55000';
+  END IF;
+  v_tournament_cap:=public.fn_ca_tournament_seat_cap(p_tournament_id);
+
+  SELECT tb.id,
+         LEAST(v_tournament_cap,
+               GREATEST(2,COALESCE(NULLIF(tb.max_players,0),v_tournament_cap)))
+    INTO v_table_id,v_cap
+    FROM public.tables tb
+   WHERE tb.tournament_id=p_tournament_id
+     AND lower(COALESCE(tb.status,'')) IN ('running','waiting','active')
+     AND NOT COALESCE(tb.is_deleted,false)
+     AND EXISTS (
+       SELECT 1
+         FROM generate_series(
+           1,LEAST(v_tournament_cap,
+             GREATEST(2,COALESCE(NULLIF(tb.max_players,0),v_tournament_cap))))
+           AS legal(seat_number)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.table_seats occupied
+           WHERE occupied.table_id=tb.id
+             AND occupied.seat_number=legal.seat_number
+             AND occupied.left_at IS NULL))
+   ORDER BY (
+       SELECT count(*)
+         FROM generate_series(
+           1,LEAST(v_tournament_cap,
+             GREATEST(2,COALESCE(NULLIF(tb.max_players,0),v_tournament_cap))))
+           AS legal(seat_number)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.table_seats occupied
+           WHERE occupied.table_id=tb.id
+             AND occupied.seat_number=legal.seat_number
+             AND occupied.left_at IS NULL)) DESC,
+     (tb.id=p_preferred_table_id) DESC,
+     tb.created_at,tb.id
+   LIMIT 1
+   FOR UPDATE OF tb;
+  IF v_table_id IS NULL THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_SEAT_CAPACITY_UNAVAILABLE: no legal chair exists for tournament %',
+      p_tournament_id USING ERRCODE='55000';
+  END IF;
+
+  IF v_table_id=p_preferred_table_id
+     AND p_preferred_seat_number BETWEEN 1 AND v_cap
+     AND NOT EXISTS (
+       SELECT 1 FROM public.table_seats occupied
+        WHERE occupied.table_id=v_table_id
+          AND occupied.seat_number=p_preferred_seat_number
+          AND occupied.left_at IS NULL) THEN
+    v_seat_number:=p_preferred_seat_number;
+  ELSE
+    SELECT legal.seat_number INTO v_seat_number
+      FROM generate_series(1,v_cap) AS legal(seat_number)
+     WHERE NOT EXISTS (
+       SELECT 1 FROM public.table_seats occupied
+        WHERE occupied.table_id=v_table_id
+          AND occupied.seat_number=legal.seat_number
+          AND occupied.left_at IS NULL)
+     ORDER BY legal.seat_number
+     LIMIT 1;
+  END IF;
+  IF v_seat_number IS NULL THEN
+    RAISE EXCEPTION 'chosen tournament table lost its legal chair'
+      USING ERRCODE='40001';
+  END IF;
+
+  SELECT s.id INTO v_seat_id
+    FROM public.table_seats s
+   WHERE s.table_id=v_table_id AND s.seat_number=v_seat_number
+   FOR UPDATE;
+
+  RETURN jsonb_build_object(
+    'ok',true,'tournament_id',p_tournament_id,'user_id',p_user_id,
+    'table_id',v_table_id,'seat_number',v_seat_number,
+    'physical_seat_id',v_seat_id,'capacity',v_capacity);
+END;
+$choose_tournament_seat_locked$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_choose_tournament_seat_locked(
+  uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 
 -- A service-role PostgREST INSERT/UPDATE used to bypass fn_ca_guard_seat_creation
 -- before checking app.money_path. Caller identity is not lock provenance. This
@@ -1021,6 +1246,1156 @@ CREATE TRIGGER a0_tournament_live_seat_root_guard
 COMMENT ON FUNCTION
   public.fn_tournament_live_seat_acquisition_requires_authority() IS
   'Earliest BEFORE-seat fail-closed guard. A tournament seat create/revive or live identity/table change must enter with the terminal global transaction lock already held; raw service-role DML cannot bypass it.';
+
+-- The public rebuy name accumulated four nested wrappers. A later lifecycle
+-- wrapper accidentally skipped the only wrapper that closed the knockout
+-- generation, and the money core could commit a paid positive roster without
+-- a seat for a later manager sweep to discover. Preserve only the audited
+-- debit/pool/rake primitive under one explicit owner-only name. The canonical
+-- function below owns every gate, candidate, chair and receipt around it.
+DO $rename_tournament_chip_purchase_money_core$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)')
+       IS NULL THEN
+    IF to_regprocedure(
+         'public.process_tournament_rebuy_before_atomic_live_seat_lock(uuid,uuid,text,numeric,numeric,integer,text)')
+         IS NULL THEN
+      RAISE EXCEPTION 'audited tournament chip-purchase money core is missing';
+    END IF;
+    ALTER FUNCTION
+      public.process_tournament_rebuy_before_atomic_live_seat_lock(
+        uuid,uuid,text,numeric,numeric,integer,text)
+      RENAME TO fn_ca_process_tournament_chip_purchase_money_v1;
+  END IF;
+END;
+$rename_tournament_chip_purchase_money_core$;
+
+-- One owner-only time policy feeds both accepted-hand prompt creation and the
+-- purchase door. This closes the old split where level-bounded tournaments
+-- received a prompt but minute-bounded tournaments received NULL forever.
+CREATE OR REPLACE FUNCTION public.fn_ca_tournament_rebuy_window(
+  p_tournament_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $tournament_rebuy_window$
+DECLARE
+  v_t public.tournaments%ROWTYPE;
+  v_now timestamptz:=clock_timestamp();
+  v_level_cap integer;
+  v_timed_deadline timestamptz;
+  v_level_open boolean:=false;
+  v_timed_open boolean:=false;
+  v_addon_open boolean:=false;
+  v_prompt_until timestamptz;
+BEGIN
+  IF p_tournament_id IS NULL THEN
+    RAISE EXCEPTION 'tournament is required for rebuy-window policy'
+      USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO v_t
+    FROM public.tournaments t
+   WHERE t.id=p_tournament_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tournament not found' USING ERRCODE='P0002';
+  END IF;
+
+  IF upper(COALESCE(v_t.status::text,''))<>'RUNNING'
+     OR COALESCE(v_t.prize_pool_finalized,false)
+     OR NOT (COALESCE(v_t.is_rebuy,false) OR COALESCE(v_t.is_reentry,false)) THEN
+    RETURN jsonb_build_object(
+      'open',false,'prompt_until',NULL,'reason','tournament_not_rebuyable');
+  END IF;
+
+  v_addon_open:=COALESCE(v_t.add_on_available,false)
+    AND COALESCE(v_t.addon_period_triggered,false)
+    AND v_t.addon_period_started_at IS NOT NULL
+    AND v_t.addon_period_ends_at IS NOT NULL
+    AND v_now>=v_t.addon_period_started_at
+    AND v_now<v_t.addon_period_ends_at;
+  v_level_cap:=COALESCE(
+    NULLIF(v_t.rebuy_levels,0),NULLIF(v_t.late_reg_levels,0),0);
+  v_level_open:=v_level_cap>0
+    AND v_t.current_level IS NOT NULL
+    AND v_t.current_level<v_level_cap;
+  IF v_level_cap<=0 AND COALESCE(v_t.late_reg_mins,0)>0
+     AND v_t.started_at IS NOT NULL THEN
+    v_timed_deadline:=v_t.started_at+
+      make_interval(mins=>v_t.late_reg_mins);
+    v_timed_open:=v_now<v_timed_deadline;
+  END IF;
+
+  IF NOT (v_level_open OR v_timed_open OR v_addon_open) THEN
+    RETURN jsonb_build_object(
+      'open',false,'prompt_until',NULL,'reason','rebuy_window_closed',
+      'level_cap',v_level_cap,'addon_open',v_addon_open);
+  END IF;
+  v_prompt_until:=LEAST(
+    v_now+interval '30 seconds',
+    GREATEST(
+      CASE WHEN v_level_open THEN v_now+interval '30 seconds' END,
+      CASE WHEN v_timed_open THEN v_timed_deadline END,
+      CASE WHEN v_addon_open THEN v_t.addon_period_ends_at END));
+  RETURN jsonb_build_object(
+    'open',true,'prompt_until',v_prompt_until,'reason','open',
+    'level_cap',v_level_cap,'level_open',v_level_open,
+    'timed_open',v_timed_open,'addon_open',v_addon_open);
+END;
+$tournament_rebuy_window$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_rebuy_window(uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+-- Re-emit the private money primitive instead of carrying the renamed body's
+-- ordinal key, millisecond duplicate window, home-club substitution and legacy
+-- price quote. Every supported call now arrives from the canonical authority
+-- below with one exact token and the entry's persisted funding club. The raw
+-- function remains owner-only and can commit only as part of that surrounding
+-- debit + generation + seat + receipt transaction.
+CREATE OR REPLACE FUNCTION public.fn_ca_process_tournament_chip_purchase_money_v1(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_rebuy_type text,
+  p_cost numeric,
+  p_chips numeric,
+  p_current_level integer,
+  p_client_token text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $tournament_chip_purchase_money$
+DECLARE
+  v_t record;
+  v_p record;
+  v_balance numeric;
+  v_ratio numeric;
+  v_is_bounty boolean;
+  v_bounty_head numeric;
+  v_base numeric;
+  v_fee numeric;
+  v_total numeric;
+  v_add integer;
+  v_new_chips integer;
+  v_seat record;
+  v_key text;
+  v_inserted integer;
+  v_cat text;
+  v_club uuid;
+  v_stack_after numeric;
+  v_expected numeric;
+  v_fee_ratio numeric;
+  v_was_seated boolean:=false;
+  v_rows integer;
+  v_led_cat text;
+  v_led_cp text;
+  v_led_ent text;
+  v_led_tid text;
+BEGIN
+  IF NOT (COALESCE(auth.role(),'service_role')='service_role')
+     AND (auth.uid() IS NULL OR auth.uid()<>p_user_id) THEN
+    RAISE EXCEPTION
+      'process_tournament_rebuy: caller may only transact for themselves'
+      USING ERRCODE='42501';
+  END IF;
+  IF p_rebuy_type NOT IN ('rebuy','reentry','addon') THEN
+    RAISE EXCEPTION 'Invalid rebuy type: %',p_rebuy_type
+      USING ERRCODE='22023';
+  END IF;
+  IF p_client_token IS NULL OR length(btrim(p_client_token))=0
+     OR length(btrim(p_client_token))>128 THEN
+    RAISE EXCEPTION 'exact tournament chip-purchase token is required'
+      USING ERRCODE='22023';
+  END IF;
+
+  SELECT id,name,club_id,status,buy_in_amount,buy_in_fee,starting_chips,
+         is_rebuy,is_reentry,add_on_available,addon_period_triggered,
+         rebuy_cost,rebuy_chips,rebuy_levels,late_reg_levels,max_rebuys,
+         max_reentries,addon_cost,addon_chips,addon_levels,current_level,
+         prize_pool,is_bounty,is_pko,is_mystery_bounty,bounty_amount
+    INTO v_t
+    FROM public.tournaments
+   WHERE id=p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tournament not found' USING ERRCODE='P0002';
+  END IF;
+  IF v_t.status NOT IN ('RUNNING','REGISTERING','ANNOUNCED') THEN
+    RAISE EXCEPTION 'Tournament is not accepting chip purchases (status %)',v_t.status;
+  END IF;
+
+  SELECT id,chips,status,prize,rebuys,add_on,table_id,club_id
+    INTO v_p
+    FROM public.tournament_players
+   WHERE tournament_id=p_tournament_id AND user_id=p_user_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Player not registered in this tournament';
+  END IF;
+  IF v_p.status='eliminated' AND COALESCE(v_p.prize,0)>0 THEN
+    RAISE EXCEPTION
+      'Finishing Place Already Paid - A Rebuy Cannot Resurrect A Settled Result';
+  END IF;
+  v_club:=v_p.club_id;
+  IF v_club IS NULL THEN
+    RAISE EXCEPTION
+      'Tournament entry funding club is missing; refusing a substituted wallet'
+      USING ERRCODE='P0404';
+  END IF;
+
+  v_cat:=CASE WHEN p_rebuy_type='addon' THEN 'addon' ELSE 'rebuy' END;
+  v_key:=CASE WHEN p_rebuy_type='addon'
+    THEN 'tourney:'||p_tournament_id::text||':addon:'||p_user_id::text
+    ELSE 'tourney:'||p_tournament_id::text||':'||p_rebuy_type||':'||
+         p_user_id::text||':tok:'||btrim(p_client_token)
+  END;
+
+  IF p_rebuy_type='addon' THEN
+    PERFORM 1
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE s.user_id=p_user_id AND s.left_at IS NULL
+       AND tb.tournament_id=p_tournament_id
+     LIMIT 1;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION
+        'No Live Seat For This % - Aborting So No Charge Is Made',p_rebuy_type;
+    END IF;
+    IF NOT COALESCE(v_t.add_on_available,false) THEN
+      RAISE EXCEPTION 'Add-ons are not offered in this tournament';
+    END IF;
+    IF COALESCE(v_p.add_on,false) THEN
+      RAISE EXCEPTION 'Add-on already taken';
+    END IF;
+    v_base:=COALESCE(NULLIF(v_t.addon_cost,0),v_t.buy_in_amount,0);
+    v_add:=COALESCE(NULLIF(v_t.addon_chips,0),v_t.starting_chips,0)::integer;
+  ELSE
+    IF p_rebuy_type='rebuy' AND NOT COALESCE(v_t.is_rebuy,false) THEN
+      RAISE EXCEPTION 'Rebuys are not offered in this tournament';
+    END IF;
+    IF p_rebuy_type='reentry' AND NOT COALESCE(v_t.is_reentry,false) THEN
+      RAISE EXCEPTION 'Re-entries are not offered in this tournament';
+    END IF;
+    IF p_rebuy_type='rebuy' AND v_t.max_rebuys IS NOT NULL
+       AND COALESCE(v_p.rebuys,0)>=v_t.max_rebuys THEN
+      RAISE EXCEPTION 'Rebuy limit reached (% of %)',v_p.rebuys,v_t.max_rebuys;
+    END IF;
+    IF p_rebuy_type='reentry' AND v_t.max_reentries IS NOT NULL
+       AND COALESCE(v_p.rebuys,0)>=v_t.max_reentries THEN
+      RAISE EXCEPTION
+        'Re-entry limit reached (% of %)',v_p.rebuys,v_t.max_reentries;
+    END IF;
+    IF p_rebuy_type='rebuy'
+       AND COALESCE(v_p.chips,0)>COALESCE(v_t.starting_chips,0) THEN
+      RAISE EXCEPTION 'Stack too high for a rebuy';
+    END IF;
+    v_base:=COALESCE(NULLIF(v_t.rebuy_cost,0),v_t.buy_in_amount,0);
+    v_add:=COALESCE(NULLIF(v_t.rebuy_chips,0),v_t.starting_chips,0)::integer;
+  END IF;
+
+  v_fee_ratio:=CASE
+    WHEN COALESCE(v_t.buy_in_amount,0)+COALESCE(v_t.buy_in_fee,0)>0
+         AND COALESCE(v_t.buy_in_fee,0)>0
+      THEN v_t.buy_in_fee/(v_t.buy_in_amount+v_t.buy_in_fee)
+    ELSE 0.1
+  END;
+  v_ratio:=CASE WHEN p_rebuy_type='addon' THEN 0 ELSE v_fee_ratio END;
+  v_total:=round(v_base::numeric);
+  -- The total stays a whole chip, while the house cut is floored to cents.
+  -- Fractional fees are deliberate: a 1-chip entry pays 0.10 and a 5-chip
+  -- entry pays 0.50 without ever exceeding the ten-percent ceiling.
+  v_fee:=CASE WHEN v_ratio>0 AND v_total>0
+    THEN LEAST(trunc(v_total*v_ratio*100+0.000001)/100,
+               trunc(v_total*0.1*100+0.000001)/100)
+    ELSE 0
+  END;
+  v_base:=round(v_total-v_fee,2);
+  v_is_bounty:=COALESCE(v_t.is_bounty,false)
+    OR COALESCE(v_t.is_pko,false)
+    OR COALESCE(v_t.is_mystery_bounty,false);
+  IF v_is_bounty AND p_rebuy_type<>'addon' THEN
+    v_bounty_head:=LEAST(
+      GREATEST(0,round(COALESCE(v_t.bounty_amount,0),2)),v_base);
+    v_base:=v_base-v_bounty_head;
+  ELSE
+    v_bounty_head:=0;
+  END IF;
+  IF p_cost IS NOT NULL AND abs(p_cost-v_total)>0.01 THEN
+    RAISE EXCEPTION
+      'Price mismatch: client quoted %, server computed %',p_cost,v_total
+      USING ERRCODE='22023';
+  END IF;
+  IF v_add<=0 OR v_total<0 OR v_fee<0 OR v_base<0 OR v_bounty_head<0
+     OR round(v_base+v_bounty_head+v_fee,2)<>round(v_total,2) THEN
+    RAISE EXCEPTION 'Tournament chip-purchase quote does not conserve'
+      USING ERRCODE='P0404';
+  END IF;
+
+  INSERT INTO public.wallet_credit_idempotency(key,user_id,amount)
+  VALUES(v_key,p_user_id,v_total)
+  ON CONFLICT(key) DO NOTHING;
+  GET DIAGNOSTICS v_inserted=ROW_COUNT;
+  IF v_inserted=0 THEN
+    RETURN jsonb_build_object(
+      'success',true,'idempotent',true,'new_stack',v_p.chips,
+      'rebuy_type',p_rebuy_type);
+  END IF;
+
+  PERFORM public.fn_ensure_club_wallet(p_user_id,v_club);
+  SELECT chip_balance INTO v_balance
+    FROM public.club_members
+   WHERE user_id=p_user_id AND club_id=v_club
+   FOR UPDATE;
+  IF v_balance IS NULL OR v_balance<v_total THEN
+    RAISE EXCEPTION 'Insufficient club chips: need %, have %',
+      v_total,COALESCE(v_balance,0);
+  END IF;
+
+  v_led_cat:=current_setting('app.ledger_category',true);
+  v_led_cp:=current_setting('app.ledger_counterparty',true);
+  v_led_ent:=current_setting('app.ledger_counterparty_entity',true);
+  v_led_tid:=current_setting('app.ledger_tournament',true);
+  PERFORM set_config('app.ledger_category',v_cat,true);
+  PERFORM set_config('app.ledger_counterparty','prize_liability',true);
+  PERFORM set_config(
+    'app.ledger_counterparty_entity',p_tournament_id::text,true);
+  PERFORM set_config('app.ledger_tournament',p_tournament_id::text,true);
+  UPDATE public.club_members
+     SET chip_balance=chip_balance-v_total,updated_at=now()
+   WHERE user_id=p_user_id AND club_id=v_club;
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION 'Exact tournament funding wallet changed during debit'
+      USING ERRCODE='40001';
+  END IF;
+  PERFORM set_config('app.ledger_category',COALESCE(v_led_cat,''),true);
+  PERFORM set_config('app.ledger_counterparty',COALESCE(v_led_cp,''),true);
+  PERFORM set_config(
+    'app.ledger_counterparty_entity',COALESCE(v_led_ent,''),true);
+  PERFORM set_config('app.ledger_tournament',COALESCE(v_led_tid,''),true);
+
+  IF p_rebuy_type='reentry' THEN
+    UPDATE public.tournament_players
+       SET chips=v_add,status='playing',eliminated_at=NULL,position=NULL,
+           rebuys=COALESCE(rebuys,0)+1
+     WHERE tournament_id=p_tournament_id AND user_id=p_user_id
+     RETURNING chips INTO v_new_chips;
+  ELSIF p_rebuy_type='addon' THEN
+    UPDATE public.tournament_players
+       SET chips=COALESCE(chips,0)+v_add,add_on=true
+     WHERE tournament_id=p_tournament_id AND user_id=p_user_id
+     RETURNING chips INTO v_new_chips;
+  ELSE
+    UPDATE public.tournament_players
+       SET chips=COALESCE(chips,0)+v_add,status='playing',
+           eliminated_at=NULL,position=NULL,
+           rebuys=COALESCE(rebuys,0)+1
+     WHERE tournament_id=p_tournament_id AND user_id=p_user_id
+     RETURNING chips INTO v_new_chips;
+  END IF;
+  IF v_new_chips IS NULL THEN
+    RAISE EXCEPTION 'Locked tournament roster changed during chip grant'
+      USING ERRCODE='40001';
+  END IF;
+
+  IF v_bounty_head>0 THEN
+    UPDATE public.tournament_players
+       SET current_bounty=CASE WHEN p_rebuy_type='reentry'
+         THEN v_bounty_head
+         ELSE COALESCE(current_bounty,0)+v_bounty_head END
+     WHERE tournament_id=p_tournament_id AND user_id=p_user_id;
+  END IF;
+
+  SELECT s.id,s.stack INTO v_seat
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE s.user_id=p_user_id AND s.left_at IS NULL
+     AND tb.tournament_id=p_tournament_id
+   ORDER BY (tb.status IS DISTINCT FROM 'closed') DESC,
+            s.joined_at DESC NULLS LAST,s.id DESC
+   LIMIT 1;
+  IF FOUND THEN
+    v_was_seated:=true;
+    UPDATE public.table_seats
+       SET stack=CASE WHEN p_rebuy_type='reentry'
+         THEN v_add ELSE COALESCE(stack,0)+v_add END
+     WHERE id=v_seat.id
+     RETURNING stack INTO v_stack_after;
+    v_expected:=CASE WHEN p_rebuy_type='reentry'
+      THEN v_add ELSE COALESCE(v_seat.stack,0)+v_add END;
+    IF v_stack_after IS NULL OR v_stack_after<>v_expected THEN
+      RAISE EXCEPTION
+        'Chip Grant Did Not Land: % Expected Stack %, Seat % Holds % - Aborting So No Charge Is Made',
+        p_rebuy_type,v_expected,v_seat.id,v_stack_after;
+    END IF;
+    UPDATE public.tournament_players
+       SET chips=(SELECT stack FROM public.table_seats WHERE id=v_seat.id)::integer
+     WHERE tournament_id=p_tournament_id AND user_id=p_user_id
+     RETURNING chips INTO v_new_chips;
+  ELSIF p_rebuy_type='addon' THEN
+    RAISE EXCEPTION
+      'Seat Disappeared During % - Aborting So No Charge Is Made',p_rebuy_type;
+  END IF;
+
+  UPDATE public.tournaments
+     SET prize_pool=COALESCE(prize_pool,0)+v_base,
+         bounty_pool=COALESCE(bounty_pool,0)+v_bounty_head
+   WHERE id=p_tournament_id;
+  GET DIAGNOSTICS v_rows=ROW_COUNT;
+  IF v_rows<>1 THEN
+    RAISE EXCEPTION 'Tournament vanished during chip-purchase pool booking'
+      USING ERRCODE='40001';
+  END IF;
+
+  IF v_fee>0 AND v_t.club_id IS NOT NULL THEN
+    INSERT INTO public.rake_records(
+      hand_id,table_id,club_id,rake_amount,pot_size,num_players,
+      bbj_contribution,is_tournament,tournament_id,source,metadata)
+    VALUES(
+      NULL,NULL,v_t.club_id,v_fee,v_fee,1,0,true,p_tournament_id,
+      'process_tournament_rebuy',jsonb_build_object(
+        'kind','tournament_'||p_rebuy_type||'_fee','user_id',p_user_id,
+        'entry_club_id',v_club));
+    UPDATE public.tournaments
+       SET total_rake=COALESCE(total_rake,0)+v_fee
+     WHERE id=p_tournament_id;
+  END IF;
+
+  INSERT INTO public.wallet_transactions(
+    user_id,wallet_type,type,amount,category,description,
+    related_entity_id,balance_after)
+  VALUES(
+    p_user_id,'PLAYER','debit',v_total,v_cat,
+    'Tournament '||p_rebuy_type||': '||COALESCE(v_t.name,'tournament')||
+      ' ('||v_base||' prize + '||v_bounty_head||' bounty + '||v_fee||
+      ' fee) [club wallet]',
+    p_tournament_id,v_balance-v_total);
+
+  RETURN jsonb_build_object(
+    'success',true,'new_stack',v_new_chips,'rebuy_type',p_rebuy_type,
+    'chips_added',v_add,'cost',v_total,'fee',v_fee,'seated',v_was_seated,
+    'bounty_head_funded',v_bounty_head);
+END;
+$tournament_chip_purchase_money$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_ca_process_tournament_chip_purchase_money_v1(
+    uuid,uuid,text,numeric,numeric,integer,text)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+-- The engine allocates every hand from global_hand_number_seq, so hand_number
+-- is the immutable, globally monotonic chronology across all tournament tables.
+-- Keep table_id in exact evidence joins, while this covering path resolves one
+-- player's latest generation without scanning the tournament.
+CREATE INDEX IF NOT EXISTS idx_tournament_knockout_candidates_user_hand
+  ON public.tournament_knockout_candidates(
+    tournament_id,eliminated_user_id,hand_number DESC,id DESC);
+
+-- A purchase may reopen only the latest accepted zero-stack hand for this
+-- player. A candidate row by itself is not authority: bind it to both halves
+-- of the accepted-hand commit, while deliberately not comparing the internal
+-- settlement request key to hand_atomic_commits.hand_id (those ids have
+-- different meanings). This helper is read-only and owner-only; the caller
+-- re-runs it after locking tournament, roster and every candidate row.
+CREATE OR REPLACE FUNCTION
+  public.fn_ca_latest_committed_knockout_candidate(
+    p_tournament_id uuid,
+    p_user_id uuid
+  ) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $latest_committed_knockout_candidate$
+DECLARE
+  v_table_id uuid;
+  v_hand_number bigint;
+  v_candidate_id uuid;
+  v_candidate_hand_id uuid;
+  v_settlement_hand_id uuid;
+  v_settlement_hand_text text;
+  v_atomic_stack text;
+  v_settlement_stack text;
+BEGIN
+  IF p_tournament_id IS NULL OR p_user_id IS NULL THEN
+    RAISE EXCEPTION 'tournament and player are required for knockout evidence'
+      USING ERRCODE='22023';
+  END IF;
+
+  SELECT c.id,c.table_id,c.hand_number,c.hand_id
+    INTO v_candidate_id,v_table_id,v_hand_number,v_candidate_hand_id
+    FROM public.tournament_knockout_candidates c
+   WHERE c.tournament_id=p_tournament_id
+     AND c.eliminated_user_id=p_user_id
+     AND c.stack_after=0
+   ORDER BY c.hand_number DESC,c.id DESC
+   LIMIT 1;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'REBUY_KNOCKOUT_CANDIDATE_REQUIRED: no zero-stack generation names this player'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT a.stack_result->>'hand_id',
+         a.stack_result->'written'->>p_user_id::text
+    INTO v_settlement_hand_text,v_atomic_stack
+    FROM public.hand_atomic_commits a
+   WHERE a.table_id=v_table_id
+     AND a.hand_number=v_hand_number
+     AND a.hand_id=v_candidate_hand_id;
+  -- fn_ca_settle_hand_stacks_absolute derives this id from md5(... )::uuid.
+  -- PostgreSQL UUIDs are canonical hexadecimal but that deterministic hash is
+  -- not required to carry RFC version/variant nibbles.
+  IF NOT FOUND
+     OR COALESCE(v_settlement_hand_text,'')
+          !~*'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR COALESCE(v_atomic_stack,'')!~'^-?[0-9]+([.][0-9]+)?$' THEN
+    RAISE EXCEPTION
+      'REBUY_ATOMIC_HAND_REQUIRED: candidate is not the exact accepted zero hand'
+      USING ERRCODE='P0404';
+  END IF;
+  IF v_atomic_stack::numeric<>0 THEN
+    RAISE EXCEPTION
+      'REBUY_ATOMIC_HAND_REQUIRED: candidate hand did not commit a zero stack'
+      USING ERRCODE='P0404';
+  END IF;
+  v_settlement_hand_id:=v_settlement_hand_text::uuid;
+
+  SELECT k.result->'written'->>p_user_id::text
+    INTO v_settlement_stack
+    FROM public.settlement_idempotency_keys k
+   WHERE k.table_id=v_table_id
+     AND k.hand_id=v_settlement_hand_id
+     AND k.status='succeeded'
+     AND k.completed_at IS NOT NULL
+     AND k.result->>'table_id'=v_table_id::text
+     AND COALESCE(k.result->>'hand_number','')~'^[0-9]+$'
+     AND (k.result->>'hand_number')::bigint=v_hand_number;
+  IF NOT FOUND
+     OR COALESCE(v_settlement_stack,'')!~'^-?[0-9]+([.][0-9]+)?$' THEN
+    RAISE EXCEPTION
+      'REBUY_SETTLEMENT_RECEIPT_REQUIRED: atomic zero hand has no exact successful settlement'
+      USING ERRCODE='P0404';
+  END IF;
+  IF v_settlement_stack::numeric<>0 THEN
+    RAISE EXCEPTION
+      'REBUY_SETTLEMENT_RECEIPT_REQUIRED: exact settlement did not commit a zero stack'
+      USING ERRCODE='P0404';
+  END IF;
+
+  RETURN v_candidate_id;
+END;
+$latest_committed_knockout_candidate$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_rebuy_type text,
+  p_cost numeric,
+  p_chips numeric,
+  p_current_level integer DEFAULT NULL,
+  p_client_token text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+SET statement_timeout TO '30s'
+AS $atomic_tournament_chip_purchase$
+DECLARE
+  v_type text:=lower(btrim(COALESCE(p_rebuy_type,'')));
+  v_effective_token text;
+  v_receipt_key text;
+  v_request jsonb;
+  v_existing_request jsonb;
+  v_existing_response jsonb;
+  v_claim jsonb;
+  v_response jsonb;
+  v_recorded jsonb;
+  v_gate jsonb;
+  v_choice jsonb;
+  v_assignment jsonb;
+  v_t public.tournaments%ROWTYPE;
+  v_player public.tournament_players%ROWTYPE;
+  v_candidate_peek public.tournament_knockout_candidates%ROWTYPE;
+  v_candidate public.tournament_knockout_candidates%ROWTYPE;
+  v_live public.table_seats%ROWTYPE;
+  v_final_seat public.table_seats%ROWTYPE;
+  v_table_id uuid;
+  v_seat_number integer;
+  v_live_count integer;
+  v_pending_count integer;
+  v_rebuy_window jsonb;
+  v_rows integer;
+  v_wake_id bigint;
+  v_expected_club_id uuid;
+  v_expected_horse_id uuid;
+  v_previous_money_path text:=current_setting('app.money_path',true);
+BEGIN
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION
+      'SESSION_REVOKED: this session is signed out - sign in again'
+      USING ERRCODE='28000';
+  END IF;
+  IF p_tournament_id IS NULL OR p_user_id IS NULL THEN
+    RAISE EXCEPTION 'tournament and player are required'
+      USING ERRCODE='22023';
+  END IF;
+  IF v_type NOT IN ('rebuy','reentry','addon') THEN
+    RAISE EXCEPTION 'Invalid rebuy type: %',p_rebuy_type
+      USING ERRCODE='22023';
+  END IF;
+  IF COALESCE(auth.role(),'service_role')<>'service_role'
+     AND (auth.uid() IS NULL OR auth.uid()<>p_user_id) THEN
+    RAISE EXCEPTION
+      'process_tournament_rebuy: caller may only transact for themselves'
+      USING ERRCODE='42501';
+  END IF;
+  IF p_client_token IS NOT NULL
+     AND (length(btrim(p_client_token))=0
+          OR length(btrim(p_client_token))>128) THEN
+    RAISE EXCEPTION 'rebuy prompt token is invalid'
+      USING ERRCODE='22023';
+  END IF;
+  IF v_type<>'addon'
+     AND COALESCE(auth.role(),'service_role')<>'service_role'
+     AND p_client_token IS NULL THEN
+    RAISE EXCEPTION 'a rebuy prompt token is required'
+      USING ERRCODE='22023';
+  END IF;
+
+  -- Every chip purchase can change the tournament pool, even an add-on that
+  -- does not acquire a new chair. Join terminal settlement and maintenance at
+  -- their common root before claiming a receipt; an already-committed receipt
+  -- can still replay after either boundary without rerunning money.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM pg_advisory_xact_lock_shared(530090,1);
+
+  IF v_type='addon' THEN
+    -- Add-ons never create a chair, but their committed receipt must remain
+    -- replayable across the maintenance boundary.
+    v_receipt_key:='tourney:'||p_tournament_id::text||':addon:'||
+      p_user_id::text;
+    v_request:=jsonb_build_object(
+      'version','v1','tournament_id',p_tournament_id,'user_id',p_user_id,
+      'rebuy_type',v_type,'idempotency_key',v_receipt_key);
+  ELSIF p_client_token IS NOT NULL
+        AND length(btrim(p_client_token))>0 THEN
+    v_effective_token:=btrim(p_client_token);
+    v_receipt_key:='tourney:'||p_tournament_id::text||':'||v_type||':'||
+      p_user_id::text||':tok:'||v_effective_token;
+  END IF;
+
+  -- An explicit prompt token names its historical purchase independently of
+  -- whichever hand is current now. Read that immutable receipt first, so a
+  -- delayed transport retry after later play returns the original answer
+  -- instead of trying to bind the token to a newer knockout generation.
+  IF v_receipt_key IS NOT NULL THEN
+    SELECT r.request,r.response
+      INTO v_existing_request,v_existing_response
+      FROM public.entry_purchase_idempotency_receipts r
+     WHERE r.key_domain='tournament_chip_purchase'
+       AND r.idempotency_key=v_receipt_key;
+    IF FOUND THEN
+      IF v_existing_response IS NULL
+         OR v_existing_request->>'version'<>'v1'
+         OR v_existing_request->>'tournament_id'<>p_tournament_id::text
+         OR v_existing_request->>'user_id'<>p_user_id::text
+         OR v_existing_request->>'rebuy_type'<>v_type
+         OR v_existing_request->>'idempotency_key'<>v_receipt_key
+         OR v_existing_response->>'success'<>'true'
+         OR v_existing_response->>'seated'<>'true'
+         OR v_existing_response->>'atomic_tournament_chip_purchase'<>'v1'
+         OR v_existing_response->>'rebuy_type'<>v_type
+         OR v_existing_response->>'table_id' IS NULL
+         OR v_existing_response->>'seat_id' IS NULL
+         OR v_existing_response->>'stack' IS NULL
+         OR (v_type='addon' AND v_existing_request ? 'candidate_id')
+         OR (v_type<>'addon' AND (
+           v_existing_request->>'candidate_id' IS NULL
+           OR v_existing_response->>'candidate_id'<>
+              v_existing_request->>'candidate_id'
+           OR v_existing_response->>'candidate_state'<>'rebought')) THEN
+        RAISE EXCEPTION
+          'IDEMPOTENCY_RECEIPT_UNBOUND: historical response is not an atomic tournament purchase proof'
+          USING ERRCODE='55000';
+      END IF;
+      RETURN v_existing_response;
+    END IF;
+  END IF;
+
+  IF v_type<>'addon' THEN
+    -- A rebuy can acquire/revive a chair, so it joins the same global root as
+    -- every registration, move and terminal settlement before observing a
+    -- candidate. The nonlocking peek derives only an immutable identity; the
+    -- exact latest row is re-read under tournament/candidate locks below.
+    SELECT * INTO v_candidate_peek
+      FROM public.tournament_knockout_candidates c
+     WHERE c.id=public.fn_ca_latest_committed_knockout_candidate(
+       p_tournament_id,p_user_id);
+    IF v_candidate_peek.id IS NULL THEN
+      RAISE EXCEPTION
+        'REBUY_KNOCKOUT_GENERATION_REQUIRED: no immutable bust authorizes this purchase'
+        USING ERRCODE='55000';
+    END IF;
+    IF v_effective_token IS NULL THEN
+      v_effective_token:='candidate:'||v_candidate_peek.id::text;
+      v_receipt_key:='tourney:'||p_tournament_id::text||':'||v_type||':'||
+        p_user_id::text||':tok:'||v_effective_token;
+    END IF;
+    v_request:=jsonb_build_object(
+      'version','v1','tournament_id',p_tournament_id,'user_id',p_user_id,
+      'rebuy_type',v_type,'candidate_id',v_candidate_peek.id,
+      'idempotency_key',v_receipt_key);
+  END IF;
+
+  v_claim:=public.fn_claim_entry_purchase_receipt(
+    'tournament_chip_purchase',v_receipt_key,v_request);
+  IF COALESCE((v_claim->>'claimed')::boolean,false) IS NOT TRUE THEN
+    v_response:=v_claim->'response';
+    IF v_response IS NULL
+       OR v_response->>'atomic_tournament_chip_purchase'<>'v1'
+       OR v_response->>'success'<>'true'
+       OR v_response->>'seated'<>'true'
+       OR v_response->>'rebuy_type'<>v_type
+       OR v_response->>'table_id' IS NULL
+       OR v_response->>'seat_id' IS NULL
+       OR v_response->>'stack' IS NULL
+       OR (v_type<>'addon' AND
+           (v_response->>'candidate_id'<>v_candidate_peek.id::text
+            OR v_response->>'candidate_state'<>'rebought')) THEN
+      RAISE EXCEPTION
+        'IDEMPOTENCY_RECEIPT_UNBOUND: historical response is not an atomic tournament purchase proof'
+        USING ERRCODE='55000';
+    END IF;
+    RETURN v_response;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.wallet_credit_idempotency k
+     WHERE k.key=v_receipt_key) THEN
+    RAISE EXCEPTION
+      'IDEMPOTENCY_RECEIPT_UNBOUND: chip key predates its exact transaction receipt'
+      USING ERRCODE='55000';
+  END IF;
+
+  IF v_type='addon' THEN
+    IF public.fn_entry_purchases_frozen() THEN
+      RAISE EXCEPTION
+        'PLATFORM_FROZEN: scheduled maintenance has closed add-ons; no chips moved'
+        USING ERRCODE='55006';
+    END IF;
+    SELECT s.table_id INTO v_table_id
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_user_id AND s.left_at IS NULL
+     ORDER BY s.id
+     LIMIT 1;
+    IF v_table_id IS NULL THEN
+      RAISE EXCEPTION 'Add-on requires one live tournament table'
+        USING ERRCODE='55000';
+    END IF;
+    -- The accepted-hand boundary owns this same table key. During a rolling
+    -- database cutover it prevents the old hand body from settling over a paid
+    -- grant; after 14534, the hand also takes the terminal root shared before
+    -- this key, preserving root -> table -> rows on both paths.
+    PERFORM pg_advisory_xact_lock(
+      hashtextextended('atomic-table:'||v_table_id::text,0));
+    SELECT * INTO v_t FROM public.tournaments t
+     WHERE t.id=p_tournament_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Tournament not found'; END IF;
+    IF COALESCE(v_t.prize_pool_finalized,false)
+       OR upper(COALESCE(v_t.status::text,'')) NOT IN ('REGISTERING','RUNNING')
+       OR NOT COALESCE(v_t.add_on_available,false)
+       OR NOT COALESCE(v_t.addon_period_triggered,false)
+       OR v_t.addon_period_started_at IS NULL
+       OR v_t.addon_period_ends_at IS NULL
+       OR clock_timestamp()<v_t.addon_period_started_at
+       OR clock_timestamp()>=v_t.addon_period_ends_at THEN
+      RAISE EXCEPTION 'Add-On Period Is Closed Or The Prize Pool Is Already Finalized'
+        USING ERRCODE='55000';
+    END IF;
+    SELECT * INTO v_player FROM public.tournament_players tp
+     WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id
+     FOR UPDATE;
+    IF NOT FOUND OR v_player.status::text<>'playing'
+       OR COALESCE(v_player.chips,0)<=0 OR COALESCE(v_player.add_on,false) THEN
+      RAISE EXCEPTION 'Only one live positive tournament entry may take an add-on'
+        USING ERRCODE='55000';
+    END IF;
+    PERFORM s.id
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL
+     ORDER BY s.id FOR UPDATE OF s;
+    SELECT count(*)::integer INTO v_live_count
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL;
+    IF v_live_count<>1 THEN
+      RAISE EXCEPTION 'Add-on requires exactly one locked live tournament seat'
+        USING ERRCODE='55000';
+    END IF;
+    SELECT s.* INTO v_live
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL FOR UPDATE OF s;
+    IF v_live.table_id IS DISTINCT FROM v_table_id THEN
+      RAISE EXCEPTION 'Add-on live table changed after its atomic-table lock'
+        USING ERRCODE='40001';
+    END IF;
+
+    v_response:=public.fn_ca_process_tournament_chip_purchase_money_v1(
+      p_tournament_id,p_user_id,v_type,p_cost,p_chips,v_t.current_level,
+      v_receipt_key);
+    IF COALESCE((v_response->>'success')::boolean,false) IS NOT TRUE
+       OR COALESCE((v_response->>'idempotent')::boolean,false) THEN
+      RAISE EXCEPTION 'tournament add-on money core did not commit a new purchase'
+        USING ERRCODE='P0404';
+    END IF;
+    SELECT * INTO v_player FROM public.tournament_players tp
+     WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id;
+    SELECT s.* INTO v_final_seat FROM public.table_seats s
+     WHERE s.id=v_live.id;
+    IF v_player.status::text<>'playing' OR NOT COALESCE(v_player.add_on,false)
+       OR v_final_seat.left_at IS NOT NULL
+       OR v_final_seat.user_id IS DISTINCT FROM p_user_id
+       OR v_final_seat.stack IS DISTINCT FROM v_player.chips::numeric
+       OR v_final_seat.stack<=0 OR v_final_seat.stack<>trunc(v_final_seat.stack) THEN
+      RAISE EXCEPTION 'atomic add-on seat/roster proof is not exact'
+        USING ERRCODE='P0404';
+    END IF;
+    v_wake_id:=public.fn_emit_tournament_manager_wake(p_tournament_id,'addon');
+    v_response:=v_response||jsonb_build_object(
+      'success',true,'seated',true,'atomic_tournament_chip_purchase','v1',
+      'rebuy_type',v_type,'seat_id',v_final_seat.id,
+      'table_id',v_final_seat.table_id,
+      'seat_number',v_final_seat.seat_number,'stack',v_final_seat.stack,
+      'manager_wake_id',v_wake_id);
+  ELSE
+    v_table_id:=v_candidate_peek.table_id;
+    PERFORM pg_advisory_xact_lock(
+      hashtextextended('atomic-table:'||v_table_id::text,0));
+    v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
+      p_tournament_id,NULL,p_user_id);
+    IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'tournament rebuy root refused: %',
+        COALESCE(v_gate->>'reason','unknown') USING ERRCODE='55000';
+    END IF;
+    SELECT * INTO v_t FROM public.tournaments t
+     WHERE t.id=p_tournament_id;
+    IF COALESCE(v_t.prize_pool_finalized,false)
+       OR upper(COALESCE(v_t.status::text,''))<>'RUNNING' THEN
+      RAISE EXCEPTION 'Tournament is not accepting rebuys or re-entries'
+        USING ERRCODE='55000';
+    END IF;
+    v_rebuy_window:=public.fn_ca_tournament_rebuy_window(p_tournament_id);
+    IF COALESCE((v_rebuy_window->>'open')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'Rebuy period is closed: %',
+        COALESCE(v_rebuy_window->>'reason','unknown') USING ERRCODE='55000';
+    END IF;
+
+    SELECT * INTO v_player FROM public.tournament_players tp
+     WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id
+     FOR UPDATE;
+    IF NOT FOUND OR v_player.status::text NOT IN ('playing','eliminated')
+       OR COALESCE(v_player.chips,0)>0 OR COALESCE(v_player.prize,0)>0 THEN
+      RAISE EXCEPTION 'Only the exact unpaid zero-stack entry may rebuy'
+        USING ERRCODE='55000';
+    END IF;
+
+    PERFORM c.id FROM public.tournament_knockout_candidates c
+     WHERE c.tournament_id=p_tournament_id
+       AND c.eliminated_user_id=p_user_id
+     ORDER BY c.hand_number,c.id FOR UPDATE;
+    SELECT count(*) FILTER (WHERE c.state='pending')::integer
+      INTO v_pending_count
+      FROM public.tournament_knockout_candidates c
+     WHERE c.tournament_id=p_tournament_id
+       AND c.eliminated_user_id=p_user_id;
+    SELECT * INTO v_candidate
+      FROM public.tournament_knockout_candidates c
+     WHERE c.id=public.fn_ca_latest_committed_knockout_candidate(
+       p_tournament_id,p_user_id);
+    IF v_candidate.id IS DISTINCT FROM v_candidate_peek.id
+       OR v_candidate.state NOT IN ('pending','eliminated')
+       OR (v_type='rebuy' AND v_candidate.state<>'pending')
+       OR (v_candidate.state='pending' AND
+           (v_pending_count<>1 OR v_player.status::text<>'playing'))
+       OR (v_candidate.state='eliminated' AND
+           (v_pending_count<>0 OR v_player.status::text<>'eliminated'))
+       OR EXISTS (
+         SELECT 1 FROM public.tournament_knockout_candidates prior
+          WHERE prior.tournament_id=p_tournament_id
+            AND prior.eliminated_user_id=p_user_id
+            AND (prior.hand_number,prior.id)<
+                (v_candidate.hand_number,v_candidate.id)
+            AND prior.state<>'rebought') THEN
+      RAISE EXCEPTION 'UNRESOLVED_KNOCKOUT_GENERATION_CHAIN'
+        USING ERRCODE='P0404';
+    END IF;
+    IF v_candidate.state='pending'
+       AND (v_candidate.rebuy_prompt_until IS NULL
+            OR v_candidate.rebuy_prompt_until<=clock_timestamp()) THEN
+      RAISE EXCEPTION 'Rebuy or re-entry decision window has closed'
+        USING ERRCODE='55000';
+    END IF;
+    IF (COALESCE(v_t.is_bounty,false) OR COALESCE(v_t.is_pko,false)
+        OR COALESCE(v_t.is_mystery_bounty,false))
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_bounty_obligations o
+          WHERE o.tournament_id=p_tournament_id
+            AND o.eliminated_user_id=p_user_id
+            AND o.hand_number=v_candidate.hand_number
+            AND o.hand_id=v_candidate.hand_id
+            AND o.state='settled'
+            AND public.fn_bounty_obligation_has_complete_marker(o.id)) THEN
+      RAISE EXCEPTION
+        'Bounty Settlement Pending - Rebuy Or Re-Entry Cannot Replace This Entry Generation Yet'
+        USING ERRCODE='55000';
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM public.tournament_obligations o
+       WHERE o.tournament_id=p_tournament_id AND o.user_id=p_user_id
+         AND o.kind='bubble_protection' AND o.amount_paid=o.amount_owed
+         AND o.amount_paid>0 AND o.settled_at IS NOT NULL) THEN
+      RAISE EXCEPTION
+        'Bubble Protection Already Paid - This Result Cannot Be Resurrected'
+        USING ERRCODE='55000';
+    END IF;
+
+    PERFORM s.id
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL
+     ORDER BY s.id FOR UPDATE OF s;
+    SELECT count(*)::integer INTO v_live_count
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL;
+    IF v_live_count>1 THEN
+      RAISE EXCEPTION 'tournament rebuy found multiple live seats'
+        USING ERRCODE='P0404';
+    ELSIF v_live_count=1 THEN
+      SELECT s.* INTO v_live
+        FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+       WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+         AND s.left_at IS NULL FOR UPDATE OF s;
+      IF v_live.id IS DISTINCT FROM v_candidate.seat_id
+         OR v_live.table_id IS DISTINCT FROM v_candidate.table_id
+         OR v_live.joined_at IS DISTINCT FROM v_candidate.seat_joined_at
+         OR COALESCE(v_live.stack,0)<>0 THEN
+        RAISE EXCEPTION 'knockout generation has a different live seat'
+          USING ERRCODE='P0404';
+      END IF;
+      v_table_id:=v_live.table_id;
+      v_seat_number:=v_live.seat_number;
+    END IF;
+
+    v_response:=public.fn_ca_process_tournament_chip_purchase_money_v1(
+      p_tournament_id,p_user_id,v_type,p_cost,p_chips,v_t.current_level,
+      v_effective_token);
+    IF COALESCE((v_response->>'success')::boolean,false) IS NOT TRUE
+       OR COALESCE((v_response->>'idempotent')::boolean,false) THEN
+      RAISE EXCEPTION 'tournament rebuy money core did not commit a new purchase'
+        USING ERRCODE='P0404';
+    END IF;
+
+    -- A seatless eliminated entry is not counted as active capacity until the
+    -- money core promotes it. Choose the chair only after that in-transaction
+    -- promotion; any capacity/assignment failure below aborts the debit and
+    -- every pool leg with it, so a purchase can never commit seatless.
+    IF v_live_count=0 THEN
+      v_choice:=public.fn_ca_choose_tournament_seat_locked(
+        p_tournament_id,p_user_id,v_candidate.table_id,
+        (SELECT s.seat_number FROM public.table_seats s
+          WHERE s.id=v_candidate.seat_id));
+      v_table_id:=(v_choice->>'table_id')::uuid;
+      v_seat_number:=(v_choice->>'seat_number')::integer;
+    END IF;
+
+    UPDATE public.tournament_knockout_candidates c
+       SET state='rebought',resolved_at=clock_timestamp()
+     WHERE c.id=v_candidate.id AND c.state=v_candidate.state
+       AND c.state IN ('pending','eliminated');
+    GET DIAGNOSTICS v_rows=ROW_COUNT;
+    IF v_rows<>1 THEN
+      RAISE EXCEPTION 'exact knockout generation did not close with its purchase'
+        USING ERRCODE='40001';
+    END IF;
+    UPDATE public.tournament_players tp
+       SET rebuy_prompt_until=NULL
+     WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id;
+
+    -- An old-pod zero seat can still be live during the rolling window. The
+    -- money core fills that locked chair; advancing joined_at begins the new
+    -- paid entry generation so a later same-chair bust has a new identity. A
+    -- new paid generation is also playable state: clear only lifecycle flags
+    -- owned by the expired generation while preserving this player's persisted
+    -- time bank and auto-rebuy preference. Naming user_id deliberately reruns
+    -- the canonical horse and club stamp triggers for the same occupant.
+    IF v_live_count=1 THEN
+      v_expected_club_id:=public.fn_seat_club_for_user(
+        p_user_id,v_live.table_id,v_player.club_id);
+      SELECT CASE WHEN COALESCE(p.is_horse,false) THEN p.id ELSE NULL END
+        INTO v_expected_horse_id
+        FROM public.profiles p
+       WHERE p.id=p_user_id;
+      UPDATE public.table_seats s
+         SET user_id=p_user_id,player_id=NULL,member_id=NULL,
+             joined_at=clock_timestamp(),status='active',
+             is_sitting_out=false,is_away=false,leave_pending=false,
+             sit_out_at=NULL,scheduled_leave_hands=NULL,
+             horse_id=v_expected_horse_id,club_id=v_expected_club_id,
+             entry_hold=NULL,entry_post_agreed=false
+       WHERE s.id=v_live.id AND s.left_at IS NULL
+         AND s.user_id=p_user_id
+         AND s.joined_at=v_candidate.seat_joined_at;
+      GET DIAGNOSTICS v_rows=ROW_COUNT;
+      IF v_rows<>1 THEN
+        RAISE EXCEPTION 'rebuy could not advance the live seat generation'
+          USING ERRCODE='40001';
+      END IF;
+    END IF;
+
+    v_assignment:=public.fn_ca_assign_tournament_player_seat_locked(
+      p_tournament_id,p_user_id,v_table_id,v_seat_number);
+    IF COALESCE((v_assignment->>'ok')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'paid rebuy could not commit its chosen seat: %',
+        COALESCE(v_assignment->>'reason','unknown') USING ERRCODE='55000';
+    END IF;
+
+    PERFORM s.id
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL
+     ORDER BY s.id FOR UPDATE OF s;
+    SELECT count(*)::integer INTO v_live_count
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL;
+    SELECT s.* INTO v_final_seat
+      FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id AND s.user_id=p_user_id
+       AND s.left_at IS NULL;
+    SELECT * INTO v_player FROM public.tournament_players tp
+     WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id;
+    v_expected_club_id:=public.fn_seat_club_for_user(
+      p_user_id,v_final_seat.table_id,v_player.club_id);
+    SELECT CASE WHEN COALESCE(p.is_horse,false) THEN p.id ELSE NULL END
+      INTO v_expected_horse_id
+      FROM public.profiles p
+     WHERE p.id=p_user_id;
+    IF v_live_count<>1 OR v_final_seat.id IS NULL
+       OR v_final_seat.stack IS NULL OR v_final_seat.stack<=0
+       OR v_final_seat.stack<>trunc(v_final_seat.stack)
+       OR v_final_seat.stack IS DISTINCT FROM v_player.chips::numeric
+       OR v_final_seat.status::text<>'active'
+       OR COALESCE(v_final_seat.is_sitting_out,false)
+       OR COALESCE(v_final_seat.is_away,false)
+       OR COALESCE(v_final_seat.leave_pending,false)
+       OR v_final_seat.sit_out_at IS NOT NULL
+       OR v_final_seat.scheduled_leave_hands IS NOT NULL
+       OR v_final_seat.entry_hold IS NOT NULL
+       OR v_final_seat.entry_post_agreed
+       OR v_final_seat.player_id IS NOT NULL
+       OR v_final_seat.member_id IS NOT NULL
+       OR v_final_seat.horse_id IS DISTINCT FROM v_expected_horse_id
+       OR v_final_seat.club_id IS DISTINCT FROM v_expected_club_id
+       OR v_player.status::text<>'playing'
+       OR v_player.table_id IS DISTINCT FROM v_final_seat.table_id
+       OR v_player.seat_number IS DISTINCT FROM v_final_seat.seat_number
+       OR NOT EXISTS (
+         SELECT 1 FROM public.tournament_knockout_candidates c
+          WHERE c.id=v_candidate.id AND c.state='rebought')
+       OR EXISTS (
+         SELECT 1 FROM public.tournament_knockout_candidates c
+          WHERE c.tournament_id=p_tournament_id
+            AND c.eliminated_user_id=p_user_id AND c.state='pending')
+       OR NOT EXISTS (
+         SELECT 1 FROM public.tables tb
+          WHERE tb.id=v_final_seat.table_id
+            AND tb.current_players=(
+              SELECT count(*) FROM public.table_seats s
+               WHERE s.table_id=tb.id AND s.left_at IS NULL)) THEN
+      RAISE EXCEPTION 'atomic rebuy candidate/seat/roster proof is not exact'
+        USING ERRCODE='P0404';
+    END IF;
+    v_wake_id:=public.fn_emit_tournament_manager_wake(p_tournament_id,v_type);
+    v_response:=v_response||jsonb_build_object(
+      'success',true,'seated',true,'atomic_tournament_chip_purchase','v1',
+      'rebuy_type',v_type,'candidate_id',v_candidate.id,
+      'candidate_state','rebought','seat_id',v_final_seat.id,
+      'table_id',v_final_seat.table_id,
+      'seat_number',v_final_seat.seat_number,'stack',v_final_seat.stack,
+      'manager_wake_id',v_wake_id);
+  END IF;
+
+  v_recorded:=public.fn_record_entry_purchase_receipt(
+    'tournament_chip_purchase',v_receipt_key,v_request,v_response);
+  IF v_recorded IS DISTINCT FROM v_response THEN
+    RAISE EXCEPTION 'atomic tournament chip-purchase receipt changed at commit'
+      USING ERRCODE='P0404';
+  END IF;
+  PERFORM set_config(
+    'app.money_path',COALESCE(v_previous_money_path,''),true);
+  RETURN v_recorded;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM set_config(
+    'app.money_path',COALESCE(v_previous_money_path,''),true);
+  RAISE;
+END;
+$atomic_tournament_chip_purchase$;
+
+REVOKE ALL ON FUNCTION public.process_tournament_rebuy(
+  uuid,uuid,text,numeric,numeric,integer,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.process_tournament_rebuy(
+  uuid,uuid,text,numeric,numeric,integer,text) TO authenticated,service_role;
+
+DO $retire_split_tournament_chip_purchase_wrappers$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE n.nspname='public'
+       AND p.proname NOT IN (
+         'process_tournament_rebuy',
+         'process_tournament_rebuy_before_maintenance_announcement_gate',
+         'process_tournament_rebuy_before_atomic_pool_gate',
+         'process_tournament_rebuy_before_bounty_guard_20260907',
+         'process_tournament_rebuy_before_one_minute_addon',
+         'fn_ca_process_tournament_chip_purchase_money_v1')
+       AND (p.prosrc LIKE '%process_tournament_rebuy_before_maintenance_announcement_gate(%'
+         OR p.prosrc LIKE '%process_tournament_rebuy_before_atomic_pool_gate(%'
+         OR p.prosrc LIKE '%process_tournament_rebuy_before_bounty_guard_20260907(%'
+         OR p.prosrc LIKE '%process_tournament_rebuy_before_one_minute_addon(%'
+         OR p.prosrc LIKE '%fn_after_tournament_rebuy(%')) THEN
+    RAISE EXCEPTION 'an outside function still calls a retired rebuy wrapper';
+  END IF;
+END;
+$retire_split_tournament_chip_purchase_wrappers$;
+
+DROP FUNCTION
+  public.process_tournament_rebuy_before_maintenance_announcement_gate(
+    uuid,uuid,text,numeric,numeric,integer,text) RESTRICT;
+DROP FUNCTION public.process_tournament_rebuy_before_atomic_pool_gate(
+  uuid,uuid,text,numeric,numeric,integer,text) RESTRICT;
+DROP FUNCTION public.process_tournament_rebuy_before_bounty_guard_20260907(
+  uuid,uuid,text,numeric,numeric,integer,text) RESTRICT;
+DROP FUNCTION public.process_tournament_rebuy_before_one_minute_addon(
+  uuid,uuid,text,numeric,numeric,integer,text) RESTRICT;
+DROP FUNCTION public.fn_after_tournament_rebuy(uuid,uuid,text) RESTRICT;
+
+COMMENT ON FUNCTION public.process_tournament_rebuy(
+  uuid,uuid,text,numeric,numeric,integer,text) IS
+  'Sole rebuy, re-entry and add-on authority. A reported rebuy commits its exact knockout generation, wallet debit, pool/rake legs, positive live seat, roster/table mirrors, manager wake and immutable response receipt in one transaction.';
 
 -- The third paid seat is the entry authority. This is still a private helper
 -- because fn_sync_seat_first_player_count invokes it inside the transaction
@@ -2598,6 +3973,24 @@ COMMENT ON FUNCTION public.fn_spin_book_entry(uuid) IS
 INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES
   ('fn_assign_tournament_player_seat_atomic','approved',
    'Service-only tournament seat+roster+table-count assignment. It derives the locked roster stack and enters through the terminal/mission/launch parent lock root; callers cannot choose chips.'),
+  ('fn_ca_assign_tournament_player_seat_locked','system',
+   'Owner-only implementation beneath the canonical assignment and tournament chip-purchase roots. It commits one locked seat, roster mirror and exact table count or rolls the transaction back.'),
+  ('process_tournament_rebuy','approved',
+   'Sole authenticated/service tournament rebuy, re-entry and add-on authority. One transaction binds its knockout generation, debit, pool/rake, positive seat, mirrors, wake and immutable response receipt.'),
+  ('fn_ca_process_tournament_chip_purchase_money_v1','system',
+   'Owner-only debit/pool/rake primitive beneath process_tournament_rebuy. It has no PostgREST ACL and the canonical root supplies a mandatory per-generation key.'),
+  ('fn_ca_tournament_rebuy_window','system',
+   'Owner-only level/minute/add-on-window policy shared by accepted-hand prompt creation and the canonical rebuy authority.'),
+  ('process_tournament_rebuy_before_maintenance_announcement_gate','retired',
+   'Dropped after the consolidated tournament chip-purchase authority installed; no executable compatibility path remains.'),
+  ('process_tournament_rebuy_before_atomic_pool_gate','retired',
+   'Dropped after the consolidated tournament chip-purchase authority installed; no executable compatibility path remains.'),
+  ('process_tournament_rebuy_before_bounty_guard_20260907','retired',
+   'Dropped after the consolidated tournament chip-purchase authority installed; no executable compatibility path remains.'),
+  ('process_tournament_rebuy_before_one_minute_addon','retired',
+   'Dropped after the consolidated tournament chip-purchase authority installed; no executable compatibility path remains.'),
+  ('fn_after_tournament_rebuy','retired',
+   'Dropped. The sole purchase transaction now closes its exact knockout generation directly before it can commit.'),
   ('fn_spin_draw_and_settle','approved',
    'Sole service-role Spin draw and reserve settlement authority; one locked transaction and exact receipt.'),
   ('fn_spin_draw_multiplier','legacy',
@@ -2727,20 +4120,17 @@ BEGIN
   SELECT prosrc INTO v_source FROM pg_proc
    WHERE oid=
      'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)'::regprocedure;
-  IF position('public.fn_ca_lock_tournament_seat_acquisition(' IN v_source)=0
-     OR position('FROM public.tournament_players tp' IN v_source)=0
-     OR position('FROM public.tables tb' IN v_source)=0
-     OR position('FROM public.table_seats s' IN v_source)=0
+  IF position('public.fn_caller_is_engine()' IN v_source)=0
+     OR position('public.fn_ca_lock_tournament_seat_acquisition(' IN v_source)=0
+     OR position('public.fn_ca_assign_tournament_player_seat_locked(' IN v_source)=0
+     OR position('public.fn_caller_is_engine()' IN v_source)
+          > position('public.fn_ca_lock_tournament_seat_acquisition(' IN v_source)
      OR position('public.fn_ca_lock_tournament_seat_acquisition(' IN v_source)
-          > position('FROM public.tournament_players tp' IN v_source)
-     OR position('FROM public.tournament_players tp' IN v_source)
-          > position('FROM public.tables tb' IN v_source)
-     OR position('FROM public.tables tb' IN v_source)
-          > position('FROM public.table_seats s' IN v_source)
-     OR v_source NOT LIKE '%UPDATE public.tournament_players tp%'
-     OR v_source NOT LIKE '%UPDATE public.tables tb%'
-     OR v_source NOT LIKE '%INSERT INTO public.table_seats%'
-     OR v_source NOT LIKE '%v_stack:=COALESCE(v_t.starting_chips,0)%'
+          > position('public.fn_ca_assign_tournament_player_seat_locked(' IN v_source)
+     OR v_source LIKE '%INSERT INTO public.table_seats%'
+     OR v_source LIKE '%UPDATE public.table_seats%'
+     OR v_source LIKE '%UPDATE public.tournament_players%'
+     OR v_source LIKE '%UPDATE public.tables%'
      OR has_function_privilege(
        'anon',
        'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)',
@@ -2753,7 +4143,193 @@ BEGIN
        'service_role',
        'public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)',
        'EXECUTE') THEN
-    RAISE EXCEPTION 'atomic tournament seat assignment lost its lock/write/ACL contract';
+    RAISE EXCEPTION 'atomic tournament seat assignment wrapper lost its root/private-core/ACL contract';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_ca_tournament_seat_cap(uuid)'::regprocedure;
+  IF position('WHEN v_format=''spin''' IN v_source)=0
+     OR position('THEN 3' IN v_source)=0
+     OR position('WHEN v_format=''sng''' IN v_source)=0
+     OR position('NULLIF(v_t.max_players,0),6' IN v_source)=0
+     OR position('NULLIF(v_t.table_size,0),9' IN v_source)=0
+     OR position('WHEN ''plo5'' THEN 9' IN v_source)=0
+     OR position('WHEN ''plo6'' THEN 7' IN v_source)=0
+     OR position('RETURN GREATEST(v_cap,2)' IN v_source)=0
+     OR has_function_privilege(
+       'service_role','public.fn_ca_tournament_seat_cap(uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'owner-only tournament seat cap lost its format/deck contract';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)'::regprocedure;
+  IF position('FROM public.tournaments t' IN v_source)=0
+     OR position('FROM public.tournament_players tp' IN v_source)=0
+     OR position('FROM public.tables tb' IN v_source)=0
+     OR position('FROM public.table_seats s' IN v_source)=0
+     OR position('FROM public.tournaments t' IN v_source)
+          > position('FROM public.tournament_players tp' IN v_source)
+     OR position('FROM public.tournament_players tp' IN v_source)
+          > position('FROM public.tables tb' IN v_source)
+     OR position('FROM public.tables tb' IN v_source)
+          > position('FROM public.table_seats s' IN v_source)
+     OR v_source NOT LIKE '%UPDATE public.tournament_players tp%'
+     OR v_source NOT LIKE '%UPDATE public.tables tb%'
+     OR v_source NOT LIKE '%INSERT INTO public.table_seats%'
+     OR v_source NOT LIKE '%v_stack:=COALESCE(v_t.starting_chips,0)%'
+     OR v_source NOT LIKE '%atomic tournament seat assignment final proof is not exact%'
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'owner-only tournament assignment core lost its lock/write/proof contract';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_ca_choose_tournament_seat_locked(uuid,uuid,uuid,integer)'::regprocedure;
+  IF position('public.fn_ensure_late_registration_capacity(' IN v_source)=0
+     OR position('FROM public.tables tb' IN v_source)=0
+     OR position('FOR UPDATE OF tb' IN v_source)=0
+     OR position('FROM public.table_seats s' IN v_source)=0
+     OR v_source NOT LIKE '%TOURNAMENT_SEAT_CAPACITY_UNAVAILABLE%'
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_ca_choose_tournament_seat_locked(uuid,uuid,uuid,integer)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'owner-only tournament seat chooser lost its capacity/lock contract';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)'::regprocedure;
+  IF position('FROM public.settlement_idempotency_keys k' IN v_source)=0
+     OR position('FROM public.tournament_knockout_candidates c' IN v_source)=0
+     OR position('FROM public.hand_atomic_commits a' IN v_source)=0
+     OR position('ORDER BY c.hand_number DESC,c.id DESC' IN v_source)=0
+     OR position('a.table_id=v_table_id' IN v_source)=0
+     OR position('a.hand_number=v_hand_number' IN v_source)=0
+     OR position('a.hand_id=v_candidate_hand_id' IN v_source)=0
+     OR position('a.stack_result->>''hand_id''' IN v_source)=0
+     OR position('k.table_id=v_table_id' IN v_source)=0
+     OR position('k.hand_id=v_settlement_hand_id' IN v_source)=0
+     OR position('k.status=''succeeded''' IN v_source)=0
+     OR position('k.completed_at IS NOT NULL' IN v_source)=0
+     OR position('k.result->>''table_id''=v_table_id::text' IN v_source)=0
+     OR position('REBUY_ATOMIC_HAND_REQUIRED' IN v_source)=0
+     OR position('REBUY_SETTLEMENT_RECEIPT_REQUIRED' IN v_source)=0
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'owner-only rebuy evidence resolver lost exact accepted-hand proof';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid='public.fn_ca_tournament_rebuy_window(uuid)'::regprocedure;
+  IF position('NULLIF(v_t.rebuy_levels,0)' IN v_source)=0
+     OR position('NULLIF(v_t.late_reg_levels,0)' IN v_source)=0
+     OR position('make_interval(mins=>v_t.late_reg_mins)' IN v_source)=0
+     OR position('v_t.addon_period_started_at' IN v_source)=0
+     OR position('v_t.addon_period_ends_at' IN v_source)=0
+     OR position('v_prompt_until:=LEAST' IN v_source)=0
+     OR has_function_privilege(
+       'service_role','public.fn_ca_tournament_rebuy_window(uuid)','EXECUTE') THEN
+    RAISE EXCEPTION 'owner-only rebuy-window policy lost level/minute/add-on parity';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure;
+  IF position('p_client_token IS NULL OR length(btrim(p_client_token))=0'
+       IN v_source)=0
+     OR position('length(btrim(p_client_token))>128' IN v_source)=0
+     OR position('v_club:=v_p.club_id' IN v_source)=0
+     OR position('refusing a substituted wallet' IN v_source)=0
+     OR position('v_was_seated:=true' IN v_source)=0
+     OR position('''seated'',v_was_seated' IN v_source)=0
+     OR position('trunc(v_total*v_ratio*100+0.000001)/100' IN v_source)=0
+     OR position('trunc(v_total*0.1*100+0.000001)/100' IN v_source)=0
+     OR position(
+          'round(COALESCE(v_t.bounty_amount,0),2)' IN v_source)=0
+     OR v_source ~* 'GREATEST[[:space:]]*\([[:space:]]*1[[:space:]]*,[[:space:]]*round[[:space:]]*\([[:space:]]*v_total'
+     OR v_source ~* 'double_submit_collapsed|1500 milliseconds|:\#|v_legacy|fn_player_home_club'
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION
+      'private tournament money core kept a legacy token, wallet or quote substitute';
+  END IF;
+
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid=
+     'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure;
+  IF position('public.fn_caller_session_is_live()' IN v_source)=0
+     OR position('SESSION_REVOKED' IN v_source)=0
+     OR position('ca:tournament-terminal-settlement:v1' IN v_source)=0
+     OR position('pg_advisory_xact_lock_shared(530090,1)' IN v_source)=0
+     OR position('public.fn_claim_entry_purchase_receipt(' IN v_source)=0
+     OR position('public.fn_entry_purchases_frozen()' IN v_source)=0
+     OR position('public.fn_record_entry_purchase_receipt(' IN v_source)=0
+     OR position('FROM public.entry_purchase_idempotency_receipts r' IN v_source)=0
+     OR position('public.fn_ca_process_tournament_chip_purchase_money_v1(' IN v_source)=0
+     OR (length(v_source)-length(replace(v_source,'atomic-table:','')))
+          /length('atomic-table:')<>2
+     OR position('v_table_id:=v_candidate_peek.table_id' IN v_source)=0
+     OR position('Add-on live table changed after its atomic-table lock' IN v_source)=0
+     OR position('public.fn_ca_latest_committed_knockout_candidate(' IN v_source)=0
+     OR position('public.fn_ca_choose_tournament_seat_locked(' IN v_source)=0
+     OR position('public.fn_ca_assign_tournament_player_seat_locked(' IN v_source)=0
+     OR position('UPDATE public.tournament_knockout_candidates c' IN v_source)=0
+     OR position(
+          'v_final_seat.club_id IS DISTINCT FROM v_expected_club_id'
+          IN v_source)=0
+     OR position('public.fn_emit_tournament_manager_wake(' IN v_source)=0
+     OR position('atomic_tournament_chip_purchase' IN v_source)=0
+     OR position('FROM public.entry_purchase_idempotency_receipts r' IN v_source)
+          > position('public.fn_ca_latest_committed_knockout_candidate(' IN v_source)
+     OR position('public.fn_claim_entry_purchase_receipt(' IN v_source)
+          > position('public.fn_entry_purchases_frozen()' IN v_source)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_indexes i
+        WHERE i.schemaname='public'
+          AND i.indexname='idx_tournament_knockout_candidates_user_hand'
+          AND i.indexdef LIKE '%(tournament_id, eliminated_user_id, hand_number DESC, id DESC)%')
+     OR v_source LIKE '%double_submit_collapsed%'
+     OR v_source LIKE '%:#%'
+     OR v_source LIKE '%process_tournament_rebuy_before_%'
+     OR has_function_privilege(
+       'anon',
+       'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)',
+       'EXECUTE')
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)',
+       'EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'canonical tournament chip purchase lost atomic generation/seat/receipt authority';
+  END IF;
+  IF to_regprocedure(
+       'public.process_tournament_rebuy_before_maintenance_announcement_gate(uuid,uuid,text,numeric,numeric,integer,text)') IS NOT NULL
+     OR to_regprocedure(
+       'public.process_tournament_rebuy_before_atomic_pool_gate(uuid,uuid,text,numeric,numeric,integer,text)') IS NOT NULL
+     OR to_regprocedure(
+       'public.process_tournament_rebuy_before_bounty_guard_20260907(uuid,uuid,text,numeric,numeric,integer,text)') IS NOT NULL
+     OR to_regprocedure(
+       'public.process_tournament_rebuy_before_one_minute_addon(uuid,uuid,text,numeric,numeric,integer,text)') IS NOT NULL
+     OR to_regprocedure(
+       'public.fn_after_tournament_rebuy(uuid,uuid,text)') IS NOT NULL THEN
+    RAISE EXCEPTION 'a retired tournament chip-purchase wrapper or after-hook remains installed';
   END IF;
 
   SELECT prosrc INTO v_source FROM pg_proc

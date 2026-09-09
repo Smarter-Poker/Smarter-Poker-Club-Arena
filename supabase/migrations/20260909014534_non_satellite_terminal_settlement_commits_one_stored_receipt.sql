@@ -42,6 +42,10 @@ BEGIN
      OR to_regprocedure(
           'public.fn_mystery_bounty_reserve_unguarded_20260907(uuid,uuid,jsonb,uuid,text,uuid,integer)') IS NULL
      OR to_regprocedure(
+          'public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)') IS NULL
+     OR to_regprocedure(
+          'public.fn_ca_tournament_rebuy_window(uuid)') IS NULL
+     OR to_regprocedure(
           'public.fn_settle_satellite_finish_atomic_before_maintenance_gate(uuid,text)') IS NULL THEN
     RAISE EXCEPTION
       'terminal settlement requires every audited cash, bounty, mystery, satellite and rake authority';
@@ -66,6 +70,69 @@ BEGIN
   END IF;
 END;
 $terminal_prerequisites$;
+
+-- New hands receive one monotonically increasing number from
+-- global_hand_number_seq. Preserve that global identity while every lookup
+-- also proves table_id and history hand_id; the extra scope makes malformed
+-- or legacy evidence fail closed rather than trusting the number alone.
+CREATE INDEX IF NOT EXISTS idx_tournament_knockout_candidates_user_hand
+  ON public.tournament_knockout_candidates
+    (tournament_id,eliminated_user_id,hand_number DESC,id DESC);
+CREATE INDEX IF NOT EXISTS idx_tournament_bounty_obligations_user_hand
+  ON public.tournament_bounty_obligations
+    (tournament_id,eliminated_user_id,hand_number DESC);
+
+DO $knockout_generation_key_proof$
+BEGIN
+  IF NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.tournament_knockout_candidates'::regclass
+          AND c.conname=
+            'tournament_knockout_candidate_tournament_id_eliminated_user_key'
+          AND pg_get_constraintdef(c.oid)=
+            'UNIQUE (tournament_id, eliminated_user_id, seat_joined_at)')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.tournament_bounty_obligations'::regclass
+          AND c.conname=
+            'tournament_bounty_obligations_tournament_id_eliminated_user_key'
+          AND pg_get_constraintdef(c.oid)=
+            'UNIQUE (tournament_id, eliminated_user_id, seat_joined_at)')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.hand_atomic_commits'::regclass
+          AND c.conname='hand_atomic_commits_hand_number_key'
+          AND pg_get_constraintdef(c.oid)='UNIQUE (hand_number)')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.hand_projection_outbox'::regclass
+          AND c.conname='hand_projection_outbox_hand_number_key'
+          AND pg_get_constraintdef(c.oid)='UNIQUE (hand_number)')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.hand_atomic_commits'::regclass
+          AND c.contype='p'
+          AND pg_get_constraintdef(c.oid)=
+            'PRIMARY KEY (table_id, hand_number)')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.tournament_knockout_candidates'::regclass
+          AND c.conname=
+            'tournament_knockout_candidate_tournament_id_hand_number_eli_key'
+          AND pg_get_constraintdef(c.oid)=
+            'UNIQUE (tournament_id, hand_number, eliminated_user_id)')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.tournament_bounty_obligations'::regclass
+          AND c.conname=
+            'tournament_bounty_obligations_tournament_id_hand_number_eli_key'
+          AND pg_get_constraintdef(c.oid)=
+            'UNIQUE (tournament_id, hand_number, eliminated_user_id)') THEN
+    RAISE EXCEPTION
+      'accepted hands or knockout generations lost global-hand and entry-generation identity';
+  END IF;
+END;
+$knockout_generation_key_proof$;
 
 -- A live split-pot bounty can credit several claimant wallets. The historical
 -- function locks its event first but then pays claimants in weight order, not
@@ -2875,8 +2942,7 @@ DECLARE
   v_departed jsonb := '[]'::jsonb;   -- [{user_id, delta, club_id}]
   v_dep record; v_dep_club uuid; v_dep_after numeric; v_dep_key text; v_dep_claimed integer;
   -- chip-std Lane F (2026-09-02): tournament conservation (absolute mode)
-  v_tournament_id uuid; v_prev_settled timestamptz; v_grants jsonb := '{}'::jsonb;
-  v_explained numeric := 0;
+  v_tournament_id uuid;
   -- The hand result is also the durable final-stack boundary for a tournament.
   v_tournament_status text;
   v_payload_stack_count integer := 0;
@@ -3162,45 +3228,14 @@ BEGIN
       -- ═══ TOURNAMENT CHIPS ARE CONSERVED HAND BY HAND (chip-std Lane F, 2026-09-02) ═══
       -- Absolute mode only. A tournament table has no rake and no BBJ drop,
       -- so the named seats must sum, after this write, to exactly what they
-      -- summed to before it. A shortfall that exactly matches rebuy /
-      -- re-entry / add-on grants landed on the named seats since this
-      -- table's previous settlement is the engine having dealt from a stack
-      -- that did not yet hold the grant: the grant is re-added to that seat
-      -- so the write conserves instead of erasing it. Anything else is
-      -- refused whole, with the numbers.
+      -- summed to before it. A paid rebuy/re-entry/add-on commits its seat and
+      -- roster under the accepted-hand table lock. The dealing loop reloads
+      -- those authoritative rows before admitting the next hand. Therefore a
+      -- non-zero delta is stale hand input, never permission to scan payment
+      -- history and reconstruct chips. Refuse the whole hand at the boundary.
       IF v_tournament_id IS NOT NULL AND round(v_delta_sum, 2) <> 0 THEN
-        SELECT max(k.completed_at) INTO v_prev_settled
-          FROM public.settlement_idempotency_keys k
-         WHERE k.table_id = p_table_id AND k.status = 'succeeded' AND k.hand_id <> v_hand;
-        SELECT COALESCE(jsonb_object_agg(g.user_id::text, g.chips), '{}'::jsonb),
-               COALESCE(sum(g.chips), 0)
-          INTO v_grants, v_explained
-          FROM (
-            SELECT w.user_id,
-                   sum(CASE WHEN w.category = 'addon'
-                            THEN COALESCE(NULLIF(t.addon_chips, 0), t.starting_chips, 0)
-                            ELSE COALESCE(NULLIF(t.rebuy_chips, 0), t.starting_chips, 0) END) AS chips
-              FROM public.wallet_transactions w
-              JOIN public.tournaments t ON t.id = w.related_entity_id
-             WHERE w.related_entity_id = v_tournament_id
-               AND w.category IN ('rebuy', 'addon')
-               AND w.type = 'debit'
-               AND w.created_at > COALESCE(v_prev_settled, now() - interval '30 minutes')
-               AND w.user_id IN (SELECT (x->>'user_id')::uuid FROM jsonb_array_elements(p_stacks) x)
-             GROUP BY w.user_id
-          ) g;
-        IF v_explained > 0 AND round(v_delta_sum + v_explained, 2) = 0 THEN
-          FOR e IN SELECT * FROM jsonb_array_elements(v_canonical) LOOP
-            IF v_grants ? (e->>'user_id') THEN
-              v_targets := v_targets || jsonb_build_object(e->>'user_id',
-                round((v_targets->>(e->>'user_id'))::numeric + (v_grants->>(e->>'user_id'))::numeric, 2));
-            END IF;
-          END LOOP;
-          v_delta_sum := 0;
-        ELSE
-          RAISE EXCEPTION 'conservation violation (tournament %): stack deltas % across % seat(s) of table % hand % (grants since previous settlement: %) - tournament chips must sum to what they summed to before the hand; write refused whole',
-            v_tournament_id, round(v_delta_sum, 2), v_n, p_table_id, p_hand_number, v_explained;
-        END IF;
+        RAISE EXCEPTION 'conservation violation (tournament %): stale accepted-hand stacks changed the table total by % across % seat(s) of table % hand % - paid seat/roster generations must be reloaded before dealing; write refused whole',
+          v_tournament_id,round(v_delta_sum,2),v_n,p_table_id,p_hand_number;
       END IF;
 
       -- strict conservation only when rake is declared
@@ -3533,7 +3568,7 @@ DECLARE
   v_zero_generation jsonb;
   v_zero_generation_count integer;
   v_prompt_until timestamptz;
-  v_rebuy_cap integer;
+  v_rebuy_window jsonb;
   v_rebuy_offer_available boolean;
   v_n integer;
   v_distinct integer;
@@ -3575,6 +3610,11 @@ BEGIN
     'ref',p_ref,'inflow',p_inflow,'hand_row',p_hand_row,
     'units',v_normalized_units)::text,'UTF8'),'sha256'),'hex');
 
+  -- Lock order is global tournament lifecycle -> table -> exact table hand.
+  -- Paid admissions take the global root exclusively before the same table
+  -- lock; unrelated hands share the lifecycle root and remain concurrent.
+  PERFORM pg_advisory_xact_lock_shared(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
   PERFORM pg_advisory_xact_lock(
     hashtextextended('atomic-table:'||p_table_id::text,0));
   PERFORM pg_advisory_xact_lock(
@@ -3582,11 +3622,11 @@ BEGIN
 
   SELECT * INTO v_prior
     FROM public.hand_atomic_commits c
-   WHERE c.hand_number=p_hand_number
+   WHERE c.table_id=p_table_id
+     AND c.hand_number=p_hand_number
    FOR UPDATE;
   IF FOUND THEN
-    IF v_prior.table_id IS DISTINCT FROM p_table_id
-       OR v_prior.payload_hash IS DISTINCT FROM v_commit_hash THEN
+    IF v_prior.payload_hash IS DISTINCT FROM v_commit_hash THEN
       RETURN jsonb_build_object(
         'success',false,'reason','atomic_hand_payload_conflict',
         'hand_number',p_hand_number,'existing_table_id',v_prior.table_id);
@@ -3632,7 +3672,8 @@ BEGIN
     END IF;
 
     SELECT * INTO v_existing
-      FROM public.hand_history h WHERE h.hand_number=p_hand_number;
+      FROM public.hand_history h
+     WHERE h.table_id=p_table_id AND h.hand_number=p_hand_number;
     IF FOUND THEN
       RAISE EXCEPTION 'hand % already exists without an atomic commit receipt',p_hand_number
         USING ERRCODE='integrity_constraint_violation';
@@ -3740,24 +3781,23 @@ BEGIN
             OR
             (coalesce(t.is_reentry,false)
                AND (t.max_reentries IS NULL OR coalesce(tp.rebuys,0)<t.max_reentries)),
-            coalesce(nullif(t.rebuy_levels,0),nullif(t.late_reg_levels,0),0)
-              + CASE WHEN coalesce(t.add_on_available,false)
-                     THEN coalesce(nullif(t.addon_levels,0),1) ELSE 0 END
-            INTO v_rebuy_offer_available,v_rebuy_cap
+            public.fn_ca_tournament_rebuy_window(v_tournament_id)
+            INTO v_rebuy_offer_available,v_rebuy_window
             FROM public.tournaments t
             JOIN public.tournament_players tp
               ON tp.tournament_id=t.id AND tp.user_id=v_uid
            WHERE t.id=v_tournament_id;
-          SELECT CASE
+          v_prompt_until:=CASE
             WHEN v_rebuy_offer_available
-             AND v_rebuy_cap>0
-             AND (SELECT coalesce(current_level,0)
-                    FROM public.tournaments WHERE id=v_tournament_id)<v_rebuy_cap
-             AND NOT (SELECT coalesce(prize_pool_finalized,false)
-                        FROM public.tournaments WHERE id=v_tournament_id)
-            THEN clock_timestamp()+interval '30 seconds'
-            ELSE NULL END
-            INTO v_prompt_until;
+             AND coalesce((v_rebuy_window->>'open')::boolean,false)
+            THEN (v_rebuy_window->>'prompt_until')::timestamptz
+            ELSE NULL END;
+          IF v_prompt_until IS NOT NULL
+             AND v_prompt_until<=clock_timestamp() THEN
+            RAISE EXCEPTION
+              'authoritative rebuy window returned an expired prompt for tournament %',
+              v_tournament_id USING ERRCODE='P0404';
+          END IF;
 
           v_candidate_id := NULL;
           INSERT INTO public.tournament_knockout_candidates(
@@ -3766,12 +3806,10 @@ BEGIN
           VALUES (
             v_tournament_id,v_uid,p_table_id,v_seat.id,v_seat.joined_at,
             v_hand_id,p_hand_number,v_before,0,v_prompt_until)
-          -- More than one uniqueness rule can describe the same physical bust.
-          -- In particular, a rebuy can bust twice from the same chair generation.
-          -- Let the identity checks below distinguish an accepted replay from a
-          -- genuinely conflicting candidate instead of aborting the whole hand on
-          -- whichever relevant unique constraint PostgreSQL encounters first.
-          ON CONFLICT DO NOTHING
+          -- One accepted hand is one immutable knockout generation. A rebuy can
+          -- bust again in the same physical chair, so chair identity must never
+          -- absorb that later hand.
+          ON CONFLICT (tournament_id,hand_number,eliminated_user_id) DO NOTHING
           RETURNING id INTO v_candidate_id;
           IF v_candidate_id IS NULL AND NOT EXISTS (
             SELECT 1 FROM public.tournament_knockout_candidates c
@@ -3783,12 +3821,7 @@ BEGIN
                AND c.seat_joined_at=v_seat.joined_at
                AND c.hand_id=v_hand_id
                AND c.stack_before=v_before
-               AND c.stack_after=0)
-             AND NOT EXISTS (
-              SELECT 1 FROM public.tournament_knockout_candidates c2
-               WHERE c2.tournament_id=v_tournament_id
-                 AND c2.eliminated_user_id=v_uid
-                 AND c2.seat_joined_at=v_seat.joined_at) THEN
+               AND c.stack_after=0) THEN
             RAISE EXCEPTION
               'knockout candidate identity conflict for tournament %, hand %, user %',
               v_tournament_id,p_hand_number,v_uid;
@@ -3828,6 +3861,852 @@ REVOKE ALL ON FUNCTION
   public.fn_ca_commit_hand_settlement_before_lease_generation(
     uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)
   FROM PUBLIC,anon,authenticated,service_role;
+
+-- Resolve a non-bounty knockout only from the latest accepted hand involving
+-- this player. `table_seats` is mutable operational state: it can veto a stale
+-- claim, but it can never select or authorize a generation.
+CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_position integer,
+  p_prize numeric,
+  p_bubble_refund numeric DEFAULT 0
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $function$
+DECLARE
+  v_t public.tournaments%ROWTYPE;
+  v_player public.tournament_players%ROWTYPE;
+  v_candidate public.tournament_knockout_candidates%ROWTYPE;
+  v_atomic public.hand_atomic_commits%ROWTYPE;
+  v_live public.table_seats%ROWTYPE;
+  v_evidence_stack numeric;
+  v_settlement_hand_text text;
+  v_settlement_hand_id uuid;
+  v_live_count integer;
+  v_changed integer;
+  v_result jsonb;
+BEGIN
+  IF p_position<2 OR p_prize IS NULL OR p_prize<0
+     OR p_bubble_refund IS NULL OR p_bubble_refund<0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','invalid_place_or_prize');
+  END IF;
+  IF p_bubble_refund<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','bubble_refund_requires_finalized_batch');
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments t
+   WHERE t.id=p_tournament_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_not_found');
+  END IF;
+  IF v_t.status<>'RUNNING' THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_not_running');
+  END IF;
+  IF coalesce(v_t.is_bounty,false) OR coalesce(v_t.is_pko,false)
+     OR coalesce(v_t.is_mystery_bounty,false) THEN
+    RETURN jsonb_build_object('ok',false,'reason','bounty_requires_outbox_claim');
+  END IF;
+
+  SELECT * INTO v_player FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id AND tp.user_id=p_user_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_not_found');
+  END IF;
+  IF v_player.status='winner' THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_is_winner');
+  END IF;
+  IF v_player.status NOT IN ('playing','eliminated')
+     OR (v_player.status='playing' AND coalesce(v_player.chips,0)>0) THEN
+    RETURN jsonb_build_object('ok',false,'reason','not_busted');
+  END IF;
+
+  PERFORM 1
+    FROM public.tournament_knockout_candidates c
+   WHERE c.tournament_id=p_tournament_id
+     AND c.eliminated_user_id=p_user_id
+   ORDER BY c.hand_number,c.id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','knockout_candidate_required');
+  END IF;
+
+  -- The owner-only resolver selects this player's latest immutable entry
+  -- generation and already proves both durable halves of its accepted hand.
+  -- Re-read every identity here so this transaction is independently bound to
+  -- candidate(history hand) -> atomic(internal settlement hand) -> receipt.
+  SELECT c.* INTO v_candidate
+    FROM public.tournament_knockout_candidates c
+   WHERE c.id=public.fn_ca_latest_committed_knockout_candidate(
+     p_tournament_id,p_user_id);
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','committed_knockout_candidate_not_found');
+  END IF;
+
+  SELECT a.* INTO v_atomic
+    FROM public.hand_atomic_commits a
+   WHERE a.table_id=v_candidate.table_id
+     AND a.hand_number=v_candidate.hand_number
+     AND a.hand_id=v_candidate.hand_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_candidate_missing');
+  END IF;
+  v_settlement_hand_text:=v_atomic.stack_result->>'hand_id';
+  -- The settlement owner uses md5(... )::uuid for its stable internal key;
+  -- validate PostgreSQL's canonical UUID shape without inventing RFC nibbles.
+  IF coalesce(v_settlement_hand_text,'')
+       !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR v_atomic.stack_result->>'table_id'<>v_candidate.table_id::text
+     OR coalesce(v_atomic.stack_result->>'hand_number','')
+          !~ '^[0-9]+$'
+     OR (v_atomic.stack_result->>'hand_number')::bigint<>
+          v_candidate.hand_number
+     OR coalesce(v_atomic.stack_result->'written'->>p_user_id::text,'')
+          !~ '^-?[0-9]+([.][0-9]+)?$'
+     OR (v_atomic.stack_result->'written'->>p_user_id::text)::numeric<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_candidate_identity_conflict');
+  END IF;
+  v_settlement_hand_id:=v_settlement_hand_text::uuid;
+
+  SELECT (k.result->'written'->>p_user_id::text)::numeric
+    INTO v_evidence_stack
+    FROM public.settlement_idempotency_keys k
+   WHERE k.table_id=v_candidate.table_id
+     AND k.hand_id=v_settlement_hand_id
+     AND k.status='succeeded'
+     AND k.completed_at IS NOT NULL
+     AND k.result->>'table_id'=v_candidate.table_id::text
+     AND coalesce(k.result->>'hand_number','') ~ '^[0-9]+$'
+     AND (k.result->>'hand_number')::bigint=v_candidate.hand_number
+     AND coalesce(k.result->'written'->>p_user_id::text,'')
+           ~ '^-?[0-9]+([.][0-9]+)?$';
+  IF NOT FOUND OR v_evidence_stack<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','exact_knockout_settlement_receipt_missing');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_knockout_candidates c
+     WHERE c.tournament_id=p_tournament_id
+       AND c.eliminated_user_id=p_user_id
+       AND c.hand_number>v_candidate.hand_number
+  ) THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','latest_knockout_evidence_chain_conflict');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_knockout_candidates c
+     WHERE c.tournament_id=p_tournament_id
+       AND c.eliminated_user_id=p_user_id
+       AND c.hand_number<v_candidate.hand_number
+       AND c.state<>'rebought'
+  ) THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','unresolved_knockout_generation_chain');
+  END IF;
+
+  IF (v_player.status='playing' AND v_candidate.state<>'pending')
+     OR (v_player.status='eliminated' AND v_candidate.state<>'eliminated') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','knockout_generation_state_mismatch',
+      'player_state',v_player.status,'candidate_state',v_candidate.state);
+  END IF;
+  IF v_candidate.state='pending'
+     AND v_candidate.rebuy_prompt_until IS NOT NULL
+     AND v_candidate.rebuy_prompt_until>clock_timestamp() THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','rebuy_decision_open',
+      'rebuy_prompt_until',v_candidate.rebuy_prompt_until);
+  END IF;
+
+  PERFORM 1
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_user_id AND s.left_at IS NULL
+   ORDER BY s.id FOR UPDATE OF s;
+  SELECT count(*) INTO v_live_count
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_user_id AND s.left_at IS NULL;
+  IF v_live_count>1 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','knockout_generation_has_multiple_live_seats');
+  END IF;
+  IF v_live_count=1 THEN
+    SELECT s.* INTO v_live
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_user_id AND s.left_at IS NULL;
+    IF v_live.stack IS DISTINCT FROM 0
+       OR v_live.table_id IS DISTINCT FROM v_candidate.table_id
+       OR v_live.id IS DISTINCT FROM v_candidate.seat_id
+       OR v_live.joined_at IS DISTINCT FROM v_candidate.seat_joined_at THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','knockout_generation_has_new_live_seat');
+    END IF;
+  END IF;
+
+  v_result:=public.fn_eliminate_player_legacy_candidate_20260907(
+    p_tournament_id,p_user_id,p_position,p_prize,p_bubble_refund);
+  IF coalesce((v_result->>'ok')::boolean,false)
+     AND v_player.status='playing' THEN
+    UPDATE public.tournament_knockout_candidates c
+       SET state='eliminated',
+           resolved_at=coalesce(c.resolved_at,clock_timestamp())
+     WHERE c.id=v_candidate.id AND c.state='pending';
+    GET DIAGNOSTICS v_changed=ROW_COUNT;
+    IF v_changed<>1 THEN
+      RAISE EXCEPTION 'knockout generation changed while elimination committed'
+        USING ERRCODE='serialization_failure';
+    END IF;
+  END IF;
+  RETURN v_result;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_eliminate_tournament_player_atomic(
+  uuid,uuid,integer,numeric,numeric) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_eliminate_tournament_player_atomic(
+  uuid,uuid,integer,numeric,numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_eliminate_player_legacy_candidate_20260907(
+  uuid,uuid,integer,numeric,numeric)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+-- Preserve the bounty payout state machine, but bind both replay and mutation
+-- to the exact hand identity. Only the immutable commit/candidate pair can
+-- authorize a new status or money obligation; no historical scan can invent
+-- a missing knockout generation.
+CREATE OR REPLACE FUNCTION public.fn_claim_bounty_legacy_candidate_20260907(
+  p_tournament_id uuid,
+  p_eliminated_user_id uuid,
+  p_position integer,
+  p_prize numeric,
+  p_table_id uuid,
+  p_hand_id uuid,
+  p_hand_number bigint,
+  p_seat_joined_at timestamptz,
+  p_knocker_user_id uuid,
+  p_claimants jsonb,
+  p_bubble_refund numeric DEFAULT 0,
+  p_allow_existing_eliminated boolean DEFAULT false
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $function$
+DECLARE
+  v_t public.tournaments%ROWTYPE;
+  v_player public.tournament_players%ROWTYPE;
+  v_candidate public.tournament_knockout_candidates%ROWTYPE;
+  v_atomic public.hand_atomic_commits%ROWTYPE;
+  v_settlement_at timestamptz;
+  v_settlement_hand_text text;
+  v_settlement_hand_id uuid;
+  v_mode text;
+  v_claimants jsonb;
+  v_input_claimants jsonb;
+  v_knocker uuid;
+  v_head numeric;
+  v_hand_created_at timestamptz;
+  v_position integer;
+  v_prize numeric;
+  v_claimed boolean := false;
+  v_existing public.tournament_bounty_obligations%ROWTYPE;
+  v_obligation_id uuid;
+  v_activation_generation bigint := 0;
+  v_pko_watermark bigint;
+BEGIN
+  IF p_tournament_id IS NULL OR p_eliminated_user_id IS NULL
+     OR p_table_id IS NULL OR p_hand_id IS NULL OR p_hand_number IS NULL
+     OR p_hand_number<1000000 OR p_seat_joined_at IS NULL
+     OR p_bubble_refund IS NULL OR p_bubble_refund<0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','missing_identity');
+  END IF;
+  IF p_bubble_refund<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','bubble_refund_requires_finalized_batch');
+  END IF;
+
+  IF p_claimants IS NOT NULL THEN
+    IF jsonb_typeof(p_claimants)<>'array' OR jsonb_array_length(p_claimants)=0
+       OR EXISTS (
+         SELECT 1 FROM jsonb_array_elements(p_claimants) e
+          WHERE coalesce(e->>'user_id','')
+                  !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+             OR coalesce(e->>'weight','') !~ '^[0-9]+([.][0-9]+)?$'
+             OR (e->>'weight')::numeric<=0
+       ) THEN
+      RETURN jsonb_build_object('ok',false,'reason','invalid_claimants');
+    END IF;
+    SELECT jsonb_agg(jsonb_build_object('user_id',user_id,'weight',1)
+                     ORDER BY user_id::text)
+      INTO v_input_claimants
+      FROM (
+        SELECT DISTINCT (e->>'user_id')::uuid AS user_id
+          FROM jsonb_array_elements(p_claimants) e
+      ) q;
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments t
+   WHERE t.id=p_tournament_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_not_found');
+  END IF;
+
+  -- A hand triple is the immutable replay key. Two legitimate bounties may
+  -- have the same player and seat_joined_at after a same-chair rebuy.
+  SELECT * INTO v_existing
+    FROM public.tournament_bounty_obligations o
+   WHERE o.tournament_id=p_tournament_id
+     AND o.table_id=p_table_id
+     AND o.hand_id=p_hand_id
+     AND o.hand_number=p_hand_number
+     AND o.eliminated_user_id=p_eliminated_user_id
+   FOR UPDATE;
+  IF FOUND THEN
+    IF v_existing.table_id IS DISTINCT FROM p_table_id
+       OR v_existing.hand_id IS DISTINCT FROM p_hand_id
+       OR v_existing.seat_joined_at IS DISTINCT FROM p_seat_joined_at
+       OR v_existing.bubble_refund IS DISTINCT FROM round(p_bubble_refund,2)
+       OR v_existing.position IS DISTINCT FROM p_position
+       OR v_existing.prize IS DISTINCT FROM round(p_prize,2)
+       OR (p_knocker_user_id IS NOT NULL AND NOT EXISTS (
+             SELECT 1 FROM jsonb_array_elements(v_existing.claimants) c
+              WHERE c->>'user_id'=p_knocker_user_id::text))
+       OR (v_input_claimants IS NOT NULL
+           AND v_existing.claimants IS DISTINCT FROM v_input_claimants) THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','obligation_identity_conflict');
+    END IF;
+    IF v_existing.state='settled'
+       AND NOT public.fn_bounty_obligation_has_complete_marker(v_existing.id) THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','settled_marker_incomplete',
+        'obligation_id',v_existing.id);
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',true,'already',true,'claimed',false,
+      'mode',v_existing.mode,'state',v_existing.state,
+      'activation_generation',v_existing.activation_generation,
+      'obligation_id',v_existing.id);
+  END IF;
+
+  IF NOT (coalesce(v_t.is_bounty,false) OR coalesce(v_t.is_pko,false)
+          OR coalesce(v_t.is_mystery_bounty,false)) THEN
+    RETURN jsonb_build_object('ok',false,'reason','not_bounty_tournament');
+  END IF;
+  IF upper(coalesce(v_t.status,''))<>'RUNNING'
+     AND NOT (p_allow_existing_eliminated
+              AND upper(coalesce(v_t.status,''))='COMPLETING') THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','tournament_lifecycle_not_claimable',
+      'status',v_t.status);
+  END IF;
+
+  SELECT * INTO v_player FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.user_id=p_eliminated_user_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_not_found');
+  END IF;
+  IF coalesce(v_player.chips,0)>0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_has_chips');
+  END IF;
+  IF v_player.status<>'playing' THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','status_not_claimable','status',v_player.status);
+  END IF;
+  IF p_position IS NULL OR p_position<2 OR p_prize IS NULL OR p_prize<0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','invalid_place_or_prize');
+  END IF;
+  v_position:=p_position;
+  v_prize:=p_prize;
+
+  SELECT a.* INTO v_atomic
+    FROM public.hand_atomic_commits a
+   WHERE a.table_id=p_table_id
+     AND a.hand_number=p_hand_number
+     AND a.hand_id=p_hand_id;
+  IF NOT FOUND THEN
+    IF EXISTS (
+      SELECT 1 FROM public.hand_atomic_commits a
+       WHERE a.table_id=p_table_id AND a.hand_number=p_hand_number
+    ) THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','atomic_knockout_history_identity_conflict');
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_evidence_required');
+  END IF;
+
+  v_settlement_hand_text:=v_atomic.stack_result->>'hand_id';
+  IF coalesce(v_settlement_hand_text,'')
+       !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR v_atomic.stack_result->>'table_id'<>p_table_id::text
+     OR coalesce(v_atomic.stack_result->>'hand_number','')
+          !~ '^[0-9]+$'
+     OR (v_atomic.stack_result->>'hand_number')::bigint<>p_hand_number
+     OR coalesce(v_atomic.stack_result->'written'
+                   ->>p_eliminated_user_id::text,'')
+          !~ '^-?[0-9]+([.][0-9]+)?$'
+     OR (v_atomic.stack_result->'written'
+           ->>p_eliminated_user_id::text)::numeric<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_candidate_identity_conflict');
+  END IF;
+  v_settlement_hand_id:=v_settlement_hand_text::uuid;
+
+  SELECT c.* INTO v_candidate
+    FROM public.tournament_knockout_candidates c
+   WHERE c.tournament_id=p_tournament_id
+     AND c.table_id=p_table_id
+     AND c.hand_number=p_hand_number
+     AND c.hand_id=p_hand_id
+     AND c.eliminated_user_id=p_eliminated_user_id;
+  IF NOT FOUND
+     OR v_candidate.seat_joined_at IS DISTINCT FROM p_seat_joined_at THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_candidate_identity_conflict');
+  END IF;
+
+  SELECT k.completed_at INTO v_settlement_at
+    FROM public.settlement_idempotency_keys k
+   WHERE k.table_id=p_table_id
+     AND k.hand_id=v_settlement_hand_id
+     AND k.status='succeeded'
+     AND k.completed_at IS NOT NULL
+     AND k.completed_at>=p_seat_joined_at
+     AND coalesce(k.result->>'hand_number','') ~ '^[0-9]+$'
+     AND (k.result->>'hand_number')::bigint=p_hand_number
+     AND k.result->>'table_id'=p_table_id::text
+     AND k.result->'written' ? p_eliminated_user_id::text
+     AND coalesce(k.result->'written'->>p_eliminated_user_id::text,'')
+           ~ '^-?[0-9]+([.][0-9]+)?$'
+     AND (k.result->'written'->>p_eliminated_user_id::text)::numeric=0;
+  IF v_settlement_at IS NULL THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','accepted_zero_settlement_not_found');
+  END IF;
+
+  SELECT h.created_at INTO v_hand_created_at
+    FROM public.hand_history h
+   WHERE h.id=p_hand_id
+     AND h.table_id=p_table_id
+     AND h.hand_number=p_hand_number
+     AND h.hand_number>=1000000
+     AND h.created_at>=v_settlement_at
+     AND h.created_at>=p_seat_joined_at
+     AND EXISTS (
+       SELECT 1 FROM jsonb_array_elements(coalesce(h.players,'[]'::jsonb)) player
+        WHERE coalesce(player->>'userId',player->>'user_id')=
+                p_eliminated_user_id::text
+          AND coalesce(player->>'stack','') ~ '^-?[0-9]+([.][0-9]+)?$'
+          AND (player->>'stack')::numeric=0
+     );
+  IF v_hand_created_at IS NULL THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','exact_knockout_history_not_found');
+  END IF;
+
+  v_claimants:=public.fn_exact_tournament_knockout_claimants(
+    p_tournament_id,p_hand_id,p_eliminated_user_id);
+  IF v_claimants IS NULL OR jsonb_array_length(v_claimants)=0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','exact_pot_claimants_not_found');
+  END IF;
+  SELECT (e->>'user_id')::uuid INTO v_knocker
+    FROM jsonb_array_elements(v_claimants) e
+   ORDER BY e->>'user_id' LIMIT 1;
+  IF p_knocker_user_id IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_claimants) e
+        WHERE e->>'user_id'=p_knocker_user_id::text
+     ) THEN
+    RETURN jsonb_build_object('ok',false,'reason','invalid_knocker');
+  END IF;
+  IF v_input_claimants IS NOT NULL
+     AND v_input_claimants IS DISTINCT FROM v_claimants THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','claimants_do_not_match_exact_pot');
+  END IF;
+
+  v_mode:=CASE
+    WHEN coalesce(v_t.is_mystery_bounty,false)
+         AND v_t.mystery_bounty_stage='active' THEN 'mystery_chest'
+    WHEN coalesce(v_t.is_pko,false) THEN 'pko'
+    WHEN coalesce(v_t.is_mystery_bounty,false) THEN 'mystery_pre'
+    ELSE 'regular'
+  END;
+  v_activation_generation:=CASE WHEN v_mode='mystery_chest'
+    THEN v_t.mystery_bounty_activation_generation ELSE 0 END;
+  IF v_mode='mystery_chest' AND (
+       v_activation_generation<=0 OR NOT EXISTS (
+         SELECT 1 FROM public.tournament_mystery_activation_receipts ar
+          WHERE ar.tournament_id=p_tournament_id
+            AND ar.activation_generation=v_activation_generation
+       )) THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','mystery_activation_evidence_missing');
+  END IF;
+
+  IF v_mode='pko' THEN
+    SELECT w.last_settled_hand_number INTO v_pko_watermark
+      FROM public.tournament_pko_settlement_watermarks w
+     WHERE w.tournament_id=p_tournament_id FOR UPDATE;
+    IF v_pko_watermark IS NOT NULL AND p_hand_number<v_pko_watermark THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','pko_order_already_advanced',
+        'last_settled_hand_number',v_pko_watermark);
+    END IF;
+  END IF;
+
+  IF v_mode='pko' AND EXISTS (
+    SELECT 1 FROM public.tournament_bounty_obligations prior
+     WHERE prior.tournament_id=p_tournament_id
+       AND prior.mode='pko' AND prior.state='pending'
+       AND (prior.hand_number<p_hand_number
+            OR (prior.hand_number=p_hand_number
+                AND prior.eliminated_user_id::text<
+                    p_eliminated_user_id::text))
+       AND EXISTS (
+         SELECT 1 FROM jsonb_array_elements(prior.claimants) c
+          WHERE c->>'user_id'=p_eliminated_user_id::text
+       )
+  ) THEN
+    RETURN jsonb_build_object('ok',false,'reason','pending_pko_predecessor');
+  END IF;
+
+  IF v_mode='pko' AND EXISTS (
+    SELECT 1
+      FROM public.hand_history h
+      CROSS JOIN LATERAL
+        jsonb_array_elements(coalesce(h.players,'[]'::jsonb)) hp
+     WHERE h.id=p_hand_id
+       AND coalesce(hp->>'userId',hp->>'user_id','')
+             ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+       AND coalesce(hp->>'userId',hp->>'user_id')<>
+             p_eliminated_user_id::text
+       AND coalesce(hp->>'stack','') ~ '^-?[0-9]+([.][0-9]+)?$'
+       AND (hp->>'stack')::numeric<=0
+       AND public.fn_exact_tournament_knockout_claimants(
+             p_tournament_id,h.id,
+             coalesce(hp->>'userId',hp->>'user_id')::uuid)
+             @> jsonb_build_array(jsonb_build_object(
+                  'user_id',p_eliminated_user_id,'weight',1))
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_bounty_obligations predecessor
+          WHERE predecessor.tournament_id=p_tournament_id
+            AND predecessor.hand_number=p_hand_number
+            AND predecessor.eliminated_user_id=
+                coalesce(hp->>'userId',hp->>'user_id')::uuid
+            AND predecessor.state='settled'
+       )
+  ) THEN
+    RETURN jsonb_build_object('ok',false,'reason','same_hand_pko_predecessor');
+  END IF;
+
+  v_head:=coalesce(nullif(v_player.current_bounty,0),
+                   nullif(v_t.bounty_amount,0));
+  IF coalesce(v_head,0)<=0 THEN
+    RETURN jsonb_build_object('ok',false,'reason','exact_head_value_not_found');
+  END IF;
+
+  UPDATE public.tournament_players tp
+     SET status='eliminated',position=p_position,prize=p_prize,
+         eliminated_at=now()
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.user_id=p_eliminated_user_id
+     AND tp.status='playing' AND tp.chips<=0;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'bounty elimination CAS missed after locked claim'
+      USING ERRCODE='serialization_failure';
+  END IF;
+  v_claimed:=true;
+
+  INSERT INTO public.tournament_bounty_obligations(
+    tournament_id,eliminated_user_id,table_id,hand_id,hand_number,
+    settlement_completed_at,seat_joined_at,position,prize,bubble_refund,
+    mode,activation_generation,head_amount,knocker_user_id,claimants,
+    next_attempt_at)
+  VALUES (
+    p_tournament_id,p_eliminated_user_id,p_table_id,p_hand_id,p_hand_number,
+    v_settlement_at,p_seat_joined_at,v_position,round(v_prize,2),0,
+    v_mode,v_activation_generation,round(v_head,2),v_knocker,v_claimants,
+    CASE WHEN v_mode='mystery_chest' THEN now()+interval '30 seconds'
+         ELSE now() END)
+  RETURNING id INTO v_obligation_id;
+
+  UPDATE public.table_seats s
+     SET left_at=coalesce(s.left_at,now())
+   WHERE s.table_id=p_table_id AND s.user_id=p_eliminated_user_id
+     AND s.joined_at=p_seat_joined_at AND s.left_at IS NULL;
+  UPDATE public.tables tb
+     SET current_players=(
+       SELECT count(*) FROM public.table_seats s
+        WHERE s.table_id=p_table_id AND s.left_at IS NULL)
+   WHERE tb.id=p_table_id;
+  PERFORM public.fn_sync_seat_first_player_count(p_tournament_id);
+
+  UPDATE public.tournament_bounty_obligations o
+     SET state='settled',settled_at=now()
+   WHERE o.id=v_obligation_id
+     AND public.fn_bounty_obligation_has_complete_marker(o.id);
+
+  RETURN jsonb_build_object(
+    'ok',true,'already',false,'claimed',v_claimed,'mode',v_mode,
+    'state',(SELECT o.state FROM public.tournament_bounty_obligations o
+              WHERE o.id=v_obligation_id),
+    'activation_generation',v_activation_generation,'bubble_refund',0,
+    'obligation_id',v_obligation_id);
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_claim_bounty_legacy_candidate_20260907(
+  uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,
+  numeric,boolean) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_claim_tournament_bounty_elimination(
+  p_tournament_id uuid,
+  p_eliminated_user_id uuid,
+  p_position integer,
+  p_prize numeric,
+  p_table_id uuid,
+  p_hand_id uuid,
+  p_hand_number bigint,
+  p_seat_joined_at timestamptz,
+  p_knocker_user_id uuid,
+  p_claimants jsonb,
+  p_bubble_refund numeric DEFAULT 0,
+  p_allow_existing_eliminated boolean DEFAULT false
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $function$
+DECLARE
+  v_t public.tournaments%ROWTYPE;
+  v_player public.tournament_players%ROWTYPE;
+  v_candidate public.tournament_knockout_candidates%ROWTYPE;
+  v_atomic public.hand_atomic_commits%ROWTYPE;
+  v_live public.table_seats%ROWTYPE;
+  v_evidence_stack numeric;
+  v_settlement_hand_text text;
+  v_settlement_hand_id uuid;
+  v_live_count integer;
+  v_changed integer;
+  v_result jsonb;
+BEGIN
+  -- Exact replay is permitted after the player, seat and tournament have moved
+  -- on. The immutable obligation itself is the receipt, and the private core
+  -- verifies every caller-supplied field against it.
+  IF p_tournament_id IS NULL OR p_eliminated_user_id IS NULL
+     OR p_hand_number IS NULL THEN
+    RETURN public.fn_claim_bounty_legacy_candidate_20260907(
+      p_tournament_id,p_eliminated_user_id,p_position,p_prize,p_table_id,
+      p_hand_id,p_hand_number,p_seat_joined_at,p_knocker_user_id,p_claimants,
+      p_bubble_refund,p_allow_existing_eliminated);
+  END IF;
+
+  SELECT * INTO v_t FROM public.tournaments t
+   WHERE t.id=p_tournament_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_not_found');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_bounty_obligations o
+     WHERE o.tournament_id=p_tournament_id
+       AND o.table_id=p_table_id
+       AND o.hand_id=p_hand_id
+       AND o.hand_number=p_hand_number
+       AND o.eliminated_user_id=p_eliminated_user_id
+  ) THEN
+    RETURN public.fn_claim_bounty_legacy_candidate_20260907(
+      p_tournament_id,p_eliminated_user_id,p_position,p_prize,p_table_id,
+      p_hand_id,p_hand_number,p_seat_joined_at,p_knocker_user_id,p_claimants,
+      p_bubble_refund,p_allow_existing_eliminated);
+  END IF;
+
+  SELECT * INTO v_player FROM public.tournament_players tp
+   WHERE tp.tournament_id=p_tournament_id
+     AND tp.user_id=p_eliminated_user_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok',false,'reason','player_not_found');
+  END IF;
+
+  PERFORM 1
+    FROM public.tournament_knockout_candidates c
+   WHERE c.tournament_id=p_tournament_id
+     AND c.eliminated_user_id=p_eliminated_user_id
+   ORDER BY c.hand_number,c.id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','knockout_candidate_required');
+  END IF;
+
+  SELECT c.* INTO v_candidate
+    FROM public.tournament_knockout_candidates c
+   WHERE c.id=public.fn_ca_latest_committed_knockout_candidate(
+     p_tournament_id,p_eliminated_user_id);
+  IF NOT FOUND
+     OR v_candidate.table_id IS DISTINCT FROM p_table_id
+     OR v_candidate.hand_id IS DISTINCT FROM p_hand_id
+     OR v_candidate.hand_number IS DISTINCT FROM p_hand_number
+     OR v_candidate.seat_joined_at IS DISTINCT FROM p_seat_joined_at THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','bounty_claim_is_not_latest_knockout_hand');
+  END IF;
+
+  SELECT a.* INTO v_atomic
+    FROM public.hand_atomic_commits a
+   WHERE a.table_id=v_candidate.table_id
+     AND a.hand_number=v_candidate.hand_number
+     AND a.hand_id=v_candidate.hand_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_candidate_missing');
+  END IF;
+  v_settlement_hand_text:=v_atomic.stack_result->>'hand_id';
+  IF coalesce(v_settlement_hand_text,'')
+       !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     OR v_atomic.stack_result->>'table_id'<>v_candidate.table_id::text
+     OR coalesce(v_atomic.stack_result->>'hand_number','')
+          !~ '^[0-9]+$'
+     OR (v_atomic.stack_result->>'hand_number')::bigint<>
+          v_candidate.hand_number
+     OR coalesce(v_atomic.stack_result->'written'
+                   ->>p_eliminated_user_id::text,'')
+          !~ '^-?[0-9]+([.][0-9]+)?$'
+     OR (v_atomic.stack_result->'written'
+           ->>p_eliminated_user_id::text)::numeric<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','atomic_knockout_candidate_identity_conflict');
+  END IF;
+  v_settlement_hand_id:=v_settlement_hand_text::uuid;
+
+  SELECT (k.result->'written'
+            ->>p_eliminated_user_id::text)::numeric
+    INTO v_evidence_stack
+    FROM public.settlement_idempotency_keys k
+   WHERE k.table_id=v_candidate.table_id
+     AND k.hand_id=v_settlement_hand_id
+     AND k.status='succeeded'
+     AND k.completed_at IS NOT NULL
+     AND k.result->>'table_id'=v_candidate.table_id::text
+     AND coalesce(k.result->>'hand_number','') ~ '^[0-9]+$'
+     AND (k.result->>'hand_number')::bigint=v_candidate.hand_number
+     AND coalesce(k.result->'written'
+                   ->>p_eliminated_user_id::text,'')
+           ~ '^-?[0-9]+([.][0-9]+)?$';
+  IF NOT FOUND OR v_evidence_stack<>0 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','exact_knockout_settlement_receipt_missing');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_knockout_candidates c
+     WHERE c.tournament_id=p_tournament_id
+       AND c.eliminated_user_id=p_eliminated_user_id
+       AND c.hand_number>v_candidate.hand_number
+  ) THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','latest_knockout_evidence_chain_conflict');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_knockout_candidates c
+     WHERE c.tournament_id=p_tournament_id
+       AND c.eliminated_user_id=p_eliminated_user_id
+       AND c.hand_number<v_candidate.hand_number
+       AND c.state<>'rebought'
+  ) THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','unresolved_knockout_generation_chain');
+  END IF;
+  IF v_candidate.state<>'pending' THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','knockout_generation_state_mismatch',
+      'player_state',v_player.status,'candidate_state',v_candidate.state);
+  END IF;
+  IF v_candidate.rebuy_prompt_until IS NOT NULL
+     AND v_candidate.rebuy_prompt_until>clock_timestamp() THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','rebuy_decision_open',
+      'rebuy_prompt_until',v_candidate.rebuy_prompt_until);
+  END IF;
+
+  PERFORM 1
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_eliminated_user_id AND s.left_at IS NULL
+   ORDER BY s.id FOR UPDATE OF s;
+  SELECT count(*) INTO v_live_count
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id=s.table_id
+   WHERE tb.tournament_id=p_tournament_id
+     AND s.user_id=p_eliminated_user_id AND s.left_at IS NULL;
+  IF v_live_count>1 THEN
+    RETURN jsonb_build_object(
+      'ok',false,'reason','knockout_generation_has_multiple_live_seats');
+  END IF;
+  IF v_live_count=1 THEN
+    SELECT s.* INTO v_live
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id=s.table_id
+     WHERE tb.tournament_id=p_tournament_id
+       AND s.user_id=p_eliminated_user_id AND s.left_at IS NULL;
+    IF v_live.stack IS DISTINCT FROM 0
+       OR v_live.table_id IS DISTINCT FROM v_candidate.table_id
+       OR v_live.id IS DISTINCT FROM v_candidate.seat_id
+       OR v_live.joined_at IS DISTINCT FROM v_candidate.seat_joined_at THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','knockout_generation_has_new_live_seat');
+    END IF;
+  END IF;
+
+  v_result:=public.fn_claim_bounty_legacy_candidate_20260907(
+    p_tournament_id,p_eliminated_user_id,p_position,p_prize,p_table_id,
+    p_hand_id,p_hand_number,p_seat_joined_at,p_knocker_user_id,p_claimants,
+    p_bubble_refund,p_allow_existing_eliminated);
+  IF coalesce((v_result->>'ok')::boolean,false)
+     AND coalesce((v_result->>'claimed')::boolean,false)
+  THEN
+    UPDATE public.tournament_knockout_candidates c
+       SET state='eliminated',
+           resolved_at=coalesce(c.resolved_at,clock_timestamp())
+     WHERE c.id=v_candidate.id AND c.state='pending';
+    GET DIAGNOSTICS v_changed=ROW_COUNT;
+    IF v_changed<>1 THEN
+      RAISE EXCEPTION
+        'bounty knockout generation changed while claim committed'
+        USING ERRCODE='serialization_failure';
+    END IF;
+  END IF;
+  RETURN v_result;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_claim_tournament_bounty_elimination(
+  uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,
+  numeric,boolean) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_claim_tournament_bounty_elimination(
+  uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,
+  numeric,boolean) TO service_role;
 
 -- The current protocol-2 hand door persists an exhaustive time-bank snapshot
 -- after the exact-generation core returns. A zero-stack tournament seat is
@@ -3869,6 +4748,14 @@ DECLARE
   v_updated integer;
   v_row_count integer;
 BEGIN
+  -- This public 12-argument door is the outermost accepted-hand authority.
+  -- Take the lifecycle root before its preserved exact-generation core can
+  -- lock a lease, tournament or table. The owner-only nine-argument core
+  -- re-enters this shared transaction lock defensively; that acquisition is
+  -- harmless and keeps the private core safe from future owner-only callers.
+  PERFORM pg_advisory_xact_lock_shared(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+
   IF jsonb_typeof(p_post_commit_obligations) IS DISTINCT FROM 'object'
      OR p_post_commit_obligations->>'version' <> '1'
      OR jsonb_typeof(p_post_commit_obligations->'time_banks') IS DISTINCT FROM 'array'
@@ -8132,10 +9019,24 @@ BEGIN
      OR position('''tournament_zero_stack_seat_generations'''
                    IN v_hand_source) = 0
      OR position('''tournament_zero_stack_vacated_at'''
+                   IN v_hand_source) = 0
+     OR position('FROM public.wallet_transactions' IN v_hand_source) <> 0
+     OR position('v_prev_settled' IN v_hand_source) <> 0
+     OR position('v_grants' IN v_hand_source) <> 0
+     OR position('v_explained' IN v_hand_source) <> 0
+     OR position('paid seat/roster generations must be reloaded before dealing'
                    IN v_hand_source) = 0 THEN
     RAISE EXCEPTION 'hand stack authority lost canonical locks or player-chip sync';
   END IF;
   IF v_hand_core_source IS NULL
+     OR position('pg_advisory_xact_lock_shared(' IN v_hand_core_source) = 0
+     OR position('ca:tournament-terminal-settlement:v1'
+                   IN v_hand_core_source) = 0
+     OR position('ca:tournament-terminal-settlement:v1'
+                   IN v_hand_core_source) >
+          position('atomic-table:' IN v_hand_core_source)
+     OR position('WHERE c.table_id=p_table_id' IN v_hand_core_source) = 0
+     OR position('WHERE h.table_id=p_table_id' IN v_hand_core_source) = 0
      OR position('IF v_written=0 THEN' IN v_hand_core_source) = 0
      OR position('tournament_zero_stack_seat_generations'
                    IN v_hand_core_source) = 0

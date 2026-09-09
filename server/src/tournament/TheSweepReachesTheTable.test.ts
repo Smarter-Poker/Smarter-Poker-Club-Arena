@@ -157,23 +157,39 @@ describe('the migration that ships beside this one', () => {
   const MIGRATION = readFileSync(
     resolve(
       __dirname,
-      '../../../supabase/migrations/20260909005925_a_busted_player_without_a_seat_can_still_be_eliminated.sql'
+      '../../../supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
     ),
     'utf8'
   );
 
-  it('resolves duplicate pending generations to the newest instead of refusing', () => {
-    expect(MIGRATION).not.toMatch(
-      /RETURN jsonb_build_object\('ok',false,'reason','multiple_pending_knockout_generations'\)/
+  it('never invents a rebuy while eliminating a later generation', () => {
+    const elimination = MIGRATION.slice(
+      MIGRATION.lastIndexOf(
+        'CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic('
+      ),
+      MIGRATION.indexOf(
+        '$function$;',
+        MIGRATION.lastIndexOf(
+          'CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic('
+        )
+      )
     );
-    expect(MIGRATION).toMatch(/SET state='rebought'/);
-    expect(MIGRATION).toMatch(/SELECT max\(c2\.seat_joined_at\)/);
+    expect(elimination).not.toMatch(/SET state='rebought'/);
+    expect(elimination).not.toMatch(/max\([^)]*joined_at/);
+    expect(elimination).toMatch(/AND c\.state<>'rebought'/);
+    expect(elimination).toMatch(/'unresolved_knockout_generation_chain'/);
   });
 
-  it('only compares seat generations when the player still holds a seat', () => {
-    expect(MIGRATION).toMatch(
-      /IF v_latest_joined_at IS NOT NULL\s*\n\s*AND v_candidate\.seat_joined_at IS DISTINCT FROM v_latest_joined_at THEN/
-    );
+  it('selects the immutable latest candidate and proves its exact accepted hand', () => {
+    expect(MIGRATION).toMatch(/fn_ca_latest_committed_knockout_candidate\(/);
+    expect(MIGRATION).toMatch(/a\.table_id=v_candidate\.table_id/);
+    expect(MIGRATION).toMatch(/a\.hand_number=v_candidate\.hand_number/);
+    expect(MIGRATION).toMatch(/a\.hand_id=v_candidate\.hand_id/);
+    expect(MIGRATION).toMatch(/v_settlement_hand_id:=v_settlement_hand_text::uuid/);
+    expect(MIGRATION).toMatch(/k\.hand_id=v_settlement_hand_id/);
+    expect(MIGRATION).toMatch(/'knockout_candidate_required'/);
+    expect(MIGRATION).not.toMatch(/ORDER BY \(k\.result->>'hand_number'\)::bigint DESC/);
+    expect(MIGRATION).not.toMatch(/SELECT max\(c2\.seat_joined_at\)/);
   });
 
   it('keeps the function closed to every browser role', () => {

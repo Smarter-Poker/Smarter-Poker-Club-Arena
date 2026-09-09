@@ -27,6 +27,7 @@
     "fn_ca_tournament_escrow",
     "fn_ca_tournament_refund_plan",
     "fn_ca_tournament_unregistration_receipt",
+    "fn_ca_unregistration_rake_evidence_is_immutable",
     "fn_ca_unregister_tournament_player_exact",
     "fn_find_tournament_entry_ticket",
     "fn_horse_tournament_entry_ticket_hints",
@@ -39,6 +40,11 @@
     "fn_settle_satellite_tournament",
     "fn_settle_tournament_refund_exact"
   ],
+  "removedFunctions": [
+    "atomic_tournament_unregister",
+    "fn_admin_remove_tournament_player",
+    "fn_tournament_unregister_counter"
+  ],
   "columns": {
     "tables": ["terminal_closed_at"],
     "tournament_tickets": [
@@ -50,6 +56,11 @@
       "source_satellite_id",
       "source_tournament_id"
     ],
-    "tournaments": ["entry_contract_locked"]
+    "tournaments": ["entry_contract_locked"],
+    "tournament_unregistration_receipts": [
+      "fee_reversal_ids",
+      "fee_source_rake_record_ids",
+      "fees_reversed"
+    ]
   }
 }

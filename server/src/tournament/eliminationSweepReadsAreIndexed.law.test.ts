@@ -35,9 +35,9 @@ import { sliceMethod } from '../testHelpers/sourceWindow.js';
 const src = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8');
 describe('LAW: the elimination sweep reads through indexes', () => {
   /**
-   * Only the SWEEP is pinned, not the whole file. `tournamentTableForUser` and
-   * `lastTournamentTableForUser` further down use the same `tables!inner` embed
-   * legitimately: they filter `.eq('user_id', userId)` first, which is selective
+   * Only the SWEEP is pinned, not the whole file. The knockout candidate's
+   * live-seat safety veto further down uses the same `tables!inner` embed
+   * legitimately: it filters `.eq('user_id', userId)` first, which is selective
    * and indexed (idx_table_seats_live_user). The bug is an inner embed with NO
    * selective predicate on the outer table, which is what the sweep had.
    */

@@ -46,9 +46,12 @@ SELECT (jsonb_populate_record(NULL::public.tournaments,
     'current_players',2,'max_players',2,
     'prize_pool',20,'guaranteed_prize',0,
     'prize_pool_finalized',false,'bounty_pool',0,'bounty_pool_paid',0,
+    'starting_chips',10,
     'is_bounty',false,'is_pko',false,'is_mystery_bounty',false,
-    'is_rebuy',false,'is_reentry',false,'add_on_available',false,
-    'rebuy_levels',0,'late_reg_levels',0,'current_level',1
+    'is_rebuy',true,'is_reentry',true,'add_on_available',false,
+    'max_rebuys',5,'max_reentries',5,
+    'rebuy_cost',10,'rebuy_chips',10,
+    'rebuy_levels',5,'late_reg_levels',5,'current_level',1
   ))).*
   FROM public.tournaments t
  WHERE t.id='30000000-0000-0000-0000-000000000001'::uuid;
@@ -76,6 +79,21 @@ SELECT (jsonb_populate_record(NULL::public.tournament_players,
   FROM public.tournament_players tp
  WHERE tp.tournament_id='30000000-0000-0000-0000-000000000001'::uuid
    AND tp.user_id='10000000-0000-0000-0000-000000000001'::uuid;
+
+INSERT INTO public.tournament_escrow(
+  tournament_id,gross_in,fee_entries_in,satellite_fee_in,bounty_in,
+  overlay_in,satellite_in,prize_out,bounty_out,fee_out,refund_prize,
+  refund_bounty,refund_fee,reserve_out,reserve_in,prize_balance,
+  bounty_balance,fee_balance,opened_from,opened_at,updated_at,enforced)
+VALUES(
+  '86000000-0000-0000-0000-000000000001',
+  20,0,0,0,0,0,0,0,0,0,0,0,0,0,20,0,0,
+  'atomic-hand-boundary-probe',now(),now(),true);
+
+UPDATE public.club_members
+   SET chip_balance=100
+ WHERE club_id='20000000-0000-0000-0000-000000000001'::uuid
+   AND user_id='10000000-0000-0000-0000-000000000001'::uuid;
 
 INSERT INTO public.tournament_players
 SELECT (jsonb_populate_record(NULL::public.tournament_players,
@@ -612,7 +630,139 @@ BEGIN
       v_result,v_replay,v_after;
   END IF;
 
-  RAISE EXCEPTION
-    'AUDIT_TEST_PASS: the tournament hand authority accepted an ordinary no-bust hand with exact empty zero-seat evidence and no wake, then used the public protocol-2 door to commit history, stacks, roster, exact bust-seat generation, vacate, closed-seat time bank, one knockout candidate, table headcount, outbox, atomic receipt, and one durable manager wake together; injected early and late faults rolled all accepted-hand evidence and the wake back, while exact replay advanced nothing; fixture and evidence rolled back';
 END;
 $success_replay_probe$;
+
+-- The accepted zero-hand candidate is also the sole authority for its paid
+-- replacement. Prove the public purchase commits debit, pool, candidate,
+-- positive chair, roster mirrors, wake and immutable response together. The
+-- second call arrives after the candidate is already closed and must return
+-- the first response without moving another chip.
+DO $atomic_rebuy_probe$
+DECLARE
+  v_before_balance numeric;
+  v_after_balance numeric;
+  v_prize_before numeric;
+  v_rake_before numeric;
+  v_escrow_prize_before numeric;
+  v_escrow_fee_before numeric;
+  v_purchase jsonb;
+  v_replay jsonb;
+  v_candidate_id uuid;
+  v_receipt_key text :=
+    'tourney:86000000-0000-0000-0000-000000000001:rebuy:'||
+    '10000000-0000-0000-0000-000000000001:tok:atomic-boundary-rebuy';
+BEGIN
+  SELECT c.id INTO STRICT v_candidate_id
+    FROM public.tournament_knockout_candidates c
+   WHERE c.tournament_id='86000000-0000-0000-0000-000000000001'::uuid
+     AND c.eliminated_user_id=
+           '10000000-0000-0000-0000-000000000001'::uuid
+     AND c.hand_number=8600001 AND c.state='pending';
+  SELECT cm.chip_balance INTO STRICT v_before_balance
+    FROM public.club_members cm
+   WHERE cm.club_id='20000000-0000-0000-0000-000000000001'::uuid
+     AND cm.user_id='10000000-0000-0000-0000-000000000001'::uuid;
+  SELECT t.prize_pool,t.total_rake
+    INTO STRICT v_prize_before,v_rake_before
+    FROM public.tournaments t
+   WHERE t.id='86000000-0000-0000-0000-000000000001'::uuid;
+  SELECT e.prize_balance,e.fee_balance
+    INTO STRICT v_escrow_prize_before,v_escrow_fee_before
+    FROM public.tournament_escrow e
+   WHERE e.tournament_id='86000000-0000-0000-0000-000000000001'::uuid;
+
+  v_purchase:=public.process_tournament_rebuy(
+    '86000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
+    'rebuy',10,10,1,'atomic-boundary-rebuy');
+  v_replay:=public.process_tournament_rebuy(
+    '86000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
+    'rebuy',10,10,1,'atomic-boundary-rebuy');
+
+  SELECT cm.chip_balance INTO STRICT v_after_balance
+    FROM public.club_members cm
+   WHERE cm.club_id='20000000-0000-0000-0000-000000000001'::uuid
+     AND cm.user_id='10000000-0000-0000-0000-000000000001'::uuid;
+
+  IF v_purchase IS DISTINCT FROM v_replay
+     OR v_purchase->>'success'<>'true'
+     OR v_purchase->>'seated'<>'true'
+     OR v_purchase->>'atomic_tournament_chip_purchase'<>'v1'
+     OR v_purchase->>'candidate_id'<>v_candidate_id::text
+     OR v_purchase->>'candidate_state'<>'rebought'
+     OR (v_purchase->>'stack')::numeric<>10
+     OR (v_purchase->>'cost')::numeric<>10
+     OR (v_purchase->>'fee')::numeric<>1
+     OR (v_purchase->>'bounty_head_funded')::numeric<>0
+     OR v_after_balance IS DISTINCT FROM v_before_balance-10
+     OR (SELECT t.prize_pool FROM public.tournaments t
+          WHERE t.id='86000000-0000-0000-0000-000000000001'::uuid)
+          IS DISTINCT FROM v_prize_before+9
+     OR (SELECT t.total_rake FROM public.tournaments t
+          WHERE t.id='86000000-0000-0000-0000-000000000001'::uuid)
+          IS DISTINCT FROM v_rake_before+1
+     OR (SELECT e.prize_balance FROM public.tournament_escrow e
+          WHERE e.tournament_id=
+                  '86000000-0000-0000-0000-000000000001'::uuid)
+          IS DISTINCT FROM v_escrow_prize_before+9
+     OR (SELECT e.fee_balance FROM public.tournament_escrow e
+          WHERE e.tournament_id=
+                  '86000000-0000-0000-0000-000000000001'::uuid)
+          IS DISTINCT FROM v_escrow_fee_before+1
+     OR (SELECT round(COALESCE(sum(r.rake_amount),0),2)
+           FROM public.rake_records r
+          WHERE r.tournament_id=
+                  '86000000-0000-0000-0000-000000000001'::uuid
+            AND r.is_tournament)
+          IS DISTINCT FROM v_rake_before+1
+     OR (SELECT count(*) FROM public.wallet_transactions tx
+          WHERE tx.user_id=
+                  '10000000-0000-0000-0000-000000000001'::uuid
+            AND tx.related_entity_id=
+                  '86000000-0000-0000-0000-000000000001'::uuid
+            AND tx.type='debit' AND lower(COALESCE(tx.category,''))='rebuy')<>1
+     OR (SELECT count(*) FROM public.entry_purchase_idempotency_receipts r
+          WHERE r.key_domain='tournament_chip_purchase'
+            AND r.idempotency_key=v_receipt_key
+            AND r.response IS NOT DISTINCT FROM v_purchase)<>1
+     OR NOT EXISTS (
+       SELECT 1 FROM public.tournament_knockout_candidates c
+        WHERE c.id=v_candidate_id AND c.state='rebought'
+          AND c.resolved_at IS NOT NULL)
+     OR NOT EXISTS (
+       SELECT 1 FROM public.tournament_players tp
+        WHERE tp.tournament_id=
+                '86000000-0000-0000-0000-000000000001'::uuid
+          AND tp.user_id='10000000-0000-0000-0000-000000000001'::uuid
+          AND tp.status='playing' AND tp.chips=10
+          AND tp.rebuy_prompt_until IS NULL
+          AND tp.table_id=(v_purchase->>'table_id')::uuid
+          AND tp.seat_number=(v_purchase->>'seat_number')::integer)
+     OR (SELECT count(*) FROM public.table_seats s
+          JOIN public.tables tb ON tb.id=s.table_id
+         WHERE tb.tournament_id=
+                 '86000000-0000-0000-0000-000000000001'::uuid
+           AND s.user_id='10000000-0000-0000-0000-000000000001'::uuid
+           AND s.left_at IS NULL AND s.stack=10
+           AND s.id=(v_purchase->>'seat_id')::uuid)<>1
+     OR (SELECT tb.current_players FROM public.tables tb
+          WHERE tb.id=(v_purchase->>'table_id')::uuid)<>2
+     OR (SELECT count(*) FROM public.tournament_manager_wakes w
+          WHERE w.tournament_id=
+                  '86000000-0000-0000-0000-000000000001'::uuid
+            AND w.reason='rebuy')<>1 THEN
+    RAISE EXCEPTION
+      'FAIL atomic rebuy did not conserve its exact debit/prize/rake rails or replay exactly once: purchase %, replay %, balances % -> %',
+      v_purchase,v_replay,v_before_balance,v_after_balance;
+  END IF;
+END;
+$atomic_rebuy_probe$;
+
+DO $pass$
+BEGIN
+  RAISE EXCEPTION
+    'AUDIT_TEST_PASS: the tournament hand authority committed and replayed no-bust and bust hands, rolled back injected early and late faults, and the exact accepted zero-hand then authorized one atomic rebuy debit, candidate close, positive live chair, roster/table mirrors, manager wake and immutable replay receipt; fixture and evidence rolled back';
+END;
+$pass$;

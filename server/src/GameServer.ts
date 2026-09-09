@@ -140,9 +140,9 @@ import {
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
 
-// Dan 2026-08-19: refundAndCloseCancelledTournament is no longer imported here.
-// GameServer had four tournament-cancel paths; all four are gone. Nothing in
-// this file cancels a tournament any more — it fills, resumes or settles.
+// GameServer owns no tournament-cancellation path. It fills, resumes, or asks
+// the database terminal authority to settle completed play; operator-managed
+// cancellation enters through the authenticated database command authority.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';

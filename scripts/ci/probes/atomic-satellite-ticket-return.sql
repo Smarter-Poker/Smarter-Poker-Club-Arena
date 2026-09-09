@@ -126,6 +126,7 @@ INSERT INTO public.rake_records(
   '22222222-2222-4222-8222-222222222222',20,200,1,true,
   '44444444-4444-4444-8444-444444444444','fn_award_satellite_seat',
   jsonb_build_object(
+    'kind','satellite_seat_entry_fee',
     'user_id','11111111-1111-4111-8111-111111111111',
     'registration_id','55555555-5555-4555-8555-555555555555')
 );
@@ -239,8 +240,8 @@ INSERT INTO probe_results VALUES(
 );
 
 -- Once the tournament begins, the exact request may still read its already
--- committed pre-start outcome. A rolling caller with no request identity is
--- refused, proving that this is replay and not a post-start unregister.
+-- committed pre-start outcome. A fresh request identity is refused, proving
+-- that the successful keyed call is replay and not a post-start unregister.
 SET LOCAL session_replication_role=replica;
 UPDATE public.tournaments
    SET start_time=clock_timestamp()-interval '1 second'
@@ -255,9 +256,10 @@ INSERT INTO probe_results VALUES(
 );
 
 INSERT INTO probe_results VALUES(
-  'legacy_post_start_refusal',
+  'fresh_request_post_start_refusal',
   public.fn_unregister_from_tournament(
-    '44444444-4444-4444-8444-444444444444')
+    '44444444-4444-4444-8444-444444444444',
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd')
 );
 
 SET LOCAL session_replication_role=replica;
@@ -341,8 +343,9 @@ DECLARE
   v_second_post_start_replay jsonb:=(
     SELECT value FROM probe_results
      WHERE name='second_return_post_start_replay');
-  v_legacy_post_start jsonb:=(
-    SELECT value FROM probe_results WHERE name='legacy_post_start_refusal');
+  v_fresh_request_post_start jsonb:=(
+    SELECT value FROM probe_results
+     WHERE name='fresh_request_post_start_refusal');
   v_redeem jsonb:=(
     SELECT value FROM probe_results WHERE name='cash_redeem_refusal');
   v_cancel jsonb:=(
@@ -389,8 +392,8 @@ BEGIN
           IS NOT TRUE
      OR (v_second_post_start_replay-'replayed')
           IS DISTINCT FROM (v_second-'replayed')
-     OR COALESCE((v_legacy_post_start->>'ok')::boolean,true) IS NOT FALSE
-     OR v_legacy_post_start->>'reason'<>'tournament_started'
+     OR COALESCE((v_fresh_request_post_start->>'ok')::boolean,true) IS NOT FALSE
+     OR v_fresh_request_post_start->>'reason'<>'tournament_started'
      OR COALESCE((v_redeem->>'success')::boolean,true) IS NOT FALSE
      OR COALESCE((v_cancel->>'success')::boolean,true) IS NOT FALSE
      OR COALESCE((v_corrupt_selector->>'ok')::boolean,true) IS NOT FALSE
@@ -480,7 +483,7 @@ SET CONSTRAINTS ALL IMMEDIATE;
 
 SELECT
   'PASS satellite seat -> ticket -> admission -> ticket-only return; '
-  || 'request-key replay exact before and after start; unkeyed post-start, '
+  || 'request-key replay exact before and after start; fresh post-start, '
   || 'cash and forged redemptions refused; zero wallet rows'
   AS result;
 

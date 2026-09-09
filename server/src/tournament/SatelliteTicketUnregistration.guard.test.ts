@@ -100,7 +100,7 @@ describe('satellite-funded tournament unregistration is ticket-only', () => {
     expect(UNREGISTER_RECEIPT).toContain('r.request_id=p_request_id');
     expect(UNREGISTER_RECEIPT).toContain('FROM public.chip_transactions');
     expect(PROBE).toContain('second_return_post_start_replay');
-    expect(PROBE).toContain('legacy_post_start_refusal');
+    expect(PROBE).toContain('fresh_request_post_start_refusal');
     expect(PROBE).toContain('old unregistration request id touched a later registration');
   });
 

@@ -6,11 +6,13 @@ BEGIN;
 SET LOCAL session_replication_role = replica;
 
 INSERT INTO auth.users(id) VALUES
+  ('2d1cd6c3-5700-4af9-a271-d4863fdab20d'),
   ('10000000-0000-0000-0000-000000000001'),
   ('10000000-0000-0000-0000-000000000002')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users(id,username) VALUES
+  ('2d1cd6c3-5700-4af9-a271-d4863fdab20d','club_arena_system'),
   ('10000000-0000-0000-0000-000000000001','probe_user_1'),
   ('10000000-0000-0000-0000-000000000002','probe_user_2')
 ON CONFLICT (id) DO NOTHING;

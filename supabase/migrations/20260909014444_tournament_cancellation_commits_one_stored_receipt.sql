@@ -1751,6 +1751,13 @@ BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'Authentication required' USING ERRCODE = '28000';
   END IF;
+  -- auth.uid() proves only that the JWT once named an account. A signed-out
+  -- browser can retain that old subject claim, so refuse it before hashing a
+  -- request, taking a lock, reading a game, or writing a command receipt.
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION 'SESSION_REVOKED: this session is signed out - sign in again'
+      USING ERRCODE = '28000';
+  END IF;
 
   IF p_command_id IS NULL
      OR p_game_id IS NULL
@@ -1895,6 +1902,60 @@ BEGIN
 END;
 $managed_command$;
 
+-- Due schedules are durable service-role work, not a replay of the browser's
+-- now-expired JWT. The old runner changed its trusted role claim to
+-- authenticated before entering the command gateway. Once that gateway
+-- correctly requires a live browser session, every scheduled close would be
+-- rejected even though the service-role worker owns the schedule. Preserve
+-- the engine identity and delegate only the stored actor subject: the gateway
+-- still evaluates fn_can_create_games for that exact actor, while its session
+-- guard can distinguish this trusted worker from a signed-out browser.
+CREATE OR REPLACE FUNCTION public.fn_run_due_managed_game_schedules(
+  p_batch_size integer DEFAULT 50
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $managed_schedule_runner$
+DECLARE
+  v_schedule public.managed_game_schedules%ROWTYPE;
+  v_result jsonb;
+  v_processed integer := 0;
+BEGIN
+  IF auth.uid() IS NOT NULL AND COALESCE(auth.role(),'')<>'service_role' THEN
+    RAISE EXCEPTION 'Service role required' USING ERRCODE='42501';
+  END IF;
+  IF NOT pg_try_advisory_xact_lock(hashtext('run-due-managed-game-schedules')) THEN
+    RETURN jsonb_build_object('ok',true,'processed',0,'overlap_skipped',true);
+  END IF;
+  FOR v_schedule IN
+    SELECT * FROM public.managed_game_schedules
+     WHERE status='scheduled' AND execute_at<=now()
+     ORDER BY execute_at,schedule_id FOR UPDATE SKIP LOCKED
+     LIMIT LEAST(100,GREATEST(1,COALESCE(p_batch_size,50)))
+  LOOP
+    UPDATE public.managed_game_schedules SET status='executing'
+     WHERE schedule_id=v_schedule.schedule_id;
+    PERFORM set_config(
+      'request.jwt.claim.sub',v_schedule.actor_id::text,true);
+    v_result := public.fn_execute_managed_game_command(
+      v_schedule.command_id,v_schedule.game_kind,v_schedule.game_id,
+      v_schedule.command_action,v_schedule.expected_version,'{}'::jsonb
+    );
+    UPDATE public.managed_game_schedules
+       SET status=CASE WHEN COALESCE((v_result->>'ok')::boolean,false)
+                       THEN 'succeeded' ELSE 'rejected' END,
+           result=v_result,completed_at=now()
+     WHERE schedule_id=v_schedule.schedule_id;
+    v_processed:=v_processed+1;
+  END LOOP;
+  PERFORM set_config('request.jwt.claim.sub','',true);
+  RETURN jsonb_build_object(
+    'ok',true,'processed',v_processed,'overlap_skipped',false);
+END;
+$managed_schedule_runner$;
+
 REVOKE ALL ON FUNCTION public.fn_close_managed_game(text, uuid)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_close_managed_game(text, uuid)
@@ -1905,14 +1966,21 @@ REVOKE ALL ON FUNCTION public.fn_execute_managed_game_command(
 GRANT EXECUTE ON FUNCTION public.fn_execute_managed_game_command(
   uuid, text, uuid, text, integer, jsonb)
   TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_run_due_managed_game_schedules(integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_run_due_managed_game_schedules(integer)
+  TO service_role;
 
 DO $managed_cancel_proof$
 DECLARE
   v_atomic text;
   v_close text;
   v_gateway text;
+  v_runner text;
   v_close_global_at integer;
   v_close_row_at integer;
+  v_gateway_session_at integer;
+  v_gateway_hash_at integer;
   v_gateway_global_at integer;
   v_gateway_row_at integer;
 BEGIN
@@ -1926,10 +1994,18 @@ BEGIN
     FROM pg_proc p
    WHERE p.oid=to_regprocedure(
      'public.fn_execute_managed_game_command(uuid,text,uuid,text,integer,jsonb)');
+  SELECT p.prosrc INTO v_runner
+    FROM pg_proc p
+   WHERE p.oid=to_regprocedure(
+     'public.fn_run_due_managed_game_schedules(integer)');
 
   v_close_global_at:=position(
     'ca:tournament-terminal-settlement:v1' IN v_close);
   v_close_row_at:=position('FROM public.tournaments' IN v_close);
+  v_gateway_session_at:=position(
+    'public.fn_caller_session_is_live()' IN v_gateway);
+  v_gateway_hash_at:=position(
+    'public.fn_managed_game_command_hash(' IN v_gateway);
   v_gateway_global_at:=position(
     'ca:tournament-terminal-settlement:v1' IN v_gateway);
   v_gateway_row_at:=position('FROM public.tournaments' IN v_gateway);
@@ -1948,10 +2024,17 @@ BEGIN
      OR v_close NOT LIKE '%managed tournament close did not return its exact atomic cancellation receipt%'
      OR v_close ~* 'update[[:space:]]+public[.]tournaments'
      OR v_gateway IS NULL
+     OR v_gateway_session_at=0 OR v_gateway_hash_at=0
+     OR v_gateway_session_at>=v_gateway_hash_at
      OR v_gateway_global_at=0 OR v_gateway_row_at=0
      OR v_gateway_global_at>=v_gateway_row_at
      OR v_gateway NOT LIKE '%p_kind = ''tournament'' AND p_action = ''close''%'
-     OR v_gateway NOT LIKE '%fn_close_managed_game(p_kind, p_game_id)%' THEN
+     OR v_gateway NOT LIKE '%fn_close_managed_game(p_kind, p_game_id)%'
+     OR v_runner IS NULL
+     OR v_runner NOT LIKE
+          '%''request.jwt.claim.sub'',v_schedule.actor_id::text,true%'
+     OR v_runner LIKE '%request.jwt.claim.role%authenticated%'
+     OR v_runner NOT LIKE '%fn_execute_managed_game_command(%' THEN
     RAISE EXCEPTION 'managed cancellation source or lock-order proof failed'
       USING ERRCODE='P0404';
   END IF;
@@ -1971,7 +2054,13 @@ BEGIN
      OR NOT has_function_privilege(
        'authenticated',
        'public.fn_execute_managed_game_command(uuid,text,uuid,text,integer,jsonb)',
-       'EXECUTE') THEN
+       'EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_run_due_managed_game_schedules(integer)','EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_run_due_managed_game_schedules(integer)','EXECUTE') THEN
     RAISE EXCEPTION 'managed cancellation ACL proof failed'
       USING ERRCODE='42501';
   END IF;

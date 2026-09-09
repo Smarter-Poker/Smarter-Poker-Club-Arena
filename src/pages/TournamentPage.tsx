@@ -59,6 +59,7 @@ import {
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+import { uuid } from '../utils/uuid';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -140,6 +141,18 @@ export default function TournamentPage() {
   const [canRebuyNow, setCanRebuyNow] = useState(false);
   const [canAddOnNow, setCanAddOnNow] = useState(false);
   const [isProcessingRebuy, setIsProcessingRebuy] = useState(false);
+  /** One immutable token for one visible rebuy offer. A failed request keeps
+   * this token so a retry can only replay the same purchase. */
+  const rebuyPromptTokenRef = useRef<string | null>(null);
+  const beginRebuyPrompt = useCallback((): string => {
+    if (rebuyPromptTokenRef.current) return rebuyPromptTokenRef.current;
+    const token = uuid();
+    rebuyPromptTokenRef.current = token;
+    return token;
+  }, []);
+  const endRebuyPrompt = useCallback(() => {
+    rebuyPromptTokenRef.current = null;
+  }, []);
   const selectedTournamentRef = useRef<Tournament | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
 
@@ -200,6 +213,13 @@ export default function TournamentPage() {
   useEffect(() => {
     selectedTournamentRef.current = selectedTournament;
   }, [selectedTournament]);
+
+  // Opening an offer mints its token before the player confirms. Closing it or
+  // changing its player/tournament identity retires that token first.
+  useEffect(() => {
+    endRebuyPrompt();
+    if (canRebuyNow) beginRebuyPrompt();
+  }, [canRebuyNow, selectedTournament?.id, currentUser.id, beginRebuyPrompt, endRebuyPrompt]);
 
   // Check club ownership
   useEffect(() => {
@@ -872,9 +892,15 @@ export default function TournamentPage() {
     if (!selectedTournament) return;
     setIsProcessingRebuy(true);
     try {
-      const result = await tournamentService.processRebuy(selectedTournament.id, currentUser.id);
+      const clientToken = beginRebuyPrompt();
+      const result = await tournamentService.processRebuy(
+        selectedTournament.id,
+        currentUser.id,
+        clientToken
+      );
       if (result.success) {
         toast.success(`Rebuy successful! New stack: ${result.newStack?.toLocaleString()}`);
+        endRebuyPrompt();
         setCanRebuyNow(false);
         // Refresh tournament
         const updated = await tournamentService.getTournament(selectedTournament.id);

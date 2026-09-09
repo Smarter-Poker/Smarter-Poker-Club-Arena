@@ -631,7 +631,7 @@ BEGIN
       trunc(v_gross*v_ratio*100+0.000001)/100,
       trunc(v_gross*0.1*100+0.000001)/100);
     v_bounty := CASE WHEN v_is_bounty THEN LEAST(
-      GREATEST(0,round(COALESCE(v_t.bounty_amount,0))),v_gross-v_fee)
+      GREATEST(0,round(COALESCE(v_t.bounty_amount,0),2)),v_gross-v_fee)
       ELSE 0 END;
     refund_fee := v_fee;
     refund_bounty := v_bounty;
@@ -2137,6 +2137,9 @@ CREATE TABLE public.tournament_unregistration_receipts (
   source_wallet_club_ids uuid[] NOT NULL,
   credit_ledger_ids uuid[] NOT NULL,
   wallet_transaction_ids uuid[] NOT NULL,
+  fees_reversed numeric(15,2) NOT NULL,
+  fee_reversal_ids uuid[] NOT NULL,
+  fee_source_rake_record_ids uuid[] NOT NULL,
   seat_number integer,
   seats_taken integer,
   scheduled_start_at timestamptz NOT NULL,
@@ -2147,17 +2150,24 @@ CREATE TABLE public.tournament_unregistration_receipts (
   CHECK (returned_ticket_value >= 0
      AND returned_ticket_value::text NOT IN ('NaN','Infinity','-Infinity')
      AND returned_ticket_value=round(returned_ticket_value,2)),
+  CHECK (fees_reversed >= 0
+     AND fees_reversed::text NOT IN ('NaN','Infinity','-Infinity')
+     AND fees_reversed=round(fees_reversed,2)),
   CHECK (array_position(entitlement_ids,NULL) IS NULL
      AND array_position(ticket_ids,NULL) IS NULL
      AND array_position(source_wallet_club_ids,NULL) IS NULL
      AND array_position(credit_ledger_ids,NULL) IS NULL
-     AND array_position(wallet_transaction_ids,NULL) IS NULL),
+     AND array_position(wallet_transaction_ids,NULL) IS NULL
+     AND array_position(fee_reversal_ids,NULL) IS NULL
+     AND array_position(fee_source_rake_record_ids,NULL) IS NULL),
   CHECK (cardinality(entitlement_ids)=cardinality(source_wallet_club_ids)),
   CHECK (cardinality(entitlement_ids)=
          cardinality(ticket_ids)+cardinality(wallet_transaction_ids)),
   CHECK (cardinality(credit_ledger_ids)=cardinality(wallet_transaction_ids)),
   CHECK ((returned_ticket_value=0)=(cardinality(ticket_ids)=0)),
   CHECK ((refunded_chips=0)=(cardinality(wallet_transaction_ids)=0)),
+  CHECK ((fees_reversed=0)=(cardinality(fee_reversal_ids)=0)),
+  CHECK ((fees_reversed=0)=(cardinality(fee_source_rake_record_ids)=0)),
   CHECK ((source_table_id IS NULL AND seat_number IS NULL)
       OR (source_table_id IS NOT NULL AND seat_number IS NOT NULL)),
   CHECK (settled_at < scheduled_start_at)
@@ -2166,6 +2176,12 @@ CREATE TABLE public.tournament_unregistration_receipts (
 CREATE INDEX tournament_unregistration_receipt_replay
   ON public.tournament_unregistration_receipts(
     tournament_id,user_id,source_table_id,settled_at DESC,registration_id);
+CREATE INDEX tournament_unregistration_receipt_fee_reversals
+  ON public.tournament_unregistration_receipts
+  USING gin(fee_reversal_ids);
+CREATE INDEX tournament_unregistration_receipt_fee_sources
+  ON public.tournament_unregistration_receipts
+  USING gin(fee_source_rake_record_ids);
 
 ALTER TABLE public.tournament_satellite_settlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_satellite_awards ENABLE ROW LEVEL SECURITY;
@@ -2216,6 +2232,37 @@ CREATE TRIGGER tournament_refund_tranches_append_only
 CREATE TRIGGER tournament_unregistration_receipts_append_only
   BEFORE UPDATE OR DELETE ON public.tournament_unregistration_receipts
   FOR EACH ROW EXECUTE FUNCTION public.fn_satellite_settlement_receipts_are_append_only();
+
+-- Once an unregistration receipt names the positive fee sources and their
+-- negative reversals, both sides are financial evidence. Refuse mutation at
+-- the journal itself so replay never depends on a watcher or later repair.
+CREATE OR REPLACE FUNCTION public.fn_ca_unregistration_rake_evidence_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $unregistration_rake_evidence_is_immutable$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_unregistration_receipts receipt
+     WHERE ARRAY[OLD.id] && receipt.fee_reversal_ids
+        OR ARRAY[OLD.id] && receipt.fee_source_rake_record_ids) THEN
+    RAISE EXCEPTION
+      'committed tournament unregistration rake evidence is immutable'
+      USING ERRCODE='55000';
+  END IF;
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$unregistration_rake_evidence_is_immutable$;
+
+REVOKE ALL ON FUNCTION
+  public.fn_ca_unregistration_rake_evidence_is_immutable()
+  FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE TRIGGER tournament_unregistration_rake_evidence_is_immutable
+  BEFORE UPDATE OR DELETE ON public.rake_records
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_ca_unregistration_rake_evidence_is_immutable();
 
 -- A direct charge receipt and its reporting wallet debit must both exist by
 -- commit. This is deliberately deferred because the canonical buy-in writes
@@ -2435,7 +2482,7 @@ COMMENT ON TABLE public.tournament_refund_tranches IS
 COMMENT ON TABLE public.tournament_refund_authorizations IS
   'Owner-only one-use capabilities consumed inside the exact wallet-refund transaction. No browser or service role can inspect or mint them.';
 COMMENT ON TABLE public.tournament_unregistration_receipts IS
-  'Immutable, request-keyed outcome of one exact pre-start registration removal. It records the scheduled-start cutoff plus wallet and tournament-ticket rails separately, so a lost response can be replayed without performing a post-start unregister or reconstructing money from mutable tournament pricing.';
+  'Immutable, request-keyed outcome of one exact pre-start registration removal. It records the scheduled-start cutoff, wallet and tournament-ticket rails separately, and the exact original and reversing rake row ids by fee-recipient club, so a lost response can be replayed without performing a post-start unregister or reconstructing money from mutable tournament pricing or the funding wallet club.';
 COMMENT ON TABLE public.tournament_ticket_admission_authorizations IS
   'Owner-only one-use capabilities consumed by the ticket row guard during atomic tournament admission. Session settings alone never authorize redemption.';
 COMMENT ON COLUMN public.tournament_tickets.redemption_mode IS
@@ -4113,7 +4160,7 @@ WITH t AS (
     WHEN NOT t.is_b OR lower(l.category)='addon' THEN 0
     WHEN lower(l.category)='tournament_buyin' THEN round(t.bounty_amount,2)
     ELSE LEAST(
-      GREATEST(0,round(t.bounty_amount)),
+      GREATEST(0,round(t.bounty_amount,2)),
       round(l.amount,2)-LEAST(
         trunc(round(l.amount,2)*(CASE
           WHEN t.buy_in_amount+t.buy_in_fee>0 AND t.buy_in_fee>0
@@ -4290,7 +4337,9 @@ AS $unregistration_receipt$
 DECLARE
   v_r public.tournament_unregistration_receipts%ROWTYPE;
   v_entitlement_count integer;
+  v_fee_entitlement_count integer;
   v_entitlement_total numeric;
+  v_entitlement_fee numeric;
   v_source_count integer;
   v_wallet_count integer;
   v_wallet_total numeric;
@@ -4298,6 +4347,12 @@ DECLARE
   v_ticket_total numeric;
   v_ticket_ledger_count integer;
   v_ticket_transaction_count integer;
+  v_fee_reversal_count integer;
+  v_fee_reversal_total numeric;
+  v_fee_source_ids uuid[];
+  v_fee_mapping_count integer;
+  v_fee_mapping_entitlement_count integer;
+  v_fee_mapping_ids uuid[];
 BEGIN
   SELECT * INTO v_r
     FROM public.tournament_unregistration_receipts r
@@ -4320,8 +4375,11 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  SELECT count(*),round(COALESCE(sum(e.gross),0),2)
-    INTO v_entitlement_count,v_entitlement_total
+  SELECT count(*),count(*) FILTER (WHERE e.refund_fee>0),
+         round(COALESCE(sum(e.gross),0),2),
+         round(COALESCE(sum(e.refund_fee),0),2)
+    INTO v_entitlement_count,v_fee_entitlement_count,
+         v_entitlement_total,v_entitlement_fee
     FROM public.tournament_refund_entitlements e
    WHERE e.id=ANY(v_r.entitlement_ids)
      AND e.tournament_id=v_r.tournament_id AND e.user_id=v_r.user_id;
@@ -4384,6 +4442,64 @@ BEGIN
      AND l.idempotency_key='tourney:'||e.tournament_id::text
           ||':satellite-ticket-return:'||e.id::text;
 
+  SELECT count(*),round(COALESCE(-sum(reversal.rake_amount),0),2)
+    INTO v_fee_reversal_count,v_fee_reversal_total
+    FROM public.rake_records reversal
+   WHERE reversal.id=ANY(v_r.fee_reversal_ids)
+     AND reversal.tournament_id=v_r.tournament_id
+     AND reversal.is_tournament IS TRUE
+     AND reversal.source='fn_unregister_from_tournament'
+     AND reversal.rake_amount<0
+     AND reversal.metadata->>'kind'='tournament_fee_refund'
+     AND reversal.metadata->>'user_id'=v_r.user_id::text
+     AND reversal.metadata->>'registration_id'=v_r.registration_id::text;
+  SELECT COALESCE(array_agg(source.id ORDER BY source.id),ARRAY[]::uuid[])
+    INTO v_fee_source_ids
+    FROM public.rake_records reversal
+   CROSS JOIN LATERAL jsonb_array_elements_text(
+     reversal.metadata->'original_rake_record_ids') raw(id)
+   JOIN LATERAL (SELECT raw.id::uuid AS id) source ON true
+   WHERE reversal.id=ANY(v_r.fee_reversal_ids);
+  WITH exact_fee_mapping AS MATERIALIZED (
+    SELECT e.id AS entitlement_id,r.id AS rake_record_id
+      FROM public.tournament_refund_entitlements e
+      JOIN public.chip_ledger l ON l.id=e.source_ledger_id
+      JOIN public.rake_records r
+        ON r.id=ANY(v_r.fee_source_rake_record_ids)
+       AND r.tournament_id=e.tournament_id
+       AND r.is_tournament IS TRUE
+       AND r.club_id IS NOT NULL
+       AND r.rake_amount=e.refund_fee
+       AND r.created_at=l.created_at
+       AND r.metadata->>'user_id'=e.user_id::text
+       AND (
+         (e.entitlement_kind='wallet_charge'
+          AND e.charge_category='tournament_buyin'
+          AND r.source IN (
+            'fn_register_for_tournament','fn_register_horse_for_tournament')
+          AND r.metadata->>'kind'='tournament_entry_fee'
+          AND r.metadata->>'registration_id'=v_r.registration_id::text)
+         OR (e.entitlement_kind='wallet_charge'
+          AND e.charge_category='rebuy'
+          AND r.source='process_tournament_rebuy'
+          AND r.metadata->>'kind' IN (
+            'tournament_rebuy_fee','tournament_reentry_fee'))
+         OR (e.entitlement_kind='satellite_seat'
+          AND r.source='fn_award_satellite_seat'
+          AND r.metadata->>'kind'='satellite_seat_entry_fee'
+          AND r.metadata->>'registration_id'=e.registration_id::text)
+         OR (e.entitlement_kind='tournament_ticket'
+          AND r.source='fn_register_for_tournament_with_ticket'
+          AND r.metadata->>'kind'='tournament_ticket_entry_fee'
+          AND r.metadata->>'registration_id'=e.registration_id::text))
+     WHERE e.id=ANY(v_r.entitlement_ids) AND e.refund_fee>0
+  )
+  SELECT count(*),count(DISTINCT entitlement_id),
+         COALESCE(array_agg(rake_record_id ORDER BY rake_record_id),
+                  ARRAY[]::uuid[])
+    INTO v_fee_mapping_count,v_fee_mapping_entitlement_count,v_fee_mapping_ids
+    FROM exact_fee_mapping;
+
   IF v_r.settled_at>=v_r.scheduled_start_at
      OR v_entitlement_count<>cardinality(v_r.entitlement_ids)
      OR v_source_count<>cardinality(v_r.entitlement_ids)
@@ -4395,6 +4511,56 @@ BEGIN
      OR v_ticket_total IS DISTINCT FROM v_r.returned_ticket_value
      OR v_ticket_ledger_count<>cardinality(v_r.ticket_ids)
      OR v_ticket_transaction_count<>cardinality(v_r.ticket_ids)
+     OR v_r.fees_reversed IS DISTINCT FROM v_entitlement_fee
+     OR v_fee_reversal_count<>cardinality(v_r.fee_reversal_ids)
+     OR v_fee_reversal_total IS DISTINCT FROM v_r.fees_reversed
+     OR v_fee_source_ids IS DISTINCT FROM v_r.fee_source_rake_record_ids
+     OR v_fee_mapping_ids IS DISTINCT FROM v_r.fee_source_rake_record_ids
+     OR v_fee_mapping_count<>v_fee_entitlement_count
+     OR v_fee_mapping_entitlement_count<>v_fee_entitlement_count
+     OR cardinality(v_fee_source_ids)<>(
+       SELECT count(DISTINCT id) FROM unnest(v_fee_source_ids) source(id))
+     OR EXISTS (
+       SELECT 1 FROM public.tournament_unregistration_receipts other
+        WHERE other.registration_id<>v_r.registration_id
+          AND (other.fee_reversal_ids && v_r.fee_reversal_ids
+            OR other.fee_source_rake_record_ids
+                 && v_r.fee_source_rake_record_ids))
+     OR EXISTS (
+       SELECT 1
+         FROM public.rake_records reversal
+        WHERE reversal.id=ANY(v_r.fee_reversal_ids)
+          AND (
+            jsonb_typeof(reversal.metadata->'original_rake_record_ids')
+              IS DISTINCT FROM 'array'
+            OR jsonb_array_length(
+                 reversal.metadata->'original_rake_record_ids')=0
+            OR (SELECT round(COALESCE(sum(original.rake_amount),0),2)
+                  FROM jsonb_array_elements_text(
+                    reversal.metadata->'original_rake_record_ids') raw(id)
+                  JOIN public.rake_records original
+                    ON original.id=raw.id::uuid
+                 WHERE original.tournament_id=v_r.tournament_id
+                   AND original.club_id=reversal.club_id
+                   AND original.is_tournament IS TRUE
+                   AND original.rake_amount>0
+                   AND original.metadata->>'user_id'=v_r.user_id::text
+                   AND (
+                     (original.source IN (
+                        'fn_register_for_tournament',
+                        'fn_register_horse_for_tournament')
+                       AND original.metadata->>'kind'='tournament_entry_fee')
+                     OR (original.source='process_tournament_rebuy'
+                       AND original.metadata->>'kind' IN (
+                         'tournament_rebuy_fee','tournament_reentry_fee'))
+                     OR (original.source=
+                           'fn_register_for_tournament_with_ticket'
+                       AND original.metadata->>'kind'=
+                           'tournament_ticket_entry_fee')
+                     OR (original.source='fn_award_satellite_seat'
+                       AND original.metadata->>'kind'=
+                           'satellite_seat_entry_fee')))
+                IS DISTINCT FROM -reversal.rake_amount))
      OR (v_r.source_table_id IS NOT NULL AND NOT EXISTS(
        SELECT 1 FROM public.tables tb
         WHERE tb.id=v_r.source_table_id
@@ -4414,6 +4580,9 @@ BEGIN
     'source_wallet_club_ids',to_jsonb(v_r.source_wallet_club_ids),
     'credit_ledger_ids',to_jsonb(v_r.credit_ledger_ids),
     'wallet_transaction_ids',to_jsonb(v_r.wallet_transaction_ids),
+    'fees_reversed',v_r.fees_reversed,
+    'fee_reversal_ids',to_jsonb(v_r.fee_reversal_ids),
+    'fee_source_rake_record_ids',to_jsonb(v_r.fee_source_rake_record_ids),
     'seat_number',v_r.seat_number,'seats_taken',v_r.seats_taken,
     'scheduled_start_at',v_r.scheduled_start_at,
     'settled_at',v_r.settled_at);
@@ -4468,11 +4637,19 @@ DECLARE
   v_running_owed numeric:=0;
   v_rake_before numeric:=0;
   v_rake_after numeric:=0;
+  v_fees_reversed numeric:=0;
   v_entitlement_ids uuid[]:='{}'::uuid[];
   v_ticket_ids uuid[]:='{}'::uuid[];
   v_credit_ledger_ids uuid[]:='{}'::uuid[];
   v_wallet_transaction_ids uuid[]:='{}'::uuid[];
   v_source_wallet_club_ids uuid[]:='{}'::uuid[];
+  v_fee_reversal_ids uuid[]:='{}'::uuid[];
+  v_fee_source_rake_record_ids uuid[]:='{}'::uuid[];
+  v_fee_entitlement_ids uuid[]:='{}'::uuid[];
+  v_fee_reversal_id uuid;
+  v_fee_source_count integer:=0;
+  v_fee_source_entitlement_count integer:=0;
+  v_fee_source_amount numeric:=0;
   v_request_id uuid:=COALESCE(p_request_id,gen_random_uuid());
   v_unregistered_at timestamptz;
   v_description text:=COALESCE(
@@ -4654,14 +4831,77 @@ BEGIN
   SELECT round(COALESCE(sum(r.rake_amount),0),2) INTO v_rake_before
     FROM public.rake_records r
    WHERE r.tournament_id=p_tournament_id AND r.is_tournament;
-  IF round(COALESCE((SELECT sum(r.rake_amount)
-       FROM public.rake_records r
-      WHERE r.tournament_id=p_tournament_id AND r.is_tournament
-        AND r.metadata->>'user_id'=p_user_id::text),0),2)
-       IS DISTINCT FROM v_refund_fee THEN
-    RAISE EXCEPTION 'registration % has no exact unmatched fee evidence',v_reg.id
-      USING ERRCODE='P0404';
+  SELECT COALESCE(array_agg(e.id ORDER BY e.id),ARRAY[]::uuid[])
+    INTO v_fee_entitlement_ids
+    FROM public.tournament_refund_entitlements e
+   WHERE e.tournament_id=p_tournament_id AND e.user_id=p_user_id
+     AND (e.entitlement_kind='wallet_charge' OR e.registration_id=v_reg.id)
+     AND e.refund_fee>0
+     AND NOT EXISTS(
+       SELECT 1 FROM public.tournament_refund_tranches tr
+        WHERE tr.entitlement_id=e.id)
+     AND NOT EXISTS(
+       SELECT 1 FROM public.tournament_tickets tk
+        WHERE tk.source_refund_entitlement_id=e.id);
+
+  -- Bind every fee-bearing entitlement to its actual same-transaction rake
+  -- journal. The refund wallet club is deliberately absent from this match:
+  -- it identifies the payer, while rake_records.club_id identifies the fee
+  -- recipient and can be a different club.
+  WITH fee_sources AS MATERIALIZED (
+    SELECT e.id AS entitlement_id,r.id AS rake_record_id,
+           r.club_id,r.rake_amount
+      FROM public.tournament_refund_entitlements e
+      JOIN public.chip_ledger l ON l.id=e.source_ledger_id
+      JOIN public.rake_records r
+        ON r.tournament_id=e.tournament_id
+       AND r.is_tournament IS TRUE
+       AND r.club_id IS NOT NULL
+       AND r.rake_amount=e.refund_fee
+       AND r.created_at=l.created_at
+       AND r.metadata->>'user_id'=e.user_id::text
+       AND (
+         (e.entitlement_kind='wallet_charge'
+          AND e.charge_category='tournament_buyin'
+          AND r.source IN (
+            'fn_register_for_tournament','fn_register_horse_for_tournament')
+          AND r.metadata->>'kind'='tournament_entry_fee'
+          AND r.metadata->>'registration_id'=v_reg.id::text)
+         OR (e.entitlement_kind='wallet_charge'
+          AND e.charge_category='rebuy'
+          AND r.source='process_tournament_rebuy'
+          AND r.metadata->>'kind' IN (
+            'tournament_rebuy_fee','tournament_reentry_fee'))
+         OR (e.entitlement_kind='satellite_seat'
+          AND r.source='fn_award_satellite_seat'
+          AND r.metadata->>'kind'='satellite_seat_entry_fee'
+          AND r.metadata->>'registration_id'=e.registration_id::text)
+         OR (e.entitlement_kind='tournament_ticket'
+          AND r.source='fn_register_for_tournament_with_ticket'
+          AND r.metadata->>'kind'='tournament_ticket_entry_fee'
+          AND r.metadata->>'registration_id'=e.registration_id::text))
+     WHERE e.id=ANY(v_fee_entitlement_ids)
+  )
+  SELECT count(*),count(DISTINCT entitlement_id),
+         round(COALESCE(sum(rake_amount),0),2),
+         COALESCE(array_agg(rake_record_id ORDER BY rake_record_id),
+                  ARRAY[]::uuid[])
+    INTO v_fee_source_count,v_fee_source_entitlement_count,
+         v_fee_source_amount,v_fee_source_rake_record_ids
+    FROM fee_sources;
+  IF v_fee_source_count<>cardinality(v_fee_entitlement_ids)
+     OR v_fee_source_entitlement_count<>cardinality(v_fee_entitlement_ids)
+     OR v_fee_source_count<>(
+       SELECT count(DISTINCT id)
+         FROM unnest(v_fee_source_rake_record_ids) source(id))
+     OR v_fee_source_amount IS DISTINCT FROM v_refund_fee THEN
+    RAISE EXCEPTION
+      'registration % fee entitlements do not map one-to-one to exact rake evidence',
+      v_reg.id USING ERRCODE='P0404';
   END IF;
+  PERFORM 1 FROM public.rake_records r
+   WHERE r.id=ANY(v_fee_source_rake_record_ids)
+   ORDER BY r.club_id,r.id FOR UPDATE;
 
   PERFORM public.fn_ca_escrow_apply(
     p_tournament_id,'unregister entitlement escrow prelock');
@@ -4751,15 +4991,40 @@ BEGIN
   END LOOP;
 
   FOR v_fee_group IN
-    SELECT e.refund_wallet_club_id AS club_id,
-           round(sum(e.refund_fee),2) AS fee,
+    SELECT r.club_id,round(sum(r.rake_amount),2) AS fee,
+           array_agg(r.id ORDER BY r.id) AS source_rake_record_ids,
            array_agg(e.id ORDER BY e.id) AS entitlement_ids
-      FROM public.tournament_refund_entitlements e
-     WHERE e.tournament_id=p_tournament_id AND e.user_id=p_user_id
-       AND (e.entitlement_kind='wallet_charge' OR e.registration_id=v_reg.id)
-       AND e.id=ANY(v_entitlement_ids)
-     GROUP BY e.refund_wallet_club_id
-     ORDER BY e.refund_wallet_club_id
+      FROM public.rake_records r
+      JOIN public.tournament_refund_entitlements e
+        ON e.id=ANY(v_fee_entitlement_ids)
+       AND e.refund_fee=r.rake_amount
+       AND e.tournament_id=r.tournament_id
+       AND e.user_id=p_user_id
+       AND r.metadata->>'user_id'=e.user_id::text
+       AND (
+         (e.entitlement_kind='wallet_charge'
+          AND e.charge_category='tournament_buyin'
+          AND r.source IN (
+            'fn_register_for_tournament','fn_register_horse_for_tournament')
+          AND r.metadata->>'kind'='tournament_entry_fee'
+          AND r.metadata->>'registration_id'=v_reg.id::text)
+         OR (e.entitlement_kind='wallet_charge'
+          AND e.charge_category='rebuy'
+          AND r.source='process_tournament_rebuy'
+          AND r.metadata->>'kind' IN (
+            'tournament_rebuy_fee','tournament_reentry_fee'))
+         OR (e.entitlement_kind='satellite_seat'
+          AND r.source='fn_award_satellite_seat'
+          AND r.metadata->>'kind'='satellite_seat_entry_fee'
+          AND r.metadata->>'registration_id'=e.registration_id::text)
+         OR (e.entitlement_kind='tournament_ticket'
+          AND r.source='fn_register_for_tournament_with_ticket'
+          AND r.metadata->>'kind'='tournament_ticket_entry_fee'
+          AND r.metadata->>'registration_id'=e.registration_id::text))
+      JOIN public.chip_ledger l
+        ON l.id=e.source_ledger_id AND l.created_at=r.created_at
+     WHERE r.id=ANY(v_fee_source_rake_record_ids)
+     GROUP BY r.club_id ORDER BY r.club_id
   LOOP
     IF v_fee_group.fee>0 THEN
       INSERT INTO public.rake_records(
@@ -4771,10 +5036,24 @@ BEGIN
         jsonb_build_object(
           'kind','tournament_fee_refund','user_id',p_user_id,
           'registration_id',v_reg.id,
-          'source_wallet_club_id',v_fee_group.club_id,
-          'entitlement_ids',to_jsonb(v_fee_group.entitlement_ids)));
+          'fee_recipient_club_id',v_fee_group.club_id,
+          'entitlement_ids',to_jsonb(v_fee_group.entitlement_ids),
+          'original_rake_record_ids',
+            to_jsonb(v_fee_group.source_rake_record_ids)))
+      RETURNING id INTO v_fee_reversal_id;
+      v_fee_reversal_ids:=array_append(
+        v_fee_reversal_ids,v_fee_reversal_id);
+      v_fees_reversed:=round(v_fees_reversed+v_fee_group.fee,2);
     END IF;
   END LOOP;
+  SELECT COALESCE(array_agg(id ORDER BY id),ARRAY[]::uuid[])
+    INTO v_fee_reversal_ids
+    FROM unnest(v_fee_reversal_ids) reversal(id);
+  IF v_fees_reversed IS DISTINCT FROM v_refund_fee THEN
+    RAISE EXCEPTION
+      'registration % reversed % in exact fee rows but owes %',
+      v_reg.id,v_fees_reversed,v_refund_fee USING ERRCODE='P0404';
+  END IF;
 
   UPDATE public.tournaments
      SET current_players=v_players_before-1,
@@ -4861,11 +5140,13 @@ BEGIN
     registration_id,request_id,tournament_id,user_id,source_table_id,
     refunded_chips,returned_ticket_value,entitlement_ids,ticket_ids,
     source_wallet_club_ids,credit_ledger_ids,wallet_transaction_ids,
+    fees_reversed,fee_reversal_ids,fee_source_rake_record_ids,
     seat_number,seats_taken,scheduled_start_at,settled_at)
   VALUES(
     v_reg.id,v_request_id,p_tournament_id,p_user_id,p_expected_table_id,
     v_wallet_amount,v_ticket_amount,v_entitlement_ids,v_ticket_ids,
     v_source_wallet_club_ids,v_credit_ledger_ids,v_wallet_transaction_ids,
+    v_fees_reversed,v_fee_reversal_ids,v_fee_source_rake_record_ids,
     v_seat_number,v_seats_taken,v_t.start_time,v_unregistered_at);
   v_receipt:=public.fn_ca_tournament_unregistration_receipt(
     p_tournament_id,p_user_id,p_expected_table_id,v_request_id);
@@ -4896,6 +5177,10 @@ BEGIN
     RAISE EXCEPTION 'fn_unregister_from_tournament requires an authenticated caller'
       USING ERRCODE='28000';
   END IF;
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION 'fn_unregister_from_tournament requires a live session'
+      USING ERRCODE='28000';
+  END IF;
   RETURN public.fn_ca_unregister_tournament_player_exact(
     p_tournament_id,v_uid,NULL,'Tournament unregistration refund');
 END;
@@ -4920,6 +5205,10 @@ DECLARE
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'fn_unregister_from_tournament requires an authenticated caller'
+      USING ERRCODE='28000';
+  END IF;
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION 'fn_unregister_from_tournament requires a live session'
       USING ERRCODE='28000';
   END IF;
   IF p_request_id IS NULL THEN
@@ -4948,6 +5237,10 @@ DECLARE
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'fn_leave_seat_and_refund requires an authenticated caller'
+      USING ERRCODE='28000';
+  END IF;
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION 'fn_leave_seat_and_refund requires a live session'
       USING ERRCODE='28000';
   END IF;
   SELECT tb.tournament_id INTO v_tournament_id FROM public.tables tb
@@ -4980,6 +5273,10 @@ DECLARE
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'fn_leave_seat_and_refund requires an authenticated caller'
+      USING ERRCODE='28000';
+  END IF;
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION 'fn_leave_seat_and_refund requires a live session'
       USING ERRCODE='28000';
   END IF;
   IF p_request_id IS NULL THEN
@@ -5016,6 +5313,10 @@ DECLARE
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'fn_admin_remove_tournament_player requires an authenticated caller'
+      USING ERRCODE='28000';
+  END IF;
+  IF NOT public.fn_caller_session_is_live() THEN
+    RAISE EXCEPTION 'fn_admin_remove_tournament_player requires a live session'
       USING ERRCODE='28000';
   END IF;
   SELECT t.club_id INTO v_club_id FROM public.tournaments t
@@ -8531,6 +8832,7 @@ DECLARE
   v_refund_plan_source text;
   v_ticket_redeem_source text;
   v_ticket_cancel_source text;
+  v_charge_split_source text;
   v_escrow_reader_source text;
   v_late_registration_source text;
   v_wallet_registration_source text;
@@ -8592,6 +8894,9 @@ BEGIN
    WHERE oid = 'public.fn_redeem_tournament_ticket(uuid)'::regprocedure;
   SELECT prosrc INTO v_ticket_cancel_source FROM pg_proc
    WHERE oid = 'public.fn_cancel_tournament_ticket(uuid)'::regprocedure;
+  SELECT prosrc INTO v_charge_split_source FROM pg_proc
+   WHERE oid =
+     'public.fn_ca_tournament_charge_split(uuid,text,numeric)'::regprocedure;
   SELECT prosrc INTO v_escrow_reader_source FROM pg_proc
    WHERE oid = 'public.fn_ca_tournament_escrow(uuid)'::regprocedure;
   SELECT prosrc INTO v_late_registration_source FROM pg_proc
@@ -8671,7 +8976,18 @@ BEGIN
     RAISE EXCEPTION
       'wallet and ticket admission no longer share the canonical lifecycle and uncapped-event contract';
   END IF;
-  IF v_escrow_reader_source IS NULL
+  IF v_charge_split_source IS NULL
+     OR position(
+          'round(COALESCE(v_t.bounty_amount,0),2)'
+          IN v_charge_split_source)=0
+     OR v_charge_split_source ~
+          'round\([[:space:]]*COALESCE\(v_t\.bounty_amount,0\)[[:space:]]*\)'
+     OR v_escrow_reader_source IS NULL
+     OR position(
+          'GREATEST(0,round(t.bounty_amount,2))'
+          IN v_escrow_reader_source)=0
+     OR v_escrow_reader_source ~
+          'round\([[:space:]]*t\.bounty_amount[[:space:]]*\)'
      OR NOT EXISTS (
        SELECT 1
          FROM pg_proc p
@@ -8703,7 +9019,7 @@ BEGIN
           )
      ) THEN
     RAISE EXCEPTION
-      'tournament escrow read model is not a pinned owner/service-only SECURITY DEFINER';
+      'tournament split/escrow lost cent-accurate bounty rails or owner/service-only security';
   END IF;
   IF v_receipt_source IS NULL
      OR v_receipt_source NOT LIKE '%v_source_table_ids IS DISTINCT FROM v_h.source_table_ids%'
@@ -8754,6 +9070,11 @@ BEGIN
           IN v_unregister_source)=0
      OR position('v_wallet_amount,v_ticket_amount,v_entitlement_ids,v_ticket_ids'
           IN v_unregister_source)=0
+     OR position('original_rake_record_ids' IN v_unregister_source)=0
+     OR position('fee_recipient_club_id' IN v_unregister_source)=0
+     OR position('v_fee_source_rake_record_ids' IN v_unregister_source)=0
+     OR position('e.refund_wallet_club_id AS club_id'
+          IN v_unregister_source)<>0
      OR position('credit_player_wallet' IN v_unregister_source)<>0
      OR position('interval ''1 minute''' IN lower(v_unregister_source))<>0 THEN
     RAISE EXCEPTION
@@ -8782,6 +9103,12 @@ BEGIN
           IN v_unregister_receipt_source)=0
      OR position('''wallet_chips_from_satellite_entitlements'',0'
           IN v_unregister_receipt_source)=0
+     OR position('''fees_reversed'',v_r.fees_reversed'
+          IN v_unregister_receipt_source)=0
+     OR position('''fee_reversal_ids'',to_jsonb(v_r.fee_reversal_ids)'
+          IN v_unregister_receipt_source)=0
+     OR position('''fee_source_rake_record_ids'',to_jsonb('
+          IN v_unregister_receipt_source)=0
      OR position('INSERT INTO ' IN upper(v_unregister_receipt_source))<>0
      OR position('UPDATE ' IN upper(v_unregister_receipt_source))<>0
      OR position('DELETE FROM ' IN upper(v_unregister_receipt_source))<>0 THEN
@@ -8799,7 +9126,19 @@ BEGIN
      OR position('p_request_id IS NULL' IN v_leave_wrapper_source)=0
      OR position(
           '''Tournament seat unregistration refund'',p_request_id'
-          IN v_leave_wrapper_source)=0 THEN
+          IN v_leave_wrapper_source)=0
+     OR position('public.fn_caller_session_is_live()'
+          IN v_unregister_wrapper_source)=0
+     OR position('public.fn_caller_session_is_live()'
+          IN v_leave_wrapper_source)=0
+     OR (SELECT count(*) FROM pg_proc p
+          WHERE p.oid=ANY(ARRAY[
+            'public.fn_unregister_from_tournament(uuid)'::regprocedure::oid,
+            'public.fn_unregister_from_tournament(uuid,uuid)'::regprocedure::oid,
+            'public.fn_leave_seat_and_refund(uuid)'::regprocedure::oid,
+            'public.fn_leave_seat_and_refund(uuid,uuid)'::regprocedure::oid,
+            'public.fn_admin_remove_tournament_player(uuid,uuid)'::regprocedure::oid])
+            AND p.prosrc LIKE '%public.fn_caller_session_is_live()%')<>5 THEN
     RAISE EXCEPTION
       'request-keyed unregister wrappers lost caller identity or retry identity';
   END IF;
@@ -8966,6 +9305,20 @@ BEGIN
         WHERE c.conrelid='public.tournament_unregistration_receipts'::regclass
           AND c.contype='c'
           AND pg_get_constraintdef(c.oid)='CHECK ((settled_at < scheduled_start_at))')
+     OR (SELECT count(*) FROM information_schema.columns c
+          WHERE c.table_schema='public'
+            AND c.table_name='tournament_unregistration_receipts'
+            AND c.column_name IN (
+              'fees_reversed','fee_reversal_ids',
+              'fee_source_rake_record_ids'))<>3
+     OR (SELECT count(*) FROM pg_index i
+          JOIN pg_class idx ON idx.oid=i.indexrelid
+         WHERE i.indrelid=
+                 'public.tournament_unregistration_receipts'::regclass
+           AND idx.relname IN (
+             'tournament_unregistration_receipt_fee_reversals',
+             'tournament_unregistration_receipt_fee_sources')
+           AND i.indisvalid)<>2
      OR NOT EXISTS(
        SELECT 1 FROM pg_proc p
         WHERE p.oid=
@@ -9019,6 +9372,9 @@ BEGIN
         ('public.tournament_unregistration_receipts'::regclass,
          'tournament_unregistration_receipts_append_only',
          'public.fn_satellite_settlement_receipts_are_append_only()'::regprocedure,27),
+        ('public.rake_records'::regclass,
+         'tournament_unregistration_rake_evidence_is_immutable',
+         'public.fn_ca_unregistration_rake_evidence_is_immutable()'::regprocedure,27),
         ('public.tournaments'::regclass,
          'satellite_target_contract_is_immutable',
          'public.fn_satellite_target_contract_is_immutable()'::regprocedure,19)
@@ -9030,7 +9386,7 @@ BEGIN
      WHERE NOT tg.tgisinternal
        AND tg.tgenabled IN ('O','A')
        AND tg.tgtype=required.trigger_type
-  ) <> 7 THEN
+  ) <> 8 THEN
     RAISE EXCEPTION
       'refund or tournament-entry ticket guards are not exactly installed';
   END IF;
@@ -9151,6 +9507,7 @@ BEGIN
            ('public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid)'::regprocedure),
            ('public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)'::regprocedure),
            ('public.fn_ca_tournament_refund_plan(uuid,uuid)'::regprocedure),
+           ('public.fn_ca_unregistration_rake_evidence_is_immutable()'::regprocedure),
            ('public.fn_settle_tournament_refund_exact(uuid,uuid,uuid,numeric,numeric,numeric,numeric,text,text)'::regprocedure)
          ) internal(function_id)
          CROSS JOIN (VALUES ('anon'),('authenticated'),('service_role')) app(role_name)

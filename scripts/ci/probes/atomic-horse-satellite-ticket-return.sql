@@ -115,6 +115,7 @@ INSERT INTO public.rake_records(
   'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',20,200,1,true,
   '94444444-4444-4444-8444-444444444444','fn_award_satellite_seat',
   jsonb_build_object(
+    'kind','satellite_seat_entry_fee',
     'user_id','91111111-1111-4111-8111-111111111111',
     'registration_id','95555555-5555-4555-8555-555555555555')
 );

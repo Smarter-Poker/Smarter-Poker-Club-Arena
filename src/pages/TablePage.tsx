@@ -4182,10 +4182,8 @@ export default function TablePage({
   const rebuyPromptDeadlineRef = useRef<number | null>(null);
   const rebuyPromptTokenRef = useRef<string | null>(null);
   const beginRebuyPrompt = useCallback((): string => {
-    const token =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `rebuy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    if (rebuyPromptTokenRef.current) return rebuyPromptTokenRef.current;
+    const token = uuid();
     rebuyPromptTokenRef.current = token;
     return token;
   }, []);
@@ -8537,20 +8535,24 @@ export default function TablePage({
   // Handle tournament add-on
   const handleTournamentAddOn = async () => {
     if (!tableState.tournamentId || !userId || rebuyProcessing) return;
-    setRebuyProcessing(true);
     try {
+      // This menu action opens the same confirmed, price-bound offer used by
+      // the persisted/realtime add-on window. It must never be a second direct
+      // purchase door: the modal is where the player sees the exact charge and
+      // explicitly accepts it.
       const addOnCheck = await tournamentService.canAddOn(tableState.tournamentId);
       if (!addOnCheck.allowed) {
-        toast.error(addOnCheck.reason || 'Add-on not available');
+        toast.error(addOnCheck.reason || 'Add-On Is Not Available');
         return;
       }
-      await tournamentService.processAddOn(tableState.tournamentId, userId);
-      toast?.success('Add-on successful - chips added');
-      setShowRebuyModal(false);
+      const refreshOffer = refreshPersistedAddOnOfferRef.current;
+      if (!refreshOffer) {
+        toast.error('Add-On Details Are Still Loading');
+        return;
+      }
+      await refreshOffer();
     } catch (err) {
-      toast?.error((err as Error).message || 'Add-on failed');
-    } finally {
-      setRebuyProcessing(false);
+      toast?.error((err as Error).message || 'Could Not Load Add-On Details');
     }
   };
 
@@ -8865,6 +8867,7 @@ export default function TablePage({
               // Unanswered for two minutes is a decline. Close the prompt and
               // tell the server, exactly as the Cancel button would.
               setShowRebuyModal(false);
+              endRebuyPrompt();
               if (tableId) {
                 GameServerAPI.notifyServerRejectRebuy(tableId).catch(() => {
                   /* best effort: the exit below must happen either way */
@@ -8968,6 +8971,7 @@ export default function TablePage({
     tableState.isTournament,
     tableState.tournamentId,
     showRebuyModal,
+    endRebuyPrompt,
     beginBustHold,
     releaseBustHold,
   ]);

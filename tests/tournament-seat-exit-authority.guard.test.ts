@@ -9,8 +9,17 @@ const eliminationProbe = readFileSync(
   root('scripts/ci/probes/tournament-elimination-seat-exit-authority.sql'),
   'utf8'
 );
+const seatExitProbe = readFileSync(
+  root('scripts/ci/probes/tournament-seat-exit-authority.sql'),
+  'utf8'
+);
+const crossClubUnregisterProbe = readFileSync(
+  root('scripts/ci/probes/tournament-unregistration-cross-club.sql'),
+  'utf8'
+);
 const manager = readFileSync(root('server/src/tournament/TournamentManager.ts'), 'utf8');
 const moveRpc = readFileSync(root('server/src/tournament/tournamentSeatMoveRpc.ts'), 'utf8');
+const tournamentService = readFileSync(root('src/services/TournamentService.ts'), 'utf8');
 
 function taggedBody(tag: string): string {
   const delimiter = `$${tag}$`;
@@ -26,6 +35,8 @@ const handSeatOpener = taggedBody('open_hand_seat_exit_authority');
 const handStackWrapper = taggedBody('accepted_hand_stack_with_seat_authority');
 const managerWake = taggedBody('manager_wake_with_accepted_hand_bust');
 const terminalOrphanCutover = taggedBody('terminal_orphan_cutover');
+const cutoverPlayerLockPrefix = taggedBody('cutover_player_lock_prefix');
+const cutoverReceiptsAppendOnly = taggedBody('cutover_receipts_append_only');
 const atomicMove = taggedBody('atomic_tournament_move');
 const cancellation = taggedBody('cancel_with_seat_authority');
 const elimination = taggedBody('elimination_with_seat_authority');
@@ -39,6 +50,7 @@ const unionMoneyPath = taggedBody('union_money_path_without_legacy_unregister');
 const unionOverload = taggedBody('union_overload_without_legacy_unregister');
 const walletGuard = taggedBody('wallet_guard_without_legacy_unregister');
 const legacyPreflight = taggedBody('legacy_unregister_preflight');
+const legacyPublicExitPreflight = taggedBody('legacy_public_exit_preflight');
 const legacyCutoverProof = taggedBody('legacy_unregister_cutover_proof');
 const chipSyncPreflight = taggedBody('legacy_chip_sync_preflight');
 
@@ -59,9 +71,185 @@ describe('tournament seat exits have one hard authority', () => {
     );
     expect(terminalOrphanCutover).toContain("status='left'");
     expect(terminalOrphanCutover).toContain('SET current_players=0');
-    expect(terminalOrphanCutover).not.toMatch(/SET[\s\S]*?stack\s*=/);
+    const terminalCloseOnly = terminalOrphanCutover.slice(
+      0,
+      terminalOrphanCutover.indexOf('-- A later knockout generation')
+    );
+    expect(terminalCloseOnly).not.toMatch(/SET[\s\S]*?stack\s*=/);
     expect(terminalOrphanCutover).toContain(
       'INSERT INTO public.tournament_seat_exit_authority_cutover'
+    );
+  });
+
+  it('takes the terminal root before every cutover lock and reuses private seating cores', () => {
+    const globalLock = sql.indexOf("hashtextextended('ca:tournament-terminal-settlement:v1',0)");
+    const maintenanceLock = sql.indexOf('pg_advisory_xact_lock_shared(530090,1)');
+    const reconcilerLock = sql.indexOf(
+      "pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))"
+    );
+    const playerLocks = sql.indexOf('$cutover_player_lock_prefix$');
+    const relationLocks = sql.indexOf(
+      'LOCK TABLE public.tournament_launch_receipts IN SHARE ROW EXCLUSIVE MODE'
+    );
+
+    expect(globalLock).toBeGreaterThan(-1);
+    expect(maintenanceLock).toBeGreaterThan(globalLock);
+    expect(reconcilerLock).toBeGreaterThan(maintenanceLock);
+    expect(playerLocks).toBeGreaterThan(reconcilerLock);
+    expect(relationLocks).toBeGreaterThan(playerLocks);
+    expect(cutoverPlayerLockPrefix).toContain('public.fn_lock_daily_mission_user(v_user_id)');
+    expect(terminalOrphanCutover).toContain('public.fn_ca_choose_tournament_seat_locked(');
+    expect(terminalOrphanCutover).toContain('public.fn_ca_assign_tournament_player_seat_locked(');
+    expect(terminalOrphanCutover).not.toContain('public.fn_assign_tournament_player_seat_atomic(');
+  });
+
+  it('classifies every paid knockout generation from exact immutable evidence', () => {
+    const windows = sql.slice(
+      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_windows'),
+      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
+    );
+    const payments = sql.slice(
+      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments'),
+      sql.indexOf('CREATE TEMP TABLE ca_cutover_paid_candidates')
+    );
+
+    expect(windows).toContain('lead(c.id) OVER generation_order');
+    expect(windows).toContain('lead(c.created_at) OVER generation_order');
+    // hand_number is allocated by the global hand-number sequence. table_id
+    // remains part of each physical-hand join, never a chronology substitute.
+    expect(windows).toContain('ORDER BY c.hand_number,c.id');
+    expect(windows).toContain('h.table_id=c.table_id AND h.hand_number=c.hand_number');
+    expect(windows).toContain("WHERE c.state='pending' AND c.stack_after=0");
+    expect(windows).toContain('public.hand_atomic_commits');
+    expect(windows).toContain('public.settlement_idempotency_keys');
+    expect(windows).toContain('k.result IS NOT DISTINCT FROM h.stack_result');
+    expect(payments).toContain('public.tournament_refund_entitlements');
+    expect(payments).toContain('public.chip_ledger');
+    expect(payments).toContain('public.wallet_transactions');
+    expect(payments).toContain('public.wallet_credit_idempotency');
+    expect(payments).toContain('l.created_at IS NOT DISTINCT FROM e.created_at');
+    expect(payments).toContain("VALUES ('rebuy'::text),('reentry'::text)");
+    expect(payments).toContain("kind.purchase_type||':'||w.user_id::text||':%'");
+    expect(payments).toContain("tx.description LIKE 'Tournament '||idem.purchase_type||':%'");
+    expect(terminalOrphanCutover).toContain(
+      "SET state='rebought',resolved_at=v_item.first_paid_at"
+    );
+    expect(terminalOrphanCutover).toContain('later.hand_number>p.zero_hand_number');
+    expect(terminalOrphanCutover).not.toContain('later.committed_at>p.first_paid_at');
+  });
+
+  it('repairs only exact paid seat generations and receipts every source identity', () => {
+    expect(terminalOrphanCutover).toContain('count(*)::bigint*v_item.rebuy_chips::bigint');
+    expect(terminalOrphanCutover).toContain('SET chips=v_expected_stack::integer');
+    expect(terminalOrphanCutover).toContain("v_action:='stranded_stack_seated'");
+    expect(terminalOrphanCutover).toContain("v_action:='live_generation_rotated'");
+    expect(terminalOrphanCutover).toContain('SET joined_at=v_item.first_paid_at');
+    expect(terminalOrphanCutover).toContain(
+      'INSERT INTO public.tournament_paid_candidate_cutover_receipts'
+    );
+    for (const evidence of [
+      'zero_hac_hand_id',
+      'zero_settlement_hand_id',
+      'entitlement_ids',
+      'source_ledger_ids',
+      'source_ledger_chain_seqs',
+      'source_ledger_row_hashes',
+      'wallet_transaction_ids',
+      'purchase_idempotency_keys',
+      'purchase_types',
+    ]) {
+      expect(sql).toContain(evidence);
+    }
+    expect(terminalOrphanCutover).toContain("WHERE reentry.purchase_type='reentry'");
+  });
+
+  it('proves every occupant-owned field after a vacated chair is reused', () => {
+    expect(terminalOrphanCutover).toContain(
+      'assignment core normalizes it. That core writes an identical complete'
+    );
+    expect(terminalOrphanCutover).toContain(
+      'v_item.user_id,v_target_table_id,v_item.roster_club_id'
+    );
+    expect(terminalOrphanCutover).toContain(
+      "'stranded rebuy chair retained state from a departed occupant'"
+    );
+    for (const field of [
+      'seat_row_reused',
+      'destination_seat_id_before',
+      'destination_user_id_before',
+      'destination_horse_id_before',
+      'destination_club_id_before',
+      'destination_time_bank_remaining_before',
+      'destination_time_bank_uses_remaining_before',
+      'seat_player_id',
+      'seat_member_id',
+      'seat_horse_id',
+      'seat_club_id',
+      'seat_is_sitting_out',
+      'seat_is_away',
+      'seat_sit_out_at',
+      'seat_scheduled_leave_hands',
+      'seat_left_at',
+      'seat_status',
+      'seat_leave_pending',
+      'seat_auto_rebuy',
+      'seat_time_bank_remaining',
+      'seat_time_bank_uses_remaining',
+      'seat_entry_hold',
+      'seat_entry_post_agreed',
+    ]) {
+      expect(sql).toContain(field);
+    }
+  });
+
+  it('revives a positive generic-clear orphan only from one exact departed generation', () => {
+    expect(terminalOrphanCutover).toContain('WITH positive_seatless AS MATERIALIZED');
+    expect(terminalOrphanCutover).toContain(
+      'AND NOT EXISTS (\n           SELECT 1 FROM public.tournament_knockout_candidates c'
+    );
+    expect(terminalOrphanCutover).toContain('SELECT count(*) FROM public.table_seats history');
+    expect(terminalOrphanCutover).toContain("s.status='active'");
+    expect(terminalOrphanCutover).toContain('h.committed_at>=s.joined_at');
+    expect(terminalOrphanCutover).toContain(
+      'ORDER BY committed.hand_number DESC,committed.table_id'
+    );
+    expect(terminalOrphanCutover).toContain('later_global.hand_number>h.hand_number');
+    expect(terminalOrphanCutover).toContain('k.result IS NOT DISTINCT FROM h.stack_result');
+    expect(terminalOrphanCutover).toContain('s.left_at>GREATEST(');
+    expect(terminalOrphanCutover).toContain(
+      "'positive generic-clear orphan did not revive exactly: %'"
+    );
+    expect(terminalOrphanCutover).toContain(
+      'INSERT INTO public.tournament_positive_orphan_cutover_receipts'
+    );
+    expect(terminalOrphanCutover).toContain(
+      "'positive orphan revival did not preserve its own seat state exactly'"
+    );
+    expect(sql).toContain('source_time_bank_remaining');
+    expect(sql).toContain('revived_time_bank_remaining');
+    expect(sql).toContain('revived_left_at');
+    expect(sql).toContain('revived_status');
+    expect(sql).toContain('revived_leave_pending');
+  });
+
+  it('keeps both detailed cutover receipts owner-only and append-only', () => {
+    for (const table of [
+      'tournament_paid_candidate_cutover_receipts',
+      'tournament_positive_orphan_cutover_receipts',
+    ]) {
+      expect(sql).toContain(`ALTER TABLE public.${table}\n  ENABLE ROW LEVEL SECURITY`);
+      expect(sql).toContain(`CREATE TRIGGER ${table}_append_only`);
+      expect(sql).toContain(`ON public.${table}`);
+    }
+    expect(sql).toContain('REVOKE ALL ON TABLE public.tournament_paid_candidate_cutover_receipts,');
+    expect(cutoverReceiptsAppendOnly).toContain(
+      'tournament seat-exit cutover receipts are append-only'
+    );
+    expect(seatExitProbe).toContain('FAIL paid candidate cutover evidence changed');
+    expect(seatExitProbe).toContain('FAIL positive-orphan cutover evidence changed');
+    expect(seatExitProbe).toContain('FAIL cutover detail receipts are not append-only');
+    expect(seatExitProbe).toContain(
+      "'service_role','public.tournament_paid_candidate_cutover_receipts','SELECT'"
     );
   });
 
@@ -280,6 +468,35 @@ describe('tournament seat exits have one hard authority', () => {
     expect(sql).toContain('$legacy_unregister_cutover_proof$');
   });
 
+  it('retires unkeyed and unused public exits after proving they have no caller', () => {
+    const retired = [
+      'public.fn_unregister_from_tournament(uuid)',
+      'public.fn_leave_seat_and_refund(uuid)',
+      'public.fn_admin_remove_tournament_player(uuid,uuid)',
+    ];
+    for (const signature of retired) {
+      const escaped = signature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(sql.match(new RegExp(`DROP FUNCTION ${escaped} RESTRICT;`, 'g'))).toHaveLength(1);
+      expect(legacyPublicExitPreflight).toContain(signature);
+      expect(legacyCutoverProof).toContain(signature);
+      expect(seatExitProbe).toContain(signature);
+    }
+    expect(legacyPublicExitPreflight).toContain('pg_depend');
+    expect(legacyPublicExitPreflight).toContain(
+      'a stored function still calls obsolete tournament exit'
+    );
+    expect(legacyCutoverProof).toContain('obsolete public tournament exit still exists');
+    expect(seatExitProbe).toContain('FAIL obsolete public tournament exit still exists');
+
+    expect(tournamentService).toMatch(
+      /rpc\('fn_unregister_from_tournament',[\s\S]*?p_request_id: requestId/
+    );
+    expect(tournamentService).toMatch(
+      /rpc\('fn_leave_seat_and_refund',[\s\S]*?p_request_id: requestId/
+    );
+    expect(tournamentService).not.toContain("rpc('fn_admin_remove_tournament_player'");
+  });
+
   it('re-emits every current audit and balance guard without the dead name', () => {
     for (const body of [globalWalletCheck, unionMoneyPath, unionOverload, walletGuard]) {
       expect(body).not.toContain('atomic_tournament_unregister');
@@ -331,5 +548,55 @@ describe('tournament seat exits have one hard authority', () => {
     expect(sql).toContain(
       "'public.fn_ca_unregister_tournament_player_exact(uuid,uuid,uuid,text,uuid)'"
     );
+  });
+
+  it('refuses revoked sessions at every player-facing tournament exit', () => {
+    expect(legacyCutoverProof).toContain('public.fn_caller_session_is_live()');
+    expect(legacyCutoverProof).toContain('tournament exit RPC no longer refuses a revoked session');
+    expect(seatExitProbe).toContain('FAIL tournament exit RPC admits a missing or revoked session');
+    expect(seatExitProbe).toContain("'request.jwt.claims'");
+    expect(seatExitProbe).toContain("EXECUTE 'SET LOCAL ROLE authenticated'");
+    expect(seatExitProbe).toContain("EXCEPTION WHEN SQLSTATE '28000'");
+    expect(seatExitProbe).toContain('FAIL missing or revoked session reached tournament exit');
+    for (const signature of [
+      'public.fn_unregister_from_tournament(uuid,uuid)',
+      'public.fn_leave_seat_and_refund(uuid,uuid)',
+    ]) {
+      expect(legacyCutoverProof).toContain(signature);
+      expect(seatExitProbe).toContain(signature);
+    }
+  });
+
+  it('pins fee refunds to the original recipient instead of the funding club', () => {
+    for (const proof of [legacyCutoverProof, seatExitProbe]) {
+      expect(proof).toContain('v_fee_source_rake_record_ids');
+      expect(proof).toContain('GROUP BY r.club_id');
+      expect(proof).toContain('fee_recipient_club_id');
+      expect(proof).toContain('original_rake_record_ids');
+      expect(proof).toContain('fee_reversal_ids');
+      expect(proof).toContain('fees_reversed');
+      expect(proof).toContain('original.club_id=reversal.club_id');
+      expect(proof).toContain('tournament_unregistration_rake_evidence_is_immutable');
+      expect(proof).toContain('GROUP BY e.refund_wallet_club_id');
+    }
+    expect(seatExitProbe).toContain(
+      'FAIL tournament unregistration substitutes funding club for fee recipient'
+    );
+    expect(seatExitProbe).toContain(
+      'FAIL a committed unregistration fee reversal changed provenance'
+    );
+    expect(seatExitProbe).toContain('receipt.fee_source_rake_record_ids IS DISTINCT FROM ARRAY(');
+    expect(seatExitProbe).toContain('original.club_id=reversal.club_id');
+    expect(crossClubUnregisterProbe).toContain('public.fn_register_for_tournament(');
+    expect(crossClubUnregisterProbe).toContain(
+      'public.fn_ca_process_tournament_chip_purchase_money_v1('
+    );
+    expect(crossClubUnregisterProbe).toContain('public.fn_unregister_from_tournament(');
+    expect(crossClubUnregisterProbe).toContain('v_receipt.source_wallet_club_ids');
+    expect(crossClubUnregisterProbe).toContain('v_receipt.fee_source_rake_record_ids');
+    expect(crossClubUnregisterProbe).toContain('v_receipt.fee_reversal_ids');
+    expect(crossClubUnregisterProbe).toContain('reversal.rake_amount=-15');
+    expect(crossClubUnregisterProbe).toContain('ROLLBACK;');
+    expect(crossClubUnregisterProbe).toContain('AUDIT_TEST_PASS');
   });
 });

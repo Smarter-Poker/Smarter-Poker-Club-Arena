@@ -71,6 +71,12 @@ interface TableRevealQueue {
   coalesceTimer: ReturnType<typeof setTimeout> | null;
 }
 
+interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
+  candidateId: string;
+  seatId: string;
+  seatJoinedAt: string;
+}
+
 /**
  * The money threshold is a finishing place, not the number of rows in a
  * payout ladder. A valid stored ladder may be sparse (for example 1, 2, 3,
@@ -1405,116 +1411,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
-   * Vacate every seat this player holds AT THIS TOURNAMENT'S TABLES.
-   *
-   * Idempotent by construction (`.is('left_at', null)`), so it is safe to call
-   * from the already-eliminated early return as well as the main path.
-   *
-   * SCOPE, 2026-08-18: this UPDATE used to be scoped by user_id alone, so
-   * busting a player out of a tournament stamped left_at on EVERY open seat
-   * they held — including cash tables. Players are not confined to one context
-   * (HorseFleetManager explicitly allows multi-tabling, and registerHorses only
-   * excludes horses busy in another TOURNAMENT), so a bustout could silently
-   * eject someone from a cash game they were winning, stranding the stack in a
-   * left_at row that atomicCashout never sees.
-   *
-   * The result is CHECKED, 2026-08-23. It was not, and a seat release that
-   * fails silently is indistinguishable from one that never ran — which is
-   * exactly how "the busted player is still sitting there" reaches a player
-   * with nothing in the logs to explain it.
-   */
-  /**
-   * The table this user is LIVE at inside this tournament, or null.
-   *
-   * BOUNTY-INTEGRITY 2026-08-27. Knockout attribution needs the table the
-   * busted player was sitting at, and the only place that fact exists is the
-   * seat row that `releaseTournamentSeat` is about to stamp `left_at` on. This
-   * is deliberately a separate call made BEFORE the release rather than a
-   * `left_at`-filtered query made after it — the latter is what has been
-   * returning null on every knockout since 2026-08-24.
-   */
-  protected async tournamentTableForUser(
-    userId: string
-  ): Promise<{ tableId: string; joinedAt: string } | null> {
-    try {
-      const { data, error } = await supabase
-        .from('table_seats')
-        .select('table_id, joined_at, tables!inner(tournament_id)')
-        .eq('user_id', userId)
-        .eq('tables.tournament_id', this.tournamentId)
-        .is('left_at', null)
-        .limit(1)
-        .maybeSingle(); // FIX 168: Bible safety rule — maybeSingle over single
-      if (error) {
-        reportError(error, 'Tournament.knockout_table_lookup_failed');
-        return null;
-      }
-      const row = data as { table_id?: string; joined_at?: string } | null;
-      return row?.table_id && row.joined_at
-        ? { tableId: row.table_id, joinedAt: row.joined_at }
-        : null;
-    } catch (err) {
-      reportError(err, 'Tournament.knockout_table_lookup_threw');
-      return null;
-    }
-  }
-
-  /**
-   * Fallback for a player whose seat was already released by some other path
-   * (the recovery watchdog, an admin removal, a raced sweep): the most
-   * recently vacated seat this user held at a table of THIS tournament.
-   *
-   * Scoped to the tournament for the same reason the live lookup is — an
-   * unscoped seat query returns any open cash seat, which is how bounties were
-   * routed to strangers before 2026-08-18.
-   */
-  protected async lastTournamentTableForUser(
-    userId: string
-  ): Promise<{ tableId: string; joinedAt: string } | null> {
-    try {
-      const { data, error } = await supabase
-        .from('table_seats')
-        .select('table_id, joined_at, left_at, tables!inner(tournament_id)')
-        .eq('user_id', userId)
-        .eq('tables.tournament_id', this.tournamentId)
-        .order('left_at', { ascending: false, nullsFirst: true })
-        .limit(1);
-      if (error) {
-        reportError(error, 'Tournament.knockout_table_fallback_failed');
-        return null;
-      }
-      const row = data?.[0] as { table_id?: string; joined_at?: string } | undefined;
-      return row?.table_id && row.joined_at
-        ? { tableId: row.table_id, joinedAt: row.joined_at }
-        : null;
-    } catch (err) {
-      reportError(err, 'Tournament.knockout_table_fallback_threw');
-      return null;
-    }
-  }
-
-  /**
    * Load the one hand that is allowed to authorize a bounty elimination.
    *
-   * Stack persistence and hand-history persistence are separate requests. A
-   * safety sweep can therefore see tournament_players.chips=0 while the
-   * knockout hand is still being inserted. Selecting "the latest hand this
-   * player appeared in" is not safe: after a rebuy that can be an older bust
-   * and pay the new head to the old winner. The successful stack-settlement
-   * ledger records the exact accepted hand number and zero stack; the matching
-   * history row must exist before eliminatePlayer may mutate status or release
-   * the seat.
+   * The accepted-hand transaction freezes a `tournament_knockout_candidates`
+   * row before it writes the matching `hand_atomic_commits` receipt. A seat is
+   * operational state: the physical row may already be closed, moved or reused
+   * by a rebuy. It may veto a stale candidate, but it must never choose the
+   * table, generation or hand that receives money.
    *
-   * Both records are durable, so this works after a manager/engine restart and
-   * does not depend on an in-memory callback surviving. A queued history write
-   * wakes the restored manager from GameServer when it lands; this short
-   * coalesced retry covers transient reads and the narrow stack/history gap.
+   * Query every candidate state, newest hand first, and THEN require `pending`.
+   * Filtering to pending in SQL would let an older unresolved bust leap over a
+   * newer rebought/eliminated generation. The exact atomic receipt and history
+   * row independently prove the candidate's table, hand id, hand number, zero
+   * stack and pot claimant before the bounty RPC can mutate anything.
    */
   protected async loadPersistedBountyEvidence(
-    userId: string,
-    tableId: string,
-    seatJoinedAt: string
-  ): Promise<PersistedKnockoutEvidence | null> {
+    userId: string
+  ): Promise<CandidateBackedKnockoutEvidence | null> {
     const defer = (reason: string, cause?: unknown): null => {
       if (!this.bountyEvidenceDeferred.has(userId)) {
         this.bountyEvidenceDeferred.add(userId);
@@ -1536,56 +1449,145 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     };
 
     try {
-      // JSON containment finds the newest accepted settlement that wrote THIS
-      // player to zero. It cannot select a later unrelated table hand (the
-      // player is no longer dealt) and, ordered newest-first, cannot select an
-      // earlier pre-rebuy bust when the current zero write exists.
-      const { data: settlementRow, error: settlementErr } = await supabase
-        .from('settlement_idempotency_keys')
-        .select('result, completed_at')
-        .eq('table_id', tableId)
-        .eq('status', 'succeeded')
-        .contains('result', { written: { [userId]: 0 } })
-        .order('completed_at', { ascending: false })
+      const { data: candidateRow, error: candidateErr } = await supabase
+        .from('tournament_knockout_candidates')
+        .select(
+          'id,table_id,seat_id,seat_joined_at,hand_id,hand_number,stack_before,stack_after,state'
+        )
+        .eq('tournament_id', this.tournamentId)
+        .eq('eliminated_user_id', userId)
+        .order('hand_number', { ascending: false })
+        .order('id', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (settlementErr)
-        return defer('accepted zero-stack settlement is unreadable', settlementErr);
+      if (candidateErr) return defer('latest knockout candidate is unreadable', candidateErr);
 
-      const persisted = settlementRow as {
-        result?: StackSettlementResult;
-        completed_at?: string;
+      const candidate = candidateRow as {
+        id?: unknown;
+        table_id?: unknown;
+        seat_id?: unknown;
+        seat_joined_at?: unknown;
+        hand_id?: unknown;
+        hand_number?: unknown;
+        stack_before?: unknown;
+        stack_after?: unknown;
+        state?: unknown;
       } | null;
-      const settlement = persisted?.result;
-      const identity = acceptedZeroStackSettlement(settlement, userId);
-      if (!identity || identity.tableId !== tableId) {
-        return defer('no exact accepted zero-stack settlement exists yet');
+      const candidateId = String(candidate?.id ?? '').trim();
+      const tableId = String(candidate?.table_id ?? '').trim();
+      const seatId = String(candidate?.seat_id ?? '').trim();
+      const seatJoinedAt = String(candidate?.seat_joined_at ?? '').trim();
+      const handId = String(candidate?.hand_id ?? '').trim();
+      const handNumber = Number(candidate?.hand_number);
+      const stackBefore = Number(candidate?.stack_before);
+      const stackAfter = Number(candidate?.stack_after);
+      if (
+        !candidateId ||
+        !tableId ||
+        !seatId ||
+        !seatJoinedAt ||
+        !handId ||
+        !Number.isSafeInteger(handNumber) ||
+        !Number.isFinite(stackBefore) ||
+        stackBefore <= 0 ||
+        !Number.isFinite(stackAfter) ||
+        stackAfter !== 0 ||
+        !Number.isFinite(Date.parse(seatJoinedAt))
+      ) {
+        return defer('latest knockout candidate has an invalid immutable identity');
       }
-      // A rebuy/re-entry creates a new seat generation. Never authorize that
-      // generation with an older zero-stack settlement, even if it came from
-      // the same physical table and still has a perfectly valid history row.
-      const settlementAt = Date.parse(String(persisted?.completed_at ?? ''));
-      const joinedAt = Date.parse(seatJoinedAt);
-      if (!Number.isFinite(settlementAt) || !Number.isFinite(joinedAt) || settlementAt < joinedAt) {
-        return defer('accepted zero-stack settlement predates this seat generation');
+      if (candidate?.state !== 'pending') {
+        return defer(`latest knockout candidate is ${String(candidate?.state ?? 'invalid')}`);
+      }
+
+      // A live seat is never positive authorization. The accepted hand closes
+      // the zero-stack seat, so no row is normal. One exact zero-stack legacy
+      // row is tolerated until the RPC closes it; every other live shape proves
+      // the candidate is stale or the player has already entered a new generation.
+      const { data: liveSeatRows, error: liveSeatErr } = await supabase
+        .from('table_seats')
+        .select('id,table_id,joined_at,stack,tables!inner(tournament_id)')
+        .eq('user_id', userId)
+        .eq('tables.tournament_id', this.tournamentId)
+        .is('left_at', null)
+        .limit(2);
+      if (liveSeatErr) return defer('live-seat safety veto is unreadable', liveSeatErr);
+      const liveSeats = (liveSeatRows ?? []) as Array<{
+        id?: unknown;
+        table_id?: unknown;
+        joined_at?: unknown;
+        stack?: unknown;
+      }>;
+      if (liveSeats.length > 1) return defer('multiple live tournament seats veto the candidate');
+      if (liveSeats.length === 1) {
+        const live = liveSeats[0];
+        if (
+          String(live.id ?? '') !== seatId ||
+          String(live.table_id ?? '') !== tableId ||
+          Date.parse(String(live.joined_at ?? '')) !== Date.parse(seatJoinedAt) ||
+          !Number.isFinite(Number(live.stack)) ||
+          Number(live.stack) !== 0
+        ) {
+          return defer('a different or funded live seat generation vetoes the candidate');
+        }
+      }
+
+      const { data: atomicRow, error: atomicErr } = await supabase
+        .from('hand_atomic_commits')
+        .select('table_id,hand_id,hand_number,stack_result,committed_at')
+        .eq('table_id', tableId)
+        .eq('hand_number', handNumber)
+        .eq('hand_id', handId)
+        .maybeSingle();
+      if (atomicErr)
+        return defer(`atomic receipt for hand #${handNumber} is unreadable`, atomicErr);
+      const atomic = atomicRow as {
+        table_id?: unknown;
+        hand_id?: unknown;
+        hand_number?: unknown;
+        stack_result?: StackSettlementResult;
+        committed_at?: unknown;
+      } | null;
+      if (
+        String(atomic?.table_id ?? '') !== tableId ||
+        String(atomic?.hand_id ?? '') !== handId ||
+        Number(atomic?.hand_number) !== handNumber
+      ) {
+        return defer(`atomic receipt for hand #${handNumber} does not match its candidate`);
+      }
+      const settlement = atomic?.stack_result;
+      const identity = acceptedZeroStackSettlement(settlement, userId);
+      if (identity?.tableId !== tableId || identity.handNumber !== handNumber) {
+        return defer(
+          `atomic receipt for hand #${handNumber} is not an exact zero-stack settlement`
+        );
       }
 
       const { data: hand, error: handErr } = await supabase
         .from('hand_history')
         .select('id, table_id, hand_number, winners, players, pots')
-        .eq('hand_number', identity.handNumber)
+        .eq('id', handId)
+        .eq('table_id', tableId)
+        .eq('hand_number', handNumber)
         .maybeSingle();
-      if (handErr) return defer(`knockout hand #${identity.handNumber} is unreadable`, handErr);
+      if (handErr) return defer(`knockout hand #${handNumber} is unreadable`, handErr);
 
       const evidence = persistedKnockoutEvidence(settlement, hand, userId);
       if (!evidence.ready) {
-        return defer(
-          `knockout hand #${identity.handNumber} is not authoritative (${evidence.reason})`
-        );
+        return defer(`knockout hand #${handNumber} is not authoritative (${evidence.reason})`);
+      }
+      if (evidence.handId !== handId) {
+        return defer(`knockout hand #${handNumber} does not match its candidate hand id`);
       }
 
       this.bountyEvidenceDeferred.delete(userId);
-      return { ...evidence, settledAt: String(persisted?.completed_at ?? '') };
+      return {
+        ...evidence,
+        settledAt: String(atomic?.committed_at ?? ''),
+        candidateId,
+        seatId,
+        seatJoinedAt,
+      };
     } catch (err) {
       return defer('authoritative knockout lookup threw', err);
     }
@@ -1740,34 +1742,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const hasBounty = Boolean(
       tournament.is_bounty || tournament.is_pko || tournament.is_mystery_bounty
     );
-    // Capture the table and prove the exact knockout BEFORE the status CAS.
-    // If history is still queued, this returns false and no position, payout,
-    // status, or seat mutation below can occur.
-    const liveBustedSeat = await this.tournamentTableForUser(userId);
-    if (!this.eliminationMutationAllowed()) return false;
-    const bountySeat = hasBounty
-      ? (liveBustedSeat ?? (await this.lastTournamentTableForUser(userId)))
-      : liveBustedSeat;
-    if (!this.eliminationMutationAllowed()) return false;
-    const bountyEvidence = hasBounty
-      ? bountySeat
-        ? await this.loadPersistedBountyEvidence(userId, bountySeat.tableId, bountySeat.joinedAt)
-        : null
-      : null;
+    // Prove the immutable candidate and its exact accepted hand BEFORE the
+    // status CAS. A live or historical seat never selects bounty identity.
+    const bountyEvidence = hasBounty ? await this.loadPersistedBountyEvidence(userId) : null;
     if (!this.eliminationMutationAllowed()) return false;
     if (hasBounty && !bountyEvidence) {
-      if (!bountySeat) {
-        if (!this.bountyEvidenceDeferred.has(userId)) {
-          this.bountyEvidenceDeferred.add(userId);
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] bounty elimination for ${userId.slice(0, 8)} deferred before status mutation: no tournament table can be attributed`
-            ),
-            'Tournament.bounty_attribution_deferred'
-          );
-        }
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-      }
       return false;
     }
 
@@ -1849,7 +1828,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           p_table_id: bountyEvidence!.tableId,
           p_hand_id: bountyEvidence!.handId,
           p_hand_number: bountyEvidence!.handNumber,
-          p_seat_joined_at: bountySeat!.joinedAt,
+          p_seat_joined_at: bountyEvidence!.seatJoinedAt,
           p_knocker_user_id: attribution.knockerUserId!,
           p_claimants: attribution.claimants.map((claimant) => ({
             user_id: claimant.userId,
@@ -1884,7 +1863,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         )
         .eq('tournament_id', this.tournamentId)
         .eq('eliminated_user_id', userId)
-        .eq('seat_joined_at', bountySeat!.joinedAt)
+        .eq('table_id', bountyEvidence!.tableId)
+        .eq('hand_number', bountyEvidence!.handNumber)
         .eq('hand_id', bountyEvidence!.handId)
         .maybeSingle();
       const row = existing as {

@@ -21,6 +21,10 @@ const PHASE_ONE_MANAGEMENT = readFileSync(
   ),
   'utf8'
 );
+const MANAGED_CANCELLATION_PROBE = readFileSync(
+  resolve(__dirname, '../../../scripts/ci/probes/managed-tournament-cancellation-authority.sql'),
+  'utf8'
+);
 function executable(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*--.*$/gm, '');
 }
@@ -55,6 +59,13 @@ const MANAGED_GATEWAY = SQL.slice(
   SQL.indexOf(
     '$managed_command$;',
     SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_execute_managed_game_command')
+  )
+);
+const MANAGED_SCHEDULE_RUNNER = SQL.slice(
+  SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_run_due_managed_game_schedules'),
+  SQL.indexOf(
+    '$managed_schedule_runner$;',
+    SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_run_due_managed_game_schedules')
   )
 );
 
@@ -187,14 +198,47 @@ describe('tournament cancellation has one replayable database owner', () => {
   });
 
   it('takes the terminal lock in the public command path before its row lock', () => {
+    const sessionAt = MANAGED_GATEWAY.indexOf('public.fn_caller_session_is_live()');
+    const hashAt = MANAGED_GATEWAY.indexOf('public.fn_managed_game_command_hash(');
     const globalAt = MANAGED_GATEWAY.indexOf('ca:tournament-terminal-settlement:v1');
     const tournamentAt = MANAGED_GATEWAY.indexOf('FROM public.tournaments');
+    expect(sessionAt).toBeGreaterThan(-1);
+    expect(hashAt).toBeGreaterThan(sessionAt);
     expect(MANAGED_GATEWAY).toMatch(
       /p_kind = 'tournament' AND p_action = 'close'[\s\S]*pg_advisory_xact_lock/
     );
     expect(globalAt).toBeGreaterThan(-1);
     expect(tournamentAt).toBeGreaterThan(globalAt);
     expect(MANAGED_GATEWAY).toMatch(/fn_close_managed_game\(p_kind, p_game_id\)/);
+  });
+
+  it('rejects missing and revoked browser sessions before the managed command can write', () => {
+    expect(MANAGED_CANCELLATION_PROBE).toContain('INSERT INTO auth.sessions');
+    expect(MANAGED_CANCELLATION_PROBE).toContain("'session_id'");
+    expect(MANAGED_CANCELLATION_PROBE).toContain('missing_session_refused');
+    expect(MANAGED_CANCELLATION_PROBE).toContain('revoked_session_refused');
+    expect(MANAGED_CANCELLATION_PROBE).toContain("EXCEPTION WHEN SQLSTATE '28000'");
+    expect(MANAGED_CANCELLATION_PROBE).toContain(
+      'FAIL missing or revoked session reached the managed cancellation gateway'
+    );
+    expect(MANAGED_CANCELLATION_PROBE).toContain(
+      'FAIL live-session managed close did not commit one exact cancellation receipt'
+    );
+  });
+
+  it('keeps durable scheduled closes on their service-role rail', () => {
+    expect(MANAGED_SCHEDULE_RUNNER).toContain(
+      "'request.jwt.claim.sub',v_schedule.actor_id::text,true"
+    );
+    expect(MANAGED_SCHEDULE_RUNNER).not.toContain('request.jwt.claim.role');
+    expect(MANAGED_SCHEDULE_RUNNER).toContain('fn_execute_managed_game_command(');
+    expect(MIGRATION).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_run_due_managed_game_schedules\(integer\)\s+FROM PUBLIC, anon, authenticated;/
+    );
+    expect(MANAGED_CANCELLATION_PROBE).toContain('scheduled_service_role_success');
+    expect(MANAGED_CANCELLATION_PROBE).toContain(
+      'FAIL service-role scheduled close did not reach live-session-hardened gateway'
+    );
   });
 
   it('freezes all receipt evidence and requires it at commit', () => {

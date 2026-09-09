@@ -30,6 +30,7 @@ import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
+import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -1868,10 +1869,13 @@ class TournamentService {
       }
     }
 
-    // Check current stack (must be at or below starting stack)
+    // Mirror the player-visible half of the atomic purchase authority. A
+    // normal short stack is not a rebuy candidate: only an unpaid zero-stack
+    // knockout generation can buy back in. The database still binds that row
+    // to the immutable accepted-hand candidate under lock when money moves.
     const { data: player, error: stackErr } = await supabase
       .from('tournament_players')
-      .select('chips')
+      .select('chips, status, prize, rebuys, rebuy_prompt_until')
       .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -1884,8 +1888,30 @@ class TournamentService {
       return { allowed: false, reason: 'Could not check your stack. Please try again.' };
     }
     if (!player) return { allowed: false, reason: 'Player not found' };
-    if (player.chips > tournament.starting_chips) {
-      return { allowed: false, reason: 'Stack too high for rebuy' };
+    const purchaseType = tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy';
+    const playerStatus = String(player.status ?? '').toLowerCase();
+    if (
+      Number(player.chips ?? 0) !== 0 ||
+      Number(player.prize ?? 0) > 0 ||
+      (purchaseType === 'rebuy'
+        ? playerStatus !== 'playing'
+        : !['playing', 'eliminated'].includes(playerStatus))
+    ) {
+      return { allowed: false, reason: 'Only An Unpaid Zero-Stack Entry Can Rebuy' };
+    }
+    if (purchaseType === 'rebuy') {
+      const promptUntil = Date.parse(String(player.rebuy_prompt_until ?? ''));
+      if (!Number.isFinite(promptUntil) || promptUntil <= Date.now()) {
+        return { allowed: false, reason: 'The Rebuy Decision Window Has Closed' };
+      }
+    }
+    const used = Math.max(0, Number(player.rebuys ?? 0));
+    const limit = purchaseType === 'reentry' ? tournament.max_reentries : tournament.max_rebuys;
+    if (limit !== null && limit !== undefined && used >= Number(limit)) {
+      return {
+        allowed: false,
+        reason: purchaseType === 'reentry' ? 'Re-Entry Limit Reached' : 'Rebuy Limit Reached',
+      };
     }
 
     return { allowed: true };
@@ -1913,21 +1939,19 @@ class TournamentService {
   }
 
   /**
-   * Fee for a given base cost, as a WHOLE number of chips.
+   * Fee cut out of the whole advertised price, floored to cents.
    *
-   * Dan 2026-08-20: "Sit and Go and any tournament buy-ins must never be
-   * decimal buy-ins, whole numbers only." That covers rebuys and re-entries,
-   * so the fee they carry is rounded to a whole chip rather than to the cent.
+   * The 2026-08-25 fractional-fee rule supersedes the earlier whole-fee rule:
+   * a 1-chip purchase pays 0.10 and a 5-chip purchase pays 0.50. Reuse the
+   * canonical buy-in splitter so this quote cannot round above the 10% cap or
+   * drift from tournament creation and the database purchase authority.
    */
   private calcTournamentFee(
     tournament: { buy_in_amount?: number | null; buy_in_fee?: number | null },
     baseCost: number
   ): number {
-    const base = Math.max(0, Math.round(Number(baseCost) || 0));
-    if (base <= 0) return 0;
-    // Floor of one chip so a small rebuy cannot slip through rake-free,
-    // mirroring fn_create_tournament and process_tournament_rebuy exactly.
-    return Math.min(base, Math.max(1, Math.round(base * this.getTournamentFeeRatio(tournament))));
+    const rate = Math.min(DEFAULT_RAKE_RATE, Math.max(0, this.getTournamentFeeRatio(tournament)));
+    return splitBuyIn(baseCost, rate).fee;
   }
 
   /**
@@ -1994,131 +2018,30 @@ class TournamentService {
   }
 
   /**
-   * RAKE-AUDIT 2026-07-24: Record a collected tournament/SNG fee in the rake
-   * ledger (rake_records, attributed to the paying player) and the
-   * tournament/union total_rake counters. Pass a NEGATIVE fee to record a
-   * reversal (e.g. unregister refund) — the ledger stays append-only.
-   */
-  private async recordTournamentFee(
-    tournament: { club_id?: string | null; union_id?: string | null },
-    tournamentId: string,
-    userId: string,
-    fee: number,
-    kind: string
-  ): Promise<void> {
-    if (!fee || fee === 0) return;
-    const clubId = tournament.club_id || null;
-    try {
-      const { error: rrError } = await supabase.from('rake_records').insert({
-        hand_id: null,
-        table_id: tournamentId,
-        club_id: clubId,
-        rake_amount: fee,
-        pot_size: Math.abs(fee),
-        num_players: 1,
-        bbj_contribution: 0,
-        is_tournament: true,
-        tournament_id: tournamentId,
-        source: `TournamentService.${kind}`,
-        player_contributions: { [userId]: fee },
-        metadata: { kind, user_id: userId },
-      });
-      if (rrError) reportError(rrError, 'TournamentService.recordTournamentFee_rake_records');
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.recordTournamentFee_rake_records');
-    }
-    // Tournament total_rake counter (atomic RPC, read-modify-write fallback)
-    try {
-      const { error: incErr } = await supabase.rpc('increment_tournament_rake', {
-        p_tournament_id: tournamentId,
-        p_amount: fee,
-      });
-      if (incErr) {
-        const { data: tData, error: tReadErr } = await supabase
-          .from('tournaments')
-          .select('total_rake')
-          .eq('id', tournamentId)
-          .maybeSingle();
-        // ROUND 8 (2026-08-29): both the RPC and the fallback read failing
-        // used to leave no trace at all - the club's rake total silently
-        // under-reported with nothing anywhere saying so.
-        if (tReadErr) {
-          reportError(tReadErr, 'TournamentService.recordTournamentFee_fallback_read_failed', {
-            tournamentId,
-          });
-        }
-        if (tData) {
-          // Same defect shape as D7: the catch below cannot see a PostgREST
-          // `{ error }`, so a failed rake counter fallback was invisible and
-          // the club's rake total silently under-reported.
-          const { error: rakeUpdErr } = await supabase
-            .from('tournaments')
-            .update({ total_rake: (tData.total_rake || 0) + fee })
-            .eq('id', tournamentId);
-          if (rakeUpdErr) {
-            reportError(rakeUpdErr, 'TournamentService.recordTournamentFee_total_rake', {
-              tournamentId,
-            });
-          }
-        }
-      }
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.recordTournamentFee_total_rake');
-    }
-    // Union-level counter
-    const unionId = tournament.union_id || undefined;
-    if (unionId) {
-      try {
-        const { data: unionData, error: unionReadErr } = await supabase
-          .from('unions')
-          .select('total_rake')
-          .eq('id', unionId)
-          .maybeSingle();
-        // ROUND 8 (2026-08-29): same silent under-report shape as the
-        // tournament counter above, on the union ledger.
-        if (unionReadErr) {
-          reportError(unionReadErr, 'TournamentService.recordTournamentFee_union_read_failed', {
-            tournamentId,
-            unionId,
-          });
-        }
-        if (unionData) {
-          // Same defect shape as D7, on the union ledger this time.
-          const { error: unionUpdErr } = await supabase
-            .from('unions')
-            .update({ total_rake: (unionData.total_rake || 0) + fee })
-            .eq('id', unionId);
-          if (unionUpdErr) {
-            reportError(unionUpdErr, 'TournamentService.recordTournamentFee_union_total_rake', {
-              tournamentId,
-              unionId,
-            });
-          }
-        }
-      } catch (e: unknown) {
-        reportError(e, 'TournamentService.recordTournamentFee_union_total_rake');
-      }
-    }
-  }
-
-  /**
    * Process a rebuy for a player.
    *
-   * `clientToken` is the IDEMPOTENCY TOKEN for one rebuy PROMPT (2026-08-27).
-   * It must be generated when the prompt OPENS and reused by every click of
-   * that same prompt; a new bust must generate a new one. See the note beside
-   * `p_client_token` in the RPC call below for what the server does without it.
+   * `clientToken` is the REQUIRED idempotency token for one rebuy prompt. It
+   * must be generated when that prompt opens and reused by every retry from the
+   * same prompt; a new bust must generate a new token.
    */
   async processRebuy(
     tournamentId: string,
     userId: string,
-    clientToken?: string
+    clientToken: string
   ): Promise<{ success: boolean; newStack?: number }> {
-    const canRebuyResult = await this.canRebuy(tournamentId, userId);
-    if (!canRebuyResult.allowed) {
-      throw new Error(canRebuyResult.reason || 'Rebuy not allowed');
+    if (typeof clientToken !== 'string' || !clientToken.trim()) {
+      throw new Error('A rebuy prompt token is required');
+    }
+    const normalizedClientToken = clientToken.trim();
+    if (normalizedClientToken.length > 128) {
+      throw new Error('The rebuy prompt token is invalid');
     }
 
+    // Never put a mutable eligibility read in front of an idempotent money
+    // retry. If the first RPC committed and its response was lost, `canRebuy`
+    // now correctly says the player is funded; blocking here would prevent the
+    // immutable receipt from returning that already-committed result. The RPC
+    // owns both replay and current eligibility under one transaction lock.
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
 
@@ -2160,17 +2083,11 @@ class TournamentService {
        * prompt collapses to one charge and a SECOND, genuine bust in the same
        * tournament is a different purchase.
        *
-       * Without one it falls back to a rebuy-ordinal key plus a 1.5s
-       * double-submit collapse — and before that fallback existed, ANY second
-       * rebuy inside 30 seconds was swallowed and reported as success. In a
-       * turbo that meant a player who really did bust twice was charged
-       * nothing, granted nothing, shown "Rebuy Successful", and left sitting at
-       * 0 chips.
-       *
-       * The token is minted per PROMPT, never per click — see the callers in
-       * TablePage (`beginRebuyPrompt` / `endRebuyPrompt`).
+       * The token is mandatory and minted per PROMPT, never per click. The
+       * service refuses an empty token before it reaches the money RPC, so no
+       * supported browser path can fall back to an ordinal or timing window.
        */
-      p_client_token: clientToken ?? null,
+      p_client_token: normalizedClientToken,
     });
 
     if (error) {
@@ -2230,11 +2147,12 @@ class TournamentService {
     tournamentId: string,
     userId: string
   ): Promise<{ success: boolean; newStack?: number }> {
-    const canAddOnResult = await this.canAddOn(tournamentId);
-    if (!canAddOnResult.allowed) {
-      throw new Error(canAddOnResult.reason || 'Add-on not allowed');
-    }
-
+    // Do not put mutable availability or duplicate reads in front of this
+    // idempotent money call. If the first RPC committed and its response was
+    // lost, those reads now correctly say the window is closed / the add-on was
+    // used and would block the immutable receipt from replaying. The RPC owns
+    // the one-add-on rule, live window, locked seat, debit, chip grant and
+    // receipt in one transaction. `canAddOn` remains display guidance only.
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
 
@@ -2249,27 +2167,6 @@ class TournamentService {
     // process_tournament_rebuy now charges an add-on at face value and books
     // no rake for it; the whole add-on goes to the prize pool.
     const addonTotalCost = addonCost;
-
-    // Check if player already used their add-on (each player gets max 1 add-on)
-    const { data: existingAddon, error: addonCheckErr } = await supabase
-      .from('wallet_transactions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('category', 'addon')
-      .eq('related_entity_id', tournamentId)
-      .limit(1);
-    // ROUND 8 (2026-08-29): a failed read used to pass the duplicate gate on a
-    // MONEY action - the one-add-on-per-player rule waved through anyone whose
-    // check query timed out. Fails closed and retryable instead.
-    if (addonCheckErr) {
-      reportError(addonCheckErr, 'TournamentService.addon_duplicate_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your add-on status. Please try again.');
-    }
-    if (existingAddon && existingAddon.length > 0) {
-      throw new Error('You have already used your add-on for this tournament');
-    }
 
     // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
     // public.wallets - frozen since 2026-08-21, nothing maintains it - so a

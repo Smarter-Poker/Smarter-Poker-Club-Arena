@@ -22,6 +22,11 @@ VALUES
   ('91000000-0000-0000-0000-000000000003','managed-cancel-union-owner'),
   ('91000000-0000-0000-0000-000000000004','managed-cancel-entrant');
 
+INSERT INTO auth.sessions(id,user_id,created_at,updated_at)
+VALUES (
+  '97000000-0000-0000-0000-000000000001',
+  '91000000-0000-0000-0000-000000000001',now(),now());
+
 INSERT INTO public.unions(id,name,owner_id,slug)
 VALUES (
   '92000000-0000-0000-0000-000000000001',
@@ -57,12 +62,17 @@ VALUES
   ('94000000-0000-0000-0000-000000000003',
    'Managed Unauthorized Refusal Probe',0,0,now()+interval '1 day',
    'ANNOUNCED',9,'93000000-0000-0000-0000-000000000001',
+   '92000000-0000-0000-0000-000000000001',0,0,0,0),
+  ('94000000-0000-0000-0000-000000000004',
+   'Managed Scheduled Cancellation Probe',0,0,now()+interval '1 day',
+   'ANNOUNCED',9,'93000000-0000-0000-0000-000000000001',
    '92000000-0000-0000-0000-000000000001',0,0,0,0);
 
 INSERT INTO public.tournament_escrow(tournament_id,opened_from)
 VALUES
   ('94000000-0000-0000-0000-000000000001','managed_cancel_probe'),
-  ('94000000-0000-0000-0000-000000000003','managed_cancel_probe');
+  ('94000000-0000-0000-0000-000000000003','managed_cancel_probe'),
+  ('94000000-0000-0000-0000-000000000004','managed_cancel_probe');
 
 INSERT INTO public.tournament_players(id,tournament_id,user_id,status)
 VALUES (
@@ -82,9 +92,80 @@ VALUES
   ('tournament','94000000-0000-0000-0000-000000000002',
    '93000000-0000-0000-0000-000000000001',
    '92000000-0000-0000-0000-000000000001',1,'{}',repeat('0',64),
+   '91000000-0000-0000-0000-000000000001','probe_fixture'),
+  ('tournament','94000000-0000-0000-0000-000000000004',
+   '93000000-0000-0000-0000-000000000001',
+   '92000000-0000-0000-0000-000000000001',1,'{}',repeat('0',64),
    '91000000-0000-0000-0000-000000000001','probe_fixture');
 
+INSERT INTO public.managed_game_schedules(
+  schedule_id,command_id,actor_id,game_kind,game_id,command_action,
+  expected_version,execute_at,status,created_at)
+VALUES (
+  '98000000-0000-0000-0000-000000000001',
+  '95000000-0000-0000-0000-000000000006',
+  '91000000-0000-0000-0000-000000000001','tournament',
+  '94000000-0000-0000-0000-000000000004','close',1,
+  now()-interval '1 day','scheduled',now()-interval '2 days');
+
 SET LOCAL session_replication_role = origin;
+
+-- A subject claim is not proof of a current browser session. Exercise the
+-- authenticated gateway twice before any successful command: once without a
+-- session claim and once with a session id whose auth.sessions row is gone.
+-- Both calls must fail with 28000 before even a rejected command receipt is
+-- created or the addressed tournament can be observed or changed.
+DO $missing_and_revoked_sessions$
+DECLARE
+  missing_session_refused boolean:=false;
+  revoked_session_refused boolean:=false;
+BEGIN
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  PERFORM set_config(
+    'request.jwt.claim.sub','91000000-0000-0000-0000-000000000001',true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object(
+      'sub','91000000-0000-0000-0000-000000000001',
+      'role','authenticated')::text,true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  BEGIN
+    PERFORM public.fn_execute_managed_game_command(
+      '95000000-0000-0000-0000-000000000004','tournament',
+      '94000000-0000-0000-0000-000000000003','close',1,'{}');
+  EXCEPTION WHEN SQLSTATE '28000' THEN
+    missing_session_refused:=true;
+  END;
+
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object(
+      'sub','91000000-0000-0000-0000-000000000001',
+      'role','authenticated',
+      'session_id','97000000-0000-0000-0000-000000000002')::text,true);
+  BEGIN
+    PERFORM public.fn_execute_managed_game_command(
+      '95000000-0000-0000-0000-000000000005','tournament',
+      '94000000-0000-0000-0000-000000000003','close',1,'{}');
+  EXCEPTION WHEN SQLSTATE '28000' THEN
+    revoked_session_refused:=true;
+  END;
+  EXECUTE 'RESET ROLE';
+
+  IF NOT missing_session_refused OR NOT revoked_session_refused
+     OR EXISTS (
+       SELECT 1 FROM public.managed_game_command_receipts r
+        WHERE r.command_id IN (
+          '95000000-0000-0000-0000-000000000004',
+          '95000000-0000-0000-0000-000000000005'))
+     OR (SELECT t.status FROM public.tournaments t
+          WHERE t.id='94000000-0000-0000-0000-000000000003')
+          IS DISTINCT FROM 'ANNOUNCED' THEN
+    RAISE EXCEPTION
+      'FAIL missing or revoked session reached the managed cancellation gateway';
+  END IF;
+END;
+$missing_and_revoked_sessions$;
 
 DO $source_and_success$
 DECLARE
@@ -92,6 +173,7 @@ DECLARE
   v_wrapper text;
   v_close text;
   v_gateway text;
+  v_runner text;
   v_result jsonb;
 BEGIN
   IF current_user <> 'postgres'
@@ -118,6 +200,9 @@ BEGIN
    WHERE p.oid=
      'public.fn_execute_managed_game_command(uuid,text,uuid,text,integer,jsonb)'
        ::regprocedure;
+  SELECT p.prosrc INTO v_runner FROM pg_proc p
+   WHERE p.oid=
+     'public.fn_run_due_managed_game_schedules(integer)'::regprocedure;
 
   IF position('ca:tournament-terminal-settlement:v1' IN v_close)=0
      OR position('ca:tournament-terminal-settlement:v1' IN v_close)
@@ -125,6 +210,9 @@ BEGIN
      OR position('ca:tournament-terminal-settlement:v1' IN v_gateway)=0
      OR position('ca:tournament-terminal-settlement:v1' IN v_gateway)
           >=position('FROM public.tournaments' IN v_gateway)
+     OR position('public.fn_caller_session_is_live()' IN v_gateway)=0
+     OR position('public.fn_caller_session_is_live()' IN v_gateway)
+          >=position('public.fn_managed_game_command_hash(' IN v_gateway)
      OR v_close ~* 'update[[:space:]]+public[.]tournaments'
      OR v_close NOT LIKE '%atomic_cancel_tournament(p_game_id, v_uid)%'
      OR v_close NOT LIKE '%players_registered%'
@@ -132,7 +220,11 @@ BEGIN
      OR v_atomic LIKE '%is_club_admin(v_t.club_id,v_uid)%'
      OR v_wrapper NOT LIKE '%managed_game_command_receipts%'
      OR v_wrapper NOT LIKE '%r.status=''processing''%'
-     OR v_wrapper NOT LIKE '%p_admin_id IS NOT DISTINCT FROM v_uid%' THEN
+     OR v_wrapper NOT LIKE '%p_admin_id IS NOT DISTINCT FROM v_uid%'
+     OR v_runner NOT LIKE
+          '%''request.jwt.claim.sub'',v_schedule.actor_id::text,true%'
+     OR v_runner LIKE '%request.jwt.claim.role%authenticated%'
+     OR v_runner NOT LIKE '%fn_execute_managed_game_command(%' THEN
     RAISE EXCEPTION 'FAIL installed managed cancellation source bypasses authority or lock order';
   END IF;
 
@@ -147,7 +239,13 @@ BEGIN
      OR has_function_privilege(
        'authenticated','public.fn_close_managed_game(text,uuid)','EXECUTE')
      OR has_function_privilege(
-       'anon','public.fn_close_managed_game(text,uuid)','EXECUTE') THEN
+       'anon','public.fn_close_managed_game(text,uuid)','EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role','public.fn_run_due_managed_game_schedules(integer)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'authenticated','public.fn_run_due_managed_game_schedules(integer)',
+       'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL managed cancellation private authority ACL changed';
   END IF;
 
@@ -163,9 +261,17 @@ BEGIN
   PERFORM set_config('request.jwt.claim.role','authenticated',true);
   PERFORM set_config(
     'request.jwt.claim.sub','91000000-0000-0000-0000-000000000001',true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object(
+      'sub','91000000-0000-0000-0000-000000000001',
+      'role','authenticated',
+      'session_id','97000000-0000-0000-0000-000000000001')::text,true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
   v_result:=public.fn_execute_managed_game_command(
     '95000000-0000-0000-0000-000000000001','tournament',
     '94000000-0000-0000-0000-000000000001','close',1,'{}');
+  EXECUTE 'RESET ROLE';
 
   IF v_result->>'ok' IS DISTINCT FROM 'true'
      OR v_result->>'command_status' IS DISTINCT FROM 'succeeded'
@@ -183,11 +289,51 @@ BEGIN
           AND r.ticket_return_count=0
           AND r.total_refunded=0
           AND r.total_ticket_returned=0) THEN
-    RAISE EXCEPTION 'FAIL union-authorized managed close did not commit one exact cancellation receipt: %',
+    RAISE EXCEPTION 'FAIL live-session managed close did not commit one exact cancellation receipt: %',
       v_result;
   END IF;
 END;
 $source_and_success$;
+
+-- The durable schedule runner is service-role work. It must keep that trusted
+-- identity while delegating the stored actor subject, so the browser session
+-- check cannot strand already-authorized schedules after the browser signs
+-- out. Authorization still resolves against the stored actor in the gateway.
+DO $scheduled_service_role_success$
+DECLARE
+  v_result jsonb;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  PERFORM set_config(
+    'request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
+  v_result:=public.fn_run_due_managed_game_schedules(10);
+  IF v_result->>'ok' IS DISTINCT FROM 'true'
+     OR (v_result->>'processed')::integer IS DISTINCT FROM 1
+     OR NOT EXISTS (
+       SELECT 1 FROM public.managed_game_schedules s
+        WHERE s.schedule_id='98000000-0000-0000-0000-000000000001'
+          AND s.status='succeeded'
+          AND s.result->>'ok'='true')
+     OR NOT EXISTS (
+       SELECT 1 FROM public.managed_game_command_receipts r
+        WHERE r.command_id='95000000-0000-0000-0000-000000000006'
+          AND r.actor_id='91000000-0000-0000-0000-000000000001'
+          AND r.status='succeeded')
+     OR NOT EXISTS (
+       SELECT 1 FROM public.tournament_cancellation_receipts r
+        WHERE r.tournament_id='94000000-0000-0000-0000-000000000004'
+          AND r.actor_id='91000000-0000-0000-0000-000000000001'
+          AND r.source_player_count=0)
+     OR (SELECT t.status FROM public.tournaments t
+          WHERE t.id='94000000-0000-0000-0000-000000000004')
+          IS DISTINCT FROM 'CANCELLED' THEN
+    RAISE EXCEPTION
+      'FAIL service-role scheduled close did not reach live-session-hardened gateway: %',
+      v_result;
+  END IF;
+END;
+$scheduled_service_role_success$;
 
 -- Force the deferred cancellation invariant now. A receiptless direct status
 -- update would fail here instead of appearing to pass only because the probe

@@ -90,4 +90,19 @@ check(sum(isinstance(r,dict) and r.get('success',False) for r in results)==1,'tr
 check(sql('SELECT min(diamonds)>=0 FROM profiles')=='t','race never overdraws')
 check(sql("SELECT count(*) FROM diamond_wallet_transfers WHERE to_jsonb(diamond_wallet_transfers) ? 'recipient_balance'")=='0','receipt does not expose recipient balance')
 
+# Exercise the actual reserve writer against the same available balance.
+amount=int(sql("SELECT diamonds FROM profiles WHERE id='"+B+"'"))//2+1
+before=sql('SELECT sum(diamonds)+fn_ca_arena_diamonds() FROM profiles')
+def reserve_race():
+ r=sql("SELECT fn_poker_diamond_reserve('"+B+"','cash_seat','30000000-0000-0000-0000-000000000001','transfer-race',"+str(amount)+",'"+str(uuid.uuid4())+"')",False)
+ if r.returncode:
+  assert 'insufficient_settled_diamonds' in r.stderr,r.stderr
+  return r
+ return json.loads(r.stdout.strip())
+with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+ a=pool.submit(send,amount,None,B,A); b=pool.submit(reserve_race)
+ results=[a.result(),b.result()]
+check(sum(isinstance(r,dict) and r.get('success',False) for r in results)==1,'transfer versus reserve spends once')
+check(before==sql('SELECT sum(diamonds)+fn_ca_arena_diamonds() FROM profiles'),'reserve race conserves available plus custody')
+
 print(str(passed)+' Phase 4 assertions passed')

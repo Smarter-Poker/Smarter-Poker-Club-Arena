@@ -351,6 +351,10 @@ export default function DiamondWalletModal({
     if (isMounted.current && isOpen) fetchTransactions();
   });
 
+  useMasterBusSubscription('PROFILE_UPDATED', ({ userId }) => {
+    if (userId === user?.id && isMounted.current && isOpen) void fetchTransactions();
+  });
+
   // Client-side filter over the fetched page.
   const filteredTx = (historyOwnerId === user?.id ? transactions : []).filter((tx) => {
     const txType = tx.transaction_type || tx.type || '';

@@ -125,13 +125,43 @@ async function liveChecks() {
     if (s > 5000) bad(`trailing 4h unexplained chip supply is ${trailing.rows[0].s}`);
     else ok(`trailing 4h unexplained chip supply ${trailing.rows[0].s} (n=${trailing.rows[0].n})`);
 
-    const states = await c.query(
-      `SELECT count(*) AS n FROM public.ca_settlements
-        WHERE state NOT IN ('open','locked_for_calculation','calculated','validated',
-                            'ledger_posted','post_commit_verified','final','failed')`
+    // ca_settlements is an append-only ledger with millions of rows. Reading
+    // every row to rediscover an invariant PostgreSQL already enforces made
+    // the pre-deploy advisory gate compete with live hand settlement. A
+    // validated CHECK proves both existing and future rows without touching
+    // the ledger heap.
+    const stateConstraint = await c.query(
+      `SELECT c.convalidated AS validated,
+              pg_get_constraintdef(c.oid, true) AS definition
+         FROM pg_catalog.pg_constraint c
+        WHERE c.conrelid = 'public.ca_settlements'::regclass
+          AND c.conname = 'ca_settlements_state_check'
+          AND c.contype = 'c'`
     );
-    if (Number(states.rows[0].n) > 0) bad(`${states.rows[0].n} settlement(s) in an illegal state`);
-    else ok('every settlement is in a legal state');
+    const expectedStates = [
+      'open',
+      'locked_for_calculation',
+      'calculated',
+      'validated',
+      'ledger_posted',
+      'post_commit_verified',
+      'final',
+      'failed',
+    ].sort();
+    const stateRow = stateConstraint.rows[0];
+    const constrainedStates = [
+      ...String(stateRow?.definition ?? '').matchAll(/'([^']+)'::text/g),
+    ]
+      .map((match) => match[1])
+      .sort();
+    const exactStateSet =
+      constrainedStates.length === expectedStates.length &&
+      constrainedStates.every((state, index) => state === expectedStates[index]);
+    if (!stateRow || stateRow.validated !== true || !exactStateSet) {
+      bad('settlement state constraint is missing, unvalidated, or does not match legal states');
+    } else {
+      ok('validated settlement state constraint enforces every legal state');
+    }
 
     const claims = await c.query(
       `SELECT count(*) AS n FROM public.ca_op_claims

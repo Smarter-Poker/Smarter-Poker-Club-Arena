@@ -5002,11 +5002,38 @@ export class GameServer {
           }
         }
 
-        // Find RUNNING tournaments that need resuming
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  THE LONGEST-WAITING TOURNAMENT IS ADOPTED FIRST (2026-09-09)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This read had no ORDER BY, so the resume order was whatever
+         * PostgREST happened to return - in practice stable, which is worse
+         * than random: the same events land at the end of the list on every
+         * single pass. Adoption is not free (a manager plus an engine per
+         * table, against a database where a single bounty-evidence read can
+         * take eight seconds), so when the fleet cannot all be adopted at once
+         * the tail is not merely late, it is ALWAYS the same tail.
+         *
+         * Measured on production 2026-09-09: after the 05:55 maintenance
+         * restart, tournaments dealing in the last ten minutes fell from 86 to
+         * EIGHT of 126 RUNNING, while THIRTEEN events had been stalled for more
+         * than an hour - across several hourly restarts, so they had lost the
+         * race every time. The oldest, `$100 Freeroll 6:00 AM`, had not dealt a
+         * hand in 903 minutes with players still seated in it.
+         *
+         * `started_at` ascending makes the order a queue instead of a lottery.
+         * It is the cheapest possible fix for starvation and it cannot make
+         * anything slower: the same set is adopted in the same number of
+         * passes, and the event that has been waiting longest is simply no
+         * longer the one that waits again. NULLS LAST because a row with no
+         * start time is not evidence of a long wait.
+         */
         const { data: running, error: runningErr } = await supabase
           .from('tournaments')
           .select('id, name')
-          .eq('status', 'RUNNING');
+          .eq('status', 'RUNNING')
+          .order('started_at', { ascending: true, nullsFirst: false });
         if (runningErr) {
           // Same rule as the REGISTERING read: unreadable is UNKNOWN. Reading
           // it as "nothing is running" silently stops every re-adoption.

@@ -29,8 +29,8 @@ BEGIN
           'chart','Cash|fold_to_hero|BTN|8','villain_action','fold_to_hero',
           'legal_actions',jsonb_build_array('push','fold')),
         'kind','open_jam','game_type','Cash','position','BTN','stack_bb',8,'hand','AA',
-        'final_action','push','reference_distribution',jsonb_build_object('push',0.9,'fold',0.1),
-        'chosen_probability',0.9,'action_regret_bb',0.6,'regret_eligible',true,'pure_miss',false,
+        'final_action','push','reference_distribution',jsonb_build_object('push',1.0,'fold',0.0),
+        'chosen_probability',1.0,'action_regret_bb',0.6,'regret_eligible',true,'pure_miss',false,
         'source_seal',jsonb_build_object(
           'quality_seal','CHART_AUDITED','policy_version','1.0.1','policy_checksum',repeat('a',64),
           'system','memory_charts_gold','artifact_id','one','scenario_hash','hash-one',
@@ -44,8 +44,8 @@ BEGIN
           'chart','Tournament|sb_push|BB|12','villain_action','sb_push',
           'legal_actions',jsonb_build_array('call','fold')),
         'kind','bb_defend','game_type','Tournament','position','BB','stack_bb',12,'hand','T9s',
-        'final_action','fold','reference_distribution',jsonb_build_object('call',0.8,'fold',0.2),
-        'chosen_probability',0.2,'action_regret_bb',NULL,'regret_eligible',false,'pure_miss',true,
+        'final_action','fold','reference_distribution',jsonb_build_object('call',0.9,'fold',0.1),
+        'chosen_probability',0.1,'action_regret_bb',NULL,'regret_eligible',false,'pure_miss',true,
         'source_seal',jsonb_build_object(
           'quality_seal','CHART_AUDITED','policy_version','1.0.1','policy_checksum',repeat('c',64),
           'system','memory_charts_gold','artifact_id','two','scenario_hash','hash-two',
@@ -91,6 +91,38 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM='forged decision state was accepted' THEN RAISE; END IF;
   END;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(
+      jsonb_set(v_rows,'{0,decisions,0,chosen_probability}','"1"'::jsonb)
+    );
+    RAISE EXCEPTION 'string chart probability was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM='string chart probability was accepted' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(
+      jsonb_set(v_rows,'{0,decisions,1,pure_miss}','false'::jsonb)
+    );
+    RAISE EXCEPTION 'forged chart pure miss was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM='forged chart pure miss was accepted' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(
+      jsonb_build_array(v_rows->0,v_rows->0)
+    );
+    RAISE EXCEPTION 'duplicate chart reference day was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM='duplicate chart reference day was accepted' THEN RAISE; END IF;
+  END;
+
+  v_audit := public.fn_audit_solver_agreement('2026-09-09');
+  IF NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(v_audit) finding
+     WHERE finding->>'code'='solver_agreement_missing'
+  ) THEN
+    RAISE EXCEPTION 'a prior-day chart receipt satisfied the target-day audit: %',v_audit;
+  END IF;
 END
 $probe$;
 ROLLBACK;

@@ -67,8 +67,8 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
   const atomicCashout = fnBody(SEATS, 'atomicCashout');
 
   it('both cash-out paths go through the locked RPC', () => {
-    expect(markSeatAsLeft).toContain('atomic_seat_cashout_locked');
-    expect(atomicCashout).toContain('atomic_seat_cashout_locked');
+    expect(markSeatAsLeft).toContain('atomicCashout(userId, tableId, seatNumber, { occupancyId })');
+    expect(atomicCashout).toContain('fn_cashout_seat_occupancy');
   });
 
   it('there is exactly ONE implementation of cashing a seat out', () => {
@@ -91,7 +91,7 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
       ...markSeatAsLeft.matchAll(/rpc\(\s*'([a-z_]+)'/g),
       ...atomicCashout.matchAll(/rpc\(\s*'([a-z_]+)'/g),
     ].map((m) => m[1]);
-    expect(new Set(cashoutRpcs)).toEqual(new Set(['atomic_seat_cashout_locked']));
+    expect(new Set(cashoutRpcs)).toEqual(new Set(['fn_cashout_seat_occupancy']));
 
     /* And no OTHER function in this file may cash a seat out. That is the half
        the whole-file assertion was really buying, kept explicitly.
@@ -103,7 +103,7 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
       .replace(atomicCashout, '')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-    expect(outsideCode).not.toMatch(/atomic_seat_cashout_locked/);
+    expect(outsideCode).not.toMatch(/atomic_seat_cashout_locked|fn_cashout_seat_occupancy/);
   });
 
   it('neither path credits a wallet itself', () => {

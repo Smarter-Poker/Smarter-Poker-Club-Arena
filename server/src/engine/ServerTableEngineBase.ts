@@ -1493,6 +1493,23 @@ export abstract class ServerTableEngineBase {
   // FIX 211: Bible V8 §1.9 — Track postHandTasks promise to prevent next hand
   // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
   protected postHandTasksPromise: Promise<void> | null = null;
+  // Serialize financial departure against asynchronous hand preparation.
+  // Release after controller start, not after the hand finishes.
+  protected seatBoundaryTail: Promise<void> = Promise.resolve();
+  protected async acquireSeatBoundary(): Promise<() => void> {
+    if (this.terminal) throw new Error('Table Engine Is Stopping');
+    const previous = this.seatBoundaryTail;
+    let release!: () => void;
+    this.seatBoundaryTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    if (this.terminal) {
+      release();
+      throw new Error('Table Engine Is Stopping');
+    }
+    return release;
+  }
 
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
@@ -1659,9 +1676,8 @@ export abstract class ServerTableEngineBase {
    * Sitting back in withdraws the request. Not persisted: after a restart the
    * seat is an ordinary sat-out seat and the sit-out eviction handles it.
    */
-  protected leaveHeldByClock: Set<string> = new Set();
+  protected leaveHeldByClock: Map<string, string> = new Map();
   /** CHIP CONTINUITY: mid-hand leaves that are system exits (admin kick). */
-  protected forcedLeaves: Set<string> = new Set();
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -1765,12 +1781,17 @@ export abstract class ServerTableEngineBase {
       // fire-and-forget, the UI write must never affect gameplay.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
+        const occupancyId = this.seatedPlayers.find(
+          (p) => p.user_id === event.playerId
+        )?.occupancy_id;
+        if (!occupancyId) return;
         void Promise.resolve(
           supabase
             .from('table_seats')
             .update({ is_sitting_out: sittingOut })
             .eq('table_id', this.tableId)
             .eq('user_id', event.playerId)
+            .eq('occupancy_id', occupancyId)
             .is('left_at', null)
         )
           .then(({ error }) => {
@@ -2538,7 +2559,7 @@ export abstract class ServerTableEngineBase {
         // for one horse, one a minute, every one expired, while Main 1 sat one
         // short beside it. A table below the minimum is at a hand boundary
         // all the time; every pending move lands now.
-        await this.executePendingSeatMoves().catch((err) =>
+        await this.executeIdleSeatMoves().catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
         );
         if (!this.lifecycleCanMutate()) return;
@@ -2701,6 +2722,9 @@ export abstract class ServerTableEngineBase {
       if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
     }
     if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
+    // A cashout accepted before the terminal fence remains an owned writer.
+    // Do not release this engine's resources until its transaction returns.
+    await this.seatBoundaryTail;
 
     // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
     // tableId has already been constructed, every shared resource (scheduler
@@ -2824,41 +2848,61 @@ export abstract class ServerTableEngineBase {
   protected async releaseLeavesHeldByClock(): Promise<void> {
     if (this.leaveHeldByClock.size === 0 || this.isTournamentTable()) return;
     if (isMaintenanceFrozen()) return;
-    for (const userId of [...this.leaveHeldByClock]) {
-      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seated) {
-        // Gone by another path (eviction, kick): nothing to release.
-        this.leaveHeldByClock.delete(userId);
-        continue;
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      while (this.postHandTasksPromise) {
+        const pending = this.postHandTasksPromise;
+        await pending;
+        if (this.postHandTasksPromise === pending) break;
       }
-      if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
-      if (this.handController) {
-        const live = this.handController.getState().players.find((p) => p.user_id === userId);
-        if (live && !live.is_folded) continue; // dealt in after all: wait for the boundary
-      }
-      const res = await atomicCashoutVoluntary(userId, this.tableId, seated.seat_number);
-      if (res.ok) {
-        this.leaveHeldByClock.delete(userId);
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.chipContinuity.forget(userId);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: seated.seat_number,
-          user_id: userId,
-          mid_hand: false,
-          timestamp: Date.now(),
-        });
-        console.log(
-          `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+      for (const [userId, occupancyId] of [...this.leaveHeldByClock]) {
+        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+        if (!seated || seated.occupancy_id !== occupancyId) {
+          // Gone by another path (eviction, kick): nothing to release.
+          this.leaveHeldByClock.delete(userId);
+          continue;
+        }
+        if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
+        if (this.handController) {
+          const live = this.handController.getState().players.find((p) => p.user_id === userId);
+          if (live) continue; // dealt in after all: wait for the boundary
+        }
+        const res = await atomicCashoutVoluntary(
+          userId,
+          this.tableId,
+          seated.seat_number,
+          seated.occupancy_id
         );
-        void this.broadcastCurrentState();
-      } else if (res.code === 'LEAVE_LOCKED') {
-        this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+        if (this.seatedPlayers.some((p) => p.user_id === userId && p.occupancy_id !== occupancyId))
+          continue;
+        if (res.ok) {
+          this.seatedPlayers = this.seatedPlayers.filter(
+            (p) => p.user_id !== userId || p.occupancy_id !== occupancyId
+          );
+          this.leaveHeldByClock.delete(userId);
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.chipContinuity.forget(userId);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'seat_left',
+            table_id: this.tableId,
+            seat: seated.seat_number,
+            user_id: userId,
+            mid_hand: false,
+            timestamp: Date.now(),
+          });
+          console.log(
+            `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+          );
+          void this.broadcastCurrentState();
+        } else if (res.code === 'LEAVE_LOCKED') {
+          this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+        }
       }
+    } finally {
+      releaseSeatBoundary();
     }
   }
 
@@ -2874,8 +2918,15 @@ export abstract class ServerTableEngineBase {
    * left). They are still seated - sat out by their own request - and are
    * told the countdown. Nothing is torn down.
    */
-  protected onLeaveRefusedAtSettlement(userId: string, stayRemainingMs: number): void {
-    this.leaveHeldByClock.add(userId);
+  protected onLeaveRefusedAtSettlement(
+    userId: string,
+    stayRemainingMs: number,
+    occupancyId: string
+  ): void {
+    const current = this.seatedPlayers.find((p) => p.user_id === userId);
+    const original = occupancyId;
+    if (!original || current?.occupancy_id !== original) return;
+    this.leaveHeldByClock.set(userId, original);
     this.chipContinuity.noteRefusal(userId, stayRemainingMs);
     console.log(
       `[ServerTableEngine:${this.tableId}] leave_pending refused at settlement for ${userId} - stay clock ${stayRemainingMs}ms remaining`
@@ -2993,6 +3044,46 @@ export abstract class ServerTableEngineBase {
    * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
    * that has none.
    */
+  protected async cashoutVoluntaryStay(
+    player: SeatedPlayer
+  ): Promise<Awaited<ReturnType<typeof atomicCashoutVoluntary>> | null> {
+    // Snapshot before awaiting: callers may retain a mutable roster object.
+    const { user_id, seat_number, occupancy_id } = player;
+    const mayReflect = () => {
+      if (!this.lifecycleCanMutate()) return false;
+      const current = this.seatedPlayers.find((seat) => seat.user_id === user_id);
+      return (
+        !current || (current.occupancy_id === occupancy_id && current.seat_number === seat_number)
+      );
+    };
+    if (!mayReflect()) return null;
+    const result = await atomicCashoutVoluntary(user_id, this.tableId, seat_number, occupancy_id);
+    // The durable outcome is still retained, but a later stay must not inherit
+    // either its refusal clock or the cleanup of its local presence trackers.
+    return mayReflect() ? result : null;
+  }
+
+  protected async executeIdleSeatMoves(): Promise<string[]> {
+    const release = await this.acquireSeatBoundary();
+    try {
+      if (!this.lifecycleCanMutate()) return [];
+      const raw = this.executePendingSeatMoves();
+      const budgeted = this.withStepBudget(
+        'idle_seat_moves',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        raw
+      );
+      // A time budget cannot cancel a committed or in-flight transfer.
+      // Keep the boundary until the original operation has actually settled.
+      const [outcome, budget] = await Promise.allSettled([raw, budgeted]);
+      if (outcome.status === 'rejected') throw outcome.reason;
+      if (budget.status === 'rejected') throw budget.reason;
+      return outcome.value;
+    } finally {
+      release();
+    }
+  }
+
   protected async executePendingSeatMoves(
     opts: { announcedOnly: boolean } = { announcedOnly: false },
     prefetched?: readonly PendingSeatMove[]
@@ -3005,6 +3096,8 @@ export abstract class ServerTableEngineBase {
     // The first side of a swap to reach its boundary: held out of the deal
     // until the other table lands both chairs. Told once.
     for (const h of held) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === h.player_id);
+      if (!current || current.occupancy_id !== h.source_occupancy_id) continue;
       // A held side is still seated HERE and will be moved by the other
       // table's transaction: refresh its deposit while this engine still has
       // its presence to give.
@@ -3022,6 +3115,8 @@ export abstract class ServerTableEngineBase {
     }
     const movedIds: string[] = [];
     for (const m of done) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
+      if (current && current.occupancy_id !== m.source_occupancy_id) continue;
       movedIds.push(m.player_id);
       this.announcedSeatMoves.delete(m.move_id);
       this.heldForSwap.delete(m.player_id);
@@ -3035,7 +3130,6 @@ export abstract class ServerTableEngineBase {
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
       this.preActionEngine.removePlayer(this.tableId, m.player_id);
-      this.forcedLeaves.delete(m.player_id);
       this.leaveHeldByClock.delete(m.player_id);
       // The session row followed the player; only this engine's mirror of
       // it is dropped. The destination engine rebuilds its mirror from rows.
@@ -5219,7 +5313,7 @@ export abstract class ServerTableEngineBase {
    * the same cashout again under the same idempotency key.
    */
   protected async releaseBustedSeat(
-    player: { user_id: string; seat_number: number; username?: string },
+    player: { user_id: string; seat_number: number; username?: string; occupancy_id?: string },
     reason: 'busted_no_rebuy' | 'busted_stop_loss' | 'busted_unfunded'
   ): Promise<boolean> {
     try {
@@ -5230,6 +5324,7 @@ export abstract class ServerTableEngineBase {
          money path's books either way (CLAUDE.md 11.5). */
       await atomicCashout(player.user_id, this.tableId, player.seat_number, {
         leaveMode: 'forced',
+        occupancyId: player.occupancy_id,
       });
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_release_cashout', {
@@ -5239,6 +5334,12 @@ export abstract class ServerTableEngineBase {
       });
       return false;
     }
+    if (
+      this.seatedPlayers.some(
+        (p) => p.user_id === player.user_id && p.occupancy_id !== player.occupancy_id
+      )
+    )
+      return false;
     // The event goes out only once the row says the chair is empty.
     this.hub?.emitEvent(this.tableId, {
       type: 'seat_left',
@@ -5266,143 +5367,191 @@ export abstract class ServerTableEngineBase {
     // the one and not the other. The gate the law names, here, so it holds
     // from every call site.
     if (isMaintenanceFrozen()) return;
-    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
-    if (seatedIds.length === 0) return;
-
-    const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
-      this.tableId,
-      seatedIds,
-      { countOrbit: opts.countOrbit }
-    );
-    // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
-    // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
-    // REMOVED." Collected together so one pass removes the seat once.
-    const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
-
-    // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
-    // numbers were columns the creation page wrote and nothing read, while the
-    // toggle's own tooltip promised a "Penalty for tight play".
-    //
-    // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
-    // ca_hand_facts already stores VPIP per player per hand from the same
-    // derivation the player's own HUD shows. A second counter here would be a
-    // second answer, and the two would part company the first time this process
-    // restarted mid-session.
-    //
-    // GATED ON THE COLUMN so the round trip never happens on a table without the
-    // rule — which is every table today. A failure returns an empty list: a
-    // stats query that cannot answer must not throw anyone out of a hand they
-    // were entitled to play.
-    //
-    // Merged into this shared method 2026-08-25: it arrived on main inside the
-    // inline block this method replaced, and it belongs wherever the other two
-    // eviction reasons live — including the start-up wait loop.
-    const nitEvictable: string[] = [];
-    if (this.tableInfo?.nit_game === true) {
-      // The board every seat is judged on, kept for the brain (Dan
-      // 2026-09-04). Read beside the eviction, at the same boundary, from the
-      // same rows, so what a horse steers by is what it is stood up on.
-      this.nitStatus = await collectNitStatus(this.tableId);
-      const nits = await collectNitEvictions(this.tableId);
-      for (const n of nits) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
-            `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
-        );
-        nitEvictable.push(n.userId);
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      while (this.postHandTasksPromise) {
+        const settlement = this.postHandTasksPromise;
+        await settlement;
+        if (this.postHandTasksPromise === settlement) break;
       }
-    }
+      if (this.terminal || isMaintenanceFrozen()) return;
+      const originalOccupancies = new Map(this.seatedPlayers.map((p) => [p.user_id, { ...p }]));
+      const seatedIds = [...originalOccupancies.keys()];
+      if (seatedIds.length === 0) return;
 
-    // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
-    // never charged a blind (a quiet table), is released on the same clock
-    // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
-    const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
-      this.tableId,
-      seatedIds
-    );
-
-    const blindEvictSet = new Set(blindEvictable);
-    const nitEvictSet = new Set(nitEvictable);
-    const abandonedEvictSet = new Set(abandonedEvictable);
-    const evictable = Array.from(
-      new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
-    );
-    if (evictable.length === 0) return;
-
-    // Dan 2026-08-26, binding: "a player can never leave the table while they
-    // are all in. they must wait for the hand to be finished." An eviction is
-    // still a departure, and this one cashes the seat out. Both call sites are
-    // between hands today, so this should never fire - which is the point: the
-    // safety was call-site placement rather than a check, and a future caller
-    // would not know that. leaveTable() refuses the same case explicitly.
-    const evictHand = this.handController?.getState();
-
-    const departed = new Set<string>();
-    for (const userId of evictable) {
-      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seated) continue;
-      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
-      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
-        );
-        continue;
-      }
-      const awayBlindEvict = blindEvictSet.has(userId);
-      const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
-      const abandonedEvict =
-        !awayBlindEvict &&
-        !nitEvict &&
-        !sitOutEvictable.includes(userId) &&
-        abandonedEvictSet.has(userId);
-      console.log(
-        awayBlindEvict
-          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
-          : nitEvict
-            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
-            : abandonedEvict
-              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
-              : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+      const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+        this.tableId,
+        seatedIds,
+        { countOrbit: opts.countOrbit }
       );
-      try {
-        // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
-        // database writes the bar from this leave mode; every other eviction
-        // stays a plain system exit.
-        await atomicCashout(
-          userId,
-          this.tableId,
-          seated.seat_number,
-          nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
-        );
-        departed.add(userId);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: seated.seat_number,
-          user_id: userId,
-          mid_hand: false,
-          reason: awayBlindEvict
-            ? 'away_blind_cap'
-            : nitEvict
-              ? 'nit_game_vpip'
-              : abandonedEvict
-                ? 'abandoned_seat'
-                : 'sit_out_timeout',
-          timestamp: Date.now(),
-        });
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.leaveHeldByClock.delete(userId);
-        this.chipContinuity.forget(userId);
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-        // Keep the roster and tracking until the next pass confirms departure.
-        // Retrying through a different helper would discard the eviction mode.
+      // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
+      // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
+      // REMOVED." Collected together so one pass removes the seat once.
+      const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(
+        this.tableId,
+        seatedIds
+      );
+
+      // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
+      // numbers were columns the creation page wrote and nothing read, while the
+      // toggle's own tooltip promised a "Penalty for tight play".
+      //
+      // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
+      // ca_hand_facts already stores VPIP per player per hand from the same
+      // derivation the player's own HUD shows. A second counter here would be a
+      // second answer, and the two would part company the first time this process
+      // restarted mid-session.
+      //
+      // GATED ON THE COLUMN so the round trip never happens on a table without the
+      // rule — which is every table today. A failure returns an empty list: a
+      // stats query that cannot answer must not throw anyone out of a hand they
+      // were entitled to play.
+      //
+      // Merged into this shared method 2026-08-25: it arrived on main inside the
+      // inline block this method replaced, and it belongs wherever the other two
+      // eviction reasons live — including the start-up wait loop.
+      const nitEvictable: string[] = [];
+      if (this.tableInfo?.nit_game === true) {
+        // The board every seat is judged on, kept for the brain (Dan
+        // 2026-09-04). Read beside the eviction, at the same boundary, from the
+        // same rows, so what a horse steers by is what it is stood up on.
+        this.nitStatus = await collectNitStatus(this.tableId);
+        const nits = await collectNitEvictions(this.tableId);
+        for (const n of nits) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+              `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+          );
+          nitEvictable.push(n.userId);
+        }
       }
+
+      // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
+      // never charged a blind (a quiet table), is released on the same clock
+      // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
+      const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
+        this.tableId,
+        seatedIds
+      );
+
+      const blindEvictSet = new Set(blindEvictable);
+      const nitEvictSet = new Set(nitEvictable);
+      const abandonedEvictSet = new Set(abandonedEvictable);
+      const evictable = Array.from(
+        new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
+      );
+      if (evictable.length === 0) return;
+
+      // Dan 2026-08-26, binding: "a player can never leave the table while they
+      // are all in. they must wait for the hand to be finished." An eviction is
+      // still a departure, and this one cashes the seat out. Both call sites are
+      // between hands today, so this should never fire - which is the point: the
+      // safety was call-site placement rather than a check, and a future caller
+      // would not know that. leaveTable() refuses the same case explicitly.
+      const evictHand = this.handController?.getState();
+
+      const departed = new Set<string>();
+      for (const userId of evictable) {
+        if (this.terminal || isMaintenanceFrozen()) break;
+        const seated = originalOccupancies.get(userId);
+        if (
+          !seated ||
+          !this.seatedPlayers.some(
+            (p) =>
+              p.user_id === userId &&
+              p.occupancy_id === seated.occupancy_id &&
+              p.seat_number === seated.seat_number
+          )
+        )
+          continue;
+        const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+        if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
+          );
+          continue;
+        }
+        // Folding removes winning eligibility, not a participant's unsettled
+        // contribution. Every live-hand participant waits for settlement.
+        if (evictSelf) continue;
+        // Presence can change while an eligibility read or an earlier
+        // player's cashout is awaited. Recheck this original occupant now,
+        // without charging another orbit.
+        const stillTimedOut = this.disconnectEngine
+          .tickSitOutsAndCollectEvictions(this.tableId, [userId], { countOrbit: false })
+          .includes(userId);
+        const stillAway = this.disconnectEngine
+          .collectAwayBlindEvictions(this.tableId, [userId])
+          .includes(userId);
+        const stillAbandoned = this.disconnectEngine
+          .collectAbandonedSeatEvictions(this.tableId, [userId])
+          .includes(userId);
+        if (!stillTimedOut && !stillAway && !stillAbandoned && !nitEvictSet.has(userId)) continue;
+        const awayBlindEvict = blindEvictSet.has(userId) && stillAway;
+        const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+        const abandonedEvict =
+          !awayBlindEvict &&
+          !nitEvict &&
+          !stillTimedOut &&
+          abandonedEvictSet.has(userId) &&
+          stillAbandoned;
+        console.log(
+          awayBlindEvict
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
+            : nitEvict
+              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
+              : abandonedEvict
+                ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
+                : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+        );
+        try {
+          // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
+          // database writes the bar from this leave mode; every other eviction
+          // stays a plain system exit.
+          await atomicCashout(userId, this.tableId, seated.seat_number, {
+            occupancyId: seated.occupancy_id,
+            ...(nitEvict ? { leaveMode: 'vpip_evicted' as const } : {}),
+          });
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== seated.occupancy_id
+            )
+          )
+            continue;
+          departed.add(seated.occupancy_id!);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'seat_left',
+            table_id: this.tableId,
+            seat: seated.seat_number,
+            user_id: userId,
+            mid_hand: false,
+            reason: awayBlindEvict
+              ? 'away_blind_cap'
+              : nitEvict
+                ? 'nit_game_vpip'
+                : abandonedEvict
+                  ? 'abandoned_seat'
+                  : 'sit_out_timeout',
+            timestamp: Date.now(),
+          });
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.leaveHeldByClock.delete(userId);
+          this.chipContinuity.forget(userId);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
+          // Keep the roster and tracking until the next pass confirms departure.
+          // Retrying through a different helper would discard the eviction mode.
+        }
+      }
+      this.seatedPlayers = this.seatedPlayers.filter(
+        (p) => !p.occupancy_id || !departed.has(p.occupancy_id)
+      );
+    } finally {
+      releaseSeatBoundary();
     }
-    this.seatedPlayers = this.seatedPlayers.filter((p) => !departed.has(p.user_id));
   }
 
   /**

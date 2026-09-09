@@ -70,3 +70,13 @@ Verification of the combined formatted source:
 - Engine health still advertised 9ef973e9; inspecting that revision confirms its leave predicate still excludes folded participants. Do not mark the previously merged folded correction as engine-adopted.
 
 Remaining mandatory work includes admin retry identity and immutable administrative outcome, all indirect SQL callers and their outer lock ownership, legacy privilege retirement, held-request restart semantics, browser/native/multi-tab/live HTTP verification, current-main integration, migration application and scheduled engine adoption, and the remaining Phase 2 rule/lifecycle acceptance matrix. No Phase 3 work has started.
+
+## Administrative retry identity follow-up
+
+Added /admin/kick-occupancy, with existing table-admin authorization before receipt lookup or engine dispatch. Cached cashout receipts return before consulting a replacement seat. An immediate cash kick requires its committed receipt; failed removals do not create success moderation events.
+
+IntegrityActionService now shares the persisted occupancy-request implementation with voluntary leave. Kick requests use a separate key and retain the original reason across unknown-outcome retries. The legacy HTTP route remains for the compatibility transition and must be retired with direct SQL privileges.
+
+Verification: 12 administrative handler tests; four actual loopback HTTP/router/JSON checks (auth and receipt storage mocked, not production E2E); 50 focused client tests. Full client suite passed 17,304 tests. Full server suite passed 7,821 tests with one old exact-source forced-option assertion failing; updated that assertion to include forced authority plus occupancy. Type errors in two test assertions were corrected. Full combined verification is required again after integrating current main.
+
+Administrative moderation-history insertion is still outside the financial transaction. Do not describe it as an immutable atomic administrative audit record. Bulk action identity, original authorization context for receipts after table deletion, native/multi-tab browser acceptance and the remaining SQL wrappers are still open.

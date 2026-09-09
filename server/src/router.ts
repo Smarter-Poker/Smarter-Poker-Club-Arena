@@ -1,3 +1,4 @@
+import { handleAdminKickOccupancy } from './handlers/admin.js';
 /**
  * HTTP request router for the Hetzner game server.
  *
@@ -233,6 +234,8 @@ export function createRouter(
     if (method === 'POST' && url === '/admin/resume')
       return handleAdminResume(req, res, { gameServer });
     // Round 68: admin kick — moderation can remove a player from a table
+    if (method === 'POST' && url === '/admin/kick-occupancy')
+      return handleAdminKickOccupancy(req, res, deps);
     if (method === 'POST' && url === '/admin/kick')
       return handleAdminKick(req, res, { gameServer });
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });

@@ -1,3 +1,4 @@
+import { getSeatCashoutReceipt } from '../services/supabase/seats.js';
 /**
  * Admin handlers — Bible V8 §6.17: pause / resume table dealing.
  *
@@ -23,7 +24,7 @@ export interface AdminDeps {
           adminResume(): unknown;
           leaveTable(
             userId: string,
-            opts?: { forced?: boolean }
+            opts?: { forced?: boolean; occupancyId?: string; seatNumber?: number }
           ):
             | { success: boolean; [k: string]: unknown }
             | Promise<{ success: boolean; [k: string]: unknown }>;
@@ -203,25 +204,66 @@ export async function handleAdminResume(
 export async function handleAdminKick(
   req: IncomingMessage,
   res: ServerResponse,
-  deps: AdminDeps
+  deps: AdminDeps,
+  occupancyBound = false
 ): Promise<void> {
   try {
     const body = JSON.parse(await readBody(req));
-    const { tableId, userId: targetUserId } = body as {
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      return sendJSON(res, 400, { success: false, error: 'Invalid Removal Request' });
+    const {
+      tableId,
+      userId: targetUserId,
+      occupancyId,
+      seatNumber,
+    } = body as {
       tableId?: string;
       userId?: string;
       reason?: string;
+      occupancyId?: string;
+      seatNumber?: number;
     };
     if (!tableId || !targetUserId) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or userId' });
     }
 
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (
+      occupancyBound &&
+      (!uuid.test(tableId) ||
+        !uuid.test(targetUserId) ||
+        typeof occupancyId !== 'string' ||
+        !uuid.test(occupancyId) ||
+        !Number.isInteger(seatNumber) ||
+        seatNumber! < 0)
+    ) {
+      return sendJSON(res, 400, { success: false, error: 'Original Seat Identity Required' });
+    }
+    const identity = occupancyBound
+      ? { protocol: 'seat-occupancy-v1', occupancyId, seatNumber }
+      : {};
     // Resolve caller + verify club-admin role (owner / admin / super_agent).
     const authz = await authorizeTableAdmin(req, tableId);
     if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const callerUserId = authz.userId;
     const clubId = authz.clubId;
 
+    if (occupancyBound) {
+      const previous = await getSeatCashoutReceipt(
+        targetUserId,
+        tableId,
+        seatNumber!,
+        occupancyId!
+      );
+      if (previous)
+        return sendJSON(res, 200, {
+          ...identity,
+          success: true,
+          immediate: true,
+          cashout: previous,
+          target_user_id: targetUserId,
+        });
+    }
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
@@ -229,7 +271,23 @@ export async function handleAdminKick(
 
     // CHIP CONTINUITY: a kick is a system exit. The stay clock never blocks it;
     // the session still closes and the rejoin floor is still written.
-    const result = await engine.leaveTable(targetUserId, { forced: true });
+    const result = await engine.leaveTable(targetUserId, {
+      forced: true,
+      ...(occupancyBound ? { occupancyId, seatNumber } : {}),
+    });
+    if (!result.success)
+      return sendJSON(res, 400, { ...result, ...identity, target_user_id: targetUserId });
+    const cashout =
+      occupancyBound && result.immediate === true && result.tournament !== true
+        ? await getSeatCashoutReceipt(targetUserId, tableId, seatNumber!, occupancyId!)
+        : null;
+    if (occupancyBound && result.immediate === true && result.tournament !== true && !cashout) {
+      return sendJSON(res, 503, {
+        ...identity,
+        success: false,
+        error: 'Cashout Outcome Could Not Be Confirmed',
+      });
+    }
 
     // Round 71: write audit ledger row so forensic review sees who kicked
     // whom, when, why. Fire-and-forget — engine admin actions log to
@@ -269,6 +327,8 @@ export async function handleAdminKick(
 
     return sendJSON(res, result.success ? 200 : 400, {
       ...result,
+      ...identity,
+      ...(occupancyBound ? { cashout } : {}),
       kicked_by: callerUserId,
       target_user_id: targetUserId,
     });
@@ -276,4 +336,12 @@ export async function handleAdminKick(
     reportError(err, 'HTTP.admin_kick_error');
     return sendJSON(res, 500, { success: false, error: 'Failed to kick player' });
   }
+}
+
+export async function handleAdminKickOccupancy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AdminDeps
+): Promise<void> {
+  return handleAdminKick(req, res, deps, true);
 }

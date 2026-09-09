@@ -26,21 +26,6 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
-const ENGINE_BASE_URL =
-  (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL ??
-  'https://engine.smarter.poker';
-
-function engineAuthHeader(): Record<string, string> {
-  try {
-    const raw =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('smarter-poker-auth') : null;
-    const token = raw ? (JSON.parse(raw) as { access_token?: string }).access_token : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 export interface RemovalOutcome {
   removed: number;
   failed: number;
@@ -55,21 +40,10 @@ export async function adminRemovePlayerFromTable(
   reason: string
 ): Promise<{ ok: boolean; error: string | null }> {
   try {
-    const response = await fetch(`${ENGINE_BASE_URL}/admin/kick`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...engineAuthHeader() },
-      body: JSON.stringify({ tableId, userId, reason }),
-    });
-    const result = (await response.json().catch(() => ({}))) as {
-      success?: boolean;
-      error?: string;
-    };
-    if (!response.ok || result.success !== true) {
-      return {
-        ok: false,
-        error: result.error || `The engine refused this removal (${response.status}).`,
-      };
-    }
+    const { kickSeatWithIntent } = await import('./SeatLeaveIntent');
+    const result = await kickSeatWithIntent(tableId, userId, reason);
+    if (!result.success)
+      return { ok: false, error: result.error || 'The Engine Refused This Removal.' };
     masterBus.emit('TABLE_UPDATED', { tableId, status: 'running' });
     return { ok: true, error: null };
   } catch (error) {

@@ -223,7 +223,8 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
     expect(LEAVE).toContain("result.success || result.code === 'LEAVE_LOCKED' ? 200 : 400");
     expect(LEAVE).toContain('await engine.leaveTable(userId)');
     const ADMIN = read('src/handlers/admin.ts');
-    expect(ADMIN).toContain('await engine.leaveTable(targetUserId, { forced: true })');
+    expect(ADMIN).toMatch(/await engine\.leaveTable\(targetUserId,\s*\{\s*forced: true,/);
+    expect(ADMIN).toContain('occupancyBound ? { occupancyId, seatNumber } : {}');
     const ROTATOR = read('src/services/HorseSessionRotator.ts');
     // Four doors, all the human one: the retirement drain, the session end,
     // (2026-09-05, no lone horse) the lone-table stand in standLoneHorses, and

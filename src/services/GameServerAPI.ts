@@ -1012,6 +1012,31 @@ export async function submitDiscard(tableId: string, cardIndex: number): Promise
  * POST /leave — Notify the game server that a player is leaving the table.
  * The server will auto-fold if mid-hand, then mark leave_pending for cashout.
  */
+export async function notifyServerKickOccupancy(
+  tableId: string,
+  userId: string,
+  seatNumber: number,
+  occupancyId: string,
+  reason: string
+): Promise<unknown> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await engineFetch(GAME_SERVER_URL + '/admin/kick-occupancy', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, userId, seatNumber, occupancyId, reason }),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok && body && typeof body === 'object') return { ...body, success: false };
+    return body;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Could Not Confirm Removal',
+    };
+  }
+}
+
 export async function notifyServerLeaveOccupancy(
   tableId: string,
   seatNumber: number,

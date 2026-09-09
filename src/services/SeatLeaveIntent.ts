@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { notifyServerLeaveOccupancy } from './GameServerAPI';
+import { notifyServerLeaveOccupancy, notifyServerKickOccupancy } from './GameServerAPI';
 
 type Intent = {
   version: 1;
@@ -8,6 +8,8 @@ type Intent = {
   seatNumber: number;
   occupancyId: string;
   state: 'pending' | 'resolved';
+  action?: 'kick';
+  reason?: string;
 };
 export type SeatLeaveResult = {
   success: boolean;
@@ -17,11 +19,19 @@ export type SeatLeaveResult = {
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const running = new Map<string, Promise<SeatLeaveResult>>();
-function validIntent(value: unknown, userId: string, tableId: string): value is Intent {
+function validIntent(
+  value: unknown,
+  userId: string,
+  tableId: string,
+  action: 'leave' | 'kick'
+): value is Intent {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const x = value as Intent;
   return (
     x.version === 1 &&
+    (action === 'kick'
+      ? x.action === 'kick' && typeof x.reason === 'string'
+      : x.action === undefined) &&
     x.userId === userId &&
     x.tableId === tableId &&
     Number.isInteger(x.seatNumber) &&
@@ -33,11 +43,23 @@ function validIntent(value: unknown, userId: string, tableId: string): value is 
 }
 
 /** An unknown response retains the original target across retries and reloads. */
-export async function leaveSeatWithIntent(
+export function leaveSeatWithIntent(tableId: string, userId: string): Promise<SeatLeaveResult> {
+  return requestSeatWithIntent(tableId, userId, { kind: 'leave' });
+}
+export function kickSeatWithIntent(
   tableId: string,
-  userId: string
+  userId: string,
+  reason: string
 ): Promise<SeatLeaveResult> {
-  const key = 'ca:seat-leave:v1:' + userId + ':' + tableId;
+  return requestSeatWithIntent(tableId, userId, { kind: 'kick', reason });
+}
+async function requestSeatWithIntent(
+  tableId: string,
+  userId: string,
+  action: { kind: 'leave' } | { kind: 'kick'; reason: string }
+): Promise<SeatLeaveResult> {
+  const key =
+    (action.kind === 'kick' ? 'ca:seat-kick:v1:' : 'ca:seat-leave:v1:') + userId + ':' + tableId;
   const active = running.get(key);
   if (active) return active;
   const execute = async (): Promise<SeatLeaveResult> => {
@@ -48,7 +70,7 @@ export async function leaveSeatWithIntent(
       let intent: Intent | null = null;
       if (raw !== null) {
         const saved: unknown = JSON.parse(raw);
-        if (!validIntent(saved, userId, tableId))
+        if (!validIntent(saved, userId, tableId, action.kind))
           throw new Error('The Saved Leave Request Could Not Be Verified.');
         intent = saved;
       }
@@ -69,8 +91,9 @@ export async function leaveSeatWithIntent(
             seatNumber: data.seat_number,
             occupancyId: data.occupancy_id,
             state: 'pending',
+            ...(action.kind === 'kick' ? { action: 'kick', reason: action.reason } : {}),
           };
-          if (!validIntent(candidate, userId, tableId))
+          if (!validIntent(candidate, userId, tableId, action.kind))
             throw new Error('Your Seat Identity Could Not Be Verified.');
           intent = candidate;
         }
@@ -79,11 +102,16 @@ export async function leaveSeatWithIntent(
       intent = { ...intent, state: 'pending' };
       // Persist before sending. Storage failure must not create an unrepeatable request.
       storage.setItem(key, JSON.stringify(intent));
-      const response = await notifyServerLeaveOccupancy(
-        tableId,
-        intent.seatNumber,
-        intent.occupancyId
-      );
+      const response =
+        action.kind === 'kick'
+          ? await notifyServerKickOccupancy(
+              tableId,
+              userId,
+              intent.seatNumber,
+              intent.occupancyId,
+              intent.reason!
+            )
+          : await notifyServerLeaveOccupancy(tableId, intent.seatNumber, intent.occupancyId);
       if (!response || typeof response !== 'object' || Array.isArray(response)) {
         throw new Error('The Server Did Not Confirm The Leave.');
       }

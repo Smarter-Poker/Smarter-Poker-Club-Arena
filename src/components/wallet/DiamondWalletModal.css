@@ -265,3 +265,38 @@
   font-size: 1.35rem;
   color: #00d4ff;
 }
+
+.diamond-wallet-transfer {
+  padding: 1rem;
+  color: #f3f4f6;
+  border-top: 1px solid #374151;
+}
+.diamond-wallet-transfer form,
+.diamond-wallet-transfer label {
+  display: grid;
+  gap: 0.5rem;
+}
+.diamond-wallet-transfer form {
+  gap: 1rem;
+}
+.diamond-wallet-transfer input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.75rem;
+  background: #111827;
+  color: #fff;
+  border: 1px solid #6b7280;
+  border-radius: 0.5rem;
+}
+.diamond-wallet-transfer button {
+  padding: 0.75rem 1rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+.diamond-wallet-transfer p {
+  overflow-wrap: anywhere;
+}
+.diamond-wallet-transfer button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

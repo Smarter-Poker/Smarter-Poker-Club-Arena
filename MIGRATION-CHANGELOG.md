@@ -6,6 +6,10 @@
 
 The former reminder generator updates player rows after enqueueing pushes. The replacement commits versioned notification receipts with the outbox and never updates a player row. An isolated PostgreSQL 17 execution reproduced the old lock timeout and verified the replacement through 40 checks, including legacy overlap, bounded batches, rollback, cancellation, rescheduling and abandoned claims. Source re-read: yes. No gameplay timing or accounting changes. The workers service is the intended primary caller; the compatibility cron remains active. Application and publication evidence: docs/audits/2026-09-09-tournament-reminder-execution.md.
 
+## 2026-09-09: Durable Tournament Seat Refund Identity
+
+TablePage seat exits now retain the original request across later retries through the existing durable refund helper, with a distinct table key and authenticated-account check. Canonical server receipt and ticket parsing remain unchanged. Two regressions reproduced the gap; 108 focused tests, TypeScript and the production build pass. Re-read: yes. No database migration. Publication and overall accounting Phase 3 acceptance remain pending. See docs/changelog/2026-09-09-durable-tournament-seat-refund.md.
+
 ## 2026-09-09: Spin Reveals Follow The Booked Result
 
 The engine could announce a locally drawn 2x outcome before an idempotent reserve receipt restored a booked 10x outcome, or announce before settlement failed. The early reveal now follows successful settlement and booked-multiplier validation, retaining the existing hold and reconnect window and preceding table work. Five production-fragment cases cover unresolved, replayed, failed, malformed and matching receipts. The complete tournament/maintenance/pause suite passes 1348 tests in 127 files; server TypeScript and build pass. Re-read: yes. No migration or financial repair. Phase 3 publication is explicitly authorized in the audit chat; refreshed verification and publication are in progress; see docs/audits/2026-09-09-phase3-tournament-lifecycle.md.

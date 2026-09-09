@@ -147,6 +147,7 @@ describe('durable agent wallet intent', () => {
       { agent_wallet_after: NaN },
       { recipient_balance_after: -1 },
       { destination: 'promo' },
+      { destination: 'agent_wallet' },
       { transaction_id: '' },
     ]) {
       expect(confirmedAgentWalletReceipt({ ...receipt, ...change }, 12.34, 'agent_send')).toBe(

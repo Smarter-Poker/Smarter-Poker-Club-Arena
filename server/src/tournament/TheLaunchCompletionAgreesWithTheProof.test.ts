@@ -49,7 +49,8 @@ describe('the engine proof and the database completion apply the same rule', () 
   });
 
   it('both assert conservation against starting_chips instead', () => {
-    expect(BASE).toMatch(/const expectedFloor = roster\.length \* startingChips;/);
+    expect(BASE).toMatch(/const expectedFloor = fundingFieldSize \* startingChips;/);
+    expect(BASE).toMatch(/launchStacksMeetFundingFloor\([\s\S]*?fundingFieldSize/);
     expect(MIGRATION).toMatch(/v_active_count \* COALESCE\(/);
     expect(MIGRATION).toMatch(/t2\.starting_chips/);
     // roster AND felt, because both carried the per-row rule

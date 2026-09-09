@@ -30,7 +30,11 @@ import { formatBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
 import { useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
-import { parsePayoutStructure } from '../tournament/details/types';
+import {
+  effectivePlaceLadderPool,
+  placePrize,
+  resolvePayoutStructure,
+} from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
 import './GameLobbyPanel.css';
@@ -157,6 +161,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
   // ── Detail data (read-only enrichment; actions never depend on it) ──
   const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [tournamentFieldSize, setTournamentFieldSize] = useState<number | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [waitlistError, setWaitlistError] = useState(false);
   const [avgPot, setAvgPot] = useState<number | null>(null);
@@ -172,6 +177,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   useEffect(() => {
     let cancelled = false;
     setTournament(null);
+    setTournamentFieldSize(null);
     setWaitlist([]);
     setWaitlistError(false);
     setAvgPot(null);
@@ -207,10 +213,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         })
         .catch((e) => reportError(e, 'GameLobbyPanel.loadAveragePot'));
     } else {
-      tournamentService
-        .getTournament(entry.id)
-        .then((t) => {
-          if (!cancelled) setTournament(t);
+      Promise.all([
+        tournamentService.getTournament(entry.id),
+        supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', entry.id),
+      ])
+        .then(([t, countResult]) => {
+          if (cancelled) return;
+          setTournament(t);
+          if (countResult.error) {
+            reportError(countResult.error, 'GameLobbyPanel.loadTournamentFieldSize');
+          } else {
+            setTournamentFieldSize(
+              typeof countResult.count === 'number' ? countResult.count : null
+            );
+          }
         })
         .catch((e) => {
           reportError(e, 'GameLobbyPanel.loadTournament');
@@ -536,9 +555,32 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
    * ranges to one entry per place, which also gives the rows a real key.
    */
   const panelPayouts = useMemo<PayoutPlace[]>(
-    () => parsePayoutStructure(tournament?.payout_structure) ?? [],
-    [tournament?.payout_structure]
+    () => resolvePayoutStructure(tournament) ?? [],
+    [tournament]
   );
+  const panelIsSatellite =
+    String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+  const panelPlaceLadderPool = useMemo<number | null>(() => {
+    if (!tournament) return 0;
+    if (
+      tournament.bubble_protection === true &&
+      !panelIsSatellite &&
+      tournamentFieldSize === null
+    ) {
+      return null;
+    }
+    return effectivePlaceLadderPool(
+      tournament.prize_pool,
+      tournament.guaranteed_prize,
+      panelPayouts,
+      tournamentFieldSize ?? 0,
+      tournament.bubble_protection === true,
+      Number(tournament.buy_in_amount) || 0,
+      panelIsSatellite
+    );
+  }, [panelIsSatellite, panelPayouts, tournament, tournamentFieldSize]);
 
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different
@@ -1048,7 +1090,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                             <tr>
                               <th>Place</th>
                               <th>Share</th>
-                              {Number(tournament.prize_pool) > 0 && <th>Projected</th>}
+                              {Math.max(
+                                Number(tournament.prize_pool) || 0,
+                                Number(tournament.guaranteed_prize) || 0
+                              ) > 0 && <th>Projected</th>}
                             </tr>
                           </thead>
                           <tbody>
@@ -1056,17 +1101,19 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                               <tr key={p.place}>
                                 <td>{p.place}</td>
                                 <td>{p.percentage}%</td>
-                                {Number(tournament.prize_pool) > 0 && (
+                                {Math.max(
+                                  Number(tournament.prize_pool) || 0,
+                                  Number(tournament.guaranteed_prize) || 0
+                                ) > 0 && (
                                   <td>
-                                    {/* To the cent (2026-09-09). This is the
-                                        advertised payout table; flooring each
-                                        place advertised 98 against the 98.72
-                                        the settlement actually pays. */}
-                                    {formatTableChips(
-                                      Math.round(
-                                        (Number(tournament.prize_pool) || 0) * p.percentage
-                                      ) / 100
-                                    )}
+                                    {/* The bubble promise is reserved before the
+                                        place ladder is projected. Display the
+                                        same cent-rounded amount settlement uses. */}
+                                    {panelPlaceLadderPool === null
+                                      ? '-'
+                                      : formatTableChips(
+                                          placePrize(panelPlaceLadderPool, panelPayouts, p.place)
+                                        )}
                                   </td>
                                 )}
                               </tr>

@@ -3,13 +3,13 @@
  *  THE DRAW REACHES MEMORY WHOLE, OR IT DOES NOT REACH IT AT ALL
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * When a Spin's tier is drawn at start, TournamentManagerBase writes ONE patch
- * to `tournaments` — `spinRowPatch` — carrying the multiplier, the prize pool,
- * the starting stack, the blind ladder, the payout structure and the reveal
- * lag. It then has to make the in-memory copies agree, because the row is not
- * re-read: the live `tournament` object drives table creation and the level
- * clock, and `this.tournamentCache` is what the elimination and bubble paths
- * read for the rest of the game.
+ * When a Spin's tier is drawn at start, fn_spin_draw_and_settle commits its
+ * multiplier, prize pool and locked tiers in the same transaction as the
+ * reserve/journal receipt. TournamentManagerBase then proves its separate
+ * presentation patch (blind ladder, payout structure and reveal timing) and
+ * merges both proven shapes into `spinMemoryPatch`. The live `tournament`
+ * object drives table creation and the level clock, and `this.tournamentCache`
+ * is what the elimination and bubble paths read for the rest of the game.
  *
  * That sync was written out field by field, and it copied FOUR of the five
  * fields the patch carried. `payout_structure` was the one left behind, so for
@@ -25,7 +25,7 @@
  * and nothing fails when somebody forgets. THIS function is the promise made
  * mechanical — the patch is the single list, and every key in it lands on
  * every target. Add a sixth field to `spinRowPatch` and it is synced by
- * construction; there is no second place to remember.
+ * construction; there is no second per-field list to remember.
  *
  * `SpinDrawIntegrity.guard.test.ts` pins both halves: that this copies every
  * key of whatever it is handed, and that the draw site hands it the whole

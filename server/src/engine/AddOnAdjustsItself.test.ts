@@ -282,21 +282,25 @@ describe('the rows the hand envelope resolved are announced (verified lease path
   });
 
   it('a rebuild that a concurrent mid-hand add-on overtook is discarded, not applied stale', async () => {
-    const { engine, rpcTable } = envelopeEngine();
+    const { engine, rpcTable, from } = envelopeEngine();
     engine.pendingAddOns.set('hero', 5);
     engine.requestPendingAddOnSweep = () => {
       engine.pendingAddOnSweepGen += 1;
     };
     rpcTable.set('table_pending_addons:open', { data: [], error: null });
-    // The read is in flight when addChips writes the map and bumps the gen.
-    const original = supabase.from;
-    const from = vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
-      const chain = (original as any).call(supabase, table);
+    /* The read is in flight when addChips writes the map and bumps the gen.
+       `vi.spyOn` on a method that is ALREADY spied hands back the SAME spy
+       object rather than wrapping it, so capturing `supabase.from` here and
+       calling it from a second `mockImplementation` re-entered THIS
+       implementation - unbounded recursion, and the guard under test was
+       never reached. Wrap the fixture implementation the harness installed. */
+    const fixture = from.getMockImplementation() as (table: string) => unknown;
+    from.mockImplementation(((table: string) => {
+      const chain = fixture(table);
       engine.pendingAddOnSweepGen += 1; // the overtaking write
       return chain;
     }) as any);
     await engine.rebuildPendingAddOnCache();
-    from.mockRestore();
     expect(engine.pendingAddOns.get('hero')).toBe(5);
   });
 

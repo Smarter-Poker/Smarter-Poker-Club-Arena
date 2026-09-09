@@ -1533,22 +1533,28 @@ class TournamentService {
     tableId: string,
     userId: string
   ): Promise<TournamentUnregisterResult> {
-    const requestId = uuid();
-    const result = await executeTournamentUnregisterRpc(
-      async () =>
-        supabase.rpc('fn_leave_seat_and_refund', {
-          p_table_id: tableId,
-          p_request_id: requestId,
-        }),
-      requestId,
-      'TournamentService.leaveTournamentSeatAndRefund_result_unconfirmed',
-      { tableId, userId }
-    );
-
-    if (result.refundedChips > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId) {
+      throw new Error(
+        'Please Sign In To The Correct Account Before Requesting A Tournament Refund.'
+      );
     }
-    return result;
+    return withTournamentUnregistrationIntent(userId, 'seat:' + tableId, async (requestId) => {
+      const result = await executeTournamentUnregisterRpc(
+        async () =>
+          supabase.rpc('fn_leave_seat_and_refund', {
+            p_table_id: tableId,
+            p_request_id: requestId,
+          }),
+        requestId,
+        'TournamentService.leaveTournamentSeatAndRefund_result_unconfirmed',
+        { tableId, userId }
+      );
+      if (result.refundedChips > 0) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+      }
+      return result;
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

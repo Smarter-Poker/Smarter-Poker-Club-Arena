@@ -1422,7 +1422,8 @@ const BOOT_EXPLANATIONS: Record<string, string> = {
  */
 function warmSeatToPlayer(seat: WarmSeat, heroUserId: string): SeatPlayer {
   const profiles = (seat as { profiles?: unknown }).profiles as
-    { username?: string; display_name?: string; avatar_url?: string } | undefined;
+    | { username?: string; display_name?: string; avatar_url?: string }
+    | undefined;
   return {
     id: seat.user_id,
     name: playerDisplayName(profiles),
@@ -16986,7 +16987,8 @@ export default function TablePage({
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
         const potAwardsWire = (evt.data as any).pot_awards as
-          import('../lib/showdownPresentation').PotAwardGroupWire[] | undefined;
+          | import('../lib/showdownPresentation').PotAwardGroupWire[]
+          | undefined;
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||

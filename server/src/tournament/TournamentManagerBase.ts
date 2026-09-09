@@ -247,8 +247,6 @@ export abstract class TournamentManagerBase {
   static readonly ADD_ON_RETRY_MS = 20_000;
   /** Poll an enabled deal only after this manager has confirmed one final table. */
   static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
-  /** A full table promotes a registrant before expansion; re-drive that handoff promptly. */
-  static readonly LATE_REG_REDRIVE_MS = 5_000;
   /** Preserve fast recovery while a known zero-stack player is unresolved. */
   static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
   /** Re-check only a tournament whose balancer proved work remains. */
@@ -3856,12 +3854,9 @@ export abstract class TournamentManagerBase {
       tournament.status = 'RUNNING';
       tournament.started_at = startedAtIso;
 
-      // LIVE E2E FIX 2026-08-15: tournamentCache was captured while status was
-      // still REGISTERING and never refreshed after this transition — so
-      // ensureLateRegSeated's `status !== 'RUNNING'` guard made the former
-      // seat self-heal a permanent no-op for every tournament started (not
-      // resumed) by this process. Live evidence: 3 RUNNING tournaments frozen
-      // for hours with 'playing' players holding chips but no active seat.
+      // The cache was captured while status was still REGISTERING. Keep the
+      // committed lifecycle state aligned before any RUNNING-only manager
+      // stage executes; the atomic launch receipt already owns every chair.
       if (this.tournamentCache) {
         this.tournamentCache.status = 'RUNNING';
         this.tournamentCache.started_at = startedAtIso;

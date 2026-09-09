@@ -19,7 +19,6 @@ import { TournamentManagerEliminations } from './TournamentManagerEliminations.j
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
-import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
 import {
   moveTournamentPlayerAtomically,
   TournamentSeatMoveOutcomeUnknownError,
@@ -979,18 +978,6 @@ export class TournamentManager extends TournamentManagerEliminations {
   }
 
   /**
-   * TOURNEY-AUDIT 2026-07-24 (sweep 6): server-authoritative seating for late
-   * registrants and re-entries. Dan's rule: an MTT entrant is NEVER waiting.
-   * Every 5s cycle:
-   *   1. Find tournament_players rows (registered/playing) with NO active seat
-   *      at any of this tournament's tables.
-   *   2. Ask one database transaction to derive the stack, create/revive the
-   *      chair, promote the roster row, persist both coordinates and count.
-   *   3. If no table has an open chair, keep the registration durable; the
-   *      capacity RPC counts registered + playing entrants and creates room.
-   * Exact receipt replay makes the assignment idempotent across lost replies.
-   */
-  /**
    * Ask the one database authority to settle and certify the complete
    * satellite result. TypeScript neither derives an award nor infers success
    * from tournament status; only the exact immutable receipt is accepted.
@@ -1006,186 +993,14 @@ export class TournamentManager extends TournamentManagerEliminations {
     return verified;
   }
 
-  protected async ensureLateRegSeated(): Promise<void> {
-    try {
-      if (!this.eliminationMutationAllowed()) return;
-      if (this.tournamentCache?.status && this.tournamentCache.status !== 'RUNNING') return;
-      const { data: entrants, error: entrantsErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, username, status, chips')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['registered', 'playing']);
-      if (!this.eliminationMutationAllowed()) return;
-      if (entrantsErr) {
-        reportError(entrantsErr, 'Tournament.late_reg_entrants_unreadable');
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-        return;
-      }
-      if (!entrants || entrants.length === 0) return;
-
-      // Active tables of THIS tournament (DB-grounded, not the in-memory map)
-      const { data: tourneyTables, error: tourneyTablesErr } = await supabase
-        .from('tables')
-        .select('id, max_players')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['waiting', 'running', 'RUNNING', 'active']);
-      if (!this.eliminationMutationAllowed()) return;
-      if (tourneyTablesErr) {
-        reportError(tourneyTablesErr, 'Tournament.late_reg_tables_unreadable');
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-        return;
-      }
-      if (!tourneyTables || tourneyTables.length === 0) {
-        // checkDynamicTableExpansion runs later in this sweep. Re-enter with
-        // fresh rows after it has created the first table (or retry if it did
-        // not), including for a player already promoted to `playing` whom the
-        // registered-only global lane intentionally cannot see.
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-        return;
-      }
-      const tableIds = tourneyTables.map((t) => t.id);
-
-      /* CHUNKED, AND A FAILED READ MUST NOT MEAN "NOBODY IS SEATED" (2026-09-03).
-         `tableIds` is every live table of this tournament and the largest field
-         on record here is 1,076 tables, so one `.in()` goes past the ~675-id
-         ceiling PostgREST accepts in a URL and answers HTTP 400. The error was
-         discarded, `seatedUsers` came back EMPTY, and every entrant in the
-         field then read as unseated - a seat-write storm every five seconds
-         across the whole tournament, and `best` never null so nobody is ever
-         promoted to 'playing' and table expansion never fires. Declining the
-         pass is the safe answer: seatClaim still fails closed, and the next
-         cycle tries again. */
-      const seatRead = await selectInChunks<{
-        user_id: string;
-        table_id: string;
-        seat_number: number;
-      }>(
-        tableIds,
-        (batch) =>
-          supabase
-            .from('table_seats')
-            .select('user_id, table_id, seat_number')
-            .in('table_id', batch)
-            .is('left_at', null),
-        `Tournament.lateRegSeated(${this.tournamentId.slice(0, 8)})`
-      );
-      if (!this.eliminationMutationAllowed()) return;
-      if (!seatRead.complete) {
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-        return;
-      }
-      const seatRows = seatRead.rows;
-      const seatedUsers = new Set(seatRows.map((s) => s.user_id));
-      const allUnseated = entrants.filter((e) => !seatedUsers.has(e.user_id));
-      if (allUnseated.length === 0) return;
-      const unseated = allUnseated.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-      if (allUnseated.length > unseated.length) this.requestEliminationSweep();
-
-      // Keep one manager-scoped retry due for as long as a paid entrant is
-      // known to be seatless. This includes status='playing' rebuys and rows
-      // promoted for expansion, which the registered-only global RPC cannot
-      // and must not claim. One clean tail pass observes zero and stops.
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-
-      // Build per-table occupancy
-      const occupancy = new Map<string, { max: number; taken: Set<number> }>();
-      for (const t of tourneyTables) {
-        occupancy.set(t.id, { max: t.max_players || 9, taken: new Set() });
-      }
-      for (const s of seatRows ?? []) {
-        occupancy.get(s.table_id)?.taken.add(s.seat_number);
-      }
-
-      for (const player of unseated) {
-        if (!this.eliminationMutationAllowed()) return;
-        // Choose the active table with the most open seats
-        let best: { tableId: string; openSeats: number } | null = null;
-        for (const [tid, occ] of occupancy) {
-          const open = occ.max - occ.taken.size;
-          if (open > 0 && (!best || open > best.openSeats)) {
-            best = { tableId: tid, openSeats: open };
-          }
-        }
-
-        /**
-         * A ZERO-CHIP 'playing' ENTRANT IS NOT SEATABLE (2026-08-30).
-         *
-         * That state now has a precise meaning: they busted and their rebuy
-         * decision window is open (the bust vacates the seat immediately —
-         * Dan 2026-08-30 — and the elimination sweep holds their entry for
-         * REBUY_DECISION_GRACE_MS). The old fallback here handed such a
-         * player a FREE startingChips stack, which was unreachable while
-         * busted players kept their seats and becomes a chip mint the moment
-         * they do not. A landed rebuy raises their chips and the next pass
-         * seats them normally; a declined/expired window eliminates them.
-         */
-        if (player.status !== 'registered' && Number(player.chips || 0) <= 0) {
-          continue;
-        }
-
-        if (!best) {
-          // `fn_ensure_late_registration_capacity` counts both registered and
-          // playing entrants. Keep the roster untouched until one database
-          // transaction can create/revive the seat, promote the entrant and
-          // persist both coordinates. A new table spawns later in this same
-          // sweep and this durable entrant is retried on the next pass.
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-          continue;
-        }
-
-        const occ = occupancy.get(best.tableId)!;
-        let seatNumber = 1;
-        while (occ.taken.has(seatNumber) && seatNumber <= occ.max) seatNumber++;
-        if (seatNumber > occ.max) continue;
-
-        /**
-         * THE SNAPSHOT IS NOT AUTHORITY (2026-09-08).
-         *
-         * One service-only RPC now owns the duplicate check, vacated-row reuse,
-         * roster promotion/link, stack derivation and exact table count under
-         * terminal -> mission -> launch -> tournament -> roster -> table ->
-         * seat locks. There is no raw fallback and no compensating write.
-         */
-        try {
-          const receipt = await assignTournamentPlayerSeatAtomically({
-            tournamentId: this.tournamentId,
-            userId: player.user_id,
-            tableId: best.tableId,
-            seatNumber,
-          });
-          if (!this.eliminationMutationAllowed()) return;
-          // The snapshot supplies only a placement preference. Concurrent
-          // claims can make that chair stale, so the database may select a
-          // different legal chair and its receipt is the only coordinate we
-          // are allowed to reserve in this pass's occupancy view.
-          occupancy.get(receipt.tableId)?.taken.add(receipt.seatNumber);
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic late-reg seat certified for ${player.user_id.slice(0, 8)} at table ${receipt.tableId.slice(0, 8)} seat ${receipt.seatNumber} (${receipt.stack} chips, table count ${receipt.currentPlayers})`
-          );
-        } catch (seatError) {
-          reportError(seatError, 'Tournament.atomic_late_reg_seat_refused_or_unknown', {
-            tournamentId: this.tournamentId,
-            playerId: player.user_id,
-            tableId: best.tableId,
-            seatNumber,
-          });
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-        }
-      }
-    } catch (err) {
-      reportError(err, 'Tournament.ensureLateRegSeated');
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
-    }
-  }
-
   /**
    * FIX 155: Dynamic table creation during rebuy/re-entry/late-reg period.
    * When player count exceeds (tableCount × maxPerTable), create new tables
    * and rebalance players across all tables using TableBalancer.
    *
-   * Called from bounded elimination scheduling: immediately for a detected
-   * seatless registrant or bust, on manager admission, and after any failed
-   * capacity attempt at its explicit retry deadline.
+   * Called from bounded elimination scheduling after causal manager wakes and
+   * ordinary gameplay mutations. The database re-counts the committed field;
+   * this process never scans a seatless roster to authorize a chair write.
    */
   // Round 51 RE-RUN-2 fix: when a table was just broken in the same
   // elimination-loop cycle, skip expansion. Otherwise the broken table's
@@ -1225,7 +1040,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
       if (createErr) {
         reportError(createErr, 'Tournament.dynamic_expansion_capacity_authority_unavailable');
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return false;
       }
 
@@ -1235,7 +1050,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           new Error('late-registration capacity RPC returned an invalid contract'),
           'Tournament.dynamic_expansion_capacity_contract_invalid'
         );
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return false;
       }
 
@@ -1265,7 +1080,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           new Error('capacity RPC returned an invalid durable table hand-off'),
           'Tournament.dynamic_expansion_table_handoff_invalid'
         );
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return false;
       }
 
@@ -1291,9 +1106,9 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
 
       if (pendingTableIds.length > 0) {
-        // Queue the seating pass before the acknowledgement RPC. If its response
-        // is lost after the database commits, the admitted engine still gets a
-        // causal seating pass in this lifecycle.
+        // Queue the manager continuation before the acknowledgement RPC. If
+        // its response is lost after the database commits, the admitted engine
+        // still gets a causal gameplay pass in this lifecycle.
         this.requestUrgentEliminationSweepAfter(0);
         const { data: ackData, error: ackError } = await supabase.rpc(
           'fn_ack_tournament_capacity_tables',
@@ -1316,7 +1131,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             ),
             'Tournament.dynamic_expansion_table_handoff_ack_failed'
           );
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
           return false;
         }
       }
@@ -1334,7 +1149,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       // next local pass could leave a committed table with no dealer.
       if (pendingTableCount > pendingTableIds.length) {
         if (i === TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE - 1) {
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
           return false;
         }
         continue;
@@ -1349,9 +1164,9 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!admittedCapacity) return true;
     if (remainingDeficit > 0) this.requestEliminationSweep('capacity_deficit_remains');
 
-    // ensureLateRegSeated runs before expansion in the sweep. Requeue this
-    // manager now that real capacity exists so the entrant promoted to
-    // `playing` above cannot disappear after this causal pass completes.
+    // Re-enter the manager after admitting real capacity so the fresh table
+    // engines, durable wake acknowledgement, balancing and gameplay tail all
+    // observe the database-committed registration hand-off.
     this.requestUrgentEliminationSweepAfter(0);
 
     // Now rebalance players across ALL tables using the same bounded snapshot

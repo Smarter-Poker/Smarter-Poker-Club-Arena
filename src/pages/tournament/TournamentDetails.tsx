@@ -957,8 +957,8 @@ export default function TournamentDetails({
     const readSnapshot = async () => {
       let complete = true;
       owner.tournamentPatches = [];
-      owner.entryPatches = [];
-      owner.tablePatches = [];
+      owner.entryPatches = null;
+      owner.tablePatches = null;
       if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(true);
       try {
         const result = await tournamentService.getTournament(tournamentId, { throwOnError: true });
@@ -984,6 +984,7 @@ export default function TournamentDetails({
            * is `add_ons: number`, so it collapses to 0 or 1 here rather than
            * pretending the database records how many.
            */
+          owner.entryPatches = [];
           const { data: playersData, error } = await supabase
             .from('tournament_players')
             .select(
@@ -1067,6 +1068,7 @@ export default function TournamentDetails({
            uses `isWatchable` for exactly this reason; the query it depends on
            did not. */
           if (data.status === 'RUNNING' || isLateStatus(data.status)) {
+            owner.tablePatches = [];
             const { data: tablesData, error: tablesErr } = await supabase
               .from('tables')
               .select('id, name, status, max_players, current_players, small_blind, big_blind')

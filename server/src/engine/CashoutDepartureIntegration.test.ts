@@ -113,17 +113,22 @@ for (const path of ['eviction', 'busted'] as const) {
       async (rejoined) => {
         const { e, sweep } = scenario();
         let resolve!: (value: unknown) => void;
+        let signalStarted!: () => void;
+        const started = new Promise<void>((done) => {
+          signalStarted = done;
+        });
         transport.rpc.mockImplementation((name: string) => {
           if (name === 'fn_cashout_seat_occupancy')
             return new Promise((r) => {
               resolve = r;
+              signalStarted();
             });
           if (name === 'fn_offer_open_seat')
             return Promise.resolve({ data: { ok: false, reason: 'nobody_waiting' }, error: null });
           throw new Error(`Unexpected RPC: ${name}`);
         });
         const pending = sweep();
-        await Promise.resolve();
+        await started;
         expect(transport.rpc).toHaveBeenCalledTimes(1);
         expect(e.hub.emitEvent).not.toHaveBeenCalled();
         if (rejoined)

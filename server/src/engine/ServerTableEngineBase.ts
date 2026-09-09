@@ -5315,149 +5315,191 @@ export abstract class ServerTableEngineBase {
     // the one and not the other. The gate the law names, here, so it holds
     // from every call site.
     if (isMaintenanceFrozen()) return;
-    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
-    if (seatedIds.length === 0) return;
-
-    const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
-      this.tableId,
-      seatedIds,
-      { countOrbit: opts.countOrbit }
-    );
-    // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
-    // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
-    // REMOVED." Collected together so one pass removes the seat once.
-    const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
-
-    // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
-    // numbers were columns the creation page wrote and nothing read, while the
-    // toggle's own tooltip promised a "Penalty for tight play".
-    //
-    // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
-    // ca_hand_facts already stores VPIP per player per hand from the same
-    // derivation the player's own HUD shows. A second counter here would be a
-    // second answer, and the two would part company the first time this process
-    // restarted mid-session.
-    //
-    // GATED ON THE COLUMN so the round trip never happens on a table without the
-    // rule — which is every table today. A failure returns an empty list: a
-    // stats query that cannot answer must not throw anyone out of a hand they
-    // were entitled to play.
-    //
-    // Merged into this shared method 2026-08-25: it arrived on main inside the
-    // inline block this method replaced, and it belongs wherever the other two
-    // eviction reasons live — including the start-up wait loop.
-    const nitEvictable: string[] = [];
-    if (this.tableInfo?.nit_game === true) {
-      // The board every seat is judged on, kept for the brain (Dan
-      // 2026-09-04). Read beside the eviction, at the same boundary, from the
-      // same rows, so what a horse steers by is what it is stood up on.
-      this.nitStatus = await collectNitStatus(this.tableId);
-      const nits = await collectNitEvictions(this.tableId);
-      for (const n of nits) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
-            `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
-        );
-        nitEvictable.push(n.userId);
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      while (this.postHandTasksPromise) {
+        const settlement = this.postHandTasksPromise;
+        await settlement;
+        if (this.postHandTasksPromise === settlement) break;
       }
-    }
+      if (this.terminal || isMaintenanceFrozen()) return;
+      const originalOccupancies = new Map(this.seatedPlayers.map((p) => [p.user_id, { ...p }]));
+      const seatedIds = [...originalOccupancies.keys()];
+      if (seatedIds.length === 0) return;
 
-    // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
-    // never charged a blind (a quiet table), is released on the same clock
-    // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
-    const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
-      this.tableId,
-      seatedIds
-    );
-
-    const blindEvictSet = new Set(blindEvictable);
-    const nitEvictSet = new Set(nitEvictable);
-    const abandonedEvictSet = new Set(abandonedEvictable);
-    const evictable = Array.from(
-      new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
-    );
-    if (evictable.length === 0) return;
-
-    // Dan 2026-08-26, binding: "a player can never leave the table while they
-    // are all in. they must wait for the hand to be finished." An eviction is
-    // still a departure, and this one cashes the seat out. Both call sites are
-    // between hands today, so this should never fire - which is the point: the
-    // safety was call-site placement rather than a check, and a future caller
-    // would not know that. leaveTable() refuses the same case explicitly.
-    const evictHand = this.handController?.getState();
-
-    const departed = new Set<string>();
-    for (const userId of evictable) {
-      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seated) continue;
-      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
-      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
-        );
-        continue;
-      }
-      const awayBlindEvict = blindEvictSet.has(userId);
-      const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
-      const abandonedEvict =
-        !awayBlindEvict &&
-        !nitEvict &&
-        !sitOutEvictable.includes(userId) &&
-        abandonedEvictSet.has(userId);
-      console.log(
-        awayBlindEvict
-          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
-          : nitEvict
-            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
-            : abandonedEvict
-              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
-              : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+      const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+        this.tableId,
+        seatedIds,
+        { countOrbit: opts.countOrbit }
       );
-      try {
-        // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
-        // database writes the bar from this leave mode; every other eviction
-        // stays a plain system exit.
-        await atomicCashout(userId, this.tableId, seated.seat_number, {
-          occupancyId: seated.occupancy_id,
-          ...(nitEvict ? { leaveMode: 'vpip_evicted' as const } : {}),
-        });
+      // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
+      // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
+      // REMOVED." Collected together so one pass removes the seat once.
+      const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(
+        this.tableId,
+        seatedIds
+      );
+
+      // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
+      // numbers were columns the creation page wrote and nothing read, while the
+      // toggle's own tooltip promised a "Penalty for tight play".
+      //
+      // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
+      // ca_hand_facts already stores VPIP per player per hand from the same
+      // derivation the player's own HUD shows. A second counter here would be a
+      // second answer, and the two would part company the first time this process
+      // restarted mid-session.
+      //
+      // GATED ON THE COLUMN so the round trip never happens on a table without the
+      // rule — which is every table today. A failure returns an empty list: a
+      // stats query that cannot answer must not throw anyone out of a hand they
+      // were entitled to play.
+      //
+      // Merged into this shared method 2026-08-25: it arrived on main inside the
+      // inline block this method replaced, and it belongs wherever the other two
+      // eviction reasons live — including the start-up wait loop.
+      const nitEvictable: string[] = [];
+      if (this.tableInfo?.nit_game === true) {
+        // The board every seat is judged on, kept for the brain (Dan
+        // 2026-09-04). Read beside the eviction, at the same boundary, from the
+        // same rows, so what a horse steers by is what it is stood up on.
+        this.nitStatus = await collectNitStatus(this.tableId);
+        const nits = await collectNitEvictions(this.tableId);
+        for (const n of nits) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+              `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+          );
+          nitEvictable.push(n.userId);
+        }
+      }
+
+      // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
+      // never charged a blind (a quiet table), is released on the same clock
+      // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
+      const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
+        this.tableId,
+        seatedIds
+      );
+
+      const blindEvictSet = new Set(blindEvictable);
+      const nitEvictSet = new Set(nitEvictable);
+      const abandonedEvictSet = new Set(abandonedEvictable);
+      const evictable = Array.from(
+        new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
+      );
+      if (evictable.length === 0) return;
+
+      // Dan 2026-08-26, binding: "a player can never leave the table while they
+      // are all in. they must wait for the hand to be finished." An eviction is
+      // still a departure, and this one cashes the seat out. Both call sites are
+      // between hands today, so this should never fire - which is the point: the
+      // safety was call-site placement rather than a check, and a future caller
+      // would not know that. leaveTable() refuses the same case explicitly.
+      const evictHand = this.handController?.getState();
+
+      const departed = new Set<string>();
+      for (const userId of evictable) {
+        if (this.terminal || isMaintenanceFrozen()) break;
+        const seated = originalOccupancies.get(userId);
         if (
-          this.seatedPlayers.some(
-            (p) => p.user_id === userId && p.occupancy_id !== seated.occupancy_id
+          !seated ||
+          !this.seatedPlayers.some(
+            (p) =>
+              p.user_id === userId &&
+              p.occupancy_id === seated.occupancy_id &&
+              p.seat_number === seated.seat_number
           )
         )
           continue;
-        departed.add(seated.occupancy_id!);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: seated.seat_number,
-          user_id: userId,
-          mid_hand: false,
-          reason: awayBlindEvict
-            ? 'away_blind_cap'
+        const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+        if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
+          );
+          continue;
+        }
+        // Folding removes winning eligibility, not a participant's unsettled
+        // contribution. Every live-hand participant waits for settlement.
+        if (evictSelf) continue;
+        // Presence can change while an eligibility read or an earlier
+        // player's cashout is awaited. Recheck this original occupant now,
+        // without charging another orbit.
+        const stillTimedOut = this.disconnectEngine
+          .tickSitOutsAndCollectEvictions(this.tableId, [userId], { countOrbit: false })
+          .includes(userId);
+        const stillAway = this.disconnectEngine
+          .collectAwayBlindEvictions(this.tableId, [userId])
+          .includes(userId);
+        const stillAbandoned = this.disconnectEngine
+          .collectAbandonedSeatEvictions(this.tableId, [userId])
+          .includes(userId);
+        if (!stillTimedOut && !stillAway && !stillAbandoned && !nitEvictSet.has(userId)) continue;
+        const awayBlindEvict = blindEvictSet.has(userId) && stillAway;
+        const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+        const abandonedEvict =
+          !awayBlindEvict &&
+          !nitEvict &&
+          !stillTimedOut &&
+          abandonedEvictSet.has(userId) &&
+          stillAbandoned;
+        console.log(
+          awayBlindEvict
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
             : nitEvict
-              ? 'nit_game_vpip'
+              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
               : abandonedEvict
-                ? 'abandoned_seat'
-                : 'sit_out_timeout',
-          timestamp: Date.now(),
-        });
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.leaveHeldByClock.delete(userId);
-        this.chipContinuity.forget(userId);
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-        // Keep the roster and tracking until the next pass confirms departure.
-        // Retrying through a different helper would discard the eviction mode.
+                ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
+                : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+        );
+        try {
+          // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
+          // database writes the bar from this leave mode; every other eviction
+          // stays a plain system exit.
+          await atomicCashout(userId, this.tableId, seated.seat_number, {
+            occupancyId: seated.occupancy_id,
+            ...(nitEvict ? { leaveMode: 'vpip_evicted' as const } : {}),
+          });
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== seated.occupancy_id
+            )
+          )
+            continue;
+          departed.add(seated.occupancy_id!);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'seat_left',
+            table_id: this.tableId,
+            seat: seated.seat_number,
+            user_id: userId,
+            mid_hand: false,
+            reason: awayBlindEvict
+              ? 'away_blind_cap'
+              : nitEvict
+                ? 'nit_game_vpip'
+                : abandonedEvict
+                  ? 'abandoned_seat'
+                  : 'sit_out_timeout',
+            timestamp: Date.now(),
+          });
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.leaveHeldByClock.delete(userId);
+          this.chipContinuity.forget(userId);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
+          // Keep the roster and tracking until the next pass confirms departure.
+          // Retrying through a different helper would discard the eviction mode.
+        }
       }
+      this.seatedPlayers = this.seatedPlayers.filter(
+        (p) => !p.occupancy_id || !departed.has(p.occupancy_id)
+      );
+    } finally {
+      releaseSeatBoundary();
     }
-    this.seatedPlayers = this.seatedPlayers.filter(
-      (p) => !p.occupancy_id || !departed.has(p.occupancy_id)
-    );
   }
 
   /**

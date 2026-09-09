@@ -4456,7 +4456,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // This manager holds service_role, which the database maintenance trigger
     // intentionally exempts. Do not claim a finish or enter any settlement
     // preparation while the platform freeze is active.
-    if (isMaintenanceFrozen()) return;
+    //
+    // BUT COME BACK FOR IT (2026-09-09). This was a bare `return`: no log, no
+    // retry re-armed, nothing. The break holds the platform for five minutes of
+    // every hour, so roughly one finish in twelve arrived inside one and was
+    // simply dropped - the tournament then waited for whatever sweep happened
+    // to call this again, which for a DECIDED event can be a long time, because
+    // with one player left there are no more hands and no more eliminations to
+    // trigger one. CLAUDE.md 13 rule 4: a deadline is thawed, not burned.
+    //
+    // Re-arming costs one timer and makes the deferral visible. It is not a
+    // repair job (10.12): nothing is being back-filled or compensated - the
+    // finish simply has not happened yet, and this is the same work resuming
+    // the moment it is allowed to.
+    if (isMaintenanceFrozen()) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] finish deferred: the platform is frozen for the maintenance break; resuming after the thaw`
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return;
+    }
     // One in-process finalizer at a time. On every fail-closed exit below the
     // flag is released so the next elimination sweep can resume the durable
     // COMPLETING claim and prepared obligations.

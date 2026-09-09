@@ -92,6 +92,7 @@ SET LOCAL session_replication_role = origin;
 DO $probe$
 DECLARE
   v_receipt jsonb;
+  v_replay jsonb;
   v_refused boolean := false;
 BEGIN
   v_receipt := public.fn_poker_diamond_release(
@@ -103,24 +104,39 @@ BEGIN
     RAISE EXCEPTION 'successful release returned the wrong receipt: %', v_receipt;
   END IF;
 
-  IF (SELECT diamonds FROM public.profiles
-       WHERE id = 'd1a10000-0000-4000-8000-000000000001') <> 10
-     OR EXISTS (
-       SELECT 1 FROM public.poker_diamond_custody
-        WHERE id = 'd1a40000-0000-4000-8000-000000000001'
-          AND (state <> 'released' OR balance <> 0 OR released_at IS NULL)
-     )
-     OR EXISTS (
-       SELECT 1 FROM public.diamond_purchase_lots
-        WHERE id = 'd1a20000-0000-4000-8000-000000000001'
-          AND arena_reserved <> 0
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.poker_diamond_movements
-        WHERE request_id = 'd1a60000-0000-4000-8000-000000000001'
-          AND action = 'release'
-          AND amount = 10
-     ) THEN
+  -- A retry is an immutable receipt lookup, not a second credit or movement.
+  v_replay := public.fn_poker_diamond_release(
+    'd1a40000-0000-4000-8000-000000000001',
+    'd1a60000-0000-4000-8000-000000000001'
+  );
+
+  IF v_replay IS DISTINCT FROM v_receipt
+     OR (SELECT diamonds FROM public.profiles
+          WHERE id = 'd1a10000-0000-4000-8000-000000000001') IS DISTINCT FROM 10
+     OR (SELECT state = 'released' AND balance = 0 AND released_at IS NOT NULL
+           FROM public.poker_diamond_custody
+          WHERE id = 'd1a40000-0000-4000-8000-000000000001') IS DISTINCT FROM true
+     OR (SELECT arena_reserved = 0
+           FROM public.diamond_purchase_lots
+          WHERE id = 'd1a20000-0000-4000-8000-000000000001') IS DISTINCT FROM true
+     OR (SELECT released_at IS NOT NULL
+           FROM public.poker_diamond_lot_reservations
+          WHERE custody_id = 'd1a40000-0000-4000-8000-000000000001'
+            AND lot_id = 'd1a20000-0000-4000-8000-000000000001') IS DISTINCT FROM true
+     OR (SELECT count(*)
+           FROM public.poker_diamond_movements
+          WHERE request_id = 'd1a60000-0000-4000-8000-000000000001'
+            AND custody_id = 'd1a40000-0000-4000-8000-000000000001'
+            AND action = 'release'
+            AND amount = 10
+            AND receipt = v_receipt) <> 1
+     OR (SELECT count(*)
+           FROM public.diamond_transactions
+          WHERE user_id = 'd1a10000-0000-4000-8000-000000000001'
+            AND reference_id =
+              'poker-release:d1a40000-0000-4000-8000-000000000001:d1a60000-0000-4000-8000-000000000001'
+            AND type = 'arena_withdraw'
+            AND amount = 10) <> 1 THEN
     RAISE EXCEPTION 'successful release did not commit every custody rail';
   END IF;
 
@@ -139,26 +155,25 @@ BEGIN
 
   IF NOT v_refused
      OR (SELECT diamonds FROM public.profiles
-         WHERE id = 'd1a10000-0000-4000-8000-000000000002') <> 0
-     OR EXISTS (
-       SELECT 1 FROM public.poker_diamond_custody
-        WHERE id = 'd1a40000-0000-4000-8000-000000000002'
-          AND (state <> 'reserved' OR balance <> 10 OR released_at IS NOT NULL)
-     )
-     OR EXISTS (
-       SELECT 1 FROM public.diamond_purchase_lots
-        WHERE id = 'd1a20000-0000-4000-8000-000000000002'
-          AND arena_reserved <> 10
-     )
-     OR EXISTS (
-       SELECT 1 FROM public.poker_diamond_lot_reservations
-        WHERE custody_id = 'd1a40000-0000-4000-8000-000000000002'
-          AND released_at IS NOT NULL
-     )
-     OR EXISTS (
-       SELECT 1 FROM public.poker_diamond_movements
-        WHERE request_id = 'd1a60000-0000-4000-8000-000000000002'
-     ) THEN
+         WHERE id = 'd1a10000-0000-4000-8000-000000000002') IS DISTINCT FROM 0
+     OR (SELECT state = 'reserved' AND balance = 10 AND released_at IS NULL
+           FROM public.poker_diamond_custody
+          WHERE id = 'd1a40000-0000-4000-8000-000000000002') IS DISTINCT FROM true
+     OR (SELECT arena_reserved = 10
+           FROM public.diamond_purchase_lots
+          WHERE id = 'd1a20000-0000-4000-8000-000000000002') IS DISTINCT FROM true
+     OR (SELECT released_at IS NULL
+           FROM public.poker_diamond_lot_reservations
+          WHERE custody_id = 'd1a40000-0000-4000-8000-000000000002'
+            AND lot_id = 'd1a20000-0000-4000-8000-000000000002') IS DISTINCT FROM true
+     OR (SELECT count(*)
+           FROM public.poker_diamond_movements
+          WHERE request_id = 'd1a60000-0000-4000-8000-000000000002') <> 0
+     OR (SELECT count(*)
+           FROM public.diamond_transactions
+          WHERE user_id = 'd1a10000-0000-4000-8000-000000000002'
+            AND reference_id =
+              'poker-release:d1a40000-0000-4000-8000-000000000002:d1a60000-0000-4000-8000-000000000002') <> 1 THEN
     RAISE EXCEPTION 'refused release left a partial write behind';
   END IF;
 END;

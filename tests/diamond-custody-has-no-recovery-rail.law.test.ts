@@ -26,6 +26,10 @@ const manifest = JSON.parse(
     'utf8'
   )
 );
+const atomicProbe = readFileSync(
+  resolve(root, 'tests/sql/diamond-custody-atomic-release.sql'),
+  'utf8'
+);
 
 const releaseBodyMatch = atomic.match(
   /CREATE OR REPLACE FUNCTION public\.fn_poker_diamond_release\([\s\S]*?AS \$fn\$([\s\S]*?)\$fn\$;/
@@ -103,5 +107,17 @@ describe('Diamond custody has one atomic release writer', () => {
     expect(internalAcl).toContain("has_function_privilege('public', v_proc, 'EXECUTE')");
     expect(explicitAcl.match(/REVOKE ALL ON FUNCTION/g)).toHaveLength(3);
     expect(explicitAcl.match(/GRANT EXECUTE ON FUNCTION/g)).toHaveLength(3);
+  });
+
+  it('proves commit, immutable replay, and refusal without missing-row false positives', () => {
+    expect(atomicProbe).toContain('v_replay IS DISTINCT FROM v_receipt');
+    expect(atomicProbe.match(/public\.fn_poker_diamond_release\(/g)).toHaveLength(3);
+    expect(atomicProbe).toContain('receipt = v_receipt) <> 1');
+    expect(atomicProbe).toContain("type = 'arena_withdraw'");
+    expect(atomicProbe).toContain('IS DISTINCT FROM true');
+    expect(atomicProbe).toContain(
+      "SQLERRM NOT LIKE 'diamond_release_credit_failed:duplicate_reference%'"
+    );
+    expect(atomicProbe.trimEnd()).toMatch(/ROLLBACK;$/);
   });
 });

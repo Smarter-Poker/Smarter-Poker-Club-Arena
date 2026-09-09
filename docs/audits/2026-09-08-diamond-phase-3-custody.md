@@ -2,6 +2,20 @@
 
 Updated September 9, 2026. Phase completion remains open until the Arena publication and authenticated UI checks pass.
 
+## Verified Publication And Browser Acceptance, September 9 At 18:02 UTC
+
+Arena PR 3972 merged at 17:39:44 UTC as `ec5a84f994f10215823d27fc05a562ff6348f352`. Both the public rewrite and static-origin build-info endpoints serve that exact commit, built at 17:48:27 UTC by successful publisher `34384177966`. The publisher selected that target even though its event SHA predates it; the built provenance and production response are the release evidence.
+
+Final implementation CI passed 17,552 client tests, 8,123 server tests (18 skipped), TypeScript, production build, 150 CSS cases, 13 Studio cases and 3 mobile-decision cases. Live-production and post-deploy CI jobs were skipped, not passed. A manifest-format defect was fixed in `b29bce8d09caf44c58e83939e93341247306de6d`, preserving the supported manifest schema and every gate.
+
+After the user's explicit age/terms acceptance, the authenticated browser verified the UUID Diamond route, finance and agents routes: automatic membership, games not open, Available Diamonds and Diamonds In Play, with no Join or chip-management rail/footer. The stale invite redirected automatically to `/hub/club-arena/clubs/diamond-arena` and rendered the same balance screen. Home includes the automatic Diamond entry. No Diamond errors were captured. No real player money, seat, purchase or bonus-claim mutation was used.
+
+Shark's joined lobby and game list load, but its seat-state query reproducibly reported an error. Read-only production inspection found three parent foreign keys; the original unqualified embed returns HTTP 300 PGRST201. Repair PR 3982 (`43c3b140f67698294543333b7fcb05f88810f7ca`) selects the existing `table_seats_table_id_fkey` explicitly. Its 15 focused and 802 related tests passed before push. Its publication and authenticated error-free recheck remain required.
+
+Fresh database reads confirm all five recorded migrations, zero custody/movement/lot-reservation rows, no obsolete obligation table or recovery RPC, RLS on all three tables, own-user read policies, and service-only monetary RPCs. The balance RPC remains authenticated-only. Worker retirement and dispatcher evidence are recorded below.
+
+Engine at 18:00 UTC serves `5dd902e9`, status/liveness/settlement status all ok and zero blocked settlements. That revision does not contain the new Phase 3 server adapter. Deployment `34385758736` targets a descendant containing the Phase 3 merge through the normal maintenance pipeline. Server adoption is still open; no restart or maintenance protection was bypassed. Phase 3 is not yet complete, and Phase 4 implementation has not started.
+
 ## Current Contract, September 9 At 17:25 UTC
 
 This section supersedes the historical recovery design below. Production migrations `20260909164740`, `20260909164847`, `20260909165003`, and `20260909165102` are applied. They replace release with a strict transaction, remove the obligations table and recovery/report RPCs, and state the existing service-only writer ACLs. No pending release receipt or scheduled repayment exists. Failed credit rolls back wallet, lot, custody and movement writes together. The original applied migration is recorded byte-for-byte under actual version `20260909065458`; it must not be reapplied.

@@ -79,7 +79,27 @@ describe('occupancy contracts over actual HTTP router and JSON bodies', () => {
       expect(mock.receipt).toHaveBeenCalledWith(userId, tableId, 2, occupancyId);
     }
   );
-  it.each(['/leave-occupancy', '/admin/kick-occupancy'])(
+  it.each([
+    ['/leave', 'test-player'],
+    ['/admin/kick', 'test-admin'],
+  ])('%s refuses the retired contract without cashout or receipt access', async (path, token) => {
+    const response = await fetch(origin + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ tableId, userId, occupancyId, seatNumber: 2 }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      success: false,
+      code: 'SEAT_OCCUPANCY_REQUIRED',
+      reloadRequired: true,
+    });
+    expect(body).not.toHaveProperty('clientCashout');
+    expect(mock.engine).not.toHaveBeenCalled();
+    expect(mock.receipt).not.toHaveBeenCalled();
+  });
+  it.each(['/leave-occupancy', '/admin/kick-occupancy', '/leave', '/admin/kick'])(
     '%s refuses unauthenticated replay',
     async (path) => {
       const response = await fetch(origin + path, {

@@ -570,6 +570,53 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       ).toBe(role === 'service_role');
     }
   });
+  it('cannot confirm cashout when the destination club wallet no longer exists', () => {
+    const original = seedOccupancy();
+    sql('DELETE FROM club_members');
+    expect(() => boundCashout(original)).toThrow(/CLUB_CREDIT_DESTINATION_MISSING/);
+    expect(
+      sql(`SELECT json_build_object(
+      'active',(SELECT count(*) FROM table_seats WHERE left_at IS NULL),
+      'credits',(SELECT count(*) FROM wallet_transactions),
+      'keys',(SELECT count(*) FROM wallet_credit_idempotency),
+      'receipts',(SELECT count(*) FROM seat_cashout_receipts),
+      'closes',(SELECT count(*) FROM session_closes))`)
+    ).toEqual({ active: 1, credits: 0, keys: 0, receipts: 0, closes: 0 });
+  });
+  it.each(['rakeback', 'tournament_prize', 'refund'])(
+    'a missing club destination also refuses %s credits atomically',
+    (category) => {
+      seedOccupancy();
+      sql('DELETE FROM club_members');
+      expect(() =>
+        sql(`SELECT atomic_credit_wallet_and_log('${USER}',25,'${category}','test',
+      '${TABLE}',NULL,NULL,'missing-destination-test')`)
+      ).toThrow(/CLUB_CREDIT_DESTINATION_MISSING/);
+      expect(
+        sql(`SELECT json_build_object(
+      'stack',(SELECT stack FROM table_seats),
+      'keys',(SELECT count(*) FROM wallet_credit_idempotency),
+      'wallet_entries',(SELECT count(*) FROM wallet_transactions),
+      'chip_entries',(SELECT count(*) FROM chip_transactions))`)
+      ).toEqual({ stack: 25, keys: 0, wallet_entries: 0, chip_entries: 0 });
+    }
+  );
+  it('no application role can invoke the retired SQL admin kick', () => {
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      expect(
+        sql(`SELECT to_json(has_function_privilege('${role}',
+        'public.fn_admin_kick_player(uuid,uuid,text)','EXECUTE'))`)
+      ).toBe(false);
+    }
+  });
+  it('a real authenticated role cannot enter canonical cashout after retirement', () => {
+    seedOccupancy();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL ROLE authenticated;
+      SELECT public.atomic_seat_cashout_locked('${USER}','${TABLE}',2,'voluntary'); COMMIT;`)
+    ).toThrow(/permission denied for function atomic_seat_cashout_locked/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
   it('grants the receipt lookup only to the service role', () => {
     for (const role of ['anon', 'authenticated', 'service_role']) {
       expect(
@@ -688,7 +735,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       'anon',has_function_privilege('anon','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
       'authenticated',has_function_privilege('authenticated','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
       'service_role',has_function_privilege('service_role','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'))`)
-    ).toEqual({ anon: false, authenticated: true, service_role: true });
+    ).toEqual({ anon: false, authenticated: false, service_role: true });
   });
   it.each([
     'NULL',

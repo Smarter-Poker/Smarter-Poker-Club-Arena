@@ -219,9 +219,9 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
   });
 
   it('the leave handler answers a lawful refusal with 200, and the admin kick is forced', () => {
-    const LEAVE = read('src/handlers/leave.ts');
-    expect(LEAVE).toContain("result.success || result.code === 'LEAVE_LOCKED' ? 200 : 400");
-    expect(LEAVE).toContain('await engine.leaveTable(userId)');
+    const LEAVE = read('src/handlers/leaveOccupancy.ts');
+    expect(LEAVE).toContain("result.code === 'LEAVE_LOCKED' ? 200");
+    expect(LEAVE).toContain('await engine.leaveTable(auth.userId, { occupancyId, seatNumber })');
     const ADMIN = read('src/handlers/admin.ts');
     expect(ADMIN).toMatch(/await engine\.leaveTable\(targetUserId,\s*\{\s*forced: true,/);
     expect(ADMIN).toContain('occupancyBound ? { occupancyId, seatNumber } : {}');
@@ -270,7 +270,7 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
     const body = sliceMethod(SEATS, 'export async function processLeavePending(');
     expect(body).toContain("leaveMode: 'voluntary'");
     expect(body).not.toContain('forcedUserIds');
-    expect(body).toContain('leave_pending: false');
+    expect(body).not.toContain('leave_pending: false');
     expect(body).toContain('onLocked?.(');
   });
 

@@ -62,6 +62,16 @@ for departure_apply in 1 2; do
   "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
     -d postgres -f "$repo/supabase/migrations/20260909024909_table_close_requires_every_occupancy_cashout_to_commit.sql" >/dev/null
 done
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-admin-function.sql" >/dev/null
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260909031204_retire_direct_browser_cashout_after_occupancy_adoption.sql" >/dev/null
+done
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260909031958_club_credit_requires_an_actual_destination_wallet_write.sql" >/dev/null
+done
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -c "SELECT proname, md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname IN ('atomic_seat_cashout_locked','atomic_credit_wallet_and_log','player_leave_table') ORDER BY proname"

@@ -248,6 +248,15 @@ export async function handleAdminKick(
     const callerUserId = authz.userId;
     const clubId = authz.clubId;
 
+    if (!occupancyBound) {
+      return sendJSON(res, 200, {
+        success: false,
+        code: 'SEAT_OCCUPANCY_REQUIRED',
+        error: 'Reload the table before removing a player.',
+        reloadRequired: true,
+      });
+    }
+
     if (occupancyBound) {
       const previous = await getSeatCashoutReceipt(
         targetUserId,

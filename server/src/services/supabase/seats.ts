@@ -328,9 +328,9 @@ export async function processLeavePending(
    * CHIP CONTINUITY (2026-09-04): a leave_pending seat is the player's OWN
    * request, so it goes through the door the stay clock guards. When the
    * database refuses it (they won the hand they asked to leave during, and
-   * are now ahead with clock remaining) the seat stays, `leave_pending` is
-   * cleared so this sweep does not re-ask every tick, and the caller is told
-   * so it can show the player the countdown instead of an empty seat.
+   * are now ahead with clock remaining) the seat and durable pending request
+   * remain. The caller can show the countdown; losing that in-memory display
+   * must not lose an accepted departure after an engine restart.
    */
   onLocked?: (userId: string, stayRemainingMs: number, occupancyId: string) => void
 ): Promise<Array<{ userId: string; occupancyId: string }>> {

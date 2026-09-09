@@ -9,7 +9,7 @@ CREATE TABLE tournaments(id uuid PRIMARY KEY);
 CREATE TABLE table_seats(id uuid PRIMARY KEY,table_id uuid,user_id uuid,seat_number integer,
  stack numeric,joined_at timestamptz,left_at timestamptz,leave_pending boolean,club_id uuid,status text,is_sitting_out boolean);
 CREATE TABLE wallet_credit_idempotency(key text PRIMARY KEY,user_id uuid,amount numeric);
-CREATE TABLE club_members(user_id uuid,club_id uuid,chip_balance numeric,updated_at timestamptz);
+CREATE TABLE club_members(user_id uuid,club_id uuid,chip_balance numeric,updated_at timestamptz,status text DEFAULT 'active');
 CREATE TABLE wallets(user_id uuid,wallet_type text,balance numeric,locked_balance numeric,
  updated_at timestamptz,UNIQUE(user_id,wallet_type));
 CREATE TABLE wallet_transactions(user_id uuid,wallet_type text,type text,amount numeric,
@@ -23,7 +23,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT nullif(current_
 CREATE FUNCTION fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$SELECT coalesce(nullif(current_setting('test.is_engine',true),''),'true')::boolean$$;
 CREATE FUNCTION fn_cash_leave_check(uuid,uuid) RETURNS jsonb LANGUAGE sql AS $$SELECT '{"allowed":true}'::jsonb$$;
 CREATE FUNCTION fn_player_home_club(uuid,uuid) RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$;
-CREATE FUNCTION fn_ensure_club_wallet(uuid,uuid) RETURNS void LANGUAGE sql AS $$SELECT$$;
+CREATE FUNCTION fn_ensure_club_wallet(uuid,uuid) RETURNS boolean LANGUAGE sql STABLE AS $$SELECT EXISTS(SELECT 1 FROM club_members WHERE user_id=$1 AND club_id=$2 AND status IN ('active','approved'))$$;
 CREATE FUNCTION fn_cash_session_close(uuid,uuid,numeric,text) RETURNS void LANGUAGE sql
  AS $$INSERT INTO session_closes VALUES($1,$2,$3,$4)$$;
 CREATE FUNCTION reject_test_exit() RETURNS trigger LANGUAGE plpgsql AS $$

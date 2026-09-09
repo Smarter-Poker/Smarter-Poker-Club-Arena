@@ -265,6 +265,75 @@ records nothing. `ca_detector_runs.ran_at` also defaulted to `now()`, the
 transaction start, so two runs in one transaction were stamped at the same
 instant; it is `clock_timestamp()` now.
 
+## A played hand is no longer thrown away
+
+The refusal rate had a cause that could be fixed here, and it is the same
+failure that strands players.
+
+`fn_ca_settle_hand_stacks_absolute` cannot find a seat that left mid-hand. For
+a CASH table it has settled that case since 2026-09-04, against the club wallet
+the seat cashed out to. For a TOURNAMENT it refused - and refusing throws away
+the whole hand: **every other player at that table loses the result they just
+played for**, while the engine has already moved on, so its stacks and the
+database's part company. The comment said so plainly: "here it is refused
+whole, as before."
+
+The reason not to use the cash path was right - tournament chips are play chips
+with no wallet to settle against - and it is not a reason to discard the hand.
+A tournament seat that moved has somewhere to go: the chair the player now
+occupies. `executePlayerMoves` reads the source stack **before** it vacates a
+chair, so a seat created mid-hand carries the stack as it stood before the
+hand, which is exactly what `stack_before` says. Adding the delta lands them on
+the right total from either ordering. A player with no chair anywhere gets the
+delta on the chair they left, so the chips stay inside the event instead of
+vanishing with the hand.
+
+Four arms, each proved in a transaction that was rolled back:
+
+| arm                                   | result                                                                                                         |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| moved to another table                | hand settles; delta on the new chair (47,000); old chair untouched (48,000); the other player gets their 1,000 |
+| no chair anywhere                     | hand settles; delta on the chair they left (47,000); the other player gets their 1,000                         |
+| a payload that would mint 1,000 chips | **refused** - "conservation violation: stack deltas 1000.00 != inflow 0"                                       |
+| a full bust to zero                   | settles; the chair they left reads 0.00, never negative                                                        |
+
+### The probe found a bug in the fix, which is what probes are for
+
+The first version wrote `SET stack = ..., updated_at = now()`. `table_seats`
+has no `updated_at` column, so the statement raised the moment the branch was
+actually reached - turning "the hand is kept" back into "the hand is refused",
+with a worse message.
+
+The first probe missed it, and read as a pass: it revived the mover's chair on
+the **same** table with `left_at` NULL, so the ordinary seated lookup found the
+seat and the new branch never ran. A probe that does not reach the code it is
+testing proves nothing. The second probe put the player on no chair at all,
+reached the branch, and the column error came straight back.
+
+## A player with chips and no chair is seated again
+
+`orphanedSeatRepair.ts` already answers one half of this failure - a live seat
+on a table that cannot deal - and nothing answered the other: a player who is
+`playing` on the roster and holds **no live seat anywhere**. `planOrphanReseats`
+takes `liveSeats`, and these players have none, so it cannot see them.
+
+`planSeatlessReseats` is its sibling, under the same rules for the same
+reasons: no chips no move, never a player who holds a live seat after all,
+nothing without an open table, the same deterministic destination, the same
+per-pass budget. Ten new tests pin them.
+
+One thing downstream had to learn with it. `executePlayerMoves` reads the
+source stack from a **live** seat and aborts without one - correct for every
+other caller, since seating at a guessed stack is how a player gets eliminated
+at zero. A seatless player has no live seat by definition; that is the fault
+being repaired. So for that one reason, and only after re-confirming they hold
+nothing anywhere, the stack is read from the chair they left - which is where
+`executePlayerMoves` put it and where the settlement fix above now carries hand
+results to.
+
+The engine ships on merge; the eight players stranded today are seated by the
+first sweep after it deploys.
+
 ## Left open on purpose
 
 - **`fn_ca_conservation_sweep:fn_tournament_chip_conservation_check`** - the

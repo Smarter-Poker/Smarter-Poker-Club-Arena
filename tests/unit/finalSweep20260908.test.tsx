@@ -72,15 +72,20 @@ describe('WaitListModal quotes a wait only when it has one', () => {
     onLeaveWaitList: () => {},
   };
 
+  /* The pin is the BEHAVIOUR - no estimate unless a caller measured one - not
+     the label. The sheet was rebuilt on the spade console (#ClubArenaConsole)
+     on 2026-09-08 and prints a sentence, "You Are 2nd In Line. Estimated Wait
+     About 4 Min.", where it used to print "Est. Wait: ~4 min". Same rule,
+     Title Case, no tilde and no abbreviation. */
   it('prints the position and no estimate when none was supplied', () => {
     const { container } = render(<WaitListModal {...base} />);
-    expect(container.textContent).toContain('#2');
-    expect(container.textContent).not.toContain('Est. Wait');
+    expect(container.textContent).toContain('2nd In Line');
+    expect(container.textContent).not.toContain('Estimated Wait');
   });
 
   it('prints the estimate when the caller supplies a real average', () => {
     const { container } = render(<WaitListModal {...base} avgWaitTimeMinutes={4} />);
-    expect(container.textContent).toContain('Est. Wait');
+    expect(container.textContent).toContain('Estimated Wait About 4 Min');
   });
 });
 

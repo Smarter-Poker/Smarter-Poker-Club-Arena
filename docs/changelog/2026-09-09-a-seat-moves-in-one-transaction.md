@@ -94,24 +94,13 @@ ceiling shared by three related numbers destroys the relationship between them.
 
 ## What Else Shipped
 
-**`fn_ca_move_tournament_seat`** — one transaction: vacate, write, carry the
-stack, assert that the chips that arrived are the chips that left, repoint the
-roster. Refuses `CA_MOVE_AMBIGUOUS_SOURCE` rather than guessing between two
-live seats, treats a player already at the destination as a replay, and takes
-the terminal authority through `fn_ca_lock_tournament_seat_acquisition` like
-every other seat door, so
-`fn_tournament_live_seat_acquisition_requires_authority` permits it.
-
-**`fn_ca_return_stranded_to_the_felt`** — brings a player with chips and no
-chair back through that same primitive. It reads the returned jsonb rather
-than only catching exceptions, because that function can now decline without
-raising and a decline must not be counted as a success. Not scheduled, no cron
-entry, and it never will be: it is called.
-
-**`fn_ca_restore_tournament_felt`** — the other half. A chair needs a table.
-Rather than reopen a closed one (deliberately irreversible, and rightly so),
-it delegates to `fn_ensure_late_registration_capacity`, the canonical capacity
-door, which writes the capacity receipts the origin validator demands.
+**Incident-only seating tools were retired.** `fn_ca_move_tournament_seat`,
+`fn_ca_return_stranded_to_the_felt`, and `fn_ca_restore_tournament_felt` were
+used to close the measured backlog, then removed by
+`20260909230135_tournament_capacity_has_one_runtime_door.sql`. Their original
+migrations remain immutable provenance, but none remains a callable runtime
+seat or table writer. Ongoing capacity stays with the tournament manager and
+its canonical database capacity and seating functions.
 
 **Two measurement fixes.** `fn_ca_drift_metrics.suspense_today` and the
 burn-in gate's `zero_suspense_flow` both summed rows touching

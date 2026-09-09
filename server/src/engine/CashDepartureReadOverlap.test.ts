@@ -16,10 +16,9 @@ function setup(cluster = true) {
   const engine = Object.create(ServerTableEngine.prototype) as any;
   engine.tableId = 'aaaaaaaa-1111-4111-8111-111111111111';
   engine.tableInfo = { club_id: 'club', cluster_id: cluster ? 'game' : null };
-  engine.forcedLeaves = new Set(['forced']);
   engine.lifecycleCanMutate = vi.fn(() => true);
   engine.onLeaveRefusedAtSettlement = vi.fn();
-  const leaves = deferred<string[]>();
+  const leaves = deferred<Array<{ userId: string; occupancyId: string }>>();
   const pending = deferred<moves.PendingSeatMove[]>();
   const leaveCall = vi.spyOn(db, 'processLeavePending').mockReturnValue(leaves.promise);
   const moveRead = vi.spyOn(moves, 'pendingSeatMoves').mockReturnValue(pending.promise);
@@ -32,20 +31,18 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     const h = setup();
     const completed = vi.fn();
     const boundary = h.engine.readCashHandDepartures().then(completed);
-    expect(h.leaveCall).toHaveBeenCalledWith(
-      h.engine.tableId,
-      'club',
-      expect.any(Function),
-      h.engine.forcedLeaves
-    );
+    expect(h.leaveCall).toHaveBeenCalledWith(h.engine.tableId, 'club', expect.any(Function));
     expect(h.moveRead).toHaveBeenCalledWith(h.engine.tableId);
     h.pending.resolve([]);
     await Promise.resolve();
     await Promise.resolve();
     expect(completed).not.toHaveBeenCalled();
-    h.leaves.resolve(['departed']);
+    h.leaves.resolve([{ userId: 'departed', occupancyId: 'original' }]);
     await boundary;
-    expect(completed).toHaveBeenCalledWith({ cashedOutIds: ['departed'], pendingMoves: [] });
+    expect(completed).toHaveBeenCalledWith({
+      cashedOutIds: [{ userId: 'departed', occupancyId: 'original' }],
+      pendingMoves: [],
+    });
   });
   it('observes a move-read rejection immediately but waits for the leave result', async () => {
     const h = setup();
@@ -90,7 +87,7 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     h.engine.lifecycleCanMutate.mockReturnValue(true);
     const boundary = h.engine.readCashHandDepartures();
     h.engine.lifecycleCanMutate.mockReturnValue(false);
-    h.leaveCall.mock.calls[0][2]?.('forced', 4000);
+    h.leaveCall.mock.calls[0][2]?.('forced', 4000, 'original');
     expect(h.engine.onLeaveRefusedAtSettlement).not.toHaveBeenCalled();
     h.leaves.resolve([]);
     h.pending.resolve([]);

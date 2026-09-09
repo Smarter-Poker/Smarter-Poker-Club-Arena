@@ -40,8 +40,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(durationSeconds);
   const [purchased, setPurchased] = useState(false);
-  // Ref guard: the add-on RPC has no idempotency key, so a double tap that
-  // lands before setProcessing re-renders would buy two add-ons.
+  // Prevent same-frame taps while the service owns durable purchase identity.
   const inFlightRef = useRef(false);
 
   // ── Countdown timer ──
@@ -74,7 +73,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
           tournamentId,
           status: 'addon',
         });
-        onSuccess(result.newStack || currentStack + addOnChips);
+        onSuccess(result.newStack);
       }
     } catch (err: any) {
       setError(safeErrorMessage(err, 'Add-on failed'));
@@ -82,7 +81,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
       setProcessing(false);
       inFlightRef.current = false;
     }
-  }, [tournamentId, userId, currentStack, addOnChips, onSuccess]);
+  }, [tournamentId, userId, onSuccess]);
 
   const progressPercent = (countdown / durationSeconds) * 100;
 

@@ -13,9 +13,10 @@ import { getPriority } from 'node:os';
 
 import { runMatchup } from './HorseLeague.js';
 import { scoreSolverAgreement } from './HorseSolverAgreement.js';
+import { scoreGtoV31Agreement } from './HorseSolverAgreementV31.js';
 import { gtoChartCount } from '../engine/GtoCharts.js';
 import { gtoPostflopCount } from '../engine/GtoPostflop.js';
-import { gtoPostflopV31Count } from '../engine/GtoPostflopV31.js';
+import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../engine/GtoPostflopV31.js';
 import { loadGtoCharts } from '../services/GtoChartLoader.js';
 import { loadGtoPostflop } from '../services/GtoPostflopLoader.js';
 import { loadGtoPostflopV31 } from '../services/GtoPostflopV31Loader.js';
@@ -66,6 +67,7 @@ if (runtimeAvailable) {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),
         postflopV31: gtoPostflopV31Count(),
+        postflopV31Dataset: gtoPostflopV31Dataset(),
       },
     });
   })();
@@ -90,6 +92,21 @@ if (runtimeAvailable) {
       if (message.type === 'SCORE_SOLVER_AGREEMENT') {
         const result = scoreSolverAgreement(message.maxSpots);
         send({ type: 'AGREEMENT_RESULT', jobId: message.jobId, result });
+        return;
+      }
+      if (message.type === 'SCORE_GTO_V31_AGREEMENT') {
+        let lastHeartbeatAt = 0;
+        const result = await scoreGtoV31Agreement(message.maxSpots, {
+          shouldContinue: () => !cancelled.has(message.jobId),
+          onProgress: () => {
+            const now = Date.now();
+            if (now - lastHeartbeatAt >= 1_000) {
+              lastHeartbeatAt = now;
+              send({ type: 'HEARTBEAT', jobId: message.jobId });
+            }
+          },
+        });
+        send({ type: 'GTO_V31_AGREEMENT_RESULT', jobId: message.jobId, result });
         return;
       }
 

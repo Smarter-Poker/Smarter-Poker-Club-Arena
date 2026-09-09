@@ -4,6 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { downloadBlob as sharedDownloadBlob } from '../utils/downloadCsv';
+
 /**
  * Export settlement report as PDF
  */
@@ -264,17 +266,14 @@ async function htmlToPdfBlob(html: string): Promise<Blob> {
 }
 
 /**
- * Download a blob as a file
+ * Download a blob as a file.
+ *
+ * Argument order is (blob, filename) for its existing callers; the shared
+ * implementation in utils/downloadCsv takes (filename, blob) and carries the
+ * native branch, so this is a thin adapter rather than a second copy.
  */
 export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  sharedDownloadBlob(filename, blob);
 }
 
 /**

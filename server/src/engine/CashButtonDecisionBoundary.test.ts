@@ -88,7 +88,9 @@ it.each([
       user_id: `u${seat}`,
       username: `P${seat}`,
       stack: 100,
+      occupancy_id: `occupancy-${seat}`,
     }));
+    engine.seatedPlayers = players;
     const predicted = engine.predictButtonSeat(players);
 
     // Exercise the actual deal through button selection, stopping before cards,

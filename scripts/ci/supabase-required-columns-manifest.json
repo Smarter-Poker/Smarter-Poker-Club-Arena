@@ -1042,6 +1042,20 @@
       "user_id",
       "from_table_id"
     ],
+    "cash_seat_move_receipts": [
+      "move_id",
+      "player_id",
+      "game_id",
+      "club_id",
+      "from_table_id",
+      "from_seat_number",
+      "source_occupancy_id",
+      "to_table_id",
+      "to_seat_number",
+      "destination_occupancy_id",
+      "amount",
+      "receipt"
+    ],
     "cash_seat_moves": [
       "game_id",
       "player_id",
@@ -2077,6 +2091,11 @@
       "unparked_at_countdown",
       "peak_unparked",
       "tables_resumed"
+    ],
+    "engine_maintenance_thaw_targets": [
+      "freeze_started_at",
+      "step",
+      "target_id"
     ],
     "engine_maintenance_thaws": [
       "freeze_started_at",
@@ -3616,6 +3635,15 @@
     "scraper_watchdog_state": [
       "key"
     ],
+    "seat_admin_departure_authorizations": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_number",
+      "actor_id",
+      "club_id",
+      "reason"
+    ],
     "seat_cashout_receipts": [
       "occupancy_id",
       "user_id",
@@ -3906,6 +3934,15 @@
     ],
     "spin_bonus_pools": [
       "club_id"
+    ],
+    "spin_draw_receipts": [
+      "tournament_id",
+      "launch_id",
+      "lease_generation",
+      "rule_manifest",
+      "rule_sha256",
+      "entrants",
+      "receipt"
     ],
     "spin_payout_ladder": [
       "multiplier",

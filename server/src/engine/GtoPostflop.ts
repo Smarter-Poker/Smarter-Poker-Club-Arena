@@ -64,9 +64,17 @@ export type GtoStreetAdvice = {
   cell: string;
 };
 
-const store = new Map<string, Record<string, Record<string, number>>>();
+let store = new Map<string, Record<string, Record<string, number>>>();
 
 const DEPTH_BUCKETS = [10, 20, 40, 80, 150];
+const STREETS = new Set(['flop', 'turn', 'river']);
+const FAMILIES = new Set(['cash', 'spin', 'tourney_ev', 'tourney_icm']);
+const POSITIONS = new Set(['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB']);
+const TEXTURE_CLASS = /^[ABML][mtr][pu][cd]$/;
+const ACTIONS = new Set(['check', 'bet_small', 'bet_big']);
+const RANK_INDEX: Record<string, number> = Object.fromEntries(
+  [...'AKQJT98765432'].map((rank, index) => [rank, index])
+);
 
 function key(
   street: string,
@@ -78,23 +86,99 @@ function key(
   return `${street}|${family}|${position}|${depth}|${texture}`;
 }
 
-export function setGtoPostflop(rows: GtoPostflopRow[]): number {
-  let n = 0;
-  for (const r of rows) {
-    if (!r) continue;
-    if (r.street !== 'flop' && r.street !== 'turn' && r.street !== 'river') continue;
+function canonicalHandClass(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  const match = /^([AKQJT98765432])([AKQJT98765432])([so]?)$/.exec(value);
+  if (!match) return false;
+  const [, first, second, suitedness] = match;
+  if (first === second) return suitedness === '';
+  return suitedness !== '' && RANK_INDEX[first] < RANK_INDEX[second];
+}
+
+function validRow(r: GtoPostflopRow): boolean {
+  if (
+    !r ||
+    !STREETS.has(r.street) ||
+    !FAMILIES.has(r.game_family) ||
+    !POSITIONS.has(r.position) ||
+    !DEPTH_BUCKETS.includes(r.depth_bucket) ||
+    typeof r.texture_class !== 'string' ||
+    !TEXTURE_CLASS.test(r.texture_class) ||
     // 'facing' cells were proven contaminated and purged from the table
     // (2026-08-29). Refuse them here too so a stale or restored snapshot
     // cannot resurrect the over-folding bug through the loader.
-    if (r.facing !== 'open') continue;
-    if (!r.hand_matrix || typeof r.hand_matrix !== 'object') continue;
-    store.set(
-      key(r.street, r.game_family, r.position, r.depth_bucket, r.texture_class),
-      r.hand_matrix
-    );
-    n++;
+    r.facing !== 'open' ||
+    !r.hand_matrix ||
+    typeof r.hand_matrix !== 'object' ||
+    Array.isArray(r.hand_matrix)
+  ) {
+    return false;
   }
-  return n;
+
+  const hands = Object.entries(r.hand_matrix);
+  if (hands.length === 0 || hands.length > 169) return false;
+  for (const [hand, mix] of hands) {
+    if (!canonicalHandClass(hand) || !mix || typeof mix !== 'object' || Array.isArray(mix)) {
+      return false;
+    }
+    const entries = Object.entries(mix);
+    if (entries.length === 0 || entries.some(([action]) => !ACTIONS.has(action))) return false;
+    const values = entries.map(([, value]) => value);
+    if (
+      values.some(
+        (value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1
+      )
+    ) {
+      return false;
+    }
+    if (Math.abs(values.reduce((total, value) => total + value, 0) - 1) > 0.002) return false;
+  }
+  return true;
+}
+
+function validatedGtoPostflopStore(
+  rows: GtoPostflopRow[]
+): Map<string, Record<string, Record<string, number>>> {
+  if (!Array.isArray(rows)) throw new Error('gto_postflop_rows_not_array');
+  const next = new Map<string, Record<string, Record<string, number>>>();
+  for (const row of rows) {
+    if (!validRow(row)) throw new Error('gto_postflop_malformed_cell');
+    const cellKey = key(
+      row.street,
+      row.game_family,
+      row.position,
+      row.depth_bucket,
+      row.texture_class
+    );
+    if (next.has(cellKey)) throw new Error(`gto_postflop_duplicate_cell:${cellKey}`);
+    next.set(cellKey, structuredClone(row.hand_matrix));
+  }
+  return next;
+}
+
+/** Validate the complete snapshot, then atomically replace the live store. */
+export function replaceGtoPostflop(rows: GtoPostflopRow[]): number {
+  const next = validatedGtoPostflopStore(rows);
+  store = next;
+  return store.size;
+}
+
+/**
+ * Backward-compatible additive seam for focused tests and manual fixtures.
+ * The production loader must use replaceGtoPostflop so a malformed page can
+ * never clear or partially mutate the last-known-good policy.
+ */
+export function setGtoPostflop(rows: GtoPostflopRow[]): number {
+  let applied = 0;
+  for (const row of rows) {
+    if (!validRow(row)) continue;
+    store.set(
+      key(row.street, row.game_family, row.position, row.depth_bucket, row.texture_class),
+      structuredClone(row.hand_matrix)
+    );
+    applied++;
+  }
+  return applied;
 }
 
 /**
@@ -133,7 +217,7 @@ export function gtoPostflopCount(): number {
 
 /** Test seam. */
 export function _clearGtoPostflop(): void {
-  store.clear();
+  store = new Map<string, Record<string, Record<string, number>>>();
 }
 
 const RANKV: Record<string, number> = {

@@ -32,6 +32,50 @@ function walk(dir, out = []) {
 }
 
 const files = walk(SRC).filter((f) => /\.tsx$/.test(f) && !/\.test\.tsx$/.test(f));
+
+/* SPOKEN FOR: any surface a VISUAL test already pins.
+   Club Arena has more than one approved authority - the spade console, the
+   #SmarterCasinoRealism cinematic routes, the community and account surface
+   headers, the lobby's card art, and one page Dan art-directed himself. Those
+   are finished work, and rebuilding one turns a written contract red. Rather
+   than guess at markers, ask the tests: every page named inside a test that
+   pins a LOOK is off the sweep. */
+/* Case- and space-insensitive: a test file says "Players Casino Realism" in a
+   describe() and "casino-realism" in its filename, and an earlier version of
+   this regex saw neither, so MemberManagementPage was handed to an agent as
+   generic while an approved credential render sat on it. */
+const VISUAL_TEST =
+  /casino[\s-]?realism|surface[\s-]?header|visual authority|cinematic|owns its class|black-glass|visual composition|credential/i;
+/* NOT "palette" or "wears the house colours": those are COLOUR laws that bind
+   every surface, console ones included. They constrain the ink, they do not
+   say a surface is finished - and reading them as "spoken for" hid TablePage,
+   the most generic surface in the app, behind a law that would have applied to
+   its rebuild anyway. */
+
+const spokenFor = new Set();
+try {
+  for (const t of walk(join(ROOT, 'tests'))) {
+    if (!/\.tsx?$/.test(t)) continue;
+    const text = readFileSync(t, 'utf8');
+    /* The phrase must be in the FILENAME or in a describe()/it() title - the
+       claim "this surface's look is pinned" belongs to the test's subject, not
+       to a passing mention in a comment. Scanning the whole body marked
+       TablePage as spoken for because an unrelated file said "cinematic"
+       somewhere below the fold. */
+    const titles = [...text.matchAll(/\b(?:describe|it|test)\s*\(\s*[`'"]([^`'"]{4,160})/g)]
+      .map((m) => m[1])
+      .join('\n');
+    if (!VISUAL_TEST.test(t) && !VISUAL_TEST.test(titles)) continue;
+    for (const m of text.matchAll(
+      /src\/(?:pages|components)\/[A-Za-z0-9/_-]+(?:\.(?:tsx|module\.css|css))?/g
+    )) {
+      const hit = m[0].replace(/\.(?:module\.css|css)$/, '.tsx');
+      spokenFor.add(hit.endsWith('.tsx') ? hit : `${hit}.tsx`);
+    }
+  }
+} catch {
+  /* no tests dir: fall back to the markers below */
+}
 /* Read every file ONCE. Counting importers by re-reading the tree per surface
    is O(n^2) and takes minutes on this repo. */
 const sources = new Map(files.map((f) => [f, readFileSync(f, 'utf8')]));
@@ -61,12 +105,24 @@ for (const tsx of files) {
     lines: src.split('\n').length,
     radius: count(style, /border-radius/g),
     grad: count(style, /linear-gradient|radial-gradient|box-shadow/g),
-    master: count(both, /club-buttons/g),
+    /* ANY approved master counts, not just the console's. Club Arena carries
+       three visual authorities: the spade console (club-buttons/), the
+       cinematic route families of #SmarterCasinoRealism (images/challenges/,
+       images/stats/, --realism-* tokens, data-arena-surface) and the lobby's
+       own card art. A surface on ANY of them is already upgraded - scoring it
+       as generic sends an agent to rebuild a page that is pinned by contract
+       to a different standard, which is how two pages were nominated at 193
+       and 200 despite being finished work. */
+    master: count(both, /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g),
     console: count(src, /SpadeConsole|PlateButton|ZoneText|sc-ink--/g),
     hover: count(style, /:hover/g),
     px: count(style, /font-size:\s*\d+(\.\d+)?px/g),
   };
-  row.score = row.master + row.console > 0 ? 0 : row.radius * 2 + row.grad + row.hover * 5;
+  row.spokenFor = spokenFor.has(rel);
+  row.score =
+    row.master + row.console > 0 || row.spokenFor
+      ? 0
+      : row.radius * 2 + row.grad + row.hover * 5;
   rows.push(row);
 }
 rows.sort((a, b) => b.score - a.score || b.radius - a.radius);
@@ -88,5 +144,9 @@ if (process.argv.includes('--json')) {
     );
   }
   const done = rows.filter((r) => r.score === 0);
-  console.log(`\n${done.length} surface(s) already on the master, ${rows.length - done.length} to go.`);
+  const pinned = rows.filter((r) => r.spokenFor).length;
+  console.log(
+    `\n${done.length} surface(s) already spoken for (${pinned} pinned by a visual test), ` +
+      `${rows.length - done.length} to go.`
+  );
 }

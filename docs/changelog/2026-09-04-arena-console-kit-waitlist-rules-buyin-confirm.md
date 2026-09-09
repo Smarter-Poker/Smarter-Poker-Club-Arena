@@ -303,3 +303,55 @@ player.
 - **The four-bay deck belongs to the buy-in family.** Dan: "I DON'T LIKE THE 4
   BOXES, AND THE WAY IT STICKS OUT ON THE SIDES." Every other surface prints
   rows on the glass.
+
+## Round nine (2026-09-09): waves three and four
+
+Thirteen more surfaces on the master: the operator pages (drift incidents, club
+financials, table config, agent management, admin dashboard) and the table-side
+panels (hand detail, hand history, table settings, must-move lobby, tournament
+winner, hero hub, table leaderboard, table cashier).
+
+### The inventory learned to read the tests properly
+
+Three corrections, each one a surface it would otherwise have handed to an agent
+to break:
+
+- **A test's SUBJECT, not its body.** The detector scanned whole files, so a
+  passing mention of "cinematic" in an unrelated test marked `TablePage` - the
+  most generic surface in the app - as spoken for. It reads `describe()` / `it()`
+  titles and filenames now.
+- **A colour law is not a look.** `gameplay-wears-the-house-colours` and the
+  settings palette test bind every surface, console ones included; treating them
+  as "already mastered" hid four more pages.
+- **Spaced and capitalised markers, and paths without extensions.** A test
+  titled "Players Casino Realism" that imports `'../../src/pages/X'` and reads
+  `X.css` pins X - the old regex saw none of those three forms, and offered up
+  `MemberManagementPage`, which carries an approved credential render.
+
+Final count: **134 surfaces spoken for (36 by a visual test), 81 genuinely
+generic and live.** 34 are done.
+
+### Judgement calls the agents made, and were right to
+
+- `BombPotOverlay` was reported back rather than rebuilt: it is felt cinematics -
+  a falling bomb, a wick, a fireball, embers - with no frame, plate or button in
+  it, `aria-hidden` and `pointer-events: none`. Putting a painted console frame
+  there would put a frame back over the community cards at exactly the place Dan
+  ruled it must move away from.
+- `TournamentRankingCard`, `MemberManagementPage`, `GameManagementPage` and
+  `ClubDataPage` were left alone: each is pinned by a written contract to
+  another master (a medal palette, a credential render, a table-command hero, a
+  data-vault hero).
+
+### Defects fixed on the way
+
+- The table leaderboard rendered its list from `players.slice(3)`, so the top
+  three appeared ONLY in the podium tiles - which the rebuild deletes. Every
+  player is in one ordered list now, and 1st / 2nd / 3rd still say so.
+- `ClubFinancialsPage` defined `.summary-card`, `.card-value`, `.card-label`,
+  `.period-selector` and `.export-btn` unscoped, and `RakeReports` - which that
+  page renders inside itself - defines all five. Whichever loaded second won.
+- `TableConfigPage` printed `NOT AVAILABLE YET` through a class that named no
+  rule anywhere, so the one control that tells an operator a game type is off
+  rendered unstyled.
+- Two rebuilt sheets defined a global `slideUp` differently; both are prefixed.

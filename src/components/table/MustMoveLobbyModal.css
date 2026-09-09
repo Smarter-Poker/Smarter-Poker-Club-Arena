@@ -1,394 +1,531 @@
-/* ═══════════════════════════════════════════════════════════════════════════════
-   MUST MOVE LOBBY (Dan 2026-09-05) - the frame is TournamentLobbyModal.css
-   (tlm-*); this sheet is only the content. Palette from club-engine.css, the
-   Facebook scheme (.agent/workflows/design-guidelines.md): no gold, no amber.
-   Mobile-first: 375px is the reference width.
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   MUST MOVE LOBBY - on the spade console (#ClubArenaConsole)
 
-.mml-body {
-  overflow-y: auto;
-  padding: 10px 12px calc(16px + env(safe-area-inset-bottom, 0px));
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+   The SHEET is TournamentLobbyModal's, and stays: a 75vw panel hanging on the
+   right on desktop, a 75dvh sheet on a phone, with its own slide-in. That
+   geometry is Dan's ruling (2026-08-30, "JUST OPENS RIGHT TO LEFT AS A 3/4
+   PAGE POP UP") and is not this file's to change - so nothing here is written
+   into TournamentLobbyModal.css, which the tournament lobby also loads. Every
+   rule below is SCOPED to `.mml-*`, and the two panel overrides carry
+   `.tlm-panel.mml-panel` so they beat the shared sheet on specificity and
+   change nothing for the surface that shares it.
+
+   WHAT THE SHEET NOW PAINTS: nothing. It used to be a navy gradient with a
+   left rail, a 32px drop shadow, an 18px rounded top on a phone and a grey
+   header bar carrying two square buttons. The spade master stands inside it
+   instead, and the sheet is the space around the picture.
+
+   WHAT WAS DELETED HERE: a four-up grid of figure tiles, a rounded card per
+   table with a bordered seat list inside it, and three rounded button styles.
+   Every figure, every chair and every player is a ROW now - label in the
+   master's lit blue on the left, value in engraved silver on the right, an
+   engraved rule between - and every inline control is a lit word.
+
+   No border-radius on a card, tile, pill or button, no gradient, no
+   box-shadow on a box, no :hover. Sizes are cqw against the console.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mml-overlay {
+  /* Black, not grey: the console floats on the same black as the felt. */
+  background: rgb(0 0 0 / 90%);
+}
+
+.tlm-panel.mml-panel {
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 12px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
-.mml-body > * {
-  flex: 0 0 auto;
+.mml-console {
+  width: min(100%, 460px);
+  margin-inline: auto;
+}
+
+.mml-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  min-width: 0;
 }
 
 .mml-error,
 .mml-loading {
-  padding: 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary, #b0b8c4);
-  font-size: 0.85rem;
-  text-align: center;
+  padding: 2.6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font:
+    600 3.1cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .mml-error {
-  color: #ff7b7b;
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
 }
 
-.mml-section-title {
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+.mml-loading {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-secondary, #b0b8c4);
-  margin-bottom: 6px;
 }
 
-/* ─── The game ─── */
-.mml-game {
-  padding: 12px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(24, 119, 242, 0.16) 0%, rgba(255, 255, 255, 0.03) 100%);
-  border: 1px solid rgba(24, 119, 242, 0.32);
-}
+/* ── The game ─────────────────────────────────────────────────────────── */
 
-.mml-game-name {
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: var(--text-primary, #fff);
+.mml-game,
+.mml-me,
+.mml-tables,
+.mml-list,
+.mml-seat-change {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .mml-game-line {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 0.85rem;
-  color: var(--text-secondary, #b0b8c4);
+  gap: 1.4cqw 3cqw;
+  align-items: baseline;
+  padding: 0 0.5cqw 2cqw;
 }
 
 .mml-style {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #1877f2;
-  color: #fff;
-  font-size: 0.68rem;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .mml-stakes {
-  font-weight: 700;
-  color: var(--text-primary, #fff);
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
 }
 
+.mml-hand {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+/* Four figures, four engraved rows - never four drawn tiles. */
 .mml-figures {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
 }
 
 .mml-figure {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 4px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.mml-figure-label,
+.mml-section-title {
+  min-width: 0;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.mml-section-title {
+  padding: 2.6cqw 0.5cqw 1cqw;
 }
 
 .mml-figure-value {
-  font-size: 1.25rem;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.6cqw;
   font-weight: 800;
-  color: var(--text-primary, #fff);
-  line-height: 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607,
+    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
 }
 
-.mml-figure-label {
-  margin-top: 4px;
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-secondary, #b0b8c4);
-}
-
-/* ─── Your seat ─── */
-.mml-me {
-  padding: 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-}
+/* ── Your seat ────────────────────────────────────────────────────────── */
 
 .mml-me-line {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-primary, #fff);
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
 }
 
-.mml-me-note {
-  margin-top: 4px;
-  font-size: 0.82rem;
-  color: var(--text-secondary, #b0b8c4);
+.mml-me-note,
+.mml-hint,
+.mml-list-note {
+  padding: 1.6cqw 0.5cqw;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
+/* The one sentence that says the player is about to be moved: gold, because
+   it is the only line here that changes where they are sitting. */
 .mml-me-move {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(24, 119, 242, 0.18);
-  border: 1px solid rgba(24, 119, 242, 0.4);
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-primary, #fff);
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  font-size: 3.2cqw;
+  font-weight: 800;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.mml-seat-change {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-}
-
-.mml-request-row,
-.mml-listed {
+.mml-listed,
+.mml-request-row {
   display: flex;
   flex-wrap: wrap;
+  gap: 1.6cqw 3cqw;
   align-items: center;
-  gap: 10px;
-  font-size: 0.85rem;
-  color: var(--text-primary, #fff);
+  justify-content: space-between;
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.mml-listed span {
+  min-width: 0;
+  color: #d7dee7;
+  font:
+    500 3cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .mml-hint {
-  font-size: 0.78rem;
-  color: var(--text-secondary, #b0b8c4);
+  padding: 0;
 }
+
+/* ── Inline controls: lit words, never drawn buttons ──────────────────── */
 
 .mml-btn {
   appearance: none;
-  border: none;
-  border-radius: 10px;
-  background: #1877f2;
-  color: #fff;
-  font-weight: 800;
-  font-size: 0.82rem;
-  letter-spacing: 0.02em;
+  /* A control on a phone still has to be hittable. */
   min-height: 44px;
-  padding: 0 16px;
-  cursor: pointer;
-}
-
-.mml-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* JOIN GAME, beside Close in the header (Dan 2026-09-05). It borrows the
-   .tlm-close geometry so the two buttons are the same height and touch
-   target, and wears the brand blue so it reads as the action rather than
-   the dismissal. margin-left:auto keeps the pair together on the right of
-   a space-between header that now has three children. */
-.mml-join {
-  margin-left: auto;
-  border-color: transparent;
-  background: #1877f2;
-  color: #fff;
+  margin: 0;
+  padding: 0 1cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  font-family: inherit;
+  font-size: 3.1cqw;
   font-weight: 800;
-}
-
-.mml-join:disabled {
-  opacity: 0.45;
-  cursor: default;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
 }
 
 .mml-btn--ghost {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .mml-btn--small {
-  min-height: 34px;
-  padding: 0 12px;
-  font-size: 0.74rem;
-  margin-left: auto;
+  font-size: 2.7cqw;
 }
 
-/* ─── Tables ─── */
-.mml-tables {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.mml-btn:disabled {
+  color: #3a424d;
+  -webkit-text-fill-color: #3a424d;
+  text-shadow: none;
+  cursor: not-allowed;
 }
+
+.mml-btn:active:not(:disabled) {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.mml-btn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* ── The tables, and every chair on them ──────────────────────────────── */
 
 .mml-table {
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-  overflow: hidden;
-}
-
-.mml-table--here {
-  border-color: rgba(24, 119, 242, 0.6);
-}
-
-.mml-table--closing {
-  opacity: 0.75;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .mml-table-head {
   display: flex;
   flex-wrap: wrap;
+  gap: 1.2cqw 3cqw;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.25);
+  padding: 2.2cqw 0.5cqw 1.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .mml-table-name {
+  margin-right: auto;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.4cqw;
   font-weight: 800;
-  font-size: 0.9rem;
-  color: var(--text-primary, #fff);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
 }
 
-.mml-table-state {
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary, #b0b8c4);
+/* The table the viewer is looking at is lit, not boxed. */
+.mml-table--here .mml-table-name {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .mml-table--closing .mml-table-state {
-  background: rgba(255, 123, 123, 0.18);
-  color: #ff9b9b;
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.mml-table-state,
+.mml-table-queue {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.5cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }
 
 .mml-table-count {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-secondary, #b0b8c4);
-}
-
-.mml-table-queue {
-  font-size: 0.72rem;
-  color: #79b4ff;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 3cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  white-space: nowrap;
 }
 
 .mml-seats {
-  list-style: none;
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  padding: 6px 10px 8px;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 3px 12px;
+  padding: 0;
+  list-style: none;
 }
 
 .mml-seat {
   display: grid;
-  grid-template-columns: 18px 1fr auto;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
-  color: var(--text-primary, #fff);
-  min-height: 22px;
-}
-
-.mml-seat--open {
-  color: var(--text-secondary, #8b93a1);
-}
-
-.mml-seat--me .mml-seat-name {
-  color: #79b4ff;
-  font-weight: 800;
+  grid-template-columns: 6cqw minmax(0, 1fr) auto;
+  gap: 2.4cqw;
+  align-items: baseline;
+  padding: 1.4cqw 0.5cqw 1.4cqw 3cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .mml-seat-n {
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: var(--text-secondary, #8b93a1);
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .mml-seat-name {
+  min-width: 0;
   overflow: hidden;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.1cqw;
+  font-weight: 700;
   text-overflow: ellipsis;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   white-space: nowrap;
 }
 
-.mml-seat-stack {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
+.mml-seat--open .mml-seat-name {
+  color: #4a5462;
+  -webkit-text-fill-color: #4a5462;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-/* ─── The list ─── */
-.mml-list-note {
-  font-size: 0.76rem;
-  color: var(--text-secondary, #b0b8c4);
-  margin-bottom: 6px;
+.mml-seat--me .mml-seat-name {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  font-weight: 800;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
+
+.mml-seat-stack {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+  text-shadow:
+    0 -0.1cqw 0 rgb(255 255 255 / 40%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
+  white-space: nowrap;
+}
+
+/* ── The must-move list ───────────────────────────────────────────────── */
 
 .mml-list-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .mml-list-row {
   display: grid;
-  grid-template-columns: 30px 1fr auto;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  font-size: 0.84rem;
-  color: var(--text-primary, #fff);
-}
-
-.mml-list-row--me {
-  background: rgba(24, 119, 242, 0.2);
-  border: 1px solid rgba(24, 119, 242, 0.45);
+  grid-template-columns: 7cqw minmax(0, 1fr) auto;
+  gap: 2.4cqw;
+  align-items: baseline;
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .mml-list-pos {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 3.2cqw;
   font-weight: 800;
-  color: #79b4ff;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .mml-list-name {
+  display: flex;
+  gap: 1.6cqw;
+  align-items: baseline;
+  min-width: 0;
   overflow: hidden;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.2cqw;
+  font-weight: 800;
   text-overflow: ellipsis;
+  text-shadow:
+    0 -0.1cqw 0 rgb(255 255 255 / 40%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
   white-space: nowrap;
 }
 
-.mml-list-table {
-  font-size: 0.74rem;
-  color: var(--text-secondary, #b0b8c4);
+.mml-list-row--me .mml-list-name {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-/* The viewer's own row says so in words, not only in colour (Dan
-   2026-09-05: every entry shows its name and its place, the hero's row
-   highlighted). */
 .mml-list-you {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: #1877f2;
-  color: #fff;
-  font-size: 0.62rem;
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  font-size: 2.4cqw;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  vertical-align: middle;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-@media (min-width: 900px) {
-  .mml-seats {
-    grid-template-columns: repeat(3, 1fr);
-  }
+.mml-list-table {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: right;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
 }

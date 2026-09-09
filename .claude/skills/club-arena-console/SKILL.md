@@ -255,6 +255,24 @@ A surface is "still generic" when its CSS has rounded cards, its own gradients
 and **zero** references to `club-buttons`. Prefer surfaces a player actually
 meets: buy-in, rebuy, wait list, confirm, rules, announcements, waitlists.
 
+### Step 1.5 — Is it already on another master?
+
+Club Arena has more than one visual authority, and they are all Dan's:
+
+| Authority                              | How you recognise it                                                                                      | Who guards it                                                                                                                         |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| #ClubArenaConsole (this one)           | `club-buttons/`, `SpadeConsole`                                                                           | this document                                                                                                                         |
+| #SmarterCasinoRealism cinematic routes | `images/challenges/`, `images/stats/`, `--realism-*` tokens, `data-arena-surface`, `RewardsSurfaceHeader` | `tests/unit/cinematicRouteFamilies.test.ts`, `tests/stats-experience-contract.test.ts`, `tests/e2e/production-daily-missions.spec.ts` |
+| The lobby's card art                   | `ArenaGameCard`, `game-cards/`                                                                            | the layered-card tests                                                                                                                |
+
+**A surface on any of them is finished work, not generic.** Daily Challenges
+and Player Stats scored 193 and 200 on the inventory and are both already
+mastered - their tests pin bevel frames, conic gradients, named animations and
+a horizontal snap rail, which is the exact shape this standard forbids.
+Rebuilding one would break a written contract, and CLAUDE.md 10.8 is explicit:
+two written standards in conflict go to Dan, you never write a third law and
+never delete the other side on your own authority. Leave them, and say so.
+
 ### Step 2 — Prove it is alive, then shoot the "before"
 
 `git cat-file -e origin/main:<path>` and grep for importers before you spend a

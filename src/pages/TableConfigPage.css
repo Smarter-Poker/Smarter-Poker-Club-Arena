@@ -1,15 +1,32 @@
 /**
  * TABLE CONFIGURATION PAGE - CSS Styles
- * Facebook Color Scheme: Blue (#1877F2), Dark backgrounds, clean look
- * No emojis - text-only indicators
+ *
+ * TWO SHEETS IN ONE FILE, AND THE SPLIT MATTERS.
+ *
+ * The bottom half of this file is the SHARED create-table control vocabulary.
+ * `src/components/table-config/controls.tsx` imports THIS FILE for its Toggle,
+ * Slider, NumberField and DateTimeField, and `CashGameCreateFlow` draws from
+ * the same class names. Those rules are other components' surfaces and are
+ * left exactly as they were - restyling them from here would repaint two files
+ * nobody asked for.
+ *
+ * The rest - the page's own chrome - is on Dan's approved spade master
+ * (#ClubArenaConsole, 2026-09-09). Gone with the markup that carried them: a
+ * bordered header bar, three segmented mode tabs with a blue fill and a glow,
+ * a rounded template dropdown on a tinted rail, a gold SPINS capsule with a
+ * pulsing shadow, and a sticky three-button footer. The frame, the plates, the
+ * pill and the chrome rule are painted in the master; what is left here is
+ * type, spacing and one engraved rule.
+ *
+ * The `.tc-console` section at the end also flattens the shared controls WHERE
+ * THEY SIT ON THE CONSOLE GLASS, and only there - a scoped section rather than
+ * a rewrite, so `controls.tsx` and the cash flow keep their own look
+ * everywhere else.
+ *
+ * No emojis - text-only indicators. No :hover anywhere.
  */
 
 .table-config-page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(180deg, #0a0a1a 0%, #1a1a2e 100%);
-  display: flex;
-  flex-direction: column;
   width: 100%;
   max-width: 100vw;
   /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
@@ -18,17 +35,9 @@
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
+  background: #000;
   /* keep the in-flow footer above the fixed app bottom nav */
   padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
-}
-
-/* HEADER */
-.config-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .back-btn {
@@ -38,51 +47,6 @@
   font-size: 1.5rem;
   cursor: pointer;
   padding: 0.25rem 0.5rem;
-}
-
-.config-title {
-  flex: 1;
-  text-align: center;
-  color: white;
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-/* MODE TABS - Facebook Blue */
-.mode-tabs {
-  display: flex;
-  padding: 0.5rem;
-  gap: 0.25rem;
-}
-
-.mode-tab {
-  flex: 1;
-  padding: 0.5rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: transparent;
-  color: #888;
-  font-size: 0.9rem;
-  cursor: pointer;
-  touch-action: manipulation;
-  min-height: 44px;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.mode-tab:first-child {
-  border-radius: 4px 0 0 4px;
-}
-
-.mode-tab:last-child {
-  border-radius: 0 4px 4px 0;
-}
-
-.mode-tab.active {
-  background: #1877f2;
-  border-color: #1877f2;
-  color: white;
-  font-weight: 600;
-  box-shadow: 0 0 15px rgba(24, 119, 242, 0.4);
 }
 
 /* TABLE NAME INPUT */
@@ -540,11 +504,6 @@
 
 /* RESPONSIVE */
 @media (max-width: 480px) {
-  .mode-tab {
-    padding: 0.4rem 0.5rem;
-    font-size: 0.8rem;
-  }
-
   .config-toggle,
   .config-slider {
     padding: 0.6rem 0.25rem;
@@ -555,113 +514,9 @@
   }
 }
 
-/* TEMPLATE SELECTOR - At top for easy duplication */
-.template-selector {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.5rem;
-  background: rgba(24, 119, 242, 0.1);
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
-  border-bottom: 1px solid rgba(24, 119, 242, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.template-label {
-  color: #1877f2;
-  font-size: 0.85rem;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.template-dropdown {
-  flex: 1;
-  min-width: 0;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(24, 119, 242, 0.5);
-  border-radius: 4px;
-  padding: 0.5rem 1rem;
-  color: white;
-  font-size: 16px; /* under 16px makes iOS zoom the page on focus */
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.template-dropdown:focus {
-  outline: none;
-  border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
-}
-
-.template-dropdown option {
-  background: #1a1a2e;
-  color: white;
-}
-
-/* SPINS INDICATOR */
-.spins-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.5rem;
-  background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 165, 0, 0.1) 100%);
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
-  border-bottom: 1px solid rgba(255, 215, 0, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.spins-badge {
-  background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%);
-  color: #000;
-  font-weight: 700;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  animation: pulse-gold 2s ease-in-out infinite;
-}
-
-@keyframes pulse-gold {
-  0%,
-  100% {
-    box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
-  }
-
-  50% {
-    box-shadow: 0 0 16px rgba(255, 215, 0, 0.8);
-  }
-}
-
-.spins-text {
-  color: #ffd700;
-  font-size: 0.85rem;
-}
-
 /* SNG PLAYER SELECT */
 .sng-player-select {
   min-width: 180px;
-}
-
-/* SAVE AS TEMPLATE BUTTON */
-.btn-template {
-  flex: 0.8;
-  padding: 0.75rem 1rem;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #ccc;
-}
-
-.btn-template:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* DELETE BUTTON */
@@ -786,8 +641,7 @@
   .save-btn,
   .reset-btn,
   .btn-save,
-  .btn-start,
-  .btn-template {
+  .btn-start {
     min-height: 44px;
   }
 
@@ -853,4 +707,235 @@
 
 .config-toggle.is-locked input:disabled {
   cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE CONSOLE (#ClubArenaConsole, 2026-09-09)
+
+   Everything above this line is either the shared create-table control
+   vocabulary - which `src/components/table-config/controls.tsx` imports and
+   `CashGameCreateFlow` draws from - or the page's own leftovers. This section
+   is the page's own chrome on Dan's master, plus a SCOPED flattening of the
+   shared controls WHERE THEY SIT ON THE CONSOLE GLASS.
+
+   The scope is `.tc-console`, never `.table-config-page`, and that is
+   deliberate: the cash flow renders OUTSIDE the consoles, so it keeps its own
+   look, and no other page that draws a Toggle or a Slider is touched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* One picture per card, and the pictures stack. */
+.table-config-page .tc-console {
+  margin: 0 auto 14px;
+  width: 100%;
+  max-width: 560px;
+}
+
+/* ── The mode rail: three lit words, no drawn tab ─────────────────────── */
+
+.tc-rail {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6cqw;
+  padding: 0.5cqw 0 1cqw;
+}
+
+.tc-rail__word {
+  appearance: none;
+  margin: 0;
+  /* 44px minimum tap target on a phone. */
+  min-height: 44px;
+  padding: 1cqw 1.5cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.8cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tc-rail__word:active {
+  filter: brightness(1.3);
+}
+
+.tc-rail__word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* ── A field is a groove cut in the glass, never a rounded box on it ──── */
+
+.tc-field {
+  display: grid;
+  gap: 1.2cqw;
+  min-width: 0;
+  padding: 1cqw 0;
+}
+
+.tc-field__label {
+  margin: 0;
+}
+
+.tc-field__groove {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  /* 16px, not cqw: under 16px iOS zooms the page on focus. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2.4cqw 1cqw;
+  border: 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  border-radius: 0;
+  background: transparent;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%);
+  font:
+    600 16px/1.4 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.03em;
+  outline: none;
+  caret-color: #5bb8ff;
+}
+
+.tc-field__groove::placeholder {
+  color: #6b7784;
+}
+
+.tc-field__groove:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* A native select paints its own list; the options need a ground to sit on. */
+.tc-field__groove option {
+  background: #0a0d11;
+  color: #e4e7ec;
+}
+
+/* ── A lit word cut into the glass ─────────────────────────────────────── */
+
+.tc-word {
+  appearance: none;
+  justify-self: start;
+  margin: 0;
+  min-height: 44px;
+  padding: 1cqw 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.5cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tc-word:active {
+  filter: brightness(1.3);
+}
+
+.tc-word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tc-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+/* One line of lit type where a gold capsule used to sit. */
+.tc-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2.4cqw;
+  margin: 0;
+  padding: 1cqw 0;
+}
+
+/* ── The shared controls, flattened where they sit on the glass ────────
+   Scoped to the console, so `controls.tsx` keeps its own look everywhere
+   else. The console's own body already supplies the side padding, and the
+   engraved rule replaces the drawn divider each control carried. */
+
+.tc-console .config-options {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+
+.tc-console .config-toggle,
+.tc-console .config-slider,
+.tc-console .config-textarea,
+.tc-console .config-free-buy {
+  padding: 2.2cqw 0;
+  border-bottom: 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tc-console .toggle-label,
+.tc-console .textarea-label,
+.tc-console .slider-label {
+  color: #45adff;
+  font:
+    700 2.7cqw/1.4 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Selects, textareas and the datetime field become the same groove as the
+   page's own fields. */
+.tc-console .config-select,
+.tc-console .config-textarea-input,
+.tc-console .config-datetime {
+  min-height: 44px;
+  border: 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  border-radius: 0;
+  background: transparent;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%);
+  color: #e4e7ec;
+  caret-color: #5bb8ff;
+}
+
+.tc-console .config-select option,
+.tc-console .config-datetime option {
+  background: #0a0d11;
+  color: #e4e7ec;
+}
+
+.tc-console .config-select:focus,
+.tc-console .config-textarea-input:focus,
+.tc-console .config-datetime:focus {
+  border-color: #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%);
+}
+
+/* The free-buy badge was a blue capsule; it is lit type now. */
+.tc-console .config-free-buy__badge {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #ffd700;
 }

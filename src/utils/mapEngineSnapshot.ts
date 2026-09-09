@@ -134,6 +134,7 @@ export interface EnginePublishedState {
   fixed_raise_size?: number;
   /** Fixed limit only: bet and three raises are in — fold or call only. */
   wagers_capped?: boolean;
+  action_context?: string | null;
   turn_start_time_ms?: number;
 
   turn_duration_ms?: number;
@@ -243,6 +244,7 @@ export interface MappedTableStatePatch {
   discardDurationMs?: number;
   /** Server-authoritative turn start wall-clock (for CSS ring animation). */
   actionTimerStartTime?: number;
+  actionContext?: string;
   actionTimerPlayerId?: string;
   isTimeBankActive?: boolean;
   /** hand number */
@@ -589,6 +591,7 @@ export function mapEngineSnapshot(
     actionTimerDeadline,
     discardDeadline,
     discardDurationMs: typeof s.discard_duration_ms === 'number' ? s.discard_duration_ms : 0,
+    actionContext: s.action_context ?? undefined,
     actionTimerStartTime: s.turn_start_time_ms,
     actionTimerPlayerId: s.current_player ?? undefined,
     isTimeBankActive: s.time_bank_active ?? false,

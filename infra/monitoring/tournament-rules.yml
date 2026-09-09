@@ -51,6 +51,54 @@ groups:
             sweep.
           runbook: https://monitor.smarter.poker/runbooks/tournament-never-started
 
+      # ── NOBODY IS RUNNING THE TOURNAMENTS (2026-09-09) ────────────────
+      # Measured on production 05:52 UTC, and nothing anywhere said it:
+      #
+      #     /health   activeTables: 102, activeTournaments: 0, liveness: ok
+      #     /metrics  poker_tournaments_running 120
+      #               poker_tournament_elimination_scheduler_registered 0
+      #
+      # A full cash fleet and not one of a hundred and twenty tournaments. Every
+      # liveness branch was satisfied - cash tables progressing, discovery loop
+      # ticking, and `barrenLeaderDead` requires tables.length == 0, which a busy
+      # cash fleet never is. Thirteen events had dealt no hand for over an hour,
+      # the oldest for fifteen, with 183 players sitting in them.
+      #
+      # The engine computes the gauge because it is the only thing that knows
+      # both halves AND its own leadership: a standby owns nothing by design, a
+      # booting instance has not adopted yet, and a stale snapshot means the
+      # `running` half is a number nobody re-read. It reports 0 in all three
+      # rather than guessing (CLAUDE.md 10.86 rule 1).
+      #
+      # 10m, DERIVED not guessed: the hourly maintenance break holds the
+      # platform for five minutes and the engine is down for roughly two to
+      # three of them (CLAUDE.md 13: park at :55, new engine boots ~:58, thaw at
+      # :00), and re-adoption is a five-second discovery pass. Ten minutes
+      # cannot be reached by a scheduled restart. The break guard below is
+      # belt-and-braces per CLAUDE.md 13 rule 6.
+      - alert: TournamentFleetUnserved
+        expr: |
+          poker_tournament_fleet_unserved == 1
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: "The leader engine owns NO tournament manager while tournaments are RUNNING"
+          description: |
+            This engine is the leader, is past its boot grace, holds a fresh
+            database snapshot, and owns zero tournament managers while the
+            database says tournaments are RUNNING. Every one of those events is
+            frozen: no hands are dealt, no player can be eliminated, no winner
+            is paid, and the knockout-candidate backlog grows for as long as it
+            lasts.
+            Compare poker_tournaments_owned against poker_tournaments_running,
+            then read the engine log for GameServer.running_board_read_failed
+            and for tournament admission refusals. Table liveness will look
+            perfectly healthy throughout - it is measuring the cash fleet.
+          runbook: https://monitor.smarter.poker/runbooks/tournament-fleet-unserved
+
       # ── Money is owed and the settle path did not finish ──────────────
       # recoverStuckCompletingTournaments should settle a COMPLETING event
       # within a sweep. Ten minutes means it did not, and the prize pool is

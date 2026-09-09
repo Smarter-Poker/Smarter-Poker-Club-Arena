@@ -85,7 +85,7 @@ pm2 set pm2-metrics:http-port 9256
 pm2 restart all --update-env
 ```
 
-Custom engine metrics (`poker_engine_hands_played_total`, `active_tables`,
+Custom engine metrics (`poker_hands_dealt_total`, `active_tables`,
 `seated_players`) are exposed by a Prometheus client already wired in
 `CA/src/engine/metrics.js` — verify with `curl localhost:9256/metrics`.
 

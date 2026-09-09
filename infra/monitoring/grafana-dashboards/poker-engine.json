@@ -14,7 +14,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "rate(poker_engine_hands_played_total[1m])",
+          "expr": "rate(poker_hands_dealt_total[1m])",
           "legendFormat": "{{ host }}"
         }
       ],

@@ -117,10 +117,11 @@ export async function loadSeatedPlayers(tableId: string) {
 }
 
 const SEAT_SELECT =
-  'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
+  'user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
 
 interface SeatRow {
   user_id: string;
+  occupancy_id: string;
   stack: number;
   seat_number: number | null;
   time_bank_remaining: number | null;
@@ -150,6 +151,7 @@ interface SeatedProfileRow {
 function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
   return {
     user_id: seat.user_id,
+    occupancy_id: seat.occupancy_id,
     username: profile.is_horse
       ? profile.display_name || profile.username || 'Player'
       : profile.use_real_name

@@ -8,6 +8,12 @@ A short blind reduced the preflop ceiling in both engine and client. Shared wage
 
 Evidence: docs/audits/2026-09-09-phase2-pot-limit-short-blinds.md. 25 failing regressions reproduced the defect; 81 focused/property server tests and 41 client tests pass, including chip conservation. Re-read: yes. TypeScript: both projects pass. Ordinary merge and scheduled runtime adoption remain required.
 
+## 2026-09-08: HTTP Actions Belong To The Displayed Decision
+
+Before: handlers/action.ts forwarded only user/action/amount; ServerTableEngineTurns.ts:1389 checked the live seat but had no original hand/turn identity. A delayed raise could apply to a later decision.
+After: server snapshots and turn_change carry a controller-incarnation/action-state context; TablePage and MultiTablePage return the displayed context unchanged through HTTP retries. The engine rejects stale/missing context before mutation and the replay fingerprint includes context. Old clients receive a readable success:false reload envelope. Structured rejection details reach current clients; late optimistic rollback is fenced to its original decision.
+Re-read: yes. TypeScript: both projects passed. Regression history and remaining build/publication gates: docs/audits/2026-09-08-phase2-poker-rules.md. Real-time law: context travels on the discrete turn_change event; snapshots provide reconciliation, no polling added.
+
 ## 2026-09-08: Voluntary Card Reveals Survive Resync
 
 HTTP table state now retains selected card reveals after the hand ends, matching live snapshots while hiding unselected cards. 49 tests and server TypeScript pass; stored-card RLS read checks pass in production. Normal CI and adoption pending. Evidence: docs/audits/2026-09-08-phase2-card-visibility.md.

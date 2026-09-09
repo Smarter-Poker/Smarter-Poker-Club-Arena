@@ -75,7 +75,7 @@ describe('handleAction', () => {
     await handleAction(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
 
-    expect((engine as any).handlePlayerAction).toHaveBeenCalledWith('u1', 'raise', 50);
+    expect((engine as any).handlePlayerAction).toHaveBeenCalledWith('u1', 'raise', 50, null);
 
     expect((engine as any).recordActionPerformance).toHaveBeenCalled();
   });
@@ -96,7 +96,8 @@ describe('handleAction', () => {
     expect((engine as any).handlePlayerAction).toHaveBeenCalledWith(
       'authenticated_user',
       'fold',
-      undefined
+      undefined,
+      null
     );
   });
 

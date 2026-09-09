@@ -17124,3 +17124,7 @@ Migration 20260908160032 appends one proven missing 0.25 main BBJ journal entry 
 ## 2026-09-08: Phase 2 fixed-limit completion
 
 Correct below-half wager completion and counted-wager caps across engine validation, action bounds and snapshot/client wiring. Add fixed-limit and pot-limit regression evidence in docs/audits/2026-09-08-phase2-limit-completion.md. No database migration. Merge and runtime adoption remain separate gates.
+
+## 2026-09-09: Phase 3 Tournament Break Ownership
+
+Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets and resumes from the final break end. Nine behavioral cases and the 1343-test tournament/maintenance/pause suite pass; no database migration. See docs/audits/2026-09-09-phase3-tournament-lifecycle.md. Phase 3 remains in progress.

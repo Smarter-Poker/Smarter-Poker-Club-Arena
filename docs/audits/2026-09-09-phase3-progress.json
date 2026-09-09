@@ -1,0 +1,570 @@
+{
+  "phase": 3,
+  "of": 12,
+  "status": "in_progress",
+  "source_commit": "993798a5052879b34e198001558344800ab064af",
+  "controls": [
+    {
+      "id": "T01",
+      "requirement": "Atomic registration binds one funded entry to one player/event. Race duplicate requests, last seat and registration closure.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T02",
+      "requirement": "Split total entry into disclosed prize, bounty and fee components. Verify all supported prices and promotional entries.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T03",
+      "requirement": "Fund guarantees/overlays from an approved bank. Total committed prizes must fit actual funding before obligations mature.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T04",
+      "requirement": "Give each re-entry a distinct identity; enforce eliminated status, limits and deadline. Never mistake retries for another entry.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T05",
+      "requirement": "Process rebuy/add-on eligibility and funding atomically, with tournament chips separate from spendable cash.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T06",
+      "requirement": "Unregister/refund according to entry provenance and policy. Race refund with tournament start and satellite transfer.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T07",
+      "requirement": "Freeze the final payout ladder at the disclosed cutoff; distribute residual units once and store the resulting amounts.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T08",
+      "requirement": "Persist elimination rank from authoritative hands. Test same-hand ties, simultaneous tables and final-table transitions.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T09",
+      "requirement": "Create unique finishing obligations and pay cumulative deltas once. Test early payouts and final incremental awards.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T10",
+      "requirement": "Fund extra bubble protection separately or include its disclosed reserve before binding the ladder. Never overcommit the pool.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T11",
+      "requirement": "Drain correct prize/bounty/fee sub-balances at completion; leave display history intact and preserve unpaid debt.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "T12",
+      "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K01",
+      "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K02",
+      "requirement": "Snapshot level/blinds at hand creation; advance only the next eligible hand when a level boundary occurs mid-hand.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K03",
+      "requirement": "Define registration wall time separately from blind time and maintenance extensions. Test daylight saving and UTC conversion.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K04",
+      "requirement": "Publish break cadence, duration and exceptions. Track requested, draining, on-break and resumed states explicitly.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K05",
+      "requirement": "Finish active hands before a tournament break begins; release participating tables using one authoritative deadline.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K06",
+      "requirement": "Keep maintenance, hand-for-hand, deal discussion and operator pauses independently owned. One resume cannot clear another.",
+      "priority": "P1",
+      "status": "partial_behavioral_correction"
+    },
+    {
+      "id": "K07",
+      "requirement": "Transfer all applicable deadlines across the approved maintenance freeze. No hidden time-bank, rebuy or offer expiry.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K08",
+      "requirement": "Balance tables with the published seat-selection rule. Transfer scoring stacks once and preserve in-progress hands.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K09",
+      "requirement": "Break tables and form the final table without missing/duplicating players. Test moves alongside elimination and reconnect.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K10",
+      "requirement": "Hand-for-hand uses a shared hand epoch and barrier. Compare simultaneous eliminations under the chosen rank policy.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K11",
+      "requirement": "Tournament sit-outs still follow tournament blinds/antes policy. Cash sit-out rules must not remove tournament obligations.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "K12",
+      "requirement": "Test missed scheduler ticks, engine failover and long-running hands at :53/:55/:00 without restarting active settlement.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S01",
+      "requirement": "Start a full SNG once under concurrent final-seat joins. All entrants must be funded before the start commits.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S02",
+      "requirement": "Resolve last-seat join versus unregister atomically. Never start with a refunded entrant or strand an unseated buy-in.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S03",
+      "requirement": "Define seating, blinds, time banks and payouts for each SNG size, including heads-up and special payout formats.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S04",
+      "requirement": "Use the same escrow/obligation contract as MTTs, with separate format rules rather than duplicate payment implementations.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S05",
+      "requirement": "Close SNG/heads-up fee escrow correctly and retain prize display history. Completed events must have explained residuals.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S06",
+      "requirement": "Persist one Spin draw, probability table version and entrants before reveal. Replay and failover cannot reroll.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S07",
+      "requirement": "Fund the selected Spin payout with net entries plus reserve transfer. Fees cannot be counted as prize funding twice.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S08",
+      "requirement": "Reveal multiplier/prize before the first deal and action timer. All participants must receive the same stored result.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S09",
+      "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S10",
+      "requirement": "Audit reserve contributions, draws, odds and expected cost. Verify peak payout exposure against approved funding policy.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S11",
+      "requirement": "Define Spin/SNG cancellation before draw, after reveal and after play begins. Avoid double refunds or reserve releases.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "S12",
+      "requirement": "Implement heads-up button/action order and simultaneous-bustout rules consistently across engine, history and displayed payouts.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B01",
+      "requirement": "Keep bounty funding separate from finishing prizes and rake. Reconcile entry splits, carried bounties and paid rewards.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B02",
+      "requirement": "Award eliminations by relevant-pot eligibility, including side pots, tied winners and split-pot variants.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B03",
+      "requirement": "PKO cash portion plus carried portion equals the eliminated bounty. Resolve final winner own-bounty treatment explicitly.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B04",
+      "requirement": "Mystery activation follows the approved rebuy/add-on cutoff. A break alone must not enable early awards.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B05",
+      "requirement": "Generate and fund the complete mystery reward inventory. Draw without replacement with one key per entitlement.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B06",
+      "requirement": "Update remaining mystery rewards and public winners once. Animation replay must not redraw, reorder or repay.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B07",
+      "requirement": "Transfer satellite seat value from its funded pool into target escrow exactly once; retain both event identities.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B08",
+      "requirement": "Apply Smarter cash treatment for duplicate seats, valid unregisters and cancelled targets. Do not introduce unapproved tickets.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B09",
+      "requirement": "Resolve target registration closure and concurrent target entries atomically with seat award or approved cash alternative.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B10",
+      "requirement": "Fund satellite seat guarantees and leftover awards explicitly. Test fields smaller than advertised seat count.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B11",
+      "requirement": "Publish and enforce deals, shootouts, phased events and equal-prize stopping rules only where those formats are offered.",
+      "priority": "P1",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "B12",
+      "requirement": "Version cancellation treatment for already-paid bounties, guarantees and seat transfers. Preserve prior legitimate awards.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "AX07",
+      "requirement": "Replay tournament cancellation after some minimum-cash awards have posted. Each player receives only the remaining contractual entitlement.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "AX08",
+      "requirement": "Concurrent final SNG registrations and an unregister select one entrant set, one startup and exactly funded entries.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "AX09",
+      "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "AX10",
+      "requirement": "Cancellation races a persisted Spin draw. Apply the approved pre-draw/post-draw policy without silently discarding a funded high multiplier.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "AX11",
+      "requirement": "Test paid places plus bubble refund, fee, bounty and guarantee against independently funded escrow before publishing the prize ladder.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "BX08",
+      "requirement": "Blind expiry, registration closure, :53 drain and :55 maintenance overlap a long hand: assigned forced bets stay fixed; each clock follows its documented policy.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "BX11",
+      "requirement": "Hand-for-hand completion arrives twice or late while a table breaks. One batch completes against the correct authoritative table set.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "BX12",
+      "requirement": "Reverse delivery order for simultaneous bubble bustouts; rank from the versioned synchronized-hand rule, never arrival order.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "BX13",
+      "requirement": "Bustout, re-entry cutoff and prize finalization race: all three agree on one accepted entry count and funded pool.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    },
+    {
+      "id": "BX14",
+      "requirement": "Table balancing races blind posting and disconnect: player occupies one seat, stack transfers once, and forced bets are not duplicated.",
+      "priority": "P0",
+      "status": "pending_full_requirement_verification"
+    }
+  ],
+  "first_correction": {
+    "controls": ["K06"],
+    "related_boundaries": ["K05", "BX11"],
+    "tests": "server/src/tournament/HandForHandBreakOwnership.test.ts",
+    "baseline": {
+      "failed": 6,
+      "passed": 2
+    },
+    "after": {
+      "passed": 9
+    },
+    "broader_verification": {
+      "tests_passed": 1343,
+      "files_passed": 126
+    },
+    "server_typescript": "passed",
+    "ci_merge_deployment": "pending"
+  },
+  "installed_function_inventory": {
+    "project": "kuklfnapbkmacvwxktbh",
+    "observed_date_utc": "2026-09-09",
+    "method": "Read-only pg_proc definitions and privilege checks. No function invocation or production mutation.",
+    "functions": [
+      {
+        "proname": "atomic_cancel_tournament",
+        "arguments": "p_tournament_id uuid, p_admin_id uuid",
+        "definition_md5": "5e2761a07fb9e5eb2b5bfcf6e6502fb9",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_begin_tournament_launch_atomic",
+        "arguments": "p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone",
+        "definition_md5": "3214b4fe0037e6b08963dd8676d593a8",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_begin_tournament_launch_atomic",
+        "arguments": "p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone, p_lease_generation uuid",
+        "definition_md5": "80e5567b44bf2711979444432ce4e979",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_begin_tournament_launch_before_lease_generation",
+        "arguments": "p_tournament_id uuid, p_launch_id uuid, p_started_at timestamp with time zone",
+        "definition_md5": "21effa5740c1288acc3e224ec5f4903b",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "fn_complete_tournament_launch_atomic",
+        "arguments": "p_tournament_id uuid, p_launch_id uuid",
+        "definition_md5": "554c10597600a0408c5698039f1aa046",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_complete_tournament_launch_atomic",
+        "arguments": "p_tournament_id uuid, p_launch_id uuid, p_lease_generation uuid",
+        "definition_md5": "089328dfdae64c78cb2f7976a3a02b83",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_complete_tournament_launch_before_lease_generation",
+        "arguments": "p_tournament_id uuid, p_launch_id uuid",
+        "definition_md5": "fc7caf2b35bc5542ceb2053adbf8358a",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "fn_register_for_tournament",
+        "arguments": "p_tournament_id uuid",
+        "definition_md5": "9d587799b04c0b7ca19b802feccda67b",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": true,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_register_for_tournament",
+        "arguments": "p_tournament_id uuid, p_seat_first_internal boolean",
+        "definition_md5": "c1af4f225a8bd4a0573f5de7505dc07d",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_register_for_tournament_before_atomic_capacity_20260907",
+        "arguments": "p_tournament_id uuid, p_seat_first_internal boolean",
+        "definition_md5": "02e3aa5ba87d5330573a4837272088a1",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "fn_register_for_tournament_before_atomic_lifecycle_gate",
+        "arguments": "p_tournament_id uuid, p_seat_first_internal boolean",
+        "definition_md5": "1f5b646bfa52cafa0c3a678324cf3e56",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "fn_register_for_tournament_before_maintenance_announcement_gate",
+        "arguments": "p_tournament_id uuid, p_seat_first_internal boolean",
+        "definition_md5": "77885e533e07a48788a4a4c9cac17d65",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "fn_spin_draw_multiplier",
+        "arguments": "p_club_id uuid, p_buy_in numeric, p_tiers jsonb, p_rake_rate numeric, p_seats integer",
+        "definition_md5": "9530aa9c1b2c05604e3af611aa6b7ce8",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_spin_settle_game",
+        "arguments": "p_tournament_id uuid, p_club_id uuid, p_buy_in numeric, p_seats integer, p_multiplier numeric, p_rake_rate numeric",
+        "definition_md5": "107ce74bc2bd8d36f7b5838b58061e41",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": true
+      },
+      {
+        "proname": "fn_unregister_from_tournament",
+        "arguments": "p_tournament_id uuid",
+        "definition_md5": "d791ee76743cae60ba4ada5a165306c3",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": true,
+        "service_execute": true
+      },
+      {
+        "proname": "process_tournament_rebuy",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text",
+        "definition_md5": "8a3a28a2ca0c3dae61713d3a6803875f",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": true,
+        "service_execute": true
+      },
+      {
+        "proname": "process_tournament_rebuy_before_atomic_live_seat_lock",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text",
+        "definition_md5": "1cf72fdeed6677a6e3c18519c40ae734",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "process_tournament_rebuy_before_atomic_pool_gate",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text",
+        "definition_md5": "46c726af8cb7cd8b433e078b60587ebf",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "process_tournament_rebuy_before_bounty_guard_20260907",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text",
+        "definition_md5": "a874cbcbbc157cfd7ce244a9711c701a",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "process_tournament_rebuy_before_maintenance_announcement_gate",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text",
+        "definition_md5": "d6a9a33601aadd4059ed53492ca4290a",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      },
+      {
+        "proname": "process_tournament_rebuy_before_one_minute_addon",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text",
+        "definition_md5": "5921343121b6043e46c773b319d31a68",
+        "security_definer": true,
+        "anon_execute": false,
+        "authenticated_execute": false,
+        "service_execute": false
+      }
+    ]
+  }
+}

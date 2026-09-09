@@ -1,128 +1,141 @@
 {
   "phase": 2,
   "total_phases": 12,
-  "status": "release_verification_pending",
-  "reviewed_head": "93e4e991834f5bc9292f3d2b5c94a1f12cda0ee5",
+  "status": "acceptance_verified",
+  "reviewed_head": "bb4401d5ca32ccfcb92e04c4a41d517f364f78f8",
   "owner": "Club Arena accounting audit",
   "controls": [
     {
       "id": "CA01-01",
       "requirement": "Departure Ordering",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashoutDepartureIntegration.test.ts",
         "server/src/engine/CashoutEvictionOutcome.test.ts",
         "server/src/engine/IdleSeatMoveOwnership.test.ts",
         "server/src/engine/EngineTeardownOwnership.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-01-01"
     },
     {
       "id": "CA01-02",
       "requirement": "Original Cashout Identity",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashoutDeparturePostgres.test.ts",
         "server/src/handlers/OccupancyHttpIntegration.test.ts",
         "server/src/services/supabase/CashoutReceipt.test.ts",
         "scripts/dev/probe-seat-intent-browser.mjs"
-      ]
+      ],
+      "original_backlog_id": "CA-01-02"
     },
     {
       "id": "CA01-03",
       "requirement": "Committed Seat And Chip Ownership",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashoutDeparturePostgres.test.ts",
         "server/src/services/supabase/SeatMoveReceipt.test.ts",
         "server/src/engine/VoluntaryStayOutcome.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-01-03"
     },
     {
       "id": "CA02-01",
       "requirement": "Legal Action Authority",
-      "status": "local_evidence_present_live_adoption_pending",
-      "evidence": ["server/src/engine/PlayerActionContext.test.ts"]
+      "status": "verified",
+      "evidence": ["server/src/engine/PlayerActionContext.test.ts"],
+      "original_backlog_id": "CA-02-01"
     },
     {
       "id": "CA02-02",
       "requirement": "Reopening And Fixed Limit",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/HandController.reopening.test.ts",
         "server/src/engine/FixedLimit.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-02"
     },
     {
       "id": "CA02-03",
       "requirement": "Side Pots And Uncalled Returns",
-      "status": "local_evidence_present_live_adoption_pending",
-      "evidence": ["server/src/engine/Phase2SidePotFixture.test.ts"]
+      "status": "verified",
+      "evidence": ["server/src/engine/Phase2SidePotFixture.test.ts"],
+      "original_backlog_id": "CA-02-03"
     },
     {
       "id": "CA02-04",
       "requirement": "Exact Split Awards",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/RunItTwice.money.test.ts",
         "server/src/engine/RunItTwice.parity.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-04"
     },
     {
       "id": "CA02-05",
       "requirement": "Blinds And Position",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashButtonDecisionBoundary.test.ts",
         "server/src/engine/PartialIndividualAnte.test.ts",
         "server/src/engine/PotLimitShortBlinds.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-05"
     },
     {
       "id": "CA02-06",
       "requirement": "Variant Evaluation",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/VariantRules.test.ts",
         "server/src/engine/Phase2EvaluatorOracle.test.ts",
         "server/src/engine/PineappleThreeCardShowdown.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-06"
     },
     {
       "id": "CA02-07",
       "requirement": "Deck And Hidden Information",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CryptoRandom.test.ts",
         "server/src/engine/CardVisibilityParity.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-07"
     },
     {
       "id": "CA02-08",
       "requirement": "Showdown And Muck",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/HandController.showdownRules.test.ts",
         "server/src/engine/revealedShowdown.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-08"
     },
     {
       "id": "CA02-09",
       "requirement": "Bomb Pots And Multiple Runouts",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/BombPotScheduler.test.ts",
         "server/src/engine/RunItTwiceDecisionBoundary.test.ts",
         "server/src/engine/RunItTwiceTerminalBoundary.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-09"
     },
     {
       "id": "CA02-10",
       "requirement": "Decision Deadlines",
-      "status": "local_evidence_present_live_adoption_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/PreciseActionTimer.test.ts",
         "server/src/engine/PlayerActionContext.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-10"
     }
   ],
   "shared_rules_review": "docs/audits/2026-09-09-phase2-final-boundaries.md",
@@ -131,20 +144,89 @@
     "Internal evaluator differential and cryptographic RNG tests are not independent external certification.",
     "The Chromium probe uses actual browser persistence/locking with isolated HTTP fixtures; it is not authenticated production gameplay or physical-device certification.",
     "Historical incident completeness is Phase 9; no incident is closed by passing this matrix.",
-    "Distributed process crash/restart durability remains Phase 3.",
+    "Distributed process crash/restart durability remains Phase 7 of the original 109-item plan.",
     "Final application-role retirement of unbound cashout RPCs requires compatible engine/client adoption."
   ],
-  "remaining_gates": [
-    "Required CI including real PostgreSQL job",
-    "Normal Hetzner frontend and scheduled engine publication",
-    "Exact live version and source verification",
-    "Reserved final retirement migration, application and permission verification",
-    "Final requirement-by-requirement evidence closure"
-  ],
+  "remaining_gates": [],
   "hosted_postgres_evidence": {
     "run_id": 34385701145,
     "job_id": 102581340897,
     "passed": 145,
     "head": "29f0487367e5aadd3b4b370076e4de8eab3839a9"
+  },
+  "release_progress": {
+    "checked_at": "2026-09-09T21:02:23Z",
+    "merged_commit": "bb4401d5ca32ccfcb92e04c4a41d517f364f78f8",
+    "required_ci": {
+      "run": 34387414111,
+      "status": "passed",
+      "optional_live_production_e2e": "skipped",
+      "optional_post_deploy_verification": "skipped"
+    },
+    "frontend": {
+      "public_and_origin_sha": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+      "built_at": "2026-09-09T20:48:43Z",
+      "publisher_run": 34402997540,
+      "contains_occupancy_merge": true
+    },
+    "engine": {
+      "version": "561eaa52",
+      "full_sha": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
+      "compatible": true,
+      "contains_occupancy_merge": true,
+      "heartbeat_at": "2026-09-09T21:02:23.46803Z",
+      "source_blobs_match_original_release": [
+        "server/src/services/supabase/cashSessions.ts",
+        "server/src/services/supabase/seatMoves.ts",
+        "server/src/services/supabase/seats.ts",
+        "server/src/handlers/leaveOccupancy.ts",
+        "server/src/router.ts"
+      ],
+      "canceled_dispatch": 34402029786,
+      "redispatch": "HTTP 204 accepted with force=false and staged ref dd54b676; not represented as the source of the observed 561eaa52 runtime"
+    },
+    "database": {
+      "validated_constraints": [
+        "active_seat_game_scope_parent",
+        "active_seat_requires_game_scope",
+        "one_committed_seat_per_game_player",
+        "table_game_scope_is_derived"
+      ],
+      "active_missing_keys": 0,
+      "cashout_receipts": 157,
+      "move_receipts": 2748,
+      "unbound_retirement_applied": true,
+      "retirement_live_version": "20260909210206",
+      "retirement_file": "supabase/migrations/20260909210038_retire_unbound_cashouts_after_verified_occupancy_adoption.sql",
+      "retirement_sha256": "5ecc6d171b53f019f069e5463099d4ab191352ef73edd55a4b4b5ca977ce49ed",
+      "all_four_unbound_application_privileges": false,
+      "bound_function_service_only": true
+    },
+    "deployment_direction": "Dispatch compatible staged releases promptly through the normal Hetzner workflow with force=false. Continue development during the announced cutover gate. Do not create a duplicate dispatch while a compatible deployment is active."
+  },
+  "final_acceptance": {
+    "verified_at": "2026-09-09T21:33:00Z",
+    "implementation_merge": "bb4401d5ca32ccfcb92e04c4a41d517f364f78f8",
+    "retirement_merge": "ea1fbbdb9217a2b04054b1c3a1dc189c5fdb7ac3",
+    "pr": 4023,
+    "required_checks": "passed",
+    "agent_open_pr": "one redundant run canceled; PR was created and automatically merged, not a test failure",
+    "public_and_origin_sha": "ea1fbbdb9217a2b04054b1c3a1dc189c5fdb7ac3",
+    "built_at": "2026-09-09T21:26:08Z",
+    "publisher_run": 34406655838,
+    "engine": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
+    "maintenance": "idle; 177 of 177 tables resumed in eight completed waves",
+    "read_only_database": {
+      "cashout_receipts": 209,
+      "cashouts_after_retirement": 53,
+      "move_receipts": 3211,
+      "move_ledger_sum": 0,
+      "invalid_move_leg_counts": 0,
+      "active_missing_keys": 0,
+      "pending_unbound_moves": 0,
+      "retired_executable_aliases": 0
+    },
+    "all_13_evidence_paths_present": true,
+    "scope": "The defined Phase 1 cashout carryover and Phase 2 acceptance matrix only; Phase 3 and later phases remain open."
   }
 }

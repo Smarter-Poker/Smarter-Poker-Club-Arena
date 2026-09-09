@@ -592,6 +592,8 @@ if mode=="fixed":
 if mode=="fixed":
  from test_entry_purchase_helpers import verify_entry_purchase_helpers
  verify_entry_purchase_helpers(run)
+ from test_registration_receipts import verify_registration_receipts
+ verify_registration_receipts(run)
 
 if mode=="fixed":
  from test_satellite import verify_satellite

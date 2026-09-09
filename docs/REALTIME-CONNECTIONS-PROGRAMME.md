@@ -1,5 +1,16 @@
 # Real-Time Connections Programme
 
+## Built-In Execution Standard (September 9, 2026)
+
+Significant Club Arena work must have a built-in server owner and durable
+recovery. Cron is a secondary safeguard or housekeeping mechanism, not the
+sole progress path. See `docs/standards/EVENT-DRIVEN-EXECUTION.md`.
+
+The Supabase email has been reconciled against current schema, cron history,
+subscriptions, and delivery records in
+`docs/audits/2026-09-09-supabase-email-reconciliation.md`. The reminder ownership
+replacement and the missing detailed-log/device evidence remain open.
+
 Dan, 2026-09-04, after a 22-hour "Reconnecting To The Table" outage that
 every monitor slept through: "TAKE EVERYTHING YOU JUST SUGGESTED, AND CREATE
 A COMPREHENSIVE BUILD PLAN AND BREAK IT DOWN INTO PHASES. DO ONE PHASE AT A

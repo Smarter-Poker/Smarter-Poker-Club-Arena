@@ -85,40 +85,49 @@ export async function logRakeCollection(
     if (club.union_id) {
       // Club is in a union — ALL rake held by union wallet until weekly settlement
       // FIX-232: Atomic increment via RPC — eliminates read-then-write race condition
+      /**
+       * ONE WRITE, NOT THREE (2026-09-09).
+       *
+       * This was a split write: the RPC moved union_wallets.rake_wallet, then
+       * a SECOND request read the new balance, then a THIRD inserted the
+       * union_wallet_transactions row. increment_union_wallet has been able to
+       * write that row atomically since migration 20260819162238 - it does so
+       * whenever the caller passes club or notes context - and this caller
+       * simply never passed any, so it took the split path instead.
+       *
+       * Both halves of the 2026-09-09 union rake drift came from exactly this
+       * shape, in opposite directions:
+       *
+       *   -71.00 on 2026-08-19 16:22:46.719, journal row b8399c84: the audit
+       *   INSERT landed and the wallet update did not. It is the ONLY row in
+       *   the whole 1.42M-row journal with a NULL balance_after, because the
+       *   separate read that feeds balance_after found nothing.
+       *
+       *   +25.39 across 2026-07-19 to 2026-07-24, about fifteen steps: the
+       *   wallet moved and the audit INSERT did not land.
+       *
+       * Neither write was error-checked, so neither failure was ever reported.
+       * The middle read is also wrong under concurrency: it reports whatever
+       * balance another hand's rake left behind, which is why the journal's
+       * balance_after chain is full of offsetting jumps.
+       *
+       * Passing the context makes it one atomic statement inside the RPC's own
+       * transaction, with balance_after taken from the UPSERT's own RETURNING
+       * clause. The error IS checked now, and a failure is reported.
+       */
       const { error: uwErr } = await supabase.rpc('increment_union_wallet', {
         p_union_id: club.union_id,
         p_amount: rakeAmount,
+        p_club_id: clubId,
+        p_notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
       });
       if (uwErr) {
         reportError(
-          new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`),
+          new Error(
+            `[logRakeCollection] Union wallet credit failed: ${uwErr.message}. The balance and its journal leg are one statement inside the RPC, so neither moved.`
+          ),
           'logRakeCollection.Union_wallet_credit_failed'
         );
-      }
-
-      // Log union transaction for audit trail (BUG 013 FIX — was union_transactions, that
-      // table doesn't exist; actual audit table is union_wallet_transactions with required
-      // fields amount + wallet + direction + tx_type + balance_after).
-      // ROUND 16 FIX: wallet must be one of {chip_balance, rake_wallet, bbj_wallet,
-      // promo_wallet} per union_wallet_transactions_wallet_check; 'main' was rejected
-      // by the CHECK constraint, silently dropping every union rake audit row. Rake
-      // collection credits the rake_wallet sub-account.
-      {
-        const { data: wallet } = await supabase
-          .from('union_wallets')
-          .select('rake_wallet')
-          .eq('union_id', club.union_id)
-          .maybeSingle();
-        await supabase.from('union_wallet_transactions').insert({
-          union_id: club.union_id,
-          club_id: clubId,
-          amount: rakeAmount,
-          tx_type: 'rake',
-          wallet: 'rake_wallet',
-          direction: 'credit',
-          balance_after: wallet?.rake_wallet ?? null,
-          notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
-        });
       }
     } else {
       // Standalone club — the rake chips settle into the club's OPERATIONAL BANK,

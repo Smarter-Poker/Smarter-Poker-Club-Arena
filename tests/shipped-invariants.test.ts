@@ -749,3 +749,24 @@ it('final guarantee funding follows recorded tournament scope', () => {
     )
   ).toBe(true);
 });
+
+it('Spin expiry keeps a booked draw and rechecks current seats before cancellation', () => {
+  const sql = read(
+    'supabase/migrations/20260909192921_spin_expiry_rechecks_the_locked_board.sql'
+  ).replace(/--[^\n]*/g, '');
+  const lock = sql.indexOf('FOR UPDATE SKIP LOCKED');
+  const reread = sql.indexOf('SELECT t.status,t.variant,t.started_at');
+  const cancel = sql.indexOf('res := public.atomic_cancel_tournament(g.id, NULL)');
+  expect(lock).toBeGreaterThan(-1);
+  expect(reread).toBeGreaterThan(lock);
+  expect(cancel).toBeGreaterThan(reread);
+  const eligibility = sql.slice(reread, cancel);
+  expect(eligibility).toContain('v_current.live_seats >= v_current.max_players');
+  expect(eligibility).toContain('v_current.started_at IS NOT NULL');
+  expect(eligibility).toContain('v_current.has_booked_draw');
+  expect(eligibility).toContain('public.spin_draw_receipts');
+  expect(eligibility).toContain('CONTINUE;');
+  expect(
+    has('scripts/dev/probe-spin-expiry-pg17.py', 'cached-candidate-rechecks-after-parent-lock')
+  ).toBe(true);
+});

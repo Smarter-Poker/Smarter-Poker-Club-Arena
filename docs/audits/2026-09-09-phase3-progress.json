@@ -671,7 +671,7 @@
     }
   },
   "atomic_spin_correction": {
-    "status": "database_applied_and_verified_awaiting_ci_and_engine",
+    "status": "merged_frontend_published_awaiting_engine",
     "migration": "20260909174722_spin_draw_books_one_funded_rule_receipt.sql",
     "postgres_checks_passed": 36,
     "server_scope_tests_passed": 1394,
@@ -716,7 +716,48 @@
         "files_skipped": 1
       },
       "client_shards": "all four passed",
-      "status": "retry_pending"
+      "status": "passed",
+      "passing_run": 34394618457,
+      "merged_pr": 4000,
+      "merge_commit": "61796f8f4c0c5f10ffbc0ec253575ff8a970af49"
+    },
+    "frontend": {
+      "both_urls_verified": true,
+      "sha": "0ed94e26141be46f0d4aa7bf9b0ade9ac025a526",
+      "publisher_run": 34395543987,
+      "contains_atomic_merge": true
+    },
+    "last_engine_read": {
+      "version": "5dd902e9",
+      "observed_at": "2026-09-09T19:31:17.00018Z",
+      "adoption": "pending"
     }
+  },
+  "expiry_correction": {
+    "status": "database_applied_and_verified_awaiting_ci",
+    "controls": ["S11", "AX10"],
+    "migration": "20260909192921_spin_expiry_rechecks_the_locked_board.sql",
+    "applied_version": "20260909193534",
+    "sha256": "e4de5f0ca9c907c5e8631d36ad3ac7ad8c6a83d35bf7c608334430f84a687855",
+    "body_md5": "27da3d41bca0fe9e2df8f92d7b647aa7",
+    "definition_md5": "2b9e53e7603ccebd7af10be31ab67a96",
+    "production_roles": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    "postgres_checks_passed": 21,
+    "client_guard_tests_passed": 68,
+    "source_matches_installed_baseline": true,
+    "canonical_cancel_body_changed": false,
+    "financial_fixture_limit": "No paid entries or ledger triggers; verifies expiry/cancellation control flow, not financial refunds",
+    "schema_generator": "passed; no changed expiry schema shape; unrelated generated metadata additions discarded",
+    "club_foreign_key_gate": "passed",
+    "engine_caller": "GameServer.ts ten-minute fn_spin_expire_unfilled call"
+  },
+  "cancellation_review_clarifications": {
+    "generic_refund_planner": "No installed database callers found; the fee mismatch is not by itself proof of active cancellation failure",
+    "engine_refund_helper": "refundAndCloseCancelledTournament is exported and imported but no application invocation was found",
+    "satellite_unregistration": "Current public unregister RPC delegates to fn_ca_unregister_tournament_player_exact, which returns a ticket for satellite-funded entries; this conflicts with the cash-refund rule still present on origin/main docs/LAWS.md. No policy reversal or historical ticket repair performed."
   }
 }

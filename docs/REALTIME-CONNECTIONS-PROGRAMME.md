@@ -22,6 +22,10 @@ verification when it lands.
 | 8     | Connection ownership and refusal recovery | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets                                                                     | published; device acceptance open |
 | 9     | Financial reconnect and refresh ownership | Refresh after every channel open; bypass stale cashier cache; retain invalidations during reads; reject retired balance responses                                                         | published; device acceptance open |
 
+| 10 | Cashier history recovery and scope ownership | Retain history invalidations; isolate user and club results/cache; preserve confirmed rows on read failure | implementation verified; publication pending |
+
+Phase 10 scope and regression evidence: `docs/changelog/2026-09-09-realtime-phase10-cashier-history.md`.
+
 Phase 9 (2026-09-09) follows missed financial updates through the actual
 channel, MasterBus consumers, and displayed balance stores. Scope and evidence:
 `docs/changelog/2026-09-09-realtime-phase9-financial-recovery.md`.

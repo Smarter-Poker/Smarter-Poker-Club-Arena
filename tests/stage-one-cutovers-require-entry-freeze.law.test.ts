@@ -14,7 +14,7 @@ type Cutover = {
 
 const cutovers: Cutover[] = [
   {
-    file: '20260909215633_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
+    file: '20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
     gateTag: 'require_live_obligation_retirement_freeze',
     expiryTag: 'verify_live_obligation_retirement_freeze_still_held',
     firstBarrier: 'CREATE TABLE IF NOT EXISTS public.tournament_obligation_retirements',

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const migration = readFileSync(
   resolve(
     __dirname,
-    '../supabase/migrations/20260909212340_wallet_debit_uses_the_game_club_and_cannot_mint.sql'
+    '../supabase/migrations/20260909182500_wallet_debit_uses_the_game_club_and_cannot_mint.sql'
   ),
   'utf8'
 );

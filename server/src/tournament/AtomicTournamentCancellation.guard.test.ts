@@ -10,14 +10,14 @@ import { resolve } from 'node:path';
 const MIGRATION = readFileSync(
   resolve(
     __dirname,
-    '../../../supabase/migrations/20260909215539_tournament_cancellation_commits_one_stored_receipt.sql'
+    '../../../supabase/migrations/20260909014444_tournament_cancellation_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );
 const LATEST_MANAGED_CLOSE = readFileSync(
   resolve(
     __dirname,
-    '../../../supabase/migrations/20260909215543_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql'
+    '../../../supabase/migrations/20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql'
   ),
   'utf8'
 );

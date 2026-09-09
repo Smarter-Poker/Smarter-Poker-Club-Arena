@@ -7,14 +7,14 @@ const root = resolve(__dirname, '..');
 const migrations = [
   {
     name: 'cancellation',
-    file: '20260909215539_tournament_cancellation_commits_one_stored_receipt.sql',
+    file: '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql',
     broadLock: 'LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE',
     liveError: 'atomic cancellation live cutover requires the maintenance entry freeze',
     expiryTag: 'verify_live_cancellation_freeze_still_held',
   },
   {
     name: 'payout source hardening',
-    file: '20260909215636_every_tournament_payout_names_its_source.sql',
+    file: '20260909014510_every_tournament_payout_names_its_source.sql',
     broadLock: 'LOCK TABLE public.tournament_payouts IN ACCESS EXCLUSIVE MODE',
     liveError:
       'tournament payout source hardening live cutover requires the maintenance entry freeze',
@@ -22,7 +22,7 @@ const migrations = [
   },
   {
     name: 'terminal settlement',
-    file: '20260909215641_non_satellite_terminal_settlement_commits_one_stored_receipt.sql',
+    file: '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql',
     broadLock: 'LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE',
     liveError: 'terminal settlement live cutover requires the maintenance entry freeze',
     expiryTag: 'verify_live_terminal_settlement_freeze_still_held',

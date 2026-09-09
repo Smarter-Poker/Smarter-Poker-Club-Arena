@@ -13,7 +13,7 @@ that the tournament prize pool had already exhausted.
 ## Evidence-Gated Retirement
 
 Migration
-`20260909215633_four_full_pool_events_retire_only_their_stale_obligation_metadata`
+`20260909014457_four_full_pool_events_retire_only_their_stale_obligation_metadata`
 creates an append-only `tournament_obligation_retirements` receipt and handles
 only the four named obligation UUIDs.
 

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = (path: string) => resolve(__dirname, '..', path);
-const migration = '20260909215545_seat_first_unregistration_uses_actual_start_truth.sql';
+const migration = '20260909183657_seat_first_unregistration_uses_actual_start_truth.sql';
 const sql = readFileSync(root(`supabase/migrations/${migration}`), 'utf8');
 const probe = readFileSync(
   root('scripts/ci/probes/seat-first-unregistration-actual-start.sql'),

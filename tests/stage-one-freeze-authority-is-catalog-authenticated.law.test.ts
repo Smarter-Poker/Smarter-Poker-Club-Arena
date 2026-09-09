@@ -14,19 +14,19 @@ const cutovers = [
     gate: 'require_live_spin_cutover_freeze',
   },
   {
-    file: '20260909215539_tournament_cancellation_commits_one_stored_receipt.sql',
+    file: '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql',
     gate: 'require_live_cancellation_cutover_freeze',
   },
   {
-    file: '20260909215633_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
+    file: '20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
     gate: 'require_live_obligation_retirement_freeze',
   },
   {
-    file: '20260909215636_every_tournament_payout_names_its_source.sql',
+    file: '20260909014510_every_tournament_payout_names_its_source.sql',
     gate: 'require_live_payout_source_cutover_freeze',
   },
   {
-    file: '20260909215641_non_satellite_terminal_settlement_commits_one_stored_receipt.sql',
+    file: '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql',
     gate: 'require_live_terminal_cutover_freeze',
   },
   {

@@ -12,14 +12,14 @@ const tableBuild = sliceMethod(manager, 'createTablesAndSeatPlayers(tournament: 
 const migration = readFileSync(
   join(
     here,
-    '../../../supabase/migrations/20260909212357_a_played_spin_with_one_vacated_busted_seat_can_complete_laun.sql'
+    '../../../supabase/migrations/20260909183217_a_played_spin_with_one_vacated_busted_seat_can_complete_laun.sql'
   ),
   'utf8'
 );
 const fundedDrawRecovery = readFileSync(
   join(
     here,
-    '../../../supabase/migrations/20260909212412_a_booked_played_spin_replays_its_original_funded_draw.sql'
+    '../../../supabase/migrations/20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql'
   ),
   'utf8'
 );

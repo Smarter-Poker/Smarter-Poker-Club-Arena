@@ -24,9 +24,8 @@
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import {
-  setGtoPostflop,
+  replaceGtoPostflop,
   gtoPostflopCount,
-  _clearGtoPostflop,
   type GtoPostflopRow,
 } from '../engine/GtoPostflop.js';
 import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
@@ -36,8 +35,54 @@ const RETRY_MS = 30_000;
 const MAX_RETRY_MS = 5 * 60_000;
 const PAGE = 500;
 
+export interface GtoPostflopSnapshotBoundary {
+  count: number | null;
+  latestBuiltAt: string | null;
+}
+
+export function assertCompleteGtoPostflopSnapshot(
+  before: GtoPostflopSnapshotBoundary,
+  fetched: number,
+  after: GtoPostflopSnapshotBoundary
+): void {
+  if (before.count === null || after.count === null) {
+    throw new Error('gto_postflop_exact_count_unavailable');
+  }
+  if (
+    before.count !== after.count ||
+    fetched !== before.count ||
+    before.latestBuiltAt !== after.latestBuiltAt
+  ) {
+    throw new Error(
+      `gto_postflop_snapshot_shifted:before=${before.count}@${before.latestBuiltAt ?? 'empty'}:` +
+        `fetched=${fetched}:after=${after.count}@${after.latestBuiltAt ?? 'empty'}`
+    );
+  }
+}
+
+async function snapshotBoundary(): Promise<GtoPostflopSnapshotBoundary> {
+  const [count, latest] = await Promise.all([
+    supabase.from('gto_postflop_compact').select('street', { count: 'exact', head: true }),
+    supabase
+      .from('gto_postflop_compact')
+      .select('built_at')
+      .order('built_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (count.error) throw new Error(count.error.message);
+  if (latest.error) throw new Error(latest.error.message);
+  const latestBuiltAt = (latest.data as { built_at?: unknown } | null)?.built_at;
+  if (latestBuiltAt !== undefined && typeof latestBuiltAt !== 'string') {
+    throw new Error('gto_postflop_snapshot_revision_malformed');
+  }
+  return { count: count.count, latestBuiltAt: latestBuiltAt ?? null };
+}
+
 async function loadGtoPostflopAttempt(): Promise<{ ok: boolean; count: number }> {
   try {
+    const before = await snapshotBoundary();
+
     const rows: GtoPostflopRow[] = [];
     for (let offset = 0; ; offset += PAGE) {
       const { data, error } = await supabase
@@ -57,9 +102,15 @@ async function loadGtoPostflopAttempt(): Promise<{ ok: boolean; count: number }>
       rows.push(...(data as GtoPostflopRow[]));
       if (data.length < PAGE) break;
     }
-    // full success only: swap, so DB-side deletions evict from memory too
-    _clearGtoPostflop();
-    const applied = setGtoPostflop(rows);
+    const after = await snapshotBoundary();
+    assertCompleteGtoPostflopSnapshot(before, rows.length, after);
+
+    // Full success only. Validation builds a separate Map and one assignment
+    // swaps it, so an invalid/duplicate row cannot clear or partially replace
+    // the last-known-good policy. Exact counts and the table's latest build
+    // revision on both sides catch inserts and in-place aggregation updates
+    // that could otherwise mix two offset-paginated snapshots.
+    const applied = replaceGtoPostflop(rows);
     console.log(
       `[GtoPostflopLoader] ${applied} solver open-node cells loaded (${gtoPostflopCount()} in the store)`
     );

@@ -94,6 +94,7 @@ import {
 } from './GtoPostflop.js';
 import {
   gtoStreetAdviceV31,
+  type GtoV31ActionFamily,
   type GtoV31GameFamily,
   type GtoV31Objective,
 } from './GtoPostflopV31.js';
@@ -176,6 +177,35 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 // what is owed, and a short stack's all-in is whatever it is.
 const chipStep = (bigBlind: number | undefined): number =>
   typeof bigBlind === 'number' && bigBlind >= 1 && Number.isInteger(bigBlind) ? 1 : 0.01;
+
+/**
+ * Reconcile a sampled certified action with the decision that reached the
+ * engine. A call that consumes the remaining stack is still the sampled call;
+ * wagers must retain both their family and their size (apart from one legal
+ * chip-step of deterministic rounding). This helper is exported so the
+ * release gate's exact semantics have direct unit coverage.
+ */
+export function gtoV31ExecutionMatches(args: {
+  sampledFamily: GtoV31ActionFamily;
+  sampledAmount: number | null;
+  finalAction: HorseDecision['action'];
+  finalAmount: number | null;
+  bigBlind?: number;
+}): boolean {
+  const amountPreserved =
+    args.sampledAmount !== null &&
+    args.finalAmount !== null &&
+    Number.isFinite(args.sampledAmount) &&
+    Number.isFinite(args.finalAmount) &&
+    Math.abs(args.sampledAmount - args.finalAmount) <= chipStep(args.bigBlind) + 0.005;
+  if (args.sampledFamily === 'call') {
+    return args.finalAction === 'all_in' || (args.finalAction === 'call' && amountPreserved);
+  }
+  if (args.sampledFamily === 'bet' || args.sampledFamily === 'raise') {
+    return args.finalAction === args.sampledFamily && amountPreserved;
+  }
+  return args.finalAction === args.sampledFamily;
+}
 
 /** Largest multiple of `step` that is <= n. */
 const snapDown = (n: number, step: number): number =>
@@ -1589,6 +1619,12 @@ export interface HorseDecideOpts {
     nodeRole: GtoV31NodeRole;
     cell: string;
     actionId: string;
+    sampledActionFamily: GtoV31ActionFamily;
+    sampledAmount: number | null;
+    finalAction: HorseDecision['action'];
+    finalAmount: number | null;
+    /** True only when legalization preserved the sampled family and wager size. */
+    executedAsIntended: boolean;
   }) => void;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
@@ -3892,54 +3928,69 @@ export class HorseLogic {
         const actionId31 = rollMix(direct31.mix, fastRandom);
         const action31 = actionId31 ? direct31.actions[actionId31] : null;
         if (action31 && actionId31) {
-          if (opts.gtoV31DatasetChecksum && opts.onGtoV31Decision) {
-            opts.onGtoV31Decision({
-              datasetChecksum: direct31.sourceSeal.dataset_checksum,
-              nodeRole: direct31.nodeRole,
-              cell: direct31.cell,
-              actionId: actionId31,
-            });
-          }
-          if (tele15) noteFire(`v31_certified_${direct31.nodeRole}`);
+          let intended31: HorseDecision | null = null;
           if (action31.family === 'check') {
-            return this.legalize({ action: 'check', thinkTime: 0 }, player, gs, vi);
+            intended31 = { action: 'check', thinkTime: 0 };
           }
           if (action31.family === 'fold') {
-            return this.legalize({ action: 'fold', thinkTime: 0 }, player, gs, vi);
+            intended31 = { action: 'fold', thinkTime: 0 };
           }
           if (action31.family === 'call') {
-            return this.legalize({ action: 'call', amount: toCall, thinkTime: 0 }, player, gs, vi);
+            intended31 = { action: 'call', amount: toCall, thinkTime: 0 };
           }
           if (action31.family === 'all_in') {
-            return this.legalize({ action: 'all_in', thinkTime: 0 }, player, gs, vi);
+            intended31 = { action: 'all_in', thinkTime: 0 };
           }
           if (
             action31.family === 'bet' &&
             action31.size_unit === 'pot_fraction' &&
             action31.size_value
           ) {
-            return this.legalize(
-              { action: 'bet', amount: pot * action31.size_value, thinkTime: 0 },
-              player,
-              gs,
-              vi
-            );
+            intended31 = { action: 'bet', amount: pot * action31.size_value, thinkTime: 0 };
           }
           if (
             action31.family === 'raise' &&
             action31.size_unit === 'pot_after_call_fraction' &&
             action31.size_value
           ) {
-            return this.legalize(
-              {
-                action: 'raise',
-                amount: currentBet + (pot + toCall) * action31.size_value,
-                thinkTime: 0,
-              },
-              player,
-              gs,
-              vi
-            );
+            intended31 = {
+              action: 'raise',
+              amount: currentBet + (pot + toCall) * action31.size_value,
+              thinkTime: 0,
+            };
+          }
+          if (intended31) {
+            const final31 = this.legalize(intended31, player, gs, vi);
+            const sampledAmount31 = intended31.amount ?? null;
+            const finalAmount31 = final31.amount ?? null;
+            const executedAsIntended31 = gtoV31ExecutionMatches({
+              sampledFamily: action31.family,
+              sampledAmount: sampledAmount31,
+              finalAction: final31.action,
+              finalAmount: finalAmount31,
+              bigBlind: gs.bigBlind,
+            });
+            if (opts.gtoV31DatasetChecksum && opts.onGtoV31Decision) {
+              opts.onGtoV31Decision({
+                datasetChecksum: direct31.sourceSeal.dataset_checksum,
+                nodeRole: direct31.nodeRole,
+                cell: direct31.cell,
+                actionId: actionId31,
+                sampledActionFamily: action31.family,
+                sampledAmount: sampledAmount31,
+                finalAction: final31.action,
+                finalAmount: finalAmount31,
+                executedAsIntended: executedAsIntended31,
+              });
+            }
+            if (tele15) {
+              noteFire(
+                executedAsIntended31
+                  ? `v31_certified_${direct31.nodeRole}`
+                  : 'v31_certified_execution_mismatch'
+              );
+            }
+            return final31;
           }
         }
         if (tele15) noteFire('v31_certified_unusable_action');

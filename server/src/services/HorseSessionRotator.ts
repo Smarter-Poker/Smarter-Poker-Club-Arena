@@ -269,7 +269,7 @@ export class HorseSessionRotator {
           // (which has no seat change) and whether the table is closing.
           // created_at joined 2026-09-05 for the lone-horse pass: an opening
           // feeder younger than its grace window is being filled, not dead.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!table_seats_table_id_fkey!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -279,7 +279,25 @@ export class HorseSessionRotator {
       // A failed page means an INCOMPLETE room, and rotating against half a
       // room is how a table gets picked that should not have been. Decline
       // the pass; it runs again on the next cycle.
-      if (error || !chunk) return;
+      if (error || !chunk) {
+        /* AND SAY SO (2026-09-09). This was a bare `return`: the rotator
+           declined the pass and nothing anywhere recorded that it had. On
+           2026-09-09 two migrations gave `table_seats` a second and third
+           foreign key to `tables`, PostgREST refused the un-hinted embed
+           above with PGRST201 ("more than one relationship was found"), and
+           this line swallowed it on EVERY cycle for fifteen hours - no
+           session ended, no horse rotated, no top-up, no seat change, no
+           lone-horse stand, and not one log line said why. CLAUDE.md 10.86:
+           "I could not tell" is an outcome with a name, never a silence. */
+        reportError(
+          new Error(
+            `[HorseSessionRotator] live seat read failed on page ${page}; the pass is ` +
+              `declined and will run again next cycle: ${error?.message ?? 'no rows returned'}`
+          ),
+          'HorseSessionRotator.seat_read_failed'
+        );
+        return;
+      }
       seats.push(...chunk);
       if (chunk.length < PAGE) break;
     }

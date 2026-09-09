@@ -2719,7 +2719,7 @@ export abstract class TournamentManagerBase {
     const { data: seatRows, error: seatErr } = await supabase
       .from('table_seats')
       .select(
-        'user_id, table_id, seat_number, stack, tables!inner(id, tournament_id, status, current_players)'
+        'user_id, table_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(id, tournament_id, status, current_players)'
       )
       .is('left_at', null)
       .eq('tables.tournament_id', this.tournamentId);
@@ -4976,7 +4976,9 @@ export abstract class TournamentManagerBase {
 
     const { data: liveSeatRows, error: liveSeatRowsErr } = await supabase
       .from('table_seats')
-      .select('user_id, table_id, seat_number, tables!inner(tournament_id)')
+      .select(
+        'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
+      )
       .is('left_at', null)
       .eq('tables.tournament_id', this.tournamentId);
     if (liveSeatRowsErr) {

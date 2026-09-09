@@ -1311,7 +1311,10 @@ export function horseAtCapacity(load: number): boolean {
  * callers and every unit test are only exercising the counting.
  */
 export type LoadRef =
-  string | null | undefined | { user_id?: string | null; tournament_id?: string | null };
+  | string
+  | null
+  | undefined
+  | { user_id?: string | null; tournament_id?: string | null };
 
 function refUser(ref: LoadRef): string | null {
   if (!ref) return null;
@@ -4255,7 +4258,7 @@ export class TournamentRecurringService {
              seat-first chair from a separate booking for the same game. */
       const { data: chunk, error: seatErr } = await supabase
         .from('table_seats')
-        .select('user_id, table_id, tables!inner(status, tournament_id)')
+        .select('user_id, table_id, tables!table_seats_table_id_fkey!inner(status, tournament_id)')
         .is('left_at', null)
         .neq('tables.status', 'closed')
         /*
@@ -4366,7 +4369,9 @@ export class TournamentRecurringService {
         const row = r as {
           user_id?: string;
           tables?:
-            { tournament_id?: string | null } | Array<{ tournament_id?: string | null }> | null;
+            | { tournament_id?: string | null }
+            | Array<{ tournament_id?: string | null }>
+            | null;
         };
         const embedded = Array.isArray(row.tables) ? row.tables[0] : row.tables;
         return { user_id: row.user_id, tournament_id: embedded?.tournament_id ?? null };

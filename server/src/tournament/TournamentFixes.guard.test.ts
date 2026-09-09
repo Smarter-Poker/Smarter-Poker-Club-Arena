@@ -427,7 +427,7 @@ describe('no seating path may write a second live seat in the same tournament', 
   it('the claim is scoped to the TOURNAMENT, not to one table', () => {
     const src = code(SEAT_CLAIM);
     // Reached through the join, because table_seats carries no tournament_id.
-    expect(src).toContain('tables!inner(tournament_id)');
+    expect(src).toContain('tables!table_seats_table_id_fkey!inner(tournament_id)');
     expect(src).toMatch(/eq\('tables\.tournament_id'/);
     expect(src).toMatch(/is\('left_at',\s*null\)/);
   });

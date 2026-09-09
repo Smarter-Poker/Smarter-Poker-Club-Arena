@@ -3124,7 +3124,16 @@ export class GameServer {
       // single most player-visible tournament failure there is. These come
       // from the database because the database is the only thing that knows
       // what SHOULD exist. See services/TournamentMetrics.ts.
-      ...this.tournamentMetrics.toPrometheus(),
+      // `owned` is the half the database cannot see and this process is the only
+      // thing that knows: how many of those RUNNING events actually have a
+      // manager here. Leadership and boot state are passed for the same reason -
+      // a standby owns nothing legitimately, and a rule reading these series
+      // from outside cannot tell that apart from an outage.
+      ...this.tournamentMetrics.toPrometheus({
+        owned: this.tournamentEngines.size,
+        isLeader: isLeader(),
+        stillBooting: livenessVerdict.stillBooting,
+      }),
       // ── SPIN OBSERVABILITY (2026-08-31) ──────────────────────────────
       // The tournament gauges above count events. These test the one
       // EQUALITY the Spin format is sold on, and watch the punctuality of

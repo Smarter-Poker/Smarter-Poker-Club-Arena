@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { uuid } from '../../src/utils/uuid';
+import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
 import {
   createCashBuyInJournal,
   executeCashBuyIn,
@@ -77,7 +78,7 @@ function fixture() {
     useUserStore: { getState: () => ({ currentClubId: 'a0000000-0000-4000-8000-000000000001' }) },
     reportError: vi.fn(),
     toast: { error: vi.fn(), warning: vi.fn() },
-    cashBuyInRefusalText: () => null,
+    cashBuyInRefusalText,
     applyBalanceDelta: vi.fn(),
     totalBuyInRef: ref(0),
     peakStackRef: ref(0),
@@ -326,3 +327,95 @@ it('treats a successful retried mutation as recovery when the original may have 
   expect(f.d.leftSeatPendingRef.current).toBe(true);
   expect(f.d.retryAccountBalance).toHaveBeenCalledOnce();
 });
+
+it.each([
+  [
+    {
+      code: '23505',
+      message:
+        'duplicate key value violates unique constraint "table_seats_table_id_seat_number_key"',
+    },
+    'That Seat Was Taken. Please Choose Another Seat.',
+  ],
+  [
+    {
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "idx_unique_active_user_per_table"',
+    },
+    'You Are Already Seated At This Table',
+  ],
+  [
+    {
+      code: 'P0001',
+      message: 'SEAT_RESERVED: the open seat is held for the next player on the waiting list',
+    },
+    'This Seat Is Reserved For The Next Player On The Waiting List. Please Join The Waitlist.',
+  ],
+  [
+    { code: 'P0001', message: 'Insufficient club chips for buy-in (club abc)' },
+    'Your Club Wallet Does Not Have Enough Chips For This Buy In',
+  ],
+])(
+  'releases a confirmed refusal and permits a newly reviewed seat and amount: %j',
+  async (error, message) => {
+    const f = fixture();
+    f.d.supabase.rpc.mockImplementation((name: string) =>
+      Promise.resolve({
+        data: name === 'fn_ca_cash_buyin_receipt' ? { status: 'unconfirmed' } : null,
+        error: name === 'atomic_table_buyin' ? error : null,
+      })
+    );
+    expect(await f.handler(100, false)).toBe(false);
+    await Promise.resolve();
+    expect(f.d.toast.error).toHaveBeenCalledWith(message);
+    expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).toBeNull();
+    expect(f.d.cashBuyInPendingRef.current).toBeNull();
+    expect(f.d.buyInProcessingRef.current).toBe(false);
+    expect(f.state().heroSeat).toBe(0);
+    expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
+    const originalKey = f.d.supabase.rpc.mock.calls[0][1].p_idempotency_key;
+    f.d.selectedSeat = 3;
+    f.d.supabase.rpc.mockResolvedValue({ data: null, error: null });
+    expect(await f.handler(80, false)).toBe(true);
+    const purchase = f.d.supabase.rpc.mock.calls.at(-1)[1];
+    expect(purchase.p_seat_number).toBe(3);
+    expect(purchase.p_amount).toBe(80);
+    expect(purchase.p_idempotency_key).not.toBe(originalKey);
+  }
+);
+
+it.each([
+  {
+    code: '23505',
+    message:
+      'duplicate key value violates unique constraint "entry_purchase_idempotency_receipts_pkey"',
+  },
+  { code: '23505', message: 'duplicate key value violates unique constraint "table_seats_pkey"' },
+  {
+    code: '57014',
+    message:
+      'duplicate key value violates unique constraint "table_seats_table_id_seat_number_key"',
+  },
+  {
+    code: '42501',
+    message: 'SEAT_RESERVED: the open seat is held for the next player on the waiting list',
+  },
+])(
+  'retains uncertain outcomes rather than treating unrelated errors as safe to retry: %j',
+  async (error) => {
+    const f = fixture();
+    f.d.supabase.rpc.mockImplementation((name: string) =>
+      Promise.resolve({
+        data: name === 'fn_ca_cash_buyin_receipt' ? { status: 'unconfirmed' } : null,
+        error: name === 'atomic_table_buyin' ? error : null,
+      })
+    );
+    expect(await f.handler(100, false)).toBe(false);
+    expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).not.toBeNull();
+    expect(f.d.cashBuyInPendingRef.current).not.toBeNull();
+    expect(f.d.toast.error).not.toHaveBeenCalled();
+    expect(
+      f.d.supabase.rpc.mock.calls.filter((call: any[]) => call[0] === 'atomic_table_buyin')
+    ).toHaveLength(1);
+  }
+);

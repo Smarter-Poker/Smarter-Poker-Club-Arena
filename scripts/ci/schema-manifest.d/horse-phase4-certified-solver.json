@@ -34,6 +34,8 @@
     "fn_gto_v31_heldout_metrics",
     "fn_gto_v31_seal_build",
     "fn_gto_v31_record_evaluation",
+    "fn_gto_v31_freeze_evaluation_source",
+    "fn_gto_v31_candidate_evaluations_valid",
     "fn_gto_v31_mark_candidate",
     "fn_gto_v31_promote_dataset",
     "fn_gto_v31_active_cells",
@@ -74,6 +76,7 @@
     "horse_league_results": [
       "truncated_streets",
       "candidate_policy_hits",
+      "candidate_execution_mismatches",
       "candidate_node_roles",
       "candidate_benchmark_components"
     ]

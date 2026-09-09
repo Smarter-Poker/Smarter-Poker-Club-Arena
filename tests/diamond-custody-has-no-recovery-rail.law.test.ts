@@ -19,6 +19,7 @@ const migrationEnding = (suffix: string): string => {
 const seal = migrationEnding('_seal_diamond_custody_retry_doors_before_retirement.sql');
 const atomic = migrationEnding('_diamond_custody_release_is_atomic_without_recovery.sql');
 const internalAcl = migrationEnding('_diamond_internal_writers_are_service_only.sql');
+const explicitAcl = migrationEnding('_diamond_internal_writer_acl_contract_is_explicit.sql');
 const manifest = JSON.parse(
   readFileSync(
     resolve(root, 'scripts/ci/schema-manifest.d/codex-poker-diamond-custody.json'),
@@ -100,5 +101,7 @@ describe('Diamond custody has one atomic release writer', () => {
     expect(internalAcl).toContain('FROM PUBLIC, anon, authenticated;');
     expect(internalAcl).toContain('TO service_role;');
     expect(internalAcl).toContain("has_function_privilege('public', v_proc, 'EXECUTE')");
+    expect(explicitAcl.match(/REVOKE ALL ON FUNCTION/g)).toHaveLength(3);
+    expect(explicitAcl.match(/GRANT EXECUTE ON FUNCTION/g)).toHaveLength(3);
   });
 });

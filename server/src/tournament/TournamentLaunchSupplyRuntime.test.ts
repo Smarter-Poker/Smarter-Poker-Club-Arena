@@ -124,7 +124,7 @@ function rpcResult(data: Record<string, unknown>) {
 }
 
 function supplyVersionResult(
-  data: { supply_version: number | string } | null,
+  data: number | string | null,
   error: {
     code?: string;
     message: string;
@@ -132,11 +132,18 @@ function supplyVersionResult(
     hint?: string;
   } | null = null
 ) {
-  const builder: Record<string, ReturnType<typeof vi.fn>> = {};
-  builder.select = vi.fn(() => builder);
-  builder.eq = vi.fn(() => builder);
-  builder.maybeSingle = vi.fn(async () => ({ data, error }));
-  return vi.spyOn(supabase, 'from').mockReturnValue(builder as never);
+  return vi.spyOn(supabase, 'rpc').mockResolvedValue({ data, error } as never);
+}
+
+function rpcThenSupplyVersion(
+  rpcData: Record<string, unknown>,
+  supplyVersion: number | string | null,
+  supplyError: { code?: string; message: string; details?: string; hint?: string } | null = null
+) {
+  return vi
+    .spyOn(supabase, 'rpc')
+    .mockResolvedValueOnce({ data: rpcData, error: null } as never)
+    .mockResolvedValueOnce({ data: supplyVersion, error: supplyError } as never);
 }
 
 function commonResult() {
@@ -193,36 +200,40 @@ describe('the launch supply caller accepts only exact database receipts', () => 
   it('reads an explicit receipt version when an intermediate RPC wrapper omits it', async () => {
     const begin = commonResult();
     delete (begin as { supply_version?: number }).supply_version;
-    rpcResult({
-      ...begin,
-      claimed: true,
-      replay: false,
-      completed: false,
-      started_at: STARTED_AT,
-    });
-    supplyVersionResult({ supply_version: 1 });
+    rpcThenSupplyVersion(
+      {
+        ...begin,
+        claimed: true,
+        replay: false,
+        completed: false,
+        started_at: STARTED_AT,
+      },
+      1
+    );
     const manager = new LaunchSupplyHarness();
 
     await expect(manager.claim(manager.activate())).resolves.toMatchObject({ supplyVersion: 1 });
+    expect(supabase.rpc).toHaveBeenNthCalledWith(2, 'fn_ca_tournament_launch_supply_version', {
+      p_tournament_id: TOURNAMENT_ID,
+      p_launch_id: LAUNCH_ID,
+    });
   });
 
-  it('recognizes only PostgreSQL undefined-column as the pre-ledger version-0 capability', async () => {
-    supplyVersionResult(null, {
-      code: '42703',
-      message: 'column tournament_launch_receipts.supply_version does not exist',
-    });
+  it.each([0, 1] as const)('reads exact manager-fenced supply version %s', async (version) => {
+    supplyVersionResult(version);
     const manager = new LaunchSupplyHarness();
 
-    await expect(manager.readSupplyVersion(manager.activate())).resolves.toBe(0);
+    await expect(manager.readSupplyVersion(manager.activate())).resolves.toBe(version);
   });
 
   it.each([
+    { code: '42501', message: 'permission denied for table tournament_launch_receipts' },
+    { code: 'PGRST202', message: 'function is absent from the schema cache' },
     {
       code: 'PGRST204',
       message: "Could not find the 'supply_version' column in the schema cache",
     },
     { code: '57014', message: 'statement timeout while reading supply_version' },
-    { code: '42703', message: 'column some_other_column does not exist' },
   ])('fails closed for every other unreadable capability state ($code)', async (error) => {
     supplyVersionResult(null, error);
     const manager = new LaunchSupplyHarness();
@@ -320,20 +331,19 @@ describe('the launch supply caller accepts only exact database receipts', () => 
   it('completes a pre-ledger version-0 claim when the old RPC and schema omit the version', async () => {
     const completion = commonResult();
     delete (completion as { supply_version?: number }).supply_version;
-    rpcResult({
-      ...completion,
-      completed: true,
-      status: 'RUNNING',
-      started_at: STARTED_AT,
-      completed_at: '2026-09-09T04:00:15.000Z',
-      issued_chips: null,
-      roster_chips: null,
-      felt_chips: null,
-    });
-    supplyVersionResult(null, {
-      code: '42703',
-      message: 'column tournament_launch_receipts.supply_version does not exist',
-    });
+    rpcThenSupplyVersion(
+      {
+        ...completion,
+        completed: true,
+        status: 'RUNNING',
+        started_at: STARTED_AT,
+        completed_at: '2026-09-09T04:00:15.000Z',
+        issued_chips: null,
+        roster_chips: null,
+        felt_chips: null,
+      },
+      0
+    );
     const manager = new LaunchSupplyHarness();
 
     await expect(manager.complete(manager.activate(), 0)).resolves.toBe(true);
@@ -342,20 +352,19 @@ describe('the launch supply caller accepts only exact database receipts', () => 
   it('never lets the pre-ledger capability impersonate a version-1 completion', async () => {
     const completion = commonResult();
     delete (completion as { supply_version?: number }).supply_version;
-    rpcResult({
-      ...completion,
-      completed: true,
-      status: 'RUNNING',
-      started_at: STARTED_AT,
-      completed_at: '2026-09-09T04:00:15.000Z',
-      issued_chips: 2000,
-      roster_chips: 2000,
-      felt_chips: 2000,
-    });
-    supplyVersionResult(null, {
-      code: '42703',
-      message: 'column tournament_launch_receipts.supply_version does not exist',
-    });
+    rpcThenSupplyVersion(
+      {
+        ...completion,
+        completed: true,
+        status: 'RUNNING',
+        started_at: STARTED_AT,
+        completed_at: '2026-09-09T04:00:15.000Z',
+        issued_chips: 2000,
+        roster_chips: 2000,
+        felt_chips: 2000,
+      },
+      0
+    );
     const manager = new LaunchSupplyHarness();
 
     await expect(manager.complete(manager.activate(), 1)).resolves.toBe(false);

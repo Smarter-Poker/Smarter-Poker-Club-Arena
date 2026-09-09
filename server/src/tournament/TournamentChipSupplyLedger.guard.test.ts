@@ -28,13 +28,23 @@ if (versionSealMigrationNames.length !== 1) {
     `Expected one tournament launch supply-version seal, found ${versionSealMigrationNames.length}`
   );
 }
+const versionReaderMigrationNames = readdirSync(join(repoRoot, 'supabase/migrations')).filter(
+  (name) => name.endsWith('_tournament_launch_supply_version_is_manager_only.sql')
+);
+if (versionReaderMigrationNames.length !== 1) {
+  throw new Error(
+    `Expected one tournament launch supply-version reader, found ${versionReaderMigrationNames.length}`
+  );
+}
 const migration = readRepo(`supabase/migrations/${migrationNames[0]}`);
 const sealMigration = readRepo(`supabase/migrations/${sealMigrationNames[0]}`);
 const versionSealMigration = readRepo(`supabase/migrations/${versionSealMigrationNames[0]}`);
+const versionReaderMigration = readRepo(`supabase/migrations/${versionReaderMigrationNames[0]}`);
 const fixture = readRepo('scripts/dev/fixtures/tournament-chip-supply-ledger-pg17-bootstrap.sql');
 const runtimeProbe = readRepo('scripts/dev/probe-tournament-chip-supply-ledger-pg17.sql');
 const harness = readRepo('scripts/dev/probe-tournament-chip-supply-ledger-pg17.sh');
 const activationRunbook = readRepo('docs/runbooks/tournament-fractional-stack-cutover.md');
+const manager = readRepo('server/src/tournament/TournamentManagerBase.ts');
 
 describe('tournament chip supply is one immutable conserved ledger', () => {
   it('publishes an explicit zero-only supply version without activating the ledger', () => {
@@ -58,6 +68,36 @@ describe('tournament chip supply is one immutable conserved ledger', () => {
     );
     expect(migration).toContain('CHECK (supply_version IN (0, 1)) NOT VALID');
     expect(migration).toContain('ALTER COLUMN supply_version SET DEFAULT 1');
+  });
+
+  it('reads the private version only through one current-manager authority door', () => {
+    expect(
+      versionReaderMigrationNames[0].localeCompare(versionSealMigrationNames[0])
+    ).toBeGreaterThan(0);
+    expect(versionReaderMigration).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_tournament_launch_supply_version('
+    );
+    expect(versionReaderMigration).toContain('VOLATILE');
+    expect(versionReaderMigration).toContain('SECURITY DEFINER');
+    expect(versionReaderMigration).toContain("auth.role() IS DISTINCT FROM 'service_role'");
+    expect(versionReaderMigration).toContain("v_actor IS DISTINCT FROM 'tournament-manager'");
+    expect(versionReaderMigration).toContain(
+      'v_context_tournament IS DISTINCT FROM p_tournament_id::text'
+    );
+    expect(versionReaderMigration).toContain('FROM public.tournament_launch_receipts r');
+    expect(versionReaderMigration).toContain('r.tournament_id = p_tournament_id');
+    expect(versionReaderMigration).toContain('r.launch_id = p_launch_id');
+    expect(versionReaderMigration).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_tournament_launch_supply_version(uuid, uuid)'
+    );
+    expect(versionReaderMigration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_ca_tournament_launch_supply_version(uuid, uuid)'
+    );
+    expect(versionReaderMigration).not.toContain('GRANT SELECT');
+    expect(versionReaderMigration).not.toContain('CREATE TRIGGER');
+    expect(versionReaderMigration).not.toContain('cron.');
+    expect(manager).toContain("supabase.rpc('fn_ca_tournament_launch_supply_version'");
+    expect(manager).not.toContain(".from('tournament_launch_receipts')");
   });
 
   it('publishes fail-closed RPC signatures before the capable caller can ship', () => {

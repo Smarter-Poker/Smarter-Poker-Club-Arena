@@ -2509,34 +2509,21 @@ export abstract class TournamentManagerBase {
     );
   }
 
-  /**
-   * Read the launch receipt's durable chip-supply protocol. The sealed
-   * pre-ledger schema exposes version 0 explicitly. Only an older/restored
-   * schema's exact 42703 capability state also maps to version 0; every other
-   * unreadable or future state fails closed instead of guessing a path.
-   */
+  /** Read one private launch receipt's durable chip-supply protocol through
+   * the current manager-fenced evidence door. Direct table reads stay denied;
+   * an absent receipt, unreadable door, or future version fails closed. */
   private async readTournamentLaunchSupplyVersion(
     lifecycle: TournamentLifecycleToken,
     launchId: string
   ): Promise<0 | 1 | null> {
-    const { data, error } = await supabase
-      .from('tournament_launch_receipts')
-      .select('supply_version')
-      .eq('tournament_id', this.tournamentId)
-      .eq('launch_id', launchId)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc('fn_ca_tournament_launch_supply_version', {
+      p_tournament_id: this.tournamentId,
+      p_launch_id: launchId,
+    });
     this.assertLifecycleCurrent(lifecycle);
 
-    if (error) {
-      const diagnostic = [error.message, error.details, error.hint]
-        .filter((value): value is string => typeof value === 'string')
-        .join(' ');
-      if (error.code === '42703' && /\bsupply_version\b/i.test(diagnostic)) return 0;
-      return null;
-    }
-
-    if (!data) return null;
-    const version = Number(data.supply_version);
+    if (error || data === null || data === undefined) return null;
+    const version = Number(data);
     return version === 0 || version === 1 ? version : null;
   }
 

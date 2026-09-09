@@ -10,6 +10,7 @@
     "fn_issue_tournament_launch_stacks",
     "fn_materialize_tournament_launch_seats",
     "fn_project_tournament_launch_seat_stacks",
-    "fn_ca_paid_spin_launch_entitlements"
+    "fn_ca_paid_spin_launch_entitlements",
+    "fn_ca_tournament_launch_supply_version"
   ]
 }

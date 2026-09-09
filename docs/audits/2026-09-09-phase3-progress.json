@@ -182,13 +182,15 @@
       "id": "S06",
       "requirement": "Persist one Spin draw, probability table version and entrants before reveal. Replay and failover cannot reroll.",
       "priority": "P0",
-      "status": "partial_behavioral_correction"
+      "status": "partial_behavioral_correction_pending_publication",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "S07",
       "requirement": "Fund the selected Spin payout with net entries plus reserve transfer. Fees cannot be counted as prize funding twice.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_pending_publication",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "S08",
@@ -200,7 +202,8 @@
       "id": "S09",
       "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_pending_publication",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "S10",
@@ -308,7 +311,8 @@
       "id": "AX09",
       "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_pending_publication",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "AX10",
@@ -651,5 +655,40 @@
       "name": "fn_settle_tournament_obligation_before_atomic_batch_gate",
       "definition_md5": "0fbfd867868fe2485dc9c66f565be15e"
     }
-  ]
+  ],
+  "continuation_base_commit": "7419a67c158d9bf0116165657acaaa48c05418aa",
+  "last_published_correction": {
+    "pr": 3971,
+    "merge_commit": "5dd902e978006d736b90df5261e949a7e07657cd",
+    "ci_run": 34382881384,
+    "server_tests_passed": 8105,
+    "client_tests_passed": 17547,
+    "engine_adoption": {
+      "build": "5dd902e9",
+      "deployment_run": 34383629239,
+      "heartbeat_at": "2026-09-09T18:37:53.655563Z",
+      "observed_at": "2026-09-09T18:38:00.950052Z"
+    }
+  },
+  "atomic_spin_correction": {
+    "status": "database_applied_and_verified_awaiting_ci_and_engine",
+    "migration": "20260909174722_spin_draw_books_one_funded_rule_receipt.sql",
+    "postgres_checks_passed": 36,
+    "server_scope_tests_passed": 1394,
+    "server_scope_test_files": 131,
+    "client_spec_tests_passed": 61,
+    "server_types": "passed",
+    "server_build": "passed",
+    "historical_probability_snapshot": "explicitly_unavailable_for_legacy_adoption",
+    "production_financial_probe": false,
+    "scope_limits": [
+      "Generic Spin refund planner fee-versus-embedded-rake mismatch remains open",
+      "All 58 controls and deployed behavior still require closure"
+    ],
+    "migration_sha256": "1c14cea8740b48326c02af496c9f3ca72b7cdc42c56b2209c93c3d1788156295",
+    "installed_bodies_match": true,
+    "receipt_roles_verified": true,
+    "schema_manifests_regenerated": true,
+    "club_foreign_key_gate": "passed"
+  }
 }

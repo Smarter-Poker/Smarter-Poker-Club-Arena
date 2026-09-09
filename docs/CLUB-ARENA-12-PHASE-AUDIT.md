@@ -43,6 +43,10 @@ This continuation also passed server TypeScript, 80 focused receipt/departure/re
 
 Historical baseline: 16 failures and 28 passing tests before correction; 73 focused tests passed after the first correction. Subsequent follow-up and runtime gates are resolved by the evidence above. Phase 2 is poker rules and fairness for supported variants; its audit remains to be completed under this programme.
 
+## Phase 2 Continuation Status
+
+In progress, recovered September 9 from the existing Phase 2 reports. Earlier reopening, evaluator, side-pot, high/low, partial-ante, reveal and completion work is preserved. Action-context PR #3879 still requires conflict resolution and publication; the new short-blind pot-limit correction has local behavioral evidence. See docs/audits/2026-09-09-phase2-pot-limit-short-blinds.md. Phase 2 of 12 is not complete.
+
 ## Required Phase Summary
 
 Only after all exit evidence is satisfied: Phase N Of 12 Is Done, followed by concrete changes, tests and deployment evidence, remaining limitations outside that phase, then Ready To Start Phase N+1 Of 12. If a gate is pending, say Phase N Of 12 Is Not Complete and identify the missing evidence. Never use a partial pass to advance the phase counter.

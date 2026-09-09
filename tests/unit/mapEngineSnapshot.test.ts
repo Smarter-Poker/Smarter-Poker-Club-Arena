@@ -230,6 +230,33 @@ describe('fixed-limit completion metadata', () => {
   });
 });
 
+it('maps the pot-limit wager basis separately from the real pot', () => {
+  const out = mapEngineSnapshot(
+    makeSnapshot({
+      stage: 'preflop',
+      betting_structure: 'pot_limit',
+      pot: 1.5,
+      pot_limit_pot: 3,
+    }),
+    'hero',
+    4
+  );
+  expect(out.pot).toBe(1.5);
+  expect(out.potLimitPot).toBe(3);
+  const later = mapEngineSnapshot(
+    makeSnapshot({
+      stage: 'flop',
+      betting_structure: 'pot_limit',
+      pot: 6.5,
+      pot_limit_pot: 6.5,
+    }),
+    'hero',
+    4
+  );
+  expect(later.potLimitPot).toBe(6.5);
+  expect(mapEngineSnapshot(makeSnapshot(), 'hero', 4).potLimitPot).toBeUndefined();
+});
+
 describe('decision context from live and reconnect snapshots', () => {
   it('preserves the opaque server context without recreating it from client time', () => {
     expect(

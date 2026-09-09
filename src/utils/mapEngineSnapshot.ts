@@ -127,6 +127,8 @@ export interface EnginePublishedState {
    * Optional so a snapshot from an older engine build still maps cleanly.
    */
   betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Pot-limit wager basis, including nominal short blinds only preflop. */
+  pot_limit_pot?: number;
   /** Fixed limit only: the street's one legal wager (small bet or big bet). */
   fixed_bet_size?: number;
   fixed_raise_size?: number;
@@ -227,6 +229,7 @@ export interface MappedTableStatePatch {
    * panel then falls back to deriving it from the variant string.
    */
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  potLimitPot?: number;
   /** Fixed limit only: the street's one legal wager. */
   fixedBetSize?: number;
   fixedRaiseSize?: number;
@@ -579,6 +582,7 @@ export function mapEngineSnapshot(
     // everything that was not PLO no-limit — a fixed-limit table would have
     // drawn a no-limit slider and had every drag rejected.
     bettingStructure: s.betting_structure,
+    potLimitPot: s.pot_limit_pot,
     fixedBetSize: s.fixed_bet_size,
     fixedRaiseSize: s.fixed_raise_size,
     wagersCapped: s.wagers_capped,

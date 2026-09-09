@@ -2,6 +2,12 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Pot-Limit Sizing Includes Full Preflop Blinds
+
+A short blind reduced the preflop ceiling in both engine and client. Shared wagering math now includes the normal blind shortfall until the flop. Real pot accounting, eligibility and pot odds still use actual chips. Snapshots, HTTP actions, tile bounds and the POT preset agree on the maximum.
+
+Evidence: docs/audits/2026-09-09-phase2-pot-limit-short-blinds.md. 25 failing regressions reproduced the defect; 81 focused/property server tests and 41 client tests pass, including chip conservation. Re-read: yes. TypeScript: both projects pass. Ordinary merge and scheduled runtime adoption remain required.
+
 ## 2026-09-08: HTTP Actions Belong To The Displayed Decision
 
 Before: handlers/action.ts forwarded only user/action/amount; ServerTableEngineTurns.ts:1389 checked the live seat but had no original hand/turn identity. A delayed raise could apply to a later decision.

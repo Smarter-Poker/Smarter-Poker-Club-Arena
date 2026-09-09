@@ -7,6 +7,7 @@
  *
  *   fn_ca_daily_bonus_status()                 what today offers and what is claimed
  *   fn_ca_daily_bonus_claim(slot, req, day)    pay one tile, exactly once
+ *   fn_ca_daily_bonus_mark_shown()             today's sheet was shown (one popup per day, any device)
  *
  * The claim names the day the sheet showed (`p_bonus_date`). A tap that lands
  * after Chicago midnight is refused with `day_rolled_over` and the sheet
@@ -111,6 +112,8 @@ export interface DailyBonusStatus {
   multiplier: number;
   is_vip: boolean;
   claimed_today: boolean;
+  /** The sheet has already been put in front of this player today, on any device (one popup per day). */
+  shown_today: boolean;
   unclaimed: number;
   tiles: DailyBonusTile[];
   week: DailyBonusWeekDay[];
@@ -213,6 +216,7 @@ class DailyBonusServiceClass {
     return {
       ...status,
       eligible: status.eligible === true,
+      shown_today: status.shown_today === true,
       unclaimed: Number(status.unclaimed) || 0,
       seconds_to_reset: Math.max(0, Number(status.seconds_to_reset) || 0),
       tiles: Array.isArray(status.tiles) ? status.tiles : [],
@@ -220,6 +224,17 @@ class DailyBonusServiceClass {
       tomorrow: Array.isArray(status.tomorrow) ? status.tomorrow : [],
       caps: status.caps ?? null,
     };
+  }
+
+  /**
+   * Record that today's sheet has been put in front of the player, so no
+   * other device raises the popup again today. Idempotent server-side (the
+   * first show wins); a failure is reported and otherwise ignored, the
+   * browser's own day mark covers the gap.
+   */
+  async markShown(): Promise<void> {
+    const { error } = await supabase.rpc('fn_ca_daily_bonus_mark_shown');
+    if (error) reportError(error, 'DailyBonusService.markShown.fn_ca_daily_bonus_mark_shown');
   }
 
   /**

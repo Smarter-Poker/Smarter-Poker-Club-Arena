@@ -3,11 +3,16 @@
  *
  * "Given to all players for entering the Club Arena every single day" (Dan,
  * 2026-09-07). Mounted by the two hosts a signed-in player can land on, the
- * hub home and the AppLayout shell. Once per Chicago day per device it asks
- * the server whether today still has an unclaimed tile and, if so, raises the
- * sheet. Dismissing it is remembered for the day in localStorage (best
- * effort: a private window simply sees it again), and the wallet door, the
- * nav and /bonuses stay open all day for a player who swiped it away.
+ * hub home and the AppLayout shell. Once per Chicago day it asks the server
+ * whether today still has an unclaimed tile that has not been shown yet and,
+ * if so, raises the sheet.
+ *
+ * ONE POPUP PER DAY (Dan, 2026-09-09: "JUST ONE POP UP PER DAY, NOT EVERYTIME
+ * YOU OPEN IT"). Showing it is what spends the day, not closing it: the day
+ * is marked the moment the sheet is raised, on the server (`sheet_shown_at`,
+ * so no other device raises it) and in localStorage (this device, while that
+ * write is in flight). The wallet door, the nav and /bonuses stay open all
+ * day for a player who swiped it away.
  *
  * It never opens on a table, never over the first-run welcome or the profile
  * gate (the host passes `suspended`), and never on /bonuses, which renders
@@ -115,6 +120,11 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
         );
       }
       if (shouldOpenSheet(status, userId)) {
+        // ONE POPUP PER DAY. The day is marked seen the moment the sheet is
+        // shown, not when it is closed: a tab closed with the sheet still up
+        // is not a reason to show it again. The sheet itself records the
+        // same fact on the server for every other device.
+        markSeenToday(userId, status.today);
         setToday(status.today);
         setOpen(true);
       } else if (status.eligible) {

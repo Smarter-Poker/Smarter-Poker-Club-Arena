@@ -35,7 +35,11 @@ import { ThrowableImage } from '../table/ThrowableImage';
 import { triggerHaptic } from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { mediaUrl } from '../../utils/mediaBase';
-import { diamondsToCentsLabel, type DailyBonusTile } from '../../services/DailyBonusService';
+import {
+  dailyBonusService,
+  diamondsToCentsLabel,
+  type DailyBonusTile,
+} from '../../services/DailyBonusService';
 import { formatCountdown, useDailyBonus } from './useDailyBonus';
 import './DailyBonusSheet.css';
 
@@ -223,6 +227,17 @@ export default function DailyBonusSheet({
       if (burstTimer.current) clearTimeout(burstTimer.current);
     };
   }, []);
+
+  // The sheet is in front of the player: today is spent, on every device.
+  // Once per day per mount; the server keeps the first mark.
+  const shownFor = useRef<string | null>(null);
+  const statusToday = status?.eligible ? status.today : null;
+  const statusShown = status?.shown_today ?? true;
+  useEffect(() => {
+    if (!statusToday || statusShown || shownFor.current === statusToday) return;
+    shownFor.current = statusToday;
+    void dailyBonusService.markShown();
+  }, [statusToday, statusShown]);
 
   // Modal chrome: lock scroll, focus the close control, Escape closes.
   useEffect(() => {

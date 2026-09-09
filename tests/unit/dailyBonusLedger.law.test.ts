@@ -170,6 +170,30 @@ describe('daily bonus ledger law', () => {
     expect(order).not.toContain('GRANT EXECUTE');
   });
 
+  it('the popup is one per day on every device: the mark lives on the day row', () => {
+    const once = migration('the_daily_bonus_pops_up_once_a_day_on_every_device');
+    expect(once).toContain('ADD COLUMN IF NOT EXISTS sheet_shown_at timestamptz');
+    expect(once).toContain('CREATE OR REPLACE FUNCTION public.fn_ca_daily_bonus_mark_shown()');
+    expect(once).toContain('SET sheet_shown_at = COALESCE(sheet_shown_at, now())');
+    expect(once).toContain("'shown_today', v_day.sheet_shown_at IS NOT NULL");
+    expect(once).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_ca_daily_bonus_mark_shown() TO authenticated, service_role'
+    );
+    for (const primitive of CHIP_CREDIT_PRIMITIVES) {
+      expect(once.replace(/fn_ca_mint_supply/g, ''), primitive).not.toContain(primitive);
+    }
+    const fragment = join(
+      process.cwd(),
+      'scripts/ci/schema-manifest.d/claude-dailybonus-audit.json'
+    );
+    const json = JSON.parse(readFileSync(fragment, 'utf8')) as {
+      functions: string[];
+      columns: Record<string, string[]>;
+    };
+    expect(json.functions).toContain('fn_ca_daily_bonus_mark_shown');
+    expect(json.columns.ca_daily_bonus_days).toContain('sheet_shown_at');
+  });
+
   it('the schema fragment declares every new object for the phantom gates', () => {
     const fragment = join(process.cwd(), 'scripts/ci/schema-manifest.d/cw-dailybonus.json');
     expect(existsSync(fragment)).toBe(true);

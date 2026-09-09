@@ -96,7 +96,18 @@ export function isQuietPath(pathname: string): boolean {
   );
 }
 
-/** Whether a status answer should raise the sheet for this account. */
+/**
+ * Whether a status answer should raise the sheet for this account: one popup
+ * per Chicago day (Dan, 2026-09-09), and only while a tile is still there to
+ * claim. `shown_today` is the server's mark, set the first time the sheet is
+ * put in front of the player from ANY device; the local mark is the same
+ * fact for the moments the server write is still in flight.
+ */
 export function shouldOpenSheet(status: DailyBonusStatus, userId: string): boolean {
-  return status.eligible && status.unclaimed > 0 && !wasSeenToday(userId, status.today);
+  return (
+    status.eligible &&
+    status.unclaimed > 0 &&
+    !status.shown_today &&
+    !wasSeenToday(userId, status.today)
+  );
 }

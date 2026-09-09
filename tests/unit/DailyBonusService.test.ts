@@ -35,6 +35,7 @@ const STATUS = {
   multiplier: 1.2,
   is_vip: false,
   claimed_today: false,
+  shown_today: false,
   unclaimed: 3,
   tiles: [
     {
@@ -176,7 +177,17 @@ describe('DailyBonusService', () => {
     const status = await dailyBonusService.getStatus();
     expect(status.unclaimed).toBe(0);
     expect(status.seconds_to_reset).toBe(0);
+    expect(status.shown_today).toBe(false);
     expect(status.tiles).toEqual([]);
+  });
+
+  it('marks today shown through its own RPC and swallows a failure (the local mark covers it)', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { success: true }, error: null });
+    await dailyBonusService.markShown();
+    expect(mocks.rpc).toHaveBeenCalledWith('fn_ca_daily_bonus_mark_shown');
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(dailyBonusService.markShown()).resolves.toBeUndefined();
+    expect(mocks.reportError).toHaveBeenCalled();
   });
 
   it('maps every server reason to Title Case copy and reads an unknown one as itself', () => {

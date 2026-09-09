@@ -12,7 +12,16 @@ the feature has written so far (7 bonus days, 6 claims, 3 accounts).
 
 ## Fixed
 
-- **The sheet did not come back on a repeated visit.** `DailyBonusEntry`
+- **ONE POPUP PER DAY, on every device** (Dan: "ITS NOT SUPPOSED TO COME BACK,
+  JUST ONE POP UP PER DAY, NOT EVERYTIME YOU OPEN IT"). The seen-mark was
+  written to localStorage when the sheet was CLOSED, so a tab closed with the
+  sheet still up showed it again next open, and a second device showed it
+  again regardless. Showing it now spends the day: the entry marks the day
+  the moment the sheet is raised, and the sheet records `sheet_shown_at` on
+  the player's day row through `fn_ca_daily_bonus_mark_shown` (also from the
+  /bonuses page), which `fn_ca_daily_bonus_status` reports as `shown_today`
+  (`20260909211100_the_daily_bonus_pops_up_once_a_day_on_every_device`).
+- **The sheet did not come back on a NEW day for a tab left open.** `DailyBonusEntry`
   asked once per mount, which is not once per day: a PWA or tab left open
   overnight never asked again the next morning; a sign-out and sign-in as
   another account inherited the first account's answer; one dropped request
@@ -75,7 +84,9 @@ the feature has written so far (7 bonus days, 6 claims, 3 accounts).
 
 ## Verification
 
-- Live probes (rolled back where they write): a claim naming yesterday is
+- Live probes (rolled back where they write): status reads `shown_today`
+  false, `fn_ca_daily_bonus_mark_shown` sets it, status then reads true; a
+  claim naming yesterday is
   refused `day_rolled_over` with nothing opened or paid; status returns the
   week with `chest`; a non-VIP member with a two-throw bonus credit and an
   untouched allowance draws the credit first (`expiring: true,

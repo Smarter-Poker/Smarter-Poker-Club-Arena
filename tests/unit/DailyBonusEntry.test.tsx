@@ -50,6 +50,7 @@ const status = (over: Record<string, unknown> = {}) => ({
   today: '2026-09-08',
   reset_at: RESET,
   seconds_to_reset: 9 * 3600,
+  shown_today: false,
   unclaimed: 2,
   tiles: [],
   ...over,
@@ -89,8 +90,31 @@ describe('DailyBonusEntry', () => {
     expect(shouldOpenSheet(status() as never, 'u1')).toBe(true);
     expect(shouldOpenSheet(status({ unclaimed: 0 }) as never, 'u1')).toBe(false);
     expect(shouldOpenSheet(status({ eligible: false }) as never, 'u1')).toBe(false);
+    expect(shouldOpenSheet(status({ shown_today: true }) as never, 'u1')).toBe(false);
     localStorage.setItem('ca_daily_bonus_seen:u1:2026-09-08', '1');
     expect(shouldOpenSheet(status() as never, 'u1')).toBe(false);
+  });
+
+  it('one popup per day: showing it spends the day, even if the tab is closed with the sheet still up', async () => {
+    mocks.getStatus.mockResolvedValue(status());
+    const first = render(<DailyBonusEntry />);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    // Marked the moment it is shown, before any close.
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(true);
+    first.unmount(); // the tab closes with the sheet open
+
+    render(<DailyBonusEntry />);
+    await flush();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mocks.getStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('one popup per day across devices: a day the server says was shown elsewhere stays quiet', async () => {
+    mocks.getStatus.mockResolvedValue(status({ shown_today: true }));
+    render(<DailyBonusEntry />);
+    await flush();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(quietUntil('u1')).toBe(Date.parse(RESET));
   });
 
   it('opens on entry and, once dismissed, stays down for that account and day without another read', async () => {

@@ -69,12 +69,16 @@ for a free player.
 
 ## The entry sheet (phase 2, live; re-audited 2026-09-09)
 
-`DailyBonusEntry` (hub home and the AppLayout shell) asks
-`fn_ca_daily_bonus_status` once per (account, Chicago day) and raises the
-modal sheet when today still has an unclaimed tile. It asks again when the
-tab is looked at, focused or back online after the server's midnight, on a
-timer at that midnight, on an account change, and on a bounded retry after a
-failed read. Dismissing is remembered per day in localStorage; a "nothing to
-show" answer per tab in sessionStorage until midnight. It never opens on a
+ONE POPUP PER DAY, on every device (Dan, 2026-09-09). `DailyBonusEntry` (hub
+home and the AppLayout shell) asks `fn_ca_daily_bonus_status` once per
+(account, Chicago day) and raises the modal sheet when today still has an
+unclaimed tile AND the sheet has not been shown yet (`shown_today`, from
+`ca_daily_bonus_days.sheet_shown_at`, set by `fn_ca_daily_bonus_mark_shown`
+the moment the sheet is in front of the player, popup or /bonuses page, from
+any device). Showing it spends the day; closing it is not what counts. It
+asks again only for a NEW day: when the tab is looked at, focused or back
+online after the server's midnight, on a timer at that midnight, on an
+account change, and on a bounded retry after a failed read. A "nothing to
+show" answer is kept per tab in sessionStorage until midnight. It never opens on a
 table, on /multi-table, on /bonuses (the inline sheet), or over the welcome
 and profile gates. See `docs/changelog/2026-09-09-the-daily-bonus-audit.md`.

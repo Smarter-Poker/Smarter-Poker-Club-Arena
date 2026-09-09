@@ -33,6 +33,7 @@ const status = (): DailyBonusStatus => ({
   multiplier: 1.5,
   is_vip: true,
   claimed_today: false,
+  shown_today: false,
   unclaimed: 3,
   tiles: [
     tile({ slot: 1, diamonds: 75 }),

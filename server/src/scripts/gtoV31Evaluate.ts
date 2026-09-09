@@ -12,7 +12,9 @@
  */
 
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
+  buildGtoV31EvaluationScenarios,
   runGtoV31EvaluationFamily,
   type GtoV31EvaluationFamily,
   type GtoV31EvaluationKind,
@@ -27,6 +29,7 @@ import { supabase } from '../services/supabase/client.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FAMILIES: GtoV31EvaluationFamily[] = ['cash', 'spin', 'tourney_ev', 'tourney_icm'];
 const KINDS: GtoV31EvaluationKind[] = ['paired_replay', 'league'];
+const HEX40 = /^[0-9a-f]{40}$/;
 
 interface StatusEvaluation {
   kind: GtoV31EvaluationKind | 'heldout';
@@ -64,8 +67,76 @@ function snakeComponents(result: Awaited<ReturnType<typeof runGtoV31EvaluationFa
     illegal_actions: component.illegalActions,
     truncated_streets: component.truncatedStreets,
     candidate_policy_hits: component.candidatePolicyHits,
+    candidate_execution_mismatches: component.candidateExecutionMismatches,
     candidate_node_roles: component.candidateNodeRoles,
   }));
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  }
+  const scalar = JSON.stringify(value);
+  if (scalar === undefined) throw new Error('evaluation configuration is not JSON');
+  return scalar;
+}
+
+function evaluationProfile(kind: GtoV31EvaluationKind): string {
+  return kind === 'paired_replay'
+    ? 'policy_only_duplicate_deals'
+    : 'full_brain_duplicate_deal_league';
+}
+
+function evaluationEngineCommit(): string {
+  const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  }).trim();
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  if (!HEX40.test(head)) throw new Error('cannot prove the evaluation engine commit');
+  const worktreeChanges = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim();
+  if (worktreeChanges) {
+    throw new Error('the evaluation checkout is not clean; commit or remove changes before gating');
+  }
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', head, 'origin/main'], {
+      cwd: root,
+      stdio: 'ignore',
+    });
+  } catch {
+    throw new Error('the evaluation engine commit is not published on origin/main');
+  }
+  const declared = process.env.GIT_COMMIT_SHA?.trim().toLowerCase();
+  if (declared && (!HEX40.test(declared) || declared !== head)) {
+    throw new Error(`GIT_COMMIT_SHA does not match the checked-out evaluation engine (${head})`);
+  }
+  return head;
+}
+
+function evaluationConfig(args: {
+  datasetChecksum: string;
+  kind: GtoV31EvaluationKind;
+  family: GtoV31EvaluationFamily;
+  scenarios: string[];
+  engineCommit: string;
+}) {
+  return {
+    evaluation_contract: 'gto_v31_candidate.v2',
+    evaluation_kind: args.kind,
+    game_family: args.family,
+    dataset_checksum: args.datasetChecksum,
+    candidate: 'v31_certified',
+    evaluation_profile: evaluationProfile(args.kind),
+    scenarios: args.scenarios,
+    evaluation_engine_commit: args.engineCommit,
+  };
 }
 
 async function certificationStatus(datasetId: string): Promise<DatasetStatus> {
@@ -80,14 +151,19 @@ async function certificationStatus(datasetId: string): Promise<DatasetStatus> {
   return datasets[0];
 }
 
-async function existingResult(runDate: string, matchup: string): Promise<number | null> {
+async function existingResult(args: {
+  runDate: string;
+  matchup: string;
+  configA: Record<string, unknown>;
+  configB: Record<string, unknown>;
+}): Promise<number | null> {
   const { data, error } = await supabase
     .from('horse_league_results')
     .select(
-      'id,hands,illegal_actions,truncated_streets,candidate_policy_hits,candidate_benchmark_components'
+      'id,hands,illegal_actions,truncated_streets,candidate_policy_hits,candidate_execution_mismatches,candidate_benchmark_components,config_a,config_b'
     )
-    .eq('run_date', runDate)
-    .eq('matchup', matchup)
+    .eq('run_date', args.runDate)
+    .eq('matchup', args.matchup)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
@@ -97,17 +173,32 @@ async function existingResult(runDate: string, matchup: string): Promise<number 
     illegal_actions: number;
     truncated_streets: number;
     candidate_policy_hits: number;
+    candidate_execution_mismatches: number;
     candidate_benchmark_components: unknown[];
+    config_a: unknown;
+    config_b: unknown;
   };
   if (
     row.hands < 10_000 ||
     row.illegal_actions !== 0 ||
     row.truncated_streets !== 0 ||
     row.candidate_policy_hits <= 0 ||
+    row.candidate_execution_mismatches !== 0 ||
     !Array.isArray(row.candidate_benchmark_components) ||
-    row.candidate_benchmark_components.length === 0
+    row.candidate_benchmark_components.length === 0 ||
+    row.candidate_benchmark_components.some(
+      (component) =>
+        !component ||
+        typeof component !== 'object' ||
+        (component as { candidate_execution_mismatches?: unknown })
+          .candidate_execution_mismatches !== 0
+    ) ||
+    canonicalJson(row.config_a) !== canonicalJson(args.configA) ||
+    canonicalJson(row.config_b) !== canonicalJson(args.configB)
   ) {
-    throw new Error(`existing evaluation result ${row.id} is incomplete; refusing to overwrite it`);
+    throw new Error(
+      `existing evaluation result ${row.id} is incomplete or has different provenance; refusing to reuse it`
+    );
   }
   return row.id;
 }
@@ -116,12 +207,23 @@ async function persistEvaluation(args: {
   datasetId: string;
   datasetChecksum: string;
   incumbentChecksum: string;
+  engineCommit: string;
   kind: GtoV31EvaluationKind;
   family: GtoV31EvaluationFamily;
 }): Promise<void> {
   const runDate = new Date().toISOString().slice(0, 10);
-  const matchup = `gto_v31_${args.kind}_${args.family}_${args.datasetChecksum.slice(0, 12)}`;
-  let resultId = await existingResult(runDate, matchup);
+  const matchup = `gto_v31_${args.kind}_${args.family}_${args.datasetChecksum}`;
+  const scenarios = buildGtoV31EvaluationScenarios(
+    args.family,
+    args.kind,
+    args.datasetChecksum
+  ).map((scenario) => scenario.key);
+  const configA = evaluationConfig({ ...args, scenarios });
+  const configB = {
+    incumbent_dataset_checksum: args.incumbentChecksum,
+    candidate: 'incumbent',
+  };
+  let resultId = await existingResult({ runDate, matchup, configA, configB });
   if (resultId === null) {
     const result = await runGtoV31EvaluationFamily({
       family: args.family,
@@ -133,13 +235,17 @@ async function persistEvaluation(args: {
       result.hands < 10_000 ||
       result.illegalActions !== 0 ||
       result.truncatedStreets !== 0 ||
+      result.candidateExecutionMismatches !== 0 ||
       result.candidatePolicyHits <= 0 ||
-      result.benchmarkComponents.some((component) => component.candidatePolicyHits <= 0)
+      result.benchmarkComponents.some(
+        (component) =>
+          component.candidatePolicyHits <= 0 || component.candidateExecutionMismatches !== 0
+      )
     ) {
       throw new Error(
         `${args.kind}/${args.family} did not safely exercise the candidate in every context: ` +
           `hands=${result.hands} hits=${result.candidatePolicyHits} illegal=${result.illegalActions} ` +
-          `truncated=${result.truncatedStreets}`
+          `truncated=${result.truncatedStreets} execution_mismatches=${result.candidateExecutionMismatches}`
       );
     }
     const { data, error } = await supabase
@@ -150,26 +256,13 @@ async function persistEvaluation(args: {
         hands: result.hands,
         bb100: result.bb100,
         stderr: result.stderr,
-        config_a: {
-          evaluation_contract: 'gto_v31_candidate.v1',
-          evaluation_kind: args.kind,
-          game_family: args.family,
-          dataset_checksum: args.datasetChecksum,
-          candidate: 'v31_certified',
-          evaluation_profile:
-            args.kind === 'paired_replay'
-              ? 'policy_only_duplicate_deals'
-              : 'full_brain_duplicate_deal_league',
-          scenarios: result.benchmarkComponents.map((component) => component.scenario),
-        },
-        config_b: {
-          incumbent_dataset_checksum: args.incumbentChecksum,
-          candidate: 'incumbent',
-        },
+        config_a: configA,
+        config_b: configB,
         duration_ms: result.durationMs,
         illegal_actions: result.illegalActions + result.truncatedStreets,
         truncated_streets: result.truncatedStreets,
         candidate_policy_hits: result.candidatePolicyHits,
+        candidate_execution_mismatches: result.candidateExecutionMismatches,
         candidate_node_roles: result.candidateNodeRoles,
         candidate_benchmark_components: snakeComponents(result),
       })
@@ -204,6 +297,7 @@ async function main(): Promise<void> {
   if (!datasetId || !UUID.test(datasetId)) {
     throw new Error('--dataset=<uuid> is required');
   }
+  const engineCommit = evaluationEngineCommit();
   await loadGtoPostflopV31();
   const incumbentChecksum = gtoPostflopV31Dataset()?.checksum ?? 'legacy_v30';
   const loaded = await loadGtoPostflopV31Evaluation(datasetId);
@@ -231,6 +325,7 @@ async function main(): Promise<void> {
         datasetId,
         datasetChecksum: loaded.checksum,
         incumbentChecksum,
+        engineCommit,
         kind,
         family,
       });

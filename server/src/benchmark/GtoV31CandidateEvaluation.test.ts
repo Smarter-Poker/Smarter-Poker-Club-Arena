@@ -63,6 +63,7 @@ describe('V31 candidate promotion card', () => {
         illegalActions: 0,
         truncatedStreets: 0,
         candidatePolicyHits: 12,
+        candidateExecutionMismatches: 0,
         candidateNodeRoles: ['open'],
       },
       {
@@ -74,6 +75,7 @@ describe('V31 candidate promotion card', () => {
         illegalActions: 0,
         truncatedStreets: 0,
         candidatePolicyHits: 18,
+        candidateExecutionMismatches: 0,
         candidateNodeRoles: ['facing_bet'],
       },
     ];
@@ -82,6 +84,7 @@ describe('V31 candidate promotion card', () => {
     expect(result.bb100).toBeCloseTo(0.2, 10);
     expect(result.stderr).toBeCloseTo(Math.sqrt(4_000 ** 2 + (2 * 6_000) ** 2) / 10_000, 10);
     expect(result.candidatePolicyHits).toBe(30);
+    expect(result.candidateExecutionMismatches).toBe(0);
     expect(result.candidateNodeRoles).toEqual(['facing_bet', 'open']);
     expect(result.benchmarkComponents).toEqual(components);
   });

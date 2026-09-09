@@ -755,6 +755,7 @@ interface TableState {
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   fixedBetSize?: number;
   fixedRaiseSize?: number;
+  potLimitPot?: number;
   wagersCapped?: boolean;
 
   currentBet?: number;
@@ -2625,6 +2626,7 @@ export default function TablePage({
         bettingStructure: mapped.bettingStructure,
         fixedBetSize: mapped.fixedBetSize,
         fixedRaiseSize: mapped.fixedRaiseSize,
+        potLimitPot: mapped.potLimitPot,
         wagersCapped: mapped.wagersCapped,
 
         sidePots: mapped.sidePots.map((sp, i) => ({
@@ -5874,7 +5876,11 @@ export default function TablePage({
       tableState.bettingStructure ?? bettingStructureFor(tableState.gameType?.toLowerCase() || '');
     const isPotLimit = structure === 'pot_limit';
     const isFixedLimit = structure === 'fixed_limit';
-    const potLimitRaiseTo = potSizedRaiseTo(serverCurrentBet, tableState.pot, callAmount);
+    const potLimitRaiseTo = potSizedRaiseTo(
+      serverCurrentBet,
+      tableState.potLimitPot ?? tableState.pot,
+      callAmount
+    );
     const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
     const flWagerTo = Math.min(
       allInTo,
@@ -5901,6 +5907,7 @@ export default function TablePage({
     tableState.bettingStructure,
     tableState.gameType,
     tableState.pot,
+    tableState.potLimitPot,
     tableState.fixedBetSize,
     tableState.fixedRaiseSize,
     tableState.boardStage,
@@ -24636,7 +24643,7 @@ export default function TablePage({
                   // engine FIX 142 (never over-offer past the server's clamp).
                   const potLimitRaiseTo = potSizedRaiseTo(
                     serverCurrentBet,
-                    tableState.pot,
+                    tableState.potLimitPot ?? tableState.pot,
                     callAmount
                   );
 

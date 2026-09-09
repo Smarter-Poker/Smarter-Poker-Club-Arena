@@ -29,6 +29,7 @@ import {
   bettingStructureFor,
   fixedLimitBetSize,
   fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import type { GameState } from '../types.js';
@@ -178,6 +179,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
 
   private bettingStructureFields(state: GameState): {
     betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+    pot_limit_pot?: number;
     fixed_bet_size?: number;
     fixed_raise_size?: number;
     wagers_capped?: boolean;
@@ -187,6 +189,9 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // draws a no-limit slider and has every drag rejected.
     const variant = this.activeHandVariant();
     const structure = bettingStructureFor(variant);
+    if (structure === 'pot_limit') {
+      return { betting_structure: structure, pot_limit_pot: potLimitBettingPot(state) };
+    }
     if (structure !== 'fixed_limit') return { betting_structure: structure };
     const stage = state.stage ?? 'preflop';
     return {

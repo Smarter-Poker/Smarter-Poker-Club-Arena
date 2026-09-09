@@ -15,6 +15,7 @@ import {
   isFixedLimitVariant,
   fixedLimitBetSize,
   fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
   substituteOnCappedStreet,
   type BettingStructure,
@@ -1474,7 +1475,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // Previous formula (pot + toCall + toCall) was one toCall too permissive.
       // For a BET (toCall=0): maxBet = pot. For a RAISE: maxRaiseSize = pot + toCall.
       // This matches PokerEngine.calculateBettingState (FIX 121).
-      potLimitMaxBet = state.pot + toCall;
+      potLimitMaxBet = potLimitBettingPot(state) + toCall;
     }
 
     // Fixed limit has exactly one legal wager size per street, so a client that
@@ -1843,7 +1844,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const structure = bettingStructureFor(variant);
     let betSize: number | undefined;
     if (structure === 'pot_limit') {
-      const potLimitMaxBet = state.pot + toCall;
+      const potLimitMaxBet = potLimitBettingPot(state) + toCall;
       const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
       maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
     } else if (structure === 'fixed_limit') {

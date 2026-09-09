@@ -157,25 +157,26 @@ describe('the only completion door is atomic, retryable and lock bounded', () =>
     expect(CODE).not.toContain('completion-state substitution is ambiguous');
   });
 
-  it('all engine tails leave COMPLETED to the atomic domain RPCs', () => {
-    expect(ELIMINATIONS).toContain('claimTournamentFinish(');
+  it('all engine tails leave COMPLETED to the one stored-receipt authority', () => {
+    expect(ELIMINATIONS).toContain('requestTournamentTerminalReceipt(');
+    expect(ELIMINATIONS).toContain('processSatelliteAwards(tournament, winnerId)');
+    expect(ELIMINATIONS).not.toContain('claimTournamentFinish(');
     expect(ELIMINATIONS).not.toContain('certifyTournamentFinish(');
-    expect(ELIMINATIONS).toContain('settleTournamentPlacesAtomically(');
-    expect(ELIMINATIONS).toContain('settleFinalTableDealAtomically(');
-    expect(ELIMINATIONS).toContain('settleSatelliteFinishAtomically(');
+    expect(ELIMINATIONS).not.toContain('settleTournamentPlacesAtomically(');
+    expect(ELIMINATIONS).not.toContain('settleFinalTableDealAtomically(');
     expect(RECOVERY).not.toContain('certifyTournamentFinish(');
+    expect(RECOVERY).toContain('requestTournamentTerminalReceipt(');
+    expect(RECOVERY).toContain('requestSatelliteSettlementReceipt(');
     expect(`${ELIMINATIONS}\n${RECOVERY}`).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
   });
 
-  it('drains only durable bounty obligations before recovery can certify completion', () => {
-    const start = RECOVERY.indexOf('async function drainTournamentBountyObligations(');
-    const end = RECOVERY.indexOf('export async function recoverStuckCompletingTournaments(', start);
-    const drain = RECOVERY.slice(start, end);
-    expect(start).toBeGreaterThan(-1);
-    expect(drain).toContain("supabase.rpc('fn_sweep_pending_tournament_bounties'");
-    expect(drain).not.toContain('for (;;)');
-    expect(drain).not.toContain('backfill_may_have_more');
-    expect(drain).not.toContain('setImmediate(resolve)');
-    expect(RECOVERY.match(/drainTournamentBountyObligations\(t\.id\)/g)).toHaveLength(2);
+  it('recovery never recreates or drains child money beside the terminal receipt', () => {
+    expect(RECOVERY).not.toContain('drainTournamentBountyObligations(');
+    expect(RECOVERY).not.toContain("supabase.rpc('fn_sweep_pending_tournament_bounties'");
+    expect(RECOVERY).not.toContain('fn_settle_tournament_obligation');
+    expect(RECOVERY).not.toContain('fn_settle_satellite_finish_atomic');
+    expect(RECOVERY).not.toContain('fn_settle_tournament_places_atomic');
+    expect(RECOVERY.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+    expect(RECOVERY.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
   });
 });

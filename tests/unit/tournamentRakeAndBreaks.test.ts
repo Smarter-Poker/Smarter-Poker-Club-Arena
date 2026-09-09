@@ -25,7 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceMethod } from '../helpers/sourceWindow';
+import { blankNonCode, sliceMethod } from '../helpers/sourceWindow';
 import { isShortFormat } from '../../server/src/tournament/breakEligibility';
 
 const GAME_SERVER = readFileSync(resolve(__dirname, '../../server/src/GameServer.ts'), 'utf8');
@@ -231,7 +231,7 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
       resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
       'utf8'
     );
-    const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
+    const fn = sliceMethod(ENGINE, 'isPausedByDesign(): boolean');
     /* Resolved with #2705, which fixed the same red pin concurrently by
        re-pinning all three terms as one adjacent sequence. That is the shape
        that has now broken twice: #2695 inserted `maintenancePaused` between
@@ -243,11 +243,19 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
        Checked that this still catches the regressions the pin exists for:
        deleting `maintenancePaused` (the exact 1204-hands bug) fails it, and
        flipping the || to && fails it. */
-    const body = fn.slice(0, fn.indexOf('\n  }'));
-    expect(body).toMatch(/this\.handForHandPaused/);
-    expect(body).toMatch(/this\.maintenancePaused/);
+    const body = fn;
+    const code = blankNonCode(body);
+    expect(code).toMatch(/this\.handForHandPaused/);
+    expect(code).toMatch(/this\.maintenancePaused/);
     expect(body).toMatch(/this\.tableFSM\.state === 'paused'/);
-    expect(body).not.toMatch(/&&/);
+
+    // An armed move can still be landing its current hand. It counts as a
+    // deliberate pause only after the dealing loop has physically parked at
+    // the gate; every other pause authority remains an independent disjunct.
+    const parkedMove =
+      /\(this\.tournamentMovePauseOwners\.size > 0\s*&&\s*this\.handForHandResolve !== null\)/;
+    expect(code).toMatch(parkedMove);
+    expect(code.replace(parkedMove, '')).not.toMatch(/&&/);
   });
 });
 
@@ -617,11 +625,14 @@ describe('a paused table parks whatever it was doing', () => {
      * step that publishes the bundle, so a cosmetic red here stops every
      * deploy on the platform.
      */
-    const release = sliceMethod(ENGINE_BASE, 'releasePauseGate()');
+    // Use the declaration as the anchor. Terminal closeout now calls this
+    // helper before its declaration, so the shorter anchor would slice that
+    // caller rather than the method it is supposed to guard.
+    const release = sliceMethod(ENGINE_BASE, 'private releasePauseGate(): void');
     expect(release).toMatch(/this\.holdBeforeNextHand = false/);
     expect(release).toMatch(/this\.pauseMaxWaitMs = null/);
     // And resumeDealing must still route through it rather than half-resuming.
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing(): void');
     expect(resume).toMatch(/this\.releasePauseGate\(\)/);
   });
 
@@ -634,12 +645,24 @@ describe('a paused table parks whatever it was doing', () => {
      * hand inside the break AND destroyed the break's pause budget on the way
      * through, so the table self-resumed two minutes into a five minute break.
      */
-    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
-    expect(resume).toMatch(/if \(this\.maintenancePaused \|\| this\.finalTableDealPaused\)/);
+    const resume = blankNonCode(sliceMethod(ENGINE_BASE, 'resumeDealing(): void'));
+    const resumeGate = /if\s*\(([\s\S]*?)\)\s*\{\s*this\.pausedSinceMs/.exec(resume)?.[1];
+    expect(resumeGate).toBeDefined();
+    expect(resumeGate).toContain('this.tournamentMovePauseOwners.size > 0');
+    expect(resumeGate).toContain('this.maintenancePaused');
+    expect(resumeGate).toContain('this.finalTableDealPaused');
+    expect(resumeGate).toContain('this.terminalCloseoutPaused');
+    expect(resumeGate).not.toMatch(/&&/);
     // The maintenance resume is the mirror image: it must not lift a
-    // hand-for-hand pause it did not set.
-    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance()');
-    expect(maint).toMatch(/if \(this\.handForHandPaused \|\| this\.finalTableDealPaused\) return/);
+    // hand-for-hand or tournament-move pause it did not set.
+    const maint = blankNonCode(sliceMethod(ENGINE_BASE, 'resumeFromMaintenance(): void'));
+    const maintenanceGate = /if\s*\(([\s\S]*?)\)\s*return;/.exec(maint)?.[1];
+    expect(maintenanceGate).toBeDefined();
+    expect(maintenanceGate).toContain('this.tournamentMovePauseOwners.size > 0');
+    expect(maintenanceGate).toContain('this.handForHandPaused');
+    expect(maintenanceGate).toContain('this.finalTableDealPaused');
+    expect(maintenanceGate).toContain('this.terminalCloseoutPaused');
+    expect(maintenanceGate).not.toMatch(/&&/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

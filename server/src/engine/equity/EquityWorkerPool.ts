@@ -18,13 +18,7 @@ const RESPAWN_DELAY_MS = 250;
 const DEFAULT_RESPAWN_BUDGET = 10;
 
 export type EquityWorkerPoolPhase =
-  | 'idle'
-  | 'starting'
-  | 'ready'
-  | 'degraded'
-  | 'failed'
-  | 'stopping'
-  | 'stopped';
+  'idle' | 'starting' | 'ready' | 'degraded' | 'failed' | 'stopping' | 'stopped';
 
 export interface EquityWorkerPoolStatus {
   phase: EquityWorkerPoolPhase;

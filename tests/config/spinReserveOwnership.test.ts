@@ -30,9 +30,10 @@
  *      was dropped while a cached client still selected it, the hook
  *      swallowed the error, and the badge went dark for real users.
  *
- *   4. The engine growing its own opinion about which pool to use. It identifies
- *      the tournament and the database reads its club and resolves — that is what keeps a
- *      cached client from ever being out of contract with the money path.
+ *   4. The engine growing its own opinion about which pool to use. It passes
+ *      only the immutable tournament identity to the atomic authority; the
+ *      database reads the playing club and resolves the reserve owner under
+ *      the same lock that commits the draw.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -48,8 +49,11 @@ const tsCode = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const MIGRATION = 'supabase/migrations/20260822030000_union_level_spin_reserve_wallet.sql';
+const ATOMIC_MIGRATION =
+  'supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql';
 
 const migration = sqlCode(read(MIGRATION));
+const atomicMigration = sqlCode(read(ATOMIC_MIGRATION));
 const engine = tsCode(read('server/src/tournament/TournamentManagerBase.ts'));
 
 /** The body of one CREATE [OR REPLACE] FUNCTION, bounded by its own $$ pair. */
@@ -154,28 +158,36 @@ describe('Spin reserve ownership', () => {
     expect(migration).toMatch(/'merge', r\.balance/);
   });
 
-  it('resolves the playing club inside the atomic funded draw', () => {
-    // Only the tournament identity crosses the engine boundary. The locked
-    // database row supplies the playing club to the existing owner resolver.
+  it('keeps reserve ownership inside the launch-bound atomic database authority', () => {
     const call = sliceCall(engine, "supabase.rpc('fn_spin_draw_and_settle_atomic'");
     expect(call).toMatch(/p_tournament_id:\s*this\.tournamentId/);
+    expect(call).toMatch(/p_launch_id:\s*launchId/);
+    expect(call).toMatch(/p_lease_generation:\s*this\.tournamentLeaseGeneration/);
+    expect(call).toMatch(/p_rule_manifest:\s*ruleManifest/);
     expect(call).not.toMatch(/p_club_id|p_union_id|union_id/);
+
+    // The two old process-side doors remain database primitives during the
+    // rolling migration, but the live engine may no longer call either one.
     expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
 
-    const atomic = sqlCode(
-      read('supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql')
+    const authority = (() => {
+      const start = atomicMigration.indexOf(
+        'CREATE OR REPLACE FUNCTION public.fn_spin_draw_and_settle_atomic('
+      );
+      expect(start).toBeGreaterThan(-1);
+      const source = atomicMigration.slice(start);
+      const open = source.indexOf('AS $function$');
+      const close = source.indexOf('$function$;', open + 1);
+      expect(open).toBeGreaterThan(-1);
+      expect(close).toBeGreaterThan(open);
+      return source.slice(open, close);
+    })();
+    expect(authority).toMatch(
+      /SELECT \* INTO v_t FROM public\.tournaments WHERE id = p_tournament_id/
     );
-    const start = atomic.indexOf('FUNCTION public.fn_spin_draw_and_settle_atomic(');
-    expect(start).toBeGreaterThan(-1);
-    const open = atomic.indexOf('AS $function$', start);
-    expect(open).toBeGreaterThan(start);
-    const close = atomic.indexOf('$function$;', open + 13);
-    expect(close).toBeGreaterThan(open);
-    const body = atomic.slice(open, close);
-    expect(body).toMatch(/SELECT \* INTO v_t FROM public\.tournaments WHERE id = p_tournament_id/);
-    expect(body).toMatch(/public\.fn_spin_draw_multiplier\(v_t\.club_id,\s*v_t\.buy_in_amount/);
-    expect(body).toMatch(
-      /public\.fn_spin_settle_game\(p_tournament_id,\s*v_t\.club_id,\s*v_t\.buy_in_amount/
+    expect(authority).toMatch(/public\.fn_spin_draw_multiplier\(v_t\.club_id, v_t\.buy_in_amount/);
+    expect(authority).toMatch(
+      /public\.fn_spin_settle_game\(p_tournament_id, v_t\.club_id,\s*v_t\.buy_in_amount/
     );
   });
 });

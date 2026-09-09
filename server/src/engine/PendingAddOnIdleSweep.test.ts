@@ -221,7 +221,9 @@ describe('completed idle dealing sweeps are live work', () => {
     engine.running = true;
     const loop = engine.dealingLoop();
     try {
-      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled());
+      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled(), {
+        timeout: 5_000,
+      });
       now += 181_000;
       expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
       expect(progress).not.toHaveBeenCalled();

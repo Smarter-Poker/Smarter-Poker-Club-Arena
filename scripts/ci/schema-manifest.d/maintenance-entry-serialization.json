@@ -29,7 +29,6 @@
     "fn_begin_tournament_launch_atomic",
     "fn_complete_tournament_launch_atomic",
     "fn_settle_satellite_finish_atomic_before_maintenance_gate",
-    "process_tournament_rebuy_before_maintenance_announcement_gate",
     "atomic_table_buyin_before_maintenance_announcement_gate",
     "atomic_table_rebuy_before_maintenance_announcement_gate",
     "atomic_table_addon_before_maintenance_announcement_gate",

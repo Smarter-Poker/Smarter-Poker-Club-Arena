@@ -756,20 +756,79 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (busted.length === 0) return;
           }
 
-          let bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
-
-          // A player who has just been refused goes to the BACK, so one that
-          // cannot be eliminated at all stops holding everyone behind him. The
-          // chip order still decides among players who have not refused, which
-          // is what assigns the finishing places; this only breaks the tie that
-          // zero-versus-zero leaves, and it decays the moment a player lands.
-          if (this.bustRefusalStreak.size > 0) {
-            bustedOrdered.sort(
-              (a, b) =>
-                (this.bustRefusalStreak.get(a.user_id) ?? 0) -
-                (this.bustRefusalStreak.get(b.user_id) ?? 0)
-            );
+          /**
+           * ═══════════════════════════════════════════════════════════════════
+           *  BUSTS ARE PROCESSED IN THE ORDER THEY HAPPENED (2026-09-09)
+           * ═══════════════════════════════════════════════════════════════════
+           *
+           * This sorted by chips, and every candidate here holds ZERO, so the
+           * order was whatever the database happened to return. That is wrong
+           * twice over.
+           *
+           * It is wrong for the STANDINGS, because the first entry takes the
+           * worst remaining place, and the player who busted first is the player
+           * who finished last. Chips cannot say who that was; the hand number
+           * can, and it is the witness that was actually there (10.9).
+           *
+           * And it is wrong for PKO MONEY. `fn_claim_bounty_legacy_candidate`
+           * keeps a per-tournament settlement watermark and refuses any claim
+           * for a hand BEFORE it - `pko_order_already_advanced` - because a
+           * progressive bounty's halves must settle in hand order. Out-of-order
+           * processing therefore does not merely reorder: it STRANDS. Measured
+           * on production 2026-09-09, as the elimination backlog from #3912
+           * began draining: 79 refusals in six minutes and 49 knockout
+           * candidates left permanently behind the watermark across ALL THREE
+           * live PKO events - 49 players who could never be eliminated and whose
+           * bounties could never be paid.
+           *
+           * Ordering by the hand the bust actually happened in makes the
+           * watermark advance monotonically, so it cannot overtake a claim that
+           * has not been made yet.
+           *
+           * The refusal streak still wins, because it is the deadlock breaker: a
+           * player who cannot be eliminated at all must not hold the queue.
+           * Chips remain the last resort, for a candidate with no recorded hand.
+           */
+          const bustHandNumbers = new Map<string, number>();
+          {
+            const { data: bustHands, error: bustHandsErr } = await supabase
+              .from('tournament_knockout_candidates')
+              .select('eliminated_user_id, hand_number')
+              .eq('tournament_id', this.tournamentId)
+              .eq('state', 'pending')
+              .in(
+                'eliminated_user_id',
+                busted.map((b) => b.user_id)
+              );
+            if (sweepStopped()) return;
+            // A read we could not make is UNKNOWN, not "no order": fall back to
+            // the chip tiebreak rather than inventing one. The watermark still
+            // refuses anything genuinely out of order, so this stays safe.
+            if (bustHandsErr) {
+              reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
+            } else {
+              for (const row of bustHands ?? []) {
+                const uid = String((row as { eliminated_user_id?: unknown }).eliminated_user_id);
+                const hand = Number((row as { hand_number?: unknown }).hand_number);
+                if (!uid || !Number.isFinite(hand)) continue;
+                const seen = bustHandNumbers.get(uid);
+                if (seen === undefined || hand < seen) bustHandNumbers.set(uid, hand);
+              }
+            }
           }
+
+          // UNKNOWN sorts LAST. A missing hand number must never claim it busted
+          // first and take a place that belongs to somebody the engine watched.
+          const bustRank = (userId: string): number =>
+            bustHandNumbers.get(userId) ?? Number.MAX_SAFE_INTEGER;
+
+          let bustedOrdered = [...busted].sort(
+            (a, b) =>
+              (this.bustRefusalStreak.get(a.user_id) ?? 0) -
+                (this.bustRefusalStreak.get(b.user_id) ?? 0) ||
+              bustRank(a.user_id) - bustRank(b.user_id) ||
+              (a.chips ?? 0) - (b.chips ?? 0)
+          );
 
           // TOURNEY-AUDIT 2026-07-24 [double-pay guard]: if EVERY remaining
           // player busted in the same sweep, the old loop handed position 1 to

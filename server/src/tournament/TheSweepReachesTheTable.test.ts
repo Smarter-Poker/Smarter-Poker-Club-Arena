@@ -94,13 +94,29 @@ describe('one un-eliminable player does not hold the queue for ever', () => {
     expect(ELIM).toMatch(/this\.bustRefusalStreak\.delete\(bustedOrdered\[i\]\.user_id\)/);
   });
 
-  it('orders refused players last without disturbing the chip order', () => {
+  it('orders refused players last, then by the hand the bust happened in', () => {
+    // The chip tiebreak became the LAST resort on 2026-09-09: every candidate
+    // here holds zero, so chips decided nothing, and the resulting arbitrary
+    // order stranded 49 PKO bounties behind the settlement watermark. The
+    // refusal streak still wins - it is the deadlock breaker - then the hand
+    // number, which is the witness to who actually busted first.
     const order = ELIM.slice(
       ELIM.indexOf('let bustedOrdered = [...busted].sort'),
       ELIM.indexOf('TOURNEY-AUDIT 2026-07-24')
     );
-    expect(order).toMatch(/\(a, b\) => \(a\.chips \?\? 0\) - \(b\.chips \?\? 0\)/);
     expect(order).toMatch(/this\.bustRefusalStreak\.get\(a\.user_id\) \?\? 0/);
+    expect(order).toMatch(/bustRank\(a\.user_id\) - bustRank\(b\.user_id\)/);
+    expect(order).toMatch(/\(a\.chips \?\? 0\) - \(b\.chips \?\? 0\)/);
+    expect(order.indexOf('bustRefusalStreak')).toBeLessThan(order.indexOf('bustRank(a.user_id)'));
+  });
+
+  it('reads the bust order from the knockout candidates, and treats a failed read as unknown', () => {
+    expect(ELIM).toMatch(
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number'\)/
+    );
+    expect(ELIM).toMatch(/'Tournament\.bust_order_unreadable'/);
+    // UNKNOWN must not sort to the front and claim a place it cannot prove.
+    expect(ELIM).toMatch(/bustHandNumbers\.get\(userId\) \?\? Number\.MAX_SAFE_INTEGER/);
   });
 });
 

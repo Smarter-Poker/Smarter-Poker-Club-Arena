@@ -14,7 +14,8 @@
       "id": "T02",
       "requirement": "Split total entry into disclosed prize, bounty and fee components. Verify all supported prices and promotional entries.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "entry_fee_disclosure"
     },
     {
       "id": "T03",
@@ -74,7 +75,8 @@
       "id": "T12",
       "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "confirmed_results_projection_gap",
+      "evidence": "result_payment_disclosure_review"
     },
     {
       "id": "K01",
@@ -123,13 +125,15 @@
       "id": "K08",
       "requirement": "Balance tables with the published seat-selection rule. Transfer scoring stacks once and preserve in-progress hands.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "blocked_live_database_move_authority_missing",
+      "evidence": "table_move_dependency_review"
     },
     {
       "id": "K09",
       "requirement": "Break tables and form the final table without missing/duplicating players. Test moves alongside elimination and reconnect.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "blocked_live_database_move_authority_missing",
+      "evidence": "table_move_dependency_review"
     },
     {
       "id": "K10",
@@ -246,7 +250,8 @@
       "id": "B04",
       "requirement": "Mystery activation follows the approved rebuy/add-on cutoff. A break alone must not enable early awards.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_source_and_catalog_verification",
+      "evidence": "mystery_activation_review"
     },
     {
       "id": "B05",
@@ -312,7 +317,7 @@
       "id": "AX09",
       "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
       "priority": "P0",
-      "status": "partial_behavioral_correction_pending_publication",
+      "status": "partial_behavioral_correction_deployed",
       "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
@@ -355,7 +360,8 @@
       "id": "BX14",
       "requirement": "Table balancing races blind posting and disconnect: player occupies one seat, stack transfers once, and forced bets are not duplicated.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "blocked_live_database_move_authority_missing",
+      "evidence": "table_move_dependency_review"
     }
   ],
   "first_correction": {
@@ -638,8 +644,9 @@
   "open_source_findings": [
     {
       "controls": ["S07"],
-      "status": "requires_concurrent_funding_and_authority_proof",
-      "finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending."
+      "status": "confirmed_defect_corrected_deployed_full_control_open",
+      "initial_finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending.",
+      "finding": "The atomic_spin_correction replaced the separate draw/settle and unbacked shortfall path. Database and engine adoption are verified. The full S07 control remains open beyond that bounded correction."
     },
     {
       "controls": ["AX07", "AX10"],
@@ -829,7 +836,7 @@
     "continue_audit_during_deployment": true
   },
   "satellite_cash_correction": {
-    "status": "source_ready_production_database_approval_blocked",
+    "status": "production_database_applied_verified_source_followup_blocked",
     "controls": ["T06", "B08"],
     "policy_source": "docs/LAWS.md and preserved Club Arena audit decision: eligible satellite unregisters use approved cash treatment",
     "baseline_observed": {
@@ -863,7 +870,7 @@
       "updated unapplied start migration plus repeated cash migration retains cash behavior"
     ],
     "fixture_limit": "23 captured table definitions and 19 real payment/escrow/ledger functions with selected actual money triggers; excludes production financial data, unrelated membership triggers and foreign keys. Not full database certification.",
-    "production_database_changed": false,
+    "production_database_changed": true,
     "publish_order": [
       "client accepts verified satellite cash receipt",
       "database correction after frontend adoption"
@@ -874,16 +881,15 @@
       "files": 4,
       "typescript_build_mode": "passed"
     },
-    "migration": "20260909214216_satellite_unregister_returns_its_funded_cash.sql",
-    "migration_sha256": "c0f87a2dc4e0392da09bba09ecc408a5f9b692045820113f84441d6f6da50ed6",
+    "migration": "20260909222303_satellite_unregister_returns_its_funded_cash.sql",
+    "migration_sha256": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
     "postgres17_scenario_groups_passed": 8,
-    "source_guard_tests_passed": 8,
     "reproducible_probe": "scripts/dev/probe-satellite-refund-pg17.py",
     "reserved_actual_start_migration": "20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
-    "reserved_actual_start_migration_applied": false,
+    "reserved_actual_start_migration_applied": true,
     "reserved_source_cash_compatibility_verified": true,
     "security_advisors_target_function_findings": 0,
-    "production_application_blocker": "Automatic approval review rejected apply_migration: repository publishing/deployment authorization did not explicitly authorize this production financial database mutation. No retry or indirect mutation performed.",
+    "production_application_blocker": null,
     "frontend": {
       "pr": 4029,
       "merge_commit": "6a2724ea096f6f69da8b17e2a789885bc30f896f",
@@ -892,6 +898,160 @@
       "sha": "65931a248c4f35b15e6dbd50aedd3b2f8d08a576",
       "publisher_run": 34408248982,
       "contains_client_merge": true
+    },
+    "actual_start_applied_version": "20260909215545",
+    "actual_start_applied_by_this_audit": false,
+    "historical_actual_start_source_modified": false,
+    "actual_start_cash_transform_matches_previously_tested_bodies": true,
+    "source_guard_tests_passed_before_restoring_applied_source": 8,
+    "source_publication": {
+      "pr": 4035,
+      "head": "fdcc2132e42421ec495c4c4cad6bd85ff6f2f524",
+      "merge_commit": "fb7d568b8b94ca96e7b391157a538eaeae7deb9c",
+      "passing_ci": 34410459871,
+      "forward_order_followup": "required after concurrent actual-start application"
+    },
+    "applied_version": "20260909222303",
+    "production_authorization": "User explicitly authorized applying the reviewed production cash-refund migration after the direct request in this audit chat, and instructed pushing and publishing without asking again.",
+    "production_verification": {
+      "observed_at": "2026-09-09T22:23:53.687172Z",
+      "all_three_bodies_match_reviewed_source": true,
+      "body_md5": {
+        "unregister": "ae14d16400db9481dd116bd251f7af83",
+        "receipt": "0fa946ec2bf3301db11465cd9b33fb9f",
+        "exact_payer": "0024ca5acfc4e4e12b51a4609349e98d"
+      },
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": false,
+      "new_ticket_issuance_removed": true,
+      "actual_start_rules_preserved": true
+    },
+    "source_followup": {
+      "pr": 4039,
+      "head": "fa2b5acc3aa64b07fc3e5ef1c2ab2d0ac6c13f26",
+      "passing_ci": 34412792078,
+      "blocked_check": "Silent Revert Guard",
+      "blocked_files": [
+        "supabase/migrations/20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
+        "tests/seat-first-unregistration-actual-start.guard.test.ts"
+      ],
+      "reason": "Intentional restoration of the now-applied historical migration requires revert-approved. Automatic approval review twice rejected the label because the user has not explicitly authorized this exact governance override. Publication and database authorization remain valid. No label or alternate bypass was applied.",
+      "ci_attempt": 2,
+      "ci_retry_reason": "PostgreSQL lost a shared-memory segment during the first run. The single failed job was retried through the normal API; attempt 2 passed without weakening source or assertions."
     }
+  },
+  "table_move_dependency_review": {
+    "observed_at": "2026-09-09T22:11:28.280556Z",
+    "engine_commit": "b53ad9b212cf586ffdc6fed888ad6b738c348191",
+    "controls": ["K08", "K09", "BX14"],
+    "installed_writer": false,
+    "installed_receipt_resolver": false,
+    "installed_receipt_table": false,
+    "writer": "fn_move_tournament_player",
+    "resolver": "fn_resolve_committed_tournament_seat_move",
+    "receipt_table": "tournament_seat_move_receipts",
+    "active_caller": "TournamentManager.executePlayerMovesOwned -> requestTournamentSeatMoveAtBoundary -> moveTournamentPlayerAtomically",
+    "source_migration": "20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql",
+    "resolver_migration": "20260909182952_a_committed_tournament_move_receipt_survives_lease_loss.sql",
+    "scope_boundary": "Existing writer migration also contains historical repairs and a maintenance cutover. It was not applied or split to evade those controls. No manual repair or alternate move writer introduced.",
+    "source_tests_reviewed": [
+      "TournamentMoveManagerBoundary.test.ts",
+      "tournamentSeatMoveRpc.test.ts",
+      "TournamentTableBreakRetirement.test.ts"
+    ],
+    "source_test_limit": "Manager and transport tests stub database effects; the separate PostgreSQL probe validates preseeded receipt lookup, not execution of a complete live move.",
+    "full_controls_closed": false,
+    "latest_catalog_read": {
+      "observed_at": "2026-09-09T22:29:42.145802Z",
+      "move_writer_present": false,
+      "move_resolver_present": false,
+      "terminal_writer_present": true,
+      "terminal_writer_body_md5": "589388ad7204fef460a1deebf32ecb69",
+      "terminal_outcome_resolver_present": true,
+      "terminal_resolver_body_md5": "4c151073f56b53e4b0363bdd916b78d4",
+      "terminal_service_only": true
+    }
+  },
+  "entry_fee_disclosure": {
+    "controls": ["T02"],
+    "status": "merged_frontend_adoption_verified",
+    "pr": 4047,
+    "head": "a9a18739f525d75c1e369ae91005a840a3b66933",
+    "source": "src/utils/buyIn.ts: formatBuyIn",
+    "defect": "Fractional entry fees rounded to whole chips in the lobby, signup and details surfaces.",
+    "correction": "Keep whole entry totals and use existing moneyExact for fee and remainder.",
+    "focused_tests_passed": 17,
+    "prepush_related_tests_passed": 596,
+    "prepush_source_pins_passed": 48,
+    "read_only_entry_split": {
+      "observed_at": "2026-09-09T22:52:57.200615Z",
+      "body_md5": "46074e04b60ecb97557b63ef25c5739d",
+      "cases": 161,
+      "failures": 0,
+      "price_points": 22,
+      "includes_zero_entry": true,
+      "formats": ["MTT", "SNG", "HU", "SPIN", "BOUNTY30", "PKO50", "MYSTERY40"]
+    },
+    "limit": "Calculator and published generator price/template matrix only. Does not certify complete admission, bank-funded promotions or every custom configuration.",
+    "full_controls_closed": false,
+    "merge_commit": "4149cfcd53650a05ac0be247f2bdad6cf5c0997d",
+    "passing_ci": 34415082179,
+    "frontend": {
+      "observed_at": "2026-09-09T23:20:10.590209+00:00",
+      "urls": {
+        "https://ca-static.smarter.poker/build-info.json": {
+          "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+          "built_at": "2026-09-09T23:16:14Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34415964089"
+        },
+        "https://smarter.poker/hub/club-arena/build-info.json": {
+          "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+          "built_at": "2026-09-09T23:16:14Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34415964089"
+        }
+      },
+      "fee_source_blob": "66bdd353f0cd5daa3e7320abd98c2a087298be0d",
+      "merge_is_ancestor": true
+    }
+  },
+  "mystery_activation_review": {
+    "controls": ["B04"],
+    "status": "source_and_installed_guards_reviewed_full_control_open",
+    "observed_at": "2026-09-09T23:06:49.316874+00:00",
+    "engine_predicate": "shouldActivateMysteryBounty requires entryClosed plus the chosen field threshold and all tables between hands. A break alone cannot activate.",
+    "database_predicate": "fn_mystery_bounty_seed locks the tournament and refuses prize_pool_finalized=false, including when engine memory suggests otherwise.",
+    "installed_body_md5": {
+      "fn_mystery_bounty_seed": "f78272f535468f7399c78d5c4ec87e35",
+      "fn_receipt_mystery_activation": "96c4626eda4c43c3b355a752199f89bd",
+      "fn_refuse_mystery_activation_with_pending_heads": "0e2dc405aada5f99bfffe5738748d301",
+      "fn_close_tournament_addon_period": "b503380118722ce9a5b8b4467f3c48fd"
+    },
+    "existing_tests_reviewed": [
+      "server/src/tournament/mysteryBountyActivation.test.ts",
+      "server/src/tournament/AddOnFundingFinalization.test.ts"
+    ],
+    "test_limit": "Predicate tests execute pure logic; add-on tests execute the real close method with a mocked database RPC. No new whole-lifecycle PostgreSQL rehearsal or production activation was performed.",
+    "full_controls_closed": false,
+    "addon_close_deadline": "Installed fn_close_tournament_addon_period locks the row, requires a started window and refuses closure before addon_period_ends_at unless already finalized, then delegates to the locked pool finalizer."
+  },
+  "result_payment_disclosure_review": {
+    "controls": ["T12"],
+    "status": "confirmed_results_projection_gap",
+    "source": "src/pages/tournament/TournamentResultsPage.tsx",
+    "finding": "Results read tournament_players prize, bounty_winnings and participation status. They do not read tournament_obligations amount_owed/amount_paid or expose paid, partially paid and owed states.",
+    "database_evidence": "Installed tournament_obligations contains amount_owed, amount_paid, settled_at and terminal_closed_at. No src caller of tournament_obligations was found.",
+    "limit": "Source/schema gap only. No historical player debts were recalculated and no new public obligation access policy was introduced.",
+    "full_controls_closed": false,
+    "database_access": {
+      "rls_enabled": true,
+      "select_policies": 0,
+      "anon_select": false,
+      "authenticated_select": false,
+      "service_select": true
+    },
+    "next_step": "Implement an authorized player-results payment projection from the canonical obligations, then wire actual paid/partial/owed amounts into results and statements. A direct browser query to the protected ledger is not an available path."
   }
 }

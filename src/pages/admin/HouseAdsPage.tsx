@@ -35,6 +35,7 @@ import { confirmDialog } from '../../components/common/confirmDialog';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import CampaignQueue from '../../components/ads/CampaignQueue';
 import '../AdminDashboardPage.css';
 import { isPlatformStaffRole } from '../../utils/platformRoles';
 
@@ -689,6 +690,9 @@ export default function HouseAdsPage() {
 
         {actionError && <div className="admin-error-banner">{actionError}</div>}
         {notice && <div className="admin-success-banner">{notice}</div>}
+
+        {/* ── What clubs have paid for, waiting on a decision ── */}
+        <CampaignQueue />
 
         {/* ── Composer ── */}
         <div className="admin-card">

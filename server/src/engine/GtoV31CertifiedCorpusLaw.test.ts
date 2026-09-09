@@ -41,6 +41,9 @@ const PROMOTION_PROVENANCE = read(
 const RELEASE_SERIALIZATION = read(
   'supabase/migrations/20260909025949_solver_release_gate_is_serialized.sql'
 );
+const INPUT_BOOTSTRAP = read(
+  'supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql'
+);
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
 const LOGIC = read('server/src/engine/HorseLogic.ts');
 const LOADER = read('server/src/services/GtoPostflopV31Loader.ts');
@@ -63,6 +66,26 @@ describe('the certified V31 release boundary', () => {
     );
     expect(CORPUS).not.toMatch(
       /CREATE OR REPLACE FUNCTION public\.fn_gto_v31_mark_candidate\([^)]*,/
+    );
+  });
+
+  it('constructs the immutable bundle identity before the final manifest is approved', () => {
+    expect(INPUT_BOOTSTRAP).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_input_bundle_checksum(p_bundle jsonb)'
+    );
+    expect(INPUT_BOOTSTRAP).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_input_bundle_id(p_bundle_checksum text)'
+    );
+    expect(INPUT_BOOTSTRAP).toContain("WHERE value->>'kind' <> 'scenario_manifest'");
+    expect(INPUT_BOOTSTRAP).toContain(
+      "'contract','smarter-poker.horse-solver-v31-input-bundle.v2'"
+    );
+    expect(INPUT_BOOTSTRAP).toContain(
+      'input_bundle_id,bundle_key,bundle_checksum,range_bundle_checksum'
+    );
+    expect(INPUT_BOOTSTRAP).toContain('gto_v31_input_bundles_deterministic_id_chk');
+    expect(INPUT_BOOTSTRAP).not.toContain(
+      'v_checksum := public.fn_gto_v31_json_checksum(p_bundle)'
     );
   });
 
@@ -298,6 +321,9 @@ describe('agreement and liveness are daily evidence', () => {
     const certified = read('scripts/ci/probes/horse-phase4-certified-solver/certified-v31.sql');
     const decisions = read('scripts/ci/probes/horse-phase4-certified-solver/solver-agreement.sql');
     const pulses = read('scripts/ci/probes/horse-phase4-certified-solver/pipeline-liveness.sql');
+    const bootstrap = read(
+      'scripts/ci/probes/horse-phase4-certified-solver/input-bundle-bootstrap.sql'
+    );
     expect(runner).toContain('PostgreSQL 17 is required');
     expect(certified).toContain('database did not seal the checksum-less worker node');
     expect(certified).toContain('false all-in source node was accepted');
@@ -309,5 +335,9 @@ describe('agreement and liveness are daily evidence', () => {
     expect(certified).toContain('certification status did not reconcile');
     expect(decisions).toContain('SOLVER_AGREEMENT_BEHAVIOR_OK');
     expect(pulses).toContain('LIVENESS_BEHAVIOR_OK');
+    expect(bootstrap).toContain('V31_INPUT_BUNDLE_BOOTSTRAP_OK');
+    expect(bootstrap).toContain(
+      'database input identity does not match the cross-language fixture'
+    );
   });
 });

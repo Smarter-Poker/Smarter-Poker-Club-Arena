@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-ads3/feat/image-ad-rotator (2026-09-03). The lobby ad strip is mounted directly in ClubHomePage under the game action bar, so it IS first paint on the lobby - the surface these two modules exist to fill. Deferring them costs more than the 4kB gz they add: the strip is a fixed aspect-ratio box, so a late chunk either holds an empty hole or lands after layout and shifts the table list under the player's thumb. It is also the surface the previous version was silently lost from - PR #1759 dropped the mount and nothing noticed for five days - and a lazy import is one more way for this to render nothing while looking wired. The pair is the component and its stylesheet; the creatives are images fetched at render, not bundle weight.",
+  "modules": ["src/components/ads/HouseAdRotator.css", "src/components/ads/HouseAdRotator.tsx"]
+}

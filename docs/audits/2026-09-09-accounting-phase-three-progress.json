@@ -152,17 +152,17 @@
       "files": 2
     },
     "typescript": "passed",
-    "status": "implemented_and_tested_publication_pending",
+    "status": "verified_live_in_PR3991",
     "production_build": "passed locally; publication pending"
   },
   "remaining_entry_findings": [
-    "Durable payload replay is implemented for rebuy/reentry/addon and tested locally. Native browser, integrated CI and deployed acceptance remain pending.",
+    "Rebuy/reentry/addon durable payload replay is published and verified. Reuse docs/audits/2026-09-09-tournament-retry-release-evidence.json.",
     "Trace initial registration and server-side atomic funding, rollback and concurrency for every entry path.",
     "Review explicit refusal lifecycle, changed configuration and cross-device retries against retained server receipts."
   ],
   "shared_work": "Existing docs/audits/2026-09-09-phase3-progress.json tracks a separate 58-control tournament audit. Reuse verified changes and inspect latest source before duplicating work.",
   "durable_purchase_intent": {
-    "status": "implemented_local_focused_tests_passed_release_pending",
+    "status": "verified_live_in_PR3991",
     "focused_tests": 131,
     "typescript": "passed",
     "sources": ["src/services/TournamentPurchaseIntent.ts", "src/services/TournamentService.ts"],
@@ -171,7 +171,7 @@
     "native_browser_script": "scripts/dev/probe-tournament-purchase-browser.mjs",
     "integrated_typescript": "passed",
     "integrated_build": "passed locally without Sentry upload; behind-main=0",
-    "release": "not published; automatic approval review rejected Sentry source-map export",
+    "release": "Verified public and origin SHA 5001c683d53de005fdf96d04f916b4de09aec020 includes merge 0ed94e26141be46f0d4aa7bf9b0ade9ac025a526; source blobs identical. Required CI passed. Overall phase open.",
     "full_client_verification": {
       "first": {
         "passed": 17690,
@@ -197,6 +197,23 @@
       "Public initial registration has no request-id overload in the inspected catalog. Existing-row lookup cannot prove original operation identity after registration lifecycle changes. A complete retained registration receipt and client request binding remain unimplemented.",
       "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it."
     ]
+  },
+  "refund_client_contract": {
+    "controls": ["CA-03-11", "CA-03-12"],
+    "status": "tested_build_passed_publication_pending",
+    "tests_passed": 89,
+    "typescript": "passed",
+    "evidence": "docs/changelog/2026-09-09-tournament-refund-client-contract.md",
+    "service_tests": 91,
+    "storage_tests": 4,
+    "request_identity": "wired to deployed request-id overload; auth account and returned request ID verified",
+    "pr": 4013,
+    "integrated_tests": {
+      "passed": 106,
+      "files": 3,
+      "typescript": "passed",
+      "reason": "merge overlapping receipt/ticket implementation; reuse canonical parser and return value"
+    }
   },
   "prepared_batch_publication": {
     "status": "verified_live",

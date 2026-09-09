@@ -48,7 +48,7 @@ import {
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { v5 as uuidv5 } from 'uuid';
-import { reportError } from '../services/errorReporter.js';
+import { reportError, describeError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
@@ -58,6 +58,18 @@ import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
+
+/**
+ * A chip is two decimal places, everywhere it is stored (#3358).
+ *
+ * `table_seats.stack` is numeric(15,2) and rounds on write, but the SAME
+ * numbers travel into `hand_history.players[].stack` (jsonb, no scale) and
+ * from there into `club_member_table_state.last_stack` and
+ * `club_member_daily_stats.profit`, which are unscaled and had 720 and 1,328
+ * non-cent rows respectively. Every stack mutation in this file goes through
+ * here.
+ */
+const cents = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) / 100 : 0);
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -348,7 +360,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         `[ServerTableEngine:${this.tableId}] *** BBJ DRILL FIRED *** hand #${handNumber}. ` +
           `This is a drill, not a real bad beat. The chips are real.`
       );
-      EngineMetrics.bbjDrillsFiredTotal.inc(1, { table_id: this.tableId });
+      EngineMetrics.bbjDrillsFiredTotal.inc(1);
 
       return {
         hit: true,
@@ -700,7 +712,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // stack. EV CASHOUT 2026-08-28: a cashed-out player's locked amount
           // rides the same branch — paid from the bank regardless of outcome.
           if (seatedPlayer) {
-            seatedPlayer.stack += settlement.payout;
+            seatedPlayer.stack = cents(seatedPlayer.stack + settlement.payout);
             insuranceDeltas.set(
               settlement.playerId,
               (insuranceDeltas.get(settlement.playerId) ?? 0) + settlement.payout
@@ -741,8 +753,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 }
               );
             }
-            seatedPlayer.stack = Math.max(0, before - wonAmt);
-            const applied = before - seatedPlayer.stack;
+            seatedPlayer.stack = cents(Math.max(0, before - wonAmt));
+            /* `before - stack` is float CANCELLATION: it does not recover
+               wonAmt even though wonAmt was rounded three lines up. Round the
+               difference, not just the operands. */
+            const applied = cents(before - seatedPlayer.stack);
             this.currentHandCashoutRedirects.set(settlement.playerId, applied);
             insuranceDeltas.set(
               settlement.playerId,
@@ -792,7 +807,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
           if (seatedPlayer) {
             const beforePremium = seatedPlayer.stack;
-            seatedPlayer.stack = Math.max(0, seatedPlayer.stack - settlement.premium);
+            seatedPlayer.stack = cents(Math.max(0, seatedPlayer.stack - settlement.premium));
             // The CLAMPED amount, not settlement.premium — a short stack pays
             // what it has and the engine must debit exactly that.
             insuranceDeltas.set(
@@ -806,7 +821,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
 
-      if (insuranceDeltas.size > 0) this.handController?.applyStackDeltas(insuranceDeltas);
+      if (insuranceDeltas.size > 0) {
+        this.handController?.applyStackDeltas(insuranceDeltas);
+        /* AND SAY SO (2026-09-09). The client flies the payout to the seat
+           and toasts "Insurance Paid You N" off INSURANCE_SETTLED, and the
+           stack number underneath it did not move until the NEXT hand's
+           HAND_START broadcast - through the whole 1.4-2.2s post-hand hold.
+           The 7-2 bounty 130 lines below already learned this ("Move the
+           engine's own stacks BEFORE the re-broadcast - the WINNERS snapshot
+           went out before these transfers were applied"); insurance is the
+           same defect and never got the same line. */
+        void this.broadcastCurrentState();
+      }
       // Chip standard 2026-09-04: what the bank net moved onto the seats, as
       // applied. Declared to the stack write as inflow (see postHandTasks).
       let insuranceNet = 0;
@@ -1070,7 +1096,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // The actual pool amounts are fetched from Supabase and paid from union/club bank
         // For now, broadcast the BBJ_HIT event with payout percentages.
         // The actual payout amounts will be calculated in postHandTasks() using the pool balance.
-        EngineMetrics.bbjHitsDetectedTotal.inc(1, { table_id: this.tableId });
+        EngineMetrics.bbjHitsDetectedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_hit',
           table_id: this.tableId,
@@ -1551,7 +1577,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               {
                 table_id: this.tableId,
                 hand_number: snap.handNumber,
-                error: err instanceof Error ? err.message : String(err),
+                error: describeError(err),
               }
             );
           }
@@ -2033,10 +2059,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             buttonSeat: snap.dealerSeat,
             showdownReveal,
             atomicCommit: {
+              /* Rounded, as the writer this replaced did (services/supabase/
+                 tables.ts `rounded()`); the replacement dropped it and these
+                 two fields are the source of the non-cent rows in
+                 club_member_table_state / club_member_daily_stats. */
               stacks: playersForRecord.map((p) => ({
                 user_id: p.user_id,
-                stack: p.stack,
-                stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
+                stack: cents(p.stack),
+                stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
@@ -2066,7 +2096,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
           }
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = describeError(err);
           const semantic = message.includes('atomic hand commit refused');
           const alertCode = semantic
             ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
@@ -2335,25 +2365,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               attempt,
             });
           }
-          if (attempt === 1) {
-            void raiseFinancialAlert(
-              'critical',
-              'ServerTableEngine.post_commit_obligations_pending',
-              `Hand ${this.tableId}#${snap.handNumber} committed, but its durable post-commit envelope remains behind the causal settlement barrier`,
-              {
-                table_id: this.tableId,
-                hand_number: snap.handNumber,
-                hand_id: v_handHistoryId,
-                error: err instanceof Error ? err.message : String(err),
-              }
-            ).catch((alertError) =>
-              reportError(
-                alertError,
-                'ServerTableEngine.post_commit_obligations_pending.alert_failed',
-                { tableId: this.tableId, handNumber: snap.handNumber }
-              )
-            );
-          }
+          /* THE ALERT BELONGS TO THE GIVE-UP, NOT TO ATTEMPT 1 (2026-09-09).
+             A critical financial alert used to be filed here, on the FIRST
+             failure, before the bounded retry below had run even once. The
+             retry then resolved it - every single time. Measured over the
+             1,058 hands that filed this alert on 2026-09-08/09: 1,058 had
+             `post_commit_completed_at` set, 0 were still pending, 0 chips
+             were stranded. It was a paging alarm for a transient that has
+             never once failed to clear.
+
+             The cost was not just noise. Those 1,058 rows each opened their
+             own incident and buried the real findings underneath them - a
+             treasury reconciliation and a diamond-supply breach sat unread
+             on page 30 of a dashboard nobody could scroll. A detector that
+             cries wolf 1,058 times is not a strict detector, it is a broken
+             one, and section 10.8's rule that an unseen check is no check
+             cuts both ways.
+
+             `reportError` above still records every attempt to Sentry (with
+             its own budget and throttle), so the transient stays observable.
+             What moved is the FINANCIAL ALERT: it now fires only where the
+             loop actually abandons the envelope - see `if (!obligationsApplied)`
+             below - which is the condition its message has always described. */
           if (this.lifecycleCanMutate()) {
             this.markProgress();
             await this.sleep(Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000));
@@ -2373,6 +2406,32 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             handId: v_handHistoryId,
           });
         }
+        /* The envelope really is behind the barrier now: the retry loop is
+           over and this process did not apply it. Name the number of attempts
+           and the LAST error - `describeError`, not String(err), because the
+           thing rejected here is a Supabase PostgrestError and String() would
+           print "[object Object]" and tell the next reader nothing. */
+        void raiseFinancialAlert(
+          'critical',
+          'ServerTableEngine.post_commit_obligations_pending',
+          `Hand ${this.tableId}#${snap.handNumber} committed, but this engine abandoned its durable post-commit envelope behind the causal settlement barrier after ${attempt} attempt(s); the outbox row remains authoritative and the projection worker is its successor`,
+          {
+            table_id: this.tableId,
+            hand_number: snap.handNumber,
+            hand_id: v_handHistoryId,
+            attempts: attempt,
+            error: describeError(lastObligationError),
+          }
+        ).catch((alertError) =>
+          reportError(
+            alertError,
+            'ServerTableEngine.post_commit_obligations_pending.alert_failed',
+            {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            }
+          )
+        );
         return;
       } else if (postCommitStateCanReflect) {
         /* Pending add-ons are applied inside the obligation transaction. Read
@@ -2678,7 +2737,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (!this.lifecycleCanMutate()) return;
 
       if (outcome.status === 'queued') {
-        EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+        EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_payout_pending',
           kind: 'mini',
@@ -2713,7 +2772,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       const bump = (userId: string | undefined, amount: number): void => {
         if (!userId || amount <= 0) return;
         const seat = players.find((pl) => pl.user_id === userId);
-        if (seat) seat.stack = Number(seat.stack || 0) + amount;
+        // A chip is two decimal places (#3358). The mini jackpot's table share
+        // is `reserve / players`, so `amount` is a division result, and this
+        // seat array is what persistStacks writes to table_seats.stack.
+        if (seat) seat.stack = cents(Number(seat.stack || 0) + amount);
       };
       bump(mini.loserUserId, outcome.loser);
       bump(mini.winnerUserId, outcome.winner);
@@ -2791,7 +2853,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            explanation. The payout itself is safe (write-ahead claim + the
            reconciler), so this is only about telling them. */
         if (outcome.status === 'queued') {
-          EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+          EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
           this.hub?.emitEvent(this.tableId, {
             type: 'bbj_payout_pending',
             table_id: this.tableId,
@@ -2813,12 +2875,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
         if (outcome.status === 'paid') {
           const result = outcome.result;
-          EngineMetrics.bbjPayoutsPaidTotal.inc(1, { table_id: this.tableId });
+          EngineMetrics.bbjPayoutsPaidTotal.inc(1);
           // Credit chips directly to players' table stacks
           // LOSER (bad beat holder) gets 50% of total payout
           const loserSeat = players.find((p) => p.user_id === bbjHit.loserUserId);
           if (loserSeat) {
-            loserSeat.stack += result.loserShare;
+            // Two decimals (#3358): every BBJ share is a PERCENTAGE of the
+            // jackpot (50/25/25, the last one split again per player), so all
+            // three are division results landing on the seat array that
+            // persistStacks writes.
+            loserSeat.stack = cents(loserSeat.stack + result.loserShare);
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ → Loser ${bbjHit.loserUserId} +$${result.loserShare}`
             );
@@ -2827,7 +2893,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // WINNER (hand winner) gets 25% of total payout
           const winnerSeat = players.find((p) => p.user_id === bbjHit.winnerUserId);
           if (winnerSeat) {
-            winnerSeat.stack += result.winnerShare;
+            winnerSeat.stack = cents(winnerSeat.stack + result.winnerShare);
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ → Winner ${bbjHit.winnerUserId} +$${result.winnerShare}`
             );
@@ -2840,7 +2906,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           for (const playerId of tableOnlyPlayers) {
             const seat = players.find((p) => p.user_id === playerId);
             if (seat) {
-              seat.stack += result.perPlayerShare;
+              seat.stack = cents(seat.stack + result.perPlayerShare);
               console.log(
                 `[ServerTableEngine:${this.tableId}] BBJ → Table player ${playerId} +$${result.perPlayerShare}`
               );

@@ -61,6 +61,61 @@ function declaredAlerts() {
   return out;
 }
 
+/**
+ * Every metric NAME an expression in the loaded rule files reads.
+ *
+ * ADDED 2026-09-09, because this check reconciled rule NAMES between the repo
+ * and the box and never asked whether the rules could ever fire. Fifteen of
+ * them referenced series with no producer anywhere - among them
+ * `poker_hands_total`, read by `SLOHandsAreNotBeingDealt` (severity
+ * critical, page: sms), which `rate()`s an empty vector and is therefore
+ * structurally unfirable. `alert-rules.QUARANTINED.yml` says the same thing
+ * about the last set: "loaded and silently evaluated to nothing, which is
+ * worse than not having them." Nothing was checking.
+ *
+ * Deliberately loose: it collects bare identifiers that look like metric
+ * names and skips PromQL keywords, functions, label matchers and recording
+ * rules (which begin with a group prefix like `sp:`). A false positive here
+ * is a name to explain; a false negative is an alert nobody will ever get.
+ */
+const PROMQL_WORDS = new Set([
+  'and', 'or', 'unless', 'by', 'without', 'on', 'ignoring', 'group_left',
+  'group_right', 'offset', 'bool', 'if', 'default', 'inf', 'nan',
+  'rate', 'irate', 'increase', 'sum', 'avg', 'min', 'max', 'count', 'topk',
+  'bottomk', 'quantile', 'stddev', 'stdvar', 'absent', 'absent_over_time',
+  'delta', 'idelta', 'deriv', 'predict_linear', 'histogram_quantile',
+  'label_replace', 'label_join', 'time', 'timestamp', 'vector', 'scalar',
+  'clamp_max', 'clamp_min', 'round', 'abs', 'ceil', 'floor', 'exp', 'ln',
+  'log2', 'log10', 'sqrt', 'changes', 'resets', 'sort', 'sort_desc',
+  'avg_over_time', 'min_over_time', 'max_over_time', 'sum_over_time',
+  'count_over_time', 'quantile_over_time', 'stddev_over_time',
+  'last_over_time', 'present_over_time', 'group', 'count_values',
+]);
+
+function metricsReferenced() {
+  const out = new Map();
+  for (const f of loadedRuleFiles()) {
+    const p = join(MON, f);
+    if (!existsSync(p)) continue;
+    const txt = readFileSync(p, 'utf8').replace(/^\s*#[^\n]*$/gm, '');
+    for (const m of txt.matchAll(/^\s*expr:\s*\|?\s*\n?([\s\S]*?)(?=\n\s*(?:-\s|for:|labels:|annotations:|record:|alert:|$))/gm)) {
+      const expr = m[1];
+      for (const id of expr.matchAll(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*[:"])/g)) {
+        const name = id[1];
+        if (PROMQL_WORDS.has(name)) continue;
+        if (!name.includes('_')) continue;          // labels, bare words
+        if (/^(job|instance|severity|component|alertname|le|quantile)$/.test(name)) continue;
+        // a label INSIDE a matcher is followed by = or !=, never a metric
+        const at = id.index ?? 0;
+        const after = expr.slice(at + name.length).replace(/^\s+/, '');
+        if (after.startsWith('=') || after.startsWith('!=') || after.startsWith('=~')) continue;
+        if (!out.has(name)) out.set(name, f);
+      }
+    }
+  }
+  return out;
+}
+
 /** Ask a URL, through ssh when we are not on the box. */
 function ask(url) {
   const ssh = process.env.ENGINE_MONITORING_SSH;
@@ -85,9 +140,11 @@ function main() {
 
   let rules;
   let amAlerts;
+  let seriesNames;
   try {
     rules = ask(`${promUrl}/api/v1/rules`);
     amAlerts = ask(`${amUrl}/api/v2/alerts`);
+    seriesNames = ask(`${promUrl}/api/v1/label/__name__/values`);
   } catch (err) {
     // COULD NOT ASK IS NOT CLEAN. The whole point of this check is that a
     // monitoring stack nobody can reach looks exactly like one that is fine.
@@ -101,6 +158,18 @@ function main() {
   for (const g of rules?.data?.groups ?? []) {
     for (const r of g.rules ?? []) if (r.type === 'alerting') loaded.add(r.name);
   }
+
+  /* A rule whose metric has no series is a rule that cannot fire. Recording
+     rules are exempt: their own output is what the alerts read, and it only
+     exists once the recording rule has evaluated at least once. */
+  const known = new Set(seriesNames?.data ?? []);
+  const recorded = new Set();
+  for (const g of rules?.data?.groups ?? []) {
+    for (const r of g.rules ?? []) if (r.type === 'recording') recorded.add(r.name);
+  }
+  const phantom = [...metricsReferenced().entries()]
+    .filter(([name]) => !known.has(name) && !recorded.has(name))
+    .sort(([a], [b]) => a.localeCompare(b));
 
   const missing = [...declared.keys()].filter((a) => !loaded.has(a)).sort();
   const extra = [...loaded].filter((a) => !declared.has(a)).sort();
@@ -139,7 +208,19 @@ function main() {
     console.error('  nearly lost.');
   }
 
-  if (!bad) console.log('[alert-rules] OK - the box is running exactly what this repo declares, and the canary is alive.');
+  if (phantom.length) {
+    bad = true;
+    console.error('');
+    console.error(`RULES THAT READ A SERIES PROMETHEUS HAS NEVER SEEN (${phantom.length}):`);
+    for (const [name, file] of phantom) console.error(`   ${name}   (${file})`);
+    console.error('  These rules load, evaluate to an empty vector, and can never cross a');
+    console.error('  threshold - so they read as coverage and provide none. Either publish');
+    console.error('  the metric, point the rule at the name the producer actually emits, or');
+    console.error('  delete the rule. Do not leave it: alert-rules.QUARANTINED.yml already');
+    console.error('  records what a directory of these costs.');
+  }
+
+  if (!bad) console.log('[alert-rules] OK - the box runs what this repo declares, every rule reads a real series, and the canary is alive.');
   process.exit(bad ? 1 : 0);
 }
 

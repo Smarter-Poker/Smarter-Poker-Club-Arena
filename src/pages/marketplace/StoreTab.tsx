@@ -266,8 +266,18 @@ export default function StoreTab({
        * got the SAME cached 400 back - a purchase that could now succeed was
        * told, again, that it could not. A refused attempt is finished; the
        * next press is a new attempt and carries a new key.
+       *
+       * ONLY WHEN THE REFUSAL IS TERMINAL (2026-09-09). `callClubArenaApi`
+       * throws the same shape for a transport failure, a 5xx and a
+       * `{success:false}` body, so rotating unconditionally rotated after a
+       * COMMITTED purchase whose response was lost - and the next press
+       * charged the diamonds again. `definitive` is the same 400/401/403/
+       * 404/405/422 list UnionApiService uses; anything else keeps the key so
+       * the server replays its own answer.
        */
-      purchaseKeyRef.current = mintPurchaseKey();
+      if ((err as { definitive?: boolean })?.definitive) {
+        purchaseKeyRef.current = mintPurchaseKey();
+      }
       // A stale card (sold out, or already owned in another tab) must not leave
       // the confirm modal sitting open over data we now know is wrong.
       const flags = (

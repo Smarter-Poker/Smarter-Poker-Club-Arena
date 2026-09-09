@@ -1553,9 +1553,36 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       try {
         const data = await loadTable(this.tableId);
         if (data) {
+          /* AND TELL THE FELT (2026-09-09). `TABLE_META_UPDATE` - the message
+             `TableService.subscribeToTable` has consumed since the 2026-05-18
+             migration off `postgres_changes` - is CONSTRUCTED NOWHERE in this
+             engine, and `ChannelHub` has no table subscription to deliver it
+             on, so live blind-level changes and table renames have been
+             silent for every seated player since that migration. The table's
+             own socket is already subscribed and already carries every other
+             discrete fact about this table, so the meta change goes out the
+             same way, as `table_meta_update`. (`useTableStore`'s copy of the
+             subscription still goes through the channel client and is still
+             dead; the FELT is the surface a player is looking at.) */
+          const changed =
+            Number(this.tableInfo.small_blind) !== Number(data.small_blind) ||
+            Number(this.tableInfo.big_blind) !== Number(data.big_blind) ||
+            Number(this.tableInfo.ante ?? 0) !== Number(data.ante ?? 0);
           this.tableInfo.small_blind = data.small_blind;
           this.tableInfo.big_blind = data.big_blind;
           this.tableInfo.ante = data.ante;
+          if (changed) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'table_meta_update',
+              table_id: this.tableId,
+              name: this.tableInfo.name ?? null,
+              game_variant: this.tableInfo.game_variant ?? null,
+              small_blind: data.small_blind,
+              big_blind: data.big_blind,
+              ante: data.ante ?? 0,
+              timestamp: Date.now(),
+            });
+          }
         }
         return; // success
       } catch (err: any) {

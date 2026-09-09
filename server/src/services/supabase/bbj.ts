@@ -567,7 +567,8 @@ async function attemptBBJPayoutOnce(
          worse half of having no metric at all: `poker_bbj_shares_parked_total`
          would have read 0 for ever and been indistinguishable from "no share
          was ever parked". A number nobody writes to is not coverage. */
-      bbjSharesParkedTotal.inc(parked.length, { table_id: params.tableId });
+      // Fleet total, no table_id (always-on registry contract).
+      bbjSharesParkedTotal.inc(parked.length);
       await raiseFinancialAlert(
         'warning',
         'processBBJPayout.share_parked',

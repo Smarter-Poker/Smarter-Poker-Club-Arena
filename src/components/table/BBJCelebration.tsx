@@ -20,6 +20,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { soundService } from '../../services/SoundService';
 import './BBJCelebration.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -425,7 +426,7 @@ export function BBJCelebration({
       style={{ opacity, transition: 'opacity 0.5s ease' }}
       role="dialog"
       aria-live="assertive"
-      aria-label={`${kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot'} Hit. Total Payout ${Math.trunc(totalPayout).toLocaleString('en-US')}.`}
+      aria-label={`${kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot'} Hit. Total Payout ${formatTableChips(totalPayout)}.`}
     >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />

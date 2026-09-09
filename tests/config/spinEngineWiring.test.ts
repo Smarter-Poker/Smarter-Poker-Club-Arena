@@ -45,6 +45,7 @@ const tournamentServiceRaw = read('src/services/TournamentService.ts');
 
 const recurring = code(recurringRaw);
 const engine = code(engineRaw);
+const receipt = code(read('server/src/tournament/SpinDrawReceipt.ts'));
 const orchestrator = code(orchestratorRaw);
 const tournamentService = code(tournamentServiceRaw);
 
@@ -118,7 +119,7 @@ describe('one multiplier table, in one place: the spec', () => {
 
 describe('the draw happens at START, nowhere else', () => {
   it('the engine start path calls the reserve-gated RPC', () => {
-    expect(engine).toMatch(/fn_spin_draw_multiplier/);
+    expect(engine).toMatch(/fn_spin_draw_and_settle_atomic/);
   });
 
   it('creation does NOT draw — not the recurring service, not the orchestrator', () => {
@@ -184,25 +185,25 @@ describe('the draw happens at START, nowhere else', () => {
     expect(engine).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
     // ...and the failure is explicit and retryable instead.
     expect(engine).toMatch(/drawFailure/);
-    expect(engine).toMatch(/error:\s*drawErr/);
+    expect(engine).toContain('if (error || !data?.ok)');
   });
 });
 
 describe('every game is booked', () => {
   it('settles through the ledger RPC', () => {
-    expect(engine).toMatch(/fn_spin_settle_game/);
+    expect(engine).toMatch(/fn_spin_draw_and_settle_atomic/);
   });
 
   it('reports loudly rather than swallowing a failed settlement', () => {
-    const i = engine.indexOf("supabase.rpc('fn_spin_settle_game'");
-    expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
-    const block = sliceEnclosingBlock(engine, "supabase.rpc('fn_spin_settle_game'", 0, 2);
+    const i = engine.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    expect(i, 'expected an atomic funded draw call').toBeGreaterThan(-1);
+    const block = sliceEnclosingBlock(engine, 'if (!fundedSpin)');
     expect(block).toMatch(/reportError/);
-    expect(block).toMatch(/spin_settle_failed/);
+    expect(block).toMatch(/spin_draw_unavailable/);
   });
 
   it('books the rake at the rate the stake actually implies', () => {
-    expect(engine).toMatch(/p_rake_rate:\s*spinRakeRate\(buyIn\)/);
+    expect(receipt).toMatch(/rake_rate:\s*spinRakeRate\(buyIn\)/);
   });
 });
 
@@ -225,7 +226,8 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
     expect(engine).not.toMatch(/starting_chips:\s*tier\?\.startingStack/);
     expect(engine).not.toMatch(/tournament\.starting_chips\s*=\s*tier\.startingStack/);
     // What it does write is the board's own number, unchanged.
-    expect(engine).toMatch(/starting_chips:\s*tournament\.starting_chips/);
+    expect(engine).toContain('spinRuleManifest(buyIn, tournament.starting_chips)');
+    expect(engine).toContain('starting_chips: fundedSpin.startingChips');
   });
 
   it('start updates the IN-MEMORY structure too, not just the row', () => {

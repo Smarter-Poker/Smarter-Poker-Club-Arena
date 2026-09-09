@@ -1,0 +1,150 @@
+{
+  "phase": 2,
+  "total_phases": 12,
+  "status": "release_verification_pending",
+  "reviewed_head": "93e4e991834f5bc9292f3d2b5c94a1f12cda0ee5",
+  "owner": "Club Arena accounting audit",
+  "controls": [
+    {
+      "id": "CA01-01",
+      "requirement": "Departure Ordering",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/CashoutDepartureIntegration.test.ts",
+        "server/src/engine/CashoutEvictionOutcome.test.ts",
+        "server/src/engine/IdleSeatMoveOwnership.test.ts",
+        "server/src/engine/EngineTeardownOwnership.test.ts"
+      ]
+    },
+    {
+      "id": "CA01-02",
+      "requirement": "Original Cashout Identity",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/CashoutDeparturePostgres.test.ts",
+        "server/src/handlers/OccupancyHttpIntegration.test.ts",
+        "server/src/services/supabase/CashoutReceipt.test.ts",
+        "scripts/dev/probe-seat-intent-browser.mjs"
+      ]
+    },
+    {
+      "id": "CA01-03",
+      "requirement": "Committed Seat And Chip Ownership",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/CashoutDeparturePostgres.test.ts",
+        "server/src/services/supabase/SeatMoveReceipt.test.ts",
+        "server/src/engine/VoluntaryStayOutcome.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-01",
+      "requirement": "Legal Action Authority",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": ["server/src/engine/PlayerActionContext.test.ts"]
+    },
+    {
+      "id": "CA02-02",
+      "requirement": "Reopening And Fixed Limit",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/HandController.reopening.test.ts",
+        "server/src/engine/FixedLimit.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-03",
+      "requirement": "Side Pots And Uncalled Returns",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": ["server/src/engine/Phase2SidePotFixture.test.ts"]
+    },
+    {
+      "id": "CA02-04",
+      "requirement": "Exact Split Awards",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/RunItTwice.money.test.ts",
+        "server/src/engine/RunItTwice.parity.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-05",
+      "requirement": "Blinds And Position",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/CashButtonDecisionBoundary.test.ts",
+        "server/src/engine/PartialIndividualAnte.test.ts",
+        "server/src/engine/PotLimitShortBlinds.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-06",
+      "requirement": "Variant Evaluation",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/VariantRules.test.ts",
+        "server/src/engine/Phase2EvaluatorOracle.test.ts",
+        "server/src/engine/PineappleThreeCardShowdown.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-07",
+      "requirement": "Deck And Hidden Information",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/CryptoRandom.test.ts",
+        "server/src/engine/CardVisibilityParity.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-08",
+      "requirement": "Showdown And Muck",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/HandController.showdownRules.test.ts",
+        "server/src/engine/revealedShowdown.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-09",
+      "requirement": "Bomb Pots And Multiple Runouts",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/BombPotScheduler.test.ts",
+        "server/src/engine/RunItTwiceDecisionBoundary.test.ts",
+        "server/src/engine/RunItTwiceTerminalBoundary.test.ts"
+      ]
+    },
+    {
+      "id": "CA02-10",
+      "requirement": "Decision Deadlines",
+      "status": "local_evidence_present_live_adoption_pending",
+      "evidence": [
+        "server/src/engine/PreciseActionTimer.test.ts",
+        "server/src/engine/PlayerActionContext.test.ts"
+      ]
+    }
+  ],
+  "shared_rules_review": "docs/audits/2026-09-09-phase2-final-boundaries.md",
+  "accounting_production_evidence": "docs/audits/2026-09-09-phase-two-additive-production-adoption.md",
+  "limitations": [
+    "Internal evaluator differential and cryptographic RNG tests are not independent external certification.",
+    "The Chromium probe uses actual browser persistence/locking with isolated HTTP fixtures; it is not authenticated production gameplay or physical-device certification.",
+    "Historical incident completeness is Phase 9; no incident is closed by passing this matrix.",
+    "Distributed process crash/restart durability remains Phase 3.",
+    "Final application-role retirement of unbound cashout RPCs requires compatible engine/client adoption."
+  ],
+  "remaining_gates": [
+    "Required CI including real PostgreSQL job",
+    "Normal Hetzner frontend and scheduled engine publication",
+    "Exact live version and source verification",
+    "Reserved final retirement migration, application and permission verification",
+    "Final requirement-by-requirement evidence closure"
+  ],
+  "hosted_postgres_evidence": {
+    "run_id": 34385701145,
+    "job_id": 102581340897,
+    "passed": 145,
+    "head": "29f0487367e5aadd3b4b370076e4de8eab3839a9"
+  }
+}

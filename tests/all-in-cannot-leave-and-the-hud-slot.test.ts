@@ -111,11 +111,11 @@ describe('an all-in player cannot leave the table', () => {
     expect(at).toBeGreaterThan(-1);
 
     const guard = body.indexOf('liveSelf?.is_all_in', at);
-    const rosterLookup = body.indexOf('this.seatedPlayers.find', at);
+    const rosterLookup = body.indexOf('if (!player)', at);
     const tournamentSplit = body.indexOf('this.isTournamentTable()', at);
 
     expect(guard, 'no all-in guard in leaveTable').toBeGreaterThan(-1);
-    // Before the roster lookup, so a player missing from the hand roster cannot
+    // Before the missing-roster branch, so a player missing from the hand roster cannot
     // slip past on the "reserved seat" ack.
     expect(guard).toBeLessThan(rosterLookup);
     // And before the cash/tournament split, so it covers both.
@@ -126,7 +126,7 @@ describe('an all-in player cannot leave the table', () => {
     expect(SEATING).toMatch(/You Are All In\. You Cannot Leave Until The Hand Is Finished\./);
   });
 
-  it('lets a folded player go, because their chips are out of the pot', () => {
+  it('allows a folded player to request departure while settlement retains their contribution', () => {
     expect(SEATING).toMatch(/liveSelf\?\.is_all_in && !liveSelf\.is_folded/);
   });
 

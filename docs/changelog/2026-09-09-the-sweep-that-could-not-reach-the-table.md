@@ -129,6 +129,54 @@ the whole point of the original check. The same rule now applies to the felt.
   any DDL — no probe carried DDL, and nothing was executed against a money path
   to test it (CLAUDE.md 11.5, and section 2 rule 7).
 
+## Then: two ways a dealt hand was being thrown away
+
+`ServerTableEngine.authoritative_hand_semantic_refusal` filed **312 critical
+`financial_alerts` rows in three hours** and killed 37 table engines in twenty
+minutes. Every one discarded a hand that had already been dealt, played and
+settled. It began at 21:27 UTC — before the outage, not caused by it. Two
+causes, both now fixed.
+
+### 5. An `ON CONFLICT` that named one of two unique constraints
+
+`tournament_knockout_candidates` carries two:
+
+```
+UNIQUE (tournament_id, hand_number, eliminated_user_id)      <- named
+UNIQUE (tournament_id, eliminated_user_id, seat_joined_at)   <- not named
+```
+
+An `ON CONFLICT` with an explicit target does not absorb a violation of any
+other constraint. So when a player busted a **second time from the same chair**
+— the ordinary rebuy shape, because a rebuy credits chips without moving
+`seat_joined_at` — the second constraint raised, and the raise took the whole
+atomic hand commit with it.
+
+Now it absorbs every unique violation, and the identity re-check learned to
+accept an existing candidate for the same seat generation. The first bust stays
+the operative one: it is the witness that was there.
+
+### 6. Six half-chips that could not be bet
+
+A tournament chip is indivisible. Before `distributePot` was corrected to split
+in whole chips, it left half-chips on the felt. The settlement guard tolerates
+an inherited fraction and refuses a newly created one, which is the right rule —
+and which makes those halves **contagious**: the moment one is won by somebody
+who entered whole, the hand is refused and the table engine self-terminates.
+
+Six seats across two tournaments, every fraction exactly `0.50`, an even count in
+each, and both tournaments' `chips_in_play` already whole. So they pair off, and
+pairing them is exactly chip-neutral. Retired with the odd chip going to the
+earlier seat, the ordinary poker convention. A tournament holding an **odd**
+number of halves is left alone and reported rather than guessed at.
+
+**Its own assert refused the first apply, which is the point.** I measured
+conservation across every tournament seat on the platform — a total live play
+moves between two reads — and it aborted on a `-2000.00` delta that had nothing
+to do with the change. The baseline is now only the rows the statement locks.
+
+Result: zero fractional tournament seats and zero fractional player rows.
+
 ## Still open, and being worked separately
 
 **Tournaments still are not finishing** — `completed_10m` was still 0 after the

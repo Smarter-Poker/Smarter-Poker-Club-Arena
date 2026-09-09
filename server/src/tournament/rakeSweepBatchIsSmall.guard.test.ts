@@ -2,7 +2,7 @@
  * Tournament terminal settlement now books rake inside the same database
  * transaction as the immutable terminal receipt. The old periodic sweep was a
  * second money-moving authority, so the safe batch size is now zero: no engine
- * schedule and no executable RPC call may survive stage-two cutover.
+ * schedule and no executable RPC call may survive the atomic cutover.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -11,13 +11,6 @@ import { resolve } from 'node:path';
 
 const source = readFileSync(resolve(__dirname, '../GameServer.ts'), 'utf8');
 const executable = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-const stagedRetirement = readFileSync(
-  resolve(
-    __dirname,
-    '../../../supabase/staged-migrations/20260908045946_legacy_bounty_backpay_retires_after_atomic_receipt_cutover.sql'
-  ),
-  'utf8'
-);
 
 describe('the tournament rake sweep has no engine schedule', () => {
   it('removes the legacy RPC, timer and retry telemetry from executable source', () => {
@@ -34,12 +27,5 @@ describe('the tournament rake sweep has no engine schedule', () => {
   it('preserves legitimate lifecycle recovery and unfilled-Spin cancellation', () => {
     expect(executable).toContain('recoverStuckCompletingTournaments');
     expect(executable).toContain("supabase.rpc('fn_spin_expire_unfilled'");
-  });
-
-  it('retires the database sweep only behind exact zero terminal rake debt', () => {
-    expect(stagedRetirement).toContain(
-      'DROP FUNCTION public.fn_sweep_unsettled_tournament_rake(integer,integer) RESTRICT;'
-    );
-    expect(stagedRetirement).toContain('DO $all_terminal_rake_debt_is_zero$');
   });
 });

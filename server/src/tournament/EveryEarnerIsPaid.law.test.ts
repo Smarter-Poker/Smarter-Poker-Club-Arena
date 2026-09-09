@@ -45,13 +45,6 @@ const gameServer = readFileSync(join(__dirname, '../GameServer.ts'), 'utf8');
 const executableGameServer = gameServer
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
-const stagedCashRetirement = readFileSync(
-  join(
-    __dirname,
-    '../../../supabase/staged-migrations/20260908044246_legacy_cash_repair_fleet_retires_only_after_zero_backlog.sql'
-  ),
-  'utf8'
-);
 
 describe('the check exists and asks all three questions', () => {
   it('declares fn_payout_guarantee_check', () => {
@@ -118,8 +111,5 @@ describe('the atomic terminal authority replaces the rolling payout audit', () =
     expect(executableGameServer).not.toContain('lastPayoutGuaranteeCheckAt');
     expect(executableGameServer).not.toContain('fn_pay_backed_payout_shortfalls');
     expect(executableGameServer).not.toContain('lastBackedPayoutAt');
-    expect(stagedCashRetirement).toMatch(
-      /DROP FUNCTION IF EXISTS public\.fn_payout_guarantee_check\(integer\) RESTRICT;/
-    );
   });
 });

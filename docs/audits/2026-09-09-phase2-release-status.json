@@ -1,0 +1,114 @@
+{
+  "phase": 2,
+  "of": 12,
+  "status": "blocked_on_publication_approval",
+  "observed_at": "2026-09-09T03:46:06.968882+00:00",
+  "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+  "branch": "agent/codex-poker-audit-sep09/fix/phase-two-consent-and-rules",
+  "verified_code_commit": "0e57f979775c2664680f09cfcc3c3eb54d1f7c4a",
+  "source_blobs": {
+    "server/src/engine/PokerEngine.ts": "baaa30910c64d908a6cf1e75b824b6f3901b2be3",
+    "server/src/engine/RunItTwiceEngine.ts": "ffc1ca36d84738fe8cfa410e43652978f1a6abfc",
+    "server/src/engine/ServerTableEngineBase.ts": "16faeb5b2d618873d38c80b25e05c02ee1eda87d",
+    "server/src/engine/ServerTableEngineDealing.ts": "b9b960fa0ba7577eefe25eab570ccbcd3cfec6e6",
+    "server/src/engine/ServerTableEngineRunout.ts": "a4ee9f7111c4d4359c643f582138e65872ac32fe",
+    "src/components/table/GameRulesModal.tsx": "1556874d6c46657072bb869d731ce75fda09a70a",
+    "src/components/table/RunItTwice.tsx": "c3fe33299e631e5bd7f8a50421dba65fb976f9e1",
+    "src/pages/TablePage.tsx": "481700d23fea48631633a709321e8c714b891597",
+    "src/utils/ritAwardHighlights.ts": "5962c135a43a5809b516a2b12579738ba8f01840"
+  },
+  "verification": {
+    "server_tests": {
+      "passed": 8015,
+      "skipped": 18,
+      "passed_files": 599,
+      "skipped_files": 1
+    },
+    "client_tests": {
+      "passed": 17382,
+      "passed_files": 1254
+    },
+    "server_typescript": "passed",
+    "client_typescript": "passed",
+    "production_build": {
+      "head": "0e57f979775c2664680f09cfcc3c3eb54d1f7c4a",
+      "exitCode": 0
+    },
+    "build_worktree": "clean",
+    "local_sourcemap_upload": "disabled"
+  },
+  "approval_block": {
+    "action": "Normal SSH branch push to existing Club Arena GitHub repository",
+    "attempts": 2,
+    "reason": "Automatic approval review requires explicit user authorization for the private-source payload and repository destination. Verified canonical remote and documented route were not accepted as sufficient authorization.",
+    "push_completed": false,
+    "final_pr_created": false,
+    "final_ci_verified": false,
+    "final_deployment_verified": false
+  },
+  "prior_release_adoption": {
+    "observedAt": "2026-09-09T03:40:42.737674+00:00",
+    "engine": {
+      "status": "ok",
+      "version": "5b92dc78",
+      "running": true,
+      "stalledTableCount": 0,
+      "blockedSettlementCount": 0,
+      "settlementStatus": "ok",
+      "maintenance": {
+        "active": false,
+        "phase": "idle",
+        "breakEndsAt": null,
+        "remainingMs": 0,
+        "unparkedTables": 0,
+        "readyForRestart": false,
+        "reason": "Scheduled Engine Maintenance",
+        "resumeWaves": {
+          "total": 8,
+          "done": 8,
+          "startedAt": 1788922805378,
+          "finishedAt": 1788922815880,
+          "tables": 385,
+          "tablesResumed": 385,
+          "gapMs": 1500
+        },
+        "dbClockSkewMs": -19
+      },
+      "fullSha": "5b92dc78722c084b4a04522b40f9a1f7b46f4404",
+      "contains": {
+        "C01": true,
+        "C04": true
+      }
+    },
+    "origin": {
+      "ca_sha": "5940d06d8949954ea92fa62965992b8eacac7df4",
+      "built_at": "2026-09-09T03:34:19Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34307469118",
+      "fullSha": "5940d06d8949954ea92fa62965992b8eacac7df4",
+      "contains": {
+        "C01": true,
+        "C04": true
+      }
+    },
+    "rewrite": {
+      "ca_sha": "5940d06d8949954ea92fa62965992b8eacac7df4",
+      "built_at": "2026-09-09T03:34:19Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34307469118",
+      "fullSha": "5940d06d8949954ea92fa62965992b8eacac7df4",
+      "contains": {
+        "C01": true,
+        "C04": true
+      }
+    }
+  },
+  "external_certification": "No external RNG/evaluator/fairness certificate located. No external certification claim.",
+  "remaining_gates": [
+    "Explicit publication authorization",
+    "Normal push and PR gates",
+    "Required CI and automated merge",
+    "Frontend origin/rewrite and engine adoption verification",
+    "Phase 2 completion evidence after actual rollout"
+  ]
+}

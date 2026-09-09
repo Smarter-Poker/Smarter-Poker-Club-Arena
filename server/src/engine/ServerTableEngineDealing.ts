@@ -1813,25 +1813,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         });
     }
-    // THE BUTTON MUST ALWAYS MOVE. getNextSeat over a ONE-seat roster returns
-    // that same seat from both of its branches, so when exactly one player is
-    // button-eligible and already holds the button, the button stands still and
-    // the same two players post the small and big blind twice running. That is
-    // reachable any time several players arrive at once around one incumbent.
-    //
-    // Heads-up is deliberately excluded: with two players the button IS the
-    // small blind, so parking it on the veteran is what makes the newcomer the
-    // big blind and gets them dealt in free. Forcing it across would put them in
-    // the small blind, which the hold-out then refuses, leaving one active
-    // player and no hand — a table that never deals again.
-    if (
-      !drawnIsSeated &&
-      prevButtonSeat > 0 &&
-      dealerSeat === prevButtonSeat &&
-      players.length > 2
-    ) {
-      dealerSeat = this.getNextSeat(prevButtonSeat, players);
-    }
+    // A sole eligible incumbent can keep the button for one entry hand.
+    // Giving it to a newcomer breaks cash entry rules and disagrees with the
+    // blind predictor. Once dealt, the newcomers join the eligible rotation.
     /**
      * THE DEAD BUTTON, AND THE BIG BLIND THAT WAS PAID TWICE
      * (2026-08-31, Phase 2.2. TDA Rule 33.)

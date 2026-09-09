@@ -153,7 +153,7 @@
     },
     "typescript": "passed",
     "status": "verified_live_in_PR3991",
-    "production_build": "passed locally; publication pending"
+    "production_build": "Published and verified in PR3991"
   },
   "remaining_entry_findings": [
     "Rebuy/reentry/addon durable payload replay is published and verified. Reuse docs/audits/2026-09-09-tournament-retry-release-evidence.json.",
@@ -200,7 +200,7 @@
   },
   "refund_client_contract": {
     "controls": ["CA-03-11", "CA-03-12"],
-    "status": "tested_build_passed_publication_pending",
+    "status": "PR4013_verified_on_public_and_origin",
     "tests_passed": 89,
     "typescript": "passed",
     "evidence": "docs/changelog/2026-09-09-tournament-refund-client-contract.md",
@@ -213,11 +213,24 @@
       "files": 3,
       "typescript": "passed",
       "reason": "merge overlapping receipt/ticket implementation; reuse canonical parser and return value"
+    },
+    "release": {
+      "merge": "48b3cd18af05b3c9f62b4d281102f8f7ae5665f6",
+      "served_sha": "48b3cd18af05b3c9f62b4d281102f8f7ae5665f6",
+      "built_at": "2026-09-09T20:40:23Z",
+      "publisher": "34402203356"
     }
   },
   "prepared_batch_publication": {
     "status": "verified_live",
     "evidence": "docs/audits/2026-09-09-tournament-retry-release-evidence.json",
     "phase_complete": false
+  },
+  "seat_refund_identity": {
+    "status": "tested_publication_pending",
+    "tests": 108,
+    "typescript": "passed",
+    "build": "passed",
+    "evidence": "docs/changelog/2026-09-09-durable-tournament-seat-refund.md"
   }
 }

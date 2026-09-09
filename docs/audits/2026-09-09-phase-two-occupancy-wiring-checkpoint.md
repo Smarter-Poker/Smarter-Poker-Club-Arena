@@ -94,3 +94,19 @@ This records local integration evidence only. Occupancy migration, compatible en
 The new unpublished occupancy RPC originally retained an authenticated-owner grant. That would let a browser bypass the engine's live-hand boundary even with correct occupancy identity. Its grant is now service-role only and its body independently requires engine authority before receipt access or mutation. An owner identity or club-admin session marker is insufficient. The browser and admin HTTP handlers already route through the engine.
 
 All 55 isolated PostgreSQL cases pass, including direct-owner voluntary/forced rejection with no ledger, balance, seat or receipt mutation; grants for all three app roles; rejection of direct owner replay after commit; and successful engine replay of the original receipt. Existing legacy live RPC grants are unchanged by this local correction and remain a coordinated retirement gate.
+
+## Table-close and held-departure follow-up
+
+Read-only production inspection confirmed both close triggers are enabled. The shared close helper skipped missing-club seats and non-positive or malformed amounts; its caller could then release unpaid seats. The second trigger swallowed cashout errors. The new reserved migration 20260909024909 routes all active occupancies through the bound transaction, including zero stacks, and propagates failure. It preserves tournament exclusion and the existing service-only grant.
+
+The isolated harness loads exact read-only exports of both old functions and applies the complete guarded migration twice. All 60 database tests pass: zero/positive close receipts and replay; missing-club refusal; rollback of an earlier payout when a later occupancy is invalid; and the actual trigger rolling back status, wallet, seat, and receipts on an injected payout failure before succeeding on retry.
+
+This does not close the live-hand or lock-order acceptance gates. Status triggers enter with the table row already locked, so outer transaction ordering and engine-driven table-close ownership still require review before this migration can be published. No production DDL was executed.
+
+A separate source review found clock refusal cleared the persistent pending flag while retaining only an in-memory map. The service now keeps the accepted departure pending for the same occupancy; a countdown callback cannot cancel it. Its focused retry/restart-boundary verification is recorded after execution.
+
+Verification update: 86 focused service/departure/read-overlap tests pass; server TypeScript passes. The ordinary pending-departure read remains the owner of accepted requests after restart; no new watcher or reconciler was added.
+
+Compatibility review then found that an older engine could use the canonical cashout during adoption without the new wrapper, leaving no durable receipt. Receipt insertion now belongs to the canonical transaction itself, after credit/exit/session/count updates and before commit. The wrapper validates identity and returns/replays that original outcome. Both zero and positive legacy-engine calls are covered by bound replay tests. All 62 isolated PostgreSQL cases pass, including both complete migrations applied twice. The new canonical pg_get_functiondef MD5 is 8d84b96cb2e7649ee2bf7ecf1f7028c9. Older local fingerprints above are historical, not the current migration output.
+
+Remaining release gates are unchanged: live outer lock ordering, engine hand ownership for every close ingress, retired unbound interfaces, coordinated schema/engine/frontend publication and actual adoption. This batch is local and is not a Phase 2 completion claim.

@@ -366,15 +366,9 @@ export async function processLeavePending(
       },
     });
     if (out.lockedMs !== null) {
-      const { error: clearError } = await supabase
-        .from('table_seats')
-        .update({ leave_pending: false })
-        .eq('table_id', tableId)
-        .eq('user_id', seat.user_id)
-        .eq('occupancy_id', seat.occupancy_id)
-        .is('left_at', null);
-      if (clearError)
-        throw new Error(clearError.message || 'Pending Departure Refusal Write Failed');
+      // Refusal does not cancel the accepted departure. Keep the durable
+      // pending flag so a new engine process reads the same occupancy after
+      // restart; the in-memory countdown callback is presentation only.
       onLocked?.(seat.user_id, out.lockedMs, seat.occupancy_id);
       continue;
     }

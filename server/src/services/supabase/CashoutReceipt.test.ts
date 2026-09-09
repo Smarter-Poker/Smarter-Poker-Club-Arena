@@ -118,6 +118,10 @@ describe('cashout departure proof', () => {
     const onLocked = vi.fn();
     expect(await processLeavePending('table', 'club', onLocked)).toEqual([]);
     expect(onLocked).toHaveBeenCalledWith('player', 1234, occupancyId);
+    expect(mock.from.mock.results[0].value.update).not.toHaveBeenCalled();
+    // A fresh caller, with no old countdown map, must still see the request.
+    arrange(receipt);
+    expect(await processLeavePending('table', 'club')).toEqual([{ userId: 'player', occupancyId }]);
   });
 });
 

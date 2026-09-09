@@ -8,7 +8,7 @@ DECLARE v_hash text;
 BEGIN
   SELECT md5(pg_get_functiondef('public.atomic_seat_cashout_locked(uuid,uuid,integer,text)'::regprocedure))
     INTO v_hash;
-  IF v_hash NOT IN ('9dba1ae69cb2c842c449ba90682dc3bc','27b0dea6d857963fe0fd4ac5857c1f1f') THEN
+  IF v_hash NOT IN ('9dba1ae69cb2c842c449ba90682dc3bc','8d84b96cb2e7649ee2bf7ecf1f7028c9') THEN
     RAISE EXCEPTION 'Unreviewed cashout baseline: %', v_hash;
   END IF;
 END $baseline$;
@@ -97,6 +97,7 @@ DECLARE
   v_admin_forced boolean;
   v_enforce   boolean;
   v_chk       jsonb;
+  v_receipt   jsonb;
 BEGIN
   v_engine := coalesce(public.fn_caller_is_engine(),false);
   -- H6: the mode is one of two words or nothing. 'vpip_evicted' (Dan
@@ -224,10 +225,17 @@ BEGIN
         WHERE table_id = p_table_id AND left_at IS NULL)
    WHERE id = p_table_id;
 
-  RETURN jsonb_build_object(
+  v_receipt := jsonb_build_object(
     'ok', true, 'stack', v_stack, 'credited', v_credited,
     'seat_number', v_seat.seat_number, 'idempotency_key', v_key,
-    'tournament_table', v_tournament IS NOT NULL);
+    'tournament_table', v_tournament IS NOT NULL,
+    'occupancy_id',v_seat.occupancy_id,'user_id',p_user_id,'table_id',p_table_id);
+  -- Every ingress, including an older engine during adoption, records the
+  -- original outcome in the transaction that moves the money and exits the seat.
+  INSERT INTO public.seat_cashout_receipts
+    (occupancy_id,user_id,table_id,seat_id,seat_number,receipt)
+  VALUES(v_seat.occupancy_id,p_user_id,p_table_id,v_seat.id,v_seat.seat_number,v_receipt);
+  RETURN v_receipt;
 END;
 $function$;
 
@@ -353,11 +361,8 @@ BEGIN
      OR v_result->>'idempotency_key' IS DISTINCT FROM 'cashout:occupancy:'||p_occupancy_id::text THEN
     RAISE EXCEPTION 'CASHOUT_UNCONFIRMED_OUTCOME' USING ERRCODE = '22023';
   END IF;
-  v_result := v_result || jsonb_build_object(
-    'occupancy_id',p_occupancy_id,'user_id',p_user_id,'table_id',p_table_id);
-  INSERT INTO public.seat_cashout_receipts
-    (occupancy_id,user_id,table_id,seat_id,seat_number,receipt)
-  VALUES(p_occupancy_id,p_user_id,p_table_id,v_seat.id,p_seat_number,v_result);
+  -- The canonical transaction writes this receipt for every ingress.
+  -- The wrapper owns request identity and replay, never a second receipt write.
   RETURN v_result;
 END;
 $function$;

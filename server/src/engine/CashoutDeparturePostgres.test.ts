@@ -460,6 +460,97 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       SELECT fn_get_seat_cashout_receipt('${USER}','${TABLE}',2,'${original}'); COMMIT;`)
     ).toThrow(/Engine authority required/);
   });
+  it.each([0, 25])(
+    'an older engine cashout creates a replayable occupancy receipt for %s',
+    (stack) => {
+      const original = seedOccupancy(stack);
+      const first = sql(`SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,'forced')`);
+      expect(first).toMatchObject({
+        ok: true,
+        stack,
+        occupancy_id: original,
+        user_id: USER,
+        table_id: TABLE,
+      });
+      // The next client/engine version may only know the durable occupancy.
+      expect(boundCashout(original)).toEqual(first);
+      expect(snapshot()).toEqual({
+        balance: 100 + stack,
+        active: 0,
+        credits: stack > 0 ? 1 : 0,
+        keys: stack > 0 ? 1 : 0,
+        closes: 1,
+      });
+      expect(sql('SELECT to_json(count(*)) FROM seat_cashout_receipts')).toBe(1);
+    }
+  );
+  it.each([0, 25])('table close records the original receipt for a %s stack', (stack) => {
+    const original = seedOccupancy(stack);
+    const result = sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`);
+    expect(result).toMatchObject({
+      ok: true,
+      players_paid: stack > 0 ? 1 : 0,
+      chips_returned: stack,
+    });
+    expect(snapshot()).toEqual({
+      balance: 100 + stack,
+      active: 0,
+      credits: stack > 0 ? 1 : 0,
+      keys: stack > 0 ? 1 : 0,
+      closes: 1,
+    });
+    expect(boundCashout(original)).toMatchObject({ stack, occupancy_id: original });
+    expect(sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','repeat')`)).toMatchObject({
+      ok: true,
+      players_paid: 0,
+      chips_returned: 0,
+    });
+  });
+  it('table close cannot skip a positive stack whose home club is missing', () => {
+    seedOccupancy();
+    sql('UPDATE table_seats SET club_id=NULL');
+    const before = snapshot();
+    expect(() =>
+      sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)
+    ).toThrow();
+    expect(snapshot()).toEqual(before);
+    expect(sql('SELECT to_json(count(*)) FROM seat_cashout_receipts')).toBe(0);
+  });
+  it('a later invalid occupancy rolls back every earlier payout in the same close', () => {
+    seedOccupancy();
+    sql(`INSERT INTO club_members VALUES('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','${CLUB}',100,NULL);
+      INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id)
+      VALUES(gen_random_uuid(),'${TABLE}','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',3,-1,now(),'${CLUB}')`);
+    expect(() =>
+      sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)
+    ).toThrow();
+    expect(
+      sql(`SELECT json_build_object('balance',(SELECT sum(chip_balance) FROM club_members),
+      'active',(SELECT count(*) FROM table_seats WHERE left_at IS NULL),
+      'credits',(SELECT count(*) FROM wallet_transactions),
+      'receipts',(SELECT count(*) FROM seat_cashout_receipts),
+      'closes',(SELECT count(*) FROM session_closes))`)
+    ).toEqual({ balance: 200, active: 2, credits: 0, receipts: 0, closes: 0 });
+  });
+  it('the actual close trigger propagates payout failure and rolls back the status change', () => {
+    seedOccupancy();
+    sql(`CREATE TRIGGER test_table_close AFTER UPDATE OF status ON tables
+      FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status='closed')
+      EXECUTE FUNCTION trg_auto_cashout_on_table_close()`);
+    try {
+      expect(() =>
+        sql(`BEGIN; SET LOCAL test.reject_exit='on';
+        UPDATE tables SET status='closed'; COMMIT;`)
+      ).toThrow(/injected seat exit failure/);
+      expect(sql('SELECT to_json(status) FROM tables')).toBe('waiting');
+      expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+      sql("UPDATE tables SET status='closed'");
+      expect(sql('SELECT to_json(status) FROM tables')).toBe('closed');
+      expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+    } finally {
+      sql('DROP TRIGGER test_table_close ON tables');
+    }
+  });
   it.each(['voluntary', 'forced'])('rejects direct owner %s cashout before any write', (mode) => {
     const original = seedOccupancy();
     expect(() =>

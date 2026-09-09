@@ -19,9 +19,12 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { mayTakeSeat } from './seatClaim.js';
 import {
   planOrphanReseats,
+  planSeatlessReseats,
   describeUnmovableOrphans,
+  SEATLESS_RESEAT_REASON,
   type OrphanTableRow,
   type OrphanSeatRow,
+  type SeatlessRosterRow,
 } from './orphanedSeatRepair.js';
 
 interface LateRegistrationCapacityResult {
@@ -533,6 +536,102 @@ export class TournamentManager extends TournamentManagerEliminations {
    * Both reads fail CLOSED. An unreadable board is UNKNOWN, never "nobody is
    * stranded" and never "everybody is".
    */
+  /**
+   * The tournament's own table ids, set by `absorbSeatlessPlayers` before it
+   * hands a batch to `executePlayerMoves`, so the "are they seated after all"
+   * re-check in that loop is scoped to this event and never reads another.
+   */
+  private seatlessSweepTableIds: string[] = [];
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A PLAYER WITH CHIPS AND NO CHAIR IS BROUGHT BACK TO THE FELT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The sibling of `absorbOrphanedSeats`, and the half nothing answered. That
+   * one repairs a live seat on a table that cannot deal; this one repairs a
+   * player who holds no live seat AT ALL while the roster still has them
+   * playing. Their chips stand on the chair they left, outside every reader
+   * that counts open seats, and they cannot be dealt a hand.
+   *
+   * Measured 2026-09-09: eight players across four running events holding
+   * 673,500 chips, one of them out of their chair since 04:48 the day before.
+   *
+   * Every read fails CLOSED - an unreadable board is UNKNOWN, never "nobody is
+   * stranded" - and the move goes through `executePlayerMoves`, so the
+   * duplicate-seat claim, the mid-hand deferral, the update-first seat reuse
+   * and the false-negative destination check all apply unchanged.
+   */
+  public async absorbSeatlessPlayers(): Promise<number> {
+    const { data: tableRows, error: tableErr } = await supabase
+      .from('tables')
+      .select('id, status, is_deleted, max_players')
+      .eq('tournament_id', this.tournamentId);
+    if (tableErr || !tableRows || tableRows.length === 0) return 0;
+
+    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
+    this.seatlessSweepTableIds = tableIds;
+
+    const { data: liveSeats, error: seatErr } = await supabase
+      .from('table_seats')
+      .select('table_id, user_id, seat_number, stack')
+      .in('table_id', tableIds)
+      .is('left_at', null);
+    if (seatErr || !liveSeats) return 0;
+
+    const { data: roster, error: rosterErr } = await supabase
+      .from('tournament_players')
+      .select('user_id, status')
+      .eq('tournament_id', this.tournamentId)
+      .neq('status', 'eliminated');
+    if (rosterErr || !roster) return 0;
+
+    const seated = new Set(liveSeats.map((s) => String((s as { user_id: string }).user_id)));
+    const seatlessIds = roster
+      .map((r) => String((r as { user_id: string }).user_id))
+      .filter((id) => !seated.has(id));
+    if (seatlessIds.length === 0) return 0;
+
+    // Where does each of them stand? The most recent chair they left.
+    const { data: leftSeats, error: leftErr } = await supabase
+      .from('table_seats')
+      .select('table_id, user_id, seat_number, stack, left_at')
+      .in('table_id', tableIds)
+      .in('user_id', seatlessIds)
+      .not('left_at', 'is', null)
+      .order('left_at', { ascending: false });
+    if (leftErr || !leftSeats) return 0;
+
+    const latest = new Map<string, SeatlessRosterRow>();
+    for (const row of leftSeats as Array<{
+      table_id: string;
+      user_id: string;
+      seat_number: number | null;
+      stack: number | string | null;
+    }>) {
+      const id = String(row.user_id);
+      if (latest.has(id)) continue; // ordered newest first
+      latest.set(id, {
+        user_id: id,
+        last_table_id: String(row.table_id),
+        last_seat_number: row.seat_number,
+        last_stack: row.stack,
+      });
+    }
+
+    const moves = planSeatlessReseats(
+      tableRows as OrphanTableRow[],
+      liveSeats as OrphanSeatRow[],
+      Array.from(latest.values())
+    );
+    if (moves.length === 0) return 0;
+
+    console.warn(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) are on the roster holding chips with no chair anywhere - seating them so they can be dealt in again`
+    );
+    return this.executePlayerMoves(moves);
+  }
+
   public async absorbOrphanedSeats(): Promise<number> {
     const { data: tableRows, error: tableErr } = await supabase
       .from('tables')
@@ -571,12 +670,18 @@ export class TournamentManager extends TournamentManagerEliminations {
       );
     }
 
-    if (moves.length === 0) return 0;
+    /* BOTH STRANDS OF ONE FAILURE, ONE SWEEP (2026-09-09). A player left on a
+       closed table and a player left with no chair at all are the same event -
+       a move that did not finish - and they are repaired on the same cadence
+       so neither waits on the other's discovery. */
+    const seatless = await this.absorbSeatlessPlayers();
+
+    if (moves.length === 0) return seatless;
 
     console.warn(
       `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) stranded on a closed table - moving them to open felt so the tournament can deal again`
     );
-    return this.executePlayerMoves(moves);
+    return (await this.executePlayerMoves(moves)) + seatless;
   }
 
   protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
@@ -595,13 +700,64 @@ export class TournamentManager extends TournamentManagerEliminations {
         // → eliminated on the next checker pass. MoveInstruction carries no stack, so
         // if we cannot read a real source stack we ABORT this move (leave the player
         // at the source table) and let the next rebalance pass retry — never seat at 0.
-        const { data: oldSeat, error: readErr } = await supabase
+        let { data: oldSeat, error: readErr } = await supabase
           .from('table_seats')
           .select('stack')
           .eq('table_id', move.fromTableId)
           .eq('user_id', move.playerId)
           .is('left_at', null)
           .maybeSingle();
+
+        /**
+         * THE CHAIR THEY LEFT IS WHERE THEIR CHIPS ARE (2026-09-09).
+         *
+         * Every other caller moves a player who is sitting down, so the read
+         * above is right to demand a live seat and right to abort without one -
+         * seating at a guessed stack is how a player gets eliminated at zero.
+         *
+         * A seatless player has no live seat by definition: that IS the fault
+         * being repaired. Their stack stands on the chair they left, which is
+         * where `executePlayerMoves` puts it (it reads the source before it
+         * vacates) and where `fn_ca_settle_hand_stacks_absolute` carries a hand
+         * result for a player who holds no chair. So for this one reason, and
+         * only after confirming they really hold nothing anywhere, the stack is
+         * read from the most recent chair they left. If that read is empty too,
+         * the abort below still applies and nothing is seated.
+         */
+        if (
+          move.reason === SEATLESS_RESEAT_REASON &&
+          !readErr &&
+          (oldSeat == null || oldSeat.stack == null)
+        ) {
+          const { data: stillSeated } = await supabase
+            .from('table_seats')
+            .select('id')
+            .eq('user_id', move.playerId)
+            .is('left_at', null)
+            .in('table_id', this.seatlessSweepTableIds)
+            .limit(1);
+          if (stillSeated && stillSeated.length > 0) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting seatless re-seat for ${move.playerId.slice(0, 8)} - they hold a live seat after all. The roster read and the seat read are not simultaneous; the next sweep re-decides.`
+              ),
+              'Tournament.Seatless_reseat_aborted_player_is_seated'
+            );
+            continue;
+          }
+          const { data: leftSeat, error: leftErr } = await supabase
+            .from('table_seats')
+            .select('stack')
+            .eq('table_id', move.fromTableId)
+            .eq('user_id', move.playerId)
+            .not('left_at', 'is', null)
+            .order('left_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!leftErr && leftSeat && leftSeat.stack != null) {
+            oldSeat = leftSeat;
+          }
+        }
 
         if (!this.eliminationMutationAllowed()) return moved;
 
@@ -647,6 +803,42 @@ export class TournamentManager extends TournamentManagerEliminations {
           );
           continue;
         }
+
+        /**
+         * NEVER MOVE A PLAYER MID-HAND - RE-CHECKED HERE, NOT ONLY AT PLAN TIME
+         * (2026-09-09).
+         *
+         * Both callers already probe `waitForHandComplete` before handing a
+         * batch to this loop, and the intent has been written down since
+         * 2026-07-24: "never move players mid-hand". But that probe is taken
+         * ONCE PER BATCH, and this loop then spends several awaited round
+         * trips per move (`mayTakeSeat`, the source-stack read, the seat
+         * writes). The engine keeps dealing throughout, so by the time move N
+         * vacates its seat, the boundary that was checked before move 1 is
+         * long gone.
+         *
+         * Measured 2026-09-08/09: 32 fully dealt tournament hands were thrown
+         * away. `fn_ca_settle_hand_stacks_absolute` finds the seat gone at
+         * commit time and raises `seat missing or left for <uuid> - hand write
+         * rejected whole`, which aborts the whole atomic commit; the engine
+         * files a critical alert and calls `killForRestart`. EVERY player at
+         * that table loses the hand they just played, not only the mover. The
+         * leave/join pairs sit 0.17-0.37s apart - inside the hand.
+         *
+         * So re-probe immediately before the only destructive write. Nothing
+         * has been stamped yet at this point in the iteration (the seat read
+         * and the duplicate-seat claim are both reads), so a refusal leaves
+         * the player exactly where they were - the same shape as the two
+         * guards above it.
+         */
+        if (!(await this.waitForHandComplete(move.fromTableId))) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring move for ${move.playerId.slice(0, 8)} - table ${move.fromTableId.slice(0, 8)} began a hand after this batch was planned. The player stays put and the next rebalance retries; moving now would discard the hand for everyone at that table.`
+          );
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          continue;
+        }
+        if (!this.eliminationMutationAllowed()) return moved;
 
         // From this write until destination-or-source restoration finishes we
         // complete one logical move even if stop is requested; abandoning the

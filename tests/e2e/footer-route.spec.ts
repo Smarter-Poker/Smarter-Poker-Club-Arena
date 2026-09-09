@@ -1,4 +1,33 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+/**
+ * THE FRAME, NOT THE BOX (2026-09-09). This spec used to prove the footer by
+ * asserting that the nav's bounding box reaches the bottom of the viewport. It
+ * did, on every run, while the painted frame floated above the edge with the
+ * lobby showing through: the transparent safe-area padding inside the box
+ * reached the edge and the artwork did not. The box is the wrong thing to
+ * measure. A player sees the artwork, so that is what is asserted now, on the
+ * default phone and on the narrowest one, where the 44px touch floor is taller
+ * than the artwork's own height and used to leave its slack under the frame.
+ */
+async function expectFrameOnTheBottomEdge(page: Page, nav: Locator) {
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const viewport = page.viewportSize();
+  expect(viewport).not.toBeNull();
+
+  const artwork = nav.locator('img').locator('..');
+  const frame = await artwork.boundingBox();
+  expect(frame).not.toBeNull();
+  expect(
+    Math.abs(frame!.y + frame!.height - viewport!.height),
+    'strip between the painted frame and the bottom edge'
+  ).toBeLessThan(1);
+
+  // The box is still fixed to the edge as well; it just is not the evidence.
+  const navBox = await nav.boundingBox();
+  expect(navBox).not.toBeNull();
+  expect(Math.abs(navBox!.y + navBox!.height - viewport!.height)).toBeLessThan(4);
+}
 
 test.describe('Club Arena footer route contract', () => {
   test('the production-safe probe route renders one fixed complete footer', async ({ page }) => {
@@ -11,13 +40,9 @@ test.describe('Club Arena footer route contract', () => {
     await expect(nav).toHaveCSS('position', 'fixed');
     await expect(nav.locator('[data-footer-control]')).toHaveCount(6);
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    const viewport = page.viewportSize();
-    const navBox = await nav.boundingBox();
-    expect(viewport).not.toBeNull();
-    expect(navBox).not.toBeNull();
-    expect(Math.abs(navBox!.y + navBox!.height - viewport!.height)).toBeLessThan(4);
+    await expectFrameOnTheBottomEdge(page, nav);
 
+    const viewport = page.viewportSize();
     for (const control of await nav.locator('[data-footer-control]').all()) {
       const box = await control.boundingBox();
       expect(box).not.toBeNull();
@@ -26,5 +51,16 @@ test.describe('Club Arena footer route contract', () => {
       expect(box!.width).toBeGreaterThanOrEqual(44);
       expect(box!.height).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  test.describe('on the narrowest phone', () => {
+    test.use({ viewport: { width: 320, height: 700 }, hasTouch: true, isMobile: true });
+
+    test('the touch floor leaves its slack above the frame, never under it', async ({ page }) => {
+      await page.goto('dev/footer');
+      const nav = page.getByRole('navigation', { name: 'Poker Arena' });
+      await expect(nav).toBeVisible();
+      await expectFrameOnTheBottomEdge(page, nav);
+    });
   });
 });

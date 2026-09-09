@@ -44,7 +44,7 @@ const TITLE_CENTRE_PCT = 54.65;
 /** The real GlobalHeader publishes this after measuring itself. */
 const HEADER_HEIGHT_PX = 40;
 
-function lobby(opts: { countText: string; publishControlsHeight: boolean }) {
+function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?: boolean }) {
   return `
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
@@ -136,7 +136,7 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean }) {
         </div>
       </section>
     </div>
-    <nav class="bottomNav" aria-label="Club Arena" data-footer-hidden="false">
+    <nav class="bottomNav" aria-label="Poker Arena" data-footer-hidden="false">
       <div class="viewport"><div class="artwork">
         <img class="artworkImage" alt="" width="1916" height="256" />
         <ul class="navItems">
@@ -150,7 +150,14 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean }) {
       </div></div>
     </nav>
     <script>
-      document.documentElement.style.setProperty('--ca-global-header-height', '${HEADER_HEIGHT_PX}px');
+      ${
+        opts.inTab
+          ? /* In the multi-table "+" tab the GlobalHeader publishes its height
+               on the TAB element, not the root, as --ca-in-tab-header-height.
+               The fixture puts it on .club-home, the nearest ancestor. */
+            `document.querySelector('.club-home').style.setProperty('--ca-in-tab-header-height', '${HEADER_HEIGHT_PX}px');`
+          : `document.documentElement.style.setProperty('--ca-global-header-height', '${HEADER_HEIGHT_PX}px');`
+      }
       ${
         opts.publishControlsHeight
           ? /* Mirrors ClubLobbyCommandTop exactly: publish now, and again
@@ -263,6 +270,55 @@ test.describe('mobile lobby chrome', () => {
     expect(m.sortbarPosition).toBe('sticky');
     expect(m.sortbarOnScreen).toBe(true);
     expect(m.sortbarTop).toBeGreaterThanOrEqual(HEADER_HEIGHT_PX - 1);
+  });
+
+  test('the Variant menu opens under the stuck row and above the cards', async ({ page }) => {
+    /* Dan 2026-09-05: the dropdowns "aren't clickable ... you click what's
+       behind the page". Giving the row a z-index made it a stacking context
+       around the menus that anchor inside it, so this proves the menu still
+       paints above every card once the row is stuck. */
+    await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
+    await page.evaluate(() => window.scrollTo(0, 700));
+    await settle(page);
+    const m = await page.evaluate(() => {
+      const bar = document.querySelector('.lobby-sortbar')!;
+      const anchor = document.createElement('div');
+      anchor.className = 'lt-variant-menu-anchor lt-variant-menu-anchor--bar';
+      anchor.innerHTML =
+        '<div class="lt-variant-menu" role="menu">' +
+        ['No Limit', 'Pineapple', 'Short Deck']
+          .map(
+            (g) =>
+              `<button type="button" class="lt-variant-menu__item" role="menuitemcheckbox">${g}</button>`
+          )
+          .join('') +
+        '</div>';
+      bar.appendChild(anchor);
+      const item = anchor.querySelector('.lt-variant-menu__item')!;
+      const i = item.getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      const hit = document.elementFromPoint(i.left + i.width / 2, i.top + i.height / 2);
+      return {
+        menuBelowBar: anchor.getBoundingClientRect().top - b.bottom,
+        itemIsTopmost: hit === item,
+        itemOnScreen: i.top >= 0 && i.bottom <= innerHeight,
+      };
+    });
+    expect(m.itemOnScreen).toBe(true);
+    expect(m.menuBelowBar).toBeGreaterThanOrEqual(0);
+    expect(m.menuBelowBar).toBeLessThan(12);
+    expect(m.itemIsTopmost, 'a card is painting over the open menu').toBe(true);
+  });
+
+  test('inside the multi-table tab the row reads the tab header height', async ({ page }) => {
+    await page.setContent(
+      lobby({ countText: '5 Balances', publishControlsHeight: true, inTab: true })
+    );
+    await page.evaluate(() => window.scrollTo(0, 700));
+    const m = await measureChrome(page);
+    expect(m.sortbarPosition).toBe('sticky');
+    expect(Math.abs(m.sortbarTop - m.deckBottom), 'gap between deck and row').toBeLessThan(1);
+    expect(m.sortbarOnScreen).toBe(true);
   });
 
   test('the footer frame sits on the bottom edge with nothing under it', async ({ page }) => {

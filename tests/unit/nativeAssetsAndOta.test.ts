@@ -50,13 +50,24 @@ describe('one native version, everywhere the binary and its OTA bundles state it
     );
   });
 
-  it('the publisher uploads the app bundle to Capgo after the origin is verified, and stays green without the token', () => {
+  it('the publisher uploads the app bundle to Capgo after the origin is verified, only when the switch is on', () => {
     const wf = read('.github/workflows/publish-club-arena.yml');
-    const job = wf.indexOf('publish-to-app:');
-    expect(job).toBeGreaterThan(wf.indexOf('publish-to-origin:'));
-    const body = wf.slice(job);
+    const job = wf.indexOf('\n  publish-to-app:');
+    expect(job).toBeGreaterThan(-1);
+    // the job body: up to the next top-level job key
+    const rest = wf.slice(job + 1);
+    const next = rest.search(/\n {2}[a-z-]+:\n/);
+    const body = next === -1 ? rest : rest.slice(0, next);
+    // execution order is by `needs`, not file position: the app bundle ships
+    // only after the origin publish succeeded
+    expect(body).toMatch(
+      /needs: \[publish-needed, build-and-store, client-tests, publish-to-origin\]/
+    );
     expect(body).toContain("needs.publish-to-origin.result == 'success'");
+    expect(body).toContain("vars.CAPGO_OTA_ENABLED == 'true'");
     expect(body).toContain('CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}');
+    // the warm-install law: npm ci only on a cache miss, guarded exactly so
+    expect(body).toMatch(/if: steps\.nm-cache\.outputs\.cache-hit != 'true'\s*\n\s*run: npm ci/);
     expect(body).toContain('run: npm run build:native');
     expect(body).toContain('@capgo/cli@latest bundle upload');
     expect(body).toContain('VERSION="${NATIVE}.${{ github.run_number }}"');

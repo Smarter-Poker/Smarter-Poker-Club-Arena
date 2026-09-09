@@ -137,12 +137,14 @@ launch - Capgo REQUIRES that call or it rolls the bundle back as broken.
 
 `publish-club-arena.yml` has a `publish-to-app` job: after the origin is
 verified serving a merge, it builds `dist-native` (`npm run build:native`)
-and runs `npx @capgo/cli bundle upload --channel production`. It is gated on
-the `CAPGO_TOKEN` repository secret: absent, it says so and exits green, so
-the web publish is never held by a store account that does not exist. To
-turn it on: create the Capgo app with id `poker.smarter.clubarena`, a
-`production` channel, an API key with upload rights, and set `CAPGO_TOKEN`
-(and optionally the `CAPGO_CHANNEL` repository variable). The RevenueCat
+and runs `npx @capgo/cli bundle upload --channel production`. It is switched
+on by the repository VARIABLE `CAPGO_OTA_ENABLED=true` (a job-level `if` can
+read variables, not secrets); until then the job is skipped and the web
+publish is never held by a store account that does not exist. To turn it on:
+create the Capgo app with id `poker.smarter.clubarena`, a `production`
+channel, an API key with upload rights, set the `CAPGO_TOKEN` secret, then
+set the variable (optionally `CAPGO_CHANNEL` too). The switch on with no
+token fails the job loudly rather than skipping. The RevenueCat
 public SDK keys go in as `VITE_REVENUECAT_IOS_KEY` /
 `VITE_REVENUECAT_ANDROID_KEY` secrets so the OTA bundle carries them.
 

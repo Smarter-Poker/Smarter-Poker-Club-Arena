@@ -36,10 +36,15 @@ The bundle version is `<native.version>.<run number>`. `native.version`
 monotonic - so every upload is unique, ordered, and never below the binary
 that installs it (Capgo refuses a bundle older than the app).
 
-`CAPGO_TOKEN` does not exist yet (Dan, 10.84). The job checks for it first
-and exits green with a summary line when it is absent, so today this merges
-and does nothing; the day the secret is set, the next publish ships OTA with
-no further change. The RevenueCat public SDK keys are read from secrets in
+`CAPGO_TOKEN` does not exist yet (Dan, 10.84). The job is switched on by the
+repository variable `CAPGO_OTA_ENABLED=true` in its job-level `if` (a
+job-level `if` can read variables, not secrets), so today it is skipped and
+this merges doing nothing; the day the secret and the variable are set, the
+next publish ships OTA with no further change. The switch on with no token
+fails loudly - a misconfiguration is not a quiet no-op. The job sits above
+`publish-to-origin` in the file only because the no-commit-left-behind law
+reads everything after the Converge step as that step; `needs` is what orders
+execution, and it needs the origin publish. The RevenueCat public SDK keys are read from secrets in
 the same job so the OTA bundle carries them once they exist.
 
 ## Verified

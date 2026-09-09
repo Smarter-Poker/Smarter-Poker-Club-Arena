@@ -9,11 +9,9 @@
  *
  * `hand_history.id` defaults to `gen_random_uuid()`, so the hand's identity
  * used to be decided by the INSERT. Settlement writes the hand first and banks
- * the rake second precisely so it can pass that id along - but the insert can
- * fail or simply be slow (measured the same day: 143 of 11,485 hands in two
- * hours landed more than 30 seconds after `ended_at`, 66 of them more than two
- * minutes, worst 252 seconds), and then the hand goes to the in-process retry
- * queue and settlement carries on with `null`.
+ * the rake second precisely so it can pass that id along. The accepted-hand
+ * transaction now commits history, stacks and fee ownership together under a
+ * UUID minted by the engine; no history-only queue can carry a null identity.
  *
  * A null hand id is not a cosmetic gap. It cost three separate things:
  *
@@ -42,10 +40,9 @@
  *     settle (CLAUDE.md 10.86).
  *
  * THE FIX, and what this law protects: settlement MINTS the uuid itself before
- * anything is written, and hands the same value to the `hand_history` insert,
- * to `atomic_distribute_rake`, and to the BBJ contribution. The row then lands
- * under that id in line, or from the queue five minutes later, or never - and
- * the booking names the same hand in all three cases.
+ * anything is written and hands the same value to the authoritative hand
+ * transaction. The row, stacks, rake and BBJ ownership land together under
+ * that id or none of them land.
  *
  * Every assertion below is one of the four ways this has regressed or could:
  * reading the id back out of the response, passing the post-insert variable to
@@ -86,7 +83,7 @@ describe('the hand mints its own id at settlement', () => {
 
   it('keeps v_handHistoryId meaning "the row is in the database"', () => {
     // It must still be initialised null and still be what the broadcast,
-    // the award-unit ledger and the integrity feed read - those three need
+    // the integrity feed read - those consumers need
     // the ROW, not just the identity.
     expect(settlement).toMatch(/let v_handHistoryId: string \| null = null;/);
     expect(settlement).toMatch(/if \(v_handHistoryId && this\.lifecycleCanMutate\(\)\) \{/);
@@ -128,22 +125,17 @@ describe('logHandHistory honours the minted id', () => {
     expect(handHistory).not.toMatch(/^\s*id: params\.handId,\s*$/m);
   });
 
-  it('returns the minted id when the insert lands but the response body does not', () => {
-    // "the write succeeded and we could not read the answer" must not be
-    // indistinguishable from "the write failed" - that is how the null got in.
-    expect(handHistory).toMatch(/const minted = typeof row\.id === 'string' \? row\.id : null;/);
-    expect(handHistory).toMatch(
-      /return \{ id: data\?\.id \?\? minted, wroteUnits: false, settlementCommitted: true \};/
-    );
-    expect(handHistory).toMatch(/wroteUnits: true,[\s\S]*?settlementCommitted: true/);
-    expect(handHistory).not.toMatch(/return \{ id: data\?\.id \?\? null/);
+  it('accepts only an authoritative receipt carrying the durable hand id', () => {
+    expect(handHistory).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
+    expect(handHistory).toContain("const historyId = typeof result.history_id === 'string'");
+    expect(handHistory).toContain('id: historyId,');
+    expect(handHistory).toContain('settlementCommitted: true');
   });
 
-  it('treats a duplicate-key answer as the same good news', () => {
-    const dupes = handHistory.match(
-      /if \(existing \|\| minted\)\s*return \{ id: existing \?\? minted, wroteUnits: false, settlementCommitted: true \};/g
-    );
-    expect(dupes).toHaveLength(2); // the plain insert and the bomb-pot RPC
+  it('refuses a receipt for a different UUID instead of accepting an alternate row', () => {
+    expect(handHistory).toContain('atomic hand commit refused (receipt_identity_mismatch)');
+    expect(handHistory).not.toContain(".from('hand_history')");
+    expect(handHistory).not.toContain('findExistingHandId');
   });
 });
 

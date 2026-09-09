@@ -49,6 +49,8 @@ const POLL_MS = 30000;
 
 export interface UseTournamentEntriesResult {
   entries: TournamentEntry[];
+  /** Durable count of every tournament_players row, not the draining seat counter. */
+  entryCount: number | null;
   /** True until the first attempt has settled, either way. */
   loading: boolean;
   /** True when the most recent attempt did not come back with an answer. */
@@ -70,6 +72,7 @@ export function useTournamentEntries(
 ): UseTournamentEntriesResult {
   const isMounted = useIsMounted();
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
+  const [entryCount, setEntryCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   /** Bumped by `refresh()`; the effect below watches it. */
@@ -80,6 +83,7 @@ export function useTournamentEntries(
   useEffect(() => {
     if (!tournamentId || !active) {
       setEntries([]);
+      setEntryCount(null);
       setLoading(false);
       setLoadFailed(false);
       return;
@@ -95,10 +99,11 @@ export function useTournamentEntries(
        * `fk_tournament_players_user_id_profiles` - one join for the whole
        * list, never one request per player.
        */
-      const { data, error } = await supabase
+      const { data, error, count } = await supabase
         .from('tournament_players')
         .select(
-          'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+          'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)',
+          { count: 'exact' }
         )
         .eq('tournament_id', tournamentId)
         .order('registered_at', { ascending: true });
@@ -130,6 +135,10 @@ export function useTournamentEntries(
           player_code: profile?.player_number ? String(profile.player_number) : null,
           chips: Number(e.chips) || startingChips,
           position: (e.position as number) || undefined,
+          prize:
+            e.prize !== null && e.prize !== undefined && Number.isFinite(Number(e.prize))
+              ? Number(e.prize)
+              : undefined,
           status: e.status as TournamentEntry['status'],
           table_id: (e.table_id as string | null) || null,
           created_at: (e.registered_at as string | null) ?? null,
@@ -141,6 +150,7 @@ export function useTournamentEntries(
       });
 
       setEntries(mapped);
+      setEntryCount(typeof count === 'number' ? count : mapped.length);
       setLoadFailed(false);
       setLoading(false);
     };
@@ -168,7 +178,7 @@ export function useTournamentEntries(
     };
   }, [tournamentId, active, startingChips, nonce, isMounted]);
 
-  return { entries, loading, loadFailed, refresh };
+  return { entries, entryCount, loading, loadFailed, refresh };
 }
 
 export default useTournamentEntries;

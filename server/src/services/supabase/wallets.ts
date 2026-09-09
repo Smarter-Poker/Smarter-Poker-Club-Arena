@@ -15,9 +15,7 @@ import { reportError } from '../errorReporter.js';
 import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 export type HorseRebuyResult =
-  | { status: 'funded'; stack: number }
-  | { status: 'declined' }
-  | { status: 'unknown' };
+  { status: 'funded'; stack: number } | { status: 'declined' } | { status: 'unknown' };
 
 /** One bust is one funding operation, including a retry through the idle path. */
 export async function autoRebuyHorse(

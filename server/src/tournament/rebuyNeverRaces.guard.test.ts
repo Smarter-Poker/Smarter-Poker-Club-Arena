@@ -104,50 +104,39 @@ describe('a busted player holds an open decision window, and the felt rolls on',
   });
 });
 
-describe('the SQL side matches: a rebuy needs no seat', () => {
-  it('the latest process_tournament_rebuy only demands a live seat for add-ons', () => {
-    const owning = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-      .filter((f) =>
-        fs
-          .readFileSync(path.join(MIGRATIONS, f), 'utf8')
-          .includes('FUNCTION public.process_tournament_rebuy')
-      );
-    expect(owning.length).toBeGreaterThan(0);
-    const sql = fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8');
-    const maintenanceWrapper = sliceBetween(
+describe('the SQL side matches: a paid rebuy commits its seat or nothing', () => {
+  it('the sole purchase transaction binds the accepted bust, money, seat, mirrors and receipt', () => {
+    const sql = fs.readFileSync(
+      path.join(
+        MIGRATIONS,
+        '20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+      ),
+      'utf8'
+    );
+    const purchase = sliceBetween(
       sql,
       'CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(',
       'REVOKE ALL ON FUNCTION public.process_tournament_rebuy('
     );
-    expect(maintenanceWrapper).toMatch(/pg_advisory_xact_lock_shared\(530090, 1\)/);
-    expect(maintenanceWrapper).toMatch(/fn_entry_purchases_frozen\(\)/);
-    expect(maintenanceWrapper).toMatch(
-      /process_tournament_rebuy_before_maintenance_announcement_gate/
-    );
-    expect(maintenanceWrapper).not.toMatch(/table_seats|seat_number|left_at/);
-
-    // The outer maintenance boundary deliberately delegates the already-
-    // audited lifecycle and seat contract instead of duplicating it. Follow
-    // that private core so this law continues to pin the distinction between
-    // a seatless rebuy and an add-on that must land on one live seat.
-    const lifecycleSql = fs.readFileSync(
-      path.join(MIGRATIONS, '20260908042400_tournament_places_settle_and_complete_atomically.sql'),
-      'utf8'
-    );
-    const lifecycleWrapper = sliceBetween(
-      lifecycleSql,
-      'CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(',
-      'REVOKE ALL ON FUNCTION public.process_tournament_rebuy('
-    );
-    expect(lifecycleWrapper).toMatch(/IF p_rebuy_type = 'addon' THEN/);
-    expect(lifecycleWrapper).toMatch(/ELSIF p_rebuy_type IN \('rebuy', 'reentry'\) THEN/);
-    expect(lifecycleWrapper).not.toMatch(/table_seats|seat_number|left_at/);
-    expect(lifecycleWrapper).toMatch(/process_tournament_rebuy_before_one_minute_addon/);
-    expect(lifecycleWrapper).toMatch(
-      /IF COALESCE\(v_t\.prize_pool_finalized, false\) THEN[\s\S]*?chip purchases are closed/
+    const global = purchase.indexOf('ca:tournament-terminal-settlement:v1');
+    const maintenance = purchase.indexOf('pg_advisory_xact_lock_shared(530090,1)');
+    const claim = purchase.indexOf('fn_claim_entry_purchase_receipt');
+    const freeze = purchase.indexOf('fn_entry_purchases_frozen');
+    expect(global).toBeGreaterThan(-1);
+    expect(maintenance).toBeGreaterThan(global);
+    expect(claim).toBeGreaterThan(maintenance);
+    expect(freeze).toBeGreaterThan(claim);
+    expect(purchase).toContain('fn_ca_latest_committed_knockout_candidate');
+    expect(purchase).toContain('fn_ca_process_tournament_chip_purchase_money_v1');
+    expect(purchase).toContain('UPDATE public.tournament_knockout_candidates c');
+    expect(purchase).toContain('fn_ca_choose_tournament_seat_locked');
+    expect(purchase).toContain('fn_ca_assign_tournament_player_seat_locked');
+    expect(purchase).toContain('fn_emit_tournament_manager_wake');
+    expect(purchase).toContain('fn_record_entry_purchase_receipt');
+    expect(purchase).toContain("'atomic_tournament_chip_purchase','v1'");
+    expect(purchase).not.toMatch(/double_submit_collapsed|process_tournament_rebuy_before_/);
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION\s+public\.fn_ca_process_tournament_chip_purchase_money_v1\([\s\S]*?service_role;/
     );
   });
 

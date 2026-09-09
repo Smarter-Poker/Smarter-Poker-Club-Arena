@@ -1,0 +1,151 @@
+{
+  "phase": 4,
+  "of": 12,
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "status": "in_progress",
+  "source_register": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+  "controls": [
+    {
+      "id": "CA-04-01",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Legacy agent self-transfer routing",
+      "required_work": "Replace active legacy wallet-pool self-transfer with club-scoped canonical self-stake after identity and ownership mapping.",
+      "source_or_register": "src/services/WalletService.ts",
+      "acceptance": "Both AgentPortalPage and AgentFinancialPortal use agents.user_id/club identity correctly and canonical balances; no guessed historical balance migration."
+    },
+    {
+      "id": "CA-04-02",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Agent transfer retry identity",
+      "required_work": "Move AgentService.transferToPlayer operation creation to the durable business intent and validate finite amount and strict receipt.",
+      "source_or_register": "src/services/AgentService.ts",
+      "acceptance": "Lost response, reload and repeated submit reuse the same key; altered payload and malformed success cannot credit."
+    },
+    {
+      "id": "CA-04-03",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Global wallet writer inventory",
+      "required_work": "Trace every balance-writing RPC, trigger, service, admin script and indirect helper to an authorized journal transaction.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "No unregistered balance write or independently committed journal leg remains."
+    },
+    {
+      "id": "CA-04-04",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Accounting transaction primitive",
+      "required_work": "Verify debit, credit, journal, receipt and state transition commit together with conservation constraints.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Injected failure at each statement leaves no partial state; valid retry returns the original result."
+    },
+    {
+      "id": "CA-04-05",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Precision and limits",
+      "required_work": "Review smallest units, numeric scale, rounding, bounds, NaN/infinity and JSON conversions per asset.",
+      "source_or_register": "callsite-register.csv",
+      "acceptance": "No floating-point loss, negative authorization bypass, overflow or cross-asset balancing."
+    },
+    {
+      "id": "CA-04-06",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Cashier send and take-back",
+      "required_work": "Trace player, agent, club and union send/recall paths including roles and insufficient funds.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Authorized parties only; serialized competing spends cannot overdraw or take another tenant's funds."
+    },
+    {
+      "id": "CA-04-07",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Cashout approvals and reversals",
+      "required_work": "Review requests, approvals, denial, cancellation and external settlement evidence.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "One legal state transition and one financial disposition; external uncertainty does not cause duplicate payment."
+    },
+    {
+      "id": "CA-04-08",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Wallet type and tenant boundary",
+      "required_work": "Review player, business, promo, treasury and legacy global pools for every caller.",
+      "source_or_register": "src/services/WalletService.ts",
+      "acceptance": "All reads and writes agree on owner, club, asset and account purpose; retired paths are explicit."
+    },
+    {
+      "id": "CA-04-09",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Ticket sending and redemption",
+      "required_work": "Review issue, send, take-back, expiration, redemption and duplicate-use protection.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Ownership transitions and liabilities are atomic and payload-bound; concurrent redemption succeeds once."
+    },
+    {
+      "id": "CA-04-10",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Chip mint and burn",
+      "required_work": "Review authorized issuance, source account, supply effects and audit actor.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Every issuance or destruction has an explicit balanced journal and correct authorization."
+    },
+    {
+      "id": "CA-04-11",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P0",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Diamond economy",
+      "required_work": "Trace purchase, grant, spend, refund, gifting and chip conversion where supported.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Diamond and chip ledgers remain separately balanced; retries cannot repeat grants or conversion."
+    },
+    {
+      "id": "CA-04-12",
+      "phase": "4",
+      "phase_name": "Cashier, wallets, tickets and issuance",
+      "priority": "P1",
+      "status": "Open: Full Behavioral And Release Acceptance Required",
+      "title": "Cashier UI receipts",
+      "required_work": "Review pending, rejected and confirmed states and history deduplication on all cashier controls.",
+      "source_or_register": "ui-control-register.csv",
+      "acceptance": "UI never announces success before an authoritative matching receipt; refresh reproduces the same outcome."
+    }
+  ],
+  "prior_phase": {
+    "phase": 3,
+    "status": "incomplete; prepared batch pushed as05c648a98 onPR3991; publication verification proceeds independently",
+    "authorization": "User explicitly approved configured Sentry source-map upload and Phase4 development on2026-09-09"
+  },
+  "initial_review": {
+    "existing_work": "Current main already routes self-stake and agent sends through canonical RPCs with AgentWalletIntent. Revalidate rather than duplicate.",
+    "confirmed_gap": "AgentService.transferToPlayer requests player_wallet but receipt validation accepted agent_wallet. Before correction,2 regression tests failed and53 passed.",
+    "verification": "68 focused tests passed across three files after correction; TypeScript passed after npm ci restored the declared dependency. Production build compiled and approved Sentry upload succeeded; provenance reported two commits behind main, so release integration and publication remain pending."
+  }
+}

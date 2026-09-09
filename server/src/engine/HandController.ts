@@ -1704,7 +1704,7 @@ export class HandController {
    * finalizeRunout(true) then emits WINNERS [], and that handler does
    * `localPlayer.stack = enginePlayer.stack` from a fresh (still uncredited)
    * getState(). So it overwrote the one real credit — the seated player's —
-   * with the pre-payout stack, and syncStacks persisted that. Both players in
+   * with the pre-payout stack, and the old hand writer persisted that. Both players in
    * an all-in RIT pot finished on their post-betting stack and the pot was
    * destroyed. 28,691 tables have run_it_twice_enabled.
    *

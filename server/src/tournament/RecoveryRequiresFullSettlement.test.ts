@@ -42,13 +42,13 @@ const RECOVER_CODE = blankNonCode(RECOVER);
 const ATOMIC_SETTLEMENT = newestFunctionBody('fn_settle_tournament_places_atomic');
 
 describe('recovery cannot finish a partially paid tournament', () => {
-  it('has one batch settlement door and no post-batch per-player payer', () => {
-    const boundary = RECOVER_CODE.indexOf('settleTournamentPlacesAtomically(');
-    expect(boundary).toBeGreaterThanOrEqual(0);
-
-    const completionTail = RECOVER_CODE.slice(boundary);
-    expect(completionTail.match(/settleTournamentPlacesAtomically\(/g)).toHaveLength(1);
-    expect(completionTail).not.toContain('settleTournamentObligation(');
+  it('has one domain receipt door per format and no fragment payer or writer', () => {
+    expect(RECOVER_CODE.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
+    expect(RECOVER_CODE.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+    expect(RECOVER_CODE).not.toMatch(
+      /settleTournamentPlacesAtomically|settleTournamentObligation|fn_settle_tournament_obligation/
+    );
+    expect(RECOVER_CODE).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
   });
 
   it('rejects each short-paid place and then re-proves that no place remains open', () => {
@@ -77,17 +77,14 @@ describe('recovery cannot finish a partially paid tournament', () => {
     );
   });
 
-  it('requires explicit atomic completion or a durable COMPLETED re-read before cleanup', () => {
-    const refusal = RECOVER_CODE.indexOf('if (!settlement.ok || !settlement.completed)');
-    const durableRead = RECOVER_CODE.indexOf('.from(', refusal);
-    const durableProof = RECOVER_CODE.indexOf('committed?.status !==', durableRead);
-    const failed = RECOVER_CODE.indexOf('throw new Error(', durableProof);
-    const cleanup = RECOVER_CODE.indexOf('closeRecoveredTournamentTablesAndSeats(t.id)', refusal);
-
-    expect(refusal).toBeGreaterThanOrEqual(0);
-    expect(durableRead).toBeGreaterThan(refusal);
-    expect(durableProof).toBeGreaterThan(durableRead);
-    expect(failed).toBeGreaterThan(durableProof);
-    expect(cleanup).toBeGreaterThan(failed);
+  it('delegates lost-response classification and terminal cleanup to the receipt helpers', () => {
+    expect(RECOVER_CODE).toMatch(/await requestTournamentTerminalReceipt\(/);
+    expect(RECOVER_CODE).toMatch(/await requestSatelliteSettlementReceipt\(/);
+    expect(RECOVER_CODE).toMatch(/TerminalSettlementRefusedError/);
+    expect(RECOVER_CODE).toMatch(/SatelliteSettlementRefusedError/);
+    expect(RECOVER_CODE).toMatch(/reportUnknownRecoveryOutcome\(/);
+    expect(RECOVER_CODE).not.toMatch(
+      /closeRecoveredTournamentTablesAndSeats|status:\s*'COMPLETED'/
+    );
   });
 });

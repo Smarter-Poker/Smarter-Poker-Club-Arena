@@ -29,7 +29,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 
 const DIR = resolve(__dirname, '..', 'supabase/migrations');
-const FILE = readdirSync(DIR).find((f) => f.includes('a_seat_that_waits_forever'));
+const FILE = readdirSync(DIR).find((f) => f.includes('spin_expiry_rechecks_the_locked_board'));
 const SQL = FILE ? readFileSync(resolve(DIR, FILE), 'utf8') : '';
 
 /** The function body, bounded by its own dollar-quoted block. */
@@ -44,7 +44,7 @@ function body(): string {
 
 describe('the unfilled-spin sweep refunds rather than strands', () => {
   it('ships as a migration at all', () => {
-    expect(FILE, 'the phase-2 migration is missing').toBeTruthy();
+    expect(FILE, 'the current expiry migration is missing').toBeTruthy();
   });
 
   it('cancels through atomic_cancel_tournament, the refunding path', () => {

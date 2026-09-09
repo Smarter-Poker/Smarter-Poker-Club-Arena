@@ -2700,6 +2700,33 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         console.warn(
           `[ServerTableEngine:${this.tableId}] mini jackpot not paid for hand #${snap.handNumber}: ${outcome.reason}`
         );
+        /* A REFUSED MINI IS WRITTEN DOWN (2026-09-09). `queued` is not a
+           refusal - the write-ahead row above resolves it, 19 of 19 so far -
+           but `skipped` is: the reserve at its floor, a tier disabled, the
+           pool missing. Measured two days after launch: 12 of the first 14
+           minis came out of ONE club's reserve at 3,642 chips a day against
+           an 11,168 balance and a 5,000 floor. When that floor is reached
+           every mini at those tables is refused by design, and until this
+           line the only evidence would have been the absence of hits - the
+           same guard-with-no-reader shape that hid the main jackpot's
+           seventeen silent days (CLAUDE.md 10.86). Same instrument, same
+           table, so one query answers both "why did the main not pay" and
+           "why did the mini not pay". Fire-and-forget; never gates. */
+        if (outcome.status === 'skipped') {
+          void recordBBJNearMiss({
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id ?? null,
+            handNumber: snap.handNumber,
+            variant: mini.variant ?? this.tableInfo?.game_variant ?? 'unknown',
+            bigBlind: this.tableInfo?.big_blind ?? null,
+            potSize: snap.potSize,
+            playersDealt: (mini.dealtInPlayerIds || []).length,
+            userId: mini.loserUserId ?? undefined,
+            handName: mini.loserHand?.name,
+            reason: `mini_refused:${outcome.reason || 'unspecified'}`,
+            message: `Mini jackpot qualified (${(mini as { miniRule?: string }).miniRule ?? 'rule'}) and was refused: ${outcome.reason || 'unspecified'}`,
+          }).catch(() => undefined);
+        }
         return;
       }
 

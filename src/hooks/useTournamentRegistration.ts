@@ -253,7 +253,9 @@ export function useTournamentRegistration() {
          * created roster row was read back.
          */
         type SeatLookup =
-          { state: 'seated'; tableId: string } | { state: 'pending' } | { state: 'unknown' };
+          | { state: 'seated'; tableId: string }
+          | { state: 'pending' }
+          | { state: 'unknown' };
 
         const findMySeat = async (): Promise<SeatLookup> => {
           const { data: tp, error } = await supabase

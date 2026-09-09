@@ -40,10 +40,19 @@ const MULTI = read('src/pages/MultiTablePage.tsx');
 const TRACKER = read('src/components/common/LastClubTracker.tsx');
 const TAB_BAR = read('src/components/table/TableTabBar.tsx');
 
-/** The ticker's click handler, isolated from the countdown and the marquee. */
+/**
+ * The ticker's click handler, isolated from the poll and the marquee.
+ *
+ * RE-ANCHORED 2026-09-05. The handler used to be an inline `onClick` on the
+ * marquee button and this file sliced between two class names to find it. The
+ * render moved to TickerRail.tsx in the same pass, and the routing decision -
+ * the thing this file actually guards - moved into a named `open` callback
+ * here. Same rule, same file, new anchors: whatever owns the bar, the id in
+ * the URL is a TOURNAMENT id and never a club id.
+ */
 const TICKER_CLICK = TICKER.slice(
-  TICKER.indexOf('className="mtt-ticker__track"'),
-  TICKER.indexOf('mtt-ticker__scroll')
+  TICKER.indexOf('const open = useCallback('),
+  TICKER.indexOf('[navigate]')
 );
 
 /** MultiTablePage's single home-club writer. */
@@ -62,20 +71,22 @@ describe('the MTT ticker opens the event, not a club list', () => {
        `targetId` rather than reading `primary.id` inline. The rule is
        unchanged and the assertion below is what keeps it: whatever owns the
        bar, the id in the URL is a TOURNAMENT id. */
-    expect(TICKER_CLICK).toMatch(/navigate\(`\/tournaments\/\$\{targetId\}`\)/);
+    expect(TICKER_CLICK).toMatch(/navigate\(`\/tournaments\/\$\{entry\.tournamentId\}`\)/);
   });
 
-  it('the click target is only ever a tournament id, from either source', () => {
-    /* Both sources of that id, pinned at their definition. If a future edit
-       resolves targetId from anything club-shaped this fails, which is the
-       whole point of this file. */
-    const TARGET_DECL = TICKER.slice(
-      TICKER.indexOf('const targetId ='),
-      TICKER.indexOf('const targetName =')
+  it('the click target is only ever a tournament id, from every source', () => {
+    /* Every source now composes its item through tickerMessages, and only two
+       fields can carry a destination: `tournamentId` and `tableId`. If a third
+       one ever appears carrying anything club-shaped, this fails - which is
+       the whole point of this file. */
+    const ITEM = read('src/components/tournament/tickerMessages.ts');
+    const SHAPE = ITEM.slice(
+      ITEM.indexOf('export interface TickerItem {'),
+      ITEM.indexOf('/** Between the fields of one announcement. */')
     );
-    expect(TARGET_DECL).toMatch(/primaryOverlay\.id/);
-    expect(TARGET_DECL).toMatch(/primary\?\.id/);
-    expect(TARGET_DECL).not.toMatch(/club/i);
+    expect(SHAPE).toMatch(/tournamentId\?: string;/);
+    expect(SHAPE).toMatch(/tableId\?: string;/);
+    expect(SHAPE).not.toMatch(/clubId/);
   });
 
   it('never routes through a club id again', () => {
@@ -92,7 +103,10 @@ describe('the MTT ticker opens the event, not a club list', () => {
        guarantees that - the same rule the starting-soon query follows. */
     const OVERLAY_Q = TICKER.slice(
       TICKER.indexOf('const overlayPromise ='),
-      TICKER.indexOf('const [{ data, error }, myRegs, overlayRes]')
+      // Re-anchored 2026-09-05 with the query gating. The old anchor stopped
+      // existing and `indexOf` returned -1, which silently widened this slice
+      // to the whole file instead of failing.
+      TICKER.indexOf('const wantsTournamentOps =')
     );
     expect(OVERLAY_Q).toMatch(/\.in\('club_id', clubIds\)/);
     expect(OVERLAY_Q).toMatch(/\.eq\('tournament_type', 'MTT'\)/);
@@ -101,6 +115,12 @@ describe('the MTT ticker opens the event, not a club list', () => {
 
   it('falls back to the GLOBAL lobby, which is never union-scoped', () => {
     expect(TICKER_CLICK).toMatch(/navigate\('\/tournaments'\)/);
+  });
+
+  it('a table opening opens that table, and nothing else routes by table', () => {
+    /* The only non-tournament destination the bar has. It is a TABLE id from
+       the table-openings source, never a club id and never a lobby. */
+    expect(TICKER_CLICK).toMatch(/navigate\(`\/table\/\$\{entry\.tableId\}`\)/);
   });
 });
 

@@ -43,6 +43,7 @@ vi.mock('../services/supabase/cashSessions.js', async (importOriginal) => {
 });
 
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
+const { supabase } = await import('../services/supabase.js');
 const { deadlineScheduler } = await import('./DeadlineScheduler.js');
 
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -288,4 +289,60 @@ describe('a rejected settlement is not a cashout authorization', () => {
       }
     );
   }
+});
+
+describe('a folded player still has an unsettled hand contribution', () => {
+  it.each([false, true])(
+    'defers the cashout until the live hand persists its final stack: forced=%s',
+    async (forced) => {
+      const e = makeEngine();
+      cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
+      const chain: any = {
+        update: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockResolvedValue({ error: null }),
+      };
+      const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
+      e.handController = {
+        getState: () => ({
+          players: [
+            {
+              user_id: HUMAN,
+              seat: 1,
+              is_folded: true,
+              is_all_in: false,
+              stack: 120,
+              total_bet: 60,
+            },
+          ],
+        }),
+        performAction: vi.fn(),
+      };
+      try {
+        const result = await e.leaveTable(HUMAN, { forced });
+        expect(result).toMatchObject({ success: true, immediate: false });
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+        expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ leave_pending: true }));
+        expect(e.handController.performAction).not.toHaveBeenCalled();
+      } finally {
+        from.mockRestore();
+      }
+    }
+  );
+});
+
+describe('a player who was not dealt into the live hand', () => {
+  it('can cash out without waiting for other players to finish', async () => {
+    const e = makeEngine();
+    cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
+    e.handController = {
+      getState: () => ({
+        players: [{ user_id: HORSE, seat: 2, is_folded: false, is_all_in: false }],
+      }),
+    };
+    const result = await e.leaveTable(HUMAN);
+    expect(result).toMatchObject({ success: true, immediate: true });
+    expect(cashoutVoluntary).toHaveBeenCalledOnce();
+  });
 });

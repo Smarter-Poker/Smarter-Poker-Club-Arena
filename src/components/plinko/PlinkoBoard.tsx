@@ -182,6 +182,35 @@ export default function PlinkoBoard({
         }
       }
       ctx.shadowBlur = 0;
+      /* One size for all seventeen chips, measured, never guessed: the widest
+         label sets it, so the row reads as a row instead of collapsing into
+         each other at 393px. If the multiplier's own "x" is what stands
+         between the row and a legible size it comes off EVERY chip together,
+         never off some of them; the odds console under the board carries the
+         same figures at full size either way. */
+      const slotLabels: string[] = [];
+      for (let k = 0; k <= 16; k++) slotLabels.push(multiplierLabel(mults[k] ?? 0));
+      const labelRoom = s - 2.5;
+      const widest = (labels: string[], f: number) => {
+        ctx.font = `800 ${f}px "Roboto Condensed", Inter, sans-serif`;
+        return labels.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+      };
+      const fitted = (labels: string[]) => {
+        const base = s * 0.46;
+        const w = widest(labels, base);
+        return w > labelRoom ? (base * labelRoom) / w : base;
+      };
+      let labels = slotLabels;
+      let labelPx = fitted(labels);
+      if (labelPx < 8) {
+        const bare = slotLabels.map((l) => l.replace(/x$/, ''));
+        const barePx = fitted(bare);
+        if (barePx > labelPx) {
+          labels = bare;
+          labelPx = barePx;
+        }
+      }
+      labelPx = Math.max(6, labelPx);
       for (let k = 0; k <= 16; k++) {
         const cents = mults[k] ?? 0;
         const table = tableMults?.[k] ?? cents;
@@ -203,19 +232,12 @@ export default function PlinkoBoard({
         ctx.lineWidth = 1;
         roundRect(ctx, x + 0.5, y + 0.5, w - 1, SLOT_H - 1, 4);
         ctx.stroke();
-        const label = multiplierLabel(cents);
         const capped = cents < table;
         ctx.fillStyle = hot ? '#0b1017' : capped ? '#ffd76a' : c.text;
-        const fontPx =
-          label.length > 5
-            ? Math.max(7, s * 0.34)
-            : label.length > 3
-              ? Math.max(8, s * 0.4)
-              : Math.max(9, s * 0.46);
-        ctx.font = `800 ${fontPx}px "Roboto Condensed", Inter, sans-serif`;
+        ctx.font = `800 ${labelPx}px "Roboto Condensed", Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(label, x + w / 2, y + SLOT_H / 2 + 0.5);
+        ctx.fillText(labels[k], x + w / 2, y + SLOT_H / 2 + 0.5);
       }
       if (ballAt) {
         ctx.shadowColor = 'rgba(90,200,255,0.9)';

@@ -1,0 +1,101 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DECK CONSOLE
+
+   The spade master's deck (popups/buy-in-v1/deck.png, rows 350-1135 of the
+   approved master: four bays, two plates, the flat cap) under the console's
+   own head and a body on the rails. Each slice paints its own box at its
+   own ratio, so the painted bays and plates line up with the DOM printed
+   into them at any width. Nothing else is drawn. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dk__stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.4cqw;
+  /* The rails in mid.png end at x 86 and 926 of the master: the glass between
+     them is what the game gets, with a little air either side. */
+  padding: 0 9.4% 2.4cqw;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
+    center / 100% auto repeat-y;
+}
+
+.dk__deck {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1000 / 627;
+  background: url('/hub/club-arena/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100%
+    auto no-repeat;
+}
+
+.dk__bay-label {
+  justify-items: center;
+  text-align: center;
+  font-size: 3.1cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dk__bay-value {
+  justify-items: center;
+  text-align: center;
+  font-size: 6.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+/* A bay that is a control: the button paints nothing over the master. */
+.dk__bay-button {
+  appearance: none;
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  overflow: hidden;
+}
+
+/* The face inside the window: values fit this, never the bevel. */
+.dk__bay-well {
+  display: grid;
+  justify-items: center;
+  width: 88%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dk__bay-face {
+  display: inline-block;
+  max-width: 100%;
+  font-size: calc(6.4cqw * var(--fit, 1));
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dk__bay-button:active .dk__bay-face {
+  filter: brightness(1.25);
+}
+
+.dk__bay-button:disabled {
+  cursor: default;
+}
+
+.dk__bay-button:disabled .dk__bay-face {
+  opacity: 0.45;
+}
+
+.dk__bay-button:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1.6cqw;
+}

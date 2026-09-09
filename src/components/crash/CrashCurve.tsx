@@ -85,7 +85,14 @@ export default function CrashCurve({
 
       // Axes scale: time grows with the round, the multiplier axis leads the line.
       const tMax = Math.max(6000, elapsedMs * 1.15);
-      const mMax = Math.max(2, (nowCents / 100) * 1.25);
+      // At rest the axis also makes room for the player's auto target, so the
+      // gold line they set is on the glass before they bet; once the round is
+      // running the axis leads the line and nothing else.
+      const mMax = Math.max(
+        2,
+        (nowCents / 100) * 1.25,
+        phase === 'idle' && autoCashoutCents ? (autoCashoutCents / 100) * 1.15 : 0
+      );
       const xOf = (ms: number) => PAD_L + (ms / tMax) * plotW;
       const yOf = (m: number) => PAD_T + plotH - ((m - 1) / (mMax - 1)) * plotH;
 
@@ -119,7 +126,7 @@ export default function CrashCurve({
       }
 
       // auto cash-out line
-      if (autoCashoutCents && autoCashoutCents / 100 < mMax) {
+      if (autoCashoutCents && autoCashoutCents / 100 <= mMax) {
         const y = yOf(autoCashoutCents / 100);
         ctx.setLineDash([4, 4]);
         ctx.strokeStyle = 'rgba(255,214,120,0.55)';
@@ -134,7 +141,26 @@ export default function CrashCurve({
         ctx.fillText(`Auto ${multiplierLabel(autoCashoutCents)}`, PAD_L + 4, y - 2);
       }
 
-      if (phase === 'idle') return;
+      // At rest the glass is not blank: the climb this round WOULD take, drawn
+      // dim, so a player sees the shape of the game before they bet.
+      if (phase === 'idle') {
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = 'rgba(57,182,255,0.30)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= 90; i++) {
+          const ms = (tMax * i) / 90;
+          const m = Math.exp(growthK * (ms / 1000));
+          if (m > mMax) break;
+          const x = xOf(ms);
+          const y = yOf(m);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
 
       // the curve up to elapsedMs
       const color = phase === 'crashed' ? '#ff5f5f' : phase === 'cashed' ? '#5df2a0' : '#39b6ff';

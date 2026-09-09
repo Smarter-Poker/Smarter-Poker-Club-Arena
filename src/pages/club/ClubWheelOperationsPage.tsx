@@ -18,35 +18,33 @@
  * fn_union_can_manage_wallets; a standalone club's owner, co_owner or admin;
  * platform management). The page shows a refusal, it never pre-empts one.
  *
+ * THE PICTURE (#ClubArenaConsole). Four consoles: the readings, the realised
+ * return by window, the controls (fields printed on engraved lines, Close /
+ * Open on the steel, Save on the blue glass) and the lifetime pool. Nothing is
+ * drawn.
+ *
  * Route: /clubs/:clubId/wheel-operations, finance access in the operations
- * registry. The player's page is /clubs/:clubId/wheel. Material: the
- * #SmarterCasinoRealism chassis (Dan 2026-09-08).
+ * registry. The player's page is /clubs/:clubId/wheel.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import { ErrorState, LoadingState } from '../../components/common/EmptyState';
+import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
 import DiamondWheelService, {
   type WheelConfigPatch,
   type WheelMetrics,
 } from '../../services/DiamondWheelService';
+import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import {
-  CasinoBay,
-  CasinoBays,
-  CasinoButton,
-  CasinoFrame,
-  CasinoNote,
-} from '../../components/diamond-games/CasinoChassis';
-import styles from './ClubWheelOperationsPage.module.css';
+import styles from '../diamondGames.module.css';
 
-const chips = (n: number | null | undefined) =>
-  Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pct = (n: number | null | undefined, digits = 1) =>
-  n === null || n === undefined ? 'N/A' : `${(n * 100).toFixed(digits)}%`;
+const chips = (n: number | null | undefined) => compactChips(Number(n ?? 0));
+const pct = (n: number | null | undefined) =>
+  n === null || n === undefined ? 'N/A' : `${Math.round(n * 100)}%`;
 
 interface Draft {
   spin_price_diamonds: string;
@@ -69,6 +67,80 @@ function draftFrom(m: WheelMetrics | null): Draft {
     purchased_only: c?.purchased_only ?? true,
     allow_fixture_accounts: c?.allow_fixture_accounts ?? false,
   };
+}
+
+function Row({
+  label,
+  value,
+  ink = 'silver',
+  meta,
+}: {
+  label: string;
+  value: string;
+  ink?: ConsoleInk;
+  meta?: string;
+}) {
+  return (
+    <div className={styles.row}>
+      <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>
+        {label}
+        {meta ? <span className={`${styles.rowMeta} sc-ink--muted`}>{meta}</span> : null}
+      </span>
+      <span className={`${styles.rowValue} sc-ink--${ink}`}>{value}</span>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  hint,
+  mode = 'numeric',
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+  mode?: 'decimal' | 'numeric';
+}) {
+  return (
+    <label className={styles.field}>
+      <span className="sc-label sc-ink--blue">{label}</span>
+      <input
+        className={styles.fieldInput}
+        inputMode={mode}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {hint ? <span className="sc-copy sc-ink--muted">{hint}</span> : null}
+    </label>
+  );
+}
+
+/** A switch: the row IS the control, its state is its printed value. */
+function Toggle({
+  label,
+  hint,
+  on,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button type="button" className={styles.rowButton} onClick={onToggle} aria-pressed={on}>
+      <span className={`sc-label sc-ink--silver ${styles.rowLabel}`}>
+        {label}
+        <span className={`${styles.rowMeta} sc-ink--muted`}>{hint}</span>
+      </span>
+      <span className={`${styles.rowValue} sc-ink--${on ? 'green' : 'muted'}`}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  );
 }
 
 export default function ClubWheelOperationsPage() {
@@ -178,245 +250,232 @@ export default function ClubWheelOperationsPage() {
   const pool = metrics?.pool;
   const enabled = Boolean(cfg?.enabled);
   const hostWord = metrics?.host_kind === 'union' ? 'Union Bank' : 'Club Treasury';
+  const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <button
-          type="button"
-          className={styles.backBtn}
-          onClick={() => navigate(`/clubs/${routeClubId}/operations`)}
-        >
-          ‹ Operations
-        </button>
-        <h1>Diamond Wheel</h1>
-        <span className={`${styles.pill} ${enabled ? styles.pillOn : styles.pillOff}`}>
-          {enabled ? 'Open' : 'Closed'}
-        </span>
-      </header>
+      <button
+        type="button"
+        className={styles.back}
+        onClick={() => navigate(`/clubs/${routeClubId}/operations`)}
+      >
+        ‹ Operations
+      </button>
 
-      <CasinoFrame eyebrow="Diamond Wheel" title="The Readings" tight>
-        <CasinoBays columns={3}>
-          <CasinoBay label={hostWord} value={chips(metrics?.bank_chips)} sub="Chips To Pay" small />
-          <CasinoBay
+      <SpadeConsole
+        eyebrow="Operations"
+        title="Diamond Wheel"
+        titleId="wheel-ops-title"
+        pill={enabled ? 'Open' : 'Closed'}
+        pillInk={enabled ? 'green' : 'red'}
+        foot="foot"
+        aria-labelledby="wheel-ops-title"
+      >
+        <div className={styles.rows}>
+          <Row label={hostWord} value={chips(metrics?.bank_chips)} meta="Chips To Pay" />
+          <Row
             label="Exposure"
             value={chips(metrics?.exposure_chips)}
-            sub={`Room ${chips(metrics?.exposure_headroom_chips)}`}
-            tone={(metrics?.exposure_chips ?? 0) > 0 ? 'gold' : 'chrome'}
-            small
+            ink={(metrics?.exposure_chips ?? 0) > 0 ? 'gold' : 'silver'}
+            meta={`Room ${chips(metrics?.exposure_headroom_chips)}`}
           />
-          <CasinoBay
+          <Row
             label="Return"
             value={pct(metrics?.realized_rtp_lifetime)}
-            sub={`${(pool?.spins ?? 0).toLocaleString()} Spins`}
-            small
+            meta={`${compactChips(pool?.spins ?? 0)} Spins Against 80%`}
           />
-          <CasinoBay
+          <Row
             label="House Take"
             value={chips(metrics?.house_take_lifetime_chips)}
-            sub="In Chips"
-            tone="gold"
-            small
+            ink="gold"
+            meta="Chips"
           />
-          <CasinoBay
+          <Row
             label="Lock Rate"
             value={pct(metrics?.lock_rate)}
-            sub="Tier Off The Table"
-            small
+            meta="Spins With A Tier Off The Table"
           />
-          <CasinoBay
+          <Row
             label="Invariant"
             value={metrics?.invariant_ok === false ? 'Broken' : 'Holds'}
-            sub="Paid Vs Minted"
-            tone={metrics?.invariant_ok === false ? 'red' : 'green'}
-            small
+            ink={metrics?.invariant_ok === false ? 'red' : 'green'}
+            meta="Paid Against Minted"
           />
-        </CasinoBays>
-        <CasinoNote>
+        </div>
+        <p className="sc-copy">
           Paid Never Exceeds Minted Plus The Allowance; The Per-Spin Gate Makes That Arithmetic, And
           The Metrics Re-Derive It. A Locked Tier Is One The Pool Could Not Cover On That Spin.
-        </CasinoNote>
-      </CasinoFrame>
+        </p>
+      </SpadeConsole>
 
-      <CasinoFrame eyebrow="Against The 80% Spec" title="Realised Return" tight>
-        <div className={styles.scroll}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Window</th>
-                <th className={styles.num}>Spins</th>
-                <th className={styles.num}>Intake</th>
-                <th className={styles.num}>Paid</th>
-                <th className={styles.num}>Return</th>
-                <th className={styles.num}>Z</th>
-                <th className={styles.num}>Locked</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(metrics?.windows ?? []).map((w) => (
-                <tr key={w.window} className={w.drift ? styles.rowBad : undefined}>
-                  <td>{w.window}</td>
-                  <td className={styles.num}>{w.spins.toLocaleString()}</td>
-                  <td className={styles.num}>{chips(w.intake_chips)}</td>
-                  <td className={styles.num}>{chips(w.paid_chips)}</td>
-                  <td className={styles.num}>{pct(w.realized_rtp)}</td>
-                  <td className={styles.num}>{w.z === null ? 'N/A' : w.z.toFixed(2)}</td>
-                  <td className={styles.num}>{w.constrained.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">
+        <div className={styles.rows}>
+          <div className={`${styles.grid4} ${styles.grid4Head}`}>
+            <span className="sc-label sc-ink--blue">Window</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Spins</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Return</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Z</span>
+          </div>
+          {(metrics?.windows ?? []).map((w) => (
+            <div key={w.window} className={styles.grid4}>
+              <span className={`${styles.cell} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}>
+                {w.window.toUpperCase()}
+                <span className={`${styles.rowMeta} sc-ink--muted`}>
+                  In {chips(w.intake_chips)}, Out {chips(w.paid_chips)}
+                  {w.constrained ? `, ${compactChips(w.constrained)} Locked` : ''}
+                </span>
+              </span>
+              <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
+                {compactChips(w.spins)}
+              </span>
+              <span
+                className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}
+              >
+                {pct(w.realized_rtp)}
+              </span>
+              <span
+                className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--muted'}`}
+              >
+                {w.z === null ? 'N/A' : w.z.toFixed(1)}
+              </span>
+            </div>
+          ))}
         </div>
-        <CasinoNote>
+        <p className="sc-copy">
           Z Is The Realised Return Against 80% In Standard Errors Of The Prize Table. Under 2,000
-          Spins It Is Noise; Past 2,000, |Z| Of 4 Or More Flags Drift And Colours The Row.
-        </CasinoNote>
+          Spins It Is Noise; Past 2,000, Z Of 4 Or More Either Way Flags Drift And Prints The Window
+          In Red.
+        </p>
         {metrics?.audit ? (
-          <CasinoBays columns={4} className={styles.bayRow}>
-            <CasinoBay
-              label="Return"
-              value={pct(metrics.audit.spec_rtp, 1)}
-              sub={`Table ${cfg?.segment_version ?? ''}`}
-              small
+          <div className={`${styles.rows} ${styles.rowsCompact}`}>
+            <Row
+              label="Prize Table Returns"
+              value={pct(metrics.audit.spec_rtp)}
+              meta={`Table ${cfg?.segment_version ?? ''}`}
             />
-            <CasinoBay
-              label="Chips"
-              value={pct(metrics.audit.chip_share, 1)}
-              sub="Of Intake"
-              tone="gold"
-              small
+            <Row
+              label="Paid In Chips"
+              value={pct(metrics.audit.chip_share)}
+              ink="gold"
+              meta="Of Intake"
             />
-            <CasinoBay
-              label="Diamonds"
-              value={pct(metrics.audit.diamond_share, 1)}
-              sub="Of Intake"
-              tone="cyan"
-              small
+            <Row
+              label="Paid In Diamonds"
+              value={pct(metrics.audit.diamond_share)}
+              ink="blue"
+              meta="Of Intake"
             />
-            <CasinoBay
-              label="House"
-              value={pct(metrics.audit.house_share, 1)}
-              sub="Of Intake"
-              small
-            />
-          </CasinoBays>
+            <Row label="The House Keeps" value={pct(metrics.audit.house_share)} meta="Of Intake" />
+          </div>
         ) : null}
-      </CasinoFrame>
+      </SpadeConsole>
 
-      <CasinoFrame eyebrow={`The Wheel Is ${enabled ? 'Open' : 'Closed'}`} title="Controls" tight>
-        <CasinoButton
-          tone={enabled ? 'danger' : 'gold'}
-          wide
-          disabled={saving}
-          onClick={() =>
-            void apply({ enabled: !enabled }, enabled ? 'The Wheel Is Closed' : 'The Wheel Is Open')
-          }
-          sub={
-            enabled
-              ? 'Closing It Refuses The Next Spin At Once'
-              : 'Nobody Can Spin Until You Open It'
-          }
-        >
-          {enabled ? 'Close The Wheel' : 'Open The Wheel'}
-        </CasinoButton>
-
+      <SpadeConsole
+        eyebrow={`The Wheel Is ${enabled ? 'Open' : 'Closed'}`}
+        title="Controls"
+        plates={{
+          secondary: {
+            label: enabled ? 'Close The Wheel' : 'Open The Wheel',
+            ink: enabled ? 'red' : 'gold',
+            disabled: saving,
+            onClick: () =>
+              void apply(
+                { enabled: !enabled },
+                enabled ? 'The Wheel Is Closed' : 'The Wheel Is Open'
+              ),
+          },
+          primary: {
+            label: saving ? 'Saving' : 'Save Settings',
+            ink: 'white',
+            onClick: saveNumbers,
+            disabled: saving,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          {enabled
+            ? 'Closing It Refuses The Next Spin At Once.'
+            : 'Nobody Can Spin Until You Open It.'}
+        </p>
         <div className={styles.fields}>
-          <label className={styles.field}>
-            <span>Spin Price (Diamonds)</span>
-            <input
-              inputMode="numeric"
-              value={draft.spin_price_diamonds}
-              onChange={(e) => setDraft({ ...draft, spin_price_diamonds: e.target.value })}
-            />
-            <small>A Multiple Of 100. Prizes Scale With It.</small>
-          </label>
-          <label className={styles.field}>
-            <span>Exposure Allowance (Chips)</span>
-            <input
-              inputMode="decimal"
-              value={draft.exposure_allowance_chips}
-              onChange={(e) => setDraft({ ...draft, exposure_allowance_chips: e.target.value })}
-            />
-            <small>The Most The Wheel May Pay Beyond What It Has Minted You.</small>
-          </label>
-          <label className={styles.field}>
-            <span>Diamond Seed (Diamonds)</span>
-            <input
-              inputMode="numeric"
-              value={draft.diamond_seed}
-              onChange={(e) => setDraft({ ...draft, diamond_seed: e.target.value })}
-            />
-            <small>The Float The Diamond Prizes Start From, So No Tier Opens Locked.</small>
-          </label>
-          <label className={styles.field}>
-            <span>Spins Per Player Per Day</span>
-            <input
-              inputMode="numeric"
-              value={draft.max_spins_per_player_per_day}
-              onChange={(e) => setDraft({ ...draft, max_spins_per_player_per_day: e.target.value })}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>Seconds Between Spins</span>
-            <input
-              inputMode="numeric"
-              value={draft.min_seconds_between_spins}
-              onChange={(e) => setDraft({ ...draft, min_seconds_between_spins: e.target.value })}
-            />
-          </label>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={draft.purchased_only}
-              onChange={(e) => setDraft({ ...draft, purchased_only: e.target.checked })}
-            />
-            <span>
-              Purchased Diamonds Only
-              <small>Promotional And Earned Diamonds Cannot Be Spun Into Chips.</small>
-            </span>
-          </label>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={draft.allow_fixture_accounts}
-              onChange={(e) => setDraft({ ...draft, allow_fixture_accounts: e.target.checked })}
-            />
-            <span>
-              Allow Certification Accounts
-              <small>For Burn-In Only. Their Spins Are Kept Out Of The Fairness Statistics.</small>
-            </span>
-          </label>
+          <Field
+            label="Spin Price (Diamonds)"
+            value={draft.spin_price_diamonds}
+            onChange={set('spin_price_diamonds')}
+            hint="A Multiple Of 100. Prizes Scale With It."
+          />
+          <Field
+            label="Exposure Allowance (Chips)"
+            mode="decimal"
+            value={draft.exposure_allowance_chips}
+            onChange={set('exposure_allowance_chips')}
+            hint="The Most The Wheel May Pay Beyond What It Has Minted You."
+          />
+          <Field
+            label="Diamond Seed (Diamonds)"
+            value={draft.diamond_seed}
+            onChange={set('diamond_seed')}
+            hint="The Float The Diamond Prizes Start From, So No Tier Opens Locked."
+          />
+          <Field
+            label="Spins Per Player Per Day"
+            value={draft.max_spins_per_player_per_day}
+            onChange={set('max_spins_per_player_per_day')}
+          />
+          <Field
+            label="Seconds Between Spins"
+            value={draft.min_seconds_between_spins}
+            onChange={set('min_seconds_between_spins')}
+          />
+          <Toggle
+            label="Purchased Diamonds Only"
+            hint="Promotional And Earned Diamonds Cannot Be Spun Into Chips."
+            on={draft.purchased_only}
+            onToggle={() => setDraft((d) => ({ ...d, purchased_only: !d.purchased_only }))}
+          />
+          <Toggle
+            label="Allow Certification Accounts"
+            hint="For Burn-In Only. Their Spins Are Kept Out Of The Fairness Statistics."
+            on={draft.allow_fixture_accounts}
+            onToggle={() =>
+              setDraft((d) => ({ ...d, allow_fixture_accounts: !d.allow_fixture_accounts }))
+            }
+          />
         </div>
-        <CasinoButton onClick={saveNumbers} disabled={saving}>
-          {saving ? 'Saving' : 'Save Settings'}
-        </CasinoButton>
-      </CasinoFrame>
+      </SpadeConsole>
 
-      <CasinoFrame eyebrow="Lifetime" title="The Pool" tight>
-        <dl className={styles.dl}>
-          <dt>Spins</dt>
-          <dd>{(pool?.spins ?? 0).toLocaleString()}</dd>
-          <dt>Diamonds Taken In</dt>
-          <dd>{(pool?.intake_diamonds ?? 0).toLocaleString()}</dd>
-          <dt>Chips Minted To The {hostWord}</dt>
-          <dd>{chips(pool?.chips_minted)}</dd>
-          <dt>Chips Paid To Players</dt>
-          <dd>{chips(pool?.chips_paid)}</dd>
-          <dt>Diamond Prize Float</dt>
-          <dd>
-            {(pool?.diamond_float ?? 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-          </dd>
-          <dt>Diamonds Paid As Prizes</dt>
-          <dd>{(pool?.diamonds_paid ?? 0).toLocaleString()}</dd>
-        </dl>
-        <CasinoButton
-          tone="secondary"
-          className={styles.linkButton}
-          onClick={() => navigate(`/clubs/${routeClubId}/wheel`)}
-        >
-          Open The Players Wheel
-        </CasinoButton>
-      </CasinoFrame>
+      <SpadeConsole
+        eyebrow="Lifetime"
+        title="The Pool"
+        plates={{
+          secondary: {
+            label: 'Games Console',
+            onClick: () => navigate(`/clubs/${routeClubId}/diamond-games-operations`),
+          },
+          primary: {
+            label: 'Players Wheel',
+            ink: 'white',
+            onClick: () => navigate(`/clubs/${routeClubId}/wheel`),
+          },
+        }}
+      >
+        <div className={`${styles.rows} ${styles.rowsCompact}`}>
+          <Row label="Spins" value={compactChips(pool?.spins ?? 0)} />
+          <Row
+            label="Diamonds Taken In"
+            value={compactChips(pool?.intake_diamonds ?? 0)}
+            ink="blue"
+          />
+          <Row label={`Chips Minted To The ${hostWord}`} value={chips(pool?.chips_minted)} />
+          <Row label="Chips Paid To Players" value={chips(pool?.chips_paid)} ink="gold" />
+          <Row
+            label="Diamond Prize Float"
+            value={compactChips(Math.floor(pool?.diamond_float ?? 0))}
+            ink="blue"
+          />
+          <Row label="Diamonds Paid As Prizes" value={compactChips(pool?.diamonds_paid ?? 0)} />
+        </div>
+      </SpadeConsole>
     </div>
   );
 }

@@ -3,7 +3,7 @@
  *  DIAMOND PLINKO + DIAMOND CRASH - the operator's console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * One console, two games, a switch at the top. What a host owner needs to run
+ * One page, two games, a switch on the plates. What a host owner needs to run
  * them and nothing else: open and close each game, the bet sizes, the exposure
  * allowance (the most the host accepts being ahead of what the game has minted
  * it), the cap fraction, the multiplier ceiling, the crash curve, the
@@ -17,6 +17,11 @@
  * Every control posts a patch to fn_diamond_game_set_config, which decides who
  * may (fn_wheel_can_operate). The page shows a refusal, it never pre-empts one.
  *
+ * THE PICTURE (#ClubArenaConsole). Four consoles: the readings (its plates are
+ * the Plinko / Crash switch, the chosen game in white), the realised return by
+ * window, the controls (fields printed on engraved lines, Close / Open on the
+ * steel, Save on the blue glass) and the lifetime pool. Nothing is drawn.
+ *
  * Route: /clubs/:clubId/diamond-games-operations, finance access in the
  * operations registry. The players' pages are /clubs/:clubId/plinko and
  * /clubs/:clubId/crash. The wheel has its own console at /wheel-operations.
@@ -26,29 +31,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import { ErrorState, LoadingState } from '../../components/common/EmptyState';
+import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
 import DiamondGamesService, {
   type DiamondGame,
   type GameConfigPatch,
   type GameMetrics,
 } from '../../services/DiamondGamesService';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
+import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import {
-  CasinoBay,
-  CasinoBays,
-  CasinoButton,
-  CasinoChips,
-  CasinoFrame,
-  CasinoNote,
-} from '../../components/diamond-games/CasinoChassis';
-import styles from './ClubWheelOperationsPage.module.css';
+import styles from '../diamondGames.module.css';
 
-const chips = (n: number | null | undefined) =>
-  Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pct = (n: number | null | undefined, digits = 1) =>
-  n === null || n === undefined ? 'N/A' : `${(n * 100).toFixed(digits)}%`;
+const chips = (n: number | null | undefined) => compactChips(Number(n ?? 0));
+const pct = (n: number | null | undefined) =>
+  n === null || n === undefined ? 'N/A' : `${Math.round(n * 100)}%`;
 
 interface Draft {
   bet_options: string;
@@ -82,6 +80,80 @@ function draftFrom(m: GameMetrics | null): Draft {
 }
 
 const GAME_WORD: Record<DiamondGame, string> = { plinko: 'Plinko', crash: 'Crash' };
+
+function Row({
+  label,
+  value,
+  ink = 'silver',
+  meta,
+}: {
+  label: string;
+  value: string;
+  ink?: ConsoleInk;
+  meta?: string;
+}) {
+  return (
+    <div className={styles.row}>
+      <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>
+        {label}
+        {meta ? <span className={`${styles.rowMeta} sc-ink--muted`}>{meta}</span> : null}
+      </span>
+      <span className={`${styles.rowValue} sc-ink--${ink}`}>{value}</span>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  hint,
+  mode = 'decimal',
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+  mode?: 'decimal' | 'numeric' | 'text';
+}) {
+  return (
+    <label className={styles.field}>
+      <span className="sc-label sc-ink--blue">{label}</span>
+      <input
+        className={styles.fieldInput}
+        inputMode={mode}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {hint ? <span className="sc-copy sc-ink--muted">{hint}</span> : null}
+    </label>
+  );
+}
+
+/** A switch: the row IS the control, its state is its printed value. */
+function Toggle({
+  label,
+  hint,
+  on,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button type="button" className={styles.rowButton} onClick={onToggle} aria-pressed={on}>
+      <span className={`sc-label sc-ink--silver ${styles.rowLabel}`}>
+        {label}
+        <span className={`${styles.rowMeta} sc-ink--muted`}>{hint}</span>
+      </span>
+      <span className={`${styles.rowValue} sc-ink--${on ? 'green' : 'muted'}`}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  );
+}
 
 export default function ClubDiamondGamesOperationsPage() {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
@@ -212,292 +284,274 @@ export default function ClubDiamondGamesOperationsPage() {
   const enabled = Boolean(cfg?.enabled);
   const word = GAME_WORD[game];
   const hostWord = metrics?.host_kind === 'union' ? 'Union Bank' : 'Club Treasury';
+  const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <button
-          type="button"
-          className={styles.backBtn}
-          onClick={() => navigate(`/clubs/${routeClubId}/operations`)}
-        >
-          ‹ Operations
-        </button>
-        <h1>Diamond Games</h1>
-        <span className={`${styles.pill} ${enabled ? styles.pillOn : styles.pillOff}`}>
-          {enabled ? 'Open' : 'Closed'}
-        </span>
-      </header>
+      <button
+        type="button"
+        className={styles.back}
+        onClick={() => navigate(`/clubs/${routeClubId}/operations`)}
+      >
+        ‹ Operations
+      </button>
 
-      <CasinoChips
-        label="Game"
-        value={game}
-        onChange={(v) => setGame(v as DiamondGame)}
-        items={[
-          { value: 'plinko', label: 'Plinko', sub: 'Three Boards' },
-          { value: 'crash', label: 'Crash', sub: 'The Curve' },
-        ]}
-      />
-
-      <CasinoFrame eyebrow={`Diamond ${word}`} title="The Readings" tight>
-        <CasinoBays columns={3}>
-          <CasinoBay label={hostWord} value={chips(metrics?.bank_chips)} sub="Chips To Pay" small />
-          <CasinoBay
+      <SpadeConsole
+        eyebrow="Operations"
+        title={`Diamond ${word}`}
+        titleId="diamond-games-ops-title"
+        pill={enabled ? 'Open' : 'Closed'}
+        pillInk={enabled ? 'green' : 'red'}
+        aria-labelledby="diamond-games-ops-title"
+        plates={{
+          secondary: {
+            label: 'Plinko',
+            ink: game === 'plinko' ? 'white' : 'muted',
+            onClick: () => setGame('plinko'),
+            disabled: loading,
+            'aria-pressed': game === 'plinko',
+          },
+          primary: {
+            label: 'Crash',
+            ink: game === 'crash' ? 'white' : 'muted',
+            onClick: () => setGame('crash'),
+            disabled: loading,
+            'aria-pressed': game === 'crash',
+          },
+        }}
+      >
+        <div className={styles.rows}>
+          <Row
+            label={hostWord}
+            value={chips(metrics?.bank_chips)}
+            ink="silver"
+            meta="Chips To Pay"
+          />
+          <Row
             label="Exposure"
             value={chips(metrics?.exposure_chips)}
-            sub={`Room ${chips(metrics?.exposure_headroom_chips)}`}
-            tone={(metrics?.exposure_chips ?? 0) > 0 ? 'gold' : 'chrome'}
-            small
+            ink={(metrics?.exposure_chips ?? 0) > 0 ? 'gold' : 'silver'}
+            meta={`Room ${chips(metrics?.exposure_headroom_chips)}`}
           />
-          <CasinoBay
+          <Row
             label="Return"
             value={pct(metrics?.realized_rtp_lifetime)}
-            sub={`${(pool?.rounds ?? 0).toLocaleString()} Rounds`}
-            small
+            meta={`${compactChips(pool?.rounds ?? 0)} Rounds Against 80%`}
           />
-          <CasinoBay
+          <Row
             label="House Take"
             value={chips(metrics?.house_take_lifetime_chips)}
-            sub="In Chips"
-            tone="gold"
-            small
+            ink="gold"
+            meta="Chips"
           />
-          <CasinoBay
+          <Row
             label="Capped"
             value={pct(metrics?.constrained_rate)}
-            sub={game === 'crash' ? `${metrics?.open_rounds ?? 0} Open` : 'Of Rounds'}
-            small
+            meta={game === 'crash' ? `${metrics?.open_rounds ?? 0} Open` : 'Of Rounds'}
           />
-          <CasinoBay
+          <Row
             label="Invariant"
             value={metrics?.invariant_ok === false ? 'Broken' : 'Holds'}
-            sub="Paid + Held"
-            tone={metrics?.invariant_ok === false ? 'red' : 'green'}
-            small
+            ink={metrics?.invariant_ok === false ? 'red' : 'green'}
+            meta="Paid Plus Held"
           />
-        </CasinoBays>
-        <CasinoNote>
+        </div>
+        <p className="sc-copy">
           Paid Plus Reserved Never Exceeds Minted Plus The Allowance; The Per-Round Cap Makes That
           Arithmetic, And The Metrics Re-Derive It. Capped Rounds Are Ones The Pool Could Not
           Promise The Full Ceiling On.
-        </CasinoNote>
-      </CasinoFrame>
+        </p>
+      </SpadeConsole>
 
-      <CasinoFrame eyebrow="Against The 80% Spec" title="Realised Return" tight>
-        <div className={styles.scroll}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Window</th>
-                <th className={styles.num}>Rounds</th>
-                <th className={styles.num}>Intake</th>
-                <th className={styles.num}>Paid</th>
-                <th className={styles.num}>Return</th>
-                <th className={styles.num}>Z</th>
-                <th className={styles.num}>Capped</th>
-                {game === 'crash' ? <th className={styles.num}>Instant</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {(metrics?.windows ?? []).map((w) => (
-                <tr key={w.window} className={w.drift ? styles.rowBad : undefined}>
-                  <td>{w.window}</td>
-                  <td className={styles.num}>{w.rounds.toLocaleString()}</td>
-                  <td className={styles.num}>{chips(w.intake_chips)}</td>
-                  <td className={styles.num}>{chips(w.paid_chips)}</td>
-                  <td className={styles.num}>{pct(w.realized_rtp)}</td>
-                  <td className={styles.num}>{w.z === null ? 'N/A' : w.z.toFixed(2)}</td>
-                  <td className={styles.num}>{w.constrained.toLocaleString()}</td>
-                  {game === 'crash' ? (
-                    <td className={styles.num}>{(w.instant_crashes ?? 0).toLocaleString()}</td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">
+        <div className={styles.rows}>
+          <div className={`${styles.grid4} ${styles.grid4Head}`}>
+            <span className="sc-label sc-ink--blue">Window</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Rounds</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Return</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Z</span>
+          </div>
+          {(metrics?.windows ?? []).map((w) => (
+            <div key={w.window} className={styles.grid4}>
+              <span className={`${styles.cell} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}>
+                {w.window.toUpperCase()}
+                <span className={`${styles.rowMeta} sc-ink--muted`}>
+                  In {chips(w.intake_chips)}, Out {chips(w.paid_chips)}
+                  {w.constrained ? `, ${compactChips(w.constrained)} Capped` : ''}
+                  {game === 'crash' && w.instant_crashes
+                    ? `, ${compactChips(w.instant_crashes)} Instant`
+                    : ''}
+                </span>
+              </span>
+              <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
+                {compactChips(w.rounds)}
+              </span>
+              <span
+                className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}
+              >
+                {pct(w.realized_rtp)}
+              </span>
+              <span
+                className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--muted'}`}
+              >
+                {w.z === null ? 'N/A' : w.z.toFixed(1)}
+              </span>
+            </div>
+          ))}
         </div>
-        <CasinoNote>
+        <p className="sc-copy">
           Z Is The Realised Return Against 80% In Standard Errors. Under 2,000 Rounds It Is Noise;
-          Past 2,000, |Z| Of 4 Or More Flags Drift And Colours The Row.
+          Past 2,000, Z Of 4 Or More Either Way Flags Drift And Prints The Window In Red.
           {game === 'crash'
             ? ' A Crashed Round Is Scored At Its Own Crash Point, The Most It Could Have Asked For, So Z Runs Conservative.'
             : ''}
-        </CasinoNote>
+        </p>
         {game === 'plinko' && metrics?.tables?.length ? (
-          <CasinoBays columns={3} className={styles.bayRow}>
+          <div className={`${styles.rows} ${styles.rowsCompact}`}>
             {metrics.tables.map((t) => (
-              <CasinoBay
+              <Row
                 key={t.version}
                 label={t.name}
                 value={multiplierLabel(t.max_multiplier_cents)}
-                sub={`${pct(t.spec_rtp, 1)} / Pays ${pct(t.hit_rate, 0)}`}
-                tone={t.activated_at ? 'gold' : 'chrome'}
-                locked={!t.activated_at}
-                small
+                ink={t.activated_at ? 'gold' : 'muted'}
+                meta={`Returns ${pct(t.spec_rtp)}, Pays ${pct(t.hit_rate)} Of Drops${t.activated_at ? '' : ', Not Yet Live'}`}
               />
             ))}
-          </CasinoBays>
+          </div>
         ) : null}
-      </CasinoFrame>
+      </SpadeConsole>
 
-      <CasinoFrame eyebrow={`${word} Is ${enabled ? 'Open' : 'Closed'}`} title="Controls" tight>
-        <CasinoButton
-          tone={enabled ? 'danger' : 'gold'}
-          wide
-          disabled={saving}
-          onClick={() =>
-            void apply({ enabled: !enabled }, enabled ? `${word} Is Closed` : `${word} Is Open`)
-          }
-          sub={
-            enabled
-              ? 'Closing It Refuses The Next Round At Once'
-              : 'Nobody Can Play Until You Open It'
-          }
-        >
-          {enabled ? `Close ${word}` : `Open ${word}`}
-        </CasinoButton>
-
+      <SpadeConsole
+        eyebrow={`${word} Is ${enabled ? 'Open' : 'Closed'}`}
+        title="Controls"
+        plates={{
+          secondary: {
+            label: enabled ? `Close ${word}` : `Open ${word}`,
+            ink: enabled ? 'red' : 'gold',
+            disabled: saving,
+            onClick: () =>
+              void apply({ enabled: !enabled }, enabled ? `${word} Is Closed` : `${word} Is Open`),
+          },
+          primary: {
+            label: saving ? 'Saving' : 'Save Settings',
+            ink: 'white',
+            onClick: saveNumbers,
+            disabled: saving,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          {enabled
+            ? 'Closing It Refuses The Next Round At Once. Rounds Already Open Settle As Normal.'
+            : 'Nobody Can Play Until You Open It.'}
+        </p>
         <div className={styles.fields}>
-          <label className={styles.field}>
-            <span>Bet Sizes (Diamonds, Comma Separated)</span>
-            <input
-              value={draft.bet_options}
-              onChange={(e) => setDraft({ ...draft, bet_options: e.target.value })}
-            />
-            <small>Whole Chips Only: Multiples Of 100 Diamonds.</small>
-          </label>
-          <label className={styles.field}>
-            <span>Exposure Allowance (Chips)</span>
-            <input
-              inputMode="decimal"
-              value={draft.exposure_allowance_chips}
-              onChange={(e) => setDraft({ ...draft, exposure_allowance_chips: e.target.value })}
-            />
-            <small>The Most {word} May Pay Beyond What It Has Minted You.</small>
-          </label>
-          <label className={styles.field}>
-            <span>Minimum Bet (Diamonds)</span>
-            <input
-              inputMode="numeric"
-              value={draft.min_bet_diamonds}
-              onChange={(e) => setDraft({ ...draft, min_bet_diamonds: e.target.value })}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>Maximum Bet (Diamonds)</span>
-            <input
-              inputMode="numeric"
-              value={draft.max_bet_diamonds}
-              onChange={(e) => setDraft({ ...draft, max_bet_diamonds: e.target.value })}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>Cap Fraction</span>
-            <input
-              inputMode="decimal"
-              value={draft.cap_fraction}
-              onChange={(e) => setDraft({ ...draft, cap_fraction: e.target.value })}
-            />
-            <small>
-              The Share Of The Pool Headroom One Round May Be Promised. 0.95 Keeps The Pool Alive
-              After A Full Hit.
-            </small>
-          </label>
-          <label className={styles.field}>
-            <span>Multiplier Ceiling</span>
-            <input
-              inputMode="decimal"
-              value={draft.max_multiplier}
-              onChange={(e) => setDraft({ ...draft, max_multiplier: e.target.value })}
-            />
-            <small>
-              {game === 'crash'
+          <Field
+            label="Bet Sizes (Diamonds, Comma Separated)"
+            mode="text"
+            value={draft.bet_options}
+            onChange={set('bet_options')}
+            hint="Whole Chips Only: Multiples Of 100 Diamonds."
+          />
+          <Field
+            label="Exposure Allowance (Chips)"
+            value={draft.exposure_allowance_chips}
+            onChange={set('exposure_allowance_chips')}
+            hint={`The Most ${word} May Pay Beyond What It Has Minted You.`}
+          />
+          <Field
+            label="Minimum Bet (Diamonds)"
+            mode="numeric"
+            value={draft.min_bet_diamonds}
+            onChange={set('min_bet_diamonds')}
+          />
+          <Field
+            label="Maximum Bet (Diamonds)"
+            mode="numeric"
+            value={draft.max_bet_diamonds}
+            onChange={set('max_bet_diamonds')}
+          />
+          <Field
+            label="Cap Fraction"
+            value={draft.cap_fraction}
+            onChange={set('cap_fraction')}
+            hint="The Share Of The Pool Headroom One Round May Be Promised. 0.95 Keeps The Pool Alive After A Full Hit."
+          />
+          <Field
+            label="Multiplier Ceiling"
+            value={draft.max_multiplier}
+            onChange={set('max_multiplier')}
+            hint={
+              game === 'crash'
                 ? 'Where A Round Auto Cashes If It Never Crashed.'
-                : 'Never Above The Board Itself.'}
-            </small>
-          </label>
+                : 'Never Above The Board Itself.'
+            }
+          />
           {game === 'crash' ? (
-            <label className={styles.field}>
-              <span>Curve (K Per Second)</span>
-              <input
-                inputMode="decimal"
-                value={draft.growth_k}
-                onChange={(e) => setDraft({ ...draft, growth_k: e.target.value })}
-              />
-              <small>
-                Multiplier = Exp(K Times Seconds). 0.12 Reaches 2x In 5.8s And 1000x In 57.6s.
-              </small>
-            </label>
+            <Field
+              label="Curve (K Per Second)"
+              value={draft.growth_k}
+              onChange={set('growth_k')}
+              hint="Multiplier = Exp(K Times Seconds). 0.12 Reaches 2x In 5.8s And 1000x In 57.6s."
+            />
           ) : null}
-          <label className={styles.field}>
-            <span>Rounds Per Player Per Day</span>
-            <input
-              inputMode="numeric"
-              value={draft.max_rounds_per_player_per_day}
-              onChange={(e) =>
-                setDraft({ ...draft, max_rounds_per_player_per_day: e.target.value })
-              }
-            />
-          </label>
-          <label className={styles.field}>
-            <span>Seconds Between Rounds</span>
-            <input
-              inputMode="numeric"
-              value={draft.min_seconds_between_rounds}
-              onChange={(e) => setDraft({ ...draft, min_seconds_between_rounds: e.target.value })}
-            />
-          </label>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={draft.purchased_only}
-              onChange={(e) => setDraft({ ...draft, purchased_only: e.target.checked })}
-            />
-            <span>
-              Purchased Diamonds Only
-              <small>Promotional And Earned Diamonds Cannot Be Played Into Chips.</small>
-            </span>
-          </label>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={draft.allow_fixture_accounts}
-              onChange={(e) => setDraft({ ...draft, allow_fixture_accounts: e.target.checked })}
-            />
-            <span>
-              Allow Certification Accounts
-              <small>For Burn-In Only. Their Rounds Are Kept Out Of The Fairness Statistics.</small>
-            </span>
-          </label>
+          <Field
+            label="Rounds Per Player Per Day"
+            mode="numeric"
+            value={draft.max_rounds_per_player_per_day}
+            onChange={set('max_rounds_per_player_per_day')}
+          />
+          <Field
+            label="Seconds Between Rounds"
+            mode="numeric"
+            value={draft.min_seconds_between_rounds}
+            onChange={set('min_seconds_between_rounds')}
+          />
+          <Toggle
+            label="Purchased Diamonds Only"
+            hint="Promotional And Earned Diamonds Cannot Be Played Into Chips."
+            on={draft.purchased_only}
+            onToggle={() => setDraft((d) => ({ ...d, purchased_only: !d.purchased_only }))}
+          />
+          <Toggle
+            label="Allow Certification Accounts"
+            hint="For Burn-In Only. Their Rounds Are Kept Out Of The Fairness Statistics."
+            on={draft.allow_fixture_accounts}
+            onToggle={() =>
+              setDraft((d) => ({ ...d, allow_fixture_accounts: !d.allow_fixture_accounts }))
+            }
+          />
         </div>
-        <CasinoButton onClick={saveNumbers} disabled={saving}>
-          {saving ? 'Saving' : 'Save Settings'}
-        </CasinoButton>
-      </CasinoFrame>
+      </SpadeConsole>
 
-      <CasinoFrame eyebrow="Lifetime" title="The Pool" tight>
-        <dl className={styles.dl}>
-          <dt>Rounds</dt>
-          <dd>{(pool?.rounds ?? 0).toLocaleString()}</dd>
-          <dt>Diamonds Taken In</dt>
-          <dd>{(pool?.intake_diamonds ?? 0).toLocaleString()}</dd>
-          <dt>Chips Minted To The {hostWord}</dt>
-          <dd>{chips(pool?.chips_minted)}</dd>
-          <dt>Chips Paid To Players</dt>
-          <dd>{chips(pool?.chips_paid)}</dd>
-          <dt>Chips Held For Open Rounds</dt>
-          <dd>{chips(pool?.reserved_chips)}</dd>
-          <dt>Capped Rounds</dt>
-          <dd>{(pool?.constrained_rounds ?? 0).toLocaleString()}</dd>
-        </dl>
-        <CasinoButton
-          tone="secondary"
-          className={styles.linkButton}
-          onClick={() => navigate(`/clubs/${routeClubId}/${game}`)}
-        >
-          Open The Players {word}
-        </CasinoButton>
-      </CasinoFrame>
+      <SpadeConsole
+        eyebrow="Lifetime"
+        title="The Pool"
+        plates={{
+          secondary: {
+            label: 'Wheel Console',
+            onClick: () => navigate(`/clubs/${routeClubId}/wheel-operations`),
+          },
+          primary: {
+            label: `Players ${word}`,
+            ink: 'white',
+            onClick: () => navigate(`/clubs/${routeClubId}/${game}`),
+          },
+        }}
+      >
+        <div className={`${styles.rows} ${styles.rowsCompact}`}>
+          <Row label="Rounds" value={compactChips(pool?.rounds ?? 0)} />
+          <Row
+            label="Diamonds Taken In"
+            value={compactChips(pool?.intake_diamonds ?? 0)}
+            ink="blue"
+          />
+          <Row label={`Chips Minted To The ${hostWord}`} value={chips(pool?.chips_minted)} />
+          <Row label="Chips Paid To Players" value={chips(pool?.chips_paid)} ink="gold" />
+          <Row label="Chips Held For Open Rounds" value={chips(pool?.reserved_chips)} />
+          <Row label="Capped Rounds" value={compactChips(pool?.constrained_rounds ?? 0)} />
+        </div>
+      </SpadeConsole>
     </div>
   );
 }

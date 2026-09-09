@@ -1,0 +1,292 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPADE CONSOLE
+
+   Dan's spade PLO master (1000 x 1135) cut into a chassis at full
+   resolution: console/spade-console-v1/{top,mid,bottom-plates,bottom-foot}.
+   The head and the foot are boxes with the exact ratio of their slice, so
+   the painted zones line up with the DOM printed into them; the body
+   between them sits on the repeated rails and prints on the black glass.
+
+   Type is the master's own: the title in engraved silver (a solid colour
+   with a bevel, never a clipped gradient), labels in the master's lit blue
+   condensed caps, values in silver. Sizes are cqw against the console so a
+   320px phone and a 430px one get the same picture. Nothing is drawn: no
+   fills, no borders, no shadows on boxes. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sc {
+  --sc-art: '';
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  background: none;
+}
+
+/* ── ONE PICTURE, NOTHING OUTSIDE IT (Dan 2026-09-08) ──────────────────
+   "THE CARDS AND POP UP SHOULD JUST BE THE CARDS ... THEY SHOULD JUST BE
+   STAND ALONE IMAGES WITH FRAMES AROUND THEM ... WHERE THE IMAGE HAS THESE
+   WEIRD LINES COMING OUT OF THEM."
+
+   The three slices used to be three background layers on the CONSOLE, and
+   the rails (mid.png) repeated over its whole height - so they painted in
+   the transparent margin ABOVE the crest and BELOW the closing rail, where
+   the head and the foot draw nothing. That is what the lines running past
+   the frame were: the side rails carrying on into empty space, so the card
+   read as a frame with rails sliding under it instead of one picture.
+
+   Each slice now paints its own box and nothing else: the head is the head,
+   the rails run only beside the body they carry, and the foot closes it.
+   The frame ends exactly where the picture ends. */
+.sc__head {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1000 / 348;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
+    center / 100% auto no-repeat;
+}
+
+/* Between the rails: inside x 85-915 of the master, with a little air. */
+.sc__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  padding: 0 10.5% 3cqw;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
+    center / 100% auto repeat-y;
+}
+
+/* A FLAT BOTTOM, CARRYING NOTHING (Dan 2026-09-08). The closing cap is the
+   master's own top rails turned over: same rails, same four corner chamfers,
+   no chip and no dive to the centre. */
+.sc__foot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1000 / 72;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-foot.png')
+    bottom center / 100% auto no-repeat;
+}
+
+.sc--plates .sc__foot {
+  aspect-ratio: 1000 / 277;
+  background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-plates.png');
+}
+
+/* ── Zones: absolute, centred, one line, fitted ───────────────────────── */
+
+.sc-zone {
+  position: absolute;
+  display: grid;
+  align-items: center;
+  justify-items: start;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sc-zone > span {
+  display: inline-block;
+  max-width: 100%;
+  font-size: calc(1em * var(--fit, 1));
+}
+
+.sc__eyebrow {
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.sc__title {
+  font-size: 7cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.sc__subtitle {
+  font-size: 3.2cqw;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The painted pill slot top right of the header well. */
+.sc__pill {
+  justify-items: center;
+  text-align: center;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── Ink: the master's own colours ────────────────────────────────────── */
+
+.sc-ink--silver {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.sc-ink--white {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%),
+    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+}
+
+/* The lit blue the master paints GAME TYPE / STAKES in. */
+.sc-ink--blue {
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0 2cqw rgb(49 168 255 / 30%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.sc-ink--green {
+  color: #c8ffd2;
+  -webkit-text-fill-color: #c8ffd2;
+  text-shadow:
+    0 0 1cqw rgb(53 217 90 / 80%),
+    0 0 2cqw rgb(53 217 90 / 35%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.sc-ink--red {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0 2cqw rgb(240 40 73 / 35%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.sc-ink--gold {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0 2cqw rgb(255 215 0 / 30%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.sc-ink--muted {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+/* ── The painted plates: a label on the art, nothing else ─────────────── */
+
+.sc-plate {
+  appearance: none;
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 4%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  overflow: hidden;
+}
+
+/* The face inside the rim: labels fit this, never the rim. */
+.sc-plate__well {
+  display: grid;
+  justify-items: center;
+  width: 70%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sc-plate__text {
+  display: inline-block;
+  max-width: 100%;
+  font-size: calc(4.2cqw * var(--fit, 1));
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sc-plate:active .sc-plate__text {
+  filter: brightness(1.25);
+}
+
+.sc-plate:disabled {
+  cursor: not-allowed;
+}
+
+.sc-plate:disabled .sc-plate__text {
+  opacity: 0.45;
+}
+
+.sc-plate:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1.6cqw;
+}
+
+/* Inside a dialog the global popup chassis (metallic-popups.css) bevels,
+   recolours and rounds every button with !important, and its primary /
+   danger rule is a `background` shorthand at specificity 0,2,1. The plate
+   is painted in the master; the button over it paints nothing. */
+[role='dialog'] .sc-plate.sc-plate,
+[aria-modal='true'] .sc-plate.sc-plate {
+  min-width: 0;
+  min-height: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* ── Copy on the glass ────────────────────────────────────────────────── */
+
+.sc-copy {
+  margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.7cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.sc-copy--center {
+  text-align: center;
+}
+
+.sc-label {
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}

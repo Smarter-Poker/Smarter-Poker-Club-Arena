@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DIAMOND CRASH - the player's page
+ *  DIAMOND CRASH - the player's page, on the console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan 2026-09-08: "a Crash / Aviator-style: multiplier climbs until it
@@ -20,34 +20,24 @@
  * is honoured by the server the moment the curve passes it, whatever this tab
  * does afterwards, so a dropped connection cannot cost a planned exit.
  *
- * Every user-facing string is Title Case, every message goes through the
- * Toast layer (CLAUDE.md 5.7). No emoji, no em dashes. The material is the
- * approved #SmarterCasinoRealism chassis (components/diamond-games).
+ * THE PICTURE (#ClubArenaConsole). The deck console: the curve on the glass,
+ * four bays (Bet and Auto are controls - tap to change, the bay's ink is its
+ * state), two plates. While a round is open the primary plate IS the cash-out,
+ * printed in green with the live multiplier. Odds, fairness and history each
+ * on their own console. Nothing is drawn but the curve and the seed line.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMeasuredWidth } from '../components/diamond-games/useMeasuredWidth';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
-import DiamondGamesHeader, {
-  chipsText,
-  dollarsText,
-} from '../components/diamond-games/DiamondGamesHeader';
-import {
-  CasinoBay,
-  CasinoBays,
-  CasinoButton,
-  CasinoChips,
-  CasinoFrame,
-  CasinoNote,
-  CasinoReadout,
-  CasinoWell,
-} from '../components/diamond-games/CasinoChassis';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { DeckConsole } from '../components/console/DeckConsole';
+import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import DiamondGamesService, {
   type CrashRound,
   type GameState,
@@ -59,23 +49,31 @@ import {
   verifyCrashRound,
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
+import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import styles from '../components/diamond-games/gameDetails.module.css';
+import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
-const TARGETS = [101, 150, 200, 300, 500, 1000, 2000, 5000, 10000, 100000] as const;
+/** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
+const TARGETS = [150, 200, 300, 500, 1000, 2000, 5000, 10000, 100000] as const;
+const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
 
-function centsFromText(text: string): number | null {
-  const v = Number(text.replace(/x/i, '').trim());
-  if (!Number.isFinite(v) || v < 1.01) return null;
-  return Math.round(v * 100);
+/** Chips as the player reads them: whole figures compact, sub-chip payouts exact. */
+function chipsLabel(v: number): string {
+  return v >= 1 ? compactChips(v) : v.toFixed(2);
+}
+
+function reachChance(cents: number): string {
+  const pct = 80 / (cents / 100);
+  return `${pct.toFixed(pct < 1 ? 2 : pct < 10 ? 1 : 0)}%`;
 }
 
 export default function DiamondCrashPage() {
   const { clubId: routeClubId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
   const isMountedRef = useIsMounted();
@@ -88,8 +86,7 @@ export default function DiamondCrashPage() {
   const [commit, setCommit] = useState<{ id: string; hash: string } | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
   const [bet, setBet] = useState<number>(100);
-  const [autoOn, setAutoOn] = useState(true);
-  const [autoText, setAutoText] = useState('2.00');
+  const [autoCents, setAutoCents] = useState<number>(200);
   const [round, setRound] = useState<CrashRound | null>(null);
   const [phase, setPhase] = useState<CrashPhase>('idle');
   const [startedAtLocal, setStartedAtLocal] = useState<number | null>(null);
@@ -99,13 +96,13 @@ export default function DiamondCrashPage() {
   const [history, setHistory] = useState<CrashRound[]>([]);
   const [verdict, setVerdict] = useState<CrashFairnessVerdict | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<'odds' | 'fair' | 'history'>('odds');
   const [waitSeconds, setWaitSeconds] = useState(0);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(false);
   const roundRef = useRef<CrashRound | null>(null);
   roundRef.current = round;
-  const [wellRef, wellWidth] = useMeasuredWidth<HTMLDivElement>(320);
+  const oddsRef = useRef<HTMLDivElement | null>(null);
+  const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
 
   const loadState = useCallback(
     async (uuid: string) => {
@@ -153,7 +150,7 @@ export default function DiamondCrashPage() {
       if (cashed) {
         triggerHaptic('success');
         toast.success(
-          `Cashed Out At ${multiplierLabel(settled.outcome?.cashout_cents ?? 100)} For ${chipsText(settled.outcome?.payout_chips ?? 0)} Chips`
+          `Cashed Out At ${multiplierLabel(settled.outcome?.cashout_cents ?? 100)} For ${chipsLabel(settled.outcome?.payout_chips ?? 0)} Chips`
         );
       } else {
         triggerHaptic('light');
@@ -239,17 +236,18 @@ export default function DiamondCrashPage() {
 
   const cfg = state?.config;
   const player = state?.player;
-  const betOption = useMemo(
-    () => state?.bets.find((b) => b.bet_diamonds === bet) ?? state?.bets[0],
-    [state, bet]
-  );
+  const bets = useMemo(() => state?.bets ?? [], [state]);
+  const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet) ?? bets[0], [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
   const betChips = betOption?.bet_chips ?? bet / rate;
   const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 100000;
   const growthK = cfg?.growth_k ?? 0.12;
-  const autoCents = autoOn ? centsFromText(autoText) : null;
-  const autoTooHigh = autoOn && autoCents !== null && autoCents > capCents;
-  const autoInvalid = autoOn && autoCents === null;
+  const autoPresets = useMemo(
+    () => AUTO_PRESETS.filter((t) => t === 0 || t <= capCents),
+    [capCents]
+  );
+  const autoChoice = autoCents > capCents ? 0 : autoCents;
+  const autoTarget = autoChoice > 0 ? autoChoice : null;
 
   const blocker = useMemo<string | null>(() => {
     if (!state) return null;
@@ -266,16 +264,27 @@ export default function DiamondCrashPage() {
         ? 'Crash Takes Purchased Diamonds Only'
         : 'Not Enough Diamonds For That Bet';
     }
-    if (autoInvalid) return 'Auto Cash Out Must Be At Least 1.01x';
-    if (autoTooHigh)
-      return `Auto Cash Out Must Be At Most ${multiplierLabel(capCents)} On This Bet`;
     return null;
-  }, [state, player, cfg, bet, betOption, autoInvalid, autoTooHigh, capCents]);
+  }, [state, player, cfg, bet, betOption]);
 
   const open = phase === 'open';
   const canStart = Boolean(
     clubUuid && commit && !open && !starting && !blocker && waitSeconds <= 0
   );
+
+  const cycleBet = useCallback(() => {
+    if (open || starting || bets.length < 2) return;
+    const i = bets.findIndex((b) => b.bet_diamonds === bet);
+    setBet(bets[(i + 1) % bets.length].bet_diamonds);
+    triggerHaptic('light');
+  }, [open, starting, bets, bet]);
+
+  const cycleAuto = useCallback(() => {
+    if (open || starting) return;
+    const i = autoPresets.indexOf(autoChoice as (typeof AUTO_PRESETS)[number]);
+    setAutoCents(autoPresets[(i + 1) % autoPresets.length]);
+    triggerHaptic('light');
+  }, [open, starting, autoPresets, autoChoice]);
 
   const handleStart = useCallback(async () => {
     if (!clubUuid || !commit || busyRef.current || open) return;
@@ -290,7 +299,7 @@ export default function DiamondCrashPage() {
         commit.id,
         seed,
         bet,
-        autoCents
+        autoTarget
       );
       if (!live()) return;
       if (!result.ok) {
@@ -318,7 +327,7 @@ export default function DiamondCrashPage() {
     open,
     clientSeed,
     bet,
-    autoCents,
+    autoTarget,
     live,
     toast,
     freshCommit,
@@ -396,51 +405,103 @@ export default function DiamondCrashPage() {
     );
   }
 
-  const chartWidth = Math.max(240, Math.min(440, wellWidth - 8));
+  const chartWidth = Math.max(220, Math.min(420, stageWidth - 4));
   const settledRound = round && round.status !== 'open' ? round : null;
   const finalCents = settledRound
     ? settledRound.status === 'cashed'
       ? (settledRound.outcome?.cashout_cents ?? 100)
       : (settledRound.outcome?.crash_cents ?? 100)
     : null;
-  const readoutTone = phase === 'crashed' ? 'red' : phase === 'cashed' ? 'green' : 'chrome';
+  const readoutInk =
+    phase === 'crashed' ? 'sc-ink--red' : phase === 'cashed' ? 'sc-ink--gold' : 'sc-ink--white';
   const readoutLabel =
     phase === 'crashed'
       ? 'Crashed At'
       : phase === 'cashed'
         ? 'Cashed Out At'
-        : phase === 'open'
+        : open
           ? 'Climbing'
           : 'Ready';
   const readoutValue =
-    phase === 'idle'
-      ? '1.00x'
-      : multiplierLabel(phase === 'open' ? liveCents : (finalCents ?? 100));
+    phase === 'idle' ? '1x' : multiplierLabel(open ? liveCents : (finalCents ?? 100));
   const liveWorth = open && round ? (round.bet_chips * liveCents) / 100 : 0;
   const startLabel = starting
     ? 'Starting'
     : waitSeconds > 0
       ? `Ready In ${waitSeconds}s`
-      : `Bet ${bet.toLocaleString()} Diamonds`;
+      : `Start ${bet.toLocaleString()}`;
+  const pill = open
+    ? 'Live'
+    : state.frozen
+      ? 'Break'
+      : state.available
+        ? 'Open'
+        : state.reason === 'not_configured'
+          ? 'Closed'
+          : 'Paused';
+  const pillInk = open ? 'green' : state.frozen ? 'gold' : state.available ? 'green' : 'red';
+  const roundAuto = round?.auto_cashout_cents ?? null;
 
   return (
     <div className={styles.page}>
-      <DiamondGamesHeader
+      <button
+        type="button"
+        className={styles.back}
+        onClick={() => navigate(`/clubs/${routeClubId}/diamond-games`)}
+      >
+        ‹ Diamond Games
+      </button>
+
+      <DeckConsole
         eyebrow="Diamond Games"
         title="Diamond Crash"
-        diamonds={player?.diamonds ?? 0}
-        spendable={player?.spendable ?? 0}
-        memberChips={player?.member_chips ?? null}
-        purchasedOnly={Boolean(cfg?.purchased_only)}
-        backTo={`/clubs/${routeClubId}/diamond-games`}
-      />
-
-      <CasinoFrame
-        eyebrow="Cash Out Before It Crashes"
-        title={`Up To ${multiplierLabel(capCents)}`}
+        titleId="diamond-crash-title"
+        pill={pill}
+        pillInk={pillInk}
+        aria-labelledby="diamond-crash-title"
+        bays={[
+          {
+            label: 'Bet',
+            value: open && round ? compactChips(round.bet_diamonds) : compactChips(bet),
+            ink: betOption && !betOption.playable ? 'red' : 'white',
+            onPress: cycleBet,
+            pressLabel: 'Change Bet',
+            disabled: open || starting || bets.length < 2,
+          },
+          {
+            label: 'Auto',
+            value: open
+              ? roundAuto
+                ? multiplierLabel(roundAuto)
+                : 'Off'
+              : autoTarget
+                ? multiplierLabel(autoTarget)
+                : 'Off',
+            ink: (open ? roundAuto : autoTarget) ? 'gold' : 'muted',
+            onPress: cycleAuto,
+            pressLabel: 'Change Auto Cash Out',
+            disabled: open || starting,
+          },
+          { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
+          { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+        ]}
+        secondary={{
+          label: 'Odds',
+          onClick: () => oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+        }}
+        primary={
+          open
+            ? {
+                label: cashing ? 'Cashing Out' : `Cash Out ${multiplierLabel(liveCents)}`,
+                ink: 'green',
+                onClick: handleCashOut,
+                disabled: cashing,
+              }
+            : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
+        }
       >
-        <CasinoWell lamps>
-          <div ref={wellRef}>
+        <div className={styles.stage} ref={stageRef}>
+          <div className={styles.board}>
             <CrashCurve
               phase={phase}
               growthK={round?.growth_k ?? growthK}
@@ -448,303 +509,173 @@ export default function DiamondCrashPage() {
               startedAtLocalMs={startedAtLocal}
               finalCents={finalCents}
               cashoutCents={settledRound?.outcome?.cashout_cents ?? null}
-              autoCashoutCents={open ? (round?.auto_cashout_cents ?? null) : autoCents}
+              autoCashoutCents={open ? roundAuto : autoTarget}
               width={chartWidth}
-              height={Math.round(chartWidth * 0.62)}
+              height={Math.round(chartWidth * 0.58)}
               onTick={setLiveCents}
             />
           </div>
-        </CasinoWell>
-
-        <div className={styles.result} role="status">
-          <CasinoReadout label={readoutLabel} value={readoutValue} tone={readoutTone} />
-          <span className={styles.resultSub}>
-            {open
-              ? `Worth ${chipsText(liveWorth)} Chips Right Now`
-              : settledRound
-                ? settledRound.status === 'cashed'
-                  ? `${chipsText(settledRound.outcome?.payout_chips ?? 0)} Chips Paid, Worth ${dollarsText(settledRound.outcome?.payout_chips ?? 0)}${settledRound.outcome?.settled_by === 'time' ? ' (Settled By Your Auto Cash Out)' : ''}`
-                  : `The Round Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. Nothing Paid`
-                : 'Pick A Bet, Set An Auto Cash Out If You Like, And Start The Round'}
-          </span>
+          <div className={styles.readout} role="status">
+            <span className="sc-label sc-ink--blue">{readoutLabel}</span>
+            <span className={`${styles.readoutValue} ${readoutInk}`}>{readoutValue}</span>
+            <span className={`sc-copy ${styles.readoutSub}`}>
+              {open
+                ? `Worth ${chipsLabel(liveWorth)} Chips Right Now`
+                : settledRound
+                  ? settledRound.status === 'cashed'
+                    ? `${chipsLabel(settledRound.outcome?.payout_chips ?? 0)} Chips Paid${settledRound.outcome?.settled_by === 'time' ? ' By Your Auto Cash Out' : ''}`
+                    : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. Nothing Paid`
+                  : blocker
+                    ? blocker
+                    : `Up To ${multiplierLabel(capCents)} On This Bet. Tap Bet Or Auto To Change Them.`}
+            </span>
+          </div>
         </div>
+      </DeckConsole>
 
-        {open ? (
-          <div className={styles.controls}>
-            <CasinoButton
-              tone="green"
-              wide
-              onClick={handleCashOut}
-              disabled={cashing}
-              sub={`${chipsText(liveWorth)} Chips`}
-            >
-              {cashing ? 'Cashing Out' : `Cash Out ${multiplierLabel(liveCents)}`}
-            </CasinoButton>
-            <CasinoBays columns={3}>
-              <CasinoBay
-                label="Bet"
-                value={`${chipsText(round?.bet_chips ?? 0)}`}
-                sub="Chips"
-                small
-              />
-              <CasinoBay
-                label="Auto"
-                value={
-                  round?.auto_cashout_cents ? multiplierLabel(round.auto_cashout_cents) : 'Off'
-                }
-                sub={
-                  round?.auto_cashout_cents
-                    ? `${crashSecondsToReach(round.growth_k, round.auto_cashout_cents).toFixed(1)}s`
-                    : 'Manual'
-                }
-                tone="gold"
-                small
-              />
-              <CasinoBay
-                label="Max"
-                value={multiplierLabel(round?.cap_cents ?? capCents)}
-                sub="This Round"
-                small
-              />
-            </CasinoBays>
-          </div>
-        ) : (
-          <div className={styles.controls}>
-            <div className={styles.pickers}>
-              <span className={styles.pickerLabel}>Bet</span>
-              <CasinoBays columns={2}>
-                {state.bets.map((b) => (
-                  <CasinoBay
-                    key={b.bet_diamonds}
-                    label={`${chipsText(b.bet_chips).replace(/\.00$/, '')} ${b.bet_chips === 1 ? 'Chip' : 'Chips'}`}
-                    value={b.bet_diamonds.toLocaleString()}
-                    sub={b.playable ? `Up To ${multiplierLabel(b.cap_cents)}` : 'Bank Too Low'}
-                    selected={bet === b.bet_diamonds}
-                    locked={!b.playable}
-                    onClick={() => b.playable && setBet(b.bet_diamonds)}
-                    disabled={!b.playable}
-                    ariaLabel={`Bet ${b.bet_diamonds} Diamonds`}
-                  />
-                ))}
-              </CasinoBays>
-              <span className={styles.pickerLabel}>Auto Cash Out</span>
-              <div className={styles.autoRow}>
-                <div className={styles.stepper}>
-                  <button
-                    type="button"
-                    className={styles.stepperButton}
-                    onClick={() =>
-                      setAutoText(((centsFromText(autoText) ?? 200) / 100 - 0.1).toFixed(2))
-                    }
-                    disabled={!autoOn || (centsFromText(autoText) ?? 200) <= 101}
-                    aria-label="Lower Auto Cash Out"
-                  >
-                    -
-                  </button>
-                  <input
-                    className={styles.stepperInput}
-                    value={autoText}
-                    inputMode="decimal"
-                    onChange={(e) => setAutoText(e.target.value)}
-                    disabled={!autoOn}
-                    aria-label="Auto Cash Out Multiplier"
-                  />
-                  <button
-                    type="button"
-                    className={styles.stepperButton}
-                    onClick={() =>
-                      setAutoText(((centsFromText(autoText) ?? 200) / 100 + 0.1).toFixed(2))
-                    }
-                    disabled={!autoOn}
-                    aria-label="Raise Auto Cash Out"
-                  >
-                    +
-                  </button>
-                </div>
-                <label className={styles.toggleRow}>
-                  <input
-                    type="checkbox"
-                    checked={autoOn}
-                    onChange={(e) => setAutoOn(e.target.checked)}
-                  />
-                  <span>{autoOn ? 'On' : 'Off'}</span>
-                </label>
-              </div>
-              <CasinoChips
-                label="Auto Cash Out Presets"
-                value={autoOn ? (autoCents ?? 0) : 0}
-                onChange={(v) => {
-                  setAutoOn(true);
-                  setAutoText((Number(v) / 100).toFixed(2));
-                }}
-                items={TARGETS.filter((t) => t <= capCents && t !== 101).map((t) => ({
-                  value: t,
-                  label: multiplierLabel(t),
-                  sub: `${(80 / (t / 100)).toFixed(t >= 10000 ? 2 : 0)}%`,
-                }))}
-              />
+      <div ref={oddsRef}>
+        <SpadeConsole eyebrow="How It Pays" title="The Odds" foot="foot">
+          <div className={styles.rows}>
+            <div className={`${styles.grid4} ${styles.grid4Head}`}>
+              <span className="sc-label sc-ink--blue">Cash Out</span>
+              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chance</span>
+              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>After</span>
+              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Bet Pays</span>
             </div>
-
-            <CasinoButton
-              onClick={handleStart}
-              disabled={!canStart}
-              wide
-              sub={
-                waitSeconds <= 0 && !starting ? `${dollarsText(betChips)} Of Diamonds` : undefined
-              }
-            >
-              {startLabel}
-            </CasinoButton>
-            {blocker ? <CasinoNote warn>{blocker}</CasinoNote> : null}
+            {TARGETS.filter((t) => t <= (cfg?.max_multiplier_cents ?? 100000)).map((t) => (
+              <div key={t} className={styles.grid4}>
+                <span
+                  className={`${styles.cell} ${t > capCents ? 'sc-ink--muted' : 'sc-ink--silver'}`}
+                >
+                  {multiplierLabel(t)}
+                </span>
+                <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
+                  {reachChance(t)}
+                </span>
+                <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
+                  {crashSecondsToReach(growthK, t).toFixed(1)}s
+                </span>
+                <span
+                  className={`${styles.cell} ${styles.cellRight} ${t > capCents ? 'sc-ink--muted' : 'sc-ink--gold'}`}
+                >
+                  {t > capCents ? 'Over Cap' : chipsLabel((betChips * t) / 100)}
+                </span>
+              </div>
+            ))}
           </div>
-        )}
-
-        <CasinoBays columns={3} className={styles.facts}>
-          <CasinoBay label="Return" value="80%" sub="Any Target" small />
-          <CasinoBay label="Instant" value="20.8%" sub="Crash At 1.00x" small />
-          <CasinoBay
-            label="Today"
-            value={`${(player?.rounds_today ?? 0).toLocaleString()}`}
-            sub={`Of ${(cfg?.max_rounds_per_player_per_day ?? 0).toLocaleString()}`}
-            small
-          />
-        </CasinoBays>
-      </CasinoFrame>
-
-      <div className={styles.tabs}>
-        <CasinoChips
-          label="Crash Details"
-          value={tab}
-          onChange={(v) => setTab(v as 'odds' | 'fair' | 'history')}
-          items={[
-            { value: 'odds', label: 'Odds' },
-            { value: 'fair', label: 'Fairness' },
-            { value: 'history', label: 'History' },
-          ]}
-        />
-      </div>
-
-      {tab === 'odds' ? (
-        <CasinoFrame eyebrow="How It Pays" title="The Odds" tight>
-          <div className={styles.tableScroll}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Cash Out At</th>
-                  <th className={styles.num}>Reach Chance</th>
-                  <th className={styles.num}>Reached After</th>
-                  <th className={styles.num}>This Bet Pays</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TARGETS.filter((t) => t <= (cfg?.max_multiplier_cents ?? 100000)).map((t) => (
-                  <tr key={t}>
-                    <td>{multiplierLabel(t)}</td>
-                    <td className={styles.num}>{(80 / (t / 100)).toFixed(t >= 10000 ? 3 : 1)}%</td>
-                    <td className={styles.num}>{crashSecondsToReach(growthK, t).toFixed(1)}s</td>
-                    <td className={styles.num}>{chipsText((betChips * t) / 100)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <CasinoNote>
+          <p className="sc-copy">
             The Chance Of Reaching Any Multiplier Is 80% Divided By That Multiplier, So Every Cash
-            Out Target Returns 80% Over Time. About One Round In Five Crashes At 1.00x Straight Away
+            Out Target Returns 80% Over Time. About One Round In Five Crashes At 1x Straight Away
             And Pays Nothing. The Largest Multiplier A Round Can Reach Is What The Pool Can Cover On
             Your Bet; It Is Shown Before You Start. Crash Never Pays Out More Than It Has Taken In.
             {state.pool && state.pool.rounds > 0 && state.pool.realized_rtp !== null
-              ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(1)}% Over ${state.pool.rounds.toLocaleString()} Rounds.`
+              ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(0)}% Over ${compactChips(state.pool.rounds)} Rounds.`
               : ''}
-          </CasinoNote>
-        </CasinoFrame>
-      ) : null}
+          </p>
+        </SpadeConsole>
+      </div>
 
-      {tab === 'fair' ? (
-        <CasinoFrame eyebrow="Provably Fair" title="Check Any Round" tight>
-          <CasinoNote>
-            Before You Bet, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash. The
-            Round Reveals The Seed Once It Is Settled. The Crash Point Is Floor(80 Times 2^48
-            Divided By (Roll + 1)) Cents, The Roll Being The First 48 Bits Of HMAC-SHA256(Server
-            Seed, Your Seed:Nonce). Nothing About The Point Changes After The Bet Is Placed.
-          </CasinoNote>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>
-              Next Round Commitment (SHA-256 Of The Server Seed)
-            </span>
-            <code className={styles.mono}>{commit?.hash || 'Taking A Fresh Commitment'}</code>
-          </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Your Client Seed</span>
-            <input
-              className={styles.input}
-              value={clientSeed}
-              maxLength={MAX_CLIENT_SEED}
-              onChange={(e) => setClientSeed(e.target.value)}
-              disabled={open}
-              spellCheck={false}
-            />
-          </label>
-          {settledRound && settledRound.fairness.server_seed ? (
-            <div className={styles.reveal}>
-              <dl className={styles.dl}>
-                <dt>Server Seed</dt>
-                <dd className={styles.mono}>{settledRound.fairness.server_seed}</dd>
-                <dt>Its Hash</dt>
-                <dd className={styles.mono}>{settledRound.fairness.server_seed_hash}</dd>
-                <dt>Client Seed</dt>
-                <dd className={styles.mono}>{settledRound.fairness.client_seed}</dd>
-                <dt>Nonce</dt>
-                <dd className={styles.mono}>{settledRound.fairness.nonce}</dd>
-                <dt>Roll</dt>
-                <dd className={styles.mono}>
-                  {(settledRound.fairness.roll ?? 0).toLocaleString()} Of 281,474,976,710,656
-                </dd>
-                <dt>Crash Point</dt>
-                <dd className={styles.mono}>
-                  {multiplierLabel(settledRound.fairness.crash_cents ?? 100)}
-                </dd>
-              </dl>
-              <CasinoButton
-                tone="secondary"
-                onClick={() => handleVerify(settledRound)}
-                disabled={verifying}
-              >
-                {verifying ? 'Checking' : 'Verify This Round'}
-              </CasinoButton>
-              {verdict ? (
-                <CasinoNote warn={!verdict.fair}>
-                  {verdict.fair
-                    ? 'Verified: The Hash, The Roll And The Crash Point All Match'
-                    : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, Roll ${verdict.rollMatches ? 'Ok' : 'Differs'}, Crash Point ${verdict.crashMatches ? 'Ok' : 'Differs'}`}
-                </CasinoNote>
-              ) : null}
+      <SpadeConsole
+        eyebrow="Provably Fair"
+        title="Check Any Round"
+        plates={{
+          secondary: {
+            label: 'New Seed',
+            onClick: () => setClientSeed(randomClientSeed()),
+            disabled: open,
+          },
+          primary: {
+            label: verifying ? 'Checking' : 'Verify Round',
+            ink: 'white',
+            onClick: () => settledRound && handleVerify(settledRound),
+            disabled: verifying || !settledRound?.fairness.server_seed,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          Before You Bet, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash. The
+          Round Reveals The Seed Once It Is Settled. The Crash Point Is Floor(80 Times 2^48 Divided
+          By (Roll + 1)) Cents, The Roll Being The First 48 Bits Of HMAC-SHA256(Server Seed, Your
+          Seed:Nonce). Nothing About The Point Changes After The Bet Is Placed.
+        </p>
+        <label className={styles.seedField}>
+          <span className="sc-label sc-ink--blue">Your Client Seed</span>
+          <input
+            className={styles.seedInput}
+            value={clientSeed}
+            maxLength={MAX_CLIENT_SEED}
+            onChange={(e) => setClientSeed(e.target.value)}
+            disabled={open}
+            spellCheck={false}
+          />
+        </label>
+        <div className={styles.seedField}>
+          <span className="sc-label sc-ink--blue">Next Round Commitment</span>
+          <code className={styles.mono}>{commit?.hash || 'Taking A Fresh Commitment'}</code>
+        </div>
+        {settledRound && settledRound.fairness.server_seed ? (
+          <div className={`${styles.rows} ${styles.rowsCompact}`}>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Server Seed</span>
+              <code className={styles.mono}>{settledRound.fairness.server_seed}</code>
             </div>
-          ) : (
-            <CasinoNote>
-              Finish A Round And The Revealed Seed Will Appear Here For You To Check.
-            </CasinoNote>
-          )}
-        </CasinoFrame>
-      ) : null}
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Its Hash</span>
+              <code className={styles.mono}>{settledRound.fairness.server_seed_hash}</code>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Client Seed</span>
+              <code className={styles.mono}>{settledRound.fairness.client_seed}</code>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Nonce</span>
+              <span className={`${styles.rowValue} sc-ink--silver`}>
+                {settledRound.fairness.nonce}
+              </span>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Roll</span>
+              <code className={styles.mono}>
+                {(settledRound.fairness.roll ?? 0).toLocaleString()} Of 281,474,976,710,656
+              </code>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Crash Point</span>
+              <span className={`${styles.rowValue} sc-ink--red`}>
+                {multiplierLabel(settledRound.fairness.crash_cents ?? 100)}
+              </span>
+            </div>
+            {verdict ? (
+              <p
+                className={`sc-copy sc-copy--center ${verdict.fair ? 'sc-ink--green' : 'sc-ink--red'}`}
+              >
+                {verdict.fair
+                  ? 'Verified: The Hash, The Roll And The Crash Point All Match'
+                  : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, Roll ${verdict.rollMatches ? 'Ok' : 'Differs'}, Crash Point ${verdict.crashMatches ? 'Ok' : 'Differs'}`}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="sc-copy sc-copy--center sc-ink--muted">
+            Finish A Round And The Revealed Seed Will Appear Here For You To Check.
+          </p>
+        )}
+      </SpadeConsole>
 
-      {tab === 'history' ? (
-        <CasinoFrame eyebrow="Your Rounds" title="History" tight>
-          {history.length === 0 ? (
-            <CasinoNote>No Rounds Yet.</CasinoNote>
-          ) : (
-            <ul className={styles.history}>
-              {history.map((h) => (
-                <li key={h.round_id} className={styles.historyRow}>
-                  <span
-                    className={`${styles.dot} ${h.status === 'cashed' ? styles.dotGreen : styles.dotRed}`}
-                  />
-                  <span className={styles.historyLabel}>
-                    {h.status === 'cashed'
-                      ? `Cashed ${multiplierLabel(h.outcome?.cashout_cents ?? 100)} On ${chipsText(h.bet_chips)} Chips`
-                      : `Crashed ${multiplierLabel(h.outcome?.crash_cents ?? 100)} On ${chipsText(h.bet_chips)} Chips`}
-                  </span>
-                  <span className={styles.historyMeta}>
+      <SpadeConsole eyebrow="Your Rounds" title="History" foot="foot">
+        {history.length === 0 ? (
+          <p className="sc-copy sc-copy--center sc-ink--muted">No Rounds Yet.</p>
+        ) : (
+          <div className={`${styles.rows} ${styles.rowsCompact}`}>
+            {history.map((h) => (
+              <div key={h.round_id} className={styles.row}>
+                <span
+                  className={`${styles.rowLabel} ${h.status === 'cashed' ? 'sc-ink--silver' : 'sc-ink--muted'}`}
+                >
+                  {h.status === 'cashed'
+                    ? `Cashed ${multiplierLabel(h.outcome?.cashout_cents ?? 100)} On ${chipsLabel(h.bet_chips)} Chips`
+                    : `Crashed ${multiplierLabel(h.outcome?.crash_cents ?? 100)} On ${chipsLabel(h.bet_chips)} Chips`}
+                  <span className={`${styles.rowMeta} sc-ink--muted`}>
                     {new Date(h.created_at).toLocaleString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -752,21 +683,21 @@ export default function DiamondCrashPage() {
                       minute: '2-digit',
                     })}
                   </span>
-                  <span
-                    className={`${styles.historyValue} ${h.status === 'cashed' ? '' : styles.historyValueRed}`}
-                  >
-                    {h.status === 'cashed'
-                      ? dollarsText(h.outcome?.payout_chips ?? 0)
-                      : `-${dollarsText(h.bet_chips)}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CasinoFrame>
-      ) : null}
+                </span>
+                <span
+                  className={`${styles.rowValue} ${h.status === 'cashed' ? 'sc-ink--gold' : 'sc-ink--red'}`}
+                >
+                  {h.status === 'cashed'
+                    ? `${chipsLabel(h.outcome?.payout_chips ?? 0)} Chips`
+                    : '0'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SpadeConsole>
 
-      {!user ? <CasinoNote>Sign In To Play.</CasinoNote> : null}
+      {!user ? <p className="sc-copy sc-copy--center sc-ink--muted">Sign In To Play.</p> : null}
     </div>
   );
 }

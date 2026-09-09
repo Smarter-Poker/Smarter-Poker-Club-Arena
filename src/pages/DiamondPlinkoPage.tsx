@@ -1,49 +1,37 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DIAMOND PLINKO - the player's page
+ *  DIAMOND PLINKO - the player's page, on the console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan 2026-09-08: "a Plinko version, 50x can be higher on this, but crash out
- * pays nothing, and you still need to maintain the 20% edge." Three tables
+ * pays nothing, and you still need to maintain the 20% edge." Three boards
  * (Steady 20x, Bold 130x, Moonshot 1000x), each auditing to exactly 80 percent
- * on the binomial odds of a 16-row board, the centre paying nothing on all of
+ * on the binomial odds of sixteen rows, the centre paying nothing on all of
  * them. A drop costs whole chips of diamonds (100 diamonds = 1 chip).
  *
- * WHAT THIS PAGE IS. The board, the bet and table pickers, the multiplier every
- * slot pays ON THIS BET (the pool caps what it can promise; a trimmed slot is
- * shown in gold with the table's own figure beside it in the odds), the
- * fairness panel and the player's history. Nothing is decided here: the ball
- * falls along the sixteen bits fn_plinko_drop rolled and lands in the slot the
- * server paid.
+ * WHAT THIS PAGE IS. The board, the bet, the multiplier every slot pays ON
+ * THIS BET (the pool caps what it can promise; a trimmed slot prints in gold
+ * with the board's own figure beside it in the odds), the fairness check and
+ * the player's history. Nothing is decided here: the ball falls along the
+ * sixteen bits fn_plinko_drop rolled and lands in the slot the server paid.
  *
- * Every user-facing string is Title Case, every message goes through the
- * Toast layer (CLAUDE.md 5.7). No emoji, no em dashes. The material is the
- * approved #SmarterCasinoRealism chassis (components/diamond-games).
+ * THE PICTURE (#ClubArenaConsole). The deck console: the board on the glass,
+ * four bays (Board and Bet are controls - tap to change, the bay's ink is its
+ * state), two plates. Odds, fairness and history each on their own console.
+ * Nothing is drawn but the board and the line the client seed is typed on.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMeasuredWidth } from '../components/diamond-games/useMeasuredWidth';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import PlinkoBoard from '../components/plinko/PlinkoBoard';
-import DiamondGamesHeader, {
-  chipsText,
-  dollarsText,
-} from '../components/diamond-games/DiamondGamesHeader';
-import {
-  CasinoBay,
-  CasinoBays,
-  CasinoButton,
-  CasinoChips,
-  CasinoFrame,
-  CasinoNote,
-  CasinoReadout,
-  CasinoWell,
-} from '../components/diamond-games/CasinoChassis';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { DeckConsole } from '../components/console/DeckConsole';
+import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import DiamondGamesService, {
   type GameState,
   type PlinkoDrop,
@@ -57,10 +45,11 @@ import {
   verifyPlinkoDrop,
   type PlinkoFairnessVerdict,
 } from '../utils/diamondGamesFairness';
+import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import styles from '../components/diamond-games/gameDetails.module.css';
+import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 
@@ -69,13 +58,14 @@ function odds(weight: number): string {
   return oneIn >= 100 ? `1 In ${Math.round(oneIn).toLocaleString()}` : `1 In ${oneIn.toFixed(1)}`;
 }
 
-function outcomeHeadline(d: PlinkoDrop): string {
-  if (d.outcome.payout_chips <= 0) return 'The Ball Fell Through';
-  return `${multiplierLabel(d.outcome.multiplier_cents)} Pays ${chipsText(d.outcome.payout_chips)} Chips`;
+/** Chips as the player reads them: whole figures compact, sub-chip payouts exact. */
+function chipsLabel(v: number): string {
+  return v >= 1 ? compactChips(v) : v.toFixed(2);
 }
 
 export default function DiamondPlinkoPage() {
   const { clubId: routeClubId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
   const isMountedRef = useIsMounted();
@@ -97,10 +87,10 @@ export default function DiamondPlinkoPage() {
   const [history, setHistory] = useState<PlinkoDrop[]>([]);
   const [verdict, setVerdict] = useState<PlinkoFairnessVerdict | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<'odds' | 'fair' | 'history'>('odds');
   const [waitSeconds, setWaitSeconds] = useState(0);
   const busyRef = useRef(false);
-  const [wellRef, wellWidth] = useMeasuredWidth<HTMLDivElement>(320);
+  const oddsRef = useRef<HTMLDivElement | null>(null);
+  const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
 
   const loadState = useCallback(
     async (uuid: string) => {
@@ -172,18 +162,17 @@ export default function DiamondPlinkoPage() {
 
   const cfg = state?.config;
   const player = state?.player;
+  const tables = useMemo(() => state?.tables ?? [], [state]);
+  const bets = useMemo(() => state?.bets ?? [], [state]);
   const table: PlinkoTable | undefined = useMemo(
-    () => state?.tables.find((t) => t.version === tableVersion) ?? state?.tables[0],
-    [state, tableVersion]
+    () => tables.find((t) => t.version === tableVersion) ?? tables[0],
+    [tables, tableVersion]
   );
-  const betOption = useMemo(
-    () => state?.bets.find((b) => b.bet_diamonds === bet) ?? state?.bets[0],
-    [state, bet]
-  );
+  const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet) ?? bets[0], [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
   const betChips = betOption?.bet_chips ?? bet / rate;
 
-  /** The multiplier each slot pays on THIS bet: the table trimmed to the pool's cap. */
+  /** The multiplier each slot pays on THIS bet: the board trimmed to the pool's cap. */
   const effective = useMemo(() => {
     if (!table) return [];
     const cap = betOption
@@ -215,6 +204,20 @@ export default function DiamondPlinkoPage() {
   }, [state, player, cfg, bet, betOption]);
 
   const canDrop = Boolean(clubUuid && commit && table && !dropping && !blocker && waitSeconds <= 0);
+
+  const cycleTable = useCallback(() => {
+    if (dropping || tables.length < 2) return;
+    const i = tables.findIndex((t) => t.version === (table?.version ?? -1));
+    setTableVersion(tables[(i + 1) % tables.length].version);
+    triggerHaptic('light');
+  }, [dropping, tables, table]);
+
+  const cycleBet = useCallback(() => {
+    if (dropping || bets.length < 2) return;
+    const i = bets.findIndex((b) => b.bet_diamonds === bet);
+    setBet(bets[(i + 1) % bets.length].bet_diamonds);
+    triggerHaptic('light');
+  }, [dropping, bets, bet]);
 
   const handleDrop = useCallback(async () => {
     if (!clubUuid || !commit || !table || busyRef.current || dropping) return;
@@ -260,7 +263,9 @@ export default function DiamondPlinkoPage() {
     setRestingSlot(result.outcome.slot);
     if (result.outcome.payout_chips > 0) {
       triggerHaptic('success');
-      toast.success(outcomeHeadline(result));
+      toast.success(
+        `${multiplierLabel(result.outcome.multiplier_cents)} Pays ${chipsLabel(result.outcome.payout_chips)} Chips`
+      );
     } else {
       triggerHaptic('light');
     }
@@ -312,31 +317,66 @@ export default function DiamondPlinkoPage() {
   }
 
   const path = pending?.outcome.path ?? null;
-  const boardWidth = Math.max(240, Math.min(440, wellWidth - 8));
+  const boardWidth = Math.max(220, Math.min(420, stageWidth - 4));
   const dropLabel = dropping
     ? 'Dropping'
     : waitSeconds > 0
       ? `Ready In ${waitSeconds}s`
-      : `Drop For ${bet.toLocaleString()} Diamonds`;
+      : `Drop ${bet.toLocaleString()}`;
+  const pill = state.frozen
+    ? 'Break'
+    : state.available
+      ? 'Open'
+      : state.reason === 'not_configured'
+        ? 'Closed'
+        : 'Paused';
+  const pillInk = state.frozen ? 'gold' : state.available ? 'green' : 'red';
 
   return (
     <div className={styles.page}>
-      <DiamondGamesHeader
+      <button
+        type="button"
+        className={styles.back}
+        onClick={() => navigate(`/clubs/${routeClubId}/diamond-games`)}
+      >
+        ‹ Diamond Games
+      </button>
+
+      <DeckConsole
         eyebrow="Diamond Games"
         title="Diamond Plinko"
-        diamonds={player?.diamonds ?? 0}
-        spendable={player?.spendable ?? 0}
-        memberChips={player?.member_chips ?? null}
-        purchasedOnly={Boolean(cfg?.purchased_only)}
-        backTo={`/clubs/${routeClubId}/diamond-games`}
-      />
-
-      <CasinoFrame
-        eyebrow={table ? `${table.name} Board` : 'Board'}
-        title={table ? `Up To ${multiplierLabel(table.max_multiplier_cents)}` : ''}
+        titleId="diamond-plinko-title"
+        pill={pill}
+        pillInk={pillInk}
+        aria-labelledby="diamond-plinko-title"
+        bays={[
+          {
+            label: 'Board',
+            value: table?.name ?? '',
+            ink: 'white',
+            onPress: cycleTable,
+            pressLabel: 'Change Board',
+            disabled: dropping || tables.length < 2,
+          },
+          {
+            label: 'Bet',
+            value: compactChips(bet),
+            ink: betOption && !betOption.playable ? 'red' : 'white',
+            onPress: cycleBet,
+            pressLabel: 'Change Bet',
+            disabled: dropping || bets.length < 2,
+          },
+          { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
+          { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+        ]}
+        secondary={{
+          label: 'Odds',
+          onClick: () => oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+        }}
+        primary={{ label: dropLabel, ink: 'white', onClick: handleDrop, disabled: !canDrop }}
       >
-        <CasinoWell lamps>
-          <div ref={wellRef}>
+        <div className={styles.stage} ref={stageRef}>
+          <div className={styles.board}>
             <PlinkoBoard
               multipliersCents={effective}
               tableMultipliersCents={table?.multipliers_cents}
@@ -347,238 +387,187 @@ export default function DiamondPlinkoPage() {
               width={boardWidth}
             />
           </div>
-        </CasinoWell>
-
-        {lastResult && !dropping ? (
-          <div className={styles.result} role="status">
-            <CasinoReadout
-              label={lastResult.outcome.payout_chips > 0 ? 'You Won' : 'No Payout'}
-              value={
-                lastResult.outcome.payout_chips > 0
-                  ? `${chipsText(lastResult.outcome.payout_chips)} Chips`
-                  : multiplierLabel(lastResult.outcome.multiplier_cents)
-              }
-              tone={lastResult.outcome.payout_chips > 0 ? 'gold' : 'red'}
-            />
-            <span className={styles.resultSub}>
-              {lastResult.outcome.payout_chips > 0
-                ? `${multiplierLabel(lastResult.outcome.multiplier_cents)} On ${chipsText(lastResult.bet_chips)} Chips, Worth ${dollarsText(lastResult.outcome.payout_chips)}`
-                : 'The Centre Pays Nothing. Drop Again'}
-              {lastResult.outcome.capped ? ' (Trimmed To What The Pool Could Pay)' : ''}
-            </span>
-          </div>
-        ) : null}
-
-        <div className={styles.pickers}>
-          <span className={styles.pickerLabel}>Table</span>
-          <CasinoChips
-            label="Plinko Table"
-            value={table?.version ?? 0}
-            onChange={(v) => !dropping && setTableVersion(Number(v))}
-            items={state.tables.map((t) => ({
-              value: t.version,
-              label: t.name,
-              sub: `Up To ${multiplierLabel(t.max_multiplier_cents)}`,
-              disabled: dropping,
-            }))}
-          />
-          <span className={styles.pickerLabel}>Bet</span>
-          <CasinoBays columns={2}>
-            {state.bets.map((b) => (
-              <CasinoBay
-                key={b.bet_diamonds}
-                label={`${chipsText(b.bet_chips).replace(/\.00$/, '')} ${b.bet_chips === 1 ? 'Chip' : 'Chips'}`}
-                value={b.bet_diamonds.toLocaleString()}
-                sub={b.playable ? 'Diamonds' : 'Bank Too Low'}
-                selected={bet === b.bet_diamonds}
-                locked={!b.playable}
-                onClick={() => !dropping && b.playable && setBet(b.bet_diamonds)}
-                disabled={dropping || !b.playable}
-                ariaLabel={`Bet ${b.bet_diamonds} Diamonds`}
-              />
-            ))}
-          </CasinoBays>
+          {lastResult && !dropping ? (
+            <div className={styles.readout} role="status">
+              <span className="sc-label sc-ink--blue">
+                {lastResult.outcome.payout_chips > 0 ? 'You Won' : 'No Payout'}
+              </span>
+              <span
+                className={`${styles.readoutValue} ${lastResult.outcome.payout_chips > 0 ? 'sc-ink--gold' : 'sc-ink--muted'}`}
+              >
+                {lastResult.outcome.payout_chips > 0
+                  ? `${chipsLabel(lastResult.outcome.payout_chips)} Chips`
+                  : multiplierLabel(lastResult.outcome.multiplier_cents)}
+              </span>
+              <span className={`sc-copy ${styles.readoutSub}`}>
+                {lastResult.outcome.payout_chips > 0
+                  ? `${multiplierLabel(lastResult.outcome.multiplier_cents)} On ${chipsLabel(lastResult.bet_chips)} Chips`
+                  : 'The Centre Pays Nothing. Drop Again'}
+                {lastResult.outcome.capped ? ' (Trimmed To What The Pool Could Pay)' : ''}
+              </span>
+            </div>
+          ) : (
+            <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
+              {blocker
+                ? blocker
+                : anyTrimmed
+                  ? 'Gold Slots Are Trimmed To The Biggest Win The Pool Can Cover On This Bet Right Now. Tap Board Or Bet To Change Them.'
+                  : `${table?.name ?? ''} Pays Up To ${table ? multiplierLabel(table.max_multiplier_cents) : ''}. Tap Board Or Bet To Change Them. The Centre Pays Nothing.`}
+            </p>
+          )}
         </div>
+      </DeckConsole>
 
-        <CasinoButton
-          onClick={handleDrop}
-          disabled={!canDrop}
-          wide
-          sub={!dropping && waitSeconds <= 0 ? `${dollarsText(betChips)} Of Diamonds` : undefined}
-        >
-          {dropLabel}
-        </CasinoButton>
-
-        {blocker ? <CasinoNote warn>{blocker}</CasinoNote> : null}
-        {anyTrimmed && !blocker ? (
-          <CasinoNote warn>
-            Gold Slots Are Trimmed To The Biggest Win The Pool Can Cover On This Bet Right Now. They
-            Grow As The Pool Grows.
-          </CasinoNote>
-        ) : null}
-
-        <CasinoBays columns={3} className={styles.facts}>
-          <CasinoBay label="Return" value="80%" sub="Every Table" small />
-          <CasinoBay
-            label="Pays"
-            value={table ? `${(table.hit_rate * 100).toFixed(0)}%` : ''}
-            sub="Of Balls"
-            small
-          />
-          <CasinoBay
-            label="Today"
-            value={`${(player?.rounds_today ?? 0).toLocaleString()}`}
-            sub={`Of ${(cfg?.max_rounds_per_player_per_day ?? 0).toLocaleString()}`}
-            small
-          />
-        </CasinoBays>
-      </CasinoFrame>
-
-      <div className={styles.tabs}>
-        <CasinoChips
-          label="Plinko Details"
-          value={tab}
-          onChange={(v) => setTab(v as 'odds' | 'fair' | 'history')}
-          items={[
-            { value: 'odds', label: 'Odds' },
-            { value: 'fair', label: 'Fairness' },
-            { value: 'history', label: 'History' },
-          ]}
-        />
-      </div>
-
-      {tab === 'odds' && table ? (
-        <CasinoFrame eyebrow="The Board" title={`${table.name} Odds`} tight>
-          <div className={styles.tableScroll}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Slot</th>
-                  <th className={styles.num}>Pays</th>
-                  <th className={styles.num}>Chance</th>
-                  <th className={styles.num}>Bet Pays</th>
-                </tr>
-              </thead>
-              <tbody>
-                {table.multipliers_cents.slice(0, 9).map((m, k) => {
-                  const mirror = 16 - k;
-                  const weight = PLINKO_SLOT_WEIGHTS[k] * (k === 8 ? 1 : 2);
-                  const eff = effective[k] ?? m;
-                  return (
-                    <tr key={k} className={m === 0 ? styles.rowDead : undefined}>
-                      <td>{k === 8 ? 'Centre' : `${k + 1} And ${mirror + 1}`}</td>
-                      <td className={styles.num}>
-                        {multiplierLabel(m)}
-                        {eff < m ? (
-                          <span className={styles.trim}> ({multiplierLabel(eff)} Now)</span>
-                        ) : null}
-                      </td>
-                      <td className={styles.num}>
-                        {((weight / PLINKO_WEIGHT_TOTAL) * 100).toFixed(weight < 1000 ? 3 : 1)}%
-                        <span className={styles.subCell}>{odds(weight)}</span>
-                      </td>
-                      <td className={styles.num}>
-                        {eff > 0 ? chipsText((betChips * eff) / 100) : ''}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <CasinoNote>
+      <div ref={oddsRef}>
+        <SpadeConsole eyebrow="The Board" title={table ? `${table.name} Odds` : 'Odds'} foot="foot">
+          {table ? (
+            <div className={styles.rows}>
+              <div className={`${styles.grid4} ${styles.grid4Head}`}>
+                <span className="sc-label sc-ink--blue">Slot</span>
+                <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Pays</span>
+                <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chance</span>
+                <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Bet Pays</span>
+              </div>
+              {table.multipliers_cents.slice(0, 9).map((m, k) => {
+                const mirror = 16 - k;
+                const weight = PLINKO_SLOT_WEIGHTS[k] * (k === 8 ? 1 : 2);
+                const eff = effective[k] ?? m;
+                return (
+                  <div key={k} className={styles.grid4}>
+                    <span
+                      className={`${styles.cell} ${m === 0 ? 'sc-ink--muted' : 'sc-ink--silver'}`}
+                    >
+                      {k === 8 ? 'Centre' : `${k + 1} And ${mirror + 1}`}
+                      <span className={`${styles.rowMeta} sc-ink--muted`}>{odds(weight)}</span>
+                    </span>
+                    <span
+                      className={`${styles.cell} ${styles.cellRight} ${eff < m ? 'sc-ink--gold' : 'sc-ink--silver'}`}
+                    >
+                      {multiplierLabel(eff)}
+                      {eff < m ? (
+                        <span className={`${styles.rowMeta} sc-ink--muted`}>
+                          Board {multiplierLabel(m)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
+                      {((weight / PLINKO_WEIGHT_TOTAL) * 100).toFixed(weight < 1000 ? 3 : 1)}%
+                    </span>
+                    <span className={`${styles.cell} ${styles.cellRight} sc-ink--gold`}>
+                      {eff > 0 ? chipsLabel((betChips * eff) / 100) : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          <p className="sc-copy">
             Sixteen Rows, Seventeen Slots. The Ball Goes Left Or Right At Every Peg With Equal Odds,
             So The Edges Are Rare And The Centre Is Common. The Board Returns 80% Of Everything It
             Takes In Over Time And Never Pays Out More Than It Has Taken In.
             {state.pool && state.pool.rounds > 0 && state.pool.realized_rtp !== null
-              ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(1)}% Over ${state.pool.rounds.toLocaleString()} Drops.`
+              ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(0)}% Over ${compactChips(state.pool.rounds)} Drops.`
               : ''}
-          </CasinoNote>
-        </CasinoFrame>
-      ) : null}
+          </p>
+        </SpadeConsole>
+      </div>
 
-      {tab === 'fair' ? (
-        <CasinoFrame eyebrow="Provably Fair" title="Check Any Drop" tight>
-          <CasinoNote>
-            Before You Drop, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash.
-            Your Drop Reveals The Seed. The Ball’s Path Is The First Sixteen Bits Of
-            HMAC-SHA256(Server Seed, Your Seed:Nonce), One Bit Per Row, Right When The Bit Is One.
-            The Slot Is The Number Of Rights.
-          </CasinoNote>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>
-              Next Drop Commitment (SHA-256 Of The Server Seed)
-            </span>
-            <code className={styles.mono}>{commit?.hash || 'Taking A Fresh Commitment'}</code>
-          </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Your Client Seed</span>
-            <input
-              className={styles.input}
-              value={clientSeed}
-              maxLength={MAX_CLIENT_SEED}
-              onChange={(e) => setClientSeed(e.target.value)}
-              disabled={dropping}
-              spellCheck={false}
-            />
-          </label>
-          {lastResult ? (
-            <div className={styles.reveal}>
-              <dl className={styles.dl}>
-                <dt>Server Seed</dt>
-                <dd className={styles.mono}>{lastResult.fairness.server_seed}</dd>
-                <dt>Its Hash</dt>
-                <dd className={styles.mono}>{lastResult.fairness.server_seed_hash}</dd>
-                <dt>Client Seed</dt>
-                <dd className={styles.mono}>{lastResult.fairness.client_seed}</dd>
-                <dt>Nonce</dt>
-                <dd className={styles.mono}>{lastResult.fairness.nonce}</dd>
-                <dt>HMAC</dt>
-                <dd className={styles.mono}>{lastResult.fairness.hmac_hex}</dd>
-                <dt>Path</dt>
-                <dd className={styles.mono}>
-                  {lastResult.outcome.path.map((b) => (b ? 'R' : 'L')).join(' ')} (Slot{' '}
-                  {lastResult.outcome.slot + 1})
-                </dd>
-              </dl>
-              <CasinoButton
-                tone="secondary"
-                onClick={() => handleVerify(lastResult)}
-                disabled={verifying}
-              >
-                {verifying ? 'Checking' : 'Verify This Drop'}
-              </CasinoButton>
-              {verdict ? (
-                <CasinoNote warn={!verdict.fair}>
-                  {verdict.fair
-                    ? 'Verified: The Hash, The HMAC And The Path All Match'
-                    : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, HMAC ${verdict.hmacMatches ? 'Ok' : 'Differs'}, Path ${verdict.pathMatches ? 'Ok' : 'Differs'}`}
-                </CasinoNote>
-              ) : null}
+      <SpadeConsole
+        eyebrow="Provably Fair"
+        title="Check Any Drop"
+        plates={{
+          secondary: {
+            label: 'New Seed',
+            onClick: () => setClientSeed(randomClientSeed()),
+            disabled: dropping,
+          },
+          primary: {
+            label: verifying ? 'Checking' : 'Verify Drop',
+            ink: 'white',
+            onClick: () => lastResult && handleVerify(lastResult),
+            disabled: verifying || !lastResult,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          Before You Drop, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash. Your
+          Drop Reveals The Seed. The Ball’s Path Is The First Sixteen Bits Of HMAC-SHA256(Server
+          Seed, Your Seed:Nonce), One Bit Per Row, Right When The Bit Is One. The Slot Is The Number
+          Of Rights.
+        </p>
+        <label className={styles.seedField}>
+          <span className="sc-label sc-ink--blue">Your Client Seed</span>
+          <input
+            className={styles.seedInput}
+            value={clientSeed}
+            maxLength={MAX_CLIENT_SEED}
+            onChange={(e) => setClientSeed(e.target.value)}
+            disabled={dropping}
+            spellCheck={false}
+          />
+        </label>
+        <div className={styles.seedField}>
+          <span className="sc-label sc-ink--blue">Next Drop Commitment</span>
+          <code className={styles.mono}>{commit?.hash || 'Taking A Fresh Commitment'}</code>
+        </div>
+        {lastResult ? (
+          <div className={`${styles.rows} ${styles.rowsCompact}`}>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Server Seed</span>
+              <code className={styles.mono}>{lastResult.fairness.server_seed}</code>
             </div>
-          ) : (
-            <CasinoNote>
-              Drop Once And The Revealed Seed Will Appear Here For You To Check.
-            </CasinoNote>
-          )}
-        </CasinoFrame>
-      ) : null}
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Its Hash</span>
+              <code className={styles.mono}>{lastResult.fairness.server_seed_hash}</code>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Client Seed</span>
+              <code className={styles.mono}>{lastResult.fairness.client_seed}</code>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Nonce</span>
+              <span className={`${styles.rowValue} sc-ink--silver`}>
+                {lastResult.fairness.nonce}
+              </span>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>HMAC</span>
+              <code className={styles.mono}>{lastResult.fairness.hmac_hex}</code>
+            </div>
+            <div className={styles.row}>
+              <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>Path</span>
+              <code className={styles.mono}>
+                {lastResult.outcome.path.map((b) => (b ? 'R' : 'L')).join(' ')} (Slot{' '}
+                {lastResult.outcome.slot + 1})
+              </code>
+            </div>
+            {verdict ? (
+              <p
+                className={`sc-copy sc-copy--center ${verdict.fair ? 'sc-ink--green' : 'sc-ink--red'}`}
+              >
+                {verdict.fair
+                  ? 'Verified: The Hash, The HMAC And The Path All Match'
+                  : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, HMAC ${verdict.hmacMatches ? 'Ok' : 'Differs'}, Path ${verdict.pathMatches ? 'Ok' : 'Differs'}`}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="sc-copy sc-copy--center sc-ink--muted">
+            Drop Once And The Revealed Seed Will Appear Here For You To Check.
+          </p>
+        )}
+      </SpadeConsole>
 
-      {tab === 'history' ? (
-        <CasinoFrame eyebrow="Your Drops" title="History" tight>
-          {history.length === 0 ? (
-            <CasinoNote>No Drops Yet.</CasinoNote>
-          ) : (
-            <ul className={styles.history}>
-              {history.map((h) => (
-                <li key={h.drop_id} className={styles.historyRow}>
-                  <span
-                    className={`${styles.dot} ${h.outcome.payout_chips > 0 ? styles.dotGold : styles.dotDark}`}
-                  />
-                  <span className={styles.historyLabel}>
-                    {multiplierLabel(h.outcome.multiplier_cents)} On {chipsText(h.bet_chips)} Chips
-                  </span>
-                  <span className={styles.historyMeta}>
+      <SpadeConsole eyebrow="Your Drops" title="History" foot="foot">
+        {history.length === 0 ? (
+          <p className="sc-copy sc-copy--center sc-ink--muted">No Drops Yet.</p>
+        ) : (
+          <div className={`${styles.rows} ${styles.rowsCompact}`}>
+            {history.map((h) => (
+              <div key={h.drop_id} className={styles.row}>
+                <span className={`${styles.rowLabel} sc-ink--silver`}>
+                  {multiplierLabel(h.outcome.multiplier_cents)} On {chipsLabel(h.bet_chips)} Chips
+                  <span className={`${styles.rowMeta} sc-ink--muted`}>
                     {new Date(h.created_at).toLocaleString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -586,17 +575,19 @@ export default function DiamondPlinkoPage() {
                       minute: '2-digit',
                     })}
                   </span>
-                  <span className={styles.historyValue}>
-                    {h.outcome.payout_chips > 0 ? dollarsText(h.outcome.payout_chips) : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CasinoFrame>
-      ) : null}
+                </span>
+                <span
+                  className={`${styles.rowValue} ${h.outcome.payout_chips > 0 ? 'sc-ink--gold' : 'sc-ink--muted'}`}
+                >
+                  {h.outcome.payout_chips > 0 ? `${chipsLabel(h.outcome.payout_chips)} Chips` : '0'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SpadeConsole>
 
-      {!user ? <CasinoNote>Sign In To Play.</CasinoNote> : null}
+      {!user ? <p className="sc-copy sc-copy--center sc-ink--muted">Sign In To Play.</p> : null}
     </div>
   );
 }

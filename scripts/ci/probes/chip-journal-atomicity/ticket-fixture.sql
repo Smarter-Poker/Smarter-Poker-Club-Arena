@@ -3,7 +3,25 @@ ALTER TABLE club_members ADD COLUMN role text DEFAULT 'owner',ADD COLUMN status 
 CREATE UNIQUE INDEX member_scope ON club_members(club_id,user_id);
 ALTER TABLE chip_transactions ADD COLUMN metadata jsonb,ALTER COLUMN id SET DEFAULT gen_random_uuid();
 CREATE UNIQUE INDEX cashier_key ON chip_transactions((metadata->>'idempotency_key')) WHERE metadata ? 'idempotency_key';
-CREATE TABLE tournament_tickets(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid,issued_by uuid,holder_id uuid,value numeric,note text,status text DEFAULT 'issued',cancelled_at timestamptz,redeemed_at timestamptz);
+CREATE TABLE tournament_tickets(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid,
+  issued_by uuid,
+  holder_id uuid,
+  value numeric,
+  note text,
+  status text DEFAULT 'issued',
+  cancelled_at timestamptz,
+  redeemed_at timestamptz,
+  redemption_mode text NOT NULL DEFAULT 'wallet_chips',
+  source_tournament_id uuid,
+  source_satellite_id uuid,
+  source_refund_entitlement_id uuid,
+  source_satellite_award_place integer,
+  entry_prize numeric(15,2),
+  entry_bounty numeric(15,2),
+  entry_fee numeric(15,2)
+);
 CREATE TABLE wallet_transactions(user_id uuid,wallet_type text,type text,amount numeric,category text,description text,balance_after numeric);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('test.actor',true),'')::uuid $$;
 CREATE FUNCTION fn_club_cashier_can_transact(uuid,uuid,uuid) RETURNS boolean LANGUAGE sql AS 'SELECT true';

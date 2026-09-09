@@ -325,31 +325,71 @@ must be one transaction, asserted at commit.
 
 ---
 
-### 8. `credit-stalled-seat-first-stacks` — **runs every minute, 10,069 times in 7 days**
+### 8. `credit-stalled-seat-first-stacks` — **RETIRED 2026-09-08**
 
-**What it is.** A cron that credits a seat's first stack when the seat exists
-and the chips never arrived. Money, every minute, for ever.
+**What it was.** A cron that credited a seat's first stack when the seat existed
+and the chips never arrived. It moved game-deciding chips every minute forever.
 
-**Root cause.** Seating and funding the seat are separate writes.
+**Root cause fixed.** Migration
+`20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing` makes a
+live tournament seat's positive stack a BEFORE-trigger invariant, before every
+engine or money-path bypass. A canonical seat-first seat must equal the board's
+positive `tournaments.starting_chips`. The paid-third-seat AFTER hook now
+propagates count or Spin-booking failure into the seat transaction rather than
+catching it and committing a half-built field.
 
-**The hard fix.** `atomic_table_buyin` already exists. A seat row must not be
-creatable without its stack in the same transaction — a `CHECK`/trigger, not a
-sweep.
+**Retirement proof.** The migration takes the cron job's advisory lock, holds
+the scheduler roster plus all five source tables against writers, proves the
+old function's exact candidate set is empty, proves every active pre-deal
+tournament seat is positive, and proves exact seat/roster stack parity for
+canonical seat-first games. It then unschedules every normalized name/command
+match and drops `fn_credit_stalled_seat_first_stacks()` with `RESTRICT`, all in
+that transaction. The scheduler lock prevents a concurrent reschedule between
+the final scan and commit.
 
-**Delete when:** the job reports zero credits for 30 days.
+The production snapshot at 2026-09-08 07:18 UTC found **0** old-job candidates,
+**114** active pre-deal canonical seat-first games, **194** live seats, **0**
+wrong seat stacks, **0** roster-status mismatches, **0** roster-chip mismatches,
+and **0** paid active roster entrants without a live seat. The earlier “zero
+credits for 30 days” gate was not measurable: `cron.job_run_details` retained
+about 15 days and every successful invocation recorded only `1 row`, not the
+function's returned credit count. The locked structural proof is stronger and
+is the actual deletion gate.
 
 ---
 
-### 9. `fn_spin_sweep_unbooked` (5-minutely) and `spin_repair_missing_multiplier` (15-minutely)
+### 9. Spin booking, multiplier and winner-backpay fleet — **ROOT FIX BUILT; RETIREMENT STAGED**
 
-**What it is.** Spins whose entry was never booked into the reserve, and spins
-whose multiplier was never written. **2,014 and 671 runs in 7 days.**
+**What it was.** `fn_spin_sweep_unbooked` repaired entries never booked into
+the reserve, `fn_spin_repair_missing_multiplier` reconstructed multiplier
+state, and `fn_backpay_spin_unpaid_winners` paid a winner after a split draw,
+journal or payout path. The first two schedules ran **2,014 and 671 times in 7
+days**; GameServer called winner-backpay every ten minutes.
 
-**Root cause.** `fn_spin_book_entry` runs when the last seat is paid, in a
-different transaction from the seat payment, and can be lost to a deadlock —
-the code comments record 1–3 deadlocks a day from exactly this.
+**Root cause fixed.** The paid-third-seat hook now propagates booking failure
+into the seat transaction, so the paid seat, roster, count and reserve entry
+cannot split. `fn_spin_draw_and_settle` then locks the tournament and reserve,
+books/replays that entry, selects only a funded tier, commits its draw, journal,
+escrow and tournament contract, and returns one exact receipt. The server calls
+only this authority and refuses to reveal or deal without validating the whole
+receipt. Its separate draw, settle and ledger-adoption paths are gone.
 
-**The hard fix.** Book the entry in the transaction that fills the last seat.
+The recurring GameServer winner-backpay timer/caller is removed. The two known
+historical incidents are handled by exact asserted migration blocks rather
+than by an open-ended payer.
+
+**Retirement gate.** The staged post-publish cleanup does not trust deployment
+order or elapsed time. In production it requires a complete atomic receipt for
+a new Spin outside the audited historical cohort, proves the full unpaid view
+has no positive shortfall, proves every relevant reserve/journal/escrow and
+tournament contract is exact, and checks that no repair invocation is running.
+It owns both reconstruction-job advisory locks, freezes the scheduler roster,
+and recreates plus verifies all three receipt/contract enforcement triggers.
+Only then does it unschedule every active or disabled spelling, drop the sweep,
+reconstruction, winner-backpay and old draw functions, and revoke service-role
+access to the raw settle/book primitives. Until that receipt exists, the
+database functions remain rolling-cutover compatibility doors, not live server
+callers.
 
 **Related and already fixed today:** the escrow could not see a Spin's reserve
 draw because the derived `chip_ledger` leg went missing (1 of 18,318). It now
@@ -360,51 +400,66 @@ stopped depending on a leg that could be absent.
 
 ---
 
-### 10. `unclassified` payouts — 32 rows, median 105 days late
+### 10. `unclassified` payouts - root fix implemented
 
 **What it is.** Payout rows whose `source` nobody set. A money row with no
-provenance is unauditable by definition.
+provenance is unauditable by definition. The 32-row, 161.30-chip cohort was
+traced to one exact cause: the 2026-09-01 vacant-place repair used keys shaped
+as `tourney:<id>:vacantplace:<user>:<place>`, but the shared payout classifier
+did not know that grammar and the credit funnel substituted `unclassified`.
 
-**The hard fix.** `tournament_payouts.source` becomes `NOT NULL` with a
-`CHECK` against the known list. A path that cannot name itself cannot pay.
+**The hard fix.**
+`every_tournament_payout_names_its_source` removes the legacy `payout` default,
+keeps `source NOT NULL`, adds a validated `CHECK` against the complete source
+vocabulary, and makes `fn_credit_and_log` reject an unresolved or unknown
+source before the wallet move. The shared classifier now maps the exact
+`vacantplace` grammar to `finish_position_correction` and its encoded place.
+
+The same migration corrects only the 32 exact historical rows. A digest pins
+every payout, recipient, event, amount, key, timestamp and repair fact; all 32
+must also match their wallet idempotency claim. Each metadata-only change gets
+an immutable receipt in `tournament_payout_source_corrections`. The cohort's
+32 wallet claims still total 161.30 before and after, so no chips move.
+
+**Closure proof.** Zero rows may remain as `unclassified`; an omitted source
+fails `NOT NULL`, an unknown source fails the closed `CHECK`, and the atomic
+credit door refuses both cases before crediting. There is no watcher,
+reconciler, fallback label or scheduled repair for this rule.
 
 ---
 
-### 11. Bubble protection is promised out of a pool already promised in full — **Dan's call**
+### 11. Bubble protection is reserved from the prize pool - root fix implemented
 
-**Not a band-aid. A promise the platform makes twice**, and the reason 360.00
-of the 432.17 currently owed is owed.
+Dan decided that Bubble Protection is funded by the tournament prize pool,
+never the house bank. The old path paid the Bubble one buy-in but still priced
+the normal ladder against 100% of the same pool. That double allocation then
+appeared as a false winner shortfall.
 
 Both _Sunday $200 Deep Stack_ events on 2026-09-06/07:
 
-| event      | prize pool |  paid out | of which bubble protection | winner still owed |
-| ---------- | ---------: | --------: | -------------------------: | ----------------: |
-| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |            180.00 |
-| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |            180.00 |
+| event      | prize pool |  paid out | of which Bubble Protection | stale obligation tail |
+| ---------- | ---------: | --------: | -------------------------: | --------------------: |
+| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |                180.00 |
+| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |                180.00 |
 
-The payout structure allocates **100% of the pool**. Bubble protection then pays
-the first player out of the money **one buy-in (180.00) from that same pool**.
-The arithmetic cannot close, and the shortfall always lands on the last place
-paid — which is always **first place**. Two winners, 180.00 each, twice in one
-weekend.
+**The hard fix.** The database now reserves exactly one base buy-in before it
+prices the percentage ladder. Bubble plus all paid places therefore equal the
+locked prize pool exactly. The Bubble payer can spend only that pool escrow;
+there is no club-wallet or house-bank fallback. Satellites remain separate:
+their complete tickets are paid first and every sub-ticket residual chip goes
+to exactly one next finisher.
 
-**This is not fixable by a job and no job should try.** It is a pricing
-decision, and 10.9 says pricing is Dan's:
+The two production events above had already paid every chip in their pools,
+including the Bubble buy-in. Their 180-chip rows were stale allocation
+metadata, not unpaid money. The six-event evidence migration records each
+exact full-pool proof and retires only those named obligation tails without a
+wallet, payout, escrow, ledger, rake, or bank write.
 
-- **(a) the house funds bubble protection.** It is a marketing promise; the
-  house pays for it. Players' 100% stays 100%. Cost: one buy-in per event that
-  reaches the bubble.
-- **(b) the structure is computed on `pool − bubble_protection`.** The pool pays
-  for it and every paid place is fractionally smaller. Costs the house nothing;
-  the advertised structure has to say so.
-
-Either is one line at the source. Until Dan picks one, the two winners stay
-180.00 short and the `fn_settle_tournament_obligation` alerts describing it stay
-open — deliberately, because they are the accurate description.
-
-**A law already anticipates this**: `docs/laws.d/a-bank-that-is-short-pays-what-it-holds.md`
-ends _"Who funds bubble protection — the 180.00 the pool promises twice — is
-Dan's decision under 10.9 and is deliberately not made here."_
+**Closure proof.** The atomic cash settlement writes the Bubble debt before
+the first credit, pays it and every ladder place in one transaction, and
+requires payout total = locked pool before terminal completion. A failure
+rolls the complete finish back. Tests pin the pool subtraction, exact one-buy-in
+amount, single stone-Bubble identity, no house funding, and exact replay.
 
 ---
 

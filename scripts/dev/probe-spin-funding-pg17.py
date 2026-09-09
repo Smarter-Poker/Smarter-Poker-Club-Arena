@@ -16,6 +16,7 @@ import time
 repo = Path(__file__).resolve().parents[2]
 fixture = repo / 'scripts/dev/fixtures/spin-funding'
 migration = repo / 'supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql'
+played_replay_migration = repo / 'supabase/migrations/20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql'
 configured = os.environ.get('POKER_AUDIT_PG_BIN')
 pg = Path(configured) if configured else Path(subprocess.check_output(
     ['brew', '--prefix', 'postgresql@17'], text=True).strip()) / 'bin'
@@ -106,6 +107,27 @@ with log_path.open('w') as log:
         load_sql(fixture/'proof-bootstrap.sql')
         load_sql(fixture/'installed-proof-functions.sql')
         load_sql(migration)
+        atomic_source_md5 = q("SELECT md5(pg_get_functiondef('public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)'::regprocedure))")
+        check('atomic Spin draw authority matches the reviewed composition source',
+              atomic_source_md5 == '71e869039854497e472ed20e259be4db')
+        log.write('ATOMIC_SPIN_DRAW_BASELINE_MD5: ' + atomic_source_md5 + '\n')
+        if os.environ.get('POKER_AUDIT_DUMP_ATOMIC_SOURCE') == '1':
+            log.write('ATOMIC_SPIN_DRAW_SOURCE_BEGIN\n')
+            log.write(q("SELECT pg_get_functiondef('public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)'::regprocedure)"))
+            log.write('\nATOMIC_SPIN_DRAW_SOURCE_END\n')
+        log.flush()
+        q("CREATE FUNCTION public.fn_prove_played_spin_launch_recovery(uuid) RETURNS jsonb "
+          "LANGUAGE sql STABLE AS $$ SELECT jsonb_build_object('ok',false) $$")
+        load_sql(played_replay_migration)
+        played_replay_source_md5 = q("SELECT md5(pg_get_functiondef('public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)'::regprocedure))")
+        check('played Spin replay composes into the one funded draw authority',
+              played_replay_source_md5 != atomic_source_md5 and len(played_replay_source_md5) == 32)
+        log.write('ATOMIC_SPIN_DRAW_PLAYED_REPLAY_MD5: ' + played_replay_source_md5 + '\n')
+        if os.environ.get('POKER_AUDIT_DUMP_ATOMIC_SOURCE') == '1':
+            log.write('ATOMIC_SPIN_DRAW_PATCHED_SOURCE_BEGIN\n')
+            log.write(q("SELECT pg_get_functiondef('public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)'::regprocedure)"))
+            log.write('\nATOMIC_SPIN_DRAW_PATCHED_SOURCE_END\n')
+        log.flush()
         q('CREATE TRIGGER zzz_spin_ladder_is_the_drawn_one BEFORE INSERT OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION public.fn_spin_ladder_is_the_drawn_one()')
         q("CREATE OR REPLACE FUNCTION extensions.gen_random_bytes(integer) RETURNS bytea "
           "LANGUAGE sql VOLATILE AS $$ SELECT decode(repeat('ff', $1), 'hex') $$;")
@@ -295,6 +317,41 @@ with log_path.open('w') as log:
         q(f"INSERT INTO public.wallet_transactions(related_entity_id,user_id,type,category,amount) SELECT tournament_id,user_id,'credit','refund',1 FROM public.tournament_players WHERE tournament_id='{uid(16)}' LIMIT 1")
         check('a receipt cannot be replayed after one of its entries was refunded',
               json.loads(q('SELECT ' + rpc(16)))['reason'] == 'spin_paid_entry_unproven')
+
+        seed(20)
+        q(f"UPDATE public.spin_bonus_pools SET balance=100 WHERE club_id='{club}'")
+        played = json.loads(q('SELECT ' + rpc(20)))
+        q(f"UPDATE public.tournament_players SET status='playing' WHERE tournament_id='{uid(20)}';"
+          f"UPDATE public.tournament_players SET status='eliminated' WHERE id=(SELECT id FROM public.tournament_players WHERE tournament_id='{uid(20)}' ORDER BY id LIMIT 1)")
+        check('two active rows still fail closed when played-Spin proof is absent',
+              json.loads(q('SELECT ' + rpc(20)))['reason'] == 'spin_field_unproven')
+        q("CREATE OR REPLACE FUNCTION public.fn_prove_played_spin_launch_recovery(uuid) RETURNS jsonb "
+          "LANGUAGE sql STABLE AS $$ SELECT jsonb_build_object('ok',true) $$")
+        played_replay = json.loads(q('SELECT ' + rpc(20)))
+        log.write('PLAYED_SPIN_REPLAY_RECEIPT: ' + json.dumps(played_replay, sort_keys=True) + '\n')
+        log.flush()
+        check('a proved played Spin replays the one immutable funded draw after one bust',
+              played_replay == dict(played, replay=True))
+        q(f"INSERT INTO public.wallet_transactions(related_entity_id,user_id,type,category,amount) "
+          f"SELECT tournament_id,user_id,'credit','refund',1 FROM public.tournament_players WHERE tournament_id='{uid(20)}' AND status='eliminated'")
+        check('played replay still rejects an entrant whose original charge was refunded',
+              json.loads(q('SELECT ' + rpc(20)))['reason'] == 'spin_paid_entry_unproven')
+
+        seed(21)
+        q(f"UPDATE public.spin_bonus_pools SET balance=100 WHERE club_id='{club}'")
+        q(f"SELECT public.fn_spin_settle_game('{uid(21)}','{club}',1,3,2,0.08)")
+        adopted_tier = manifest()['tiers'][0]
+        q(f"UPDATE public.tournaments SET spin_multiplier=2,blind_structure="
+          + literal(adopted_tier['blind_structure']) + ',payout_structure='
+          + literal(adopted_tier['payout_structure']) + f" WHERE id='{uid(21)}';"
+          f"UPDATE public.tournament_players SET status='playing' WHERE tournament_id='{uid(21)}';"
+          f"UPDATE public.tournament_players SET status='eliminated' WHERE id=(SELECT id FROM public.tournament_players WHERE tournament_id='{uid(21)}' ORDER BY id LIMIT 1)")
+        adopted_played = json.loads(q('SELECT ' + rpc(21)))
+        check('a proved pre-receipt played Spin adopts its original funded draw once',
+              adopted_played['rule_provenance'] == 'legacy_projection'
+              and json.loads(q('SELECT ' + rpc(21))) == dict(adopted_played, replay=True)
+              and q(f"SELECT count(*)=1 FROM public.spin_draw_receipts WHERE tournament_id='{uid(21)}'") == 't')
+
         # A mutable global payout table must never rewrite a booked contract.
         q(f"UPDATE public.tournaments SET spin_multiplier=2 WHERE id='{uid(1)}'")
         q('UPDATE public.spin_payout_ladder SET structure=' + literal([dict(place=1,percentage=90),dict(place=2,percentage=10)]) + ' WHERE multiplier=2')

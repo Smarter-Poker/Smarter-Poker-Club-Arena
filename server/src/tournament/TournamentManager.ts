@@ -648,6 +648,42 @@ export class TournamentManager extends TournamentManagerEliminations {
           continue;
         }
 
+        /**
+         * NEVER MOVE A PLAYER MID-HAND - RE-CHECKED HERE, NOT ONLY AT PLAN TIME
+         * (2026-09-09).
+         *
+         * Both callers already probe `waitForHandComplete` before handing a
+         * batch to this loop, and the intent has been written down since
+         * 2026-07-24: "never move players mid-hand". But that probe is taken
+         * ONCE PER BATCH, and this loop then spends several awaited round
+         * trips per move (`mayTakeSeat`, the source-stack read, the seat
+         * writes). The engine keeps dealing throughout, so by the time move N
+         * vacates its seat, the boundary that was checked before move 1 is
+         * long gone.
+         *
+         * Measured 2026-09-08/09: 32 fully dealt tournament hands were thrown
+         * away. `fn_ca_settle_hand_stacks_absolute` finds the seat gone at
+         * commit time and raises `seat missing or left for <uuid> - hand write
+         * rejected whole`, which aborts the whole atomic commit; the engine
+         * files a critical alert and calls `killForRestart`. EVERY player at
+         * that table loses the hand they just played, not only the mover. The
+         * leave/join pairs sit 0.17-0.37s apart - inside the hand.
+         *
+         * So re-probe immediately before the only destructive write. Nothing
+         * has been stamped yet at this point in the iteration (the seat read
+         * and the duplicate-seat claim are both reads), so a refusal leaves
+         * the player exactly where they were - the same shape as the two
+         * guards above it.
+         */
+        if (!(await this.waitForHandComplete(move.fromTableId))) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring move for ${move.playerId.slice(0, 8)} - table ${move.fromTableId.slice(0, 8)} began a hand after this batch was planned. The player stays put and the next rebalance retries; moving now would discard the hand for everyone at that table.`
+          );
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          continue;
+        }
+        if (!this.eliminationMutationAllowed()) return moved;
+
         // From this write until destination-or-source restoration finishes we
         // complete one logical move even if stop is requested; abandoning the
         // source after vacating it would be more destructive than allowing

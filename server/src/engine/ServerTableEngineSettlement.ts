@@ -48,7 +48,7 @@ import {
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { v5 as uuidv5 } from 'uuid';
-import { reportError } from '../services/errorReporter.js';
+import { reportError, describeError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
@@ -1551,7 +1551,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               {
                 table_id: this.tableId,
                 hand_number: snap.handNumber,
-                error: err instanceof Error ? err.message : String(err),
+                error: describeError(err),
               }
             );
           }
@@ -2066,7 +2066,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
           }
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = describeError(err);
           const semantic = message.includes('atomic hand commit refused');
           const alertCode = semantic
             ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
@@ -2335,25 +2335,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               attempt,
             });
           }
-          if (attempt === 1) {
-            void raiseFinancialAlert(
-              'critical',
-              'ServerTableEngine.post_commit_obligations_pending',
-              `Hand ${this.tableId}#${snap.handNumber} committed, but its durable post-commit envelope remains behind the causal settlement barrier`,
-              {
-                table_id: this.tableId,
-                hand_number: snap.handNumber,
-                hand_id: v_handHistoryId,
-                error: err instanceof Error ? err.message : String(err),
-              }
-            ).catch((alertError) =>
-              reportError(
-                alertError,
-                'ServerTableEngine.post_commit_obligations_pending.alert_failed',
-                { tableId: this.tableId, handNumber: snap.handNumber }
-              )
-            );
-          }
+          /* THE ALERT BELONGS TO THE GIVE-UP, NOT TO ATTEMPT 1 (2026-09-09).
+             A critical financial alert used to be filed here, on the FIRST
+             failure, before the bounded retry below had run even once. The
+             retry then resolved it - every single time. Measured over the
+             1,058 hands that filed this alert on 2026-09-08/09: 1,058 had
+             `post_commit_completed_at` set, 0 were still pending, 0 chips
+             were stranded. It was a paging alarm for a transient that has
+             never once failed to clear.
+
+             The cost was not just noise. Those 1,058 rows each opened their
+             own incident and buried the real findings underneath them - a
+             treasury reconciliation and a diamond-supply breach sat unread
+             on page 30 of a dashboard nobody could scroll. A detector that
+             cries wolf 1,058 times is not a strict detector, it is a broken
+             one, and section 10.8's rule that an unseen check is no check
+             cuts both ways.
+
+             `reportError` above still records every attempt to Sentry (with
+             its own budget and throttle), so the transient stays observable.
+             What moved is the FINANCIAL ALERT: it now fires only where the
+             loop actually abandons the envelope - see `if (!obligationsApplied)`
+             below - which is the condition its message has always described. */
           if (this.lifecycleCanMutate()) {
             this.markProgress();
             await this.sleep(Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000));
@@ -2373,6 +2376,32 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             handId: v_handHistoryId,
           });
         }
+        /* The envelope really is behind the barrier now: the retry loop is
+           over and this process did not apply it. Name the number of attempts
+           and the LAST error - `describeError`, not String(err), because the
+           thing rejected here is a Supabase PostgrestError and String() would
+           print "[object Object]" and tell the next reader nothing. */
+        void raiseFinancialAlert(
+          'critical',
+          'ServerTableEngine.post_commit_obligations_pending',
+          `Hand ${this.tableId}#${snap.handNumber} committed, but this engine abandoned its durable post-commit envelope behind the causal settlement barrier after ${attempt} attempt(s); the outbox row remains authoritative and the projection worker is its successor`,
+          {
+            table_id: this.tableId,
+            hand_number: snap.handNumber,
+            hand_id: v_handHistoryId,
+            attempts: attempt,
+            error: describeError(lastObligationError),
+          }
+        ).catch((alertError) =>
+          reportError(
+            alertError,
+            'ServerTableEngine.post_commit_obligations_pending.alert_failed',
+            {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            }
+          )
+        );
         return;
       } else if (postCommitStateCanReflect) {
         /* Pending add-ons are applied inside the obligation transaction. Read

@@ -27,6 +27,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
 import { isSoundAllowed } from '../utils/soundGate';
 import { soundService } from './SoundService';
+import { trackAudioContext } from '../lib/audioContexts';
 
 // Musical note frequencies (Hz) — equal temperament tuning
 const NOTE = {
@@ -69,6 +70,7 @@ function getCtx(): AudioContext | null {
   try {
     if (!_ctx) {
       _ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      trackAudioContext(_ctx);
     }
     if (_ctx.state === 'suspended') {
       _ctx.resume().catch(() => {

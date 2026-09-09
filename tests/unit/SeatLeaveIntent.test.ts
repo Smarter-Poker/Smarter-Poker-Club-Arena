@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ from: vi.fn(), leave: vi.fn(), read: vi.fn() }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), leave: vi.fn(), kick: vi.fn(), read: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { from: mocks.from } }));
-vi.mock('../../src/services/GameServerAPI', () => ({ notifyServerLeaveOccupancy: mocks.leave }));
-import { leaveSeatWithIntent } from '../../src/services/SeatLeaveIntent';
+vi.mock('../../src/services/GameServerAPI', () => ({
+  notifyServerLeaveOccupancy: mocks.leave,
+  notifyServerKickOccupancy: mocks.kick,
+}));
+import { leaveSeatWithIntent, kickSeatWithIntent } from '../../src/services/SeatLeaveIntent';
 const user = '11111111-1111-4111-8111-111111111111';
 const table = '22222222-2222-4222-8222-222222222222';
 const occupancy = '33333333-3333-4333-8333-333333333333';
@@ -39,6 +42,7 @@ beforeEach(() => {
     return chain;
   });
   mocks.leave.mockResolvedValue(response());
+  mocks.kick.mockResolvedValue(response());
 });
 describe('original seat departure identity', () => {
   it('persists the target before requesting and reports the committed amount', async () => {
@@ -116,5 +120,49 @@ describe('original seat departure identity', () => {
     ]);
     expect(outcomes.every((x) => x.success)).toBe(true);
     expect(mocks.leave).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('captured bulk removal identity', () => {
+  const target = { seatNumber: 2, occupancyId: occupancy };
+  it('sends the captured target without looking up a replacement', async () => {
+    expect((await kickSeatWithIntent(table, user, 'house decision', target)).success).toBe(true);
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.kick).toHaveBeenCalledWith(table, user, 2, occupancy, 'house decision');
+  });
+  it('refuses a replacement while an earlier removal remains unconfirmed', async () => {
+    mocks.kick.mockResolvedValueOnce({ success: false, error: 'response lost' });
+    await kickSeatWithIntent(table, user, 'first', target);
+    expect(
+      (await kickSeatWithIntent(table, user, 'next', { seatNumber: 4, occupancyId: replacement }))
+        .success
+    ).toBe(false);
+    expect(mocks.kick).toHaveBeenCalledTimes(1);
+    expect((await kickSeatWithIntent(table, user, 'retry', target)).success).toBe(true);
+    expect(mocks.kick).toHaveBeenLastCalledWith(table, user, 2, occupancy, 'first');
+  });
+  it('rejects an invalid captured identity before transport', async () => {
+    expect(
+      (await kickSeatWithIntent(table, user, 'reason', { seatNumber: NaN, occupancyId: 'bad' }))
+        .success
+    ).toBe(false);
+    expect(mocks.kick).not.toHaveBeenCalled();
+  });
+  it('does not count an unrelated running request as this selected removal', async () => {
+    let finish!: (value: ReturnType<typeof response>) => void;
+    mocks.kick.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const first = kickSeatWithIntent(table, user, 'reason', target);
+    await vi.waitFor(() => expect(mocks.kick).toHaveBeenCalledTimes(1));
+    expect(
+      (await kickSeatWithIntent(table, user, 'reason', { seatNumber: 4, occupancyId: replacement }))
+        .success
+    ).toBe(false);
+    finish(response());
+    expect((await first).success).toBe(true);
   });
 });

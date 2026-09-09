@@ -50,8 +50,16 @@ beforeEach(() => {
   });
 });
 describe('TableService administrative occupancy contract', () => {
+  it('reports a deferred removal without announcing a wallet credit', async () => {
+    mocks.kick.mockResolvedValue({ ...accepted, immediate: false, cashout: null });
+    expect(await tableService.kickPlayer(table, player)).toEqual({ deferred: true });
+    expect(mocks.emit.mock.calls.some(([event]) => event === 'BALANCE_UPDATED')).toBe(false);
+  });
+
   it('uses the captured occupancy and never calls the direct financial RPC', async () => {
-    expect(await tableService.kickPlayer(table, player, 'house decision')).toBe(true);
+    expect(await tableService.kickPlayer(table, player, 'house decision')).toEqual({
+      deferred: false,
+    });
     expect(mocks.kick).toHaveBeenCalledWith(table, player, 2, occupancy, 'house decision');
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.from.mock.calls.every(([name]) => name === 'table_seats')).toBe(true);
@@ -77,7 +85,7 @@ describe('TableService administrative occupancy contract', () => {
       data: { seat_number: 4, occupancy_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' },
       error: null,
     });
-    expect(await tableService.kickPlayer(table, player, 'new text')).toBe(true);
+    expect(await tableService.kickPlayer(table, player, 'new text')).toEqual({ deferred: false });
     expect(mocks.seat).toHaveBeenCalledTimes(1);
     expect(mocks.kick).toHaveBeenLastCalledWith(table, player, 2, occupancy, 'original decision');
   });

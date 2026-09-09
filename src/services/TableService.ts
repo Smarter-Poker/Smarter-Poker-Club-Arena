@@ -441,12 +441,17 @@ class TableService {
   }
 
   /** Admin removals enter the engine's hand and cashout boundary. */
-  async kickPlayer(tableId: string, userId: string, reason?: string): Promise<boolean> {
+  async kickPlayer(
+    tableId: string,
+    userId: string,
+    reason?: string
+  ): Promise<{ deferred: boolean }> {
     const { adminRemovePlayerFromTable } = await import('./IntegrityActionService');
     const outcome = await adminRemovePlayerFromTable(tableId, userId, reason ?? 'admin kick');
     if (!outcome.ok) throw new Error(outcome.error || 'Could Not Kick The Player');
-    masterBus.emit('BALANCE_UPDATED', { source: 'table_kick_cashout', userId });
-    return true;
+    if (!outcome.deferred)
+      masterBus.emit('BALANCE_UPDATED', { source: 'table_kick_cashout', userId });
+    return { deferred: outcome.deferred === true };
   }
 
   /**

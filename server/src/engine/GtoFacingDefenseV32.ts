@@ -10,9 +10,9 @@
  *
  * THE IDEA THAT MAKES THIS BUILDABLE FROM OPEN-NODE DATA ALONE: a cell's
  * per-holding action mix IS the opponent's betting range at a known size.
- * `hand_matrix['AKs'] = { check: 0.4, bet_mid: 0.6 }` does not only tell hero
+ * `hand_matrix['AKs'] = { check: 0.4, bet_small: 0.6 }` does not only tell hero
  * what to do with AKs — read from the BETTOR'S seat it says the bettor holds
- * AKs betting mid 60% of the time. Bayes does the rest:
+ * AKs betting small 60% of the time. Bayes does the rest:
  *
  *     P(hand | bet of size s) ∝ P(bet of size s | hand) × P(hand)
  *
@@ -36,9 +36,14 @@
  * hand — this layer exists to fix the fold/call line, and duplicating raise
  * sizing here would fork it. A null is "no opinion", never "check-fold".
  *
- * SIZE BUCKETS mirror fn_aggregate_gto_v31_next EXACTLY (size_pct: 0 check,
- * <60 small, <110 mid, else big). The observed bet is bucketed by the same
- * edges, so the range consulted is the range the solver bet AT THAT SIZE.
+ * SIZE BUCKETS must respect the V30 compact store this module actually reads.
+ * That store has only `check`, `bet_small`, and `bet_big`; worse, multi-size
+ * trees label their largest root size big while single-size trees label a
+ * sub-pot root small. The compact row no longer preserves those source sizes,
+ * so an observed 60-110% bet cannot be mapped honestly. The layer fails closed
+ * in that middle band and waits for a certified V31 response cell instead of
+ * inventing a range. The unambiguous tails retain the shipped <60% small and
+ * >=110% big behavior.
  *
  * This remains an explicitly DERIVED legacy fallback. Certified V31 response
  * nodes are consulted directly before this module. V31 open cells are not
@@ -66,13 +71,17 @@ const MC_SAMPLES = 160;
 const MIN_RANGE_COMBOS = 8;
 
 /**
- * The aggregator's own size edges (fn_aggregate_gto_v31_next):
- * 0 = check, <60% of pot = small, <110% = mid, else big.
+ * The only defensible observed-size mapping into the V30 compact action domain:
+ * 0 = no bet, <60% of pot = small, 60-110% = unknown, >=110% = big.
+ *
+ * Do not add `bet_mid` here. V31 owns that three-bucket action domain and is
+ * consulted directly before this legacy-derived fallback. V30 compact rows
+ * have never persisted a mid bucket.
  */
-export function betBucketForFraction(frac: number): 'bet_small' | 'bet_mid' | 'bet_big' | null {
+export function betBucketForFraction(frac: number): 'bet_small' | 'bet_big' | null {
   if (!isFinite(frac) || frac <= 0) return null;
   if (frac < 0.6) return 'bet_small';
-  if (frac < 1.1) return 'bet_mid';
+  if (frac < 1.1) return null;
   return 'bet_big';
 }
 

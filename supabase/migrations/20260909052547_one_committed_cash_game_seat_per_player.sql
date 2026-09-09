@@ -37,7 +37,7 @@ DO $contract$
 DECLARE definition text;
 BEGIN
   SELECT pg_get_functiondef('public.fn_managed_game_contract_document(text,jsonb)'::regprocedure) INTO definition;
-  IF md5(definition)='154901c4d25f28060e81bc06619e788a' THEN RETURN; END IF;
+  IF md5(definition) IN ('154901c4d25f28060e81bc06619e788a','6a8019cb24b5a8a42645b9de3aaf48ef') THEN RETURN; END IF;
   IF md5(definition)<>'13df6027a54258c61e6e41275fbf0dd6' THEN
     RAISE EXCEPTION 'Unreviewed managed-game contract projection; scope metadata exclusion requires review';
   END IF;

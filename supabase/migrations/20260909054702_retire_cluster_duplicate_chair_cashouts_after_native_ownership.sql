@@ -18,7 +18,7 @@ BEGIN
       AND contype='f' AND convalidated AND confupdtype='c')
   THEN RAISE EXCEPTION 'Native committed seat ownership must be installed before retiring repair cashouts'; END IF;
   SELECT pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure) INTO v_definition;
-  IF md5(v_definition)= '2303b31672ff35201d2a310d821c0cd4' THEN RETURN; END IF;
+  IF md5(v_definition) IN ('2303b31672ff35201d2a310d821c0cd4','ae91ea39aef3746371029528cb8e343d') THEN RETURN; END IF;
   IF md5(v_definition)<>'a2ad5aea846e31affa53fa187be8773b' THEN
     RAISE EXCEPTION 'Unreviewed cluster planner body; preserve concurrent changes and re-audit';
   END IF;

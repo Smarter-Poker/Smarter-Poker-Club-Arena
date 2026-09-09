@@ -106,9 +106,13 @@ if [[ "${CA_SCOPE_SCALE:-0}" = 1 ]]; then
   "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
     -d postgres <<'SQL' >/dev/null
 INSERT INTO tables(id) SELECT gen_random_uuid() FROM generate_series(1,203449);
+WITH parents AS (
+ SELECT id,row_number() OVER(ORDER BY id) AS ordinal FROM tables
+ WHERE id NOT IN ('77777777-7777-4777-8777-777777777777','88888888-8888-4888-8888-888888888888')
+)
 INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,left_at)
-SELECT gen_random_uuid(),'88888888-8888-4888-8888-888888888888',gen_random_uuid(),1,0,now(),now()
-FROM generate_series(1,471875);
+SELECT gen_random_uuid(),p.id,gen_random_uuid(),((g.n-1)%6)+1,0,now(),now()
+FROM generate_series(1,471875) AS g(n) JOIN parents p ON p.ordinal=((g.n-1)/6)+1;
 ANALYZE tables; ANALYZE table_seats;
 SQL
 fi
@@ -179,6 +183,79 @@ done
 
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -c "SELECT json_agg(json_build_object('name',conname,'definition',pg_get_constraintdef(oid))) FROM pg_constraint WHERE conname IN ('table_game_scope_is_derived','table_game_scope_parent_key','active_seat_requires_game_scope','active_seat_game_scope_parent','one_committed_seat_per_game_player')"
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-clear-seat-function.sql" >/dev/null
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-managed-close-function.sql" >/dev/null
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -c "INSERT INTO tables(id,is_template) VALUES('66666666-6666-4666-8666-666666666666',false),('55555555-5555-4555-8555-555555555555',true)" >/dev/null
+if "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -c "SET test.admission_backfill_corruption='on'" \
+  -f "$repo/supabase/migrations/20260909062236_terminal_tables_cannot_commit_live_occupancies.sql" \
+  >"$departure_tmp/rejected-admission-backfill.log" 2>&1; then
+  echo "Admission backfill incorrectly accepted a trigger-induced stack change" >&2
+  exit 1
+fi
+python3 - "$departure_tmp/rejected-admission-backfill.log" <<'PY'
+from pathlib import Path
+import sys
+assert 'Admission backfill changed existing game or seat data' in Path(sys.argv[1]).read_text()
+PY
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres <<'SQL' >/dev/null
+DO $test$
+BEGIN
+ IF EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+   AND table_name='table_seats' AND column_name='active_parent_key') THEN
+  RAISE EXCEPTION 'Rejected admission migration left schema behind';
+ END IF;
+ IF (SELECT sum(stack) FROM table_seats WHERE left_at IS NULL) <> 50 THEN
+  RAISE EXCEPTION 'Rejected admission migration left financial changes behind';
+ END IF;
+ IF md5(pg_get_functiondef('public.fn_clear_table_seats(uuid,boolean)'::regprocedure))
+   <> '1383315f595906d6f1b77190355c4c7b' THEN
+  RAISE EXCEPTION 'Rejected admission migration left a function replacement behind';
+ END IF;
+END $test$;
+SQL
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260909062236_terminal_tables_cannot_commit_live_occupancies.sql" >/dev/null
+done
+
+"$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -c "SELECT json_agg(json_build_object('name',conname,'definition',pg_get_constraintdef(oid))) FROM pg_constraint WHERE conname IN ('table_seat_admission_is_derived','table_seat_admission_parent_key','active_seat_requires_open_parent','live_seat_parent_cannot_close')"
+
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres <<'SQL' >/dev/null
+DO $test$
+BEGIN
+ IF EXISTS(SELECT 1 FROM tables WHERE id IN ('66666666-6666-4666-8666-666666666666','55555555-5555-4555-8555-555555555555')
+   AND seat_admission_key IS NOT NULL) THEN
+  RAISE EXCEPTION 'Admission migration unnecessarily backfilled old empty parents';
+ END IF;
+ INSERT INTO table_seats(id,table_id,user_id,seat_number,stack)
+ VALUES(gen_random_uuid(),'66666666-6666-4666-8666-666666666666','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',1,10);
+ IF (SELECT seat_admission_key FROM tables WHERE id='66666666-6666-4666-8666-666666666666') <> 'cash' THEN
+  RAISE EXCEPTION 'First admission did not atomically initialize its old parent';
+ END IF;
+ BEGIN
+  INSERT INTO table_seats(id,table_id,user_id,seat_number,stack)
+  VALUES(gen_random_uuid(),'55555555-5555-4555-8555-555555555555','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',1,10);
+  RAISE EXCEPTION 'Old saved template accepted a seat';
+ EXCEPTION WHEN check_violation THEN
+  IF SQLERRM NOT LIKE '%CLOSED_TABLE_REJECTS_ACTIVE_SEAT%' THEN RAISE; END IF;
+ END;
+ IF (SELECT seat_admission_key FROM tables WHERE id='55555555-5555-4555-8555-555555555555') IS NOT NULL THEN
+  RAISE EXCEPTION 'Failed template admission did not roll back its parent initialization';
+ END IF;
+END $test$;
+SQL
+
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -c "SELECT proname, md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname IN ('atomic_seat_cashout_locked','atomic_credit_wallet_and_log','player_leave_table') ORDER BY proname"

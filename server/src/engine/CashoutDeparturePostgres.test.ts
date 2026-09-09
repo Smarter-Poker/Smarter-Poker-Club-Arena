@@ -61,8 +61,11 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       'TRUNCATE cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
-  const seedOccupancy = (stack = 25) => {
-    sql(`INSERT INTO profiles VALUES('${USER}'); INSERT INTO tables VALUES('${TABLE}',NULL,1);
+
+  const seedOccupancy = (stack = 25, tournament = false) => {
+    if (tournament) sql(`INSERT INTO tournaments VALUES('${CLUB}')`);
+    sql(`INSERT INTO profiles VALUES('${USER}');
+      INSERT INTO tables(id,tournament_id,current_players) VALUES('${TABLE}',${tournament ? "'" + CLUB + "'" : 'NULL'},1);
       INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
       INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
       ${stack},now(),NULL,false,'${CLUB}')`);
@@ -146,8 +149,9 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       sql(`UPDATE table_seats SET table_id='${OTHER_TABLE}' WHERE table_id='${GAME}'`)
     ).toThrow(/one_committed_seat_per_game_player/);
   });
+
   const concurrentSql = (query: string) =>
-    new Promise<{ code: number | null; error: string }>((resolve, reject) => {
+    new Promise<{ code: number | null; error: string; output: string }>((resolve, reject) => {
       const child = spawn(process.env.CA_DEPARTURE_PSQL!, [
         '-X',
         '-qAt',
@@ -165,13 +169,17 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         query,
       ]);
       let error = '';
-      child.stdout.resume();
+      let output = '';
+      child.stdout.on('data', (data) => {
+        output += String(data);
+      });
       child.stderr.on('data', (data) => {
         error += String(data);
       });
       child.once('error', reject);
-      child.once('exit', (code) => resolve({ code, error }));
+      child.once('exit', (code) => resolve({ code, error, output }));
     });
+
   it('allows only one concurrent committed admission and rolls back the losing wallet debit', async () => {
     seedGame();
     sql('DELETE FROM table_seats');
@@ -250,7 +258,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       sql(
         "SELECT to_json(md5(pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure)))"
       )
-    ).toBe('2303b31672ff35201d2a310d821c0cd4');
+    ).toBe('ae91ea39aef3746371029528cb8e343d');
   });
   it('preserves frozen, missing-game and manual-game planner responses after retirement', () => {
     expect(
@@ -301,11 +309,274 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   it('keeps derived ownership metadata out of the operator contract while preserving real rules', () => {
     const result = sql(`SELECT json_build_object(
       'before',fn_managed_game_contract_document('table','{"name":"test","big_blind":2}'::jsonb),
-      'after',fn_managed_game_contract_document('table','{"name":"test","big_blind":2,"seat_game_scope":"cluster:derived"}'::jsonb),
-      'changed',fn_managed_game_contract_document('table','{"name":"test","big_blind":4,"seat_game_scope":"cluster:derived"}'::jsonb))`);
+      'after',fn_managed_game_contract_document('table','{"name":"test","big_blind":2,"seat_game_scope":"cluster:derived","seat_admission_key":"cash"}'::jsonb),
+      'changed',fn_managed_game_contract_document('table','{"name":"test","big_blind":4,"seat_game_scope":"cluster:derived","seat_admission_key":"cash"}'::jsonb))`);
     expect(result.before).toEqual({ name: 'test', big_blind: 2 });
     expect(result.after).toEqual(result.before);
     expect(result.changed).toEqual({ name: 'test', big_blind: 4 });
+  });
+
+  const holdingSql = async (query: string) => {
+    sql('SELECT to_json(true)'); // Validate the disposable socket before opening another connection.
+    const child = spawn(process.env.CA_DEPARTURE_PSQL!, [
+      '-X',
+      '-qAt',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-h',
+      host!,
+      '-p',
+      '55443',
+      '-U',
+      'departure_test',
+      '-d',
+      'postgres',
+    ]);
+    let error = '';
+    let output = '';
+    let releaseSent = false;
+    const done = new Promise<{ code: number | null; error: string }>((resolve) => {
+      child.stderr.on('data', (data) => {
+        error += String(data);
+      });
+      child.once('error', (e) => resolve({ code: null, error: String(e) }));
+      child.once('exit', (code) => resolve({ code, error }));
+    });
+    const ready = new Promise<void>((resolve, reject) => {
+      child.stdout.on('data', (data) => {
+        output += String(data);
+        if (output.includes('SQL_LOCK_READY')) resolve();
+      });
+      child.once('error', reject);
+      child.once('exit', (code) => {
+        if (!output.includes('SQL_LOCK_READY'))
+          reject(new Error('Lock holder exited ' + code + ': ' + error));
+      });
+    });
+    child.stdin.write(
+      "BEGIN;\nSET LOCAL statement_timeout='5s';\n" + query + ';\n\\echo SQL_LOCK_READY\n'
+    );
+    await ready;
+    return {
+      finish: (commit: boolean, finalQuery = '') => {
+        if (!releaseSent) {
+          releaseSent = true;
+          child.stdin.end(
+            (finalQuery ? finalQuery + ';\n' : '') + (commit ? 'COMMIT;\n' : 'ROLLBACK;\n')
+          );
+        }
+        return done;
+      },
+    };
+  };
+  const waitForDatabaseLock = async (application: string) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (
+        sql(`SELECT count(*) FROM pg_stat_activity
+        WHERE application_name='${application}' AND wait_event_type='Lock'`) > 0
+      )
+        return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('Contender did not reach the expected PostgreSQL lock');
+  };
+  it.each(['admission', 'close'] as const)(
+    '%s commits first: the opposite transaction cannot create a closed-table occupancy',
+    async (first) => {
+      const original = seedOccupancy();
+      boundCashout(original);
+      const admit = `UPDATE club_members SET chip_balance=chip_balance-40; ${insertGameSeat(TABLE)}`;
+      const close = "UPDATE tables SET status='closed'";
+      const holder = await holdingSql(first === 'admission' ? admit : close);
+      const contender = concurrentSql(`SET application_name='native_close_contender';
+        BEGIN; SET LOCAL statement_timeout='5s'; ${first === 'admission' ? close : admit}; COMMIT;`);
+      try {
+        await waitForDatabaseLock('native_close_contender');
+        expect((await holder.finish(true)).code).toBe(0);
+        const result = await contender;
+        expect(result.code).not.toBe(0);
+        expect(result.error).toMatch(/live_seat_parent_cannot_close/);
+        expect(sql('SELECT to_json(status) FROM tables')).toBe(
+          first === 'admission' ? 'waiting' : 'closed'
+        );
+        expect(snapshot()).toEqual({
+          balance: first === 'admission' ? 85 : 125,
+          active: first === 'admission' ? 1 : 0,
+          credits: 1,
+          keys: 1,
+          closes: 1,
+        });
+        expect(
+          sql(`SELECT count(*) FROM table_seats s JOIN tables t ON t.id=s.table_id
+          WHERE s.left_at IS NULL AND t.seat_admission_key='closed'`)
+        ).toBe(0);
+      } finally {
+        await holder.finish(false);
+        await contender;
+      }
+    }
+  );
+
+  it('cannot reclassify a committed cash occupancy as tournament chips', () => {
+    const original = seedOccupancy();
+    sql(`INSERT INTO tournaments VALUES('${GAME}')`);
+    expect(() => sql(`UPDATE tables SET tournament_id='${GAME}'`)).toThrow(
+      /live_seat_parent_cannot_close/
+    );
+    expect(sql('SELECT to_json(seat_admission_key) FROM tables')).toBe('cash');
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    boundCashout(original);
+    sql(`UPDATE tables SET tournament_id='${GAME}'`);
+    expect(sql('SELECT to_json(seat_admission_key) FROM tables')).toBe('tournament:' + GAME);
+  });
+  it('rolls back a cash debit when reclassification commits after the purchase precheck', async () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    sql(`INSERT INTO tournaments VALUES('${GAME}')`);
+    const holder = await holdingSql(`SELECT fn_assert_cash_chip_purchase_table('${TABLE}');
+      SET LOCAL app.money_path='atomic_table_buyin';
+      UPDATE club_members SET chip_balance=chip_balance-40`);
+    try {
+      sql(`UPDATE tables SET tournament_id='${GAME}'`);
+      const result = await holder.finish(true, insertGameSeat(TABLE));
+      expect(result.code).not.toBe(0);
+      expect(result.error).toMatch(/CASH_PURCHASE_ONLY/);
+      expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+    } finally {
+      await holder.finish(false);
+    }
+  });
+
+  it.each(['anon', 'authenticated'])(
+    'RLS prevents %s from changing chips or releasing a seat directly',
+    (role) => {
+      seedOccupancy();
+      sql(`BEGIN; SET LOCAL ROLE ${role};
+      UPDATE table_seats SET stack=999999,left_at=now();
+      DELETE FROM table_seats; COMMIT;`);
+      expect(() =>
+        sql(`BEGIN; SET LOCAL ROLE ${role};
+      INSERT INTO table_seats(id,table_id,user_id,seat_number,stack)
+      VALUES(gen_random_uuid(),'${TABLE}','${ACTOR}',3,10); COMMIT;`)
+      ).toThrow(/row-level security/);
+      expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    }
+  );
+  it('treasury cash funding cannot create tournament chips even for an engine caller', () => {
+    seedOccupancy(25, true);
+    expect(() =>
+      sql(`BEGIN; SET LOCAL app.money_path='fn_horse_seat_from_treasury';
+      INSERT INTO table_seats(id,table_id,user_id,seat_number,stack)
+      VALUES(gen_random_uuid(),'${TABLE}','${ACTOR}',3,40); COMMIT;`)
+    ).toThrow(/CASH_PURCHASE_ONLY/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('keeps tournament cleanup restricted to the service role', () => {
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      expect(
+        sql(`SELECT to_json(has_function_privilege('${role}',
+        'public.fn_clear_table_seats(uuid,boolean)','EXECUTE'))`)
+      ).toBe(role === 'service_role');
+    }
+  });
+
+  it('refuses a replay that would cascade an asset change into an active seat', () => {
+    seedOccupancy();
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        '../supabase/migrations/20260909062236_terminal_tables_cannot_commit_live_occupancies.sql'
+      ),
+      'utf8'
+    );
+    expect(() =>
+      sql(
+        `BEGIN;
+      ALTER TABLE table_seats DROP CONSTRAINT live_seat_parent_cannot_close;
+      ALTER TABLE table_seats ADD CONSTRAINT live_seat_parent_cannot_close
+        FOREIGN KEY(table_id,active_parent_key) REFERENCES tables(id,seat_admission_key)
+        ON UPDATE CASCADE;` + migration
+      )
+    ).toThrow(/Unreviewed admission constraint live_seat_parent_cannot_close/);
+    expect(() => sql("UPDATE tables SET status='closed'")).toThrow(/live_seat_parent_cannot_close/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+
+  it('the authorized close RPC refuses an occupied table without waiting on its cashout seat lock', async () => {
+    seedOccupancy();
+    const holder = await holdingSql('SELECT id FROM table_seats FOR UPDATE');
+    try {
+      const result = await concurrentSql(`BEGIN; SET LOCAL test.auth_uid='${USER}';
+        SET LOCAL statement_timeout='2s'; SELECT fn_close_managed_game('table','${TABLE}'); COMMIT;`);
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.output.trim())).toEqual({ ok: false, reason: 'players_seated' });
+      expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    } finally {
+      await holder.finish(false);
+    }
+  });
+  it('the authorized close RPC waits for the cash game before locking its empty table', async () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    sql(`INSERT INTO cash_games(id,must_move) VALUES('${GAME}',true);
+      UPDATE tables SET cluster_id='${GAME}',role='main'`);
+    const holder = await holdingSql(`SELECT id FROM cash_games WHERE id='${GAME}' FOR UPDATE`);
+    const close = concurrentSql(`SET application_name='managed_close_game_contender';
+      BEGIN; SET LOCAL test.auth_uid='${USER}'; SET LOCAL statement_timeout='5s';
+      SELECT fn_close_managed_game('table','${TABLE}'); COMMIT;`);
+    try {
+      await waitForDatabaseLock('managed_close_game_contender');
+      // This would block if close had already taken the table before the game.
+      sql(
+        "BEGIN; SET LOCAL statement_timeout='1s'; UPDATE tables SET current_players=current_players; COMMIT;"
+      );
+      expect((await holder.finish(true)).code).toBe(0);
+      const result = await close;
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.output.trim())).toEqual({ ok: true });
+      expect(sql('SELECT to_json(status) FROM tables')).toBe('closed');
+      expect(sql('SELECT to_json(enabled) FROM cash_games')).toBe(false);
+      expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+    } finally {
+      await holder.finish(false);
+      await close;
+    }
+  });
+  it('the close RPC preserves authentication and club authorization refusals', () => {
+    seedOccupancy();
+    expect(() => sql(`SELECT fn_close_managed_game('table','${TABLE}')`)).toThrow(
+      /Authentication required/
+    );
+    expect(
+      sql(`BEGIN; SET LOCAL test.auth_uid='${USER}'; SET LOCAL test.can_create_games='false';
+      SELECT fn_close_managed_game('table','${TABLE}'); COMMIT;`)
+    ).toEqual({ ok: false, reason: 'not_authorized' });
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+
+  it('does not close a different cash-game context after waiting for the original game lock', async () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    sql(`INSERT INTO cash_games(id,must_move) VALUES('${GAME}',true),('${OTHER_TABLE}',true);
+      UPDATE tables SET cluster_id='${GAME}',role='main'`);
+    const holder = await holdingSql(`SELECT id FROM cash_games WHERE id='${GAME}' FOR UPDATE`);
+    const close = concurrentSql(`SET application_name='managed_close_stale_context';
+      BEGIN; SET LOCAL test.auth_uid='${USER}'; SET LOCAL statement_timeout='5s';
+      SELECT fn_close_managed_game('table','${TABLE}'); COMMIT;`);
+    try {
+      await waitForDatabaseLock('managed_close_stale_context');
+      sql(`UPDATE tables SET cluster_id='${OTHER_TABLE}'`);
+      await holder.finish(true);
+      const result = await close;
+      expect(result.code).not.toBe(0);
+      expect(result.error).toMatch(/STALE_GAME_CONTEXT/);
+      expect(sql('SELECT to_json(status) FROM tables')).toBe('waiting');
+      expect(sql('SELECT count(*) FROM cash_games WHERE enabled')).toBe(2);
+      expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+    } finally {
+      await holder.finish(false);
+      await close;
+    }
   });
 
   const boundCashout = (occupancy: string) =>
@@ -499,14 +770,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     expect(sql('SELECT count(*) FROM seat_departure_requests')).toBe(0);
   });
   it('retains tournament chips and avoids cash leave_pending while persisting sit-out', () => {
-    const occupancy = seedOccupancy();
-    sql(
-      "INSERT INTO tournaments VALUES('" +
-        CLUB +
-        "'); UPDATE tables SET tournament_id='" +
-        CLUB +
-        "'"
-    );
+    const occupancy = seedOccupancy(25, true);
     expect(requestDeparture(occupancy)).toMatchObject({ accepted: true, tournament_table: true });
     expect(sql('SELECT to_json(leave_pending) FROM table_seats')).toBe(false);
     expect(sql('SELECT to_json(is_sitting_out) FROM table_seats')).toBe(true);
@@ -810,13 +1074,19 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       expect(sql('SELECT to_json(count(*)) FROM seat_cashout_receipts')).toBe(1);
     }
   );
-  it.each([0, 25])('table close records the original receipt for a %s stack', (stack) => {
+
+  it.each([0, 25])('table close waits for the engine receipt for a %s stack', (stack) => {
     const original = seedOccupancy(stack);
-    const result = sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`);
-    expect(result).toMatchObject({
+    expect(() => sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)).toThrow(
+      /CASH_TABLE_CLOSE_REQUIRES_ENGINE_DEPARTURES/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    const receipt = boundCashout(original);
+    expect(receipt).toMatchObject({ stack, occupancy_id: original });
+    expect(sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','repeat')`)).toMatchObject({
       ok: true,
-      players_paid: stack > 0 ? 1 : 0,
-      chips_returned: stack,
+      players_paid: 0,
+      chips_returned: 0,
     });
     expect(snapshot()).toEqual({
       balance: 100 + stack,
@@ -825,57 +1095,96 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       keys: stack > 0 ? 1 : 0,
       closes: 1,
     });
-    expect(boundCashout(original)).toMatchObject({ stack, occupancy_id: original });
-    expect(sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','repeat')`)).toMatchObject({
-      ok: true,
-      players_paid: 0,
-      chips_returned: 0,
-    });
   });
   it('table close cannot skip a positive stack whose home club is missing', () => {
     seedOccupancy();
     sql('UPDATE table_seats SET club_id=NULL');
     const before = snapshot();
-    expect(() =>
-      sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)
-    ).toThrow();
+    expect(() => sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)).toThrow(
+      /CASH_TABLE_CLOSE_REQUIRES_ENGINE_DEPARTURES/
+    );
     expect(snapshot()).toEqual(before);
-    expect(sql('SELECT to_json(count(*)) FROM seat_cashout_receipts')).toBe(0);
+    expect(sql('SELECT count(*) FROM seat_cashout_receipts')).toBe(0);
   });
-  it('a later invalid occupancy rolls back every earlier payout in the same close', () => {
+  it('table close refuses all occupancies without starting a partial payout', () => {
     seedOccupancy();
     sql(`INSERT INTO club_members VALUES('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','${CLUB}',100,NULL);
       INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id)
       VALUES(gen_random_uuid(),'${TABLE}','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',3,-1,now(),'${CLUB}')`);
-    expect(() =>
-      sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)
-    ).toThrow();
+    expect(() => sql(`SELECT fn_cashout_seats_for_closing_table('${TABLE}','test close')`)).toThrow(
+      /CASH_TABLE_CLOSE_REQUIRES_ENGINE_DEPARTURES/
+    );
     expect(
       sql(`SELECT json_build_object('balance',(SELECT sum(chip_balance) FROM club_members),
       'active',(SELECT count(*) FROM table_seats WHERE left_at IS NULL),
       'credits',(SELECT count(*) FROM wallet_transactions),
-      'receipts',(SELECT count(*) FROM seat_cashout_receipts),
-      'closes',(SELECT count(*) FROM session_closes))`)
-    ).toEqual({ balance: 200, active: 2, credits: 0, receipts: 0, closes: 0 });
+      'receipts',(SELECT count(*) FROM seat_cashout_receipts))`)
+    ).toEqual({ balance: 200, active: 2, credits: 0, receipts: 0 });
   });
-  it('the actual close trigger propagates payout failure and rolls back the status change', () => {
-    seedOccupancy();
+  it('the close trigger permits an empty authorized close without an engine identity', () => {
+    const original = seedOccupancy();
     sql(`CREATE TRIGGER test_table_close AFTER UPDATE OF status ON tables
       FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status='closed')
       EXECUTE FUNCTION trg_auto_cashout_on_table_close()`);
     try {
-      expect(() =>
-        sql(`BEGIN; SET LOCAL test.reject_exit='on';
-        UPDATE tables SET status='closed'; COMMIT;`)
-      ).toThrow(/injected seat exit failure/);
-      expect(sql('SELECT to_json(status) FROM tables')).toBe('waiting');
+      expect(() => sql("UPDATE tables SET status='closed'")).toThrow(
+        /CASH_TABLE_CLOSE_REQUIRES_ENGINE_DEPARTURES|live_seat_parent_cannot_close/
+      );
       expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
-      sql("UPDATE tables SET status='closed'");
+      boundCashout(original);
+      // The authorized close RPC is SECURITY DEFINER; its caller's JWT can
+      // belong to an administrator rather than an engine.
+      expect(
+        sql(`BEGIN; SET LOCAL ROLE authenticated; SET LOCAL test.auth_uid='${USER}';
+        SET LOCAL test.is_engine='false'; SELECT fn_close_managed_game('table','${TABLE}'); COMMIT;`)
+      ).toEqual({ ok: true });
       expect(sql('SELECT to_json(status) FROM tables')).toBe('closed');
       expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
     } finally {
       sql('DROP TRIGGER test_table_close ON tables');
     }
+  });
+  it.each([
+    "status='closed'",
+    "status='completed'",
+    "status='cancelled'",
+    "status='finished'",
+    "lifecycle='closed'",
+    'is_deleted=true',
+    'is_template=true',
+  ])('native ownership refuses %s while a seat is active', (change) => {
+    const original = seedOccupancy();
+    expect(() => sql('UPDATE tables SET ' + change)).toThrow(/live_seat_parent_cannot_close/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    boundCashout(original);
+    sql('UPDATE tables SET ' + change);
+    expect(sql('SELECT to_json(seat_admission_key) FROM tables')).toBe('closed');
+    expect(() =>
+      sql(`BEGIN; SET LOCAL app.cash_seat_move='on';
+      UPDATE club_members SET chip_balance=chip_balance-40;
+      ${insertGameSeat(TABLE)}; COMMIT;`)
+    ).toThrow(/CLOSED_TABLE_REJECTS_ACTIVE_SEAT/);
+    expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+  });
+  it('does not let a caller forge parent openness or child admission proof', () => {
+    seedOccupancy();
+    sql(
+      "UPDATE tables SET seat_admission_key='forged'; UPDATE table_seats SET active_parent_key=NULL"
+    );
+    expect(sql('SELECT to_json(seat_admission_key) FROM tables')).toBe('cash');
+    expect(sql('SELECT to_json(active_parent_key) FROM table_seats')).toBe('cash');
+  });
+  it('retired cash seat clearing never marks an unpaid occupancy as left', () => {
+    seedOccupancy();
+    expect(() => sql(`SELECT fn_clear_table_seats('${TABLE}',false)`)).toThrow(
+      /CASH_SEAT_CLEAR_REQUIRES_ENGINE_DEPARTURES/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('preserves tournament seat cleanup without a cash-wallet payout', () => {
+    seedOccupancy(25, true);
+    expect(sql(`SELECT fn_clear_table_seats('${TABLE}',false)`)).toBe(1);
+    expect(snapshot()).toEqual({ balance: 100, active: 0, credits: 0, keys: 0, closes: 0 });
   });
   it.each(['voluntary', 'forced'])('rejects direct owner %s cashout before any write', (mode) => {
     const original = seedOccupancy();

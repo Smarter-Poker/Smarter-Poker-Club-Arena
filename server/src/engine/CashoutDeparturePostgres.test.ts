@@ -58,7 +58,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
   const seedOccupancy = (stack = 25) => {
@@ -68,6 +68,246 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       ${stack},now(),NULL,false,'${CLUB}')`);
     return sql('SELECT to_json(occupancy_id) FROM table_seats') as string;
   };
+
+  const GAME = '11111111-1111-4111-8111-111111111111';
+  const OTHER_TABLE = '22222222-2222-4222-8222-222222222222';
+  const seedGame = () => {
+    seedOccupancy();
+    sql(`UPDATE tables SET cluster_id='${GAME}';
+      INSERT INTO tables(id,cluster_id,current_players) VALUES('${OTHER_TABLE}','${GAME}',0)`);
+  };
+  const insertGameSeat = (table = OTHER_TABLE) =>
+    `INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id)
+      VALUES(gen_random_uuid(),'${table}','${USER}',3,40,now(),'${CLUB}')`;
+  it('rejects a committed duplicate even with the cash move bypass and rolls back its debit', () => {
+    seedGame();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL app.cash_seat_move='on';
+      UPDATE club_members SET chip_balance=chip_balance-40;
+      ${insertGameSeat()}; COMMIT;`)
+    ).toThrow(/one_committed_seat_per_game_player/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('permits destination-first movement in one transaction while retaining the exact stack', () => {
+    seedGame();
+    sql(`BEGIN; SET LOCAL app.cash_seat_move='on';
+      INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id)
+        SELECT gen_random_uuid(),'${OTHER_TABLE}',user_id,3,stack,joined_at,club_id FROM table_seats;
+      UPDATE table_seats SET left_at=now(),stack=0 WHERE table_id='${TABLE}'; COMMIT;`);
+    expect(sql('SELECT sum(stack) FROM table_seats')).toBe(25);
+    expect(sql('SELECT count(*) FROM table_seats WHERE active_game_scope IS NOT NULL')).toBe(1);
+    expect(sql('SELECT chip_balance FROM club_members')).toBe(100);
+  });
+  it('rejects revival of the old chair after a completed move', () => {
+    seedGame();
+    sql(
+      `BEGIN; ${insertGameSeat()}; UPDATE table_seats SET left_at=now() WHERE table_id='${TABLE}'; COMMIT;`
+    );
+    expect(() => sql(`UPDATE table_seats SET left_at=NULL WHERE table_id='${TABLE}'`)).toThrow(
+      /one_committed_seat_per_game_player/
+    );
+    expect(sql('SELECT count(*) FROM table_seats WHERE left_at IS NULL')).toBe(1);
+  });
+  it('derives forged or cleared scopes from their parent without permitting a bypass', () => {
+    seedGame();
+    sql(
+      "UPDATE table_seats SET active_game_scope=NULL; UPDATE tables SET seat_game_scope='forged'"
+    );
+    expect(sql('SELECT to_json(active_game_scope) FROM table_seats')).toBe('cluster:' + GAME);
+    expect(() =>
+      sql(`INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,active_game_scope)
+      VALUES(gen_random_uuid(),'${OTHER_TABLE}','${USER}',3,40,'forged')`)
+    ).toThrow(/one_committed_seat_per_game_player/);
+  });
+  it('cascades standalone-to-cluster membership and rolls back a conflicting reassignment', () => {
+    seedGame();
+    sql(`UPDATE tables SET cluster_id=NULL WHERE id='${OTHER_TABLE}'; ${insertGameSeat()}`);
+    expect(() => sql(`UPDATE tables SET cluster_id='${GAME}' WHERE id='${OTHER_TABLE}'`)).toThrow(
+      /one_committed_seat_per_game_player/
+    );
+    expect(
+      sql(`SELECT to_json(active_game_scope) FROM table_seats WHERE table_id='${OTHER_TABLE}'`)
+    ).toBe('table:' + OTHER_TABLE);
+    sql(`UPDATE table_seats SET left_at=now() WHERE table_id='${TABLE}';
+      UPDATE tables SET cluster_id='${GAME}' WHERE id='${OTHER_TABLE}'`);
+    expect(
+      sql(`SELECT to_json(active_game_scope) FROM table_seats WHERE table_id='${OTHER_TABLE}'`)
+    ).toBe('cluster:' + GAME);
+  });
+  it('keeps table and cluster UUID namespaces independent', () => {
+    seedGame();
+    sql(`INSERT INTO tables(id,current_players) VALUES('${GAME}',0); ${insertGameSeat(GAME)}`);
+    expect(sql('SELECT count(*) FROM table_seats WHERE left_at IS NULL')).toBe(2);
+  });
+  it('rejects a table change into an already occupied game', () => {
+    seedGame();
+    sql(`INSERT INTO tables(id,current_players) VALUES('${GAME}',0); ${insertGameSeat(GAME)}`);
+    expect(() =>
+      sql(`UPDATE table_seats SET table_id='${OTHER_TABLE}' WHERE table_id='${GAME}'`)
+    ).toThrow(/one_committed_seat_per_game_player/);
+  });
+  const concurrentSql = (query: string) =>
+    new Promise<{ code: number | null; error: string }>((resolve, reject) => {
+      const child = spawn(process.env.CA_DEPARTURE_PSQL!, [
+        '-X',
+        '-qAt',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-h',
+        host!,
+        '-p',
+        '55443',
+        '-U',
+        'departure_test',
+        '-d',
+        'postgres',
+        '-c',
+        query,
+      ]);
+      let error = '';
+      child.stdout.resume();
+      child.stderr.on('data', (data) => {
+        error += String(data);
+      });
+      child.once('error', reject);
+      child.once('exit', (code) => resolve({ code, error }));
+    });
+  it('allows only one concurrent committed admission and rolls back the losing wallet debit', async () => {
+    seedGame();
+    sql('DELETE FROM table_seats');
+    // Different debit rows avoid accidentally serializing the competing seat insertions.
+    sql(`INSERT INTO club_members VALUES('${USER}','${GAME}',100,NULL)`);
+    const results = await Promise.all(
+      [TABLE, OTHER_TABLE].map((table, index) =>
+        concurrentSql(
+          `BEGIN; SET LOCAL statement_timeout='3s'; SET LOCAL app.cash_seat_move='on';
+       UPDATE club_members SET chip_balance=chip_balance-40 WHERE club_id='${index ? GAME : CLUB}';
+       ${insertGameSeat(table)}; SELECT pg_sleep(0.15); COMMIT;`
+        )
+      )
+    );
+    expect(results.filter((r) => r.code === 0)).toHaveLength(1);
+    expect(results.filter((r) => r.code !== 0)[0].error).toMatch(
+      /one_committed_seat_per_game_player/
+    );
+    expect(sql('SELECT sum(chip_balance) FROM club_members')).toBe(160);
+    expect(sql('SELECT count(*) FROM table_seats WHERE left_at IS NULL')).toBe(1);
+  });
+
+  it('serializes cluster reassignment against a concurrent standalone admission', async () => {
+    seedGame();
+    sql(`UPDATE tables SET cluster_id=NULL WHERE id='${OTHER_TABLE}'`);
+    const results = await Promise.all([
+      concurrentSql(`BEGIN; SET LOCAL statement_timeout='3s'; ${insertGameSeat()};
+        SELECT pg_sleep(0.15); COMMIT;`),
+      concurrentSql(`BEGIN; SET LOCAL statement_timeout='3s';
+        UPDATE tables SET cluster_id='${GAME}' WHERE id='${OTHER_TABLE}';
+        SELECT pg_sleep(0.15); COMMIT;`),
+    ]);
+    expect(results.filter((r) => r.code === 0)).toHaveLength(1);
+    expect(results.filter((r) => r.code !== 0)[0].error).toMatch(
+      /one_committed_seat_per_game_player|active_seat_game_scope_parent/
+    );
+    expect(
+      sql(`SELECT count(*) FROM table_seats s JOIN tables t ON t.id=s.table_id
+      WHERE s.left_at IS NULL AND s.active_game_scope IS DISTINCT FROM
+        CASE WHEN t.cluster_id IS NULL THEN 'table:'||t.id::text ELSE 'cluster:'||t.cluster_id::text END`)
+    ).toBe(0);
+    expect(
+      sql(`SELECT count(*) FROM (SELECT s.user_id,t.cluster_id FROM table_seats s
+      JOIN tables t ON t.id=s.table_id WHERE s.left_at IS NULL AND t.cluster_id IS NOT NULL
+      GROUP BY 1,2 HAVING count(*)>1) d`)
+    ).toBe(0);
+  });
+
+  const clusterRetirementMigration = () =>
+    readFileSync(
+      resolve(
+        process.cwd(),
+        '../supabase/migrations/20260909054702_retire_cluster_duplicate_chair_cashouts_after_native_ownership.sql'
+      ),
+      'utf8'
+    );
+  it('refuses planner retirement if native committed ownership is missing', () => {
+    expect(() =>
+      sql(
+        'BEGIN; ALTER TABLE table_seats DROP CONSTRAINT one_committed_seat_per_game_player;' +
+          clusterRetirementMigration()
+      )
+    ).toThrow(/Native committed seat ownership must be installed/);
+    expect(
+      sql("SELECT count(*) FROM pg_constraint WHERE conname='one_committed_seat_per_game_player'")
+    ).toBe(1);
+  });
+  it('refuses an unreviewed planner body without overwriting it or committing the transaction', () => {
+    expect(() =>
+      sql(
+        `BEGIN; CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick(uuid,integer)
+      RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$;` + clusterRetirementMigration()
+      )
+    ).toThrow(/Unreviewed cluster planner body/);
+    expect(
+      sql(
+        "SELECT to_json(md5(pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure)))"
+      )
+    ).toBe('2303b31672ff35201d2a310d821c0cd4');
+  });
+  it('preserves frozen, missing-game and manual-game planner responses after retirement', () => {
+    expect(
+      sql(`BEGIN; SET LOCAL test.platform_frozen='true';
+      SELECT fn_cash_cluster_tick('${GAME}',0); COMMIT;`)
+    ).toEqual({ ok: false, skipped: 'frozen' });
+    expect(sql(`SELECT fn_cash_cluster_tick('${GAME}',0)`)).toEqual({
+      ok: false,
+      reason: 'not_found',
+    });
+    sql(`INSERT INTO cash_games VALUES('${GAME}',false)`);
+    expect(sql(`SELECT fn_cash_cluster_tick('${GAME}',0)`)).toEqual({
+      ok: false,
+      reason: 'manual_game',
+    });
+  });
+  it('preserves planner execution privileges and removes both direct repair payments', () => {
+    expect(
+      sql(`SELECT json_build_object(
+      'anon',has_function_privilege('anon','public.fn_cash_cluster_tick(uuid,integer)','EXECUTE'),
+      'authenticated',has_function_privilege('authenticated','public.fn_cash_cluster_tick(uuid,integer)','EXECUTE'),
+      'engine',has_function_privilege('service_role','public.fn_cash_cluster_tick(uuid,integer)','EXECUTE'),
+      'repair',position('atomic_seat_cashout_locked' in pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure))>0)`)
+    ).toEqual({ anon: false, authenticated: false, engine: true, repair: false });
+  });
+
+  it('does not accept a same-named replacement ownership constraint on migration replay', () => {
+    seedGame();
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        '../supabase/migrations/20260909052547_one_committed_cash_game_seat_per_player.sql'
+      ),
+      'utf8'
+    );
+    expect(() =>
+      sql(
+        `BEGIN;
+      ALTER TABLE table_seats DROP CONSTRAINT one_committed_seat_per_game_player;
+      ALTER TABLE table_seats ADD CONSTRAINT one_committed_seat_per_game_player
+        UNIQUE(user_id,seat_number) DEFERRABLE INITIALLY DEFERRED;` + migration
+      )
+    ).toThrow(/Unreviewed ownership constraint one_committed_seat_per_game_player/);
+    expect(() => sql(insertGameSeat())).toThrow(/one_committed_seat_per_game_player/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+
+  it('keeps derived ownership metadata out of the operator contract while preserving real rules', () => {
+    const result = sql(`SELECT json_build_object(
+      'before',fn_managed_game_contract_document('table','{"name":"test","big_blind":2}'::jsonb),
+      'after',fn_managed_game_contract_document('table','{"name":"test","big_blind":2,"seat_game_scope":"cluster:derived"}'::jsonb),
+      'changed',fn_managed_game_contract_document('table','{"name":"test","big_blind":4,"seat_game_scope":"cluster:derived"}'::jsonb))`);
+    expect(result.before).toEqual({ name: 'test', big_blind: 2 });
+    expect(result.after).toEqual(result.before);
+    expect(result.changed).toEqual({ name: 'test', big_blind: 4 });
+  });
+
   const boundCashout = (occupancy: string) =>
     sql(`SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${occupancy}',NULL)`);
 
@@ -411,6 +651,8 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   });
   it.each(['user_id', 'table_id', 'seat_number'])('renews occupancy when %s changes', (column) => {
     const original = seedOccupancy();
+    if (column === 'table_id')
+      sql("INSERT INTO tables(id) VALUES('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')");
     sql(
       `UPDATE table_seats SET ${column}=${column === 'seat_number' ? '3' : "'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'"}`
     );
@@ -839,14 +1081,17 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     );
     expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
   });
-  it('refuses a missing table context without consuming an orphaned seat', () => {
-    sql(`INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+  it('refuses missing table cashout and prevents an orphan admission from committing a debit', () => {
+    sql(`INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL)`);
+    expect(() =>
+      sql(`BEGIN; UPDATE club_members SET chip_balance=chip_balance-25;
       INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
-      25,now(),NULL,false,'${CLUB}')`);
+      25,now(),NULL,false,'${CLUB}'); COMMIT;`)
+    ).toThrow(/Active seat requires an existing table/);
     expect(() => sql(`SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,NULL)`)).toThrow(
       /CASHOUT_TABLE_NOT_FOUND/
     );
-    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    expect(snapshot()).toEqual({ balance: 100, active: 0, credits: 0, keys: 0, closes: 0 });
   });
   for (const path of ['eviction', 'busted'] as const) {
     it.each(['normal', 'lost_after_commit', 'rollback'] as const)(

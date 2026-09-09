@@ -46,3 +46,27 @@ CREATE TABLE anti_cheat_events(
  player_id uuid REFERENCES profiles(id) ON DELETE CASCADE,club_id uuid,table_id uuid,
  details jsonb DEFAULT '{}'::jsonb,triggered_by text,created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE tables ADD COLUMN cluster_id uuid;
+
+-- Minimal planner boundary fixture: financial/admission behavior is exercised
+-- through the real ownership constraints and real cashout functions above.
+CREATE TYPE public.cash_cluster_census_row AS (
+ id uuid,role text,main_index integer,lifecycle text,status text,created_at timestamptz,
+ max_players integer,seated integer,reserved integer,open_unreserved integer,breaking boolean
+);
+CREATE TABLE public.cash_games(id uuid PRIMARY KEY,must_move boolean);
+CREATE OR REPLACE FUNCTION public.fn_platform_frozen() RETURNS boolean LANGUAGE sql
+AS $$SELECT coalesce(current_setting('test.platform_frozen',true),'false')='true'$$;
+
+-- Deliberately hostile existing-trigger behavior for the migration rollback test.
+CREATE FUNCTION inject_scope_backfill_corruption() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF current_setting('test.scope_backfill_corruption',true)='on'
+    AND (to_jsonb(NEW)->'active_game_scope') IS DISTINCT FROM (to_jsonb(OLD)->'active_game_scope') THEN
+   NEW.stack := NEW.stack+1;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER test_scope_backfill_corruption BEFORE UPDATE ON table_seats
+FOR EACH ROW EXECUTE FUNCTION inject_scope_backfill_corruption();

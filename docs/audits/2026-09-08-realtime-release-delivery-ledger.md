@@ -200,3 +200,84 @@ the expected 60-second hold and maintenance exclusion. No synthetic alert sent.
 The physical iPad home-screen/offline flow and a paid join remain unverified.
 Browser CDP refresh is unavailable. Publication proof is not end-to-end gameplay
 proof, and hand-gap outliers remain under investigation.
+
+## 23:15 UTC repository and release reconciliation
+
+Public and origin build-info agree on 5c07d06c09291d931d6b4f0eec2559000d1188de (built 23:09:53 UTC, run 34289206356).
+The running engine reports 276faa64, exact repository target 276faa64d658f966202f8ba4425041f9fb0d74d1.
+Each inclusion below is recomputed with git merge-base against those commits.
+An engine column saying No for a client-only fix is not a missing client release;
+repository inclusion does not imply that one runtime executes the other runtime code.
+DB migrations and the monitoring rule require the separate proofs recorded in
+their incident audits. The new warm-entry-state-proof work is still local at
+this snapshot and is not counted as published.
+
+| PR    | On main | In served client commit | In running engine commit |
+| ----- | ------- | ----------------------- | ------------------------ |
+| #3566 | Yes     | Yes                     | Yes                      |
+| #3573 | Yes     | Yes                     | Yes                      |
+| #3583 | Yes     | Yes                     | Yes                      |
+| #3592 | Yes     | Yes                     | Yes                      |
+| #3601 | Yes     | Yes                     | Yes                      |
+| #3603 | Yes     | Yes                     | Yes                      |
+| #3606 | Yes     | Yes                     | Yes                      |
+| #3613 | Yes     | Yes                     | Yes                      |
+| #3624 | Yes     | Yes                     | Yes                      |
+| #3633 | Yes     | Yes                     | Yes                      |
+| #3637 | Yes     | Yes                     | Yes                      |
+| #3640 | Yes     | Yes                     | Yes                      |
+| #3641 | Yes     | Yes                     | Yes                      |
+| #3649 | Yes     | Yes                     | Yes                      |
+| #3663 | Yes     | Yes                     | Yes                      |
+| #3666 | Yes     | Yes                     | Yes                      |
+| #3668 | Yes     | Yes                     | Yes                      |
+| #3674 | Yes     | Yes                     | Yes                      |
+| #3676 | Yes     | Yes                     | Yes                      |
+| #3681 | Yes     | Yes                     | Yes                      |
+| #3683 | Yes     | Yes                     | Yes                      |
+| #3685 | Yes     | Yes                     | Yes                      |
+| #3690 | Yes     | Yes                     | Yes                      |
+| #3691 | Yes     | Yes                     | Yes                      |
+| #3695 | Yes     | Yes                     | Yes                      |
+| #3717 | Yes     | Yes                     | Yes                      |
+| #3719 | Yes     | Yes                     | Yes                      |
+| #3731 | Yes     | Yes                     | Yes                      |
+| #3736 | Yes     | Yes                     | Yes                      |
+| #3744 | Yes     | Yes                     | Yes                      |
+| #3746 | Yes     | Yes                     | Yes                      |
+| #3753 | Yes     | Yes                     | Yes                      |
+| #3763 | Yes     | Yes                     | Yes                      |
+| #3765 | Yes     | Yes                     | Yes                      |
+| #3778 | Yes     | Yes                     | Yes                      |
+| #3780 | Yes     | Yes                     | Yes                      |
+| #3810 | Yes     | Yes                     | Yes                      |
+| #3816 | Yes     | Yes                     | Yes                      |
+| #3817 | Yes     | Yes                     | Yes                      |
+| #3820 | Yes     | Yes                     | Yes                      |
+| #3824 | Yes     | Yes                     | Yes                      |
+| #3827 | Yes     | Yes                     | Yes                      |
+| #3833 | Yes     | Yes                     | Yes                      |
+| #3835 | Yes     | Yes                     | Yes                      |
+| #3839 | Yes     | Yes                     | Yes                      |
+| #3843 | Yes     | Yes                     | Yes                      |
+| #3845 | Yes     | Yes                     | Yes                      |
+| #3850 | Yes     | Yes                     | Yes                      |
+| #3854 | Yes     | Yes                     | Yes                      |
+| #3857 | Yes     | Yes                     | Yes                      |
+| #3860 | Yes     | Yes                     | Yes                      |
+| #3861 | Yes     | Yes                     | Yes                      |
+| #3866 | Yes     | Yes                     | Yes                      |
+| #3871 | Yes     | Yes                     | Yes                      |
+| #3876 | Yes     | Yes                     | Yes                      |
+| #3877 | Yes     | Yes                     | Yes                      |
+| #3881 | Yes     | Yes                     | Yes                      |
+| #3884 | Yes     | Yes                     | No                       |
+| #3888 | Yes     | Yes                     | No                       |
+
+The schema refresh workflow 34288381344 first failed because two database
+reads returned HTTP 503 during schema-cache unavailability. Its failed jobs
+were rerun through the supported GitHub action, and attempt 2 succeeded.
+The browser E2E connection remains unavailable; no paid join was executed.
+Hand-delay acceptance remains open: at 23:15:40 the 2,000-sample median was
+8,497ms and p90 17,057ms at 663 active tables / 397 tournaments. Earlier low-load
+two-second results must not be represented as a sustained production fix.

@@ -206,3 +206,26 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
     expect(out.sidePots.map((p) => p.eligibleSeats)).not.toContainEqual([3, 5, 7]);
   });
 });
+
+describe('fixed-limit completion metadata', () => {
+  it('keeps the street bet distinct from the current completion increment', () => {
+    const result = mapEngineSnapshot(
+      makeSnapshot({
+        betting_structure: 'fixed_limit',
+        fixed_bet_size: 20,
+        fixed_raise_size: 15,
+        current_bet: 5,
+        stage: 'flop',
+      }),
+      'hero',
+      3
+    );
+    expect(result.fixedBetSize).toBe(20);
+    expect(result.fixedRaiseSize).toBe(15);
+  });
+  it('leaves completion unspecified on older engine snapshots', () => {
+    expect(
+      mapEngineSnapshot(makeSnapshot({ fixed_bet_size: 20 }), 'hero', 3).fixedRaiseSize
+    ).toBeUndefined();
+  });
+});

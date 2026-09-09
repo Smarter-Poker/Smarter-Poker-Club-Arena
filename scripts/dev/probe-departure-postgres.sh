@@ -261,6 +261,35 @@ for departure_apply in 1 2; do
     -d postgres -f "$repo/supabase/migrations/20260909072021_retain_original_admin_departure_outcomes.sql" >/dev/null
 done
 
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-seat-move-schema.sql" >/dev/null
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-seat-move-functions.sql" >/dev/null
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres <<'SQL' >/dev/null
+INSERT INTO cash_games(id) VALUES('99999999-9999-4999-8999-999999999999');
+INSERT INTO cash_seat_moves(id,game_id,player_id,from_table_id,to_table_id,reason,expires_at)
+VALUES('12121212-1212-4212-8212-121212121212','99999999-9999-4999-8999-999999999999',
+ 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','88888888-8888-4888-8888-888888888888',
+ '66666666-6666-4666-8666-666666666666','must_move',now()+interval '5 minutes');
+SQL
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260909074353_bind_cash_seat_moves_to_original_occupancies.sql" >/dev/null
+done
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres <<'SQL' >/dev/null
+DO $proof$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM cash_seat_moves WHERE id='12121212-1212-4212-8212-121212121212'
+   AND state='cancelled' AND source_occupancy_id IS NULL AND note='original_occupancy_not_recorded')
+ OR EXISTS(SELECT 1 FROM cash_seat_move_receipts) THEN
+  RAISE EXCEPTION 'Unbound historical plan was not retired without invented evidence';
+ END IF;
+END $proof$;
+SQL
+
+
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -c "SELECT proname, md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname IN ('atomic_seat_cashout_locked','atomic_credit_wallet_and_log','player_leave_table') ORDER BY proname"

@@ -3056,6 +3056,8 @@ export abstract class ServerTableEngineBase {
     // The first side of a swap to reach its boundary: held out of the deal
     // until the other table lands both chairs. Told once.
     for (const h of held) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === h.player_id);
+      if (!current || current.occupancy_id !== h.source_occupancy_id) continue;
       // A held side is still seated HERE and will be moved by the other
       // table's transaction: refresh its deposit while this engine still has
       // its presence to give.
@@ -3073,6 +3075,8 @@ export abstract class ServerTableEngineBase {
     }
     const movedIds: string[] = [];
     for (const m of done) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
+      if (current && current.occupancy_id !== m.source_occupancy_id) continue;
       movedIds.push(m.player_id);
       this.announcedSeatMoves.delete(m.move_id);
       this.heldForSwap.delete(m.player_id);

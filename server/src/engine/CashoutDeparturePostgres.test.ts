@@ -58,7 +58,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE cash_seat_move_receipts,cash_seat_moves,cash_player_session,cash_cluster_events,cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
 
@@ -79,6 +79,333 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     sql(`UPDATE tables SET cluster_id='${GAME}';
       INSERT INTO tables(id,cluster_id,current_players) VALUES('${OTHER_TABLE}','${GAME}',0)`);
   };
+
+  const MOVE = '66666666-6666-4666-8666-666666666666';
+  const PARTNER_MOVE = '77777777-7777-4777-8777-777777777777';
+  const PARTNER_USER = '88888888-8888-4888-8888-888888888888';
+  const planMove = (id = MOVE, user = USER, from = TABLE, to = OTHER_TABLE) =>
+    sql(`INSERT INTO cash_seat_moves(id,game_id,player_id,from_table_id,to_table_id,reason,expires_at)
+      VALUES('${id}','${GAME}','${user}','${from}','${to}','seat_change',now()+interval '5 minutes')`);
+  const seedMove = () => {
+    seedGame();
+    sql(`INSERT INTO cash_games(id) VALUES('${GAME}');
+      INSERT INTO cash_player_session VALUES('${USER}','table','${TABLE}','${TABLE}',NULL)`);
+    planMove();
+  };
+  const seedSwap = () => {
+    seedMove();
+    sql(`INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id,is_sitting_out,sit_out_at)
+      VALUES(gen_random_uuid(),'${OTHER_TABLE}','${PARTNER_USER}',3,70,now(),'${CLUB}',true,'2026-09-01')`);
+    planMove(PARTNER_MOVE, PARTNER_USER, OTHER_TABLE, TABLE);
+    sql(
+      `UPDATE cash_seat_moves SET swap_move_id=CASE WHEN id='${MOVE}' THEN '${PARTNER_MOVE}'::uuid ELSE '${MOVE}'::uuid END `
+    );
+  };
+  const move = (id = MOVE) => sql(`SELECT fn_cash_seat_move_execute('${id}')`);
+  it('binds a move to its original stay and rejects identity changes', () => {
+    seedMove();
+    expect(sql('SELECT to_json(source_occupancy_id) FROM cash_seat_moves')).toEqual(
+      sql('SELECT to_json(occupancy_id) FROM table_seats')
+    );
+    expect(() => sql(`UPDATE cash_seat_moves SET source_occupancy_id='${PARTNER_MOVE}'`)).toThrow(
+      /SEAT_MOVE_IDENTITY_IMMUTABLE/
+    );
+    expect(() => sql(`UPDATE cash_seat_moves SET to_table_id='${CLUB}'`)).toThrow(
+      /SEAT_MOVE_IDENTITY_IMMUTABLE/
+    );
+  });
+  it('moves exact chips and session scope with an intrinsically balanced retained journal', () => {
+    seedMove();
+    const result = move();
+    expect(result).toMatchObject({
+      ok: true,
+      stack: 25,
+      move_id: MOVE,
+      player_id: USER,
+      from_table_id: TABLE,
+      to_table_id: OTHER_TABLE,
+      idempotency_key: 'seatmove:' + MOVE,
+    });
+    expect(result.source_occupancy_id).not.toBe(result.destination_occupancy_id);
+    expect(sql('SELECT sum(amount) FROM cash_seat_move_ledger')).toBe(0);
+    expect(sql('SELECT count(*) FROM cash_seat_move_ledger')).toBe(2);
+    expect(sql('SELECT sum(stack) FROM table_seats WHERE left_at IS NULL')).toBe(25);
+    expect(sql('SELECT chip_balance FROM club_members')).toBe(100);
+    expect(sql('SELECT count(*) FROM wallet_transactions')).toBe(0);
+    expect(sql('SELECT to_json(table_id) FROM cash_player_session')).toBe(OTHER_TABLE);
+    expect(move()).toEqual(result);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
+  });
+  it('retains the original move outcome after seat and table deletion', () => {
+    seedMove();
+    const result = move();
+    sql('DELETE FROM table_seats; DELETE FROM tables; DELETE FROM cash_seat_moves');
+    expect(move()).toEqual(result);
+    expect(sql('SELECT sum(amount) FROM cash_seat_move_ledger')).toBe(0);
+  });
+  it('refuses an old plan after the same player rejoins the source chair', () => {
+    seedMove();
+    const original = sql('SELECT to_json(occupancy_id) FROM table_seats') as string;
+    sql(`SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}',NULL)`);
+    sql('UPDATE table_seats SET left_at=NULL,stack=40');
+    expect(move()).toMatchObject({ ok: false, reason: 'original_occupancy_gone' });
+    expect(sql('SELECT sum(stack) FROM table_seats WHERE left_at IS NULL')).toBe(40);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+  });
+  it('keeps an expired move from transferring chips', () => {
+    seedMove();
+    sql("UPDATE cash_seat_moves SET expires_at=now()-interval '1 second'");
+    expect(move()).toMatchObject({ ok: false, reason: 'expired' });
+    expect(sql('SELECT sum(stack) FROM table_seats WHERE left_at IS NULL')).toBe(25);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+  });
+  it('refuses cross-game destination changes before any movement', () => {
+    seedMove();
+    sql(`UPDATE tables SET cluster_id='${CLUB}' WHERE id='${OTHER_TABLE}'`);
+    expect(() => move()).toThrow(/SEAT_MOVE_GAME_SCOPE_MISMATCH/);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+    expect(sql('SELECT to_json(state) FROM cash_seat_moves')).toBe('pending');
+  });
+  it('swaps only after both original sides are ready and journals both outcomes', () => {
+    seedSwap();
+    expect(move()).toMatchObject({ ok: false, reason: 'waiting_partner', held: true });
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+    const second = move(PARTNER_MOVE);
+    expect(second).toMatchObject({ ok: true, swap: true, stack: 70 });
+    const first = move();
+    expect(first).toMatchObject({ ok: true, swap: true, stack: 25, player_id: USER });
+    expect(move(PARTNER_MOVE)).toEqual(second);
+    expect(first.partner.source_occupancy_id).toBe(second.source_occupancy_id);
+    expect(sql('SELECT count(*) FROM cash_seat_move_ledger')).toBe(4);
+    expect(sql('SELECT sum(amount) FROM cash_seat_move_ledger')).toBe(0);
+    expect(sql('SELECT sum(stack) FROM table_seats WHERE left_at IS NULL')).toBe(95);
+    expect(
+      sql(`SELECT to_json(is_sitting_out) FROM table_seats WHERE user_id='${PARTNER_USER}'`)
+    ).toBe(true);
+    expect(sql('SELECT count(*) FROM wallet_transactions')).toBe(0);
+  });
+  it('cancels a swap if the waiting partner is now a different occupancy', () => {
+    seedSwap();
+    move();
+    sql(`UPDATE table_seats SET left_at=now() WHERE user_id='${USER}';
+      UPDATE table_seats SET left_at=NULL,stack=45 WHERE user_id='${USER}'`);
+    expect(move(PARTNER_MOVE)).toMatchObject({ ok: false, reason: 'original_occupancy_gone' });
+    expect(sql("SELECT count(*) FROM cash_seat_moves WHERE state='cancelled'")).toBe(2);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+  });
+  it('rolls back chips, session and plan if the retained outcome cannot be written', () => {
+    seedMove();
+    sql(`CREATE FUNCTION reject_move_receipt() RETURNS trigger LANGUAGE plpgsql AS $fn$
+      BEGIN RAISE EXCEPTION 'injected move receipt failure'; END $fn$;
+      CREATE TRIGGER reject_move_receipt BEFORE INSERT ON cash_seat_move_receipts
+      FOR EACH ROW EXECUTE FUNCTION reject_move_receipt()`);
+    try {
+      expect(() => move()).toThrow(/injected move receipt failure/);
+      expect(
+        sql(`SELECT sum(stack) FROM table_seats WHERE table_id='${TABLE}' AND left_at IS NULL`)
+      ).toBe(25);
+      expect(sql('SELECT to_json(table_id) FROM cash_player_session')).toBe(TABLE);
+      expect(sql('SELECT to_json(state) FROM cash_seat_moves')).toBe('pending');
+      expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+    } finally {
+      sql(
+        'DROP TRIGGER reject_move_receipt ON cash_seat_move_receipts; DROP FUNCTION reject_move_receipt()'
+      );
+    }
+  });
+  it('rolls back an unexpected destination stack mutation instead of recording a false transfer', () => {
+    seedMove();
+    sql(`CREATE FUNCTION corrupt_move_destination() RETURNS trigger LANGUAGE plpgsql AS $fn$
+      BEGIN IF NEW.table_id='${OTHER_TABLE}' THEN NEW.stack:=NEW.stack+1; END IF; RETURN NEW; END $fn$;
+      CREATE TRIGGER corrupt_move_destination BEFORE INSERT OR UPDATE ON table_seats
+      FOR EACH ROW EXECUTE FUNCTION corrupt_move_destination()`);
+    try {
+      expect(() => move()).toThrow(/SEAT_MOVE_CONSERVATION_FAILED/);
+      expect(sql('SELECT sum(stack) FROM table_seats WHERE left_at IS NULL')).toBe(25);
+      expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+      expect(sql('SELECT to_json(state) FROM cash_seat_moves')).toBe('pending');
+    } finally {
+      sql(
+        'DROP TRIGGER corrupt_move_destination ON table_seats; DROP FUNCTION corrupt_move_destination()'
+      );
+    }
+  });
+  it.each(['anon', 'authenticated'])('denies %s execution of moves and swaps', (role) => {
+    seedMove();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL ROLE ${role}; SELECT fn_cash_seat_move_execute('${MOVE}'); COMMIT;`)
+    ).toThrow(/permission denied/);
+    expect(() =>
+      sql(`BEGIN; SET LOCAL ROLE ${role}; SELECT fn_cash_seat_swap_execute('${MOVE}'); COMMIT;`)
+    ).toThrow(/permission denied/);
+  });
+  it('denies service-role direct mutation of retained transfer evidence', () => {
+    seedMove();
+    move();
+    expect(() =>
+      sql('BEGIN; SET LOCAL ROLE service_role; DELETE FROM cash_seat_move_receipts; COMMIT;')
+    ).toThrow(/permission denied/);
+    expect(() =>
+      sql(`BEGIN; SET LOCAL ROLE service_role;
+      SELECT fn_cash_seat_move_execute_before_maintenance_gate('${MOVE}'); COMMIT;`)
+    ).toThrow(/permission denied/);
+  });
+  it('requires engine authority before reading a completed move', () => {
+    seedMove();
+    move();
+    expect(() =>
+      sql(
+        `BEGIN; SET LOCAL test.is_engine='false'; SELECT fn_cash_seat_move_execute('${MOVE}'); COMMIT;`
+      )
+    ).toThrow(/Engine authority required/);
+  });
+
+  it.each(['NaN', 'Infinity', '25.001'])('does not journal invalid source amount %s', (amount) => {
+    seedMove();
+    sql(`UPDATE table_seats SET stack='${amount}'::numeric`);
+    expect(() => move()).toThrow();
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+    expect(sql('SELECT to_json(state) FROM cash_seat_moves')).toBe('pending');
+  });
+  it('returns the same retained result to concurrent duplicate move requests', async () => {
+    seedMove();
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        concurrentSql(
+          `BEGIN; SET LOCAL statement_timeout='5s'; SELECT fn_cash_seat_move_execute('${MOVE}'); COMMIT;`
+        )
+      )
+    );
+    expect(results.map((result) => result.code)).toEqual([0, 0]);
+    expect(JSON.parse(results[0].output.trim())).toEqual(JSON.parse(results[1].output.trim()));
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
+    expect(sql('SELECT sum(amount) FROM cash_seat_move_ledger')).toBe(0);
+  });
+  it('does not deadlock when both swap sides reach the boundary concurrently', async () => {
+    seedSwap();
+    const results = await Promise.all(
+      [MOVE, PARTNER_MOVE].map((id) =>
+        concurrentSql(
+          `BEGIN; SET LOCAL statement_timeout='5s'; SELECT fn_cash_seat_move_execute('${id}'); COMMIT;`
+        )
+      )
+    );
+    expect(results.map((result) => result.code)).toEqual([0, 0]);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(2);
+    expect(sql('SELECT sum(stack) FROM table_seats WHERE left_at IS NULL')).toBe(95);
+    expect(move()).toMatchObject({ ok: true, stack: 25 });
+    expect(move(PARTNER_MOVE)).toMatchObject({ ok: true, stack: 70 });
+  });
+  it.each(['cashout', 'move'] as const)(
+    '%s commits first: original move and cashout cannot both spend a stay',
+    async (first) => {
+      seedMove();
+      const original = sql('SELECT to_json(occupancy_id) FROM table_seats') as string;
+      const departure = `SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}',NULL)`;
+      const transfer = `SELECT fn_cash_seat_move_execute('${MOVE}')`;
+      const holder = await holdingSql(first === 'cashout' ? departure : transfer);
+      const contender = concurrentSql(`SET application_name='move_cashout_contender'; BEGIN;
+      SET LOCAL statement_timeout='5s'; ${first === 'cashout' ? transfer : departure}; COMMIT;`);
+      try {
+        await waitForDatabaseLock('move_cashout_contender');
+        expect((await holder.finish(true)).code).toBe(0);
+        const result = await contender;
+        if (first === 'cashout') {
+          expect(result.code).toBe(0);
+          expect(JSON.parse(result.output.trim())).toMatchObject({
+            ok: false,
+            reason: 'original_occupancy_gone',
+          });
+        } else {
+          expect(result.code).not.toBe(0);
+          expect(result.error).toMatch(/CASHOUT_STALE_OCCUPANCY/);
+        }
+        expect(
+          sql(
+            'SELECT coalesce(sum(stack),0)+(SELECT chip_balance FROM club_members) FROM table_seats WHERE left_at IS NULL'
+          )
+        ).toBe(125);
+        expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(first === 'move' ? 1 : 0);
+        expect(sql('SELECT count(*) FROM wallet_transactions')).toBe(first === 'cashout' ? 1 : 0);
+      } finally {
+        await holder.finish(false);
+        await contender;
+      }
+    }
+  );
+  it('the actual service recovers a lost committed response using only the original move', async () => {
+    seedMove();
+    const service = await import('../services/supabase/seatMoves.js');
+    let calls = 0;
+    transport.rpc.mockImplementation(async (name: string, args: { p_move_id: string }) => {
+      expect(name).toBe('fn_cash_seat_move_execute');
+      const data = move(args.p_move_id);
+      calls++;
+      return calls === 1
+        ? { data: null, error: { message: 'response lost after commit' } }
+        : { data, error: null };
+    });
+    const result = await service.executePendingSeatMoves(TABLE, { announcedOnly: false }, [
+      {
+        move_id: MOVE,
+        player_id: USER,
+        to_table_id: OTHER_TABLE,
+        to_table_name: null,
+        to_role: null,
+        to_main_index: null,
+        reason: 'seat_change',
+        announced_at: null,
+        swap_move_id: null,
+        ready_at: null,
+      },
+    ]);
+    expect(result.done).toHaveLength(1);
+    expect(result.done[0]).toMatchObject({
+      move_id: MOVE,
+      stack: 25,
+      source_occupancy_id: expect.any(String),
+    });
+    expect(calls).toBe(2);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
+  });
+
+  it('does not tear down a replacement engine occupancy after an old move reply', async () => {
+    seedMove();
+    const originalOutcome = move();
+    const replacement = '99999999-9999-4999-8999-999999999999';
+    transport.rpc.mockResolvedValue({ data: originalOutcome, error: null });
+    const engine = new ServerTableEngine(TABLE) as any;
+    engine.tableInfo = { id: TABLE, cluster_id: GAME, tournament_id: null };
+    engine.lifecycleCanMutate = () => true;
+    engine.seatedPlayers = [
+      { user_id: USER, seat_number: 2, occupancy_id: replacement, stack: 40 },
+    ];
+    const unregister = vi.spyOn(engine.disconnectEngine, 'unregisterPlayer');
+    const notice = vi.fn();
+    engine.hub = { emitEvent: notice };
+    expect(
+      await engine.executePendingSeatMoves({ announcedOnly: false }, [
+        {
+          move_id: MOVE,
+          player_id: USER,
+          to_table_id: OTHER_TABLE,
+          to_table_name: null,
+          to_role: null,
+          to_main_index: null,
+          reason: 'seat_change',
+          announced_at: null,
+          swap_move_id: null,
+          ready_at: null,
+        },
+      ])
+    ).toEqual([]);
+    expect(engine.seatedPlayers).toEqual([
+      { user_id: USER, seat_number: 2, occupancy_id: replacement, stack: 40 },
+    ]);
+    expect(unregister).not.toHaveBeenCalled();
+    expect(notice).not.toHaveBeenCalled();
+  });
+
   const insertGameSeat = (table = OTHER_TABLE) =>
     `INSERT INTO table_seats(id,table_id,user_id,seat_number,stack,joined_at,club_id)
       VALUES(gen_random_uuid(),'${table}','${USER}',3,40,now(),'${CLUB}')`;

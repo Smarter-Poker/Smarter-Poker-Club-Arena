@@ -39,6 +39,15 @@ export function useSwipeTabs<T extends string>({
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     startX.current = e.clientX;
     startY.current = e.clientY;
+    // Capture the pointer, or a swipe that lifts outside this element never
+    // delivers its pointerup here and the tab change is silently dropped.
+    // A webview is where that happens most: the strip is narrow and a
+    // horizontal flick leaves it easily.
+    try {
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    } catch {
+      /* capture is best effort; the gesture still works when it is refused */
+    }
   }, []);
 
   const onPointerUp = useCallback(
@@ -71,7 +80,12 @@ export function useSwipeTabs<T extends string>({
     [tabs, activeTab, onTabChange, threshold]
   );
 
-  const onPointerCancel = useCallback(() => {
+  const onPointerCancel = useCallback((e: React.PointerEvent) => {
+    try {
+      (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* nothing was captured */
+    }
     startX.current = null;
     startY.current = null;
   }, []);

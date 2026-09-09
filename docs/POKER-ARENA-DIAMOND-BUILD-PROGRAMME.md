@@ -8,7 +8,7 @@ Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is mon
 
 ## Execution Update, September 9, 2026
 
-Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 remains open until its remaining repairs, running-engine adoption and live regression checks pass. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
+Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
 
 ## Approved Product Contract
 
@@ -177,15 +177,17 @@ Exit: access and wrong-asset integration tests pass, merged frontend and server 
 
 ### Phase 3 Of 12: Diamond Custody, Ledger And Reconciliation
 
-- [ ] Select dedicated diamond custody records; retire dependence on chip_balance.
-- [ ] Implement atomic reserve/release and entry/seat contracts using proven Club Arena semantics.
-- [ ] Enforce nonnegative amounts, valid denominations and request-bound idempotency.
-- [ ] Inventory/forward-migrate any old arena balances without erasing history.
-- [ ] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
-- [ ] Preserve provenance, purchased-lot/debt treatment and audit identities.
-- [ ] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
+- [x] Select dedicated diamond custody records; retire dependence on chip_balance.
+- [x] Implement atomic reserve/release and entry/seat contracts using proven Club Arena semantics.
+- [x] Enforce nonnegative amounts, valid denominations and request-bound idempotency.
+- [x] Inventory/forward-migrate any old arena balances without erasing history.
+- [x] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
+- [x] Preserve provenance, purchased-lot/debt treatment and audit identities.
+- [x] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
 
 Exit: concurrent/replayed/failure-path movements conserve diamonds and produce zero chip effects.
+
+Runtime adoption verified September 9 at 21:05 UTC: healthy engine 561eaa52 contains final repair 4c385b09; both frontend origins serve descendant b30e1b85. See docs/audits/2026-09-08-diamond-phase-3-custody.md for exact ancestry and reused acceptance evidence.
 
 ### Phase 4 Of 12: Wallet And Player-To-Player Transfers
 

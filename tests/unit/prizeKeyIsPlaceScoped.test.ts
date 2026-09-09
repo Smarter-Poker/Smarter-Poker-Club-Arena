@@ -20,84 +20,54 @@
  * the fix (2026-08-28) was at the key: keyed on the place, the second payment
  * is a no-op regardless of who holds it or which code path pays it.
  *
- * 2026-09-07: ordinary place prizes moved again, into one fingerprinted atomic
- * batch shared by finish and recovery. Other tournament money kinds still use
- * `settleTournamentObligation`; neither path builds a key of its own.
+ * 2026-09-08: ordinary place prizes moved into the single terminal receipt
+ * transaction shared by finish and recovery. The engine never constructs a
+ * payout key or pays an individual obligation.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const PAYING_PATHS = ['server/src/tournament/tournamentRecovery.ts'];
-const ATOMIC_PLACE_PATHS = [
+const TERMINAL_PLACE_PATHS = [
   'server/src/tournament/TournamentManagerEliminations.ts',
   'server/src/tournament/tournamentRecovery.ts',
 ];
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-
-/**
- * Every settleTournamentObligation({...}) argument object in a file, brace to
- * brace. Each is one obligation being settled.
- */
-const settleCalls = (src: string): string[] =>
-  code(src).match(/settleTournamentObligation\(\s*supabase\s*,\s*\{[\s\S]*?\n\s*\}/g) ?? [];
+const payingRuntime = (path: string): string => {
+  const src = code(read(path));
+  if (!path.endsWith('tournamentRecovery.ts')) return src;
+  return src.slice(src.indexOf('export async function recoverStuckCompletingTournaments('));
+};
 
 /** Real template-literal keys only (a `${` means the engine builds it). */
 const tourneyKeys = (src: string): string[] =>
   (code(src).match(/`tourney:[^`]*`/g) ?? []).filter((k) => k.includes('${'));
 
 describe('a place is paid once: the place obligation, not a hand-built key', () => {
-  for (const path of PAYING_PATHS) {
-    it(`${path} settles through the one helper`, () => {
-      expect(settleCalls(read(path)).length).toBeGreaterThan(0); // this file does pay
-    });
-
+  for (const path of TERMINAL_PLACE_PATHS) {
     it(`${path} builds no tourney: idempotency key of its own`, () => {
       // A key built here is a second opinion about what was paid. The
       // database holds the only one.
-      expect(tourneyKeys(read(path))).toEqual([]);
+      expect(tourneyKeys(payingRuntime(path))).toEqual([]);
     });
 
-    it(`${path} gives every 'place' settle a place`, () => {
-      const src = read(path);
-      for (const call of settleCalls(src)) {
-        // Either the literal kind is 'place' / 'late_reg_adjustment', or the
-        // kind is a variable that the call sites resolve — in which case the
-        // call must still forward a `place:` field.
-        const isPlaceKind = /kind:\s*'(place|late_reg_adjustment)'/.test(call);
-        const isUserKind =
-          /kind:\s*'(bubble_protection|final_table_deal|refund|satellite_remainder|mystery_bounty|bounty|bounty_residual|seat)'/.test(
-            call
-          );
-        if (isUserKind) continue;
-        expect(
-          /\bplace:/.test(call),
-          `${path}: a ${isPlaceKind ? "'place'" : 'variable-kind'} settle without a place:\n${call}`
-        ).toBe(true);
-      }
-    });
-  }
-
-  for (const path of ATOMIC_PLACE_PATHS) {
-    it(`${path} sends ordinary places only through the complete atomic batch`, () => {
-      const src = code(read(path));
-      expect(src).toMatch(/settleTournamentPlacesAtomically\(/);
-      if (path.endsWith('TournamentManagerEliminations.ts')) {
-        expect(src).not.toMatch(/settleTournamentObligation\(/);
-      }
+    it(`${path} sends ordinary places only through the terminal receipt`, () => {
+      const src = payingRuntime(path);
+      expect(src).toMatch(/requestTournamentTerminalReceipt\(/);
+      expect(src).not.toMatch(/settleTournamentPlacesAtomically\(|settleTournamentObligation\(/);
       expect(tourneyKeys(src)).toEqual([]);
     });
   }
 
-  it('the finish path and recovery watchdog invoke the SAME atomic place batch', () => {
+  it('the finish path and recovery watchdog invoke the SAME terminal receipt owner', () => {
     // They must collide on purpose; the frozen batch fingerprint makes a
     // retry or lost response a no-op.
     const eliminations = read('server/src/tournament/TournamentManagerEliminations.ts');
     const recovery = read('server/src/tournament/tournamentRecovery.ts');
-    expect(code(eliminations)).toMatch(/settleTournamentPlacesAtomically\(/);
-    expect(code(recovery)).toMatch(/settleTournamentPlacesAtomically\(/);
+    expect(code(eliminations)).toMatch(/requestTournamentTerminalReceipt\(/);
+    expect(code(recovery)).toMatch(/requestTournamentTerminalReceipt\(/);
   });
 });

@@ -1,6 +1,7 @@
 /**
- * LAW: the elimination sweep must not scan every live seat on the platform,
- * and must not page over a non-unique key.
+ * LAW: the elimination sweep reads the exact roster mirror written by the
+ * accepted-hand transaction. It must never rebuild financial truth by
+ * scanning live seats or invoking a delayed chip reconciler.
  *
  * MEASURED in production on 2026-09-01 (pg_stat_statements):
  *   68,049 calls, 45ms mean, 3,085 seconds of database time - the single
@@ -32,24 +33,11 @@ import { join } from 'node:path';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const src = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8');
-const migration = readFileSync(
-  join(
-    __dirname,
-    '../../../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
-  ),
-  'utf8'
-);
-const rpcStart = migration.indexOf(
-  'CREATE OR REPLACE FUNCTION public.fn_sync_tournament_live_seat_chips('
-);
-const rpcEnd = migration.indexOf('CREATE OR REPLACE FUNCTION', rpcStart + 1);
-const rpc = migration.slice(rpcStart, rpcEnd);
-
 describe('LAW: the elimination sweep reads through indexes', () => {
   /**
-   * Only the SWEEP is pinned, not the whole file. `tournamentTableForUser` and
-   * `lastTournamentTableForUser` further down use the same `tables!inner` embed
-   * legitimately: they filter `.eq('user_id', userId)` first, which is selective
+   * Only the SWEEP is pinned, not the whole file. The knockout candidate's
+   * live-seat safety veto further down uses the same `tables!inner` embed
+   * legitimately: it filters `.eq('user_id', userId)` first, which is selective
    * and indexed (idx_table_seats_live_user). The bug is an inner embed with NO
    * selective predicate on the outer table, which is what the sweep had.
    */
@@ -67,21 +55,15 @@ describe('LAW: the elimination sweep reads through indexes', () => {
     ).toBe(false);
   });
 
-  it('reads tables by tournament_id and seats by table_id, both indexed', () => {
-    expect(code).toContain("'fn_sync_tournament_live_seat_chips'");
-    expect(rpc).toMatch(
-      /FROM public\.tables t\s+JOIN public\.table_seats s ON s\.table_id=t\.id AND s\.left_at IS NULL\s+WHERE t\.tournament_id=p_tournament_id/
-    );
+  it('reads the tournament roster by tournament and playing status', () => {
+    expect(code).toContain(".from('tournament_players')");
+    expect(code).toContain(".eq('tournament_id', this.tournamentId)");
+    expect(code).toContain(".eq('status', 'playing')");
+    expect(code).toContain(".lte('chips', 0)");
   });
 
-  it('classifies duplicate seats in one database snapshot', () => {
-    expect(rpc).toContain('max(joined_at) AS latest_joined_at');
-    expect(rpc).toContain('latest_count<>1');
-    expect(rpc).toContain('v_ambiguous_user_ids');
-  });
-
-  it('never serializes a tournament-sized table-id list into a PostgREST URL', () => {
-    expect(code).not.toMatch(/\.in\('table_id',\s*idsForChunk\)/);
-    expect(rpc).not.toContain('.in(');
+  it('never runs a seat scan or delayed chip-sync RPC', () => {
+    expect(code).not.toMatch(/\.from\(['"]table_seats['"]\)|tables!inner/);
+    expect(code).not.toMatch(/fn_sync_tournament_(?:live_seat_)?chips/);
   });
 });

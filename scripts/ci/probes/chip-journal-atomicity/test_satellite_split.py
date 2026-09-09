@@ -15,8 +15,14 @@ def run(sql):
  return r.stdout
 fixture=Path(__file__).with_name("fixture.sql").read_text()+Path(__file__).with_name("satellite-split-fixture.sql").read_text()
 names={"fn_award_satellite_seat","fn_deliver_satellite_ticket_exact","fn_ca_escrow_on_seat_transfer_leg","fn_ca_escrow_on_rake_record","fn_ca_escrow_on_seat_payout","trg_seed_bounty_head"}
-# Resolve every real accounting dependency, overriding the journal-only escrow fixture.
-defs=parser["authoritative_function_closure"](root,"",names)
+# This probe owns the v2 funded-entry split and corresponding legacy
+# wallet-refund apportionment. Pin its complete function graph at the migration
+# that established that contract; later cancellation/refund authorities have
+# separate schemas and probes and must not expand this isolated fixture.
+contract_migration="20260908144013_satellite_entries_preserve_the_funded_split.sql"
+defs=parser["authoritative_function_closure"](
+ root,"",names,through=contract_migration
+)
 run("DROP SCHEMA public CASCADE; CREATE SCHEMA public; DROP SCHEMA auth CASCADE;"+fixture+"\n"+"\n".join(d for _,d in defs)+"""
 CREATE TRIGGER seed_bounty AFTER INSERT ON tournament_players FOR EACH ROW EXECUTE FUNCTION trg_seed_bounty_head();
 CREATE TRIGGER seat_in AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (NEW.idempotency_key LIKE 'tourney:%:seat:%:pool_transfer') EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg();

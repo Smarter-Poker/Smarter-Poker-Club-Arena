@@ -52,6 +52,7 @@ import {
   sliceMethod,
   sliceStatement,
 } from '../testHelpers/sourceWindow.js';
+import { HAND_COMMIT_RETRY_DELAYS_MS } from '../services/supabase/handHistory.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -59,6 +60,8 @@ const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8'
 const BASE = strip(read('src/engine/ServerTableEngineBase.ts'));
 const DEALING = strip(read('src/engine/ServerTableEngineDealing.ts'));
 const TABLES = strip(read('src/services/supabase/tables.ts'));
+const HAND_HISTORY = strip(read('src/services/supabase/handHistory.ts'));
+const SETTLEMENT = strip(read('src/engine/ServerTableEngineSettlement.ts'));
 
 describe('the button comes back to where it was', () => {
   it('is restored from the last settled hand, during start()', () => {
@@ -175,56 +178,58 @@ describe('a restart does not deal cards to someone who sat out', () => {
 });
 
 describe('chips survive the write, or somebody is told', () => {
-  // 2026-09-04 (chip standard, felt erasure): the per-seat write loop these
-  // pins used to describe is GONE. It wrote absolute values from engine
-  // memory with no lock and no check, ran on more than a quarter of cash
-  // hands, and was the write that erased seat credits. The hand's stacks
-  // now reach the database through ONE call to
-  // fn_ca_settle_hand_stacks_absolute, in delta mode, and the same three
-  // guarantees are pinned on that call instead: a database error is a
-  // failure, the write is retried and then named, and the retry is bounded.
+  // The active engine no longer calls syncStacks. Hand history, final stacks,
+  // tournament standings and the post-commit envelope cross one PostgreSQL
+  // transaction through fn_ca_commit_hand_settlement. A failure therefore
+  // terminates this engine generation; it can never escape into a timer or a
+  // second writer while the table continues dealing.
   it('a database error counts as a failure', () => {
-    // THE BUG: supabase does not REJECT on a database error, it RESOLVES with
-    // { error }. Success is the RPC saying success, not the absence of a throw.
-    const at = TABLES.indexOf('export async function syncStacks');
-    const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/error = res\.error/);
-    expect(body).toMatch(/if \(!error && data\?\.success === true\)/);
-    expect(body).not.toMatch(/r\.status === 'rejected'/);
-    expect(body).not.toMatch(/Promise\.allSettled/);
+    const body = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(body).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
+    expect(body).toMatch(
+      /if \(!error && result\.success === true && result\.atomic_hand_commit === true\)/
+    );
+    expect(body).toMatch(/lastError = error\?\.message/);
   });
 
   it('a failed hand write is retried, and named if it still fails', () => {
-    const at = TABLES.indexOf('export async function syncStacks');
-    const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/attempt <= STACK_WRITE_ATTEMPTS/);
-    // Named, not counted: the table, the hand, and the whole payload, so the
-    // idempotent RPC can be re-driven by hand.
-    expect(body).toMatch(/\$\{tableId\} hand \$\{handNumber\}/);
-    expect(body).toMatch(/JSON\.stringify\(payload\)/);
-    expect(body).toMatch(/'DB\.settle_hand_stacks_unreachable'/);
+    const writer = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(writer).toMatch(
+      /for \(let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS\.length; attempt\+\+\)/
+    );
+    expect(writer).toMatch(/authoritative hand commit failed for table \$\{row\.table_id\}/);
+    expect(writer).toMatch(
+      /hand #\$\{row\.hand_number\} after \$\{HAND_COMMIT_RETRY_DELAYS_MS\.length \+ 1\} identical attempts/
+    );
+
+    const caller = sliceMethod(SETTLEMENT, 'protected async postHandTasks');
+    expect(caller).toContain('this.killForRestart(');
+    expect(caller).toContain("'ServerTableEngine.authoritative_hand_unreachable'");
+    expect(caller).toContain('await raiseFinancialAlert(');
   });
 
-  it('the retry is bounded, because settlement cannot wait forever', () => {
-    const at = TABLES.indexOf('export async function syncStacks');
-    const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/attempt < STACK_WRITE_ATTEMPTS/);
-    expect(body).toMatch(/setTimeout/);
-    expect(TABLES).toMatch(/const STACK_WRITE_ATTEMPTS = 5;/);
+  it('the retry schedule is bounded and never hands an accepted hand to a timer', () => {
+    const body = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    const retryWindowMs = HAND_COMMIT_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
+    const requestDeadlinesMs = (HAND_COMMIT_RETRY_DELAYS_MS.length + 1) * 15_000;
+    expect(retryWindowMs).toBeGreaterThan(28_000);
+    expect(retryWindowMs + requestDeadlinesMs).toBeLessThan(300_000);
+    expect(body).toMatch(/const delayMs = HAND_COMMIT_RETRY_DELAYS_MS\[attempt\]/);
+    expect(body).not.toMatch(/enqueueHandHistory|enqueuePendingWrite|setInterval/);
   });
 
   it('there is no per-seat absolute fallback left to erase a credit', () => {
-    const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
+    const body = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(body).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
     expect(body).not.toMatch(/\.update\(\s*\{\s*stack/);
-    expect(body).not.toMatch(/updatePayload/);
+    expect(body).not.toMatch(/\.from\('table_seats'\)/);
   });
 });
 
 describe('the in-flight hand is voided, and that is the safe answer', () => {
   it('crash recovery completes the snapshot rather than resuming it', () => {
     // Chips are exact BECAUSE the hand is abandoned: the database is never
-    // debited mid-hand (syncStacks runs only in postHandTasks), so every chip
+    // debited mid-hand (the atomic commit runs only in postHandTasks), so every chip
     // committed to an abandoned pot is still in its owner's stack. Resuming
     // instead would require persisting the deck, and the snapshot deliberately
     // strips it.
@@ -236,14 +241,13 @@ describe('the in-flight hand is voided, and that is the safe answer', () => {
 
   it('stacks are only ever written after a hand completes', () => {
     // This is the property that makes an abandoned hand chip-exact. If a
-    // mid-hand syncStacks is ever added, an abandoned hand starts destroying
+    // mid-hand atomic commit is ever added, an abandoned hand starts destroying
     // chips and this test is the thing that should stop it.
-    const settlement = strip(read('src/engine/ServerTableEngineSettlement.ts'));
-    expect(settlement).toContain('protected async postHandTasks(');
-    expect(settlement).toContain('atomicCommit: {');
-    expect(settlement).toContain('settlementCommitted');
-    expect(settlement.indexOf('atomicCommit: {')).toBeGreaterThan(
-      settlement.indexOf('protected async postHandTasks(')
+    expect(SETTLEMENT).toContain('protected async postHandTasks(');
+    expect(SETTLEMENT).toContain('atomicCommit: {');
+    expect(SETTLEMENT).toContain('settlementCommitted');
+    expect(SETTLEMENT.indexOf('atomicCommit: {')).toBeGreaterThan(
+      SETTLEMENT.indexOf('protected async postHandTasks(')
     );
     const turns = strip(read('src/engine/ServerTableEngineTurns.ts'));
     expect(turns).not.toMatch(/logHandHistory\(/);

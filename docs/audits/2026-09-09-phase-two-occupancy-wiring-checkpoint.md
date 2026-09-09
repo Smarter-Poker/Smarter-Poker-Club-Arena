@@ -88,3 +88,9 @@ Merged main 5b92dc787 into the occupancy branch without discarding the new add-o
 Merged verification: 17,377 client tests in 1,253 files passed; 8,063 server tests in 599 files passed. The 52 opt-in PostgreSQL tests passed separately in the isolated harness (they are skipped in the ordinary server run). Server TypeScript passed. Six initial integration-fixture failures came from main's new post-confirmation financial presentation push; the fixture now isolates that notification and verifies no notification before a confirmed cashout and one after confirmation. The focused departure/rebuy/read-overlap suites pass all 25 tests.
 
 This records local integration evidence only. Occupancy migration, compatible engine/client adoption, legacy entrypoint retirement, remaining departure ownership and full Phase 2 acceptance remain open. No production occupancy migration or publication occurred in this verification.
+
+## Engine-only occupancy cashout authority
+
+The new unpublished occupancy RPC originally retained an authenticated-owner grant. That would let a browser bypass the engine's live-hand boundary even with correct occupancy identity. Its grant is now service-role only and its body independently requires engine authority before receipt access or mutation. An owner identity or club-admin session marker is insufficient. The browser and admin HTTP handlers already route through the engine.
+
+All 55 isolated PostgreSQL cases pass, including direct-owner voluntary/forced rejection with no ledger, balance, seat or receipt mutation; grants for all three app roles; rejection of direct owner replay after commit; and successful engine replay of the original receipt. Existing legacy live RPC grants are unchanged by this local correction and remain a coordinated retirement gate.

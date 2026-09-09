@@ -295,8 +295,6 @@ CREATE OR REPLACE FUNCTION public.fn_cashout_seat_occupancy(
 SET search_path TO public,pg_temp SET statement_timeout TO '30s'
 AS $function$
 DECLARE
-  v_engine boolean;
-  v_admin boolean;
   v_tournament uuid;
   v_seat record;
   v_previous public.seat_cashout_receipts%ROWTYPE;
@@ -307,12 +305,10 @@ BEGIN
      OR p_occupancy_id IS NULL THEN
     RAISE EXCEPTION 'CASHOUT_OCCUPANCY_REQUIRED' USING ERRCODE = '22023';
   END IF;
-  v_engine := coalesce(public.fn_caller_is_engine(),false);
-  v_admin := p_leave_mode = 'forced'
-    AND coalesce(current_setting('app.cash_exit_authority',true),'') = 'club_admin';
-  IF NOT v_engine AND NOT coalesce(v_admin,false)
-     AND (auth.uid() IS NULL OR auth.uid() <> p_user_id) THEN
-    RAISE EXCEPTION 'Cannot cash out for another user' USING ERRCODE = '42501';
+  -- The engine owns the live-hand boundary. Knowing an occupancy UUID or
+  -- owning the seat cannot authorize a direct browser cashout mid-hand.
+  IF NOT coalesce(public.fn_caller_is_engine(),false) THEN
+    RAISE EXCEPTION 'Engine authority required' USING ERRCODE = '42501';
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:' || p_user_id::text,0));
@@ -366,9 +362,9 @@ BEGIN
 END;
 $function$;
 REVOKE ALL ON FUNCTION public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text)
- FROM PUBLIC,anon;
+ FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text)
- TO authenticated,service_role;
+ TO service_role;
 -- An authenticated HTTP handler may look up an old outcome before consulting
 -- a newly joined seat. This function performs no financial mutation.
 CREATE OR REPLACE FUNCTION public.fn_get_seat_cashout_receipt(

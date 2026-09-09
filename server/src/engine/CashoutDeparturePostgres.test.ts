@@ -308,20 +308,21 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       SET LOCAL test.auth_uid='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
       SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}',NULL);
       COMMIT;`)
-      ).toThrow(/Cannot cash out for another user/);
+      ).toThrow(/Engine authority required/);
       expect(snapshot()).toEqual(before);
     }
   );
-  it('allows the owner to receive the same committed receipt without engine authority', () => {
+  it("requires engine authority even to replay the owner's committed receipt", () => {
     const original = seedOccupancy();
     const ownRequest = () =>
       sql(`BEGIN; SET LOCAL test.is_engine='false';
       SET LOCAL test.auth_uid='${USER}';
       SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}','voluntary');
       COMMIT;`);
-    const receipt = ownRequest();
+    const receipt = boundCashout(original);
     expect(receipt.stack).toBe(25);
-    expect(ownRequest()).toEqual(receipt);
+    expect(ownRequest).toThrow(/Engine authority required/);
+    expect(boundCashout(original)).toEqual(receipt);
     expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
   });
   it.each(['user_id', 'table_id', 'seat_number'])('renews occupancy when %s changes', (column) => {
@@ -458,6 +459,25 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       SET LOCAL test.auth_uid='${USER}';
       SELECT fn_get_seat_cashout_receipt('${USER}','${TABLE}',2,'${original}'); COMMIT;`)
     ).toThrow(/Engine authority required/);
+  });
+  it.each(['voluntary', 'forced'])('rejects direct owner %s cashout before any write', (mode) => {
+    const original = seedOccupancy();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL test.is_engine='false';
+      SET LOCAL test.auth_uid='${USER}';
+      SET LOCAL app.cash_exit_authority='club_admin';
+      SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${original}','${mode}'); COMMIT;`)
+    ).toThrow(/Engine authority required/);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    expect(sql('SELECT to_json(count(*)) FROM seat_cashout_receipts')).toBe(0);
+  });
+  it('grants the bound financial cashout only to the service role', () => {
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      expect(
+        sql(`SELECT to_json(has_function_privilege('${role}',
+        'public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text)','EXECUTE'))`)
+      ).toBe(role === 'service_role');
+    }
   });
   it('grants the receipt lookup only to the service role', () => {
     for (const role of ['anon', 'authenticated', 'service_role']) {

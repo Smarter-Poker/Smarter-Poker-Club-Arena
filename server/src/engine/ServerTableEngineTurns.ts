@@ -52,15 +52,10 @@ import {
  * and want opposite fixes - see ServerTableEngineTurns.secondLookPlan.
  */
 export type SecondLookDecline =
-  | 'not_facing_bet'
-  | 'small_pot'
-  | 'action_shape'
-  | 'no_think_time'
-  | 'governor';
+  'not_facing_bet' | 'small_pot' | 'action_shape' | 'no_think_time' | 'governor';
 
 export type SecondLookPlan =
-  | { ok: true; afterMs: number }
-  | { ok: false; reason: SecondLookDecline };
+  { ok: true; afterMs: number } | { ok: false; reason: SecondLookDecline };
 
 /**
  * One telemetry key per gate, fired as LITERALS.

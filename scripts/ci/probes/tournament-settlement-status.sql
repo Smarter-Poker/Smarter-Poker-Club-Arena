@@ -21,7 +21,15 @@ BEGIN
   UPDATE pg_temp.probe_bank SET balance=balance-$2,credited=credited+$2;
   RETURN true;
  END $body$$f$;
- SELECT pg_get_functiondef('public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure) INTO src; src:=replace(replace(src,'public.','pg_temp.'),'SET search_path TO ''public''','SET search_path TO ''pg_temp'''); EXECUTE src;
+ SELECT pg_get_functiondef(
+   'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure)
+   INTO src;
+ src:=replace(src,
+   'public.fn_settle_tournament_obligation_before_atomic_batch_gate',
+   'pg_temp.fn_settle_tournament_obligation');
+ src:=replace(replace(src,'public.','pg_temp.'),
+   'SET search_path TO ''public''','SET search_path TO ''pg_temp''');
+ EXECUTE src;
  INSERT INTO pg_temp.tournaments VALUES(event,'isolated status probe',gen_random_uuid(),100,0,0,'COMPLETED');
  j:=pg_temp.fn_settle_tournament_obligation(event,'bubble_protection',NULL,player,100,'engine.audit');
  IF j->>'ok' IS DISTINCT FROM 'true' OR (j->>'paid')::numeric IS DISTINCT FROM 99.99 THEN RAISE EXCEPTION 'FAIL partial credit setup %',j; END IF;

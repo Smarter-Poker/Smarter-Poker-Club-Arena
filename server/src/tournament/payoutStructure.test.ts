@@ -31,6 +31,7 @@ import {
 } from './payoutStructure.js';
 import { computePlacePrize } from './payoutMath.js';
 import { SPIN_TIERS } from '../config/spinSpec.js';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => readFileSync(path.join(process.cwd(), p), 'utf8');
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -227,9 +228,9 @@ describe('every payout path actually uses the rule', () => {
   const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
   const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
 
-  it('both live sites resolve the structure rather than parsing it themselves', () => {
+  it('live elimination and reprice views resolve the structure rather than parsing it themselves', () => {
     const uses = ELIM.match(/resolvePayoutStructure\(/g) ?? [];
-    expect(uses.length, 'eliminatePlayer and finishTournament').toBeGreaterThanOrEqual(2);
+    expect(uses.length, 'eliminatePlayer and late-reg reprice').toBeGreaterThanOrEqual(2);
   });
 
   it('the stuck-COMPLETING rescue shares it too', () => {
@@ -237,14 +238,18 @@ describe('every payout path actually uses the rule', () => {
   });
 
   it('the uncapped "award the whole pool" fallback is gone', () => {
-    // The exact shape: winnerPrize set from prize_pool with nothing subtracted.
-    expect(ELIM).not.toMatch(
+    const finish = sliceMethod(ELIM, 'finishTournament(winnerId: string): Promise<void>');
+    // The process never computes a terminal amount. The database derives the
+    // complete ladder and returns its immutable receipt or nothing is shown.
+    expect(blankNonCode(finish)).not.toMatch(
       /winnerPrize\s*=\s*Math\.round\(\s*\(?\s*tournament\??\.?\??\.prize_pool/
     );
-    // A positive pool without a complete published ladder now fails closed;
-    // the engine no longer guesses any fallback amount at all.
-    expect(ELIM).toContain('payout_structure_unavailable_at_finish');
-    expect(ELIM).toMatch(/else if \(Number\(tournament\.prize_pool \|\| 0\) > 0\)/);
+    expect(finish).toContain(
+      "requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
+    );
+    expect(blankNonCode(finish)).not.toMatch(
+      /resolvePayoutStructure|computePlacePrize|prize_pool|payout_structure/
+    );
   });
 
   it('both sites select what a rebuild needs', () => {

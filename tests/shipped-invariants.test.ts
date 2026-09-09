@@ -565,9 +565,15 @@ it('tournament payment completion requires durable debt or terminal batch proof'
   );
   expect(sql).toContain("'remaining', GREATEST(0, v_ob.amount_owed - v_ob.amount_paid - v_pay)");
   const manager = read('server/src/tournament/TournamentManagerEliminations.ts');
-  expect(manager).toContain('const settlement = await settleTournamentPlacesAtomically(');
-  expect(manager).toContain('if (!settlement.ok || !settlement.completed)');
-  expect(manager).toContain('Tournament.atomic_place_settlement_failed');
+  const recovery = read('server/src/tournament/tournamentRecovery.ts');
+  const terminalClient = read('server/src/tournament/terminalSettlementRpc.ts');
+  expect(manager).toContain(
+    "receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
+  );
+  expect(recovery).toContain('const receipt = await requestTournamentTerminalReceipt(');
+  expect(terminalClient).toContain("supabase.rpc('fn_complete_tournament_terminal'");
+  expect(terminalClient).toContain('verifyTournamentCompletionReceipt(');
+  expect(terminalClient).toContain("supabase.rpc('fn_resolve_tournament_terminal_outcome'");
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain(
     'FAIL stale smaller replay hides debt'
   );
@@ -716,12 +722,9 @@ it('reconciliation displays only actual payment instead of its requested top-up'
   );
   expect(sql).toContain('v_paid_eff + v_settle_paid');
   expect(sql).not.toContain('v_paid_eff + CASE WHEN v_delta > 0.005 THEN v_delta ELSE 0 END');
-  expect(
-    has(
-      'scripts/ci/probes/reconciliation-actual-settlement.sql',
-      'FAIL partial credit was displayed as full prize'
-    )
-  ).toBe(true);
+  const settlementProbe = read('scripts/ci/probes/tournament-settlement-inputs.sql');
+  expect(settlementProbe).toContain("(r->>'paid')::numeric<>30");
+  expect(settlementProbe).toContain('FAIL valid owner topup');
 });
 
 it('weekly invoice payment acknowledges every cent and rejects malformed amounts', () => {
@@ -747,5 +750,26 @@ it('final guarantee funding follows recorded tournament scope', () => {
       'scripts/ci/probes/guarantee-funding-scope.sql',
       'FAIL guarantee follows current club union instead of event union'
     )
+  ).toBe(true);
+});
+
+it('Spin expiry keeps a booked draw and rechecks current seats before cancellation', () => {
+  const sql = read(
+    'supabase/migrations/20260909192921_spin_expiry_rechecks_the_locked_board.sql'
+  ).replace(/--[^\n]*/g, '');
+  const lock = sql.indexOf('FOR UPDATE SKIP LOCKED');
+  const reread = sql.indexOf('SELECT t.status,t.variant,t.started_at');
+  const cancel = sql.indexOf('res := public.atomic_cancel_tournament(g.id, NULL)');
+  expect(lock).toBeGreaterThan(-1);
+  expect(reread).toBeGreaterThan(lock);
+  expect(cancel).toBeGreaterThan(reread);
+  const eligibility = sql.slice(reread, cancel);
+  expect(eligibility).toContain('v_current.live_seats >= v_current.max_players');
+  expect(eligibility).toContain('v_current.started_at IS NOT NULL');
+  expect(eligibility).toContain('v_current.has_booked_draw');
+  expect(eligibility).toContain('public.spin_draw_receipts');
+  expect(eligibility).toContain('CONTINUE;');
+  expect(
+    has('scripts/dev/probe-spin-expiry-pg17.py', 'cached-candidate-rechecks-after-parent-lock')
   ).toBe(true);
 });

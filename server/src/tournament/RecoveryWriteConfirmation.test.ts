@@ -1,76 +1,81 @@
 /**
- * Recovery is allowed to publish success only from readable evidence and
- * confirmed database writes. Normal place money and COMPLETED now belong to
- * one atomic database function, so this guard pins the current architecture
- * instead of recreating the retired per-player payment loop in a fake client.
+ * Recovery is a read-only evidence gate. The same domain RPC used by live
+ * play owns every financial and terminal write and returns an immutable,
+ * internally verified receipt before recovery may log success.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+const source = readFileSync('src/tournament/tournamentRecovery.ts', 'utf8');
+const recoveryRaw = sliceMethod(source, 'export async function recoverStuckCompletingTournaments(');
+const recovery = blankNonCode(recoveryRaw);
+const terminalRpc = readFileSync('src/tournament/terminalSettlementRpc.ts', 'utf8');
+const satelliteRpc = readFileSync('src/tournament/satelliteSettlementRpc.ts', 'utf8');
 
-const SOURCE = readFileSync('src/tournament/tournamentRecovery.ts', 'utf8');
-const RECOVERY = sliceMethod(SOURCE, 'export async function recoverStuckCompletingTournaments(');
-const CLEANUP = SOURCE.slice(
-  SOURCE.indexOf('async function closeRecoveredTournamentTablesAndSeats('),
-  SOURCE.indexOf('export async function recoverStuckCompletingTournaments(')
-);
-
-describe('recovery proves every read that can authorize money', () => {
-  it('treats either final-table-deal evidence query as unknown unless it returns an array', () => {
-    expect(RECOVERY).toMatch(
-      /const \[dealPayouts, dealObligations\] = await Promise\.all\([\s\S]*?!Array\.isArray\(dealPayouts\.data\)[\s\S]*?!Array\.isArray\(dealObligations\.data\)/
+describe('recovery proves every read that can authorize a receipt request', () => {
+  it('fails closed on the candidate scan and player-field read', () => {
+    expect(recovery).toMatch(
+      /const \{ data: stuck, error: stuckError \}[\s\S]*?stuckError \|\| !Array\.isArray\(stuck\)[\s\S]*?return;/
     );
-    const refusal = RECOVERY.indexOf('GameServer.recoverStuckCompleting_deal_check_failed');
-    const evidenceUse = RECOVERY.indexOf('dealPayouts.data?.length');
+    expect(recovery).toMatch(
+      /const field = await readRecoveryField\(tournament\.id\)[\s\S]*?!field\.rows \|\| field\.rows\.length < 1[\s\S]*?continue;/
+    );
+  });
+
+  it('treats either final-table-deal evidence result as unknown unless it is an array', () => {
+    const refusal = recoveryRaw.indexOf('GameServer.recoverStuckCompleting_deal_check_failed');
+    const evidenceUse = recovery.indexOf('const hasDeal =');
+    expect(recovery).toMatch(
+      /dealPayouts\.error \|\|[\s\S]*?dealObligations\.error \|\|[\s\S]*?!Array\.isArray\(dealPayouts\.data\)[\s\S]*?!Array\.isArray\(dealObligations\.data\)/
+    );
     expect(refusal).toBeGreaterThan(-1);
     expect(evidenceUse).toBeGreaterThan(refusal);
   });
+});
 
-  it('uses one checked player-field result for both roster and field size', () => {
-    expect(RECOVERY).toMatch(
-      /const \{ data: players, error: playersErr \}[\s\S]*?if \(playersErr \|\| !Array\.isArray\(players\)\)[\s\S]*?const rows = players \?\? \[\];[\s\S]*?const fieldCount = rows\.length/
+describe('recovery owns no money, standings, lifecycle, or seat write', () => {
+  it('contains no direct mutation and no retired fragment payer', () => {
+    expect(recovery).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
+    expect(recovery).not.toMatch(
+      /settleTournamentObligation|settleTournamentPlacesAtomically|claimTournamentFinish|closeRecoveredTournamentTablesAndSeats/
     );
+    expect(recovery).not.toMatch(
+      /fn_apply_prize_guarantee|fn_finalize_bounty_pool|fn_settle_tournament_rake|fn_mystery_bounty_settle/
+    );
+  });
+
+  it('has exactly one whole-domain receipt request for each tournament kind', () => {
+    expect(recovery.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
+    expect(recovery.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+  });
+
+  it('logs success only after the matching verified helper returns', () => {
+    const satelliteRequest = recoveryRaw.indexOf('await requestSatelliteSettlementReceipt(');
+    const satelliteLog = recoveryRaw.indexOf('[GameServer] Recovered satellite', satelliteRequest);
+    const tournamentRequest = recoveryRaw.indexOf('await requestTournamentTerminalReceipt(');
+    const tournamentLog = recoveryRaw.indexOf(
+      '[GameServer] Recovered tournament',
+      tournamentRequest
+    );
+    expect(satelliteRequest).toBeGreaterThan(-1);
+    expect(satelliteLog).toBeGreaterThan(satelliteRequest);
+    expect(tournamentRequest).toBeGreaterThan(-1);
+    expect(tournamentLog).toBeGreaterThan(tournamentRequest);
   });
 });
 
-describe('recovery confirms every result write before atomic settlement', () => {
-  it('reads back the survivor stamp and the normalized entitlement update', () => {
-    expect(RECOVERY).toMatch(
-      /\.update\(\{[\s\S]*?status: place === 1 \? 'winner' : 'eliminated'[\s\S]*?prize: 0,[\s\S]*?\.select\('id'\)[\s\S]*?\.maybeSingle\(\)[\s\S]*?if \(stampErr \|\| !stamped\)/
-    );
-    expect(RECOVERY).toMatch(
-      /\.update\(\{ prize: owed \}\)[\s\S]*?\.select\('id'\)[\s\S]*?\.maybeSingle\(\)[\s\S]*?if \(entitlementErr \|\| !updated\)/
-    );
-  });
-
-  it('never pays a place or marks COMPLETED through a client-side loop', () => {
-    expect(RECOVERY).toContain('await settleTournamentPlacesAtomically(');
-    expect(RECOVERY).not.toContain('settleTournamentObligation(');
-    expect(RECOVERY).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
-  });
-
-  it('accepts a lost atomic response only after durable COMPLETED is read back', () => {
-    expect(RECOVERY).toMatch(
-      /if \(!settlement\.ok \|\| !settlement\.completed\)[\s\S]*?\.select\('status'\)[\s\S]*?committed\?\.status !== 'COMPLETED'[\s\S]*?durableCompletionAcceptedAfterLostReceipt = true/
-    );
-  });
-});
-
-describe('terminal cleanup is itself proven', () => {
-  it('checks seat release and table closure before returning success', () => {
-    expect(CLEANUP).toMatch(
-      /\.from\('table_seats'\)[\s\S]*?\.update\(\{ left_at: leftAt \}\)[\s\S]*?if \(error\)[\s\S]*?return false/
-    );
-    expect(CLEANUP).toMatch(
-      /\.from\('tables'\)[\s\S]*?\.update\(\{ status: 'closed', current_players: 0 \}\)[\s\S]*?terminalTables[\s\S]*?seatProof\.count !== 0[\s\S]*?return false/
-    );
-  });
-
-  it('logs recovery only after the cleanup proof succeeds', () => {
-    const cleanup = RECOVERY.lastIndexOf('closeRecoveredTournamentTablesAndSeats(t.id)');
-    const success = RECOVERY.lastIndexOf('[GameServer] Recovered stuck COMPLETING tournament');
-    expect(cleanup).toBeGreaterThan(-1);
-    expect(success).toBeGreaterThan(cleanup);
-  });
+describe('lost responses are classified behind the same serialized authority', () => {
+  it.each([
+    [terminalRpc, 'fn_complete_tournament_terminal', 'fn_resolve_tournament_terminal_outcome'],
+    [satelliteRpc, 'fn_settle_satellite_tournament', 'fn_resolve_satellite_settlement_outcome'],
+  ])(
+    'replays one idempotent request, then uses its lock-sharing resolver',
+    (rpc, settle, resolve) => {
+      expect(rpc).toContain(`rpc('${settle}'`);
+      expect(rpc).toContain(`rpc('${resolve}'`);
+      expect(rpc).toMatch(/terminal_committed|satellite_committed/);
+      expect(rpc).toMatch(/definitively_not_committed/);
+    }
+  );
 });

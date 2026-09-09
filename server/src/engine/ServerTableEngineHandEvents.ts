@@ -247,18 +247,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
        * post rows — so old and new hands both rebuild correctly, and no
        * backfill is needed or possible.
        */
-      case 'FORCED_BETS_POSTED' as never: {
-        const postings = (
-          event as never as {
-            postings?: Array<{
-              seat: number;
-              userId: string;
-              kind: string;
-              amount: number;
-              dead?: boolean;
-            }>;
-          }
-        ).postings;
+      case 'FORCED_BETS_POSTED': {
+        const postings = event.postings;
         /**
          * THE ANTE IS SEEN LEAVING THE PLAYER (Dan 2026-09-04): "IF THERE IS
          * AN ANTE, THAT NEEDS TO BE TAKEN FROM THE PLAYER AND ADDED TO THE

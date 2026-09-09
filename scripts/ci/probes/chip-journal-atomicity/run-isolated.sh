@@ -31,3 +31,4 @@ python3 "$probe_dir/test_atomicity.py" fixed --bootstrap
 python3 "$probe_dir/test_satellite_split.py"
 
 "$PGNODE" "$probe_dir/postgres-runtime/lease-heartbeat-concurrency.mjs"
+"$PGNODE" "$probe_dir/postgres-runtime/maintenance-expired-owner.mjs"

@@ -782,7 +782,19 @@
     "affected_suite_files_passed": 6,
     "server_types": "passed",
     "base_commit": "6debd44ecb75318aea3f50f1b939649a10ed201a",
-    "full_controls_closed": false
+    "full_controls_closed": false,
+    "publication": {
+      "pr": 4016,
+      "initial_head": "8048df67c4fd9d5e4fd77939a043390edac04ae0",
+      "initial_ci": 34400837926,
+      "initial_ci_server": {
+        "passed": 8442,
+        "failed": 1,
+        "skipped": 145
+      },
+      "failure": "An existing SDK deadline test selected the old 100ms wrapper after reloading a 2000ms wrapper",
+      "gate_fix": "Clear only the stale test capture before the 2000ms import; runtime code unchanged"
+    }
   },
   "execution_scope": {
     "confirmed_defects_only": true,

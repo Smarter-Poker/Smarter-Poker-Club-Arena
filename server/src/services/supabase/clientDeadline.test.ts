@@ -152,6 +152,8 @@ describe('database transport compatibility', () => {
        was cancelled before it left", which the test above this one covers. */
     vi.resetModules();
     vi.stubEnv('SUPABASE_TIMEOUT_MS', '2000');
+    // Select the newly configured wrapper, not beforeEach's 100ms capture.
+    captured.fetches.length = 0;
     await import('./client.js');
 
     vi.stubGlobal('fetch', nativeFetch);

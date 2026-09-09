@@ -59,9 +59,16 @@ groups:
       # The platform's core promise: hands are being dealt. A table that is up,
       # seated and dealing nothing is the failure players actually notice, and
       # no availability metric can see it.
+      # `poker_hands_dealt_total`, not `poker_hands_total` (2026-09-09).
+      # The latter lives on the flag-gated registry and ENGINE_METRICS is set
+      # NOWHERE in this estate, so this recording rule evaluated `rate()` over
+      # a series with no samples - an empty vector - and
+      # `SLOHandsAreNotBeingDealt` (severity critical, page: sms) was
+      # structurally unable to fire. The engine has always published
+      # `poker_hands_dealt_total` on the always-on path (EngineTelemetry).
       - record: sp:hands_dealt:rate5m
         expr: |
-          rate(poker_hands_total[5m])
+          rate(poker_hands_dealt_total[5m])
 
       # Tables that exist but have made no progress. poker_table_ms_since_progress
       # is emitted per table; this is the worst one.

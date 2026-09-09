@@ -297,8 +297,19 @@ export function heroHoleCardsAreForThisHand(args: {
 
   /* The board. Physical proof: a card cannot be in the hero's hand and on the
      felt at the same time, so whatever produced this holding was reading an
-     expired hand. */
-  if (heroCardsCollideWithBoard(cards, ...boards)) {
+     expired hand.
+
+     UNLESS THE HOLDING IS NEWER THAN THE BOARD (2026-09-09). The hero's cards
+     arrive as a private USER_EVENT, which the client dispatches on arrival,
+     ahead of the queued SNAPSHOT that carries the new hand's empty board - so
+     at the moment this runs, `boards` is very often the PREVIOUS hand's, and
+     a fresh holding that happens to share a card with it (about one deal in
+     five at hold'em, one in three at PLO) was refused, reported to Sentry and
+     sent round the recovery poll. A hand that has not been dealt yet cannot
+     collide with a board that is already finished; the hand check above
+     already fails open on exactly this comparison, so the two now agree. */
+  const boardIsOlder = rowHand > 0 && liveHand > 0 && rowHand > liveHand;
+  if (!boardIsOlder && heroCardsCollideWithBoard(cards, ...boards)) {
     return { ok: false, reason: 'collides-with-board' };
   }
 

@@ -76,12 +76,28 @@ describe('LAW 1 - every caller passes a key', () => {
 });
 
 describe('LAW 2/3 - held across retries, keyed by amount, released when spent', () => {
-  it('the automatic key is reused unless the amount changed', () => {
+  it('the automatic key is reused for the same shortfall, discriminated by the HAND', () => {
+    /* IT USED TO BE KEYED BY THE AMOUNT, AND THAT DEFEATED THE LAW
+       (2026-09-09). `topUpAmount` is `Math.min(maxBuyIn - stack, balance)`,
+       recomputed on every snapshot - and COMMITTING THE DEBIT IS WHAT CHANGES
+       `accountBalance`. So the one case this key exists for, a debit that
+       committed while the response was lost, recomputed to a different
+       number, failed the `!==` test, minted a fresh uuid and charged the
+       wallet twice. The purchase is "this hand's shortfall", so the hand
+       number is what identifies it: stable across every retry of the same
+       shortfall, and different for the next one. Same law, an identity that
+       can actually hold it. */
     const block = sliceEnclosingBlock(TABLE_PAGE, 'autoTopUpInFlightRef.current = true');
     expect(block).toMatch(
-      /if \(!autoTopUpKeyRef\.current \|\| autoTopUpKeyRef\.current\.amount !== topUpAmount\)/
+      /if \(!autoTopUpKeyRef\.current \|\| autoTopUpKeyRef\.current\.hand !== topUpHand\)/
     );
     expect(block).toContain('crypto.randomUUID()');
+    // And the amount itself is a cent amount before it is ever sent: an
+    // unrounded float reaches `atomic_table_addon`, which stores it verbatim,
+    // and a non-cent `table_pending_addons.amount` can never be resolved
+    // against the post-commit obligation. (The computation sits just above
+    // this block, hence the file-level assertion.)
+    expect(TABLE_PAGE).toMatch(/Math\.round\(Math\.min\(maxBuyIn - currentStack/);
   });
 
   it('the automatic key is cleared only after the chips actually moved', () => {

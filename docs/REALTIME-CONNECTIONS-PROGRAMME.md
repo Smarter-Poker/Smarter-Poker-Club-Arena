@@ -20,6 +20,13 @@ verification when it lands.
 | 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done   |
 | 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done   |
 
+| 8 | Connection ownership and refusal recovery | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets | code verified; publication pending |
+
+Phase 8 (2026-09-09) extends the programme after the callback ownership and
+loaded-fleet repairs. Scope and reproducible evidence:
+`docs/changelog/2026-09-09-realtime-phase8-connection-ownership.md`.
+Physical iPad/PWA acceptance remains separate from automated transport evidence.
+
 Not in the programme, because they are Dan's decisions, recorded so they are
 not lost: Log Out scope (global today; local by default with an explicit
 "Sign Out Everywhere" is the usual shape); Supabase JWT expiry (7 days

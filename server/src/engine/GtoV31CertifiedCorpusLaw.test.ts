@@ -32,8 +32,19 @@ const RANK_HOLDOUT = read(
 const CANONICAL_IDENTITY = read(
   'supabase/migrations/20260908203000_certified_solver_identity_text_is_canonical.sql'
 );
+const EVALUATION_EXECUTION = read(
+  'supabase/migrations/20260909022146_certified_solver_evaluation_executes_sampled_action.sql'
+);
+const PROMOTION_PROVENANCE = read(
+  'supabase/migrations/20260909024950_candidate_promotion_rechecks_execution_provenance.sql'
+);
+const RELEASE_SERIALIZATION = read(
+  'supabase/migrations/20260909025949_solver_release_gate_is_serialized.sql'
+);
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
+const LOGIC = read('server/src/engine/HorseLogic.ts');
 const LOADER = read('server/src/services/GtoPostflopV31Loader.ts');
+const EVALUATOR = read('server/src/scripts/gtoV31Evaluate.ts');
 const AUDIT = read('server/src/engine/HorseDataLedger.ts');
 
 describe('the certified V31 release boundary', () => {
@@ -165,20 +176,69 @@ describe('the certified V31 release boundary', () => {
   });
 
   it('requires eight bound candidate results and never accepts a silent policy', () => {
-    expect(CORPUS).toContain('v_result.hands<10000');
-    expect(CORPUS).toContain('v_result.candidate_policy_hits<=0');
-    expect(CORPUS).toContain('v_result.candidate_benchmark_components');
-    expect(CORPUS).toContain('v_component_duration<>v_result.duration_ms');
-    expect(CORPUS).toContain('v_component_hits<>v_result.candidate_policy_hits');
-    expect(CORPUS).toContain('v_component_roles IS DISTINCT FROM v_result_roles');
-    expect(CORPUS).toContain("'policy_only_duplicate_deals'");
-    expect(CORPUS).toContain("'full_brain_duplicate_deal_league'");
+    expect(EVALUATION_EXECUTION).toContain('v_result.hands<10000');
+    expect(EVALUATION_EXECUTION).toContain('v_result.candidate_policy_hits<=0');
+    expect(EVALUATION_EXECUTION).toContain('v_result.candidate_execution_mismatches<>0');
+    expect(EVALUATION_EXECUTION).toContain('v_result.candidate_benchmark_components');
+    expect(EVALUATION_EXECUTION).toContain('v_component_duration<>v_result.duration_ms');
+    expect(EVALUATION_EXECUTION).toContain('v_component_hits<>v_result.candidate_policy_hits');
+    expect(EVALUATION_EXECUTION).toContain(
+      'v_component_mismatches<>v_result.candidate_execution_mismatches'
+    );
+    expect(EVALUATION_EXECUTION).toContain('v_component_roles IS DISTINCT FROM v_result_roles');
+    expect(EVALUATION_EXECUTION).toContain("'policy_only_duplicate_deals'");
+    expect(EVALUATION_EXECUTION).toContain("'full_brain_duplicate_deal_league'");
     expect(CORPUS).toContain(
       "CROSS JOIN unnest(ARRAY['open','cbet','probe','delayed_cbet','barrel',"
     );
     expect(CORPUS).toContain("e.evaluation_kind='paired_replay'");
     expect(CORPUS).toContain("e.evaluation_kind='league'");
     expect(CORPUS).toContain('))<>9 THEN');
+  });
+
+  it('counts only the post-legalization action and binds every gate to one exact evaluator', () => {
+    expect(LOGIC.indexOf('const final31 = this.legalize')).toBeLessThan(
+      LOGIC.indexOf('opts.onGtoV31Decision({', LOGIC.indexOf('const final31 = this.legalize'))
+    );
+    expect(LOGIC).toContain('executedAsIntended: executedAsIntended31');
+    expect(LOGIC).toContain('sampledAmount: sampledAmount31');
+    expect(LOGIC).toContain('const executedAsIntended31 = gtoV31ExecutionMatches({');
+    expect(LOGIC).toContain('return args.finalAction === args.sampledFamily && amountPreserved;');
+    expect(LOGIC).not.toContain("action31.family === 'raise' && final31.action === 'all_in'");
+    expect(LOGIC).not.toContain("action31.family === 'bet' && final31.action === 'all_in'");
+    expect(EVALUATION_EXECUTION).toContain("'evaluation_contract'<>'gto_v31_candidate.v2'");
+    expect(EVALUATION_EXECUTION).toContain("'evaluation_engine_commit']::text[]");
+    expect(EVALUATION_EXECUTION).toContain(
+      "v_result.matchup<>'gto_v31_'||p_evaluation_kind||'_'||p_game_family||'_'||v_dataset.dataset_checksum"
+    );
+    expect(EVALUATION_EXECUTION).toContain(
+      'candidate evaluations were produced by different engine commits'
+    );
+    expect(EVALUATOR).toContain("['status', '--porcelain', '--untracked-files=all']");
+    expect(EVALUATOR).toContain("['merge-base', '--is-ancestor', head, 'origin/main']");
+    expect(EVALUATOR).toContain('`gto_v31_${args.kind}_${args.family}_${args.datasetChecksum}`');
+  });
+
+  it('rechecks execution provenance at both candidate and promotion boundaries', () => {
+    expect(PROMOTION_PROVENANCE).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_candidate_evaluations_valid('
+    );
+    expect(PROMOTION_PROVENANCE).toContain('CREATE TRIGGER gto_v31_evaluation_source_is_immutable');
+    expect(PROMOTION_PROVENANCE).toContain('r.candidate_execution_mismatches<>0');
+    expect(PROMOTION_PROVENANCE).toContain(
+      "component.value->'candidate_execution_mismatches' IS DISTINCT FROM '0'::jsonb"
+    );
+    expect(PROMOTION_PROVENANCE).toContain(
+      "r.config_a->>'evaluation_contract'<>'gto_v31_candidate.v2'"
+    );
+    expect(PROMOTION_PROVENANCE).toContain('v_engine_commits<>1');
+    expect(PROMOTION_PROVENANCE.match(/fn_gto_v31_candidate_evaluations_valid\(/g)).toHaveLength(4);
+    expect(PROMOTION_PROVENANCE).toContain('v_dataset.paired_replay IS DISTINCT FROM v_paired');
+    expect(PROMOTION_PROVENANCE).toContain('v_dataset.league_gate IS DISTINCT FROM v_league');
+    expect(RELEASE_SERIALIZATION).toContain('VOLATILE');
+    expect(RELEASE_SERIALIZATION).toContain('pg_advisory_xact_lock(');
+    expect(RELEASE_SERIALIZATION).toContain('smarter-poker:gto-v31-release-gate');
+    expect(RELEASE_SERIALIZATION).toContain('fn_gto_v31_candidate_evaluations_valid(uuid,text)');
   });
 });
 
@@ -243,6 +303,9 @@ describe('agreement and liveness are daily evidence', () => {
     expect(certified).toContain('false all-in source node was accepted');
     expect(certified).toContain('semantic open-role forgery was accepted');
     expect(certified).toContain('unreconciled component duration was accepted');
+    expect(certified).toContain('a legacy evaluation receipt passed the candidate gate');
+    expect(certified).toContain('a changed release receipt passed the promotion gate');
+    expect(certified).toContain('a certified evaluation source remained mutable');
     expect(certified).toContain('certification status did not reconcile');
     expect(decisions).toContain('SOLVER_AGREEMENT_BEHAVIOR_OK');
     expect(pulses).toContain('LIVENESS_BEHAVIOR_OK');

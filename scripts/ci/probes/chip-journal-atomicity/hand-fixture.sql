@@ -1,6 +1,6 @@
 
 ALTER TABLE tables ADD COLUMN IF NOT EXISTS tournament_id uuid;
-ALTER TABLE table_seats ADD COLUMN club_id uuid;
+ALTER TABLE table_seats ADD COLUMN IF NOT EXISTS club_id uuid;
 ALTER TABLE tournaments ADD COLUMN starting_chips numeric, ADD COLUMN rebuy_chips numeric, ADD COLUMN addon_chips numeric;
 CREATE TABLE wallet_transactions(user_id uuid,category text,type text,related_entity_id uuid,created_at timestamptz);
 CREATE TABLE settlement_idempotency_keys(table_id uuid,hand_id uuid,status text,result jsonb,error text,

@@ -105,6 +105,8 @@ export interface SignUpDialogOptions {
   clubId?: string | null;
   /** Late registration reads differently from signing up before the off. */
   isLateRegistration?: boolean;
+  /** Exact noncash entry instrument selected by the server before this opens. */
+  tournamentTicketId?: string | null;
 }
 
 interface SignUpRequest {
@@ -198,6 +200,7 @@ export function SignUpHost() {
   const current = queue[0] || null;
   const userId = current?.opts.userId;
   const clubId = current?.opts.clubId ?? null;
+  const usesTournamentTicket = Boolean(current?.opts.tournamentTicketId);
 
   /**
    * R1 + R2: resolve OUTSIDE the state updater, and only ever for the request
@@ -216,7 +219,7 @@ export function SignUpHost() {
   // a figure fetched at app start would be stale by the time anyone buys in.
   useEffect(() => {
     let alive = true;
-    if (!current || !userId) {
+    if (!current || !userId || usesTournamentTicket) {
       setBalance(null);
       return;
     }
@@ -243,7 +246,7 @@ export function SignUpHost() {
     return () => {
       alive = false;
     };
-  }, [current, userId, clubId]);
+  }, [current, userId, clubId, usesTournamentTicket]);
 
   // Escape cancels, like every other dialog in the app.
   useEffect(() => {
@@ -315,7 +318,7 @@ export function SignUpHost() {
   const id = current.id;
   const cost = totalBuyIn(o.buyInAmount, o.buyInFee ?? 0);
   const startLabel = formatStart(o.startTime);
-  const short = balance !== null && balance < cost;
+  const short = !usesTournamentTicket && balance !== null && balance < cost;
 
   return (
     <div className="signup-overlay" onClick={() => settle(id, false)}>
@@ -343,12 +346,19 @@ export function SignUpHost() {
           <span className="signup-value">{o.name}</span>
         </div>
 
-        {/* One line, not three. The player is deciding on the TOTAL; where it
-            splits is the second question. See utils/buyIn formatBuyIn. */}
-        <div className="signup-row total">
-          <span className="signup-label">Entry Fee:</span>
-          <span className="signup-value">{formatBuyIn(o.buyInAmount, o.buyInFee ?? 0)}</span>
-        </div>
+        {usesTournamentTicket ? (
+          <div className="signup-row total">
+            <span className="signup-label">Entry:</span>
+            <span className="signup-value">Tournament Ticket</span>
+          </div>
+        ) : (
+          /* One line, not three. The player is deciding on the TOTAL; where it
+             splits is the second question. See utils/buyIn formatBuyIn. */
+          <div className="signup-row total">
+            <span className="signup-label">Entry Fee:</span>
+            <span className="signup-value">{formatBuyIn(o.buyInAmount, o.buyInFee ?? 0)}</span>
+          </div>
+        )}
 
         {(o.bountyAmount ?? 0) > 0 && (
           <div className="signup-row">
@@ -368,7 +378,7 @@ export function SignUpHost() {
           </div>
         )}
 
-        {o.userId && (
+        {o.userId && !usesTournamentTicket && (
           <div className="signup-row">
             <span className="signup-label">Your Balance:</span>
             <span
@@ -387,11 +397,10 @@ export function SignUpHost() {
           </p>
         )}
         {/* Only true for a scheduled event you are entering BEFORE the off.
-            A late registration cannot be unregistered at all, and an SNG or
-            Spin has no start time for the rule to be about. Printing it in
-            those cases was telling the player something untrue. */}
+            A late registration cannot be unregistered, and an SNG or Spin has
+            no scheduled boundary for the rule to describe. */}
         {!o.isLateRegistration && !!startLabel && (
-          <p className="signup-note">Cannot Unregister Within 1 Minute Of The Start Time</p>
+          <p className="signup-note">You Can Unregister Any Time Before The Tournament Starts</p>
         )}
 
         <div className="signup-actions">

@@ -305,7 +305,9 @@ class CardErrorBoundary extends Component<
     return { hasError: true };
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    reportError(info, 'ClubDetailPage.CardErrorBoundarythispropslabel__unknown');
+    reportError(error, `ClubDetailPage.CardErrorBoundary.${this.props.label || 'unknown'}`, {
+      componentStack: info.componentStack,
+    });
   }
   render() {
     if (this.state.hasError) {

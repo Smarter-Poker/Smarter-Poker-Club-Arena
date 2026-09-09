@@ -1,0 +1,194 @@
+{
+  "jobs": {
+    "34395034026": [
+      {
+        "name": "Source Windows Are Structural",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612508856"
+      },
+      {
+        "name": "TypeScript Check",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612509237"
+      },
+      {
+        "name": "What changed",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612509252"
+      },
+      {
+        "name": "Stub Gate",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612509360"
+      },
+      {
+        "name": "Live Production E2E",
+        "status": "completed",
+        "conclusion": "skipped",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612510285"
+      },
+      {
+        "name": "Post-Deploy Verification",
+        "status": "completed",
+        "conclusion": "skipped",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612511824"
+      },
+      {
+        "name": "Production Build",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547131"
+      },
+      {
+        "name": "Client Unit Tests shard 1",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547212"
+      },
+      {
+        "name": "Client Unit Tests shard 2",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547222"
+      },
+      {
+        "name": "Client Unit Tests shard 3",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547225"
+      },
+      {
+        "name": "Client Unit Tests shard 4",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547234"
+      },
+      {
+        "name": "CSS Beat E2E (multi-table + animations)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547236"
+      },
+      {
+        "name": "Accounting transactions (PostgreSQL 17)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102612547255"
+      },
+      {
+        "name": "Server Engine (typecheck + tests)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102613069855"
+      },
+      {
+        "name": "Client Unit Tests (vitest)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102613590692"
+      },
+      {
+        "name": "What this run verified",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34395034026/job/102613632739"
+      }
+    ],
+    "34396375758": [
+      {
+        "name": "publish-needed",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617004241"
+      },
+      {
+        "name": "client-tests (4)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617047046"
+      },
+      {
+        "name": "client-tests (2)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617047110"
+      },
+      {
+        "name": "client-tests (1)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617047116"
+      },
+      {
+        "name": "client-tests (3)",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617047145"
+      },
+      {
+        "name": "build-and-store",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617047163"
+      },
+      {
+        "name": "publish-to-origin",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102617933136"
+      },
+      {
+        "name": "Publish the app bundle (Capgo OTA)",
+        "status": "completed",
+        "conclusion": "skipped",
+        "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34396375758/job/102618114747"
+      }
+    ]
+  },
+  "source_blobs": [
+    {
+      "path": "src/components/tournament/AddOnModal.tsx",
+      "merged_blob": "34b71a3553f4b2e2eb0ad454fc8241fceeabae0a",
+      "served_source_blob": "34b71a3553f4b2e2eb0ad454fc8241fceeabae0a",
+      "identical": true
+    },
+    {
+      "path": "src/components/tournament/RebuyModal.tsx",
+      "merged_blob": "39e3b2f3bbdbf0fd88e3ce0372e4c3dc6a2a52c5",
+      "served_source_blob": "39e3b2f3bbdbf0fd88e3ce0372e4c3dc6a2a52c5",
+      "identical": true
+    },
+    {
+      "path": "src/services/TournamentPurchaseIntent.ts",
+      "merged_blob": "59e5314be290486b2f140df98f1849e80266787c",
+      "served_source_blob": "59e5314be290486b2f140df98f1849e80266787c",
+      "identical": true
+    },
+    {
+      "path": "src/services/TournamentService.ts",
+      "merged_blob": "8c2635a480cbe4747fd6283774df34bcfffec93e",
+      "served_source_blob": "8c2635a480cbe4747fd6283774df34bcfffec93e",
+      "identical": true
+    }
+  ],
+  "verified_at": "2026-09-09T19:52:39.947978+00:00",
+  "scope": "Prepared tournament purchase retry batch only; overall Phase 3 remains in progress",
+  "pr": 3991,
+  "merge_sha": "0ed94e26141be46f0d4aa7bf9b0ade9ac025a526",
+  "merged_at": "2026-09-09T19:31:12Z",
+  "served_sha": "5001c683d53de005fdf96d04f916b4de09aec020",
+  "public_endpoint": "https://smarter.poker/hub/club-arena/build-info.json",
+  "origin_endpoint": "https://ca-static.smarter.poker/build-info.json",
+  "both_endpoints_match": true,
+  "merge_is_ancestor_of_served": true,
+  "built_at": "2026-09-09T19:42:07Z",
+  "publisher": "publish-club-arena.yml",
+  "publisher_run": "34396375758",
+  "production_transactions_executed": false,
+  "hooks_bypassed": false,
+  "sentry_authorization": "User approved configured source-map upload on 2026-09-09 after prior review rejection"
+}

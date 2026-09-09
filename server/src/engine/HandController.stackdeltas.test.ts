@@ -13,8 +13,8 @@
  *   - insurance payouts and premiums
  *   - the 7-2 bounty transfer
  *
- * Neither lost money — `syncStacks()` persists `seatedPlayers`, which WAS being
- * mutated correctly — but `broadcastCurrentState()` reads the engine state, so
+ * Neither lost money — the retired stack writer persisted `seatedPlayers`, which
+ * WAS being mutated correctly — but `broadcastCurrentState()` reads engine state, so
  * every snapshot between settlement and the next hand showed the player a stack
  * that did not include their insurance payout or their bounty. In the 7-2 case
  * the code explicitly re-broadcasts "so clients see the bounty-adjusted stacks

@@ -357,6 +357,20 @@ export function money(n: number): string {
   return (Number.isFinite(v) ? Math.round(v) : 0).toLocaleString('en-US');
 }
 
+/**
+ * Exact financial component display. Tournament prices remain whole chips,
+ * but their prize/fee split is stored to cents (for example 13.50 + 1.50).
+ * Never pass an on-felt stack through this helper: it exists for ledger parts.
+ */
+export function moneyExact(n: number): string {
+  const v = Number(n);
+  const exact = Number.isFinite(v) ? round2(v) : 0;
+  return exact.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(exact) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 /** The total a player pays, from the two stored columns. Always whole. */
 export function totalBuyIn(prize: number, fee: number | null | undefined): number {
   return Math.round(cents((Number(prize) || 0) + (Number(fee) || 0)));

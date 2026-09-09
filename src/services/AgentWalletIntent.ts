@@ -150,6 +150,6 @@ export function confirmedAgentWalletReceipt(
     typeof balance === 'number' &&
     Number.isFinite(balance) &&
     balance >= 0 &&
-    (kind === 'self_stake' || r.destination === 'player_wallet' || r.destination === 'agent_wallet')
+    (kind === 'self_stake' || r.destination === 'player_wallet')
   );
 }

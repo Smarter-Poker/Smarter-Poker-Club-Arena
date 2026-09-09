@@ -98,10 +98,15 @@ describe('fn_finalize_bounty_pool', () => {
     expect(latest).toMatch(/IF v_residual <= 0/);
   });
 
-  it('the recoverability wrapper delegates to the private ledger implementation', () => {
-    const wrapper = sql(definitions()[definitions().length - 1]);
-    expect(wrapper).toContain('fn_finalize_bounty_pool_unguarded_20260907');
-    expect(wrapper).toMatch(/v_result\s*:=\s*public\.fn_finalize_bounty_pool_unguarded_20260907/);
+  it('the terminal root owns the event and keeps the ledger implementation in-process', () => {
+    const root = sql(definitions()[definitions().length - 1]);
+    expect(root).toMatch(/pg_advisory_xact_lock\(/);
+    expect(root).toMatch(
+      /SELECT \* INTO v_t FROM public\.tournaments WHERE id=p_tournament_id FOR UPDATE/
+    );
+    expect(root).toMatch(/FROM wallet_transactions wt/);
+    expect(root).toMatch(/v_residual := round\([\s\S]*?v_core_t\.bounty_pool/);
+    expect(root).not.toContain('fn_finalize_bounty_pool_unguarded_20260907');
   });
 });
 

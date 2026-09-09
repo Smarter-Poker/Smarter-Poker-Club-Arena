@@ -23,38 +23,72 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const ELIM = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const RECOVERY = readFileSync(join(here, 'tournamentRecovery.ts'), 'utf8');
+const TERMINAL_RPC = readFileSync(join(here, 'terminalSettlementRpc.ts'), 'utf8');
 const SERVER = readFileSync(join(here, '..', 'GameServer.ts'), 'utf8');
 
 describe('the finish boundary is owned by one database contract', () => {
-  it('claims the canonical winner before any settlement and certifies only after rake', () => {
+  it('submits one observed winner and runs only receipt-backed cleanup', () => {
     const finish = sliceMethod(ELIM, 'protected async finishTournament(winnerId: string)');
-    expect(finish).toContain('claimTournamentFinish(');
-    expect(finish).toContain('settleTournamentPlacesAtomically(');
-    expect(finish.indexOf('claimTournamentFinish(')).toBeLessThan(
-      finish.indexOf('await this.settleTournamentRake(tournament)')
+    const settle = finish.indexOf(
+      "requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
     );
-    expect(finish.indexOf('await this.settleTournamentRake(tournament)')).toBeLessThan(
-      finish.indexOf('settleTournamentPlacesAtomically(')
+    const remember = finish.indexOf('this.committedFinishReceipt = receipt', settle);
+    const cleanup = finish.indexOf('await this.cleanupCommittedTournament(receipt)', remember);
+
+    expect(settle).toBeGreaterThanOrEqual(0);
+    expect(remember).toBeGreaterThan(settle);
+    expect(cleanup).toBeGreaterThan(remember);
+    expect(finish).not.toMatch(
+      /claimTournamentFinish|settleTournamentPlacesAtomically|settleTournamentRake|applyPrizeGuarantee/
     );
-    expect(finish.indexOf('settleTournamentPlacesAtomically(')).toBeLessThan(
-      finish.lastIndexOf('await this.cleanupCommittedTournament()')
-    );
-    expect(finish).toContain('this.tournamentFinished = false;');
     expect(finish).not.toMatch(/\.from\('tournaments'\)[\s\S]*?status:\s*'COMPLETED'/);
   });
 
-  it('the deal and every recovery tail use that same contract', () => {
+  it('the deal and every recovery tail use that same receipt contract', () => {
     const dealCheck = sliceMethod(ELIM, 'protected async checkFinalTableDeal()');
+    const dealBoundary = sliceMethod(ELIM, 'private async completeFinalTableDealAtBoundary(');
     const dealTail = sliceMethod(ELIM, 'private async settleFinalTableDeal(');
-    expect(dealCheck).toContain('settleFinalTableDealAtomically(');
-    expect(dealCheck.indexOf('settleFinalTableDealAtomically(')).toBeLessThan(
-      dealCheck.indexOf('return this.settleFinalTableDeal(deal)')
+    expect(dealCheck).toContain('completeFinalTableDealAtBoundary(');
+    expect(dealBoundary).toContain(
+      "requestTournamentTerminalReceipt(\n      this.tournamentId,\n      'final_table_deal',\n      null"
     );
-    expect(dealTail).not.toContain('settleTournamentPlacesAtomically(');
-    expect(dealTail).not.toContain('claimTournamentFinish(');
-    expect(RECOVERY.match(/claimTournamentFinish\(/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(RECOVERY.match(/settleTournamentPlacesAtomically\(/g)?.length).toBeGreaterThanOrEqual(1);
+    expect(dealBoundary.indexOf('requestTournamentTerminalReceipt(')).toBeLessThan(
+      dealBoundary.indexOf('return this.settleFinalTableDeal(receipt)')
+    );
+    expect(dealTail).not.toMatch(/\.rpc\(|\.insert\(|\.update\(|\.delete\(/);
+    expect(RECOVERY.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
+    expect(RECOVERY.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+    expect(RECOVERY).not.toMatch(
+      /claimTournamentFinish|settleTournamentPlacesAtomically|settleTournamentObligation/
+    );
     expect(RECOVERY).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
+  });
+
+  it('replays one request after transport loss, then resolves behind the same lock', () => {
+    const request = TERMINAL_RPC.indexOf('const request = {');
+    const attempts = TERMINAL_RPC.indexOf('for (let attempt = 1;', request);
+    const settle = TERMINAL_RPC.indexOf(
+      "supabase.rpc('fn_complete_tournament_terminal', request)",
+      attempts
+    );
+    const resolve = TERMINAL_RPC.indexOf(
+      "supabase.rpc('fn_resolve_tournament_terminal_outcome'",
+      settle
+    );
+    const committed = TERMINAL_RPC.indexOf('outcome.terminal_committed === true', resolve);
+    const provenMiss = TERMINAL_RPC.indexOf(
+      'outcome.definitively_not_committed === true',
+      committed
+    );
+    const unknown = TERMINAL_RPC.indexOf('new TerminalSettlementOutcomeUnknownError(', provenMiss);
+
+    expect(request).toBeGreaterThanOrEqual(0);
+    expect(attempts).toBeGreaterThan(request);
+    expect(settle).toBeGreaterThan(attempts);
+    expect(resolve).toBeGreaterThan(settle);
+    expect(committed).toBeGreaterThan(resolve);
+    expect(provenMiss).toBeGreaterThan(committed);
+    expect(unknown).toBeGreaterThan(provenMiss);
   });
 });
 

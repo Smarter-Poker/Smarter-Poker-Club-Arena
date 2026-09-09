@@ -6,7 +6,7 @@
  * carries more than ~1.5MB of jsonb; refreshed every 6 hours so the ongoing
  * V30 aggregation (GtoAggregationDriver folding turn/river in) reaches the
  * fleet without a deploy. The live worker explicitly awaits the initial load;
- * this module's timer owns periodic refresh only.
+ * this module's timer owns periodic refresh and bounded failed-load recovery.
  *
  * Reads ONLY the compact table. The 79 GB warehouse is never touched at
  * runtime — that is the whole architecture (2026-08-15 incident).
@@ -18,7 +18,7 @@
  * cells rather than half a table.
  *
  * A failed load is loud but not fatal: gtoStreetAdvice returns null on an
- * empty store and yesterday's heuristics decide.
+ * empty store and yesterday's heuristics decide while bounded retries recover.
  */
 
 import { supabase } from './supabase/client.js';
@@ -29,13 +29,14 @@ import {
   _clearGtoPostflop,
   type GtoPostflopRow,
 } from '../engine/GtoPostflop.js';
+import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
 const REFRESH_MS = 6 * 60 * 60_000;
+const RETRY_MS = 30_000;
+const MAX_RETRY_MS = 5 * 60_000;
 const PAGE = 500;
 
-let timer: NodeJS.Timeout | null = null;
-
-export async function loadGtoPostflop(): Promise<number> {
+async function loadGtoPostflopAttempt(): Promise<{ ok: boolean; count: number }> {
   try {
     const rows: GtoPostflopRow[] = [];
     for (let offset = 0; ; offset += PAGE) {
@@ -62,25 +63,31 @@ export async function loadGtoPostflop(): Promise<number> {
     console.log(
       `[GtoPostflopLoader] ${applied} solver open-node cells loaded (${gtoPostflopCount()} in the store)`
     );
-    return applied;
+    return { ok: true, count: applied };
   } catch (err) {
     reportError(err, 'GtoPostflopLoader.load');
     console.warn(
       `[GtoPostflopLoader] solver cell load FAILED - the brain falls back to heuristics (${gtoPostflopCount()} cached)`
     );
-    return 0;
+    return { ok: false, count: 0 };
   }
+}
+
+const refreshLoop = createAdaptiveRefreshLoop({
+  load: loadGtoPostflopAttempt,
+  refreshMs: REFRESH_MS,
+  retryMs: RETRY_MS,
+  maxRetryMs: MAX_RETRY_MS,
+});
+
+export async function loadGtoPostflop(): Promise<number> {
+  return (await refreshLoop.runNow()).count;
 }
 
 export function startGtoPostflopLoader(): void {
-  if (timer) return;
-  timer = setInterval(() => void loadGtoPostflop(), REFRESH_MS);
-  timer.unref?.();
+  refreshLoop.start();
 }
 
 export function stopGtoPostflopLoader(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  refreshLoop.stop();
 }

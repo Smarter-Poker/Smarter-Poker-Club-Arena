@@ -114,6 +114,30 @@ export function fixedLimitBetSize(bigBlind: number, stage: HandStage): number {
   }
 }
 
+/** Resolve completions and counted wagers from this street's actual raise-to levels.
+ * WSOP 2026 rule 133: below half a wager completes; half or more is a wager.
+ * Calls record chips added, so only aggressive actions carry a raise-to level.
+ */
+export function fixedLimitStreetBounds(
+  actions: ActionRecord[],
+  stage: HandStage,
+  betSize: number,
+  currentBet: number
+): { raiseSize: number; wagers: number } {
+  let level = stage === 'preflop' ? betSize : 0;
+  let wagers = stage === 'preflop' ? 1 : 0;
+  for (const action of actions) {
+    if (action.stage !== stage || !['bet', 'raise', 'all_in'].includes(action.action)) continue;
+    if (action.amount - level >= betSize / 2 - 0.005) {
+      level = action.amount;
+      wagers++;
+    }
+  }
+  const short = currentBet - level;
+  const raiseSize = short > 0.005 && short < betSize / 2 - 0.005 ? betSize - short : betSize;
+  return { raiseSize: Math.round(raiseSize * 100) / 100, wagers };
+}
+
 /**
  * How many wagers have already gone in on this street.
  *
@@ -138,8 +162,16 @@ export function fixedLimitWagerCount(actions: ActionRecord[], stage: HandStage):
 }
 
 /** True once the street has taken a bet and three raises. */
-export function isFixedLimitCapped(actions: ActionRecord[], stage: HandStage): boolean {
-  return fixedLimitWagerCount(actions, stage) >= FIXED_LIMIT_MAX_WAGERS;
+export function isFixedLimitCapped(
+  actions: ActionRecord[],
+  stage: HandStage,
+  betSize?: number
+): boolean {
+  const wagers =
+    betSize === undefined
+      ? fixedLimitWagerCount(actions, stage)
+      : fixedLimitStreetBounds(actions, stage, betSize, 0).wagers;
+  return wagers >= FIXED_LIMIT_MAX_WAGERS;
 }
 
 /**

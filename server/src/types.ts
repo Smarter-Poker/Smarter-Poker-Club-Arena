@@ -82,6 +82,9 @@ export interface SeatPlayer {
    * private side pot / an uncalled-bet refund for chips that belong to the pot).
    */
   deadInvested?: number;
+  /** Individual ante within deadInvested, retained for partial-ante pot caps.
+   * BBA and dead blinds remain shared dead money and never populate this field. */
+  individualAnteInvested?: number;
   cards: Card[];
   is_folded: boolean;
   is_all_in: boolean;
@@ -520,6 +523,16 @@ export interface ActionRecord {
 
 export type HandEvent =
   | { type: 'HAND_START'; handNumber: number; players: SeatPlayer[] }
+  | {
+      type: 'FORCED_BETS_POSTED';
+      postings: Array<{
+        seat: number;
+        userId: string;
+        kind: string;
+        amount: number;
+        dead: boolean;
+      }>;
+    }
   | { type: 'CARDS_DEALT'; seat: number; cards: Card[] }
   /**
    * PHASE 4 2026-09-01 - the card a seat threw, for that seat's own replay.

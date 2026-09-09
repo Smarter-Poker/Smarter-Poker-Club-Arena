@@ -27,7 +27,11 @@ vi.mock('../services/TableViewerAccess.js', () => ({ authorizeTableViewer: vi.fn
 // supabase (tables.club_id -> club_members.role). Mock it with mutable results.
 const sb = vi.hoisted(() => ({
   tablesResult: {
-    data: { club_id: 't-club' } as { club_id: string } | null,
+    data: { club_id: 't-club', tournament_id: null } as {
+      club_id: string;
+      union_id?: string | null;
+      tournament_id?: string | null;
+    } | null,
     error: null as unknown,
   },
   membersResult: { data: { role: 'owner' } as { role: string } | null, error: null as unknown },
@@ -63,7 +67,7 @@ import { handleRit } from './rit.js';
 import { handleInsurance, handleInsurancePreview } from './insurance.js';
 import { handleShowhand } from './showhand.js';
 import { handleDiscard } from './discard.js';
-import { handleAdminPause, handleAdminResume } from './admin.js';
+import { handleAdminKick, handleAdminPause, handleAdminResume } from './admin.js';
 import { handlePostBB } from './postbb.js';
 import { handleGetActions, handleGetState } from './state.js';
 
@@ -264,7 +268,7 @@ describe.each([
     // default: authenticated, table resolves to a club, caller is an owner
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
     vi.mocked(readBody).mockResolvedValue(JSON.stringify(body));
-    sb.tablesResult = { data: { club_id: 't-club' }, error: null };
+    sb.tablesResult = { data: { club_id: 't-club', tournament_id: null }, error: null };
     sb.membersResult = { data: { role: 'owner' }, error: null };
   });
 
@@ -320,6 +324,53 @@ describe.each([
 });
 
 // ── GET /insurance-preview ─────────────────────────────────────
+
+describe('POST /admin/kick - tournament entries never use the cash-table exit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
+    vi.mocked(readBody).mockResolvedValue(
+      JSON.stringify({ tableId: 't1', userId: 'player-1', reason: 'review' })
+    );
+    sb.membersResult = { data: { role: 'owner' }, error: null };
+  });
+
+  it('refuses a tournament table before engine.leaveTable can sit out or vacate the player', async () => {
+    sb.tablesResult = {
+      data: { club_id: 't-club', tournament_id: 'tournament-1' },
+      error: null,
+    };
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleAdminKick(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(409);
+    expect(parseJson(captured)).toEqual({
+      success: false,
+      error:
+        'Tournament Players Can Only Be Removed Before The Tournament Starts Through Tournament Registration Management.',
+    });
+    expect((engine as any).leaveTable).not.toHaveBeenCalled();
+  });
+
+  it('requires a fresh occupancy-bound request before a cash-table kick can reach the engine', async () => {
+    sb.tablesResult = { data: { club_id: 't-club', tournament_id: null }, error: null };
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleAdminKick(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual({
+      success: false,
+      code: 'SEAT_OCCUPANCY_REQUIRED',
+      error: 'Reload the table before removing a player.',
+      reloadRequired: true,
+    });
+    expect((engine as any).leaveTable).not.toHaveBeenCalled();
+  });
+});
 
 describe('handleInsurancePreview', () => {
   beforeEach(() => vi.clearAllMocks());

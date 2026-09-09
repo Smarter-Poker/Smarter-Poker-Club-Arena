@@ -49,8 +49,15 @@ describe('the start gate is capped by the seats the game actually has', () => {
   });
 
   it('derives the required field from max_players', () => {
-    expect(baseCode).toMatch(/const\s+requiredField\s*=/);
+    // `let` is deliberate: only an exact, already-played three-seat Spin may
+    // later replace this launch headcount with its two surviving players.
+    // Heads-Up reaches two directly from max_players and remains a Sit & Go.
+    expect(baseCode).toMatch(/let\s+requiredField\s*=/);
     expect(baseCode).toMatch(/Math\.min\(\s*3\s*,\s*seatsAvailable\s*\)/);
+    expect(baseCode).toMatch(
+      /if\s*\(spinPaidGateWillRun\s*&&\s*requiredField\s*===\s*SPEC_SPIN_SEATS\s*&&\s*regCount\s*===\s*2\)/
+    );
+    expect(baseCode).toMatch(/requiredField\s*=\s*playedSpinRecovery\.activePlayerIds\.length/);
   });
 
   it('compares the head count against that derived field, not a constant', () => {

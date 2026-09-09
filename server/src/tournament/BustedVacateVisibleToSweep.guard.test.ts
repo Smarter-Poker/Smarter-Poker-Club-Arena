@@ -23,21 +23,41 @@ import { join } from 'path';
 const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
 describe('busted-vacate stays visible to the elimination sweep', () => {
-  it('the dealing engine zeroes tournament_players.chips when it vacates a busted seat', () => {
+  it('the hand transaction mirrors zero chips before it vacates the busted seat', () => {
     const src = read('../engine/ServerTableEngineDealing.ts');
     const vacateAt = src.indexOf("reason: 'busted_awaiting_rebuy_decision'");
     expect(vacateAt).toBeGreaterThan(-1);
-    // The chips-zero write lives in the same successful-vacate branch.
+    // The process publishes the durable result but owns neither database write.
     const branch = src.slice(Math.max(0, vacateAt - 4000), vacateAt);
-    expect(branch).toContain('.update({ chips: 0 })');
-    expect(branch).toContain(".eq('status', 'playing')");
+    expect(branch).not.toContain(".from('tournament_players')");
+    expect(branch).not.toContain(".from('table_seats')");
+
+    const sql = readFileSync(
+      join(
+        __dirname,
+        '../../../supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+      ),
+      'utf8'
+    );
+    const start = sql.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute('
+    );
+    const end = sql.indexOf('$function$;', start);
+    const authority = sql.slice(start, end);
+    const mirror = authority.indexOf('UPDATE public.tournament_players tp');
+    const vacate = authority.indexOf('UPDATE public.table_seats ts', mirror);
+    expect(mirror).toBeGreaterThan(-1);
+    expect(vacate).toBeGreaterThan(mirror);
+    expect(authority.slice(mirror, vacate)).toContain('SET chips = target.stack');
   });
 
   it('the sweep never manufactures a bust from elapsed seatlessness', () => {
     const src = read('./TournamentManagerEliminations.ts');
     expect(src).not.toContain('SEATLESS_PHANTOM_MS');
     expect(src).not.toContain('seatlessPlayingSince');
-    expect(src).toContain('Never infer a knockout from a player');
-    expect(src).toContain('accepted hand-settlement record');
+    expect(src).toMatch(
+      /\.from\('tournament_players'\)[\s\S]*?\.eq\('tournament_id', this\.tournamentId\)[\s\S]*?\.eq\('status', 'playing'\)[\s\S]*?\.lte\('chips', 0\)/
+    );
+    expect(src).not.toMatch(/seatless[\s\S]{0,300}Date\.now|Date\.now[\s\S]{0,300}seatless/i);
   });
 });

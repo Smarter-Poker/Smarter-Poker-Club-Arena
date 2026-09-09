@@ -846,8 +846,7 @@ export async function setSitOut(
      * The status code is still the fallback for a response with no usable body
      * — a proxy error page, a 502, an empty 500. */
     const body = (await response.json().catch(() => null)) as
-      | (ActionResult & { willFoldNextHand?: boolean })
-      | null;
+      (ActionResult & { willFoldNextHand?: boolean }) | null;
     if (body && typeof body.success === 'boolean') return body;
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return { success: false, error: 'Server sent an unreadable response' };

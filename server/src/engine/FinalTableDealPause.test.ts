@@ -37,9 +37,9 @@ describe('final-table deal pause authority', () => {
     const { engine, state } = parkedEngine();
     expect(engine.isParkedForFinalTableDeal()).toBe(true);
 
-    state.settlementInFlight = Promise.resolve();
+    state.settlementInFlight = new Set([Promise.resolve()]);
     expect(engine.isParkedForFinalTableDeal()).toBe(false);
-    state.settlementInFlight = null;
+    state.settlementInFlight = new Set();
     state.handController = {};
     expect(engine.isParkedForFinalTableDeal()).toBe(false);
     state.handController = null;

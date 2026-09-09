@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "20260909182952 adds the service-only exact immutable receipt resolver used after an atomic tournament move response becomes ambiguous and the manager lease is no longer current.",
+  "functions": ["fn_resolve_committed_tournament_seat_move"]
+}

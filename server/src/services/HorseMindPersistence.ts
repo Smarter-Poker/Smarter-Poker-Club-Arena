@@ -183,16 +183,14 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
     const chunk = rows.slice(i, i + FLUSH_CHUNK);
     try {
       const { error } = await supabase.rpc('upsert_horse_mind_pairs', {
-        rows: chunk.map(
-          (r): DbPairRow => ({
-            attacker_id: r.attacker_id,
-            victim_id: r.victim_id,
-            n3: r.n3,
-            opp3: r.opp3,
-            n_r: r.nR,
-            opp_r: r.oppR,
-          })
-        ),
+        rows: chunk.map((r): DbPairRow => ({
+          attacker_id: r.attacker_id,
+          victim_id: r.victim_id,
+          n3: r.n3,
+          opp3: r.opp3,
+          n_r: r.nR,
+          opp_r: r.oppR,
+        })),
       });
       if (error) throw new Error(error.message || 'upsert_horse_mind_pairs failed');
       flushed += chunk.length;

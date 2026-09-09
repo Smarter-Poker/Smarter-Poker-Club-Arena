@@ -43,10 +43,10 @@ function sqlFunction(name: string): string {
 describe('satellite finish ownership', () => {
   it('the manager delegates the whole finish to one atomic RPC', () => {
     const awards = sliceMethod(manager, 'protected async processSatelliteAwards(');
-    expect(awards).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(awards).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
     expect(awards).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     expect(awards).not.toContain('payCash(');
-    expect(awards).toContain('result?.ok !== true || result?.settled !== true');
+    expect(awards).toContain('return verified;');
   });
 
   it('the atomic contract begins only from COMPLETING and owns COMPLETED', () => {

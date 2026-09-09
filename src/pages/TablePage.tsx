@@ -754,6 +754,7 @@ interface TableState {
    */
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   fixedBetSize?: number;
+  fixedRaiseSize?: number;
   wagersCapped?: boolean;
 
   currentBet?: number;
@@ -2623,6 +2624,7 @@ export default function TablePage({
         // rather than re-derived from the variant string down in the panel.
         bettingStructure: mapped.bettingStructure,
         fixedBetSize: mapped.fixedBetSize,
+        fixedRaiseSize: mapped.fixedRaiseSize,
         wagersCapped: mapped.wagersCapped,
 
         sidePots: mapped.sidePots.map((sp, i) => ({
@@ -5874,7 +5876,10 @@ export default function TablePage({
     const isFixedLimit = structure === 'fixed_limit';
     const potLimitRaiseTo = potSizedRaiseTo(serverCurrentBet, tableState.pot, callAmount);
     const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
-    const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+    const flWagerTo = Math.min(
+      allInTo,
+      serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
+    );
     const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
     const minRaiseTo = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
     const maxRaiseTo = isFixedLimit
@@ -5897,6 +5902,7 @@ export default function TablePage({
     tableState.gameType,
     tableState.pot,
     tableState.fixedBetSize,
+    tableState.fixedRaiseSize,
     tableState.boardStage,
     tableState.wagersCapped,
   ]);
@@ -7386,6 +7392,12 @@ export default function TablePage({
   /** What the last add-on request actually did, for callers that only get
    *  the boolean (the auto top-up's toast). */
   const lastAddChipsResultRef = useRef<{ applied: number; queued: boolean } | null>(null);
+  /** Mid-hand add-ons this mount queued (debited locally at request time)
+   *  whose landing it has not yet been told about (add_on_adjusted). */
+  const queuedAddOnsThisMountRef = useRef(0);
+  /** The hand in which the engine last answered "already at the maximum" to
+   *  an automatic top-up; no retry until the hand number changes. */
+  const autoTopUpRefusedForHandRef = useRef<number | null>(null);
   const handleAddChips = async (
     amount: number,
     opId?: string,
@@ -7418,6 +7430,10 @@ export default function TablePage({
            the next snapshot re-evaluates. A manual request still hears it. */
         if (opts?.source === 'auto' && /maximum buy-in/i.test(String(res.error || ''))) {
           lastAddChipsResultRef.current = { applied: 0, queued: false };
+          // And do not ask again this hand: the effect below re-runs on every
+          // snapshot (`tableState.players` is a new array each time), and
+          // the answer cannot change until the queued chips land.
+          autoTopUpRefusedForHandRef.current = tableStateRef.current.handNumber ?? null;
           return false;
         }
         reportError(
@@ -7448,6 +7464,7 @@ export default function TablePage({
          for the rest of the session. Every tracker now uses `applied`. */
       const applied = typeof res.applied === 'number' ? res.applied : amount;
       lastAddChipsResultRef.current = { applied, queued: res.queued === true };
+      if (res.queued) queuedAddOnsThisMountRef.current += 1;
       if (typeof window !== 'undefined') {
         if (applied < amount) {
           toast.info(
@@ -8950,8 +8967,15 @@ export default function TablePage({
   const bustRebuyKeyRef = useRef<{ amount: number; key: string } | null>(null);
 
   const confirmBustRebuy = useCallback(
-    async (amount: number) => {
+    async (requested: number) => {
       if (!tableId || !userId) return;
+      /* TO THE CENT (2026-09-08 sweep). This lands as a table_pending_addons
+         row, and the post-commit obligation check refuses a receipt whose
+         applied + refunded (both ROUND(..., 2)) differ from the row's
+         `amount` - so an unrounded float here is a table that never deals
+         again. BuyInModal already rounds; this is the guard at the wire. */
+      const amount = Math.round(requested * 100) / 100;
+      if (!(amount > 0)) return;
       setBustRebuyProcessing(true);
       try {
         if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
@@ -9927,7 +9951,13 @@ export default function TablePage({
          refund here would invent balance. The player is still told. */
       const clientDebited = ev.addon_kind === 'addon' || ev.addon_kind === undefined;
       if (refunded > 0) {
-        if (clientDebited) {
+        /* And only when THIS mount made the debit it is correcting. A
+           reloaded page reads its balance absolutely (refund included) and
+           seeds its session from the stack; crediting the refund there
+           would invent chips. `queuedAddOnsThisMountRef` counts add-ons this
+           mount queued mid-hand and has not yet heard back about. */
+        if (clientDebited && queuedAddOnsThisMountRef.current > 0) {
+          queuedAddOnsThisMountRef.current -= 1;
           applyBalanceDelta((prev) => (prev === null ? null : prev + refunded));
           totalBuyInRef.current = Math.max(0, totalBuyInRef.current - refunded);
           if (tableId) sessionStatsService.recordRebuy(tableId, -refunded);
@@ -9957,6 +9987,21 @@ export default function TablePage({
       if (typeof ev.to_call_at_set === 'number' && Number.isFinite(ev.to_call_at_set)) {
         preActionCallAmountRef.current = ev.to_call_at_set;
       }
+      /* A "NOTHING ARMED" FRAME WITHOUT A REASON IS THE ENGINE TAKING THE
+         TURN (2026-09-08 sweep). The engine consumes a pre-action at the top
+         of its turn handler, BEFORE the snapshot that puts the hero on the
+         clock, and (on builds before this one) pushed the empty copy at
+         once - so the bar disarmed a frame before the turn arrived, the
+         suppression of every "your turn" surface had nothing to key on, and
+         the bell, ring, clock and panel all fired for a turn the engine was
+         already taking. The engine no longer pushes on execution, and every
+         other empty push now carries its reason (invalidated, cleared,
+         rejected, resync) and is applied at once. An empty frame with NO
+         reason can only be the execution push of an older engine: the arm is
+         held, and the executed action clears it a beat later (heroLastAction),
+         bounded by the grace window if it never lands. */
+      const reason = typeof ev.reason === 'string' ? ev.reason : null;
+      if (mapped === null && reason === null && preActionArmedRef.current !== null) return;
       if (mapped === null) hadPreActionRef.current = false;
       setPreAction((cur) => (cur === mapped ? cur : mapped));
     }
@@ -21571,7 +21616,15 @@ export default function TablePage({
 
         /* An unknown balance never auto-tops-up: spending on a number we
            could not read is exactly the risk the null now expresses. */
-        if (maxBuyIn > 0 && currentStack < maxBuyIn && (accountBalance ?? 0) > 0) {
+        const refusedThisHand =
+          autoTopUpRefusedForHandRef.current !== null &&
+          autoTopUpRefusedForHandRef.current === (tableState.handNumber ?? null);
+        if (
+          !refusedThisHand &&
+          maxBuyIn > 0 &&
+          currentStack < maxBuyIn &&
+          (accountBalance ?? 0) > 0
+        ) {
           const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
@@ -21591,11 +21644,9 @@ export default function TablePage({
                      Ends" for the same request. */
                   const r = lastAddChipsResultRef.current;
                   const landed = r?.applied ?? topUpAmount;
-                  toast?.success?.(
-                    r?.queued
-                      ? `Auto Top Up: ${landed.toFixed(2)} Lands When This Hand Ends`
-                      : `Auto Top Up: Added ${landed.toFixed(2)} Chips`
-                  );
+                  // A queued one was already announced by handleAddChips
+                  // ("... Lands When This Hand Ends"); one toast per event.
+                  if (!r?.queued) toast?.success?.(`Auto Top Up: Added ${landed.toFixed(2)} Chips`);
                 }
               })
               .catch((err) => {
@@ -21617,6 +21668,7 @@ export default function TablePage({
     standUpNextBB,
     tableState.blinds,
     tableState.isTournament,
+    tableState.handNumber,
     accountBalance,
     tableId,
     handleSitOut,
@@ -24593,7 +24645,10 @@ export default function TablePage({
                   // A short stack clamps to its all-in.
                   const flBetSize =
                     tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
-                  const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+                  const flWagerTo = Math.min(
+                    allInTo,
+                    serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
+                  );
                   const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
 
                   // Raise-TO floor. When currentBet===0 (first bet of a street)
@@ -24757,7 +24812,11 @@ export default function TablePage({
                  a BOUNDED bridge for the one silence that has no event. */}
             {handStillTakingAction &&
               tableState.heroSeat > 0 &&
-              tableState.currentPlayerSeat !== tableState.heroSeat &&
+              /* ...or it IS the hero's seat and the engine is taking the
+                 turn with the armed pre-action (2026-09-08 sweep): the bar
+                 stays up, pressed button and all, through the beat, instead
+                 of an empty strip between "armed" and "unarmed". */
+              (tableState.currentPlayerSeat !== tableState.heroSeat || suppressPanelForPreAction) &&
               /* Dan 2026-04-17: after hero folds, hide PreActionBar — the
                  "weird lingering bar" bug. Folded hero has no pre-turn action. */
               getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' &&

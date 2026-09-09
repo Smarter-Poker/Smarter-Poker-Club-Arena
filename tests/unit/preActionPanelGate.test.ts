@@ -224,6 +224,22 @@ describe('THE BAR DOES NOT BLINK BETWEEN ACTORS (Dan 2026-09-07)', () => {
       PAGE.indexOf("return 'waiting'", stateAt2)
     );
     expect(waitingArm).toContain('suppressPanelForPreAction');
+    // the bar itself stays up through the beat (pressed button and all)
+    const barAt = PAGE.indexOf('<PreActionBar');
+    const barGate = PAGE.slice(PAGE.lastIndexOf('{handStillTakingAction &&', barAt), barAt);
+    expect(barGate).toMatch(
+      /\(tableState\.currentPlayerSeat !== tableState\.heroSeat \|\|\s*\n?\s*suppressPanelForPreAction\)/
+    );
+    // and the engine's reason-less "nothing armed" frame (an older engine's
+    // execution push, which outran the snapshot) is HELD, never applied
+    const userEvAt = PAGE.indexOf("if (ev.kind === 'pre_action') {");
+    const userEv = PAGE.slice(
+      userEvAt,
+      PAGE.indexOf('setPreAction((cur) => (cur === mapped ? cur : mapped));', userEvAt)
+    );
+    expect(userEv).toMatch(
+      /if \(mapped === null && reason === null && preActionArmedRef\.current !== null\) return;/
+    );
   });
 });
 

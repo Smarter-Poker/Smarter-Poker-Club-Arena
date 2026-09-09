@@ -16,6 +16,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
 import { dataActorHeaders } from './dataActorContext.js';
+import { bindRealtimeCallbacksToRegistration } from './realtimeCallbackContext.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -66,7 +67,7 @@ const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
 const MAINTENANCE_DB_TIMEOUT_MS = Number(process.env.MAINTENANCE_SUPABASE_TIMEOUT_MS ?? 50_000);
 
 function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
-  return createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
+  const client = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -158,6 +159,7 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
       },
     },
   });
+  return bindRealtimeCallbacksToRegistration(client);
 }
 
 export const supabase: SupabaseClient = createBoundedServiceClient(DB_TIMEOUT_MS);

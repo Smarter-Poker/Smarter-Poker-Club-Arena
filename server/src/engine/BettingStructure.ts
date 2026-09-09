@@ -33,7 +33,7 @@
  *    least half the street bet (HandController.canReopenBetting, TDA 47B).
  */
 
-import type { HandStage, ActionRecord, ActionType } from '../types.js';
+import type { GameState, HandStage, ActionRecord, ActionType } from '../types.js';
 
 export type BettingStructure = 'no_limit' | 'pot_limit' | 'fixed_limit';
 
@@ -67,6 +67,21 @@ export function isPotLimitVariant(variant?: string | null): boolean {
 }
 
 /**
+ * TDA 54B-C: preflop pot-limit sizing assumes full SB/BB posts, even when
+ * either blind is short all-in. Later streets use only the actual pot.
+ * Keep this separate from state.pot so accounting never invents blind chips.
+ */
+export function potLimitBettingPot(
+  state: Pick<GameState, 'pot' | 'stage' | 'potLimitBlindAdjustment'>
+): number {
+  return (
+    Math.round(
+      (state.pot + (state.stage === 'preflop' ? (state.potLimitBlindAdjustment ?? 0) : 0)) * 100
+    ) / 100
+  );
+}
+
+/**
  * THE POT-LIMIT RAISE-TO CEILING (Bible V8 4.14).
  *
  * The maximum raise SIZE under pot limit is the pot AFTER calling, so the
@@ -82,8 +97,8 @@ export function isPotLimitVariant(variant?: string | null): boolean {
  * with one limper - the standard Omaha opening sizes, derived rather than
  * guessed.
  *
- * `pot` must include the chips already wagered on the current street, which is
- * the convention every caller in the engine already uses.
+ * `pot` includes current-street wagers. For a live pot-limit hand pass
+ * potLimitBettingPot(state), which includes nominal short blinds preflop.
  */
 export function potLimitRaiseTo(pot: number, currentBet: number, toCall: number): number {
   const p = Number.isFinite(pot) ? Math.max(0, pot) : 0;

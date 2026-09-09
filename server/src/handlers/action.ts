@@ -49,7 +49,8 @@ export interface ActionEngine {
   handlePlayerAction(
     userId: string,
     action: string,
-    amount?: number
+    amount?: number,
+    actionContext?: string | null
   ): { success: boolean; [k: string]: unknown };
   recordActionPerformance(userId: string, action: string, processingMs: number): void;
 }
@@ -67,7 +68,7 @@ export async function handleAction(
     }
 
     const body = JSON.parse(await readBody(req));
-    const { tableId, action, amount, idempotencyKey } = body;
+    const { tableId, action, amount, idempotencyKey, actionContext } = body;
     // Use authenticated userId from JWT, NOT from request body (prevents spoofing)
     const userId = auth.userId;
 
@@ -81,9 +82,10 @@ export async function handleAction(
        `http/actionIdempotency.ts` for why the key is in the body rather than
        a header, and why a rejection is remembered while a refusal is not.
 
-       ABSENT IS LEGAL AND MEANS THE OLD BEHAVIOUR: bundles from before this
+       THE IDEMPOTENCY KEY REMAINS OPTIONAL: bundles from before this
        shipped are still served from the origin's additive pool and are
-       posting actions right now with no key.
+       posting actions right now with no key. Decision context is checked
+       separately by the engine; an unversioned browser is asked to reload.
 
        BEFORE THE RATE LIMITER, DELIBERATELY. A replay is not a new action; a
        429 on one would send the client back round its ladder and end in "The
@@ -94,7 +96,13 @@ export async function handleAction(
       // protection and does not is worse off than one that knows it has none.
       return sendJSON(res, 400, { success: false, error: 'Invalid action key' });
     }
-    const fingerprint = hasKey ? actionFingerprint(action, amount) : '';
+    if (
+      actionContext != null &&
+      (typeof actionContext !== 'string' || actionContext.length > 200)
+    ) {
+      return sendJSON(res, 400, { success: false, error: 'Invalid action context' });
+    }
+    const fingerprint = hasKey ? actionFingerprint(action, amount, actionContext) : '';
     if (hasKey) {
       const seen = lookupAction(userId, tableId, idempotencyKey as string, fingerprint);
       if (seen.kind === 'replay') {
@@ -126,12 +134,14 @@ export async function handleAction(
 
     // Bible V8 §9.1.1: Instrument action processing time (target < 50ms)
     const actionStartMs = Date.now();
-    const result = engine.handlePlayerAction(userId, action, amount);
+    const result = engine.handlePlayerAction(userId, action, amount, actionContext ?? null);
     const actionProcessingMs = Date.now() - actionStartMs;
     // Record to telemetry (broadcast timing tracked inside engine)
     engine.recordActionPerformance(userId, action, actionProcessingMs);
 
-    const status = result.success ? 200 : 400;
+    // Old bundles only read JSON on HTTP 200. Deliver the reload instruction
+    // in their understood envelope, always with success:false and no mutation.
+    const status = result.success || result.code === 'ACTION_CONTEXT_REQUIRED' ? 200 : 400;
     /* Remembered ONLY here, on the one path where the action actually reached
        the engine. Everything above this line - 401, 404, 429 - means "not
        processed", and a retry of those must be free to run for real. There is

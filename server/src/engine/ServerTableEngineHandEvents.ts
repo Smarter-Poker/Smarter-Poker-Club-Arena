@@ -103,7 +103,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       return [];
     }
   }
-  protected async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
+  protected async handleHandEvent(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration?: number
+  ): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
         // Watchdog liveness: a dealt hand is proof the table is alive.
@@ -193,8 +197,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // SB/BB chips flying from each blind seat into the pot, instead of
         // letting the chips just appear in the pot via snapshot.
         const postings = (event as any).postings as
-          | Array<{ seat: number; type: string; amount: number }>
-          | undefined;
+          Array<{ seat: number; type: string; amount: number }> | undefined;
         if (postings && postings.length > 0) {
           this.hub?.emitEvent(this.tableId, {
             type: 'blinds_posted',
@@ -1318,7 +1321,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       }
 
       case 'HAND_COMPLETE': {
-        await this.handleHandCompleteEvent(event, players);
+        if (persistenceGeneration === undefined) {
+          throw new Error(`HAND_COMPLETE for table ${this.tableId} has no persistence generation`);
+        }
+        await this.handleHandCompleteEvent(event, players, persistenceGeneration);
         break;
       }
     }

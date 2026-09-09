@@ -10,7 +10,16 @@ CREATE TEMP TABLE unions(id uuid,name text) ON COMMIT DROP;
 CREATE TEMP TABLE union_wallets(union_id uuid,chip_balance numeric,updated_at timestamptz) ON COMMIT DROP;
 CREATE TEMP TABLE union_wallet_transactions(union_id uuid,wallet text,direction text,amount numeric,balance_after numeric,tx_type text,club_id uuid,notes text) ON COMMIT DROP;
 CREATE TEMP TABLE tournament_guarantee_overlays(tournament_id uuid UNIQUE,club_id uuid,amount numeric,pool_before numeric,pool_after numeric,source text,bank_type text,bank_entity_id uuid,union_id uuid,treasury_after numeric) ON COMMIT DROP;
-SELECT pg_get_functiondef('public.fn_apply_prize_guarantee(uuid,text)'::regprocedure) INTO src; EXECUTE replace(src,'public.','pg_temp.');
+-- Exercise the funding-scope authority directly.  The public wrapper now
+-- additionally requires production escrow and journal evidence, outside this
+-- intentionally isolated temp-table harness.
+SELECT pg_get_functiondef(
+  'public.fn_apply_prize_guarantee_before_atomic_proof(uuid,text)'::regprocedure)
+  INTO src;
+src:=replace(src,
+  'public.fn_apply_prize_guarantee_before_atomic_proof',
+  'pg_temp.fn_apply_prize_guarantee');
+EXECUTE replace(src,'public.','pg_temp.');
 INSERT INTO pg_temp.clubs VALUES(club,'test club',new_union,100,now());
 INSERT INTO pg_temp.unions VALUES(event_union,'event union'),(new_union,'new union');
 INSERT INTO pg_temp.union_wallets VALUES(event_union,100,now()),(new_union,100,now());

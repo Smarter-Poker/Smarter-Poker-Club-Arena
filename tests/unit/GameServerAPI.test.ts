@@ -47,6 +47,23 @@ describe('GameServerAPI', () => {
     );
   });
 
+  it('sends the admin occupancy contract to the configured engine origin', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+    await GameServerAPI.notifyServerKickOccupancy('table', 'player', 2, 'occupancy', 'reason');
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringMatching(/^https?:\/\/.+\/admin\/kick-occupancy$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          tableId: 'table',
+          userId: 'player',
+          seatNumber: 2,
+          occupancyId: 'occupancy',
+          reason: 'reason',
+        }),
+      })
+    );
+  });
   describe('submitAction', () => {
     it('should return success:false when server unreachable', async () => {
       mockFetch.mockRejectedValue(new Error('Network error'));

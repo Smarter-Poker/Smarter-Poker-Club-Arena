@@ -63,3 +63,23 @@ Seat-expiry correction applied as migration 20260908215333 (reserved source 2026
 PR #3872 merged as 54ed5bc1eb25dd5f1da213bb2cd0c99cb164eb37 after CI34281137223 passed all required jobs. The public frontend subsequently served 243456f0231d4a2c5f4036f177604f3be6e2ccad, built at 2026-09-08T21:53:33Z by Hetzner run34282845196. Its actual entry asset index-Czg2Izqj-v6.js contains both the cashout receipt rejection and missing table-context guard.
 
 Engine health last observed version61df0dc0: it includes the wager/reopening merge but predates the receipt merge. The live database guards are active independently. Server receipt-guard adoption still needs scheduled-maintenance evidence; no restart was forced.
+
+## Occupancy Contract Build (not deployed)
+
+The current browser /leave request carries only tableId. Server rosters select user_id/seat_number but no occupancy identity. atomic_seat_cashout_locked selects the current live seat. A lost response followed by a rejoin therefore changes the target of the retry.
+
+The new contract introduces a database-controlled occupancy UUID, renewed on seat reuse, reassignment or movement, and a private durable receipt keyed by that UUID. Each financial request must carry the original UUID through browser, HTTP, engine and SQL wrappers. The same transaction verifies the expected occupancy, calls the canonical cashout and saves the original outcome. Replays return that outcome before looking at any new live seat. Direct receipt writes are denied.
+
+Release gates: complete isolated identity/rollback tests; wire every server caller and strict versioned leave route; adopt engine support; switch browser intents; retire unbound external cashout/leave paths; verify old clients fail before mutation. The additive migration alone is not a fix for existing callers, and will not be represented as completion.
+
+Additional reproduction: reusing a physical seat row and joined_at produced a second cashout receipt for 40 but no second credit; the wallet remained85 instead of125. The new request wrapper alone did not fix the old ledger key. The canonical credit key therefore changes to cashout:occupancy:<database UUID>. The migration refuses active cash occupancies with existing legacy credit evidence rather than guessing historical balances. Existing permissions and the single canonical credit transaction remain intact. This migration is still local pending caller wiring and rollout verification.
+
+### Occupancy database and engine checkpoint
+
+Local validation now passes 7,759 ordinary server tests across 579 files, plus 41 opt-in PostgreSQL tests in the disposable database. Server TypeScript passes. The full suite preceded the final four migration-only cases, which passed separately. These are isolated tests, not live browser or production acceptance.
+
+The PostgreSQL cases cover concurrent duplicate requests, lost response after commit, rollback after wallet credit, rollback when saving the receipt fails, replay after deletion/rejoin, reuse of both physical row and joined_at, owner versus cross-user authorization, receipt table privileges/RLS, database-controlled identity renewal, and migration replay with existing receipts. The migration refuses active matching legacy credit evidence, including malformed matching keys, and refuses an unreviewed canonical function baseline. Its tested canonical definition MD5 is 27b0dea6d857963fe0fd4ac5857c1f1f.
+
+Server roster reads and cashout helpers now pass the captured occupancy UUID. Every direct atomicCashout/markSeatAsLeft call compiles against the required argument. Pending-departure results carry both user and occupancy, and pending, eviction and busted-seat cleanup preserve a replacement occupancy. Behavioral tests hold the RPC response while replacing the roster and prove that the later seat is not removed or announced as departed.
+
+This checkpoint is NOT deployed and does NOT complete Phase 2. Release-blocking work still includes the original browser intent and versioned HTTP contract; admin intent binding; remaining SQL wrapper migration and lock ordering; retiring old callable entrypoints after coordinated adoption; and full browser/engine/database release compatibility evidence. Other Phase 2 acceptance surfaces listed above remain open until their evidence is recorded. No historical financial balances were changed, and no new watcher or reconciler was added.

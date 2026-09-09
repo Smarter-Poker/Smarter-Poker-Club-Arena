@@ -146,6 +146,11 @@ export class RunItTwiceEngine {
 
   configure(tableId: string, config: RITConfig): void {
     this.tableConfigs.set(tableId, config);
+    // Disabling is a hard cash-only boundary, not merely permission to stop
+    // creating the next offer. A stale offered/accepted state must not remain
+    // callable after the table is identified as a tournament or the host turns
+    // the feature off.
+    if (!config.enabled) this.clearOffer(tableId);
   }
 
   /**

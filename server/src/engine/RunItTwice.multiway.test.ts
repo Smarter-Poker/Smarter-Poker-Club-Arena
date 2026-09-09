@@ -8,7 +8,7 @@
  *
  * These drive the REAL handleAllInRunout / consent engine / settlement.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
@@ -50,6 +50,13 @@ function mkEngine(players: SeatPlayer[], hc: HandController | null) {
     stack: p.stack,
     is_horse: false,
   }));
+  engine.currentHandActions = players.map((player, index) => ({
+    seat: player.seat,
+    userId: player.user_id,
+    action: index === 0 ? 'all_in' : 'call',
+    timestamp: 1,
+    stage: 'preflop',
+  }));
   engine.runItTwiceEngine.configure(TABLE, { enabled: true, autoDeclineTimeout: 10, maxRuns: 3 });
   engine.insuranceEngine.configure(TABLE, { enabled: false });
   // 2026-08-19 (Dan item 16): an all-in run-out is now PACED - one street at a
@@ -73,6 +80,7 @@ describe('chooser = best ACTUAL hand, not best equity', () => {
     players.forEach((p) => (p.is_all_in = true));
     const hcStub = { getState: () => ({ players, currentPlayerSeat: -1 }) } as any;
     const engine = mkEngine(players, hcStub);
+    engine.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
 
     const ev = {
       type: 'ALL_IN_RUNOUT',
@@ -96,6 +104,7 @@ describe('chooser = best ACTUAL hand, not best equity', () => {
     players.forEach((p) => (p.is_all_in = true));
     const hcStub = { getState: () => ({ players, currentPlayerSeat: -1 }) } as any;
     const engine = mkEngine(players, hcStub);
+    engine.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
 
     const ev = {
       type: 'ALL_IN_RUNOUT',
@@ -172,6 +181,7 @@ describe('6-way all-in money path - side pots, three boards, cent conservation',
     expect(events.some((e) => e.type === 'ALL_IN_RUNOUT')).toBe(true);
 
     const engine = mkEngine(players, hc);
+    engine.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
     engine.runItTwiceEngine.offer(
       TABLE,
       `${TABLE}:1`,
@@ -239,6 +249,7 @@ describe('decline → the pot runs ONCE (full flow through the real wait)', () =
     expect(ev).toBeDefined();
 
     const engine = mkEngine(players, hc);
+    engine.broadcastAllInEquity = vi.fn().mockResolvedValue(undefined);
     engine.handleAllInRunout(ev, engine.seatedPlayers); // real offer + real wait
     expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(true);
 

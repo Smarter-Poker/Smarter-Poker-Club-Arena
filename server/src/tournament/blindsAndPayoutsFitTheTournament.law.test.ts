@@ -193,6 +193,15 @@ describe('a big blind may never exceed the chips that exist', () => {
     expect(capped.ante).toBe(25);
   });
 
+  it('refuses a fractional source level instead of returning or flooring it', () => {
+    expect(() =>
+      capLevelToChipsInPlay({ smallBlind: 100.5, bigBlind: 200, ante: 25 }, TOTAL)
+    ).toThrow(/whole small blind/);
+    expect(() =>
+      capLevelToChipsInPlay({ smallBlind: 100, bigBlind: 200, ante: 25.5 }, TOTAL)
+    ).toThrow(/whole ante/);
+  });
+
   it('preserves the shape of the level it caps', () => {
     const capped = capLevelToChipsInPlay(
       { smallBlind: 500_000, bigBlind: 1_000_000, ante: 125_000 },

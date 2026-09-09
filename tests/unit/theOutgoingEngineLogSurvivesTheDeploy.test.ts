@@ -39,7 +39,8 @@ describe('engine-up.sh saves the outgoing log before it removes the container', 
     const fn = sliceMethod(sh, 'save_outgoing_log() {');
     expect(fn).toMatch(/-mtime \+"\$LOG_KEEP_DAYS" -delete/);
     expect(fn).toMatch(/-gt "\$LOG_KEEP_MB"/);
-    expect(fn).toMatch(/wc -l\)" -gt 1 \] \|\| break/);
+    expect(fn).toContain('[ "${#retained_logs[@]}" -gt 1 ] || break');
+    expect(fn).toContain('[ "$candidate" -ot "$oldest" ] && oldest="$candidate"');
   });
 
   it('the deploy names the saved file in its own log', () => {

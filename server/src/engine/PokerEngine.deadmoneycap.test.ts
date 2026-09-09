@@ -180,4 +180,127 @@ describe('the odd chip goes to the first seat clockwise OF the button', () => {
     const winners = determineWinners(players, board, pots, 'nlh', 0);
     expect(winners.find((w) => w.userId === 'u1')!.amount).toBe(1.01);
   });
+
+  it('keeps the same cash pot cent-denominated by default', () => {
+    const players = [
+      mk(1, { totalInvested: 50.5, cards: [c('Qh'), c('Jh')] }),
+      mk(2, { totalInvested: 50.5, cards: [c('Qs'), c('Js')] }),
+    ];
+    const pots = [{ amount: 101, eligiblePlayers: ['u1', 'u2'] }];
+    const winners = determineWinners(players, board, pots, 'nlh', 1);
+    expect(winners.find((w) => w.userId === 'u1')!.amount).toBe(50.5);
+    expect(winners.find((w) => w.userId === 'u2')!.amount).toBe(50.5);
+  });
+});
+
+describe('tournament pots settle in indivisible whole chips', () => {
+  const board = [c('Ah'), c('Kd'), c('Qc'), c('Js'), c('Th')]; // board plays
+
+  it('awards a 101-chip heads-up chop as 51/50 clockwise from the button', () => {
+    const players = [
+      mk(1, { totalInvested: 50, cards: [c('2h'), c('3h')] }),
+      mk(2, { totalInvested: 51, cards: [c('4s'), c('5s')] }),
+    ];
+    const awards: Array<{ userId: string; amount: number }> = [];
+    const winners = determineWinners(
+      players,
+      board,
+      [{ amount: 101, eligiblePlayers: ['u1', 'u2'] }],
+      'nlh',
+      1,
+      awards as any,
+      undefined,
+      1
+    );
+
+    expect(winners.find((w) => w.userId === 'u1')!.amount).toBe(50);
+    expect(winners.find((w) => w.userId === 'u2')!.amount).toBe(51);
+    expect(winners.reduce((s, w) => s + w.amount, 0)).toBe(101);
+    expect(awards.every((a) => Number.isInteger(a.amount))).toBe(true);
+  });
+
+  it('allocates each side-pot remainder inside that pot eligibility', () => {
+    const players = [
+      mk(1, { totalInvested: 34, cards: [c('2h'), c('3h')] }),
+      mk(2, { totalInvested: 60, cards: [c('4s'), c('5s')] }),
+      mk(3, { totalInvested: 58, cards: [c('6d'), c('7d')] }),
+    ];
+    const awards: Array<{ userId: string; amount: number; potIndex?: number }> = [];
+    const winners = determineWinners(
+      players,
+      board,
+      [
+        { amount: 101, eligiblePlayers: ['u1', 'u2'] },
+        { amount: 51, eligiblePlayers: ['u2', 'u3'] },
+      ],
+      'nlh',
+      1,
+      awards as any,
+      undefined,
+      1
+    );
+
+    const main = awards.filter((a) => a.potIndex === 0);
+    const side = awards.filter((a) => a.potIndex === 1);
+    expect(main.map((a) => [a.userId, a.amount])).toEqual([
+      ['u2', 51],
+      ['u1', 50],
+    ]);
+    expect(side.map((a) => [a.userId, a.amount])).toEqual([
+      ['u2', 26],
+      ['u3', 25],
+    ]);
+    expect(winners.reduce((s, w) => s + w.amount, 0)).toBe(152);
+    expect(winners.every((w) => Number.isInteger(w.amount))).toBe(true);
+  });
+
+  it('puts a hi-lo odd chip on high and splits the low in whole chips', () => {
+    const omahaBoard = [
+      { rank: 'A', suit: 'hearts' },
+      { rank: '2', suit: 'diamonds' },
+      { rank: '3', suit: 'clubs' },
+      { rank: 'K', suit: 'spades' },
+      { rank: 'Q', suit: 'hearts' },
+    ] as Card[];
+    const players = [
+      mk(1, {
+        totalInvested: 50,
+        cards: [
+          { rank: '4', suit: 'spades' },
+          { rank: '5', suit: 'spades' },
+          { rank: 'K', suit: 'diamonds' },
+          { rank: 'K', suit: 'clubs' },
+        ] as Card[],
+      }),
+      mk(2, {
+        totalInvested: 51,
+        cards: [
+          { rank: '4', suit: 'hearts' },
+          { rank: '5', suit: 'hearts' },
+          { rank: 'Q', suit: 'diamonds' },
+          { rank: 'Q', suit: 'clubs' },
+        ] as Card[],
+      }),
+    ];
+    const awards: Array<{ userId: string; amount: number; low?: boolean }> = [];
+    const winners = determineWinners(
+      players,
+      omahaBoard,
+      [{ amount: 101, eligiblePlayers: ['u1', 'u2'] }],
+      'plo8',
+      1,
+      awards as any,
+      undefined,
+      1
+    );
+
+    // Both players make the wheel for high as well as low. The odd 101st chip
+    // belongs to the 51-chip high half, then goes to seat 2 clockwise from the
+    // seat-1 button; the low half remains an even 25/25 split.
+    expect(awards.filter((a) => !a.low).map((a) => a.amount)).toEqual([26, 25]);
+    expect(awards.filter((a) => a.low).map((a) => a.amount)).toEqual([25, 25]);
+    expect(winners.find((w) => w.userId === 'u1')!.amount).toBe(50);
+    expect(winners.find((w) => w.userId === 'u2')!.amount).toBe(51);
+    expect(winners.reduce((s, w) => s + w.amount, 0)).toBe(101);
+  });
 });

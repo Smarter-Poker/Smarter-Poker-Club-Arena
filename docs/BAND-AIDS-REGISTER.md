@@ -331,7 +331,7 @@ must be one transaction, asserted at commit.
 and the chips never arrived. It moved game-deciding chips every minute forever.
 
 **Root cause fixed.** Migration
-`20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing` makes a
+`20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing` makes a
 live tournament seat's positive stack a BEFORE-trigger invariant, before every
 engine or money-path bypass. A canonical seat-first seat must equal the board's
 positive `tournaments.starting_chips`. The paid-third-seat AFTER hook now

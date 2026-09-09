@@ -668,6 +668,23 @@ export default function TournamentPage() {
       // Realtime refreshes the tournament row; this page must not reconstruct
       // financial state from a mutable buy-in display value.
       toast.success(tournamentUnregisterSuccessText(result));
+
+      // The committed receipt may return wallet chips or a ticket and can
+      // include exact entry/add-on/rebuy amounts. Refresh the authoritative
+      // tournament row instead of reconstructing its pool in the browser.
+      try {
+        const updated = await tournamentService.getTournament(selectedTournament.id);
+        if (updated) {
+          setTournaments((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          setSelectedTournament(updated);
+        }
+      } catch (refreshError) {
+        // The settlement already committed; a display refresh cannot turn its
+        // truthful success into an unregister failure.
+        reportError(refreshError, 'TournamentPage.Unregister_refresh_failed', {
+          tournamentId: selectedTournament.id,
+        });
+      }
     } catch (error) {
       toast.error('Unregister failed: ' + (error as Error).message);
     }

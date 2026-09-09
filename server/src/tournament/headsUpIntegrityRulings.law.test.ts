@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 /**
  * ═════════════════════════════════════════════════════════════════════════
@@ -65,10 +66,7 @@ describe("Dan's Phase 5 rulings on heads-up tournaments", () => {
   it('never folds or penalises an all-in seat when its player disconnects', () => {
     const src = read('src/engine/ServerTableEngineTurns.ts');
 
-    const handler = src.slice(
-      src.indexOf('protected handlePlayerDisconnectedMidTurn'),
-      src.indexOf('protected handlePlayerDisconnectedMidTurn') + 1500
-    );
+    const handler = sliceMethod(src, 'protected handlePlayerDisconnectedMidTurn');
     expect(handler).toContain(
       'if (player.is_folded || player.is_all_in || player.is_sitting_out) return;'
     );

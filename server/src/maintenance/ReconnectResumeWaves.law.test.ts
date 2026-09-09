@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 describe('maintenance resume waves preserve the remaining reconnect allowance', () => {
-  it.each(['success', 'failure', 'no-hook'] as const)(
+  it.each(['success', 'retry'] as const)(
     'covers database thaw %s and all eight waves without refilling any grant',
     async (thawMode) => {
       vi.useFakeTimers();
@@ -64,9 +64,11 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
         releaseThaw = resolve;
       });
       let row: PersistedMaintenanceBreak | null = null;
+      let thawCalls = 0;
       const mb = new MaintenanceBreak({
         store: {
           load: async () => row,
+          loadReleaseBoundary: async () => null,
           save: async (state) => {
             row = { ...state };
           },
@@ -82,14 +84,13 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
         engines: () => engines.entries(),
         isRunning: () => true,
         emit() {},
-        ...(thawMode === 'no-hook'
-          ? {}
-          : {
-              thaw: async () => {
-                await thawWait;
-                if (thawMode === 'failure') throw new Error('isolated thaw failure');
-              },
-            }),
+        thaw: async () => {
+          thawCalls++;
+          await thawWait;
+          if (thawMode === 'retry' && thawCalls === 1) {
+            throw new Error('isolated thaw failure');
+          }
+        },
       });
       cleanups.push(() => mb.stop());
       await mb.announceLastHand();
@@ -99,8 +100,14 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
       const ending = mb.end();
       // A snapshot can observe the original thaw while the DB request waits.
       disconnect.getFsmStatesForTable('wave-table-199');
-      if (thawMode !== 'no-hook') vi.setSystemTime(Date.now() + 8_000);
+      vi.setSystemTime(Date.now() + 8_000);
       releaseThaw();
+      await Promise.resolve();
+      await Promise.resolve();
+      if (thawMode === 'retry') {
+        expect(deadlineAtResume.size, 'a failed thaw installment admitted play').toBe(0);
+        await vi.advanceTimersByTimeAsync(MaintenanceBreak.THAW_RECOVERY_RETRY_MS);
+      }
       await ending;
       expect(deadlineAtResume.size).toBe(25);
       // Reading a waiting table must not prevent its later wave compensation.

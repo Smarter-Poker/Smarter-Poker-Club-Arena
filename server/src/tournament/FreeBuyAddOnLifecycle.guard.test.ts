@@ -32,10 +32,7 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
   );
   const beginBreak = sliceMethod(manager, 'beginAddOnBreak(endMs: number): Promise<void>');
   const finishBreak = sliceMethod(manager, 'finishAddOnBreak(): Promise<void>');
-  const drive = sliceMethod(
-    manager,
-    'drivePersistedAddOnDeadline(rebroadcastAfterThaw: boolean): Promise<void>'
-  );
+  const drive = sliceMethod(manager, 'private async drivePersistedAddOnDeadline(');
   const replay = sliceMethod(manager, 'scheduleFinalizedAddOnTailReplay(finalPool: number): void');
   const finalTail = sliceMethod(
     manager,
@@ -43,7 +40,7 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
   );
 
   it('opens after seating but before the pre-seat deal hold is applied', () => {
-    const seatsExist = start.indexOf('await this.createTablesAndSeatPlayers(tournament)');
+    const seatsExist = start.indexOf('await this.createTablesAndSeatPlayers(');
     const freeBuyOpen = start.indexOf('await this.triggerAddOnPeriod()', seatsExist);
     const advertisedDealHold = start.indexOf('engine.holdDealingUntil(launchStartMs)', freeBuyOpen);
 
@@ -63,7 +60,57 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     );
   });
 
+  it('adopts an incomplete launch window before any replacement deadline is calculated', () => {
+    const cache = start.indexOf('this.tournamentCache = tournament');
+    const durableFlag = start.indexOf('if (tournament.addon_period_triggered === true)', cache);
+    const pairProof = start.indexOf('persistedAddOnEndMs <= persistedAddOnStartMs', durableFlag);
+    const latch = start.indexOf('this.addOnPeriodTriggered = true', pairProof);
+    const seats = start.indexOf('await this.createTablesAndSeatPlayers(', latch);
+    const prospectiveOpen = start.indexOf('await this.triggerAddOnPeriod()', seats);
+
+    expect(cache).toBeGreaterThanOrEqual(0);
+    expect(durableFlag).toBeGreaterThan(cache);
+    expect(pairProof).toBeGreaterThan(durableFlag);
+    expect(latch).toBeGreaterThan(pairProof);
+    expect(seats).toBeGreaterThan(latch);
+    expect(prospectiveOpen).toBeGreaterThan(seats);
+    expect(start.slice(durableFlag, latch)).toContain('tournament.add_on_available !== true');
+  });
+
+  it('drives an adopted deadline after RUNNING is durable and before dealers start', () => {
+    const completion = start.indexOf('const launchCompleted = await this.completeTournamentLaunch');
+    const cacheRunning = start.indexOf("this.tournamentCache.status = 'RUNNING'", completion);
+    const drivePersisted = start.indexOf(
+      'const addOnDeadlineResult = await this.drivePersistedAddOnDeadline(false)',
+      cacheRunning
+    );
+    const unproven = start.indexOf("if (addOnDeadlineResult === 'unproven')", drivePersisted);
+    const standDown = start.indexOf('this.running = false', unproven);
+    const dealerAdmission = start.indexOf(
+      'for (const [tableId, engine] of this.tableEngines)',
+      standDown
+    );
+
+    expect(completion).toBeGreaterThanOrEqual(0);
+    expect(cacheRunning).toBeGreaterThan(completion);
+    expect(drivePersisted).toBeGreaterThan(cacheRunning);
+    expect(unproven).toBeGreaterThan(drivePersisted);
+    expect(standDown).toBeGreaterThan(unproven);
+    expect(dealerAdmission).toBeGreaterThan(standDown);
+    expect(start.slice(cacheRunning, drivePersisted)).toContain('if (this.addOnPeriodTriggered)');
+    expect(start.slice(drivePersisted, dealerAdmission)).toContain(
+      'this.assertLifecycleCurrent(lifecycle)'
+    );
+    expect(start.slice(unproven, dealerAdmission)).toContain(
+      "'Tournament.launch_addon_deadline_unproven'"
+    );
+  });
+
   it('anchors the break and close to the later of advertised start and the actual seat, plus late reg plus configured break', () => {
+    const durableRead = trigger.indexOf(".from('tournaments')");
+    const newDeadline = trigger.indexOf('const requestedStart = new Date().toISOString()');
+    expect(durableRead).toBeGreaterThanOrEqual(0);
+    expect(newDeadline).toBeGreaterThan(durableRead);
     expect(trigger).toContain('const requestedStart = new Date().toISOString()');
     expect(trigger).toContain(
       "const advertisedStartMs = Date.parse(String(this.tournamentCache?.start_time ?? ''))"

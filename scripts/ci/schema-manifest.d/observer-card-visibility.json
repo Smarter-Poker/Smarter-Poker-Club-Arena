@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/codex-live-realtime/stage-b-v2",
+  "_comment": "20260908233950 defines the previously stub-only observer card policy as an explicit NOT NULL boolean defaulting to false. The exact migration is recorded in production.",
+  "tables": [],
+  "functions": [],
+  "columns": {
+    "tables": ["observer_show_cards"]
+  }
+}

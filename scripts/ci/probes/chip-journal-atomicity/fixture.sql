@@ -1,6 +1,8 @@
 
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
+CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS
+ 'SELECT NULLIF(current_setting(''request.jwt.claim.role'',true),'''')::text';
 CREATE TABLE chip_ledger(id uuid DEFAULT gen_random_uuid(), performed_by uuid,from_type text,from_entity_id uuid,from_label text,to_type text,to_entity_id uuid,to_label text,amount numeric CHECK(amount>0),category text,club_id uuid,union_id uuid,table_id uuid,hand_id uuid,tournament_id uuid,description text,pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,idempotency_key text UNIQUE,metadata jsonb,created_at timestamptz DEFAULT now());
 CREATE TABLE ca_ledger_write_failures(club_id uuid,user_id uuid,delta numeric,sqlstate text,message text);
 CREATE TABLE clubs(id uuid PRIMARY KEY,name text,union_id uuid,chip_treasury numeric DEFAULT 100,total_rake numeric DEFAULT 0,updated_at timestamptz);
@@ -14,9 +16,40 @@ CREATE TABLE engine_maintenance_break(
  id boolean PRIMARY KEY DEFAULT true,
  phase text NOT NULL,
  announced_at timestamptz NOT NULL,
+ break_started_at timestamptz,
  break_ends_at timestamptz,
- enforce_freeze boolean NOT NULL DEFAULT true
+ reason text NOT NULL DEFAULT 'Scheduled Engine Maintenance',
+ declared_by text,
+ ownership_token uuid NOT NULL DEFAULT gen_random_uuid(),
+ enforce_freeze boolean NOT NULL DEFAULT true,
+ updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- The authoritative entry/admission predicates compile against the durable
+-- thaw certificate as well as the live break row. Keep this shared fixture at
+-- the current table contract so a clean dependency-closure bootstrap cannot
+-- accidentally validate a predicate against only half of its state.
+CREATE TABLE engine_maintenance_thaws(
+ freeze_started_at timestamptz PRIMARY KEY,
+ thawed_at timestamptz NOT NULL DEFAULT now(),
+ frozen_seconds numeric NOT NULL,
+ shifted jsonb NOT NULL,
+ thawed_by text,
+ announced_at timestamptz,
+ ownership_token uuid,
+ contract_version integer,
+ release_target_at timestamptz,
+ release_generation integer NOT NULL DEFAULT 0
+);
+CREATE TABLE engine_maintenance_thaw_targets(
+ freeze_started_at timestamptz NOT NULL
+  REFERENCES engine_maintenance_thaws(freeze_started_at) ON DELETE CASCADE,
+ step text NOT NULL,
+ target_id uuid NOT NULL,
+ credited_seconds numeric NOT NULL DEFAULT 0 CHECK(credited_seconds >= 0),
+ PRIMARY KEY(freeze_started_at,step,target_id)
+);
+ALTER TABLE engine_maintenance_thaws ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engine_maintenance_thaw_targets ENABLE ROW LEVEL SECURITY;
 CREATE TABLE entry_purchase_idempotency_receipts(
  key_domain text NOT NULL,
  idempotency_key text NOT NULL,

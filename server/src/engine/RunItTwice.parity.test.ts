@@ -77,6 +77,13 @@ function atAllIn(stacks = [500, 500], horses = false) {
     stack: p.stack,
     is_horse: horses,
   }));
+  e.currentHandActions = players.map((player, index) => ({
+    seat: player.seat,
+    userId: player.user_id,
+    action: index === 0 ? 'all_in' : 'call',
+    timestamp: 1,
+    stage: 'preflop',
+  }));
   const emitted: Array<Record<string, unknown>> = [];
   e.hub = { emitEvent: (_t: string, p: Record<string, unknown>) => emitted.push(p) };
   e.broadcastCurrentState = vi.fn();
@@ -338,7 +345,7 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
   });
 });
 
-describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with an integer backstop behind the gate', () => {
+describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with a fail-closed settlement backstop', () => {
   it('the enable formula in Base refuses tournaments - MTT, Spins, heads-up SNG', async () => {
     // Dan's ruling: "run it twice or 3 times is a cash game only area. it
     // should never be in MTT, SPINS OR HEADS UP." The gate lives in
@@ -397,8 +404,14 @@ describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with an integer backstop behind th
     e.runItTwiceEngine.offer(TABLE, `${TABLE}:1`, ids[0], ids, 0);
     e.runItTwiceEngine.chooserDecides(TABLE, ids[0], runs);
     for (const id of ids.slice(1)) e.runItTwiceEngine.accept(TABLE, id);
-    e.dealAndResolveRIT(st.players.filter((p) => !p.is_folded));
-    return { e, hc, st, emitted, totalBuyin: stacks.reduce((s, x) => s + x, 0) };
+    return {
+      e,
+      hc,
+      st,
+      emitted,
+      allInPlayers: st.players.filter((p) => !p.is_folded),
+      totalBuyin: stacks.reduce((s, x) => s + x, 0),
+    };
   }
 
   it('a tournament all-in gets NO offer - the engine is configured off, as Base does', () => {
@@ -434,6 +447,13 @@ describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with an integer backstop behind th
         stack: p.stack,
         is_horse: true,
       }));
+      eng.currentHandActions = players.map((player, index) => ({
+        seat: player.seat,
+        userId: player.user_id,
+        action: index === 0 ? 'all_in' : 'call',
+        timestamp: 1,
+        stage: 'preflop',
+      }));
       const em: Array<Record<string, unknown>> = [];
       eng.hub = { emitEvent: (_t: string, p: Record<string, unknown>) => em.push(p) };
       eng.broadcastCurrentState = vi.fn();
@@ -458,44 +478,24 @@ describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with an integer backstop behind th
     ).toBeFalsy();
   });
 
-  it('THE BACKSTOP: a direct resolver call on a tournament hand splits whole chips only', () => {
-    // Unreachable in production while the Base gate holds — this drives
-    // dealAndResolveRIT directly to prove the defense-in-depth branch keeps
-    // the 41627f9a chip-destruction impossible even if the gate regresses.
-    // The deal is random, so run the settlement several times per run count —
-    // scoops and splits both land here, and the invariants must hold for all.
+  it('THE BACKSTOP: a direct resolver call on a tournament hand refuses before mutation', async () => {
+    // Unreachable in production while the Base gate holds — this drives the
+    // private settlement boundary directly to prove a stale accepted offer
+    // cannot re-enable the cash-only feature. A tournament RIT result is not
+    // rounded into whole chips; it is never dealt or settled at all.
     for (const runs of [2, 3] as const) {
       for (let trial = 0; trial < 4; trial++) {
-        const { e, st, totalBuyin } = tournamentHarness([500, 500], runs);
-        const winners = e.currentHandWinners as Array<{ userId: string; amount: number }>;
-        expect(winners.length).toBeGreaterThan(0);
-        let paid = 0;
-        for (const w of winners) {
-          expect(
-            Number.isInteger(w.amount),
-            `runs=${runs} trial=${trial}: credit ${w.amount} must be a whole chip amount`
-          ).toBe(true);
-          paid += w.amount;
-        }
-        // No rake, no BBJ in tournaments: every chip in the pot is paid out.
-        expect(paid).toBe(totalBuyin);
-        // Engine stacks are whole chips — the INTEGER column sync cannot
-        // floor anything away (the exact 41627f9a failure mode).
-        for (const p of st.players) {
-          expect(
-            Number.isInteger(p.stack),
-            `runs=${runs} trial=${trial}: stack ${p.stack} must be integer`
-          ).toBe(true);
-        }
-        expect(st.players.reduce((s, p) => s + p.stack, 0)).toBe(totalBuyin);
-        // Display shares are whole chips too — no fractional "+N" floats.
-        const awards = e.currentHandPerPotAwards as Array<{ amount: number }>;
-        for (const a of awards) {
-          expect(
-            Number.isInteger(a.amount),
-            `runs=${runs} trial=${trial}: display share ${a.amount} must be integer`
-          ).toBe(true);
-        }
+        const { e, st, allInPlayers, emitted } = tournamentHarness([500, 500], runs);
+        const beforeStacks = st.players.map((player) => player.stack);
+        await expect(e.dealAndResolveRITUnchecked(allInPlayers, e.handController)).rejects.toThrow(
+          'Tournament run-it-twice settlement is forbidden'
+        );
+        expect(st.players.map((player) => player.stack)).toEqual(beforeStacks);
+        expect(e.currentHandRitBoards).toBe(0);
+        expect(e.currentHandRitExtraBoards).toEqual([]);
+        expect(e.currentHandWinners).toEqual([]);
+        expect(e.currentHandPerPotAwards).toEqual([]);
+        expect(emitted).toEqual([]);
       }
     }
   });

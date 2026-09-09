@@ -121,6 +121,10 @@ describe('pineapple discard round', () => {
     ];
     const discarder = seats[0];
     hc.performDiscard(discarder, 1); // acted in time
+    expect(
+      hc.getState().revealedDeadCards,
+      'an ordinary private discard must never enter the public card universe'
+    ).toEqual([]);
     expect(hc.foldForMissedDiscard(discarder)).toBe(false);
     expect(st().players.find((p: SeatPlayer) => p.seat === discarder).is_folded).toBe(false);
 

@@ -80,6 +80,13 @@ function atAllIn(stacks = [500, 500]) {
     stack: p.stack,
     is_horse: true,
   }));
+  e.currentHandActions = players.map((player, index) => ({
+    seat: player.seat,
+    userId: player.user_id,
+    action: index === 0 ? 'all_in' : 'call',
+    timestamp: 1,
+    stage: 'preflop',
+  }));
   // Isolate the offer path: no network, no equity solver, no snapshots.
   const emitted: Array<Record<string, unknown>> = [];
   e.hub = { emitEvent: (_t: string, p: Record<string, unknown>) => emitted.push(p) };

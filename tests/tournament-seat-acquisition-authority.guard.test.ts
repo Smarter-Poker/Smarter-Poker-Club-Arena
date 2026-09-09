@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const root = (path: string) => resolve(__dirname, '..', path);
 const sql = readFileSync(
   root(
-    'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    'supabase/migrations/20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -268,10 +268,12 @@ describe('tournament seats are acquired below one hard root authority', () => {
   });
 
   it('leaves launch and late registration with no raw seat/count fallback', () => {
-    const launch = method(base, 'createTablesAndSeatPlayers(tournament: any)');
+    const launch = method(base, 'protected async createTablesAndSeatPlayers(');
     const late = method(manager, 'ensureLateRegSeated()');
+    expect(launch).toContain('await this.materializeTournamentLaunchSeats(');
+    expect(launch).toContain('assignTournamentPlayerSeatAtomically({');
+    expect(late).toContain('assignTournamentPlayerSeatAtomically({');
     for (const source of [launch, late]) {
-      expect(source).toContain('assignTournamentPlayerSeatAtomically({');
       expect(source).not.toMatch(/from\('table_seats'\)[\s\S]{0,100}\.(?:insert|update|delete)\(/);
       expect(source).not.toMatch(/\.update\(\{\s*current_players:/);
     }

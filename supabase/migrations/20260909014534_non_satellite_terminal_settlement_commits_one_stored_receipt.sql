@@ -48,7 +48,7 @@ BEGIN
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
      WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'
+       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
        AND p.proowner = v_relation_owner
        AND p.prokind = 'f' AND p.provolatile = 'v'
        AND NOT p.prosecdef AND NOT p.proretset
@@ -1127,6 +1127,7 @@ DECLARE
   v_t record; v_union uuid; v_net numeric; v_dest text; v_res jsonb;
   v_claimed integer; v_prior record; v_att jsonb; v_att_ok boolean := false;
   v_att_err text; v_users integer; v_members integer; v_done boolean := false;
+  v_attempt integer := 0; v_attempts integer := 0; v_state text;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1',0));
@@ -1207,20 +1208,43 @@ BEGIN
          updated_at = now()
    WHERE club_id = v_t.club_id;
 
-  BEGIN
-    v_att := public.fn_attribute_tournament_rake(p_tournament_id);
-    v_att_ok := COALESCE((v_att->>'ok')::boolean, false);
-    IF NOT v_att_ok THEN
-      v_att_err := COALESCE(v_att->>'reason', 'attribution returned ok=false');
-    END IF;
-  EXCEPTION WHEN OTHERS THEN
-    v_att_err := SQLERRM;
-    v_att := jsonb_build_object('ok', false, 'reason', v_att_err);
-    INSERT INTO public.financial_alerts (severity, source, message, context)
-    VALUES ('warning', 'fn_settle_tournament_rake',
-            'Rake settled but attribution failed: ' || v_att_err,
-            jsonb_build_object('tournament_id', p_tournament_id, 'net', v_net));
-  END;
+  /* Each transient attribution attempt is its own subtransaction. A deadlock
+     or lock timeout rolls back only that attempt, then retries inside this
+     settlement transaction. Every other error still fails once and alerts. */
+  LOOP
+    v_attempt := v_attempt + 1;
+    BEGIN
+      v_att := public.fn_attribute_tournament_rake(p_tournament_id);
+      v_att_ok := COALESCE((v_att->>'ok')::boolean, false);
+      v_att_err := CASE WHEN v_att_ok THEN NULL
+                        ELSE COALESCE(v_att->>'reason', 'attribution returned ok=false') END;
+      EXIT;
+    EXCEPTION
+      WHEN deadlock_detected OR lock_not_available THEN
+        GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;
+        IF v_attempt >= 4 THEN
+          v_att_err := SQLERRM || ' (after ' || v_attempt || ' attempts)';
+          v_att := jsonb_build_object('ok', false, 'reason', v_att_err);
+          INSERT INTO public.financial_alerts (severity, source, message, context)
+          VALUES ('warning', 'fn_settle_tournament_rake',
+                  'Rake settled but attribution failed: ' || v_att_err,
+                  jsonb_build_object('tournament_id', p_tournament_id, 'net', v_net,
+                                     'sqlstate', v_state, 'attempts', v_attempt));
+          EXIT;
+        END IF;
+        PERFORM pg_sleep(CASE v_attempt WHEN 1 THEN 0.1 WHEN 2 THEN 0.3 ELSE 0.6 END);
+      WHEN OTHERS THEN
+        v_att_err := SQLERRM;
+        v_att := jsonb_build_object('ok', false, 'reason', v_att_err);
+        INSERT INTO public.financial_alerts (severity, source, message, context)
+        VALUES ('warning', 'fn_settle_tournament_rake',
+                'Rake settled but attribution failed: ' || v_att_err,
+                jsonb_build_object('tournament_id', p_tournament_id, 'net', v_net,
+                                   'attempts', v_attempt));
+        EXIT;
+    END;
+  END LOOP;
+  v_attempts := v_attempt;
 
   v_users   := COALESCE((v_att->>'attributed_users')::int, 0);
   v_members := COALESCE((v_att->>'members')::int, 0);
@@ -1244,7 +1268,8 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true, 'amount', v_net, 'destination', v_dest,
                             'attributed', v_done,
-                            'attributed_users', v_users, 'members', v_members);
+                            'attributed_users', v_users, 'members', v_members,
+                            'attribution_attempts', v_attempts);
 END;
 $function$;
 

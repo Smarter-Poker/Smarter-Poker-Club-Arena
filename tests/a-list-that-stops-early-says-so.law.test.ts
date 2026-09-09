@@ -32,13 +32,19 @@ import { describe, expect, it } from 'vitest';
 const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
 const HELPERS = ['fn_ca_rake_by_agent', 'fn_ca_rake_by_club', 'fn_ca_rake_by_downline'];
 
+let cachedMigrationSources: Array<{ file: string; sql: string }> | undefined;
+
+function migrationSources(): Array<{ file: string; sql: string }> {
+  cachedMigrationSources ??= readdirSync(MIGRATIONS)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .map((file) => ({ file, sql: readFileSync(resolve(MIGRATIONS, file), 'utf8') }));
+  return cachedMigrationSources;
+}
+
 function latestDefining(fnName: string): string {
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
   let found = '';
-  for (const f of files) {
-    const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
+  for (const { sql } of migrationSources()) {
     if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
   }
   return found;

@@ -10,7 +10,7 @@ def verify_post_commit_addons(run):
   m=re.search(r'CREATE OR REPLACE FUNCTION public\.'+name+r'\s*\(',s)
   t=s[m.start():];b=re.search(r'\bAS\s+(\$[A-Za-z0-9_]*\$)',t);e=t.index(b[1],b.end())
   return t[:e+len(b[1])]+';'
- old=extract('20260908043400_post_commit_obligations_are_atomic_and_resumable.sql','fn_ca_process_hand_post_commit_obligations')
+ old=extract('20260908130009_post_commit_obligations_are_atomic_and_resumable.sql','fn_ca_process_hand_post_commit_obligations')
  new=extract('20260908175113_post_commit_addons_accept_proven_resolution_receipts.sql','fn_ca_process_hand_post_commit_obligations')
  resolver=extract('20260904120000_chip_continuity_slice_0.sql','resolve_pending_addon')
  H="'a0000000-0000-4000-8000-000000000001'"

@@ -14,13 +14,6 @@ const MIGRATION = readFileSync(
   ),
   'utf8'
 );
-const PHASE_ONE_MANAGEMENT = readFileSync(
-  resolve(
-    __dirname,
-    '../../../supabase/migrations/20260906091511_phase_1_table_management_authority_recertified.sql'
-  ),
-  'utf8'
-);
 const LATEST_MANAGED_CLOSE = readFileSync(
   resolve(
     __dirname,
@@ -207,16 +200,9 @@ describe('tournament cancellation has one replayable database owner', () => {
     expect(MANAGED_TOURNAMENT).not.toMatch(/UPDATE public\.tournaments/i);
   });
 
-  it('preserves the current cash-table close branch exactly', () => {
-    const historicStart = PHASE_ONE_MANAGEMENT.lastIndexOf(
-      'CREATE OR REPLACE FUNCTION public.fn_close_managed_game'
-    );
-    const currentStart = MIGRATION.indexOf(
-      'CREATE OR REPLACE FUNCTION public.fn_close_managed_game'
-    );
-    expect(cashTableBranch(MIGRATION, currentStart)).toBe(
-      cashTableBranch(PHASE_ONE_MANAGEMENT, historicStart)
-    );
+  it('preserves the latest cash-table close branch exactly', () => {
+    const currentStart = SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game');
+    expect(cashTableBranch(SQL, currentStart)).toBe(LATEST_CASH_CLOSE);
   });
 
   it('keeps the later native cash-occupancy close contract in the final declaration', () => {

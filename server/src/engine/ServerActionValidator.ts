@@ -18,6 +18,7 @@
 
 import type { ActionType } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { isWholeTournamentChip, TOURNAMENT_WHOLE_CHIP_ERROR } from './TournamentChipIntegrity.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -33,6 +34,8 @@ export interface ActionRequest {
 }
 
 export interface ValidationContext {
+  /** Tournament wagers and every state value they are derived from are whole-chip only. */
+  isTournament?: boolean;
   currentPlayerId: string; // Whose turn it is
   stage: string; // preflop | flop | turn | river
   currentBet: number; // Current highest bet
@@ -112,6 +115,38 @@ export class ServerActionValidator {
 
     if (context.isAllIn) {
       return this.reject('ALREADY_ALL_IN', 'Player is already all-in', tableId, playerId);
+    }
+
+    if (context.isTournament) {
+      // Validate the raw request and authoritative context before min/max
+      // sanitization. A 4.5-chip request must not become some different legal
+      // integer wager, and a fractional live state must stop rather than be
+      // rounded into a different pot.
+      if (amount !== undefined && !isWholeTournamentChip(amount)) {
+        return this.reject(
+          'INVALID_AMOUNT',
+          `${TOURNAMENT_WHOLE_CHIP_ERROR}: requestedWager=${String(amount)}`,
+          tableId,
+          playerId
+        );
+      }
+      const stateAmounts: Array<[string, number]> = [
+        ['currentBet', context.currentBet],
+        ['playerBet', context.playerBet],
+        ['playerStack', context.playerStack],
+        ['bigBlind', context.bigBlind],
+        ['minRaise', context.minRaise],
+        ['pot', context.pot],
+      ];
+      const invalidState = stateAmounts.find(([, value]) => !isWholeTournamentChip(value));
+      if (invalidState) {
+        return this.reject(
+          'INVALID_AMOUNT',
+          `${TOURNAMENT_WHOLE_CHIP_ERROR}: context.${invalidState[0]}=${String(invalidState[1])}`,
+          tableId,
+          playerId
+        );
+      }
     }
 
     // ── 3. Duplicate Suppression ──

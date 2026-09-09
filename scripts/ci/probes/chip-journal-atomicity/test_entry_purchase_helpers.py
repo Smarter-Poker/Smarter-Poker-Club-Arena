@@ -208,8 +208,8 @@ BEGIN
   END IF;
   UPDATE public.engine_maintenance_break
      SET announced_at = clock_timestamp() - interval '8 minutes';
-  IF public.fn_entry_purchases_frozen() THEN
-    RAISE EXCEPTION 'expired last-hand state froze entry';
+  IF NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION 'durable last-hand recovery row failed open before exact clear';
   END IF;
   UPDATE public.engine_maintenance_break
      SET announced_at = clock_timestamp() + interval '1 minute';
@@ -219,14 +219,17 @@ BEGIN
   UPDATE public.engine_maintenance_break
      SET phase = 'counting_down',
          announced_at = clock_timestamp(),
+         break_started_at = clock_timestamp(),
          break_ends_at = clock_timestamp() + interval '5 minutes';
   IF NOT public.fn_entry_purchases_frozen() THEN
     RAISE EXCEPTION 'active countdown did not freeze entry';
   END IF;
   UPDATE public.engine_maintenance_break
-     SET break_ends_at = clock_timestamp() - interval '1 second';
-  IF public.fn_entry_purchases_frozen() THEN
-    RAISE EXCEPTION 'expired countdown froze entry';
+     SET announced_at = clock_timestamp() - interval '7 minutes',
+         break_started_at = clock_timestamp() - interval '5 minutes',
+         break_ends_at = clock_timestamp() - interval '1 second';
+  IF NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION 'expired countdown failed open before checkpointed thaw';
   END IF;
   UPDATE public.engine_maintenance_break
      SET break_ends_at = clock_timestamp() + interval '16 minutes';
@@ -249,8 +252,13 @@ INSERT INTO clubs(id) VALUES({club});
 INSERT INTO tables(id,club_id) VALUES({table},{club});
 INSERT INTO club_members(id,user_id,club_id) VALUES({member},{user},{club});
 INSERT INTO table_seats VALUES({table},{user},1,10,false,NULL);
-INSERT INTO public.engine_maintenance_break(id,phase,announced_at,break_ends_at)
-VALUES(true,'counting_down',clock_timestamp(),clock_timestamp()+interval '5 minutes');
+INSERT INTO public.engine_maintenance_break(
+  id, phase, announced_at, break_started_at, break_ends_at
+)
+VALUES(
+  true, 'counting_down', clock_timestamp() - interval '2 minutes',
+  clock_timestamp(), clock_timestamp() + interval '5 minutes'
+);
 DO $verify$
 DECLARE v_result jsonb;
 BEGIN
@@ -303,10 +311,10 @@ BEGIN
   END IF;
 
   INSERT INTO public.engine_maintenance_break(
-    id, phase, announced_at, break_ends_at
+    id, phase, announced_at, break_started_at, break_ends_at
   ) VALUES (
-    true, 'counting_down', clock_timestamp(),
-    clock_timestamp() + interval '5 minutes'
+    true, 'counting_down', clock_timestamp() - interval '2 minutes',
+    clock_timestamp(), clock_timestamp() + interval '5 minutes'
   );
   SELECT jsonb_build_array(
     (SELECT to_jsonb(c) FROM clubs c WHERE id = {club}),

@@ -20,6 +20,11 @@ const c = (rank: CardRank, suit: keyof typeof S): Card => ({ rank, suit: S[suit]
 // insuranceEquity = 37/44 ≈ 84.1% for the leader.
 const LEADER = 'L';
 const OPP = 'O';
+const singlePotScope = (...eligiblePlayerIds: string[]) => ({
+  kind: 'single_high_pot' as const,
+  potIndex: 0 as const,
+  eligiblePlayerIds,
+});
 const leaderCards = [c('A', 'h'), c('A', 'd')];
 const oppCards = [c('K', 'c'), c('Q', 'c')];
 const board = [c('A', 's'), c('7', 'c'), c('2', 'c'), c('9', 'h')];
@@ -43,7 +48,8 @@ function offerLeader(e: InsuranceEngine, atRisk = 100, pot = 300) {
     pot,
     'nlh',
     false,
-    insuranceEquity(leaderCards, [oppCards], board, 'nlh')
+    insuranceEquity(leaderCards, [oppCards], board, 'nlh'),
+    singlePotScope(LEADER, OPP)
   );
 }
 
@@ -176,7 +182,8 @@ describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => 
       200,
       'nlh',
       false,
-      insuranceEquity(hero, [villain], liveBoard, 'nlh')
+      insuranceEquity(hero, [villain], liveBoard, 'nlh'),
+      singlePotScope('L', 'O')
     );
     expect(offers).toHaveLength(0);
   });
@@ -212,7 +219,8 @@ describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => 
       200,
       'nlh',
       false,
-      r
+      r,
+      singlePotScope('L', 'O')
     );
     // POKERBROS PARITY 2026-08-28: with the fee collected only on a WIN,
     // pricing this coinflip-given-live spot gives fee = insured * 0.5/0.5 *
@@ -243,7 +251,8 @@ describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => 
       200,
       'nlh',
       false,
-      insuranceEquity(hero, [villain], liveBoard, 'nlh')
+      insuranceEquity(hero, [villain], liveBoard, 'nlh'),
+      singlePotScope('L', 'O')
     );
     expect(offers).toHaveLength(0);
   });
@@ -282,12 +291,30 @@ describe('settlement - chop shapes (Dan: chopped pot voids insurance)', () => {
   });
 
   it('two OTHER players chop while the leader loses => insurance PAYS', () => {
-    const offers = offerLeader(e);
+    const otherOne = 'other-1';
+    const otherTwo = 'other-2';
+    const allPlayers = [
+      { playerId: LEADER, holeCards: leaderCards, atRisk: 100 },
+      { playerId: otherOne, holeCards: oppCards, atRisk: 100 },
+      { playerId: otherTwo, holeCards: [c('J', 's'), c('T', 's')], atRisk: 100 },
+    ];
+    const offers = e.createOffers(
+      't1',
+      't1:1',
+      LEADER,
+      allPlayers,
+      board,
+      300,
+      'nlh',
+      false,
+      { equity: 60, strictLossPct: 40, pushPct: 0 },
+      singlePotScope(LEADER, otherOne, otherTwo)
+    );
     expect(e.accept('t1', LEADER)).toBe(true);
     // Multi-winner hand that does NOT include the insured leader: the leader
     // genuinely lost their stake — the void rule is about the LEADER sharing
     // a pot, not about any chop anywhere on the table.
-    const settlements = e.settle('t1', ['someone-else', 'another-player']);
+    const settlements = e.settle('t1', [otherOne, otherTwo]);
     const s = settlements[0];
     expect(s.won).toBe(true);
     expect(s.payout).toBe(offers[0].insuredAmount);
@@ -320,7 +347,8 @@ describe('settlement - chop shapes (Dan: chopped pot voids insurance)', () => {
       300,
       'nlh',
       false,
-      insuranceEquity(leaderCards, [oppCards], board, 'nlh')
+      insuranceEquity(leaderCards, [oppCards], board, 'nlh'),
+      singlePotScope(LEADER, OPP)
     );
     expect(fired).toHaveLength(1);
     fired[0](); // the offer window expires

@@ -2,6 +2,28 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+/* The real obligations-aware settlement resolves pgcrypto through the
+   production `extensions` schema. Keep the focused fixture's historical
+   public install, but expose the same bytea digest signature for the final
+   surviving-door execution probe. */
+CREATE SCHEMA extensions;
+CREATE FUNCTION extensions.digest(bytea, text)
+RETURNS bytea
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $function$
+  SELECT public.digest($1, $2)
+$function$;
+
+/* Stage B acquires the global Realtime catalog lock before any public
+   relation lock or DDL. The focused database must carry that production
+   relation so a missing or reordered lock cannot be hidden by the fixture. */
+CREATE SCHEMA realtime;
+CREATE TABLE realtime.subscription (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+);
+
 DO $roles$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
@@ -196,9 +218,51 @@ CREATE TABLE public.table_seats (
   user_id uuid,
   seat_number integer NOT NULL,
   stack numeric NOT NULL DEFAULT 0,
+  joined_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  club_id uuid,
   left_at timestamptz,
+  time_bank_uses_remaining integer,
+  time_bank_remaining integer,
   PRIMARY KEY (table_id, seat_number)
 );
+
+/* Minimal durable receipt reached by the real obligations-aware 12-argument
+   door during the final Stage-B execution probe. The owner-only core below
+   creates the accepted-hand receipt; the exact outer function attaches its
+   immutable envelope to these production-named columns. */
+CREATE TABLE public.hand_atomic_commits (
+  table_id uuid NOT NULL,
+  hand_number bigint NOT NULL,
+  hand_id uuid NOT NULL UNIQUE,
+  post_commit_payload jsonb,
+  post_commit_request_hash text,
+  post_commit_payload_hash text,
+  post_commit_completed_at timestamptz,
+  PRIMARY KEY (table_id, hand_number)
+);
+
+CREATE TABLE public.table_pending_addons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  resolved_at timestamptz
+);
+
+/* Prerequisites reached by the real zero-delta migration while constructing
+   the exact predecessor definition inspected by 20260908161534. */
+CREATE TABLE public.training_answers (
+  user_id uuid,
+  is_correct boolean,
+  ev_loss numeric,
+  level integer
+);
+
+CREATE OR REPLACE FUNCTION public.fn_ca_currency_meter()
+RETURNS integer
+LANGUAGE sql
+AS $function$
+  SELECT 1
+$function$;
 
 /* This authority probe exercises Stage B without replaying the unrelated
    4,000-line place-settlement migration. Model the exact Stage-A expand
@@ -706,8 +770,28 @@ AS $function$ SELECT jsonb_build_object('success', true) $function$;
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(
   uuid, bigint, jsonb, numeric, numeric, text, numeric, jsonb, jsonb, text, uuid
 ) RETURNS jsonb
-LANGUAGE sql SECURITY DEFINER
-AS $function$ SELECT jsonb_build_object('success', true) $function$;
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+DECLARE
+  v_hand_id uuid := '60000000-0000-4000-8000-000000000099';
+  v_replay boolean;
+BEGIN
+  INSERT INTO public.hand_atomic_commits(table_id, hand_number, hand_id)
+  VALUES ($1, $2, v_hand_id)
+  ON CONFLICT (table_id, hand_number) DO NOTHING;
+  v_replay := NOT FOUND;
+  SELECT c.hand_id INTO v_hand_id
+    FROM public.hand_atomic_commits c
+   WHERE c.table_id = $1
+     AND c.hand_number = $2;
+  RETURN jsonb_build_object(
+    'success', true,
+    'atomic_hand_commit', true,
+    'history_id', v_hand_id,
+    'replay', v_replay
+  );
+END;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(
   uuid, bigint, jsonb, numeric, numeric, text, numeric, jsonb, jsonb, text, uuid,
@@ -755,17 +839,19 @@ INSERT INTO public.tournaments (id, name, status) VALUES
   ('10000000-0000-4000-8000-000000000002', 'Fence B', 'RUNNING');
 
 INSERT INTO public.tables (
-  id, tournament_id, status, current_players, max_players
+  id, club_id, tournament_id, status, current_players, max_players
 ) VALUES (
   '20000000-0000-4000-8000-000000000001',
+  '70000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000001',
   'running', 0, 9
 );
 
 INSERT INTO public.tables (
-  id, tournament_id, status, current_players, max_players
+  id, club_id, tournament_id, status, current_players, max_players
 ) VALUES (
   '20000000-0000-4000-8000-000000000002',
+  '70000000-0000-4000-8000-000000000002',
   NULL,
   'running', 0, 9
 );

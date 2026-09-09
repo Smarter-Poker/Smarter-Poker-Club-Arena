@@ -1,0 +1,121 @@
+-- 20260908230008_stats_equity_witness_covering_index_is_ready
+--
+-- The live ca_hand_facts table is larger than 2 GB, so production builds this
+-- index first with scripts/ops/build-stats-equity-witness-index-concurrently.sql.
+-- A fresh/local database has no large history and may safely build the same
+-- index here. This transactional gate makes the normal ordered migration chain
+-- reproducible while refusing a blocking production build.
+
+BEGIN;
+
+DO $equity_witness_index_gate$
+DECLARE
+  v_index_definition text;
+  v_index_oid regclass;
+  v_index_valid boolean;
+  v_index_ready boolean;
+  v_index_exact boolean;
+  v_table_bytes bigint;
+  v_large_table_limit constant bigint := 134217728; -- 128 MiB
+BEGIN
+  IF to_regclass('public.ca_hand_facts') IS NULL THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_FACTS_TABLE_MISSING';
+  END IF;
+
+  v_index_oid := to_regclass('public.idx_ca_hand_facts_equity_owed_played_at');
+
+  SELECT pg_get_indexdef(i.indexrelid), i.indisvalid, i.indisready,
+         i.indnkeyatts = 1
+           AND i.indnatts = 2
+           AND pg_get_indexdef(i.indexrelid, 1, true) = 'played_at'
+           AND pg_get_indexdef(i.indexrelid, 2, true) = 'all_in_equity'
+           AND pg_get_expr(i.indpred, i.indrelid, false) =
+               '(all_in_equity_owed IS TRUE)'
+           AND am.amname = 'btree'
+           AND NOT i.indisunique
+           AND NOT i.indisprimary
+           AND NOT i.indisexclusion
+           AND i.indexprs IS NULL
+           AND i.indislive
+    INTO v_index_definition, v_index_valid, v_index_ready, v_index_exact
+    FROM pg_index i
+    JOIN pg_class ic ON ic.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = ic.relam
+   WHERE i.indexrelid = v_index_oid
+     AND i.indrelid = 'public.ca_hand_facts'::regclass;
+
+  IF v_index_oid IS NOT NULL AND v_index_definition IS NULL THEN
+    RAISE EXCEPTION
+      'ALL_IN_EQUITY_WITNESS_INDEX_NAME_OCCUPIED: public.idx_ca_hand_facts_equity_owed_played_at is not an index on public.ca_hand_facts';
+  END IF;
+
+  IF v_index_definition IS NOT NULL
+     AND (
+       v_index_valid IS NOT TRUE
+       OR v_index_ready IS NOT TRUE
+       OR v_index_exact IS NOT TRUE
+     ) THEN
+    v_table_bytes := pg_total_relation_size('public.ca_hand_facts'::regclass);
+    IF v_table_bytes > v_large_table_limit THEN
+      RAISE EXCEPTION
+        'ALL_IN_EQUITY_WITNESS_CONCURRENT_INDEX_REQUIRED: same-name index is invalid or drifted on a % byte table; run scripts/ops/build-stats-equity-witness-index-concurrently.sql first',
+        v_table_bytes;
+    END IF;
+
+    -- A fresh/local table is small enough to repair transactionally. The live
+    -- table must use the concurrent operator path above and never blocks here.
+    DROP INDEX public.idx_ca_hand_facts_equity_owed_played_at;
+    v_index_oid := NULL;
+    v_index_definition := NULL;
+    v_index_valid := NULL;
+    v_index_ready := NULL;
+    v_index_exact := NULL;
+  END IF;
+
+  IF v_index_definition IS NULL THEN
+    v_table_bytes := COALESCE(
+      v_table_bytes,
+      pg_total_relation_size('public.ca_hand_facts'::regclass)
+    );
+    IF v_table_bytes > v_large_table_limit THEN
+      RAISE EXCEPTION
+        'ALL_IN_EQUITY_WITNESS_CONCURRENT_INDEX_REQUIRED: table is % bytes; run scripts/ops/build-stats-equity-witness-index-concurrently.sql first',
+        v_table_bytes;
+    END IF;
+
+    CREATE INDEX idx_ca_hand_facts_equity_owed_played_at
+      ON public.ca_hand_facts (played_at)
+      INCLUDE (all_in_equity)
+      WHERE all_in_equity_owed IS TRUE;
+
+    SELECT pg_get_indexdef(i.indexrelid), i.indisvalid, i.indisready,
+           i.indnkeyatts = 1
+             AND i.indnatts = 2
+             AND pg_get_indexdef(i.indexrelid, 1, true) = 'played_at'
+             AND pg_get_indexdef(i.indexrelid, 2, true) = 'all_in_equity'
+             AND pg_get_expr(i.indpred, i.indrelid, false) =
+                 '(all_in_equity_owed IS TRUE)'
+             AND am.amname = 'btree'
+             AND NOT i.indisunique
+             AND NOT i.indisprimary
+             AND NOT i.indisexclusion
+             AND i.indexprs IS NULL
+             AND i.indislive
+      INTO v_index_definition, v_index_valid, v_index_ready, v_index_exact
+      FROM pg_index i
+      JOIN pg_class ic ON ic.oid = i.indexrelid
+      JOIN pg_am am ON am.oid = ic.relam
+     WHERE i.indexrelid = to_regclass('public.idx_ca_hand_facts_equity_owed_played_at')
+       AND i.indrelid = 'public.ca_hand_facts'::regclass;
+  END IF;
+
+  IF v_index_definition IS NULL
+     OR v_index_valid IS NOT TRUE
+     OR v_index_ready IS NOT TRUE
+     OR v_index_exact IS NOT TRUE THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_INDEX_INVALID: %', v_index_definition;
+  END IF;
+END;
+$equity_witness_index_gate$;
+
+COMMIT;

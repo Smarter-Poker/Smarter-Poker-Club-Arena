@@ -50,6 +50,11 @@ const allIn = [
   { playerId: HERO, holeCards: heroCards, atRisk: 100 },
   { playerId: VILLAIN, holeCards: villainCards, atRisk: 100 },
 ];
+const singlePotScope = {
+  kind: 'single_high_pot' as const,
+  potIndex: 0 as const,
+  eligiblePlayerIds: [HERO, VILLAIN],
+};
 
 function pricing(leaderId: string, liveBoard: Card[]) {
   const leader = allIn.find((player) => player.playerId === leaderId)!;
@@ -81,7 +86,8 @@ describe('leader handoff - a decline by one player never blocks the other', () =
       200,
       'nlh',
       false,
-      pricing(HERO, flop)
+      pricing(HERO, flop),
+      singlePotScope
     );
     expect(flopOffers).toHaveLength(1);
     expect(flopOffers[0].playerId).toBe(HERO);
@@ -102,7 +108,8 @@ describe('leader handoff - a decline by one player never blocks the other', () =
       200,
       'nlh',
       false,
-      pricing(VILLAIN, turn)
+      pricing(VILLAIN, turn),
+      singlePotScope
     );
     expect(turnOffers).toHaveLength(1);
     expect(turnOffers[0].playerId).toBe(VILLAIN);
@@ -115,7 +122,18 @@ describe('leader handoff - a decline by one player never blocks the other', () =
 
   it('a player who ACCEPTED keeps coverage and is not re-offered, but is not "declined" either', () => {
     const e = mkEngine();
-    e.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh', false, pricing(HERO, flop));
+    e.createOffers(
+      TABLE,
+      't:1',
+      HERO,
+      allIn,
+      flop,
+      200,
+      'nlh',
+      false,
+      pricing(HERO, flop),
+      singlePotScope
+    );
     expect(e.accept(TABLE, HERO)).toBe(true);
 
     // Re-running the offer step for the same leader must not duplicate or wipe.
@@ -128,7 +146,8 @@ describe('leader handoff - a decline by one player never blocks the other', () =
       200,
       'nlh',
       false,
-      pricing(HERO, turn)
+      pricing(HERO, turn),
+      singlePotScope
     );
     expect(reoffer).toHaveLength(0);
     const kept = e.getOffers(TABLE);
@@ -169,7 +188,8 @@ describe('insurancePauseStillLive - the per-street pause survives a leader decli
       200,
       'nlh',
       false,
-      pricing(HERO, flop)
+      pricing(HERO, flop),
+      singlePotScope
     );
     engine.insuranceEngine.decline(TABLE, HERO, true);
     // Before the fix this returned false (anyEligibleForInsurance saw only
@@ -188,7 +208,8 @@ describe('insurancePauseStillLive - the per-street pause survives a leader decli
       200,
       'nlh',
       false,
-      pricing(HERO, flop)
+      pricing(HERO, flop),
+      singlePotScope
     );
     engine.insuranceEngine.decline(TABLE, HERO, true);
     engine.insuranceEngine.clearPendingOffers(TABLE);
@@ -201,7 +222,8 @@ describe('insurancePauseStillLive - the per-street pause survives a leader decli
       200,
       'nlh',
       false,
-      pricing(VILLAIN, turn)
+      pricing(VILLAIN, turn),
+      singlePotScope
     );
     engine.insuranceEngine.decline(TABLE, VILLAIN, true);
     expect(engine.insurancePauseStillLive(bothPlayers)).toBe(false);
@@ -218,7 +240,8 @@ describe('insurancePauseStillLive - the per-street pause survives a leader decli
       200,
       'nlh',
       false,
-      pricing(HERO, flop)
+      pricing(HERO, flop),
+      singlePotScope
     );
     engine.insuranceEngine.accept(TABLE, HERO);
     expect(engine.insurancePauseStillLive(bothPlayers)).toBe(true);

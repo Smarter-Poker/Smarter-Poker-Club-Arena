@@ -9,7 +9,12 @@
 import { Worker } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import type { Card } from '../../types.js';
-import type { EquityOptions, InsuranceEquityComponents } from './equityWorker.js';
+import type {
+  EquityOptions,
+  InsuranceEquityComponents,
+  LayeredEquityResult,
+  LayeredPotInput,
+} from './equityWorker.js';
 import { hashSeed } from './SeededRandom.js';
 
 const DEFAULT_JOB_TIMEOUT_MS = 2_500;
@@ -81,13 +86,30 @@ interface InsurancePayload {
   type: 'INSURANCE_ALL';
   hands: Card[][];
   board: Card[];
+  deadCards: Card[];
   variant: string;
   shortDeck: boolean;
 }
 
+interface LayeredEquityPayload {
+  type: 'LAYERED_EQUITY';
+  hands: Card[][];
+  playerIds: string[];
+  playerSeats: number[];
+  boards: Card[][];
+  deadCards: Card[];
+  iters: number;
+  variant: string;
+  pots: LayeredPotInput[];
+  dealerSeat: number;
+  totalWinnings: number;
+  chipUnit: number;
+  seed: number;
+}
+
 interface Job<T = any> {
   id: number;
-  payload: EquityPayload | InsurancePayload;
+  payload: EquityPayload | InsurancePayload | LayeredEquityPayload;
   enqueuedAt: number;
   resolve: (value: T) => void;
   reject: (error: Error) => void;
@@ -245,10 +267,11 @@ export class EquityWorkerPool {
     hands: Card[][],
     board: Card[],
     variant: string,
-    shortDeck = false
+    shortDeck = false,
+    deadCards: Card[] = []
   ): Promise<InsuranceEquityComponents[]> {
     return this.enqueue<InsuranceEquityComponents[]>(
-      { type: 'INSURANCE_ALL', hands, board, variant, shortDeck },
+      { type: 'INSURANCE_ALL', hands, board, deadCards, variant, shortDeck },
       (message) => {
         if (
           message.type !== 'INSURANCE_RESULT' ||
@@ -284,8 +307,122 @@ export class EquityWorkerPool {
     );
   }
 
+  estimateLayeredEquity(
+    hands: Card[][],
+    playerIds: string[],
+    playerSeats: number[],
+    boards: Card[][],
+    deadCards: Card[] = [],
+    iters = 1000,
+    variant = 'nlh',
+    pots: LayeredPotInput[] = [],
+    dealerSeat = 0,
+    totalWinnings?: number,
+    chipUnit = 0.01,
+    seed?: number
+  ): Promise<LayeredEquityResult> {
+    const useSeed = seed ?? this.deriveSeed(hands, boards.flat(), deadCards, iters);
+    const gross = pots.reduce((sum, pot) => sum + pot.amount, 0);
+    return this.enqueue<LayeredEquityResult>(
+      {
+        type: 'LAYERED_EQUITY',
+        hands,
+        playerIds,
+        playerSeats,
+        boards,
+        deadCards,
+        iters,
+        variant,
+        pots,
+        dealerSeat,
+        totalWinnings: totalWinnings ?? gross,
+        chipUnit,
+        seed: useSeed,
+      },
+      (message) => {
+        const validVector = (value: unknown): value is number[] =>
+          Array.isArray(value) &&
+          value.length === hands.length &&
+          value.every(
+            (fraction) =>
+              typeof fraction === 'number' &&
+              Number.isFinite(fraction) &&
+              fraction >= 0 &&
+              fraction <= 1
+          );
+        const validPercentVector = (value: unknown): value is number[] =>
+          Array.isArray(value) &&
+          value.length === hands.length &&
+          value.every(
+            (percent) =>
+              typeof percent === 'number' &&
+              Number.isFinite(percent) &&
+              percent >= 0 &&
+              percent <= 100
+          );
+        if (
+          message.type !== 'LAYERED_EQUITY_RESULT' ||
+          !validVector(message.equities) ||
+          !Array.isArray(message.layerEquities) ||
+          message.layerEquities.length !== pots.length ||
+          !message.layerEquities.every(validVector) ||
+          !Array.isArray(message.expectedNetReturns) ||
+          message.expectedNetReturns.length !== hands.length ||
+          message.expectedNetReturns.some(
+            (amount) => typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0
+          ) ||
+          !validPercentVector(message.strictLossPcts) ||
+          !validPercentVector(message.pushPcts) ||
+          typeof message.seed !== 'number' ||
+          !Number.isSafeInteger(message.seed) ||
+          typeof message.exact !== 'boolean' ||
+          typeof message.runouts !== 'number' ||
+          !Number.isSafeInteger(message.runouts) ||
+          message.runouts <= 0
+        ) {
+          throw new Error('Malformed layered equity worker response');
+        }
+        const tolerance = 1 / Math.max(1, iters) + 1e-9;
+        const equitySum = (message.equities as number[]).reduce((sum, value) => sum + value, 0);
+        if (Math.abs(equitySum - 1) > tolerance) {
+          throw new Error('Layered equity worker response does not conserve the pot');
+        }
+        const playerIndex = new Map(playerIds.map((id, index) => [id, index] as const));
+        (message.layerEquities as number[][]).forEach((layer, layerIndex) => {
+          const eligible = new Set(
+            pots[layerIndex].eligiblePlayerIds.map((id) => playerIndex.get(id))
+          );
+          if (
+            layer.some((value, index) => !eligible.has(index) && value !== 0) ||
+            Math.abs(layer.reduce((sum, value) => sum + value, 0) - 1) > tolerance
+          ) {
+            throw new Error('Layered equity worker response violates pot eligibility');
+          }
+        });
+        const expectedSum = (message.expectedNetReturns as number[]).reduce(
+          (sum, value) => sum + value,
+          0
+        );
+        const net = totalWinnings ?? gross;
+        if (Math.abs(expectedSum - net) > 0.011) {
+          throw new Error('Layered equity worker response does not conserve net winnings');
+        }
+        return {
+          equities: message.equities,
+          layerEquities: message.layerEquities,
+          expectedNetReturns: message.expectedNetReturns,
+          strictLossPcts: message.strictLossPcts,
+          pushPcts: message.pushPcts,
+          seed: message.seed,
+          exact: message.exact,
+          runouts: message.runouts,
+        } as LayeredEquityResult;
+      }
+    );
+  }
+
   private enqueue<T>(
-    payload: EquityPayload | InsurancePayload,
+    payload: EquityPayload | InsurancePayload | LayeredEquityPayload,
     validate: (message: Record<string, unknown>) => T
   ): Promise<T> {
     if (this.phase !== 'ready' && this.phase !== 'degraded') {
@@ -303,7 +440,7 @@ export class EquityWorkerPool {
       };
       job.timer = setTimeout(() => this.onJobTimeout(job), this.jobTimeoutMs);
       job.timer.unref?.();
-      if (payload.type === 'INSURANCE_ALL') {
+      if (payload.type === 'INSURANCE_ALL' || payload.type === 'LAYERED_EQUITY') {
         // Real-money pricing outranks optional percentage displays. Preserve
         // FIFO within each class; never preempt an operation already running.
         const firstCosmetic = this.queue.findIndex((queued) => queued.payload.type === 'EQUITY');

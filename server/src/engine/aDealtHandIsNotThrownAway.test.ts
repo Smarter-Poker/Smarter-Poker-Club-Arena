@@ -22,7 +22,7 @@ const read = (f: string) => readFileSync(resolve(MIGRATIONS, f), 'utf8');
 const CONFLICT = read(
   '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 );
-const REBUY = read('20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql');
+const REBUY = read('20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql');
 const HALVES = read('20260909012046_retire_the_six_stranded_half_chips_on_the_felt.sql');
 
 describe('an unhandled conflict target no longer discards the hand', () => {

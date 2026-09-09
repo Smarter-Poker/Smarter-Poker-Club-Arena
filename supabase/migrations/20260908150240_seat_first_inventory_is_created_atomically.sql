@@ -3,10 +3,20 @@
 -- Migration 20260908043250 makes tournament plus table creation one database
 -- transaction. Do not apply this contract step with the rolling Stage-A
 -- expand: the protocol-1 engine still invokes the historical repair RPC. Once
--- the exact protocol-2 engine is the sole live build, this transaction runs
--- the repair once through its idempotent bounded path, proves that no
--- unjoinable legacy board remains, then removes both the public wrapper and
--- its private predecessor.
+-- the exact protocol-2 engine is the sole live build, this transaction proves
+-- that no unjoinable legacy board remains, then removes both the public
+-- wrapper and its private predecessor.
+--
+-- The retirement must never invoke the old broad repair sweep. That routine
+-- also tops up joinable, partly occupied boards. A pre-cutover seat-first game
+-- can already contain dealt hands and eliminated roster rows while its parent
+-- is still REGISTERING; running the broad sweep here can then select an
+-- eliminated horse and attempt to resurrect it. The live-roster constraint
+-- correctly refuses that write, but one unrelated joinable board would wedge
+-- the entire retirement. The atomic creator prevents new unjoinable boards,
+-- and any historical unjoinable board is now an explicit fail-closed
+-- prerequisite requiring an intentional repair before this irreversible
+-- contraction.
 
 BEGIN;
 
@@ -14,8 +24,6 @@ SET LOCAL lock_timeout = '4s';
 SET LOCAL statement_timeout = '45s';
 
 DO $finish_and_retire_seat_first_repair$
-DECLARE
-  v_cleanup_result jsonb;
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -34,12 +42,6 @@ BEGIN
       'seat-first repair retirement requires the atomic creator first';
   END IF;
 
-  IF to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NOT NULL THEN
-    SELECT public.fn_repair_seat_first_games(1000)
-      INTO v_cleanup_result;
-    RAISE NOTICE 'Final bounded seat-first cleanup result: %', v_cleanup_result;
-  END IF;
-
   IF EXISTS (
     SELECT 1
       FROM public.tournaments t
@@ -54,7 +56,7 @@ BEGIN
        )
   ) THEN
     RAISE EXCEPTION
-      'seat-first repair retirement refused: an unjoinable legacy listing remains';
+      'seat-first repair retirement refused: an unjoinable legacy listing requires intentional repair';
   END IF;
 END;
 $finish_and_retire_seat_first_repair$;

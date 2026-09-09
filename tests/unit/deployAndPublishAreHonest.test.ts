@@ -70,7 +70,7 @@ describe('the engine deploy tells the truth when it skips', () => {
        sent the next agent to restore a gate Dan deleted, in order to make a
        test pass. */
     expect(HETZNER).toMatch(
-      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
+      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.exact_dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
     );
   });
 
@@ -133,15 +133,12 @@ describe('the engine deploy tells the truth when it skips', () => {
       /7am\/7pm|America\/Chicago restart window/
     );
 
-    // The escape hatch is asserted against the STEP, not the if/elif chain.
-    // It reads `force=true` in the run summary, which is where an operator
-    // actually meets it - and it used to be pinned here only because the
-    // deleted window branch happened to mention it inside the chain. Pinning
-    // it where it lives means deleting a branch cannot quietly remove the one
-    // line that tells a human how to land the deploy now.
+    // A skip summary must not advertise a route around the hand-safety fence.
+    // Manual dispatch may prioritize a SHA, but it still waits for durable
+    // proof from the running engine.
     const step = sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY");
-    expect(step, 'the operator is told how to land it now').toMatch(/force=true/);
-    expect(step, 'and what forcing costs').toMatch(/voids/);
+    expect(step).toMatch(/cannot bypass that/);
+    expect(step).not.toMatch(/restarts OUTSIDE|voids.*hands/);
   });
 
   /**
@@ -242,16 +239,14 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(runnable).not.toMatch(/::warning title=OUTSIDE THE RESTART WINDOW::/);
   });
 
-  it('force still means "do not wait for the break", and nothing else', () => {
-    // publish-watchdog.yml dispatches this workflow when the engine is behind
-    // main. It must keep alarming without being able to bounce production
-    // outside an announced break, so a plain dispatch still waits.
+  it('manual dispatch cannot bypass the durable break gate', () => {
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
       HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).toMatch(/github\.event\.inputs\.force/);
-    expect(gate).toMatch(/skipping the break gate/);
+    expect(gate).not.toMatch(/github\.event\.inputs\.force/);
+    expect(gate).not.toMatch(/skipping the break gate/);
+    expect(gate).toMatch(/durableConfirmed/);
   });
 
   it('waits for the announced break instead of racing the hands', () => {
@@ -274,6 +269,7 @@ describe('the engine deploy tells the truth when it skips', () => {
     );
     expect(gate).toMatch(/maintenance/);
     expect(gate).toMatch(/readyForRestart/);
+    expect(gate).toMatch(/durableConfirmed/);
     // The old "a scheduled window means proceed anyway" escape must be gone,
     // or the break is decorative and the restart still lands on live tables.
     expect(gate).not.toMatch(/event_name \}\}" = "schedule"/);
@@ -284,17 +280,15 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(gate).toMatch(/skip=true/);
   });
 
-  it('can still ship the commit that introduces the break', () => {
-    // Bootstrap: the engine running in production when this lands predates
-    // the feature and can never open the flag, so waiting for it would mean
-    // the change could never deploy. Exactly one legacy restart is permitted,
-    // on the old SIGTERM drain, and the branch is unreachable afterwards.
+  it('fails closed when the running engine cannot publish the durable contract', () => {
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
       HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).toMatch(/LEGACY/);
-    expect(gate).toMatch(/drainHands/);
+    expect(gate).toMatch(/INCOMPATIBLE/);
+    expect(gate).toMatch(/DURABLE CERTIFICATE UNAVAILABLE/);
+    expect(gate).toMatch(/skip=true/);
+    expect(gate).not.toMatch(/LEGACY/);
   });
 
   it('still bypasses the spacing gate for a manual dispatch', () => {

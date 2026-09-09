@@ -22,9 +22,9 @@ The logical IDs embedded inside these files are immutable. After each production
 2. Freeze A, immediately contiguous: `20260909165555_addon_money_is_finite_and_historical_receipts_balance_to_cents.sql` (logical ID `20260909072626`)
 3. Freeze A: `20260909165602_the_four_table_limit_is_never_satellite_cash.sql` (logical ID `20260909071500`)
 4. Freeze A: `20260909165629_satellite_settlement_has_one_atomic_authority.sql` (logical ID `20260909014421`)
-5. Freeze A: `20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql`
-6. Thawed: `20260909053000_complete_known_spin_journal_adoption_after_freeze.sql`
-7. Thawed: `20260909052000_complete_known_satellite_adoptions_after_freeze.sql`
+5. Freeze A: `20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql`
+6. Thawed: `20260909210018_complete_known_spin_journal_adoption_after_freeze.sql`
+7. Thawed: `20260909211115_complete_known_satellite_adoptions_after_freeze.sql`
 8. Freeze B: `20260909014444_tournament_cancellation_commits_one_stored_receipt.sql`
 9. Freeze B: `20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql`
 10. Freeze B: `20260909014510_every_tournament_payout_names_its_source.sql`

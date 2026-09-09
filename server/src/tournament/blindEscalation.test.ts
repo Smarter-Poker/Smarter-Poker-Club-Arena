@@ -89,7 +89,7 @@ describe('escalation is anchored to the PERSISTED length', () => {
     // the entire point of the change.
     const r1 = escalatedBlindLevel(LAST, 14, LEN, 10).bigBlind;
     const r3 = escalatedBlindLevel(LAST, 16, LEN, 10).bigBlind;
-    expect(r3 / r1).toBeCloseTo(Math.pow(1.4, 2), 6);
+    expect(r3 / r1).toBeCloseTo(Math.pow(1.4, 2), 3);
     expect(r3).toBeLessThan(l3);
   });
 });
@@ -117,11 +117,37 @@ describe('the escalated level is safe to write to the database', () => {
     expect(lvl.ante).toBe(0);
   });
 
-  it('missing or garbage figures read as 0, never NaN', () => {
-    const lvl = escalatedBlindLevel({ smallBlind: 'x', bigBlind: null }, 11, LEN, 10);
-    expect(lvl.smallBlind).toBe(0);
-    expect(lvl.bigBlind).toBe(0);
-    expect(lvl.ante).toBe(0);
+  it('refuses missing, fractional or malformed sources instead of synthesizing a fake level', () => {
+    expect(() => escalatedBlindLevel({ smallBlind: 'x', bigBlind: null }, 11, LEN, 10)).toThrow(
+      /whole small blind/
+    );
+    expect(() =>
+      escalatedBlindLevel({ smallBlind: 25.5, bigBlind: 50, ante: 0 }, 11, LEN, 10)
+    ).toThrow(/whole small blind/);
+    expect(() =>
+      escalatedBlindLevel({ smallBlind: 25, bigBlind: 0, ante: 0 }, 11, LEN, 10)
+    ).toThrow(/positive whole big blind/);
+  });
+
+  it('allocates every synthesized chip value to a deterministic whole chip', () => {
+    for (const ratio of [1.15, 1.2, 1.35, 1.4, 1.6]) {
+      for (const index of [10, 11, 12, 15, 23, 40]) {
+        const first = escalatedBlindLevel(LAST, index, LEN, 10, ratio);
+        const restarted = escalatedBlindLevel(LAST, index, LEN, 10, ratio);
+        expect(restarted).toEqual(first);
+        expect(Number.isSafeInteger(first.smallBlind)).toBe(true);
+        expect(Number.isSafeInteger(first.bigBlind)).toBe(true);
+        expect(Number.isSafeInteger(first.ante)).toBe(true);
+        expect(first.smallBlind).toBeGreaterThan(0);
+        expect(first.bigBlind).toBeGreaterThan(0);
+        expect(first.ante).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('uses an explicit nearest-chip rule on a binary half-boundary', () => {
+    const level = escalatedBlindLevel({ smallBlind: 1, bigBlind: 10, ante: 1 }, 10, LEN, 10, 1.5);
+    expect(level).toMatchObject({ smallBlind: 2, bigBlind: 15, ante: 2 });
   });
 
   it('keeps a level at least two minutes long', () => {

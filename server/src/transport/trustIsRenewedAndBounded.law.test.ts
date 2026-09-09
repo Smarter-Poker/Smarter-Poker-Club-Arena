@@ -59,7 +59,10 @@ const CHANNEL = readFileSync(
 );
 const HELPERS = readFileSync(join(ROOT, 'server', 'src', 'transport', 'wsHelpers.ts'), 'utf8');
 /** The one implementation both servers call. */
-const SWEEP = sliceMethod(HELPERS, 'export function runReauthSweep<W, C extends ReauthableConnection>(');
+const SWEEP = sliceMethod(
+  HELPERS,
+  'export function runReauthSweep<W, C extends ReauthableConnection>('
+);
 const CAP = sliceMethod(HELPERS, 'export function socketsHeldBy<W, C extends { userId: string }>(');
 
 describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
@@ -75,7 +78,10 @@ describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
   });
 
   it('each socket has its own due time, spread across the period', () => {
-    const fn = sliceMethod(HELPERS, 'export function staggeredReauthAt(intervalMs: number): number {');
+    const fn = sliceMethod(
+      HELPERS,
+      'export function staggeredReauthAt(intervalMs: number): number {'
+    );
     expect(fn).toContain('Math.random() * intervalMs');
     // All THREE upgrade paths stagger - two table, one channel. A path that did
     // not would come due in a block, which is the herd this exists to avoid.
@@ -92,7 +98,10 @@ describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
   it('the next slot is claimed BEFORE the await', () => {
     const fn = blankNonCode(SWEEP);
     const claim = fn.indexOf('conn.nextReauthAt = opts.now + opts.intervalMs');
-    const ask = fn.indexOf('opts\n      .verify(conn.token)') >= 0 ? fn.indexOf('.verify(conn.token)') : fn.indexOf('.verify(conn.token)');
+    const ask =
+      fn.indexOf('opts\n      .verify(conn.token)') >= 0
+        ? fn.indexOf('.verify(conn.token)')
+        : fn.indexOf('.verify(conn.token)');
     expect(claim).toBeGreaterThan(0);
     expect(ask).toBeGreaterThan(0);
     expect(claim, 'a slow GoTrue would re-queue the same socket every sweep').toBeLessThan(ask);
@@ -100,7 +109,9 @@ describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
 
   it('the socket keeps the token it opened with, on both paths', () => {
     expect(SERVER).toMatch(/token: string;/);
-    expect(SERVER).toContain('this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token)');
+    expect(SERVER).toContain(
+      'this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token, viewerAccess)'
+    );
     expect(SERVER).toContain('this.onUpgradedMux(ws, userId, muxClientIp, muxToken)');
   });
 });
@@ -221,7 +232,9 @@ describe('LAW 7 - the channel socket is covered too', () => {
     expect(fn).toContain('recordWsSocketCapRefusal()');
     // Refused BEFORE it is registered, like the other two.
     const code = blankNonCode(fn);
-    expect(code.indexOf('socketsHeldBy')).toBeLessThan(code.indexOf('this.connections.set(ws, conn)'));
+    expect(code.indexOf('socketsHeldBy')).toBeLessThan(
+      code.indexOf('this.connections.set(ws, conn)')
+    );
   });
 
   it('it keeps the token it opened with', () => {
@@ -232,7 +245,9 @@ describe('LAW 7 - the channel socket is covered too', () => {
   it('all three servers share ONE set of numbers', () => {
     // The channel server imports them rather than declaring its own, or the
     // three sockets would drift apart the first time one was tuned.
-    expect(CHANNEL).toMatch(/REAUTH_INTERVAL_MS,\s*\n\s*REAUTH_MAX_PER_SWEEP,\s*\n\s*MAX_SOCKETS_PER_USER,/);
+    expect(CHANNEL).toMatch(
+      /REAUTH_INTERVAL_MS,\s*\n\s*REAUTH_MAX_PER_SWEEP,\s*\n\s*MAX_SOCKETS_PER_USER,/
+    );
     expect(CHANNEL).not.toMatch(/const (REAUTH_INTERVAL_MS|MAX_SOCKETS_PER_USER) =/);
   });
 });

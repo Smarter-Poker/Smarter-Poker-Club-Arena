@@ -1948,6 +1948,37 @@
   width: 100%;
 }
 
+/* A forced Crazy Pineapple discard occurs only after every all-in holding was
+   exposed. Its identity therefore remains public, and reconnect snapshots
+   must draw the same dead-card universe used to price equity and insurance. */
+.community-area__revealed-dead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 4px;
+  min-height: 24px;
+  white-space: nowrap;
+}
+
+.community-area__revealed-dead-label {
+  color: rgba(230, 238, 247, 0.78);
+  font-size: 0.46rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px #000;
+}
+
+.community-area__revealed-dead-cards {
+  display: flex;
+  align-items: center;
+}
+
+.community-area__revealed-dead-cards > * + * {
+  margin-left: -9px;
+}
+
 /* ANIMATION AUDIT 2026-08-19: Run-It-Twice extra boards used to pop onto the
    felt fully formed in one frame. Each extra run's cards now deal in with a
    left-to-right stagger, run 3 starting after run 2. */

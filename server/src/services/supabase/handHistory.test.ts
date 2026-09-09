@@ -77,6 +77,10 @@ import { logHandHistory, buildHandHistoryTiers } from './handHistory.js';
 const GLOBAL_HAND = 1_400_001;
 const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const leaseGeneration = 'bbbbbbbb-0000-4000-8000-000000000001';
+const firstSeatGeneration = '11111111-1111-4111-8111-111111111111';
+const secondSeatGeneration = '22222222-2222-4222-8222-222222222222';
+const firstSeatJoinedAt = '2026-09-08T15:20:00.123456+00:00';
+const secondSeatJoinedAt = '2026-09-08T15:20:00.654321+00:00';
 
 function params(handNumber = GLOBAL_HAND) {
   return {
@@ -104,8 +108,20 @@ const atomicParams = (handNumber = GLOBAL_HAND + 500) => ({
   ...params(handNumber),
   atomicCommit: {
     stacks: [
-      { user_id: 'u1', stack: 118, stack_before: 100 },
-      { user_id: 'u2', stack: 80, stack_before: 100 },
+      {
+        seat_id: firstSeatGeneration,
+        seat_joined_at: firstSeatJoinedAt,
+        user_id: 'u1',
+        stack: 118,
+        stack_before: 100,
+      },
+      {
+        seat_id: secondSeatGeneration,
+        seat_joined_at: secondSeatJoinedAt,
+        user_id: 'u2',
+        stack: 80,
+        stack_before: 100,
+      },
     ],
     rake: 2,
     bbj: 0,
@@ -132,8 +148,20 @@ const obligationsParams = (handNumber = GLOBAL_HAND + 600) => {
       postCommitObligations: {
         version: 1 as const,
         time_banks: [
-          { user_id: 'u1', uses_remaining: 1, seconds_remaining: 25 },
-          { user_id: 'u2', uses_remaining: 0, seconds_remaining: 0 },
+          {
+            seat_id: firstSeatGeneration,
+            seat_joined_at: firstSeatJoinedAt,
+            user_id: 'u1',
+            uses_remaining: 1,
+            seconds_remaining: 25,
+          },
+          {
+            seat_id: secondSeatGeneration,
+            seat_joined_at: secondSeatJoinedAt,
+            user_id: 'u2',
+            uses_remaining: 0,
+            seconds_remaining: 0,
+          },
         ],
         rake: {
           club_id: 'cccccccc-0000-4000-8000-000000000001',
@@ -321,6 +349,46 @@ describe('logHandHistory - accepted-hand transaction', () => {
       scope: 'holdem:hu',
     });
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a dealt composite generation when that user rejoins the same or another chair', async () => {
+    const input = obligationsParams(GLOBAL_HAND + 604);
+    const differentChairId = '33333333-3333-4333-8333-333333333333';
+    const sameChairRejoinedAt = '2026-09-08T15:21:00.123456+00:00';
+    atomicRpcResults = [
+      {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: historyId,
+          replay: false,
+          post_commit_obligations: true,
+        },
+        error: null,
+      },
+    ];
+
+    await logHandHistory(input);
+
+    const args = rpcCalls[0].args as {
+      p_stacks: Array<Record<string, unknown>>;
+      p_post_commit_obligations: {
+        time_banks: Array<Record<string, unknown>>;
+      };
+    };
+    expect(args.p_stacks[0]).toMatchObject({
+      user_id: 'u1',
+      seat_id: firstSeatGeneration,
+      seat_joined_at: firstSeatJoinedAt,
+    });
+    expect(args.p_post_commit_obligations.time_banks[0]).toMatchObject({
+      user_id: 'u1',
+      seat_id: firstSeatGeneration,
+      seat_joined_at: firstSeatJoinedAt,
+    });
+    const serialized = JSON.stringify(args);
+    expect(serialized).not.toContain(differentChairId);
+    expect(serialized).not.toContain(sameChairRejoinedAt);
   });
 
   it('replays one byte-identical obligations-aware request after a lost response', async () => {

@@ -1,0 +1,457 @@
+-- 20260908230009_stats_witness_audit_uses_durable_runout_evidence
+--
+-- Stage 2 of the stats witness cutover. 20260908233111 installed the durable
+-- boolean; the operator then built the covering index concurrently. Only now
+-- may the audit stop reconstructing obligations through seven days of JSON.
+--
+-- Both accepted definitions are exact PostgreSQL 17 pg_get_functiondef MD5s.
+-- This migration will not adopt an unknown function merely because it happens
+-- to contain one of our marker strings.
+
+BEGIN;
+
+-- The writer cutover is an operator assertion, not an inference from data. A
+-- first TRUE row proves only that one capable engine wrote one hand; it cannot
+-- prove that every old engine process has drained. The singleton is stamped
+-- only after fleet evidence shows one capable SHA everywhere, and it is then
+-- immutable. Until seven days have elapsed from that boundary the monitor must
+-- label the metric as collecting and must not page it as a complete 7d window.
+CREATE TABLE IF NOT EXISTS public.ca_stats_equity_witness_cutover (
+  id boolean NOT NULL DEFAULT true,
+  writer_cutover_at timestamptz NOT NULL,
+  writer_sha text NOT NULL,
+  recorded_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  recorded_by text NOT NULL DEFAULT session_user,
+  CONSTRAINT ca_stats_equity_witness_cutover_pkey PRIMARY KEY (id),
+  CONSTRAINT ca_stats_equity_witness_cutover_one_row CHECK (id IS TRUE),
+  CONSTRAINT ca_stats_equity_witness_cutover_sha_shape
+    CHECK (writer_sha ~ '^[0-9a-f]{40}$'),
+  CONSTRAINT ca_stats_equity_witness_cutover_not_future
+    CHECK (writer_cutover_at <= recorded_at)
+);
+
+ALTER TABLE public.ca_stats_equity_witness_cutover ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.ca_stats_equity_witness_cutover
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_stats_equity_witness_cutover_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'CA_STATS_EQUITY_WITNESS_CUTOVER_IMMUTABLE'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_stats_equity_witness_cutover_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS trg_ca_stats_equity_witness_cutover_immutable
+  ON public.ca_stats_equity_witness_cutover;
+CREATE TRIGGER trg_ca_stats_equity_witness_cutover_immutable
+BEFORE UPDATE OR DELETE ON public.ca_stats_equity_witness_cutover
+FOR EACH ROW EXECUTE FUNCTION public.fn_ca_stats_equity_witness_cutover_immutable();
+
+DO $equity_witness_cutover_shape$
+DECLARE
+  v_columns integer;
+  v_total_columns integer;
+  v_defaults integer;
+  v_total_defaults integer;
+  v_constraints integer;
+  v_total_constraints integer;
+  v_trigger_count integer;
+  v_trigger_type smallint;
+  v_trigger_function regprocedure;
+BEGIN
+  SELECT count(*)
+    INTO v_columns
+    FROM pg_attribute a
+   WHERE a.attrelid = 'public.ca_stats_equity_witness_cutover'::regclass
+     AND a.attnotnull
+     AND NOT a.attisdropped
+     AND (
+       (a.attname = 'id' AND a.atttypid = 'boolean'::regtype)
+       OR (a.attname = 'writer_cutover_at' AND a.atttypid = 'timestamptz'::regtype)
+       OR (a.attname = 'writer_sha' AND a.atttypid = 'text'::regtype)
+       OR (a.attname = 'recorded_at' AND a.atttypid = 'timestamptz'::regtype)
+       OR (a.attname = 'recorded_by' AND a.atttypid = 'text'::regtype)
+	     );
+
+  SELECT count(*)
+    INTO v_total_columns
+    FROM pg_attribute a
+   WHERE a.attrelid = 'public.ca_stats_equity_witness_cutover'::regclass
+     AND a.attnum > 0
+     AND NOT a.attisdropped;
+
+  SELECT count(*) FILTER (
+           WHERE (a.attname = 'id' AND pg_get_expr(d.adbin, d.adrelid) = 'true')
+              OR (a.attname = 'recorded_at'
+                  AND pg_get_expr(d.adbin, d.adrelid) = 'statement_timestamp()')
+              OR (a.attname = 'recorded_by'
+                  AND pg_get_expr(d.adbin, d.adrelid) = 'SESSION_USER')
+         ),
+         count(*)
+    INTO v_defaults, v_total_defaults
+    FROM pg_attrdef d
+    JOIN pg_attribute a
+      ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+   WHERE d.adrelid = 'public.ca_stats_equity_witness_cutover'::regclass;
+
+  SELECT count(*) FILTER (
+           WHERE (conname = 'ca_stats_equity_witness_cutover_pkey'
+                  AND contype = 'p'
+                  AND pg_get_constraintdef(oid, false) = 'PRIMARY KEY (id)')
+              OR (conname = 'ca_stats_equity_witness_cutover_one_row'
+                  AND contype = 'c'
+                  AND pg_get_constraintdef(oid, false) = 'CHECK ((id IS TRUE))')
+              OR (conname = 'ca_stats_equity_witness_cutover_sha_shape'
+                  AND contype = 'c'
+                  AND pg_get_constraintdef(oid, false) =
+                      'CHECK ((writer_sha ~ ''^[0-9a-f]{40}$''::text))')
+              OR (conname = 'ca_stats_equity_witness_cutover_not_future'
+                  AND contype = 'c'
+                  AND pg_get_constraintdef(oid, false) =
+                      'CHECK ((writer_cutover_at <= recorded_at))')
+         ),
+         count(*)
+    INTO v_constraints, v_total_constraints
+    FROM pg_constraint
+   WHERE conrelid = 'public.ca_stats_equity_witness_cutover'::regclass;
+
+  SELECT count(*)
+    INTO v_trigger_count
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.ca_stats_equity_witness_cutover'::regclass
+     AND NOT t.tgisinternal;
+
+  SELECT t.tgtype, t.tgfoid::regprocedure
+    INTO v_trigger_type, v_trigger_function
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.ca_stats_equity_witness_cutover'::regclass
+     AND t.tgname = 'trg_ca_stats_equity_witness_cutover_immutable'
+     AND NOT t.tgisinternal;
+
+  IF v_columns <> 5
+     OR v_total_columns <> 5
+     OR v_defaults <> 3
+     OR v_total_defaults <> 3
+     OR v_constraints <> 4
+     OR v_total_constraints <> 4
+     OR v_trigger_count <> 1
+     OR NOT (SELECT relrowsecurity FROM pg_class
+              WHERE oid = 'public.ca_stats_equity_witness_cutover'::regclass)
+     -- PostgreSQL trigger bits: ROW(1) + BEFORE(2) + DELETE(8) + UPDATE(16).
+     OR v_trigger_type IS DISTINCT FROM 27
+     OR v_trigger_function IS DISTINCT FROM
+        'public.fn_ca_stats_equity_witness_cutover_immutable()'::regprocedure THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_CUTOVER_SHAPE_DRIFT';
+  END IF;
+END;
+$equity_witness_cutover_shape$;
+
+DO $equity_witness_audit_rewrite$
+DECLARE
+  v_definition text;
+  v_hash text;
+  v_start integer;
+  v_tail integer;
+  v_start_marker constant text :=
+    '  -- 2f. EV coverage, trailing seven days (phase 3, refined the same day).';
+  v_end_marker constant text :=
+    E'\n\n  SELECT extract(epoch FROM (now() - idx_ceil))';
+  v_replacement constant text := $audit_block$  -- 2f. EV coverage, trailing seven days. The engine freezes the
+  -- exact cards-to-come runout obligation into the atomic hand action record;
+  -- ca_hand_facts materialises that witness once. This is therefore an
+  -- index-only fact count, not a reconstruction from action names.
+  SELECT count(*)::int,
+         count(*) FILTER (WHERE all_in_equity IS NULL)::int
+    INTO v_allin_sd, v_allin_sd_no_eq
+  FROM public.ca_hand_facts f
+  JOIN public.ca_stats_equity_witness_cutover c ON c.id
+  WHERE f.all_in_equity_owed IS TRUE
+    AND f.played_at >= greatest(
+      now() - interval '7 days',
+      c.writer_cutover_at
+    );$audit_block$;
+  v_old_hash constant text := '3b3b9610697ea648ee94808ff7ca91b7';
+  v_new_hash constant text := '59205e735fe109b70a23381ca3dac3d5';
+  v_index_definition text;
+  v_index_exact boolean;
+BEGIN
+  IF to_regprocedure('public.ca_stats_witness_audit(integer,integer)') IS NULL THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_AUDIT_MISSING';
+  END IF;
+
+  SELECT pg_get_indexdef(i.indexrelid),
+         i.indnkeyatts = 1
+           AND i.indnatts = 2
+           AND pg_get_indexdef(i.indexrelid, 1, true) = 'played_at'
+           AND pg_get_indexdef(i.indexrelid, 2, true) = 'all_in_equity'
+           AND pg_get_expr(i.indpred, i.indrelid, false) =
+               '(all_in_equity_owed IS TRUE)'
+           AND am.amname = 'btree'
+           AND NOT i.indisunique
+           AND NOT i.indisprimary
+           AND NOT i.indisexclusion
+           AND i.indexprs IS NULL
+           AND i.indislive
+    INTO v_index_definition, v_index_exact
+    FROM pg_index i
+    JOIN pg_class ic ON ic.oid = i.indexrelid
+    JOIN pg_am am ON am.oid = ic.relam
+   WHERE i.indexrelid = to_regclass('public.idx_ca_hand_facts_equity_owed_played_at')
+     AND i.indrelid = 'public.ca_hand_facts'::regclass
+     AND i.indisvalid
+     AND i.indisready;
+  IF v_index_definition IS NULL OR v_index_exact IS NOT TRUE THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_INDEX_NOT_READY: %', v_index_definition;
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.ca_stats_witness_audit(integer,integer)'::regprocedure
+  ) INTO v_definition;
+  v_hash := md5(v_definition);
+
+  IF v_hash = v_old_hash THEN
+    v_start := position(v_start_marker IN v_definition);
+    IF v_start = 0
+       OR position(v_start_marker IN substring(v_definition FROM v_start + 1)) <> 0 THEN
+      RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_BLOCK_NOT_UNIQUE';
+    END IF;
+    v_tail := position(v_end_marker IN substring(v_definition FROM v_start));
+    IF v_tail = 0 THEN
+      RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_BLOCK_END_MISSING';
+    END IF;
+    v_definition := overlay(
+      v_definition PLACING v_replacement FROM v_start FOR v_tail - 1
+    );
+    EXECUTE v_definition;
+  ELSIF v_hash <> v_new_hash THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_SOURCE_DRIFT: %', v_hash;
+  END IF;
+
+  SELECT md5(pg_get_functiondef(
+    'public.ca_stats_witness_audit(integer,integer)'::regprocedure
+  )) INTO v_hash;
+  IF v_hash <> v_new_hash THEN
+    RAISE EXCEPTION
+      'ALL_IN_EQUITY_WITNESS_POSTIMAGE_MISMATCH: expected %, got %',
+      v_new_hash, v_hash;
+  END IF;
+END;
+$equity_witness_audit_rewrite$;
+
+-- The legacy seven-day count and the durable count describe different
+-- populations. Expose the explicit fleet boundary so neither the engine nor
+-- Alertmanager calls a partial post-cutover window "seven days". No timestamp
+-- is inferred from fact rows: that would let one upgraded process stand in for
+-- a fleet that still contains old writers.
+CREATE OR REPLACE FUNCTION public.ca_stats_equity_witness_readiness()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+  WITH cutover AS (
+    SELECT
+      max(c.writer_cutover_at) AS writer_cutover_at,
+      max(c.writer_sha) AS writer_sha,
+      max(c.recorded_at) AS recorded_at
+    FROM public.ca_stats_equity_witness_cutover c
+    WHERE c.id
+  ), latest_audit AS (
+    SELECT max(a.ran_at) AS latest_audit_at
+    FROM public.ca_stats_witness_audit_log a
+  ), status AS (
+    SELECT
+      c.writer_cutover_at,
+      c.writer_sha,
+      c.recorded_at,
+      a.latest_audit_at,
+      c.writer_cutover_at + interval '7 days' AS full_window_at,
+      c.writer_cutover_at IS NOT NULL
+        AND c.writer_cutover_at <= now() - interval '7 days'
+        AND a.latest_audit_at >= greatest(
+          c.writer_cutover_at + interval '7 days',
+          c.recorded_at
+        )
+        AS window_ready,
+      CASE
+        WHEN c.writer_cutover_at IS NULL THEN 0
+        ELSE least(
+          604800,
+          greatest(0, extract(epoch FROM (now() - c.writer_cutover_at)))
+        )::bigint
+      END AS coverage_window_seconds,
+      CASE
+        WHEN c.writer_cutover_at IS NULL THEN 'not_configured'
+        WHEN c.writer_cutover_at <= now() - interval '7 days'
+         AND a.latest_audit_at >= greatest(
+           c.writer_cutover_at + interval '7 days',
+           c.recorded_at
+         ) THEN '7d'
+        ELSE 'collecting'
+      END AS window_label,
+      CASE WHEN c.writer_cutover_at IS NULL THEN NULL ELSE (
+        SELECT f.played_at
+        FROM public.ca_hand_facts f
+        WHERE f.all_in_equity_owed IS TRUE
+          AND f.played_at >= c.writer_cutover_at
+        ORDER BY f.played_at DESC
+        LIMIT 1
+      ) END AS latest_witness_at
+    FROM cutover c
+    CROSS JOIN latest_audit a
+  )
+  SELECT jsonb_build_object(
+    'configured', writer_cutover_at IS NOT NULL,
+    'writerCutoverAt', writer_cutover_at,
+    'writerSha', writer_sha,
+    'recordedAt', recorded_at,
+    'latestAuditAt', latest_audit_at,
+    'fullWindowAt', full_window_at,
+    'latestWitnessAt', latest_witness_at,
+    'coverageWindowSeconds', coverage_window_seconds,
+    'windowLabel', window_label,
+    'windowReady', window_ready
+  )
+  FROM status;
+$function$;
+
+COMMENT ON FUNCTION public.ca_stats_equity_witness_readiness() IS
+  'Service-only readiness for the durable all-in equity coverage window. The immutable boundary is stamped only after the capable writer SHA owns the whole fleet; latestWitnessAt is one index-edge seek.';
+
+REVOKE ALL ON FUNCTION public.ca_stats_equity_witness_readiness()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_stats_equity_witness_readiness() TO service_role;
+
+-- Keep the engine's one health RPC contract: ca_stats_health includes the
+-- readiness object beside the raw audit counts. The application can therefore
+-- publish the partial window as collecting/NaN and suppress the 7d page without
+-- a second request or a race between two snapshots.
+DO $equity_witness_health_preimage$
+DECLARE
+  v_hash text;
+  v_old_hash constant text := 'd04a19c66ebd132a89fa305cc8b5ed52';
+  v_new_hash constant text := 'f1c929eb7f4ca6f74642b47ff79ee9ac';
+BEGIN
+  IF to_regprocedure('public.ca_stats_health()') IS NULL THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_HEALTH_MISSING';
+  END IF;
+
+  SELECT md5(pg_get_functiondef('public.ca_stats_health()'::regprocedure))
+    INTO v_hash;
+  IF v_hash NOT IN (v_old_hash, v_new_hash) THEN
+    RAISE EXCEPTION 'ALL_IN_EQUITY_WITNESS_HEALTH_SOURCE_DRIFT: %', v_hash;
+  END IF;
+END;
+$equity_witness_health_preimage$;
+
+CREATE OR REPLACE FUNCTION public.ca_stats_health()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+  WITH idx AS (
+    SELECT idx_ceil, backfill_complete, rows_indexed, updated_at
+    FROM public.ca_hand_player_idx_state WHERE id
+  ),
+  recent AS (
+    SELECT count(*)::int AS hands,
+           count(*) FILTER (WHERE NOT EXISTS (
+             SELECT 1 FROM public.ca_hand_player_stat s WHERE s.hand_id = h.id
+           ))::int AS without_stat
+    FROM public.hand_history h
+    WHERE h.created_at >= now() - interval '3 minutes 30 seconds'
+      AND h.created_at <  now() - interval '90 seconds'
+  ),
+  repair AS (
+    SELECT done, cursor_at, ceiling_at, hands_seen, rows_changed, updated_at
+    FROM public.ca_hand_player_stat_repair_state WHERE id
+  ),
+  seatfill AS (
+    SELECT done, cursor_at, rows_added FROM public.ca_idx_every_seat_state WHERE id
+  ),
+  audit AS (
+    SELECT ran_at, hands, button_disagree, showdown_disagree, hands_without_stat,
+           player_hands_without_idx, human_player_hands, human_without_facts,
+           allin_showdown_7d, allin_showdown_without_equity_7d, duration_ms
+    FROM public.ca_stats_witness_audit_log
+    ORDER BY ran_at DESC LIMIT 1
+  ),
+  equity_readiness AS (
+    SELECT public.ca_stats_equity_witness_readiness() AS value
+  ),
+  ev_coverage AS (
+    SELECT jsonb_build_object(
+             'allInShowdowns', allin_showdown_7d,
+             'withoutEquity', allin_showdown_without_equity_7d,
+             'ratio', CASE WHEN allin_showdown_7d > 0
+                           THEN round((allin_showdown_7d - allin_showdown_without_equity_7d)::numeric
+                                      / allin_showdown_7d, 4)
+                           ELSE NULL END
+           ) AS value
+    FROM audit
+  )
+  SELECT jsonb_build_object(
+    'checkedAt',            now(),
+    'indexCeil',            (SELECT idx_ceil FROM idx),
+    'indexLagSeconds',      (SELECT extract(epoch FROM (now() - idx_ceil))::numeric(12,1) FROM idx),
+    'indexBackfillComplete',(SELECT backfill_complete FROM idx),
+    'indexRows',            (SELECT rows_indexed FROM idx),
+    'recentHands',          (SELECT hands FROM recent),
+    'recentHandsWithoutStat', (SELECT without_stat FROM recent),
+    'repair', (SELECT jsonb_build_object(
+                 'done', done, 'cursorAt', cursor_at, 'ceilingAt', ceiling_at,
+                 'handsSeen', hands_seen, 'rowsChanged', rows_changed, 'updatedAt', updated_at)
+               FROM repair),
+    'seatBackfill', (SELECT jsonb_build_object('done', done, 'cursorAt', cursor_at, 'rowsAdded', rows_added)
+                     FROM seatfill),
+    'equityWitnessReadiness', (SELECT value FROM equity_readiness),
+    'evCoverage7d', CASE
+      WHEN COALESCE(
+        (SELECT (value->>'windowReady')::boolean FROM equity_readiness),
+        false
+      ) THEN (SELECT value FROM ev_coverage)
+      ELSE NULL
+    END,
+    'lastAudit', (SELECT jsonb_build_object(
+                    'ranAt', ran_at, 'hands', hands,
+                    'buttonDisagree', button_disagree,
+                    'showdownDisagree', showdown_disagree,
+                    'handsWithoutStat', hands_without_stat,
+                    'playerHandsWithoutIdx', player_hands_without_idx,
+                    'humanPlayerHands', human_player_hands,
+                    'humanWithoutFacts', human_without_facts,
+                    'durationMs', duration_ms)
+                  FROM audit)
+  );
+$function$;
+
+REVOKE ALL ON FUNCTION public.ca_stats_health() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_stats_health() TO service_role;
+
+DO $equity_witness_health_postimage$
+DECLARE
+  v_hash text;
+  v_expected constant text := 'f1c929eb7f4ca6f74642b47ff79ee9ac';
+BEGIN
+  SELECT md5(pg_get_functiondef('public.ca_stats_health()'::regprocedure))
+    INTO v_hash;
+  IF v_hash <> v_expected THEN
+    RAISE EXCEPTION
+      'ALL_IN_EQUITY_WITNESS_HEALTH_POSTIMAGE_MISMATCH: expected %, got %',
+      v_expected, v_hash;
+  END IF;
+END;
+$equity_witness_health_postimage$;
+
+COMMIT;

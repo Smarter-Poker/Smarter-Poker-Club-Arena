@@ -1,0 +1,38 @@
+{
+  "_owner": "fix/rakeback-accrues-with-its-source",
+  "_comment": "Rakeback daily basis and immutable exact-cent receipts are written or compensated by the rake_records source transaction. Paid-origin refunds use exact open-period offsets/carries, and null-hand sources are transactionally superseded by their canonical hand source. The existing cursor remains, but period projection no longer scans rake_records.",
+  "tables": [
+    "rakeback_basis_epoch",
+    "rakeback_cutover_daily_user",
+    "rakeback_cutover_daily_state",
+    "rakeback_cutover_source_records",
+    "rakeback_accrual_records",
+    "rakeback_accrual_receipts",
+    "rakeback_accrual_reversals",
+    "rakeback_accrual_reversal_receipts",
+    "rakeback_compensation_records",
+    "rakeback_compensation_links",
+    "rakeback_closed_period_offsets",
+    "rakeback_period_carries",
+    "rakeback_source_relinks",
+    "rakeback_source_supersessions"
+  ],
+  "functions": [
+    "fn_rakeback_lock_period_keys",
+    "fn_rakeback_lock_period_id",
+    "fn_rakeback_resolve_open_period",
+    "fn_rakeback_carry_negative_period",
+    "fn_rakeback_recompute_day",
+    "fn_rakeback_recompute_periods",
+    "fn_rakeback_source_fingerprint",
+    "fn_rakeback_materialize_cutover_record",
+    "fn_rakeback_apply_reversal_basis",
+    "fn_rakeback_supersede_ghost_source",
+    "fn_rakeback_accrue_source_record",
+    "fn_rakeback_compensate_source_record",
+    "fn_rakeback_reverse_deleted_source_record",
+    "fn_rakeback_source_basis_is_immutable",
+    "fn_rakeback_record_hand_relink",
+    "fn_rakeback_receipt_is_immutable"
+  ]
+}

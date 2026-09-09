@@ -10,7 +10,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../services/supabase/handFacts.js', () => ({
-  captureAllInEquity: () => undefined,
   captureRitEvent: () => undefined,
 }));
 

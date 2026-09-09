@@ -41,7 +41,7 @@ const src = readFileSync(
 const atomicCreatorSql = readFileSync(
   resolve(
     __dirname,
-    '../../supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql'
+    '../../supabase/migrations/20260908130000_seat_first_board_creation_is_one_transaction.sql'
   ),
   'utf8'
 );

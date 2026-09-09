@@ -162,7 +162,35 @@ describe('DEFECT 3 - a tournament that ends on a break still comes off it', () =
   it('still clears both columns', () => {
     const clear = methodBody(BASE, 'protected async clearPersistedBreak()');
     expect(clear).toMatch(/on_break:\s*false/);
+    expect(clear).toMatch(/break_started_at:\s*null/);
     expect(clear).toMatch(/break_ends_at:\s*null/);
+  });
+});
+
+describe('DEFECT 3b - a terminal tournament cannot be put back on break', () => {
+  const pause = methodBody(BASE, 'async pauseForBreak(');
+  const persistStart = methodBody(BASE, 'private async persistSynchronizedBreakStart(');
+  const countdown = methodBody(BASE, 'private async persistSynchronizedBreakCountdown(');
+
+  it('makes durable RUNNING state the break-start compare-and-set boundary', () => {
+    expect(persistStart).toMatch(/count:\s*'exact'/);
+    expect(persistStart).toMatch(/\.eq\('status',\s*'RUNNING'\)/);
+    expect(persistStart).toMatch(/count === 1/);
+    expect(persistStart).toMatch(/data\?\.status === 'RUNNING'/);
+    expect(persistStart).toMatch(/sameTimestampInstant\(data\.break_started_at, startedAt\)/);
+
+    const persistedAt = pause.indexOf('persistSynchronizedBreakStart');
+    const localPauseAt = pause.indexOf('this.onBreak = true');
+    expect(persistedAt).toBeGreaterThan(-1);
+    expect(localPauseAt).toBeGreaterThan(-1);
+    expect(persistedAt).toBeLessThan(localPauseAt);
+  });
+
+  it('cannot stamp a countdown after completion or extend an existing deadline', () => {
+    expect(countdown).toMatch(/\.eq\('status',\s*'RUNNING'\)/);
+    expect(countdown).toMatch(/\.eq\('on_break',\s*true\)/);
+    expect(countdown).toMatch(/\.is\('break_ends_at',\s*null\)/);
+    expect(countdown).toMatch(/sameTimestampInstant\(data\.break_ends_at, endsAt\)/);
   });
 });
 
@@ -175,7 +203,7 @@ describe('DEFECT 4 - a break countdown is started once, never restarted', () => 
     expect(countdown).toMatch(/this\.breakCountdownStarted\s*=\s*true/);
     // The refusal must precede the write, or the extension still lands.
     expect(countdown.indexOf('breakCountdownStarted')).toBeLessThan(
-      countdown.indexOf('break_ends_at')
+      countdown.indexOf('persistSynchronizedBreakCountdown')
     );
   });
 

@@ -121,17 +121,12 @@ on:
     # tick in :35-:50.
     - cron: '35 * * * *'
 
-  # The override, and the only path that may restart outside a window:
-  # a deliberate `force: true` dispatch. A plain dispatch -- which is what
-  # publish-watchdog.yml sends when it notices the engine is behind main --
-  # is subject to the window like everything else, so the watchdog keeps
-  # alarming without being able to bounce production at 3am.
+  # Manual dispatch can prioritize an exact SHA and bypass restart spacing,
+  # but it cannot bypass the durable maintenance certificate. Every target
+  # image cutover, scheduled or manual, waits for the engine to prove that its
+  # exact counting-down state committed and every table is between hands.
   workflow_dispatch:
     inputs:
-      force:
-        description: 'Restart NOW, without waiting for the :55 maintenance break (voids in-flight hands)'
-        type: boolean
-        default: false
       ref_sha:
         description: 'Commit SHA to deploy (default: the ref this was dispatched on)'
         required: false
@@ -192,13 +187,34 @@ jobs:
       IMAGE_REPO: club-arena-engine
       REPO_DIR: /opt/club-arena
       ENGINE_URL: https://engine.smarter.poker
-      SHA: ${{ github.event.inputs.ref_sha || github.sha }}
 
     steps:
-      - name: Checkout the exact commit being deployed
+      - name: Checkout the requested deployment ref
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref_sha || github.sha }}
+
+      # A manual dispatch may name a branch, tag, or abbreviated commit. None
+      # of those is immutable enough for a Docker tag, remote shell command,
+      # database receipt, or release proof. Resolve the checkout once, require
+      # Git's canonical lowercase full object ID, and use only that value from
+      # here onward. The untrusted dispatch string is consumed only by the
+      # checkout action above; it is never interpolated into a shell command.
+      - name: Resolve the deployment target to one immutable commit
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESOLVED_SHA="$(git rev-parse --verify 'HEAD^{commit}')"
+          RESOLVED_SHA="${RESOLVED_SHA,,}"
+          if [[ ! "$RESOLVED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::checkout HEAD did not resolve to one lowercase 40-hex commit"
+            exit 1
+          fi
+          git cat-file -e "${RESOLVED_SHA}^{commit}"
+          echo "SHA=$RESOLVED_SHA" >> "$GITHUB_ENV"
+          echo "sha=$RESOLVED_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved deployment target: $RESOLVED_SHA"
 
       # PHASE 1 (2026-09-02): record that this run STARTED, before tests. The
       # DB-side dispatcher at :41 reads this to know a run is already in flight
@@ -236,13 +252,52 @@ jobs:
         continue-on-error: true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
         run: |
           [ -z "$DATABASE_URL" ] && { echo "::warning::no DATABASE_URL; start not recorded"; exit 0; }
           npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
           node scripts/ci/record-engine-deploy-start.mjs || echo "::warning::deploy-start not recorded"
+
+      # Dedupe is a production-state decision, so it needs the host as well as
+      # HTTP and the database. Install the pinned transport before that check;
+      # a genuinely deduped run still cleans it in the unconditional final step.
+      - name: Setup SSH key
+        env:
+          # The two repos disagreed on the name of this secret: World Hub's
+          # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
+          # HETZNER_SSH_KEY, and the Club Arena repo happens to hold BOTH. That
+          # works right up until somebody rotates the key and updates one name,
+          # at which point the other repo's deploy fails with an SSH error that
+          # says nothing about a secret. Accept either, prefer the World Hub's
+          # name as canonical, and say which one was used.
+          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          if [ -n "$SSH_KEY_CANONICAL" ]; then
+            echo "Using HETZNER_SSH_PRIVATE_KEY (canonical)"
+            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
+          elif [ -n "$SSH_KEY_LEGACY" ]; then
+            echo "::warning::Falling back to HETZNER_SSH_KEY. Set HETZNER_SSH_PRIVATE_KEY to match the World Hub repo."
+            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
+          else
+            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set — every ssh below would fail."
+            exit 1
+          fi
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
+            || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
+          # A pinned key is both safer and more reliable than ssh-keyscan; the
+          # latter also trips this host's fail2ban policy with parallel probes.
+          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts \
+            || { echo "::error::HETZNER_HOST_KEY secret is empty or unset — every ssh below would fail, including the safety net"; exit 1; }
+          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
+          chmod +x ~/hssh
 
       # 2026-08-24: DEDUPE. A restart is not free — it disconnects every
       # player and voids in-flight hands — so an engine already serving this
@@ -257,19 +312,29 @@ jobs:
       # (is there even new code), and the break gate further down (has the
       # engine parked every table and said it is safe).
       #
-      # `force: true` still exists and still means one thing: skip the break
-      # gate and restart now, outside the announced break. It is no longer an
-      # override for a window, because there is no window to override.
+      # A deliberate manual run bypasses restart coalescing only. It does not
+      # bypass the maintenance break below.
       - name: Skip if production already serves this commit
         id: dedupe
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           SHORT="${SHA:0:8}"
           BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
           VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+          PUBLIC_MATCH=false
           if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Production already serves $SHORT — nothing to deploy."
-            exit 0
+            # HTTP alone cannot close a release. A cancelled deploy can leave
+            # the target process running while :current still points at the
+            # old image; the old shortcut made that split permanent. Hand the
+            # candidate to the exact database+host reconciliation step below.
+            PUBLIC_MATCH=true
+            echo "public_match=true" >> $GITHUB_OUTPUT
+            echo "Public health names $SHORT; proving database, container, and :current before dedupe."
+          else
+            echo "public_match=false" >> $GITHUB_OUTPUT
           fi
           # 2026-08-24: RESTART COALESCING. On the night this was added the
           # engine restarted 5 times in one hour as a merge train landed —
@@ -278,7 +343,7 @@ jobs:
           # only allowed once the last restart WE performed is at least 20
           # minutes old; a younger one defers, and the next tick lands a newer
           # HEAD that contains this commit anyway. Manual workflow_dispatch
-          # (the force path) bypasses the spacing gate.
+          # bypasses the spacing gate, but not the durable break certificate.
           MIN_RESTART_SPACING_SEC=1200
           #
           # ── ASK THE LEDGER, NOT THE PROCESS (2026-09-05) ──────────────────
@@ -358,7 +423,8 @@ jobs:
             echo "::notice::Engine reports 0 active tables — nothing to protect, spacing gate bypassed."
           fi
 
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ] \
+          if [ "$PUBLIC_MATCH" != "true" ] \
+             && [ "${{ github.event_name }}" != "workflow_dispatch" ] \
              && [ "$UNHEALTHY" = "false" ] \
              && [ "$SINCE_SHIPPED_N" -ge 0 ] && [ "$SINCE_SHIPPED_N" -lt "$MIN_RESTART_SPACING_SEC" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -374,10 +440,166 @@ jobs:
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s, our last deploy ${SINCE_SHIPPED}s ago), deploying $SHORT."
 
+      - name: Reconcile an already-serving target from exact database and host truth
+        id: exact_dedupe
+        if: steps.dedupe.outputs.skip != 'true' && steps.dedupe.outputs.public_match == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: match
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          if ! node scripts/ci/prove-engine-version-moved.mjs; then
+            echo "HTTP named the target but the fresh database leader did not. The certified deploy continues."
+            exit 0
+          fi
+
+          # Hold the same host lock as deploy, supervisor, and recovery while
+          # proving the immutable target image is the sole running authority.
+          # If a prior run died after verification but before promotion, repair
+          # :current in place; this changes no process and prevents autonomous
+          # recovery from resurrecting the previous build.
+          HOST_RESULT=$(~/hssh bash -s -- \
+            "$CONTAINER" "$IMAGE_REPO:$SHA" "$IMAGE_REPO:current" "${SHA:0:8}" "${PORT:-8080}" <<'REMOTE'
+          set -euo pipefail
+          CONTAINER="$1"
+          TARGET_IMAGE="$2"
+          CURRENT_IMAGE="$3"
+          SHORT_SHA="$4"
+          PORT="$5"
+
+          # The production authority contract is not caller-configurable.
+          # Keep this assertion beside the all-state validator so a later
+          # workflow-level PORT variable cannot turn an exact-dedupe into an
+          # approval for a different host publication.
+          [ "$PORT" = "8080" ]
+
+          exec 9>/var/lock/club-arena-engine-up.lock
+          flock -w 30 9
+          EXPECTED_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$TARGET_IMAGE")"
+          [ -n "$EXPECTED_IMAGE_ID" ]
+
+          validate_all_state_identity() {
+            local ids inventory
+            ids="$(docker ps -aq)"
+            [ -n "$ids" ] || return 1
+            inventory="$(docker container inspect $ids)"
+            printf '%s' "$inventory" | python3 -c '
+          import json, sys
+
+          container, expected_image, port = sys.argv[1:]
+          rows = json.load(sys.stdin)
+          if not isinstance(rows, list):
+              raise SystemExit(1)
+
+          def name(row):
+              value = row.get("Name")
+              return value[1:] if isinstance(value, str) and value.startswith("/") else value
+
+          def labels(row):
+              config = row.get("Config")
+              value = config.get("Labels") if isinstance(config, dict) else None
+              return value if isinstance(value, dict) else {}
+
+          def bindings(row):
+              host = row.get("HostConfig")
+              value = host.get("PortBindings") if isinstance(host, dict) else None
+              return value if isinstance(value, dict) else {}
+
+          named = [row for row in rows if name(row) == container]
+          labelled = [row for row in rows if labels(row).get("sp.role") == "engine"]
+          publishers = [
+              row
+              for row in rows
+              if any(
+                  isinstance(entries, list)
+                  and any(
+                      isinstance(entry, dict) and entry.get("HostPort") == port
+                      for entry in entries
+                  )
+                  for entries in bindings(row).values()
+              )
+          ]
+          if [name(row) for row in named] != [container]:
+              raise SystemExit(1)
+          if [name(row) for row in labelled] != [container]:
+              raise SystemExit(1)
+          if [name(row) for row in publishers] != [container]:
+              raise SystemExit(1)
+
+          row = named[0]
+          state = row.get("State") if isinstance(row.get("State"), dict) else {}
+          host = row.get("HostConfig") if isinstance(row.get("HostConfig"), dict) else {}
+          restart = host.get("RestartPolicy") if isinstance(host.get("RestartPolicy"), dict) else {}
+          exact_binding = {"8080/tcp": [{"HostIp": "", "HostPort": port}]}
+          if state.get("Status") != "running":
+              raise SystemExit(1)
+          if row.get("Image") != expected_image:
+              raise SystemExit(1)
+          if labels(row).get("autoheal") != "true":
+              raise SystemExit(1)
+          if restart.get("Name") != "always":
+              raise SystemExit(1)
+          if bindings(row) != exact_binding:
+              raise SystemExit(1)
+          identity = row.get("Id")
+          started = state.get("StartedAt")
+          if not isinstance(identity, str) or not identity or not isinstance(started, str) or not started:
+              raise SystemExit(1)
+          print(f"{identity}|{started}|{expected_image}")
+          ' "$CONTAINER" "$EXPECTED_IMAGE_ID" "$PORT"
+          }
+
+          FINGERPRINT_BEFORE="$(validate_all_state_identity)"
+          CACHE_BUSTER="$(date -u +%s%N)"
+          BODY="$(curl -q -sf --noproxy '*' --max-time 10 -H 'Cache-Control: no-cache' \
+            "http://127.0.0.1:${PORT}/health?cb=${CACHE_BUSTER}")"
+          DIRECT="$(printf '%s' "$BODY" | python3 -c '
+          import json, sys
+          value = json.load(sys.stdin)
+          ok = (
+              value.get("running") is True
+              and value.get("liveness") == "ok"
+              and value.get("version") == sys.argv[1]
+          )
+          print("yes" if ok else "no")
+          ' "$SHORT_SHA")"
+          [ "$DIRECT" = yes ]
+          FINGERPRINT_AFTER="$(validate_all_state_identity)"
+          [ "$FINGERPRINT_AFTER" = "$FINGERPRINT_BEFORE" ]
+
+          CURRENT_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$CURRENT_IMAGE" 2>/dev/null || true)"
+          if [ "$CURRENT_IMAGE_ID" != "$EXPECTED_IMAGE_ID" ]; then
+            docker tag "$EXPECTED_IMAGE_ID" "$CURRENT_IMAGE"
+            [ "$(docker image inspect -f '{{.Id}}' "$CURRENT_IMAGE")" = "$EXPECTED_IMAGE_ID" ]
+            [ "$(validate_all_state_identity)" = "$FINGERPRINT_BEFORE" ]
+            echo repaired
+          else
+            echo exact
+          fi
+          REMOTE
+          ) 2>/dev/null || true
+          case "$HOST_RESULT" in
+            exact)
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Database, sole container, direct health, and :current all prove $SHA."
+              ;;
+            repaired)
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Repaired :current to the already-running, database-proved $SHA without restarting."
+              ;;
+            *)
+              echo "HTTP and database named the target, but exact host identity did not. The certified deploy continues."
+              ;;
+          esac
+
       # See design note 7. Cheap (~1 min) and it is the only thing standing
       # between a failing engine test and production.
       - name: Setup Node 22
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -385,7 +607,7 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       - name: Server tests must pass before anything is deployed
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         working-directory: server
         run: |
           npm ci
@@ -413,7 +635,7 @@ jobs:
         # on every deploy; nothing is measured less, it just stops taking the
         # train hostage. The [skip-financial-gate] tag now only silences the
         # report for one deploy.
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           # GitHub runners have no IPv6 route, and db.<ref>.supabase.co is
@@ -466,55 +688,9 @@ jobs:
           fi
           exit 0
 
-      - name: Setup SSH key
-        if: steps.dedupe.outputs.skip != 'true'
-        env:
-          # The two repos disagreed on the name of this secret: World Hub's
-          # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
-          # HETZNER_SSH_KEY, and the Club Arena repo happens to hold BOTH. That
-          # works right up until somebody rotates the key and updates one name,
-          # at which point the other repo's deploy fails with an SSH error that
-          # says nothing about a secret. Accept either, prefer the World Hub's
-          # name as canonical, and say which one was used.
-          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          if [ -n "$SSH_KEY_CANONICAL" ]; then
-            echo "Using HETZNER_SSH_PRIVATE_KEY (canonical)"
-            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
-          elif [ -n "$SSH_KEY_LEGACY" ]; then
-            echo "::warning::Falling back to HETZNER_SSH_KEY. Set HETZNER_SSH_PRIVATE_KEY to match the World Hub repo."
-            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
-          else
-            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set — every ssh below would fail."
-            exit 1
-          fi
-          chmod 600 ~/.ssh/id_deploy
-          # Fail here, loudly, rather than 20 lines later on a confusing
-          # 'Permission denied (publickey)'.
-          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
-            || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
-          # DO NOT use ssh-keyscan. It opens five parallel probes offering
-          # different host key types; four disconnect pre-auth, which fail2ban's
-          # aggressive sshd filter counts as four failures and bans the runner
-          # inside the same second (maxretry=4, bantime=24h). That made every
-          # deploy a coin flip from the moment fail2ban was installed until
-          # 2026-08-15. Pinning is also strictly better security — ssh-keyscan
-          # trusts whatever the network hands back, on every run.
-          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          test -s ~/.ssh/known_hosts \
-            || { echo "::error::HETZNER_HOST_KEY secret is empty or unset — every ssh below would fail, including the safety net"; exit 1; }
-          # One reusable alias. BatchMode so a prompt can never hang the job
-          # while it holds the deploy-hetzner concurrency lock.
-          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
-            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
-          chmod +x ~/hssh
-
       - name: Capture pre-deploy state (this is the rollback target)
         id: pre
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           # No 2>&1 here: it folded ssh/git stderr into the value, which then
           # went into $GITHUB_OUTPUT (multi-line values break the file-command
@@ -542,7 +718,7 @@ jobs:
           echo "Pre-deploy commit on host: $BEFORE_SHA"
 
       - name: Pre-flight checks
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           # An empty .env yields a container that boots and then fails every
           # query — worse than not deploying, because it looks alive.
@@ -566,7 +742,7 @@ jobs:
       # break spent compiling.
 
       - name: Pull the exact commit onto the host
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           # Design note 5: reset to $SHA, never to a moving origin/main.
           ~/hssh "cd $REPO_DIR && git fetch origin && git reset --hard $SHA && git rev-parse HEAD"
@@ -609,7 +785,7 @@ jobs:
       # option nobody remembers the meaning of.
       - name: Build immutable image (or adopt the one already staged)
         id: image
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           if ~/hssh "docker image inspect $IMAGE_REPO:$SHA >/dev/null 2>&1"; then
             echo "reused=true" >> $GITHUB_OUTPUT
@@ -623,7 +799,7 @@ jobs:
           ~/hssh "docker image inspect $IMAGE_REPO:$SHA >/dev/null"
 
       - name: Install/refresh host supervisor
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           # Re-run every deploy so the systemd units can never drift from the
           # repo, and a rebuilt host self-heals on its first deploy.
@@ -633,7 +809,7 @@ jobs:
           ~/hssh "REPO_DIR=$REPO_DIR ADMIN_ALLOW_IPS='${{ vars.ADMIN_ALLOW_IPS }}' $REPO_DIR/server/scripts/install-engine-supervisor.sh"
 
       - name: Exactly one engine may answer for this host
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           # club-arena-engine-2 was created 2026-08-23T13:29Z on port 8081 with
           # this same run-spec and nothing in this pipeline knew about it. It
@@ -673,19 +849,14 @@ jobs:
       # The engine now DECLARES a stop instead of us hunting for one. At :53 it
       # tells every table to finish its hand and start no new one; at :55 every
       # table is parked and it opens `maintenance.readyForRestart` on /health.
-      # We wait for that flag. It is not a snapshot that can go stale between
-      # the read and the SIGTERM - the platform is held still, on purpose, for
-      # the whole five minutes, and the players were told at :53.
+      # We require that flag together with `durableConfirmed`, then re-read the
+      # same certificate directly from the sole container immediately before
+      # SIGTERM. The platform stays held through the fixed :00 boundary.
       - name: Wait for the maintenance break to park every table
         id: drain
-        if: steps.dedupe.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true'
         run: |
           echo "skip=false" >> $GITHUB_OUTPUT
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            echo "force=true — skipping the break gate"; exit 0
-          fi
 
           # ── THE BUDGET REACHES THE BREAK, OR THE RUN SAYS SO AT ONCE ────
           #
@@ -755,191 +926,79 @@ jobs:
           [ "$ATTEMPTS" -lt 8 ] && ATTEMPTS=8
           echo "break gate: ${SECS_TO_GATE}s to the next :55, polling ${ATTEMPTS}x${POLL_S}s"
 
-          # ── HOW FAR BEHIND IS PRODUCTION? ───────────────────────────────
-          #
-          # Read before the wait, because it decides what to do when the gate
-          # does not open. Dan 2026-09-01: "no work ever gets lost, orphaned
-          # or not published ... EVER". A gate that fails closed protects
-          # hands, but a gate that fails closed FOREVER strands the code it
-          # was protecting them for, and that is the failure this measures.
-          #
-          # The measure is the age of the commit production is actually
-          # serving, not a run counter: it needs no state, it survives a
-          # cancelled run, and it is the number a human would ask for.
-          LIVE=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version") or "")' 2>/dev/null || echo "")
-          #
-          # THE CHECKOUT IS SHALLOW, AND THAT SILENTLY DISARMED THE ESCAPE
-          # HATCH (2026-09-02). actions/checkout defaults to fetch-depth: 1, so
-          # the only commit object on the runner is the one being deployed.
-          # Dating the LIVE sha with local git therefore ALWAYS failed,
-          # BEHIND_MIN stayed 0, and `BEHIND_MIN >= STALE_MIN` below could
-          # never be true. The escalation was unreachable on every run since it
-          # was written, while reading as though it were armed.
-          #
-          # Measured on run 33656444491: production had served 93d167b5 for 798
-          # minutes, a break WAS running, 40 tables never parked - and the gate
-          # printed "could not date the live commit (93d167b5) - treating as
-          # not-stale" and shipped nothing. The engine carrying the fix for the
-          # unparked tables was stranded behind those same unparked tables.
-          #
-          # `git fetch origin <sha>` does NOT rescue it: /health reports an
-          # ABBREVIATED sha and fetch requires a full one ("couldn't find
-          # remote ref 93d167b5", verified against a real depth-1 clone).
-          # The API resolves the abbreviation and returns the commit date in
-          # one call, needs no history, and cannot be defeated by clone depth.
-          # Local git stays as the fast path for when history happens to be
-          # there. If both fail we keep BEHIND_MIN=0 and fail closed, which is
-          # the safe direction.
-          BEHIND_MIN=0
-          LIVE_CT=""
-          if [ -n "$LIVE" ] && git cat-file -e "${LIVE}^{commit}" 2>/dev/null; then
-            LIVE_CT=$(git show -s --format=%ct "$LIVE")
-          elif [ -n "$LIVE" ]; then
-            LIVE_CT=$(curl -sf --max-time 10 \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${LIVE}" 2>/dev/null \
-              | python3 -c 'import json,sys,datetime; d=json.load(sys.stdin); print(int(datetime.datetime.fromisoformat(d["commit"]["committer"]["date"].replace("Z","+00:00")).timestamp()))' 2>/dev/null || echo "")
-          fi
-          if [ -n "$LIVE_CT" ]; then
-            BEHIND_MIN=$(( ( $(date -u +%s) - LIVE_CT ) / 60 ))
-            echo "production serves $LIVE, committed ${BEHIND_MIN}m ago"
-          else
-            echo "could not date the live commit ($LIVE) - treating as not-stale"
-          fi
-          # Three missed windows. One is ordinary (a straggler table, a dropped
-          # cron); three in a row means the strict gate is never going to open
-          # on this fleet and waiting a fourth hour just loses another hour.
-          STALE_MIN=190
-
           READY=no
-          LEGACY=no
-          BREAK_RUNNING=no
-          STRAGGLER_NOW=no
-          # The cutover has to FIT in what is left of the break, or escalating
-          # inside it buys nothing. docker stop -t 45 plus image start plus the
-          # liveness verify is comfortably under two minutes; below that floor
-          # we let the poll run out and take the old post-loop path instead.
-          MIN_BREAK_LEFT_S=120
+          INCOMPATIBLE=no
           for i in $(seq 1 $ATTEMPTS); do
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
-            # Three outcomes, deliberately distinguished: ready / not ready /
-            # this engine predates the feature. Collapsing the third into the
-            # second would deadlock the very deploy that ships the feature.
-            STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); print("LEGACY" if m is None else ("READY" if m.get("readyForRestart") else "phase=%s remaining=%ss unparked=%s" % (m.get("phase"), int((m.get("remainingMs") or 0)/1000), m.get("unparkedTables"))))' 2>/dev/null || echo ERR)
+            CACHE_BUSTER="$(date -u +%s%N)"
+            BODY=$(curl -sf --max-time 10 -H 'Cache-Control: no-cache' \
+              "$ENGINE_URL/health?cb=$CACHE_BUSTER" 2>/dev/null || echo "")
+            # Both fields are exact booleans. Truthy strings, a counting_down
+            # phase by itself, or a build that predates durableConfirmed are
+            # not restart authority.
+            STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); print("INCOMPATIBLE" if not isinstance(m,dict) or "durableConfirmed" not in m or "readyForRestart" not in m else ("READY" if m.get("readyForRestart") is True and m.get("durableConfirmed") is True else "phase=%s durable=%s ready=%s remaining=%ss unparked=%s" % (m.get("phase"), m.get("durableConfirmed"), m.get("readyForRestart"), int((m.get("remainingMs") or 0)/1000), m.get("unparkedTables"))))' 2>/dev/null || echo ERR)
             case "$STATE" in
-              READY)  READY=yes; echo "attempt $i/$ATTEMPTS: break is running and every table is parked — restarting now"; break ;;
-              LEGACY) LEGACY=yes; echo "attempt $i/$ATTEMPTS: /health has no maintenance block"; break ;;
-              ERR)    echo "attempt $i/$ATTEMPTS: /health unreadable — retrying" ;;
-              *)
-                # Remember that a break was actually RUNNING at some point,
-                # even if a straggler table kept the strict gate shut. That is
-                # the difference between "the break works and one table is
-                # slow" and "the break never fired at all", and the escalation
-                # below is only safe in the first case.
-                case "$STATE" in *"phase=counting_down"*) BREAK_RUNNING=yes ;; esac
-                #
-                # ESCALATE WHILE THE BREAK IS STILL RUNNING (2026-09-02).
-                # The escalation used to be evaluated only after all 56 attempts,
-                # i.e. 14 minutes after the gate opened. Measured on run
-                # 33662583560: the gate opened at 17:47:24, the break ran
-                # 17:55-18:00, the loop finished at 18:01:24 and the engine
-                # restarted at 18:02:24 - two and a half minutes AFTER the break
-                # it had been waiting for. Players got exactly the unannounced
-                # restart this whole feature exists to remove, and the warning
-                # the step prints ("Restarting inside the break") was not true.
-                #
-                # So take the same decision at the first poll that can act on it,
-                # while the window is still open and the players are still parked.
-                # The conditions are identical to the post-loop check - a break
-                # genuinely running, production genuinely stale - plus the break
-                # having enough time left for the cutover to land inside it.
-                # Nothing here can restart outside a break: it only fires on
-                # phase=counting_down with remaining >= MIN_BREAK_LEFT_S.
-                if [ "$BREAK_RUNNING" = "yes" ] && [ "$BEHIND_MIN" -ge "$STALE_MIN" ]; then
-                  REMAIN_S=$(printf '%s' "$STATE" | sed -n 's/.*remaining=\([0-9][0-9]*\)s.*/\1/p')
-                  if [ -n "$REMAIN_S" ] && [ "$REMAIN_S" -ge "$MIN_BREAK_LEFT_S" ]; then
-                    STRAGGLER_NOW=yes
-                    echo "attempt $i/$ATTEMPTS: break is running with ${REMAIN_S}s left and production is ${BEHIND_MIN}m behind — escalating NOW, inside the break, rather than after the poll outlives it"
-                    break
-                  fi
-                fi
-                echo "attempt $i/$ATTEMPTS: waiting for the break — $STATE" ;;
+              READY) READY=yes; echo "attempt $i/$ATTEMPTS: durable countdown confirmed and every table is between hands"; break ;;
+              INCOMPATIBLE) INCOMPATIBLE=yes; echo "attempt $i/$ATTEMPTS: running engine cannot publish the durable maintenance certificate"; break ;;
+              ERR) echo "attempt $i/$ATTEMPTS: /health unreadable — retrying" ;;
+              *) echo "attempt $i/$ATTEMPTS: waiting for a durable safe boundary — $STATE" ;;
             esac
             sleep 15
           done
 
           if [ "$READY" = "yes" ]; then exit 0; fi
-
-          # Escalated from inside the break. Same decision, same protections
-          # (drainHands still parks the straggler at a hand boundary on
-          # SIGTERM) - the only difference is that the window is still open.
-          if [ "$STRAGGLER_NOW" = "yes" ]; then
-            echo "::warning title=RESTARTING ON A STRAGGLER::A maintenance break is running RIGHT NOW but at least one table never parked, and production has been ${BEHIND_MIN}m behind main (>= ${STALE_MIN}m). Restarting inside the break rather than stranding every engine fix behind one table. drainHands still parks the straggler at a hand boundary on SIGTERM."
+          if [ "$INCOMPATIBLE" = "yes" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "gate_reason=running engine cannot publish exact durableConfirmed and readyForRestart booleans; supervised protocol upgrade required" >> $GITHUB_OUTPUT
+            echo "::warning title=DURABLE CERTIFICATE UNAVAILABLE::The running engine cannot prove the exact durable maintenance state. No target image was cut over. Upgrade the additive /health contract under a supervised maintenance procedure; never route around this fence."
             exit 0
           fi
-
-          # ── ESCALATION: A BREAK WITH A STRAGGLER STILL BEATS NEVER ────────
-          #
-          # The strict gate wants EVERY table parked. If one table cannot park
-          # — wedged mid-hand, or a bug in the park path — the gate never
-          # opens and, with a fail-closed deploy, that single table silently
-          # holds every engine fix on the platform hostage indefinitely. That
-          # is precisely the "orphaned work" this whole change exists to end,
-          # arriving through a different door.
-          #
-          # So after three missed windows, proceed IF a break is genuinely
-          # running. This is not the old staleness cap. That one restarted on
-          # a fully live fleet with no warning to anybody. Here:
-          #
-          #   * the break was announced at :53 and players are on the break
-          #     screen with a countdown;
-          #   * every table that could park has parked and has no cards out;
-          #   * the straggler is still protected — SIGTERM runs
-          #     GameServer.drainHands, which parks it at a hand boundary
-          #     inside docker stop -t 45.
-          #
-          # The straggler's hand is therefore no less safe than it was on
-          # EVERY restart before this feature existed, and everyone else is
-          # strictly safer. Refusing anyway would trade a real, shipped fix
-          # for a protection that is already in place.
-          if [ "$BREAK_RUNNING" = "yes" ] && [ "$BEHIND_MIN" -ge "$STALE_MIN" ]; then
-            echo "::warning title=RESTARTING ON A STRAGGLER::A maintenance break is running but at least one table never parked, and production has been ${BEHIND_MIN}m behind main (>= ${STALE_MIN}m, three missed windows). Restarting inside the break rather than stranding every engine fix behind one table. drainHands still parks the straggler at a hand boundary on SIGTERM."
-            exit 0
-          fi
-
-          if [ "$LEGACY" = "yes" ]; then
-            # BOOTSTRAP ONLY, AND IT REMOVES ITSELF. The engine in production
-            # right now is older than this feature, so it can never open the
-            # flag and waiting for it would mean this commit — the one that
-            # ADDS the break — could never land. One legacy restart is taken on
-            # the old terms: SIGTERM still runs GameServer.drainHands, which
-            # parks every table at a hand boundary inside docker stop -t 45.
-            # From the next deploy onward /health carries the block and this
-            # branch is unreachable.
-            echo "::warning title=LEGACY ENGINE::/health has no maintenance block, so the running engine predates the scheduled break. Restarting on the old SIGTERM drain this once; subsequent deploys will wait for the announced break."
-            exit 0
-          fi
-
-          # FAILS CLOSED, and it can afford to. A missed window costs at most
-          # six hours of slightly older code; restarting outside the break puts
-          # the ~2 minute rehydration outage back in front of players who were
-          # never told, which is exactly what this whole change removes. If the
-          # break genuinely stops firing that is an engine bug and it should be
-          # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "gate_reason=the maintenance break never opened for a restart (a break was ${BREAK_RUNNING} running during the wait)" >> $GITHUB_OUTPUT
-          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within the ${ATTEMPTS} polls this run had budget for, so nothing was deployed. Production is ${BEHIND_MIN}m behind main. A break was ${BREAK_RUNNING} running during the wait. If it was NOT, the engine's break scheduler is not firing (check the engine log for '[MaintenanceBreak]') - that is an engine bug and no deploy will land until it is fixed. The next window retries automatically, and engine-watchdog.sh raises a tracked issue once a window has passed without the engine catching up."
+          echo "gate_reason=the engine never published a durable, fully parked restart certificate within ${ATTEMPTS} polls" >> $GITHUB_OUTPUT
+          echo "::warning title=BREAK NEVER OPENED::The engine never reported both maintenance.durableConfirmed=true and maintenance.readyForRestart=true within ${ATTEMPTS} polls, so no target image was cut over. Check the maintenance scheduler, persistence RPC, and any unparked table; the next window retries automatically."
           exit 0
 
       - name: Cut over to the new image
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        id: cutover
+        if: steps.dedupe.outputs.skip != 'true' && steps.exact_dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           # Runs the SHA tag directly. :current is NOT moved yet — see design
           # note 6. If this step fails, every recovery path still recreates the
           # last verified build rather than this one.
-          ~/hssh "IMAGE=$IMAGE_REPO:$SHA CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env $REPO_DIR/server/scripts/engine-up.sh"
+          #
+          # The host-side wrapper acquires the SAME lock as engine-up.sh and
+          # the supervisor, revalidates the direct-container durable break
+          # certificate under that lock, then keeps it through SIGTERM. Exit 75
+          # is a clean refusal before mutation; exit 76 is the wrapper's exact
+          # attestation that its mutation transaction began and needs recovery.
+          # The workflow must not infer mutation merely because it attempted
+          # SSH. The wrapper has an exact exit contract: 75 means it refused
+          # before mutation, 76 means its lock-held transaction began and then
+          # failed, and 0 means that transaction completed. Any other status is
+          # transport/invocation failure and cannot authorize a target-checkout
+          # recovery script to start code. Host-local traps and the supervisor
+          # remain the crash-convergence authority if the runner disappears.
+          echo "mutation_started=false" >> $GITHUB_OUTPUT
+          echo "performed=false" >> $GITHUB_OUTPUT
+          set +e
+          ~/hssh "IMAGE=$IMAGE_REPO:$SHA CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env MIN_BREAK_LEFT_MS=180000 PROMOTE_IMAGE_TO=$IMAGE_REPO:current PUBLIC_HEALTH_URL=$ENGINE_URL/health REQUIRED_DATABASE_VERSION=${SHA:0:8} ENGINE_UP_SCRIPT=$REPO_DIR/server/scripts/engine-up.sh $REPO_DIR/server/scripts/engine-up-with-maintenance-certificate.sh"
+          CUTOVER_STATUS=$?
+          set -e
+          if [ "$CUTOVER_STATUS" = "75" ]; then
+            echo "gate_reason=the fresh direct-container certificate was refused under the shared host lock" >> $GITHUB_OUTPUT
+            echo "::warning title=DURABLE CERTIFICATE LOST::The locked direct-container recheck refused cutover. The running container was not mutated; the next maintenance window retries automatically."
+            exit 0
+          fi
+          if [ "$CUTOVER_STATUS" = "76" ]; then
+            echo "mutation_started=true" >> $GITHUB_OUTPUT
+            echo "::error title=CUTOVER FAILED AFTER MUTATION::The lock-held transaction began but did not commit; rollback and the final availability guarantee are authorized to recover the last verified image."
+            exit "$CUTOVER_STATUS"
+          fi
+          if [ "$CUTOVER_STATUS" != "0" ]; then
+            echo "::error title=CUTOVER DID NOT ATTEST MUTATION::SSH or wrapper invocation failed with status $CUTOVER_STATUS before the host transaction attested that mutation began. No target-checkout restart or recovery command is authorized."
+            exit "$CUTOVER_STATUS"
+          fi
+          echo "mutation_started=true" >> $GITHUB_OUTPUT
+          echo "performed=true" >> $GITHUB_OUTPUT
           # The outgoing engine's log was saved by engine-up.sh before the old
           # container was removed (2026-09-07). Name the file in the run log so
           # the next investigation knows where to look without ssh-ing blind.
@@ -948,7 +1007,7 @@ jobs:
 
       - name: Verify — liveness AND that the running build is the one we shipped
         id: health
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        if: steps.cutover.outcome == 'success' && steps.cutover.outputs.mutation_started == 'true' && steps.cutover.outputs.performed == 'true'
         run: |
           SHORT="${SHA:0:8}"
           # ── ASK THE CONTAINER, NOT THE HOSTNAME ─────────────────────────────
@@ -1010,15 +1069,6 @@ jobs:
           ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
           exit 1
 
-      - name: Promote :current to the verified build
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        run: |
-          # Only now. Every recovery path (supervisor, autoheal recreate, the
-          # guarantee step, a host reboot) resolves :current, so :current must
-          # only ever name a build that answered /health with its own SHA.
-          ~/hssh "docker tag $IMAGE_REPO:$SHA $IMAGE_REPO:current"
-          echo ":current -> $SHA"
-
       # A DEPLOY THAT PROVES ITSELF, PART TWO (2026-09-05). The verify step
       # above asked the container and the proxy for a version. This asks the
       # DATABASE: engine_leader.engine_version is written by the running
@@ -1026,27 +1076,56 @@ jobs:
       # GIT_COMMIT_SHA[0:8]), and cannot be served by a cache, a load balancer
       # or an unmanaged twin. It polls for up to four minutes and FAILS THE
       # JOB when the version still equals what PART ONE recorded - the
-      # 2026-09-05 shape exactly - or names a third build. Failing here
-      # triggers the ROLLBACK below, the same treatment the verify step gives
-      # a version mismatch: :current must never name a build the engine never
-      # reported running. Unreadable is NOT behind (the verify step already
-      # read /health), so no witness at all is a warning, never a rollback.
+      # 2026-09-05 shape exactly - names a third build, is stale, or cannot be
+      # read. Failing here triggers the ROLLBACK below, the same treatment the
+      # verify step gives a version mismatch: :current must never name a build
+      # the engine never reported running. HTTP remains useful diagnostic
+      # evidence, but it cannot replace the database leader witness.
       # scripts/ci/prove-engine-version-moved.mjs also raises the in-app
       # notification publish-watchdog.sh raises, to the same recipients.
       - name: 'PROVE the version moved: the engine wrote the new build, not just answered with it'
         id: prove
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        if: steps.cutover.outputs.performed == 'true' && steps.health.outputs.verified == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           MODE: prove
-          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
           TIMEOUT_S: '240'
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
           node scripts/ci/prove-engine-version-moved.mjs
+
+      - name: Confirm the lock-held transaction promoted :current
+        id: promote
+        if: steps.cutover.outputs.performed == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success'
+        run: |
+          # Promotion is part of the lock-held host transaction, not a second
+          # CI-side mutation. The target ran with restart=no until direct health,
+          # public serving health, and the fresh database leader all agreed;
+          # only then did the wrapper move :current and commit restart=always.
+          # Re-read that exact durable state under the same shared lock.
+          ~/hssh bash -s -- "$CONTAINER" "$IMAGE_REPO:$SHA" "$IMAGE_REPO:current" <<'REMOTE'
+          set -euo pipefail
+          CONTAINER="$1"
+          TARGET_IMAGE="$2"
+          CURRENT_IMAGE="$3"
+          exec 9>/var/lock/club-arena-engine-up.lock
+          flock -w 30 9
+          TARGET_ID="$(docker image inspect -f '{{.Id}}' "$TARGET_IMAGE")"
+          CURRENT_ID="$(docker image inspect -f '{{.Id}}' "$CURRENT_IMAGE")"
+          ACTUAL_ID="$(docker container inspect -f '{{.Image}}' "$CONTAINER")"
+          STATE="$(docker container inspect -f '{{.State.Status}}' "$CONTAINER")"
+          RESTART="$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER")"
+          [ -n "$TARGET_ID" ]
+          [ "$CURRENT_ID" = "$TARGET_ID" ]
+          [ "$ACTUAL_ID" = "$TARGET_ID" ]
+          [ "$STATE" = running ]
+          [ "$RESTART" = always ]
+          REMOTE
+          echo ":current and restart=always were committed under the cutover lock for $SHA"
 
       - name: ROLLBACK — restore the last known-good image
         # Broadened from `steps.health.outcome == 'failure'`, which missed the
@@ -1054,15 +1133,84 @@ jobs:
         # removed the old container by the time `docker run` executes, so a
         # failure there leaves NO container at all — and the old condition
         # skipped the rollback precisely then.
-        if: failure() && steps.pre.outcome == 'success'
+        if: failure() && steps.pre.outcome == 'success' && steps.cutover.outputs.mutation_started == 'true'
         run: |
           echo "::warning::Deploy failed — rolling back to :previous"
           if ! ~/hssh "docker image inspect $IMAGE_REPO:previous >/dev/null 2>&1"; then
             echo "::error::No :previous image to roll back to."
             exit 1
           fi
-          ~/hssh "docker tag $IMAGE_REPO:previous $IMAGE_REPO:current"
-          ~/hssh "IMAGE=$IMAGE_REPO:current CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env $REPO_DIR/server/scripts/engine-up.sh"
+
+          # First reconcile a wrapper that was SIGKILLed while its restart=no
+          # candidate was pending. The supervisor uses that durable bit before
+          # boot grace and recreates from :current; it never resumes the
+          # candidate. Then ask ensure-only whether :previous is already the
+          # exact healthy authority. A wrapper's own EXIT trap normally put it
+          # back, and that path must remain a no-op rather than interrupting the
+          # same engine a second time.
+          ~/hssh "$REPO_DIR/server/scripts/engine-supervisor.sh"
+          set +e
+          ~/hssh "IMAGE=$IMAGE_REPO:previous CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env RECOVER_IF_NOT_RUNNING=1 ENSURE_RUNNING_ONLY=1 ENGINE_UP_SCRIPT=$REPO_DIR/server/scripts/engine-up.sh $REPO_DIR/server/scripts/engine-up-with-maintenance-certificate.sh"
+          ROLLBACK_STATUS=$?
+          set -e
+
+          if [ "$ROLLBACK_STATUS" = "75" ]; then
+            # The target is genuinely still authoritative. Replacing it is a
+            # second interruption, so perform another complete certified image
+            # transaction. Derive the expected leader version from the exact
+            # immutable rollback image, validate it as data, and atomically
+            # move :current + restart=always inside the wrapper's host lock.
+            ROLLBACK_VERSION="$(
+              ~/hssh bash -s -- "$IMAGE_REPO:previous" <<'REMOTE'
+          set -euo pipefail
+          IMAGE="$1"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" \
+            | sed -n 's/^GIT_COMMIT_SHA=\([0-9a-f]\{8\}\)[0-9a-f]*$/\1/p' \
+            | head -1
+          REMOTE
+            )"
+            case "$ROLLBACK_VERSION" in
+              [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+              *) echo "::error::The immutable rollback image has no exact lowercase Git version."; exit 1 ;;
+            esac
+
+            set +e
+            ~/hssh "IMAGE=$IMAGE_REPO:previous CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env RECOVER_IF_NOT_RUNNING=1 MIN_BREAK_LEFT_MS=180000 PROMOTE_IMAGE_TO=$IMAGE_REPO:current PUBLIC_HEALTH_URL=$ENGINE_URL/health REQUIRED_DATABASE_VERSION=$ROLLBACK_VERSION ENGINE_UP_SCRIPT=$REPO_DIR/server/scripts/engine-up.sh $REPO_DIR/server/scripts/engine-up-with-maintenance-certificate.sh"
+            ROLLBACK_STATUS=$?
+            set -e
+          fi
+
+          if [ "$ROLLBACK_STATUS" = "75" ]; then
+            echo "::warning title=ROLLBACK DEFERRED::The target is still running but no fresh exact maintenance certificate authorizes replacing it. It was left untouched; the final guarantee will prove the canonical authority without another interruption."
+            exit 0
+          fi
+          if [ "$ROLLBACK_STATUS" != "0" ]; then
+            echo "::error::Certified rollback/recovery failed after mutation (status=$ROLLBACK_STATUS)."
+            exit "$ROLLBACK_STATUS"
+          fi
+
+          # Both successful paths now guarantee :previous is the healthy
+          # process and :current names the same immutable image: ensure-only
+          # proves the already-restored no-op path; the certified transaction
+          # commits both pointer and restart policy for a real replacement.
+          ~/hssh bash -s -- "$CONTAINER" "$IMAGE_REPO:previous" "$IMAGE_REPO:current" <<'REMOTE'
+          set -euo pipefail
+          CONTAINER="$1"
+          PREVIOUS_IMAGE="$2"
+          CURRENT_IMAGE="$3"
+          exec 9>/var/lock/club-arena-engine-up.lock
+          flock -w 30 9
+          PREVIOUS_ID="$(docker image inspect -f '{{.Id}}' "$PREVIOUS_IMAGE")"
+          CURRENT_ID="$(docker image inspect -f '{{.Id}}' "$CURRENT_IMAGE")"
+          ACTUAL_ID="$(docker container inspect -f '{{.Image}}' "$CONTAINER")"
+          STATE="$(docker container inspect -f '{{.State.Status}}' "$CONTAINER")"
+          RESTART="$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER")"
+          [ -n "$PREVIOUS_ID" ]
+          [ "$CURRENT_ID" = "$PREVIOUS_ID" ]
+          [ "$ACTUAL_ID" = "$PREVIOUS_ID" ]
+          [ "$STATE" = running ]
+          [ "$RESTART" = always ]
+          REMOTE
           # Rewind the host checkout too, or the next supervisor run installs
           # systemd units built from the bad commit.
           if [ "${{ steps.pre.outputs.before_sha }}" != "unknown" ]; then
@@ -1070,20 +1218,21 @@ jobs:
           else
             echo "::warning::pre-deploy SHA unknown — host checkout left on the failed commit"
           fi
-          for i in $(seq 1 24); do
-            sleep 5
-            if curl -sf --max-time 10 "$ENGINE_URL/health" | grep -q '"running":true'; then
-              echo "Rollback verified healthy on attempt $i"; exit 0
-            fi
-          done
-          echo "::error::ROLLBACK ALSO FAILED — engine is down. Page a human."
-          exit 1
+          echo "Rollback verified the exact previous image and durable recovery pointer."
 
       - name: GUARANTEE the engine is running, with the right run-spec
+        id: guarantee
         # 2026-08-24: also gated on dedupe — on a skipped run no SSH key was
         # installed, so ~/hssh does not exist and this step could only fail.
         # A skipped run touched nothing, so there is nothing to guarantee.
-        if: always() && steps.dedupe.outputs.skip != 'true'
+        # A skipped cutover has made no mutation and must never let this step
+        # start/recreate :current with scripts from the target checkout.  Keep
+        # the explicit outcome guard even though a skipped step currently has
+        # no `mutation_started` output: that GitHub detail is not an
+        # authorization boundary. Failure after the wrapper attests that the
+        # lock-held transaction began still reaches recovery; certificate
+        # refusal and transport/invocation failure cannot start target code.
+        if: always() && steps.cutover.outcome != 'skipped' && steps.cutover.outputs.mutation_started == 'true'
         run: |
           # Closes the stop -> run window: if this job died, was cancelled, or
           # the runner vanished mid-cutover, the container may be absent or
@@ -1093,29 +1242,28 @@ jobs:
           # state. A bare `docker start` on a container created by some other
           # path would otherwise bless an engine whose HEALTHCHECK is wired to
           # nothing, and report "container running" while doing it.
-          ~/hssh '
-            set +e
-            RECREATE=0
-            STATE=$(docker container inspect -f "{{.State.Status}}" club-arena-engine 2>/dev/null)
-            LABEL=$(docker container inspect -f "{{index .Config.Labels \"autoheal\"}}" club-arena-engine 2>/dev/null)
-            if [ -z "$STATE" ]; then
-              echo "container absent — recreating"; RECREATE=1
-            elif [ "$LABEL" != "true" ]; then
-              echo "container is missing autoheal=true (label=\"$LABEL\") — its healthcheck is wired to nothing; recreating"; RECREATE=1
-            elif [ "$STATE" = "paused" ]; then
-              echo "container paused — unpausing"; docker unpause club-arena-engine
-            elif [ "$STATE" != "running" ]; then
-              echo "container state=$STATE — starting"; docker start club-arena-engine
-            else
-              echo "container running with autoheal=true"
-            fi
-            if [ "$RECREATE" = "1" ]; then
-              IMAGE=club-arena-engine:current CONTAINER=club-arena-engine \
-                ENV_FILE=/opt/club-arena/server/.env /opt/club-arena/server/scripts/engine-up.sh
-            fi' || true
+          # A SIGKILL can leave a running restart=no candidate. Reconcile that
+          # durable uncommitted marker from :current before ensure-only; this
+          # branch runs before boot grace and never starts the candidate.
+          ~/hssh "$REPO_DIR/server/scripts/engine-supervisor.sh"
+
+          # ENSURE_RUNNING_ONLY is deliberately not "repair labels". Under the
+          # shared lock it leaves an exact running engine alone, recreates only
+          # when there is no running authority, and exits 75 for a running
+          # mislabeled/wrong-port target without stopping it.
+          set +e
+          ~/hssh "IMAGE=$IMAGE_REPO:current CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env RECOVER_IF_NOT_RUNNING=1 ENSURE_RUNNING_ONLY=1 ENGINE_UP_SCRIPT=$REPO_DIR/server/scripts/engine-up.sh $REPO_DIR/server/scripts/engine-up-with-maintenance-certificate.sh"
+          GUARANTEE_STATUS=$?
+          set -e
+          if [ "$GUARANTEE_STATUS" = "75" ]; then
+            echo "::error title=ENGINE IDENTITY REQUIRES OPERATOR::A running container does not have the sole labelled/published engine identity. It was not destroyed or recreated."
+            exit 1
+          fi
+          [ "$GUARANTEE_STATUS" = "0" ] \
+            || { echo "::error::The lock-held engine availability guarantee failed after mutation (status=$GUARANTEE_STATUS)."; exit "$GUARANTEE_STATUS"; }
 
       - name: Retention — keep the last 5 builds, never the rollback target
-        if: success() && steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        if: success() && steps.cutover.outputs.performed == 'true' && steps.promote.outcome == 'success'
         run: |
           # Only 40-hex SHA tags are candidates. The old filter treated every
           # non-reserved tag as expendable, which would have deleted the
@@ -1132,7 +1280,7 @@ jobs:
             echo "images retained:"; docker images club-arena-engine --format "  {{.Tag}}  {{.CreatedSince}}"' || true
 
       # ── THE STEP THAT EXISTS TO BE SEEN ────────────────────────────────
-      # A coalesced or drained run finishes GREEN having shipped nothing, and
+      # A coalesced, exact-deduped, or drained run finishes GREEN having shipped nothing, and
       # `gh run list` shows only "completed/success". On 2026-08-26 that cost
       # a real investigation: a merged engine fix was believed live for
       # thirteen minutes because the deploy said success, and the only way to
@@ -1144,7 +1292,7 @@ jobs:
       # and this name is unmissable there. Cheap, needs no new permissions,
       # and cannot itself fail the deploy.
       - name: 'DID NOT DEPLOY — this run shipped nothing'
-        if: steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
+        if: steps.dedupe.outputs.skip == 'true' || steps.exact_dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true' || steps.cutover.outputs.performed == 'false'
         run: |
           # 2026-08-31: THE REASON MUST NAME THE GATE THAT ACTUALLY HELD.
           # The restart-window gate shipped without being added here, so a run
@@ -1180,9 +1328,14 @@ jobs:
           # hard-coded strings survive only as the fallback for a gate that
           # skipped without saying why, which is itself worth seeing.
           REASON="already serving this commit"
-          if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
+          if [ "${{ steps.cutover.outputs.performed }}" = "false" ]; then
+            REASON="${{ steps.cutover.outputs.gate_reason }}"
+            [ -z "$REASON" ] && REASON="the locked direct-container certificate refused cutover"
+          elif [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
             REASON="${{ steps.drain.outputs.gate_reason }}"
             [ -z "$REASON" ] && REASON="the break gate held; see the step log for which half"
+          elif [ "${{ steps.exact_dedupe.outputs.skip }}" = "true" ]; then
+            REASON="database, sole host container, direct health, public health, and :current all prove this commit"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
             REASON="coalescing — we restarted the engine too recently, or it is already on this commit"
           fi
@@ -1195,16 +1348,10 @@ jobs:
             echo "because \`$SHA\` reached production. Do not treat this tick as"
             echo "proof the engine is running your code."
             echo ""
-            echo "It lands on the next hourly tick (:35, cutting over inside the"
-            echo ":55 break). There is no 20-minute catch-up any more - that"
-            echo "sentence outlived the schedule it described. To land it now:"
-            echo ""
-            echo '```'
-            echo "gh workflow run auto-deploy-hetzner.yml --ref main -f force=true"
-            echo '```'
-            echo ""
-            echo "\`force=true\` restarts OUTSIDE the announced break and voids"
-            echo "in-flight hands. Without it a dispatch still waits for :55."
+            echo "It lands on the next hourly tick (:35, cutting over only after"
+            echo "the live engine publishes a durable :55 certificate). A manual"
+            echo "dispatch can prioritize an exact SHA, but cannot bypass that"
+            echo "certificate or restart through an in-flight hand."
             echo ""
             echo "Verify what is ACTUALLY running before believing anything:"
             echo ""
@@ -1222,8 +1369,10 @@ jobs:
           {
             echo "## Auto-deploy summary"
             echo "- Trigger: ${{ github.event_name }}"
-            echo "- Deduped (already serving this commit, or we restarted it too recently): ${{ steps.dedupe.outputs.skip || 'n/a' }}"
+            echo "- Restart-spacing dedupe: ${{ steps.dedupe.outputs.skip || 'n/a' }}"
+            echo "- Exact database + host identity dedupe: ${{ steps.exact_dedupe.outputs.skip || 'n/a' }}"
             echo "- Deferred by the break gate: ${{ steps.drain.outputs.skip || 'n/a' }}${{ steps.drain.outputs.gate_reason && format(' — {0}', steps.drain.outputs.gate_reason) || '' }}"
+            echo "- Locked direct-container cutover: ${{ steps.cutover.outputs.performed || 'not attempted' }}${{ steps.cutover.outputs.gate_reason && format(' — {0}', steps.cutover.outputs.gate_reason) || '' }}"
             echo "- Image: ${{ steps.image.outputs.reused == 'true' && 'reused the staged build' || steps.image.outputs.reused == 'false' && 'built by this run' || 'not reached' }}"
             echo "- Unplanned (non-deploy, non-break) restart seen: ${{ steps.dedupe.outputs.unplanned_restart || 'no' }}"
             echo "- Deploying: \`$SHA\`"
@@ -1249,11 +1398,11 @@ jobs:
         if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # A manual recovery can name an exact ref_sha. Recording github.sha
-          # here used to tell the watchdog a different commit than the one the
-          # host actually checked out, tagged, and verified.
-          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome != 'failure' }}
+          # A manual recovery can name a ref_sha. Record only the immutable
+          # full commit resolved from the checkout; the requested string may be
+          # a branch, tag, abbreviation, or otherwise unsafe as provenance.
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          SHIPPED: ${{ steps.cutover.outcome == 'success' && steps.cutover.outputs.performed == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && steps.promote.outcome == 'success' && steps.guarantee.outcome == 'success' }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
           # ONE REASON, WRITTEN ONCE, READ EVERYWHERE. The drain branch used to
@@ -1265,9 +1414,12 @@ jobs:
           # DID NOT DEPLOY step prints - so the run, the summary and the
           # database can no longer tell three different stories.
           REASON: >-
-            ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
+            ${{ steps.exact_dedupe.outputs.skip == 'true' && 'database, sole host container, direct health, public health, and current image pointer all prove this commit'
+             || steps.dedupe.outputs.skip == 'true' && 'coalesced by the restart-spacing policy'
              || (steps.drain.outputs.skip == 'true' && steps.drain.outputs.gate_reason)
              || steps.drain.outputs.skip == 'true' && 'the break gate declined without recording a reason'
+             || (steps.cutover.outputs.performed == 'false' && steps.cutover.outputs.gate_reason)
+             || steps.cutover.outputs.performed == 'false' && 'the locked direct-container certificate refused cutover without recording a reason'
              || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
              || 'run ended without a verified cutover' }}

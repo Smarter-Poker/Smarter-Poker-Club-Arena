@@ -75,7 +75,7 @@ BEGIN
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
      WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'
+       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
        AND p.proowner = v_relation_owner
        AND p.prokind = 'f' AND p.provolatile = 'v'
        AND NOT p.prosecdef AND NOT p.proretset
@@ -470,7 +470,9 @@ ALTER TABLE public.tournament_spin_cancellation_unwinds ENABLE ROW LEVEL SECURIT
 REVOKE ALL ON public.tournament_spin_cancellation_unwinds
   FROM PUBLIC, anon, authenticated, service_role;
 
--- The published draw stays immutable while a Spin is live. The sole terminal
+-- The published draw stays immutable while a Spin is live. Before the third
+-- paid seat there is no reserve booking, so an objectively unstarted Spin may
+-- still book or return its provisional prize contribution. The sole terminal
 -- exception is an exact zeroing performed after the reserve unwind receipt is
 -- already durable in the same transaction.
 CREATE OR REPLACE FUNCTION public.fn_spin_tournament_contract_is_draw()
@@ -514,6 +516,33 @@ BEGIN
     INTO v_count,v_multiplier,v_prize
     FROM public.spin_reserve_ledger r
    WHERE r.tournament_id = NEW.id AND r.kind = 'jackpot_draw';
+
+  -- A Spin's fill-window deadline is not start truth. Until launch completion,
+  -- status, started_at and the immutable launch receipt all prove that it has
+  -- not started. Requiring no reserve booking limits this door to the first
+  -- two paid seats; the third-seat booking closes it permanently.
+  IF v_count = 0
+     AND upper(COALESCE(OLD.status::text,''))
+           IN ('ANNOUNCED','REGISTERING')
+     AND upper(COALESCE(NEW.status::text,''))
+           IN ('ANNOUNCED','REGISTERING')
+     AND OLD.started_at IS NULL
+     AND NEW.started_at IS NULL
+     AND COALESCE(OLD.spin_multiplier,0) = 0
+     AND COALESCE(NEW.spin_multiplier,0) = 0
+     AND OLD.spin_locked_tiers IS NULL
+     AND NEW.spin_locked_tiers IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.tournament_launch_receipts r
+        WHERE r.tournament_id = NEW.id
+          AND r.completed_at IS NOT NULL)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.spin_reserve_ledger r
+        WHERE r.tournament_id = NEW.id
+          AND r.kind IN ('contribution','jackpot_draw')) THEN
+    RETURN NEW;
+  END IF;
+
   IF v_count <> 1
      OR NEW.spin_multiplier IS DISTINCT FROM v_multiplier
      OR NEW.prize_pool IS DISTINCT FROM v_prize THEN
@@ -1713,9 +1742,9 @@ GRANT EXECUTE ON FUNCTION public.atomic_cancel_tournament(uuid, uuid)
 -- The managed-game close command used to bypass the atomic cancellation
 -- authority for an empty tournament. Its direct CANCELLED write cannot satisfy
 -- the exact deferred receipt invariant above, and it also takes the tournament
--- row before the terminal settlement lock. Preserve the cash-table branch byte
--- for byte while routing only the tournament branch through the one atomic
--- cancellation authority.
+-- row before the terminal settlement lock. Preserve the current cash-table
+-- cluster -> table lock order and stale-context refusal while routing only the
+-- tournament branch through the one atomic cancellation authority.
 CREATE OR REPLACE FUNCTION public.fn_close_managed_game(
   p_kind text,
   p_game_id uuid
@@ -1730,6 +1759,7 @@ DECLARE
   v_status text;
   v_cluster uuid;
   v_role text;
+  v_initial_cluster uuid;
   v_cancel jsonb;
 BEGIN
   IF v_uid IS NULL THEN
@@ -1737,6 +1767,28 @@ BEGIN
   END IF;
 
   IF p_kind = 'table' THEN
+    -- Match the cluster controller's game-to-table order. Authorize the
+    -- initial scope before locking, then recheck the locked table below.
+    SELECT club_id, cluster_id
+      INTO v_club, v_initial_cluster
+      FROM public.tables
+     WHERE id = p_game_id;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'game_not_found');
+    END IF;
+    IF NOT public.fn_can_create_games(v_club, v_uid) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'not_authorized');
+    END IF;
+    IF v_initial_cluster IS NOT NULL THEN
+      PERFORM 1
+        FROM public.cash_games
+       WHERE id = v_initial_cluster
+       FOR UPDATE;
+      IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'reason', 'game_not_found');
+      END IF;
+    END IF;
+
     SELECT club_id, status, cluster_id, role
       INTO v_club, v_status, v_cluster, v_role
       FROM public.tables
@@ -1745,18 +1797,26 @@ BEGIN
     IF NOT FOUND THEN
       RETURN jsonb_build_object('ok', false, 'reason', 'game_not_found');
     END IF;
+    IF v_cluster IS DISTINCT FROM v_initial_cluster THEN
+      RAISE EXCEPTION 'STALE_GAME_CONTEXT: table changed games while closing'
+        USING ERRCODE = '55000';
+    END IF;
     IF NOT public.fn_can_create_games(v_club, v_uid) THEN
       RETURN jsonb_build_object('ok', false, 'reason', 'not_authorized');
     END IF;
-    IF lower(COALESCE(v_status, '')) IN ('closed', 'completed', 'cancelled', 'finished') THEN
+    IF lower(COALESCE(v_status, '')) IN (
+      'closed', 'completed', 'cancelled', 'finished'
+    ) THEN
       RETURN jsonb_build_object('ok', false, 'reason', 'already_closed');
     END IF;
 
+    -- The native admission FK serializes new seats against this parent lock.
+    -- A refusal needs a snapshot, not a seat lock ahead of an engine cashout.
     PERFORM 1
       FROM public.table_seats ts
      WHERE ts.table_id = p_game_id
        AND ts.left_at IS NULL
-     FOR UPDATE;
+     LIMIT 1;
     IF FOUND THEN
       RETURN jsonb_build_object('ok', false, 'reason', 'players_seated');
     END IF;
@@ -1777,11 +1837,9 @@ BEGIN
     END IF;
     RETURN jsonb_build_object('ok', true);
   ELSIF p_kind = 'tournament' THEN
-    -- This must precede the first tournament row lock. Every terminal owner
-    -- takes the same lock, so managed cancellation cannot deadlock or race a
-    -- finish, satellite closeout, unregister, or another cancellation.
+    -- Every terminal owner takes this lock before the first tournament row.
     PERFORM pg_advisory_xact_lock(
-      hashtextextended('ca:tournament-terminal-settlement:v1',0));
+      hashtextextended('ca:tournament-terminal-settlement:v1', 0));
 
     SELECT club_id, status
       INTO v_club, v_status

@@ -1205,7 +1205,27 @@ export abstract class ServerTableEngineBase {
      *  part of the live bet level, so it never counts toward a call and must
      *  not be differenced against a raise-TO level. */
     dead?: boolean;
+    /** Durable all-in runout and equity evidence is attached to the player's
+     * existing canonical action, never emitted as a second synthetic action. */
+    allInRunout?: true;
+    allInRunoutStreet?: 'preflop' | 'flop' | 'turn';
+    allInEquity?: number;
+    allInEvReturned?: number;
+    allInEquityVersion?: string;
+    allInEquityExact?: boolean;
+    allInEquityRunouts?: number;
+    allInEquitySeed?: number;
+    allInEquityInputHash?: string;
   }[] = [];
+  /** The first all-in equity job for this hand. Settlement joins this
+   * already-running off-thread computation before freezing the hand row. */
+  protected currentHandAllInEquityEvidence: Promise<void> | null = null;
+  protected currentHandAllInEquityEvidenceDone: (() => void) | null = null;
+  protected currentHandAllInEquityBoundaryKey: string | null = null;
+  /** Pineapple evidence waits until the required discard has reduced every
+   * live holding to the legal two-card settlement input. */
+  protected currentHandAllInEquityDeferredForPineapple = false;
+  protected currentHandAllInEquityEvidenceClosed = false;
   protected currentHandWinners: {
     userId: string;
     amount: number;

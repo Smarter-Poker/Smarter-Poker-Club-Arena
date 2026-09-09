@@ -123,6 +123,29 @@ describe('worker-only multi-hand insurance computation', () => {
     expect(computeInsuranceComponentsForHands(hands, board, 'FLO8', false)[0]).toEqual(expected);
     expect(computeInsuranceComponentsForHands(hands, board, 'PLO4', false)[0]).toEqual(expected);
   });
+
+  it('rejects duplicate, malformed, and short-deck-impossible card universes', () => {
+    const duplicated = [holdemHands[0], [holdemHands[0][0], holdemHands[1][1]]];
+    expect(() => computeInsuranceComponentsForHands(duplicated, [], 'nlh', false)).toThrow(
+      'duplicate card'
+    );
+    expect(() =>
+      computeInsuranceComponentsForHands(
+        holdemHands.slice(0, 2),
+        [{ rank: 'A', suit: 'stars' } as unknown as Card],
+        'nlh',
+        false
+      )
+    ).toThrow('invalid card');
+    expect(() =>
+      computeInsuranceComponentsForHands(
+        holdemHands.slice(0, 2),
+        [C('2', 'clubs')],
+        'short_deck',
+        true
+      )
+    ).toThrow('removed from the short deck');
+  });
 });
 
 describe('EquityWorkerPool fail-closed lifecycle', () => {
@@ -391,9 +414,9 @@ describe('live runout source has no authoritative-thread equity escape', () => {
 
   it('re-proves process, lease, controller, and hand authority after worker pricing', () => {
     const runout = readFileSync(new URL('../ServerTableEngineRunout.ts', import.meta.url), 'utf8');
-    expect(runout).toContain('await getEquityPool().estimateInsurance(');
+    expect(runout).toContain('await getEquityPool().estimateLayeredEquity(');
     expect(runout).toMatch(
-      /await getEquityPool\(\)\.estimateInsurance\([\s\S]{0,1200}this\.lifecycleCanMutate\(\)[\s\S]{0,400}this\.handController !== controller[\s\S]{0,400}this\.handCount !== pricingHandNumber/
+      /await getEquityPool\(\)\.estimateLayeredEquity\([\s\S]{0,1600}this\.lifecycleCanMutate\(\)[\s\S]{0,400}this\.handController !== controller[\s\S]{0,400}this\.handCount !== pricingHandNumber/
     );
   });
 });

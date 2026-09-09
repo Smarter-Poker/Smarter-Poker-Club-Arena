@@ -28,17 +28,19 @@
  *     testable without a ws server.
  *   - Does not persist. Server restart → seq resets to 0, forced RESYNC.
  *     (See Phase 1.1 spec §10 Q2.)
- *   - Does not authenticate. EngineWebSocketServer does JWT checks before
- *     calling .subscribe().
- *   - Does not scrub per-player data (hole cards). The state published to the
- *     Hub is already the public-scrubbed shape from ServerTableEngine.
+ *   - Does not authenticate. EngineWebSocketServer does JWT + table access
+ *     checks before calling .subscribe().
+ *   - Does enforce the authenticated viewer policy attached by that transport.
+ *     Engine snapshots contain tabled showdown/runout cards for seated players;
+ *     a non-seated observer receives a projected snapshot/delta with those
+ *     cards and revealed dead cards removed.
  */
 
 // fast-json-patch ships as CommonJS; Node-ESM can only import it as a
 // default import, so destructure `compare` from the default export.
 import jsonPatch from 'fast-json-patch';
 import type { Operation as JsonPatchOperation } from 'fast-json-patch';
-import { captureAllInEquity, captureRitEvent } from '../services/supabase/handFacts.js';
+import { captureRitEvent } from '../services/supabase/handFacts.js';
 const { compare } = jsonPatch;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -114,6 +116,17 @@ export interface HubSubscriber {
   /** 2026-09-04: who is behind this socket, so sendToUser can find them. */
   readonly userId?: string;
   /**
+   * Viewer role established by the authoritative table access read. Snapshot
+   * contents never elevate this role: an engine roster can be briefly stale
+   * after a leave, while the active table_seats query is the access boundary.
+   */
+  readonly viewerRole?: 'seated' | 'observer';
+  /**
+   * Literal table policy from the access read. Missing is false: older peers,
+   * incomplete mocks, and unexpected access shapes must never reveal cards.
+   */
+  readonly observerShowCards?: boolean;
+  /**
    * B12: bytes queued in the socket's send buffer but not yet flushed to the
    * network. `ws.WebSocket` exposes this natively; it is optional here so test
    * doubles stay trivial (an absent value is read as 0, i.e. "not backed up").
@@ -130,6 +143,88 @@ export interface HubSubscriber {
    * reconnect ladder IMMEDIATELY and gets a fresh snapshot in seconds.
    */
   evict?(): void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Project the engine's player-facing state into the restricted observer view.
+ * This is exported so the HTTP state route and WebSocket hub cannot drift into
+ * two different interpretations of observer_show_cards.
+ */
+export function projectTableStateForViewer(
+  state: GameStateSnapshot,
+  canSeeTabledCards: boolean
+): GameStateSnapshot {
+  if (canSeeTabledCards) return state;
+
+  const projected: GameStateSnapshot = { ...state };
+  if (Object.prototype.hasOwnProperty.call(state, 'revealed_dead_cards')) {
+    // An explicit empty array actively clears a reconnecting client's
+    // previously visible Pineapple discards.
+    projected.revealed_dead_cards = [];
+  }
+  if (Object.prototype.hasOwnProperty.call(state, 'revealedDeadCards')) {
+    projected.revealedDeadCards = [];
+  }
+  if (Array.isArray(state.players)) {
+    projected.players = state.players.map((player) => {
+      if (!isRecord(player)) return player;
+      const scrubbed: Record<string, unknown> = { ...player, cards: [] };
+      // Defensive rolling-version aliases. The current engine emits `cards`,
+      // but an older/newer peer must not regain visibility through a rename.
+      if (Object.prototype.hasOwnProperty.call(player, 'holeCards')) scrubbed.holeCards = [];
+      if (Object.prototype.hasOwnProperty.call(player, 'hole_cards')) scrubbed.hole_cards = [];
+      return scrubbed;
+    });
+  }
+  return projected;
+}
+
+/** Shared EVENT payloads have two known card-bearing shapes. */
+function projectEventPayloadForViewer(
+  payload: Record<string, unknown>,
+  canSeeTabledCards: boolean
+): Record<string, unknown> {
+  if (canSeeTabledCards) return payload;
+
+  const projected: Record<string, unknown> = { ...payload };
+  for (const key of [
+    'holeCards',
+    'hole_cards',
+    'revealed_dead_cards',
+    'revealedDeadCards',
+    'visibleDeadCards',
+    'visible_dead_cards',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(projected, key)) projected[key] = [];
+  }
+
+  if (payload.type === 'showdown_cards_revealed' && Array.isArray(payload.reveals)) {
+    projected.reveals = payload.reveals.map((reveal) =>
+      isRecord(reveal) ? { ...reveal, cards: [], holeCards: [], hole_cards: [] } : reveal
+    );
+  }
+  if (payload.type === 'insurance_offers' && Array.isArray(payload.offers)) {
+    projected.offers = payload.offers.map((offer) => {
+      if (!isRecord(offer)) return offer;
+      return {
+        ...offer,
+        holeCards: [],
+        hole_cards: [],
+        opponents: Array.isArray(offer.opponents)
+          ? offer.opponents.map((opponent) =>
+              isRecord(opponent)
+                ? { ...opponent, holeCards: [], hole_cards: [], cards: [] }
+                : opponent
+            )
+          : offer.opponents,
+      };
+    });
+  }
+  return projected;
 }
 
 /**
@@ -256,8 +351,15 @@ export class TableStateHub {
     const next = prev + 1;
 
     let message: HubMessage;
+    let restrictedMessage: HubMessage;
     if (!room.lastSnapshot) {
       message = { type: 'SNAPSHOT', tableId, seq: next, state };
+      restrictedMessage = {
+        type: 'SNAPSHOT',
+        tableId,
+        seq: next,
+        state: projectTableStateForViewer(state, false),
+      };
     } else {
       const patch = compare(room.lastSnapshot, state) as JsonPatchOperation[];
       // ROUND 25 FIX (Bible V8 §6 reconnect FSM): no-op publishes (empty patch)
@@ -272,13 +374,29 @@ export class TableStateHub {
         return prev;
       }
       message = { type: 'DELTA', tableId, seq: next, prev, patch };
+      // A JSON Patch built from the full player view cannot be filtered by
+      // path: a replace at /players or even / may contain nested hole cards.
+      // Diff two already-projected observer states instead. If only hidden
+      // cards changed this is intentionally an empty DELTA; sending it keeps
+      // the observer on the table-wide sequence so their next public change
+      // does not look like a gap and trigger a resync storm.
+      restrictedMessage = {
+        type: 'DELTA',
+        tableId,
+        seq: next,
+        prev,
+        patch: compare(
+          projectTableStateForViewer(room.lastSnapshot, false),
+          projectTableStateForViewer(state, false)
+        ) as JsonPatchOperation[],
+      };
     }
 
     room.lastSnapshot = structuredClone(state);
     room.lastSeq = next;
     room.lastPublishedAt = Date.now();
 
-    this.broadcast(room, message);
+    this.broadcast(room, message, undefined, restrictedMessage);
     return next;
   }
 
@@ -295,7 +413,7 @@ export class TableStateHub {
         type: 'SNAPSHOT',
         tableId,
         seq: room.lastSeq,
-        state: room.lastSnapshot,
+        state: projectTableStateForViewer(room.lastSnapshot, this.subscriberCanSeeTabledCards(sub)),
       };
       this.safeSend(sub, JSON.stringify(snap));
     }
@@ -325,27 +443,13 @@ export class TableStateHub {
    * Emit a transient event (e.g. time bank timeout, insurance offer) to all subscribers.
    */
   emitEvent(tableId: string, payload: Record<string, unknown>): void {
-    // STATS FACT LAYER 2026-08-21 — capture all-in equity on its way past.
-    //
-    // ServerTableEngineRunout.broadcastAllInEquity() computes EXACT all-in
-    // equity (every hand is known at an all-in, so it prices each holding
-    // against the known others rather than a random range) and then discards
-    // it: the number goes to clients and a Prometheus histogram, and nowhere
-    // else. It is the whole basis of an EV-vs-actual "luck" graph and it was
-    // being thrown away on every all-in.
-    //
-    // Runout.ts is above the deploy channel's per-file size ceiling, so we
-    // intercept here instead of editing it. This MUST sit above the
-    // `if (!room) return` below: that early return fires on tables with no
-    // subscribers, and a hand nobody is watching still counts.
-    captureAllInEquity(tableId, payload);
     // RIT/insurance lifecycle telemetry - see handFacts.captureRitEvent for
     // why this exists. Same placement rationale: above the `if (!room) return`,
     // because an offer nobody is subscribed to still happened.
     captureRitEvent(tableId, payload);
 
     // D3: retain BEFORE the `if (!room) return` below, for the same reason the
-    // two captures above sit there — the early return fires while a table has
+    // capture above sits there — the early return fires while a table has
     // no room at all (nobody has ever subscribed, or every socket is currently
     // between reconnects), and that is precisely the case this exists for. An
     // event nobody could receive still happened, and for the reveal window it
@@ -359,11 +463,12 @@ export class TableStateHub {
     this.eventSeqs.set(tableId, seq);
     // The delivered set records who actually got it live, so a later resync
     // from the SAME socket does not replay a beat it already animated.
-    this.broadcast(
-      room,
-      { type: 'EVENT', tableId, seq, ts: Date.now(), payload },
-      retention?.delivered
-    );
+    const event: EventMessage = { type: 'EVENT', tableId, seq, ts: Date.now(), payload };
+    const restrictedEvent: EventMessage = {
+      ...event,
+      payload: projectEventPayloadForViewer(payload, false),
+    };
+    this.broadcast(room, event, retention?.delivered, restrictedEvent);
   }
 
   /** SHOWDOWN POLISH 2026-08-25: per-table monotonic EVENT sequence. */
@@ -406,7 +511,7 @@ export class TableStateHub {
         type: 'SNAPSHOT',
         tableId,
         seq: room?.lastSeq ?? 0,
-        state: snapshot,
+        state: projectTableStateForViewer(snapshot, this.subscriberCanSeeTabledCards(sub)),
       };
       this.safeSend(sub, JSON.stringify(snap));
     }
@@ -553,7 +658,10 @@ export class TableStateHub {
         // `ts` is the REPLAY instant, so a freshness check on the client sees
         // the event's true age rather than believing a retained hit is new.
         ts: Date.now(),
-        payload: { ...entry.payload, replayed: true },
+        payload: {
+          ...projectEventPayloadForViewer(entry.payload, this.subscriberCanSeeTabledCards(sub)),
+          replayed: true,
+        },
       };
       if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;
     }
@@ -584,6 +692,14 @@ export class TableStateHub {
     return room;
   }
 
+  /** Missing metadata is a restricted observer, never a privileged viewer. */
+  private subscriberCanSeeTabledCards(sub: HubSubscriber): boolean {
+    return (
+      sub.viewerRole === 'seated' ||
+      (sub.viewerRole === 'observer' && sub.observerShowCards === true)
+    );
+  }
+
   /**
    * 2026-08-15: JSON.stringify is done ONCE for the whole room (C16 perf opt),
    * so a throw here took down delivery for every subscriber AND propagated
@@ -598,14 +714,13 @@ export class TableStateHub {
      * received it. A subscriber that was soft-dropped here (or whose send
      * threw) is deliberately NOT recorded, so its resync replays the event.
      */
-    delivered?: WeakSet<HubSubscriber>
+    delivered?: WeakSet<HubSubscriber>,
+    restrictedMessage: HubMessage = message
   ): void {
-    // C16: serialize ONCE for the whole room. This used to sit inside safeSend,
-    // i.e. inside the per-subscriber loop, so a table with a dozen spectators
-    // re-stringified the same full-state payload a dozen times per publish. The
-    // message is identical for every subscriber — the Hub publishes the already
-    // public-scrubbed shape — so there is nothing per-subscriber to serialize.
-    const payload = JSON.stringify(message);
+    // At most two serializations per room: one seated/opted-in view and one
+    // restricted observer view. Never stringify inside the subscriber loop.
+    let privilegedPayload: string | null = null;
+    let restrictedPayload: string | null = null;
 
     // B12: a SNAPSHOT is the recovery path for a client that has missed
     // messages, so it is never dropped. DELTA and EVENT are catch-up-able.
@@ -635,6 +750,9 @@ export class TableStateHub {
         this.softDropped++;
         continue;
       }
+      const payload = this.subscriberCanSeeTabledCards(sub)
+        ? (privilegedPayload ??= JSON.stringify(message))
+        : (restrictedPayload ??= JSON.stringify(restrictedMessage));
       if (this.safeSend(sub, payload)) delivered?.add(sub);
     }
     for (const d of dead) room.subscribers.delete(d);

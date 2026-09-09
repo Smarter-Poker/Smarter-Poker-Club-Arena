@@ -163,8 +163,10 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
       BASE.indexOf('areAllTablesParked')
     );
     expect(pause).toMatch(/break_ends_at:\s*null/);
-    const begin = BASE.slice(BASE.indexOf('async beginBreakCountdown'));
-    expect(begin).toMatch(/break_ends_at:\s*endsAt/);
+    const begin = sliceMethod(BASE, 'async beginBreakCountdown');
+    const persist = sliceMethod(BASE, 'private async persistSynchronizedBreakCountdown');
+    expect(begin).toContain('persistSynchronizedBreakCountdown(endsAt)');
+    expect(persist).toMatch(/update\(\{ break_ends_at:\s*endsAt \}/);
   });
 });
 
@@ -311,7 +313,7 @@ describe('a restart mid-break does not resume play', () => {
       BASE.indexOf('protected async clearPersistedBreak'),
       BASE.indexOf('protected async clearPersistedBreak') + 600
     );
-    expect(clearFn).toMatch(/on_break: false, break_ends_at: null/);
+    expect(clearFn).toMatch(/on_break: false,\s*break_started_at: null,\s*break_ends_at: null/);
   });
 });
 

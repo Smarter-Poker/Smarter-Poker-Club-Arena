@@ -11,10 +11,7 @@ const base = strip(read('src/tournament/TournamentManagerBase.ts'));
 
 describe('the add-on window follows durable database truth', () => {
   const trigger = sliceMethod(base, 'triggerAddOnPeriod(): Promise<void>');
-  const drive = sliceMethod(
-    base,
-    'drivePersistedAddOnDeadline(rebroadcastAfterThaw: boolean): Promise<void>'
-  );
+  const drive = sliceMethod(base, 'private async drivePersistedAddOnDeadline(');
   const finalTail = sliceMethod(
     base,
     'finishAddOnTail(finalPool: number, alreadyRepriced = false): Promise<void>'
@@ -37,9 +34,9 @@ describe('the add-on window follows durable database truth', () => {
     const validation = trigger.indexOf(
       "throw new Error('the persisted add-on window failed its exact read-back proof')"
     );
-    const latch = trigger.indexOf('this.addOnPeriodTriggered = true');
-    const closeTimer = trigger.indexOf('this.scheduleAddOnPeriodEnd(endsAt)');
-    const broadcast = trigger.indexOf("this.broadcast('ADDON_PERIOD_START'");
+    const latch = trigger.indexOf('this.addOnPeriodTriggered = true', validation);
+    const closeTimer = trigger.indexOf('this.scheduleAddOnPeriodEnd(endsAt)', latch);
+    const broadcast = trigger.indexOf("this.broadcast('ADDON_PERIOD_START'", closeTimer);
     expect(latch).toBeGreaterThan(validation);
     expect(closeTimer).toBeGreaterThan(latch);
     expect(broadcast).toBeGreaterThan(closeTimer);

@@ -27,7 +27,7 @@ const BASE = readFileSync(resolve(__dirname, './TournamentManagerBase.ts'), 'utf
 const MIGRATION = readFileSync(
   resolve(
     __dirname,
-    '../../../supabase/migrations/20260909020315_the_launch_completion_tells_a_bust_from_an_uncredited_stack.sql'
+    '../../../supabase/migrations/20260909020405_the_launch_completion_tells_a_bust_from_an_uncredited_stack.sql'
   ),
   'utf8'
 );
@@ -81,10 +81,11 @@ describe('the engine proof and the database completion apply the same rule', () 
     }
   });
 
-  it('does not widen the grant, and is one transaction', () => {
+  it('does not widen the grant, and performs one guarded replacement', () => {
     expect(MIGRATION).toMatch(/FROM PUBLIC, anon, authenticated;/);
     expect(MIGRATION).not.toMatch(/GRANT EXECUTE[\s\S]*TO (service_role|authenticated|anon)/);
-    expect(MIGRATION.match(/^BEGIN;/gm) ?? []).toHaveLength(1);
-    expect(MIGRATION.match(/^COMMIT;/gm) ?? []).toHaveLength(1);
+    expect(MIGRATION.match(/^DO \$migration\$/gm) ?? []).toHaveLength(1);
+    expect(MIGRATION.match(/^\$migration\$;/gm) ?? []).toHaveLength(1);
+    expect(MIGRATION.match(/^REVOKE ALL ON FUNCTION/gm) ?? []).toHaveLength(1);
   });
 });

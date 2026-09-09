@@ -15,6 +15,10 @@ const closeMigration = readFileSync(
   'utf8'
 );
 const gameServer = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
+const postThawManagerResync = readFileSync(
+  join(process.cwd(), 'src/maintenance/postThawManagerResync.ts'),
+  'utf8'
+);
 
 describe('the MTT add-on is one persisted deadline', () => {
   const open = sliceMethod(manager, 'triggerAddOnPeriod(): Promise<void>');
@@ -23,10 +27,7 @@ describe('the MTT add-on is one persisted deadline', () => {
     'scheduleAddOnPeriodEnd(endsAt: string | null | undefined): void'
   );
   const arm = sliceMethod(manager, 'armAddOnPeriodEndCheck(delayMs: number): void');
-  const drive = sliceMethod(
-    manager,
-    'drivePersistedAddOnDeadline(rebroadcastAfterThaw: boolean): Promise<void>'
-  );
+  const drive = sliceMethod(manager, 'private async drivePersistedAddOnDeadline(');
   const resync = sliceMethod(manager, 'resyncAddOnPeriodAfterMaintenanceThaw(): Promise<void>');
   const offer = sliceMethod(manager, 'tryTournamentAddOns(): Promise<void>');
   const finalize = sliceMethod(manager, 'finalizeAfterAddOn(): Promise<boolean>');
@@ -72,7 +73,7 @@ describe('the MTT add-on is one persisted deadline', () => {
     const frozen = drive.lastIndexOf('if (isMaintenanceFrozen())', finalize);
     expect(frozen).toBeGreaterThan(reread);
     expect(frozen).toBeLessThan(finalize);
-    expect(drive.slice(frozen, finalize)).toContain('return;');
+    expect(drive.slice(frozen, finalize)).toContain("return 'unproven';");
     expect(drive.slice(frozen, finalize)).not.toContain('armAddOnPeriodEndCheck');
 
     // A failed durable read retains the exact causal edge through the shared
@@ -89,7 +90,9 @@ describe('the MTT add-on is one persisted deadline', () => {
     expect(drive).toContain("message: 'The Add-On Period Has Resumed'");
     expect(drive).toContain('resumedAfterMaintenance: true');
     expect(drive).toContain('endsAt,');
-    expect(gameServer).toContain('await manager.resyncAddOnPeriodAfterMaintenanceThaw()');
+    expect(gameServer).toContain('resyncManagersAfterMaintenanceThaw(');
+    expect(gameServer).toContain('this.launchServerLifecycleJob(');
+    expect(postThawManagerResync).toContain('manager.resyncAddOnPeriodAfterMaintenanceThaw()');
     expect(drive).toMatch(
       /const delivered = await this\.broadcast\('ADDON_PERIOD_START'[\s\S]*?if \(delivered\)[\s\S]*?this\.scheduleAddOnResumeBroadcastRetry\(\)/
     );
@@ -110,7 +113,7 @@ describe('the MTT add-on is one persisted deadline', () => {
     expect(schedulerRetry).toBeGreaterThan(schedulerWake);
     expect(drive).not.toContain('this.tryTournamentAddOns(');
     const thawDone = gameServer.indexOf('[MaintenanceBreak] thaw: complete');
-    const resyncCall = gameServer.indexOf('await manager.resyncAddOnPeriodAfterMaintenanceThaw()');
+    const resyncCall = gameServer.indexOf('resyncManagersAfterMaintenanceThaw(', thawDone);
     expect(resyncCall).toBeGreaterThan(thawDone);
   });
 

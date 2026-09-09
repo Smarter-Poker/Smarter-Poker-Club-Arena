@@ -16,14 +16,17 @@
  * upstream-error records.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const read = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const dockerfile = read('server/Dockerfile');
 const engineUp = read('server/scripts/engine-up.sh');
 const supervisor = read('server/scripts/engine-supervisor.sh');
+const supervisorInstaller = read('server/scripts/install-engine-supervisor.sh');
 const verifier = read('server/scripts/verify-recovery-stack.sh');
 const autoheal = read('infra/monitoring/autoheal-compose.yml');
 const caddyfiles = [read('server/Caddyfile'), read('infra/monitoring/engine-01/Caddyfile')];
@@ -141,4 +144,107 @@ describe('Caddy never records the WebSocket credential carrier', () => {
       expect(caddyfile).not.toMatch(/Sec-Websocket-Protocol replace/);
     });
   }
+});
+
+describe('the supervisor never revives an uncommitted environment transaction', () => {
+  it('uses restart policy as the durable pending-versus-committed transaction bit', () => {
+    expect(engineUp).toContain('ENGINE_UP_RESTART_POLICY="${ENGINE_UP_RESTART_POLICY:-always}"');
+    expect(engineUp).toMatch(/case "\$ENGINE_UP_RESTART_POLICY" in[\s\S]*?always \| no/);
+    expect(engineUp).toContain('--restart "$ENGINE_UP_RESTART_POLICY"');
+  });
+
+  it('reconciles a killed pending target before its health start-period can trigger autoheal', () => {
+    const startPeriod = seconds(
+      engineUp,
+      /HEALTH_START_PERIOD="\$\{HEALTH_START_PERIOD:-(\d+)s\}"/,
+      'pending target health start-period'
+    );
+    const onBoot = seconds(supervisorInstaller, /OnBootSec=(\d+)s/, 'supervisor boot delay');
+    const interval = seconds(supervisorInstaller, /OnUnitActiveSec=(\d+)s/, 'supervisor interval');
+    expect(onBoot).toBeLessThan(startPeriod);
+    expect(interval).toBeLessThan(startPeriod);
+  });
+
+  for (const state of ['running', 'created', 'exited', 'paused'] as const) {
+    it(`recreates a ${state} restart=no candidate from canonical env without resuming it`, () => {
+      const fixture = mkdtempSync(join(tmpdir(), 'supervisor-env-transaction-'));
+      const bin = join(fixture, 'bin');
+      const order = join(fixture, 'order');
+      const canonicalEnv = join(fixture, 'canonical.env');
+      const engineUp = join(fixture, 'engine-up');
+      mkdirSync(bin);
+      mkdirSync(join(fixture, 'state'));
+      mkdirSync(join(fixture, 'metrics'));
+      writeFileSync(canonicalEnv, 'FEATURE_FLAG=canonical\n', { mode: 0o600 });
+      writeFileSync(join(bin, 'flock'), '#!/bin/sh\n[ -e /dev/fd/9 ]\n', { mode: 0o755 });
+      writeFileSync(
+        join(bin, 'docker'),
+        `#!/bin/sh
+echo "$*" >> "$ORDER_FILE"
+case "$1:$2" in
+  info:) exit 0 ;;
+  container:inspect)
+    case "$*" in
+      *State.Status*) printf '%s\n' "$CONTAINER_STATE" ;;
+      *RestartPolicy.Name*) printf '%s\n' no ;;
+    esac
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+`,
+        { mode: 0o755 }
+      );
+      writeFileSync(
+        engineUp,
+        `#!/bin/sh
+[ "$ENGINE_UP_LOCK_HELD" = 1 ] || exit 91
+[ -e /dev/fd/9 ] || exit 92
+printf 'engine-up|%s|%s\n' "$ENV_FILE" "$ENGINE_UP_RESTART_POLICY" >> "$ORDER_FILE"
+`,
+        { mode: 0o755 }
+      );
+
+      try {
+        const result = spawnSync(
+          'bash',
+          [resolve(process.cwd(), 'server/scripts/engine-supervisor.sh')],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              ORDER_FILE: order,
+              CONTAINER_STATE: state,
+              UP_SCRIPT: engineUp,
+              CANONICAL_ENV_FILE: canonicalEnv,
+              LOCK_FILE: join(fixture, 'engine.lock'),
+              STATE_DIR: join(fixture, 'state'),
+              TEXTFILE_DIR: join(fixture, 'metrics'),
+            },
+          }
+        );
+        expect(result.status, result.stderr).toBe(0);
+        const actions = readFileSync(order, 'utf8').trim().split('\n');
+        expect(actions).toContain('engine-up|/opt/club-arena/server/.env|always');
+        expect(actions.some((action) => /^start\b/.test(action))).toBe(false);
+        expect(actions.some((action) => /^unpause\b/.test(action))).toBe(false);
+        expect(result.stdout).toContain('uncommitted/non-canonical restart policy');
+      } finally {
+        rmSync(fixture, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('checks restart policy before every start, unpause, or boot-grace branch', () => {
+    const policy = supervisor.indexOf('RESTART_POLICY=$(docker container inspect');
+    expect(policy).toBeGreaterThan(-1);
+    expect(policy).toBeLessThan(supervisor.indexOf('case "$STATUS" in'));
+    expect(policy).toBeLessThan(supervisor.indexOf('docker unpause "$CONTAINER"'));
+    expect(policy).toBeLessThan(supervisor.indexOf('docker start "$CONTAINER"'));
+    expect(policy).toBeLessThan(supervisor.indexOf('STARTED_AT=$(docker container inspect'));
+    expect(supervisor).toContain('ENV_FILE="$CANONICAL_ENV_FILE"');
+    expect(supervisor).toContain('CANONICAL_ENV_FILE="/opt/club-arena/server/.env"');
+    expect(supervisor).toContain('ENGINE_UP_RESTART_POLICY=always');
+  });
 });

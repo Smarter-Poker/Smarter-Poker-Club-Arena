@@ -146,17 +146,27 @@ export function capLevelToChipsInPlay(
   totalChipsInPlay: number | null | undefined,
   minTotalBigBlinds: number = MIN_TOTAL_BB_IN_PLAY
 ): CappedLevel {
-  const num = (v: unknown) => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : 0;
+  const whole = (value: unknown, label: string, positive: boolean): number => {
+    const decoded =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+          ? Number(value)
+          : Number.NaN;
+    if (!Number.isSafeInteger(decoded) || decoded < 0 || (positive && decoded <= 0)) {
+      throw new Error(
+        `Tournament blind cap requires a ${positive ? 'positive' : 'nonnegative'} whole ${label}, got ${String(value)}`
+      );
+    }
+    return decoded;
   };
-  const smallBlind = num(level?.smallBlind);
-  const bigBlind = num(level?.bigBlind);
-  const ante = num(level?.ante);
+  const smallBlind = whole(level?.smallBlind, 'small blind', false);
+  const bigBlind = whole(level?.bigBlind, 'big blind', true);
+  const ante = whole(level?.ante ?? 0, 'ante', false);
 
   const total = Number(totalChipsInPlay);
   const minBB = Number(minTotalBigBlinds);
-  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(minBB) || minBB <= 0) {
+  if (!Number.isSafeInteger(total) || total <= 0 || !Number.isFinite(minBB) || minBB <= 0) {
     return { smallBlind, bigBlind, ante, capped: false };
   }
 
@@ -201,15 +211,35 @@ export function escalatedBlindLevel(
   autoEscalated: true;
 } {
   const factor = escalationFactor(index, persistedLength, ratio);
-  const scale = (v: unknown) => {
-    const n = Number(v);
-    return Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE);
+  const sourceChip = (value: unknown, label: string, positive: boolean): number => {
+    const decoded =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+          ? Number(value)
+          : Number.NaN;
+    if (!Number.isSafeInteger(decoded) || decoded < 0 || (positive && decoded <= 0)) {
+      throw new Error(
+        `Tournament blind escalation requires a ${positive ? 'positive' : 'nonnegative'} whole ${label}, got ${String(value)}`
+      );
+    }
+    return decoded;
+  };
+  const scale = (value: unknown, label: string, positive: boolean): number => {
+    const source = sourceChip(value, label, positive);
+    const capped = Math.min(source * factor, MAX_BLIND_VALUE);
+    // Explicit nearest-whole-chip allocation. The relative epsilon makes an
+    // intended x.5 boundary stable when binary multiplication lands one ULP
+    // below it, while the final cap remains exact and restart-independent.
+    const epsilon = Number.EPSILON * Math.max(1, Math.abs(capped)) * 4;
+    const whole = Math.floor(capped + 0.5 + epsilon);
+    return source > 0 ? Math.max(1, whole) : 0;
   };
   return {
     level: index + 1,
-    smallBlind: scale(lastPlayable?.smallBlind),
-    bigBlind: scale(lastPlayable?.bigBlind),
-    ante: scale(lastPlayable?.ante),
+    smallBlind: scale(lastPlayable?.smallBlind, 'small blind', false),
+    bigBlind: scale(lastPlayable?.bigBlind, 'big blind', true),
+    ante: scale(lastPlayable?.ante ?? 0, 'ante', false),
     durationMinutes: Math.max(durationMinutes, 2),
     autoEscalated: true,
   };

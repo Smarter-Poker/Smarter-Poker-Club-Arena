@@ -393,24 +393,64 @@ $probe$;
    12-argument SECURITY DEFINER door must still resolve its owner-only core
    after Stage B drops the 11-argument rolling wrapper. This catches a PL/pgSQL
    late-name dependency that catalog-existence checks alone cannot see. */
+DO $settlement_fixture_scope$
+BEGIN
+  IF (
+    SELECT count(*)
+      FROM public.tables t
+     WHERE t.id = '20000000-0000-4000-8000-000000000002'
+       AND t.club_id = '70000000-0000-4000-8000-000000000002'
+       AND t.tournament_id IS NULL
+  ) <> 1 THEN
+    RAISE EXCEPTION
+      'Stage-B settlement fixture lost its exact cash-table club scope';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM public.hand_atomic_commits c
+     WHERE c.table_id = '20000000-0000-4000-8000-000000000002'
+       AND c.hand_number = 1
+  ) THEN
+    RAISE EXCEPTION
+      'Stage-B settlement fixture started with a pre-existing hand receipt';
+  END IF;
+END;
+$settlement_fixture_scope$;
+
 SET LOCAL ROLE service_role;
 DO $settlement_probe$
 DECLARE
   v_settlement jsonb;
 BEGIN
   v_settlement := public.fn_ca_commit_hand_settlement(
-    '20000000-0000-4000-8000-000000000099',
+    '20000000-0000-4000-8000-000000000002',
     1,
-    '{}'::jsonb,
+    '[]'::jsonb,
     0,
     0,
     'stage-b-probe',
     0,
-    '{}'::jsonb,
+    jsonb_build_object(
+      'pot_size', 0,
+      'big_blind', 2,
+      '_accepted_post_commit_facts', jsonb_build_object(
+        'contributions', '{}'::jsonb,
+        'returned_uncalled', '{}'::jsonb,
+        'insurance', '[]'::jsonb
+      )
+    ),
     '{}'::jsonb,
     'stage-b-probe',
     '50000000-0000-4000-8000-000000000099',
-    '{}'::jsonb
+    jsonb_build_object(
+      'version', '1',
+      'time_banks', '[]'::jsonb,
+      'promo_playthrough', '[]'::jsonb,
+      'insurance', '[]'::jsonb,
+      'pending_addons', jsonb_build_object('enabled', true, 'max_buy_in', 1),
+      'rake', NULL,
+      'bbj_contribution', NULL
+    )
   );
   IF COALESCE((v_settlement->>'success')::boolean, false) IS NOT TRUE
      OR COALESCE((v_settlement->>'post_commit_obligations')::boolean, false)

@@ -58,7 +58,7 @@ BEGIN
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
      WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'
+       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
        AND p.proowner = v_relation_owner
        AND p.prokind = 'f' AND p.provolatile = 'v'
        AND NOT p.prosecdef AND NOT p.proretset
@@ -3389,9 +3389,11 @@ REVOKE ALL ON FUNCTION public.fn_move_tournament_player(
 GRANT EXECUTE ON FUNCTION public.fn_move_tournament_player(
   uuid,uuid,uuid,uuid,integer,uuid,text) TO service_role;
 
--- Unfilled Spins still expire, but cancellation itself owns every refund and
--- count. There is no post-cancel counter reconciler and no estimate presented
--- as money returned.
+-- Unfilled Spins still expire, but the candidate scan is never cancellation
+-- authority. Re-read the board only after the canonical terminal root and
+-- parent lock are held; a funded, filled or newly launched Spin is skipped.
+-- Cancellation itself owns every refund and count. There is no post-cancel
+-- counter reconciler and no estimate presented as money returned.
 CREATE OR REPLACE FUNCTION public.fn_spin_expire_unfilled(p_limit integer DEFAULT 50)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -3401,6 +3403,8 @@ AS $expire_unfilled_without_reconciler$
 DECLARE
   v_minutes integer;
   g record;
+  v_current record;
+  v_skipped integer:=0;
   v_result jsonb;
   v_expired integer:=0;
   v_failed integer:=0;
@@ -3417,6 +3421,13 @@ BEGIN
   IF v_minutes<=0 THEN
     RETURN jsonb_build_object('ok',true,'disabled',true,'expired',0);
   END IF;
+
+  -- Every terminal owner takes this root before its first tournament row.
+  -- The first atomic cancellation would hold it for the transaction anyway;
+  -- taking it explicitly here keeps the fresh parent re-read in that order.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+
   FOR g IN
     SELECT t.id
       FROM public.tournaments t
@@ -3435,6 +3446,44 @@ BEGIN
      ORDER BY t.created_at
      LIMIT GREATEST(COALESCE(p_limit,50),1)
   LOOP
+    -- The scan above is only a candidate list. A final join or launch may
+    -- commit before this row is reached. Lock first, then read a fresh board
+    -- snapshot in a separate statement.
+    PERFORM 1 FROM public.tournaments t
+     WHERE t.id=g.id FOR UPDATE SKIP LOCKED;
+    IF NOT FOUND THEN
+      v_skipped:=v_skipped+1;
+      CONTINUE;
+    END IF;
+
+    SELECT t.status,t.variant,t.started_at,t.spin_multiplier,t.buy_in_amount,
+           COALESCE(t.max_players,3) AS max_players,
+           (SELECT count(*) FROM public.table_seats s
+              JOIN public.tables tb ON tb.id=s.table_id
+             WHERE tb.tournament_id=t.id AND s.left_at IS NULL) AS live_seats,
+           EXISTS(SELECT 1 FROM public.table_seats s
+              JOIN public.tables tb ON tb.id=s.table_id
+             WHERE tb.tournament_id=t.id AND s.left_at IS NULL
+               AND s.joined_at<now()-make_interval(mins=>v_minutes))
+             AS has_expired_waiter,
+           EXISTS(SELECT 1 FROM public.spin_reserve_ledger l
+             WHERE l.tournament_id=t.id AND l.kind='jackpot_draw')
+             OR EXISTS(SELECT 1 FROM public.spin_draw_receipts r
+               WHERE r.tournament_id=t.id) AS has_booked_draw
+      INTO v_current FROM public.tournaments t WHERE t.id=g.id;
+
+    IF v_current.variant IS DISTINCT FROM 'spin'
+       OR v_current.status NOT IN ('REGISTERING','ANNOUNCED')
+       OR v_current.status IS NULL
+       OR v_current.started_at IS NOT NULL
+       OR v_current.live_seats>=v_current.max_players
+       OR NOT v_current.has_expired_waiter
+       OR v_current.spin_multiplier IS NOT NULL
+       OR v_current.has_booked_draw THEN
+      v_skipped:=v_skipped+1;
+      CONTINUE;
+    END IF;
+
     BEGIN
       v_result:=public.atomic_cancel_tournament(g.id,NULL);
       IF COALESCE((v_result->>'success')::boolean,false) IS NOT TRUE THEN
@@ -3451,6 +3500,7 @@ BEGIN
   END LOOP;
   RETURN jsonb_build_object(
     'ok',v_failed=0,'expired',v_expired,'failed',v_failed,
+    'skipped_raced',v_skipped,
     'chips_refunded',round(v_refunded,2),'timeout_minutes',v_minutes,
     'tournament_ids',v_ids);
 END;

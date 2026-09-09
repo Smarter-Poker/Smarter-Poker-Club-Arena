@@ -13,6 +13,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   sliceMethod,
+  sliceCall,
   sliceEnclosingBlock,
   sliceCssRule,
   blankNonCode,
@@ -147,10 +148,20 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     expect(DEALING).toMatch(/bomb_pot_sched_state: snapObj/);
   });
 
-  it('multi-board all-in equity is COMPUTED per board, not suppressed', () => {
+  it('multi-board all-in equity is computed from every board and pot layer', () => {
     expect(RUNOUT).toMatch(/if \(allInPlayers\.length >= 2\) \{/);
     expect(RUNOUT).not.toMatch(/allInPlayers\.length >= 2 && !doubleBoardHand/);
-    expect(RUNOUT).toMatch(/perBoard\.reduce/);
+    const fn = sliceMethod(RUNOUT, 'protected async broadcastAllInEquity');
+    expect(fn).toMatch(/const allBoards = \[board, \.\.\.\(extraBoards \?\? \[\]\)\]/);
+    const call = sliceCall(fn, 'estimateLayeredEquity(');
+    expect(call).toMatch(
+      /estimateLayeredEquity\(\s*hands,\s*playerIds,\s*playerSeats,\s*allBoards,\s*visibleDeadCards,\s*iterations,\s*equityVariant,\s*potScope\.pots,\s*potScope\.dealerSeat,\s*potScope\.totalWinnings,\s*potScope\.chipUnit\s*\)/
+    );
+    expect(fn).toMatch(/const fractions = layered\.equities;/);
+    const jobs =
+      blankNonCode(fn).match(/getEquityPool\(\)\.(?:estimateEquity|estimateLayeredEquity)\(/g) ??
+      [];
+    expect(jobs).toEqual(['getEquityPool().estimateLayeredEquity(']);
     // RIT and insurance stay suppressed on multi-board hands.
     expect(RUNOUT).toMatch(/insuranceEngine\.isEnabled\(this\.tableId\) && !doubleBoardHand/);
   });
@@ -344,12 +355,13 @@ describe('all-in equity lands AFTER the street, and every street gets its second
     );
   });
 
-  it('per-board equity is priced in parallel, not one await at a time', () => {
-    // This computation sits between the reveal gate and the percentages
-    // appearing, so a serial loop pushes the numbers further from the card.
+  it('all boards are priced in one worker job, never serially on the event loop', () => {
+    // One layered worker job preserves a shared unseen-card universe and the
+    // physical pot/odd-unit rules. Independent per-board jobs cannot do that.
     const fn = sliceMethod(RUNOUT, 'protected async broadcastAllInEquity');
-    expect(fn).toMatch(/await Promise\.all\(/);
-    expect(fn).not.toMatch(/for \(const b of allBoards\) \{\s*perBoard\.push\(\s*await/);
+    expect(fn).toMatch(/await getEquityPool\(\)\.estimateLayeredEquity\(/);
+    expect(fn).not.toMatch(/for \(const b of allBoards\)/);
+    expect(fn).not.toMatch(/estimateEquity\(/);
   });
 });
 
@@ -464,14 +476,31 @@ describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
     // back to single-board pricing. A multi-board bomb showed correct averaged
     // percentages at the all-in and then wrong ones for the flop, turn and
     // river — drifting further from the truth as the hand got more dramatic.
-    expect(RUNOUT).toMatch(/protected liveExtraBoards\(\)/);
-    const calls = RUNOUT.match(/broadcastAllInEquity\(\s*allInPlayers,[\s\S]*?\)/g) ?? [];
-    expect(calls.length).toBeGreaterThanOrEqual(3);
-    for (const call of calls) {
-      expect(call, `an equity broadcast still prices board 1 only: ${call}`).toMatch(
-        /liveExtraBoards\(\)/
-      );
+    const liveExtraBoards = sliceMethod(RUNOUT, 'protected liveExtraBoards');
+    expect(liveExtraBoards).toMatch(/isDoubleBoardActive/);
+    expect(liveExtraBoards).toMatch(/st\.communityCards2/);
+    expect(liveExtraBoards).toMatch(/st\.communityCards3/);
+
+    for (const signature of [
+      'protected handleAllInRunout',
+      'protected async pacedAllInRunout',
+      'protected async runInsurancePerStreetFlow',
+      'protected async dealNextInsuranceStreet',
+    ]) {
+      const method = sliceMethod(RUNOUT, signature);
+      const call = sliceCall(method, 'this.broadcastAllInEquity');
+      expect(call, `${signature} must price every live board`).toMatch(/this\.liveExtraBoards\(\)/);
     }
+
+    // RIT is the deliberate exception: its boards are prebuilt under a
+    // separate ownership fence, so it passes that explicit authority rather
+    // than reading the live controller.
+    const rit = sliceMethod(RUNOUT, 'private async dealAndResolveRITUnchecked');
+    const ritCall = sliceCall(rit, 'this.broadcastAllInEquity');
+    expect(ritCall).toMatch(/boards\.slice\(1\)\.map\(\(\) => \[\]\)/);
+    expect(ritCall).toMatch(/boardAuthority: 'rit_prebuilt'/);
+    expect(ritCall).toMatch(/emitPublic: false/);
+    expect(ritCall).toMatch(/stageDurableCommit: true/);
   });
 
   it('the announce window is enforced by the ENGINE, not by the browser', () => {

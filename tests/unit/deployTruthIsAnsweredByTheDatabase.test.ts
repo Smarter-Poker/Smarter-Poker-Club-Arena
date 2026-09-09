@@ -57,9 +57,8 @@ describe('the deploy pipeline reports what it actually did', () => {
   it('reports the sha the run was FOR, not whatever the host happens to hold', () => {
     const wf = read(WORKFLOW);
     const step = wf.slice(wf.indexOf('Record deploy truth in the database'));
-    expect(step).toMatch(
-      /TARGET_SHA:\s*\$\{\{\s*github\.event\.inputs\.ref_sha\s*\|\|\s*github\.sha\s*\}\}/
-    );
+    expect(step).toMatch(/TARGET_SHA:\s*\$\{\{\s*steps\.target\.outputs\.sha\s*\}\}/);
+    expect(step).not.toContain('github.event.inputs.ref_sha');
   });
 });
 

@@ -10,7 +10,7 @@ const start = sliceMethod(source, 'private async startLifecycle(');
 const begin = sliceMethod(source, 'private async beginTournamentLaunch(');
 const complete = sliceMethod(source, 'private async completeTournamentLaunch(');
 const prove = sliceMethod(source, 'private async proveTournamentLaunchSetup(');
-const tableBuild = sliceMethod(source, 'createTablesAndSeatPlayers(tournament: any)');
+const tableBuild = sliceMethod(source, 'protected async createTablesAndSeatPlayers(');
 const seatAssignment = readFileSync(join(here, 'tournamentSeatAssignmentRpc.ts'), 'utf8');
 
 describe('a tournament launch crosses maintenance exactly once', () => {
@@ -22,7 +22,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(claim).toBeGreaterThan(paidEvidence);
     for (const mutation of [
       "supabase.rpc('fn_spin_draw_and_settle_atomic'",
-      'await this.createTablesAndSeatPlayers(tournament)',
+      'await this.createTablesAndSeatPlayers(',
     ]) {
       const mutationAt = start.indexOf(mutation);
       expect(mutationAt, `${mutation} moved or disappeared`).toBeGreaterThan(-1);
@@ -105,7 +105,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('completes only after durable launch work and before dealer admission', () => {
-    const tableCreation = start.indexOf('await this.createTablesAndSeatPlayers(tournament)');
+    const tableCreation = start.indexOf('await this.createTablesAndSeatPlayers(');
     const setupProof = start.indexOf('await this.proveTournamentLaunchSetup(');
     const completion = start.indexOf('await this.completeTournamentLaunch(');
     const admission = start.indexOf('this.admitManagedTableEngine(', completion);

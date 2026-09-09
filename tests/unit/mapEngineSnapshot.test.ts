@@ -33,6 +33,12 @@ function makeSnapshot(overrides: Partial<Parameters<typeof mapEngineSnapshot>[0]
 }
 
 describe('mapEngineSnapshot.winners[].netAmount (Phase X6 FE-037 P0)', () => {
+  it('maps publicly exposed dead cards for reconnect and late-join snapshots', () => {
+    const exposed = [{ rank: 'T', suit: 'h' }] as never;
+    const out = mapEngineSnapshot(makeSnapshot({ revealed_dead_cards: exposed }), 'hero', 9);
+    expect(out.revealedDeadCards).toEqual(exposed);
+  });
+
   it('hero wins solo → netAmount = winnings - invested', () => {
     const snap = makeSnapshot({
       players: [

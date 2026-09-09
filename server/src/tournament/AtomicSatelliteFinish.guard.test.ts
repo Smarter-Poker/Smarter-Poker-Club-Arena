@@ -683,15 +683,20 @@ describe('the one audited production miss is adopted exactly once', () => {
     expect(SQL).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_ca_adopt_682_satellite_completion\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role;/
     );
-    const freezeGate = ADOPTION_CLOSEOUT_SQL.indexOf('IF public.fn_entry_purchases_frozen() THEN');
-    const terminalBoundary = ADOPTION_CLOSEOUT_SQL.indexOf(
-      "hashtextextended('ca:tournament-terminal-settlement:v1',0)"
-    );
-    const maintenanceBoundary = ADOPTION_CLOSEOUT_SQL.indexOf(
-      'pg_advisory_xact_lock_shared(530090,1)'
-    );
     const cutoverPrerequisite = ADOPTION_CLOSEOUT_SQL.indexOf(
       "c.migration_version = '20260909014421'"
+    );
+    const terminalBoundary = ADOPTION_CLOSEOUT_SQL.indexOf(
+      "hashtextextended('ca:tournament-terminal-settlement:v1',0)",
+      cutoverPrerequisite
+    );
+    const maintenanceBoundary = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'pg_advisory_xact_lock_shared(530090,1)',
+      terminalBoundary
+    );
+    const freezeGate = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'IF public.fn_entry_purchases_frozen() THEN',
+      maintenanceBoundary
     );
     const b066Call = ADOPTION_CLOSEOUT_SQL.indexOf(
       'v_receipt := public.fn_ca_adopt_b066_satellite_remainder()'
@@ -726,6 +731,37 @@ describe('the one audited production miss is adopted exactly once', () => {
     expect(ADOPTION_CLOSEOUT_SQL).toContain(
       'DROP FUNCTION public.fn_ca_adopt_682_satellite_completion()'
     );
+  });
+
+  it('registers the atomic satellite payer with the enforced money path and removes the adoption door', () => {
+    expect(ADOPTION_CLOSEOUT_SQL).toContain(
+      'RENAME TO fn_settle_satellite_tournament_pre_money_path_gate'
+    );
+    expect(ADOPTION_CLOSEOUT_SQL).toContain(
+      "set_config(\n    'app.money_path','fn_settle_satellite_tournament',true)"
+    );
+    expect(ADOPTION_CLOSEOUT_SQL).toContain(
+      "set_config(\n      'app.money_path','fn_ca_adopt_b066_satellite_remainder',true)"
+    );
+    expect(ADOPTION_CLOSEOUT_SQL).not.toContain('SET app.money_path TO');
+
+    const finalGuardAt = ADOPTION_CLOSEOUT_SQL.lastIndexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_money_path_log()'
+    );
+    const finalGuard = ADOPTION_CLOSEOUT_SQL.slice(finalGuardAt);
+    expect(finalGuard).toContain("'fn_settle_tournament_obligation'");
+    expect(finalGuard).toContain("'fn_settle_satellite_tournament'");
+    expect(finalGuard).not.toContain("'fn_ca_adopt_b066_satellite_remainder'");
+    expect(
+      ADOPTION_CLOSEOUT_SQL.indexOf('DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder()')
+    ).toBeLessThan(finalGuardAt);
+  });
+
+  it('uses PostgreSQL-supported object-key evidence for the one-time 682 proof', () => {
+    expect(ADOPTION_CLOSEOUT_SQL).not.toContain('jsonb_object_length(');
+    expect(
+      ADOPTION_CLOSEOUT_SQL.match(/jsonb_object_keys\(r\.player_contributions\)/g)
+    ).toHaveLength(3);
   });
 });
 

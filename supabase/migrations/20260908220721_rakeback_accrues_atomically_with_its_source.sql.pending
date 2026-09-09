@@ -1,0 +1,3115 @@
+-- 20260908220721_rakeback_accrues_atomically_with_its_source.sql
+--
+-- Version reserved by scripts/new-migration.mjs against origin/main and every
+-- remote branch, so it cannot collide with another agent's in-flight work.
+--
+-- WHAT THIS CHANGES, AND WHY:
+--
+-- `fn_rakeback_recompute_periods` is called once per club/week on every
+-- 1,000-row settler page. Its first step walks all seven days, and its current
+-- day changes on every page, so `fn_rakeback_recompute_day` deletes and rebuilds
+-- the whole busy day every time. Production proof immediately before this
+-- migration: 1,305 calls consumed 4,384,317.824 ms of database execution time
+-- (mean 3,359.631 ms, max 69,895.507 ms), while the settler cursor sat more
+-- than eleven hours behind the newest rake record.
+--
+-- A page is not the source of rake. `rake_records` is. From this migration on,
+-- the same transaction which creates or first attributes a positive rake row
+-- writes one immutable per-record receipt, one immutable per-player receipt,
+-- the daily integer-cent basis, and the pending period projection. A legitimate
+-- pre-start tournament unregister deletes its fee row; that same DELETE appends
+-- an immutable reversal and removes the exact shares in the same transaction.
+-- There is no scan, cron, retry, or later repair in either path. If its receipt
+-- cannot be written, the source transaction cannot commit.
+--
+-- Existing rows are a cutover baseline, not replayed through an increment. The
+-- table is write-locked while every open-basis player share is recomputed once
+-- with the canonical allocator, proved against source cents, snapshotted, and
+-- the trigger is installed. Thus neither a stale witness nor an equal-but-wrong
+-- grand total can cross the boundary, and there is no gap or double count. This
+-- one cutover is settlement of existing state; the permanent mechanism is the
+-- source transaction trigger.
+--
+-- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
+-- Supabase's schema-cache reload, which takes ~28s on this database, and ten
+-- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
+
+BEGIN;
+
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '300s';
+SET LOCAL timezone = 'UTC';
+
+DO $precondition$
+DECLARE
+  v_bad text := '';
+BEGIN
+  IF md5(pg_get_functiondef(
+       'public.fn_rakeback_recompute_day(uuid,date,boolean)'::regprocedure
+     )) <> 'b00b5d017cb5a3699038e1bb8896b5d6' THEN
+    v_bad := v_bad || ' fn_rakeback_recompute_day';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])'::regprocedure
+     )) <> '2078fb6e89f22704096974ecf933e385' THEN
+    v_bad := v_bad || ' fn_rakeback_recompute_periods';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_allocate_rake_credits(numeric,jsonb,text)'::regprocedure
+     )) <> '74d61a3e0caf1037f6e6633eff0dd611' THEN
+    v_bad := v_bad || ' fn_allocate_rake_credits';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_player_rakeback_rate(uuid,uuid,numeric)'::regprocedure
+     )) <> 'f9b2424384371f47f9fba2006a3f646d' THEN
+    v_bad := v_bad || ' fn_player_rakeback_rate';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_rake_record_is_ghost_twin(uuid,uuid,jsonb)'::regprocedure
+     )) <> 'd59ea94ab309a36c5d5a1298cbc604d3' THEN
+    v_bad := v_bad || ' fn_rake_record_is_ghost_twin';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_tournament_fee_names_its_player()'::regprocedure
+     )) <> 'a34e26b81ceeda38237b739245ff11f6' THEN
+    v_bad := v_bad || ' fn_tournament_fee_names_its_player';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_trigger t
+     WHERE t.tgrelid = 'public.rake_records'::regclass
+       AND t.tgname = 'trg_tournament_fee_names_its_player'
+       AND NOT t.tgisinternal
+       AND t.tgenabled = 'O'
+       AND md5(pg_get_triggerdef(t.oid)) = 'b78ca0d8726cc7fce4d66ef6c2030027'
+  ) THEN
+    v_bad := v_bad || ' trg_tournament_fee_names_its_player';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_close_settlement_period(uuid)'::regprocedure
+     )) <> '0af831a32835021d60f7098e07ce4ad5' THEN
+    v_bad := v_bad || ' fn_close_settlement_period';
+  END IF;
+  IF md5(pg_get_functiondef(
+       'public.fn_relink_rake_record_to_hand(uuid,bigint,uuid)'::regprocedure
+     )) <> '708827dbc7fabd0b753d3a7b8596f076' THEN
+    v_bad := v_bad || ' fn_relink_rake_record_to_hand';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index
+     WHERE indexrelid = to_regclass('public.rakeback_daily_user_club_user_day_idx')
+       AND indisvalid AND indisready
+  ) THEN
+    v_bad := v_bad || ' rakeback_daily_user_club_user_day_idx';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint c
+     WHERE c.conrelid = 'public.rakeback_periods'::regclass
+       AND c.conname =
+           'rakeback_periods_user_id_club_id_period_start_period_end_key'
+       AND c.contype = 'u'
+       AND pg_get_constraintdef(c.oid) =
+           'UNIQUE (user_id, club_id, period_start, period_end)'
+  ) THEN
+    v_bad := v_bad || ' rakeback_periods legacy four-column unique';
+  END IF;
+  IF v_bad <> '' THEN
+    RAISE EXCEPTION
+      'rakeback accrual dependencies changed after the 2026-09-08 audit:%',
+      v_bad;
+  END IF;
+END
+$precondition$;
+
+-- This lock is the cutover boundary. It permits reads and refuses to wait
+-- behind live hand writes. The release runbook applies this migration while
+-- the engine is parked; a missed park aborts in ten seconds instead of making
+-- a half-observed baseline.
+LOCK TABLE public.rake_records,
+           public.rakeback_daily_user,
+           public.rakeback_daily_state,
+           public.rakeback_periods,
+           public.rakeback_period_payouts
+  IN SHARE ROW EXCLUSIVE MODE;
+
+-- A projection is identified by player + club + rake week while it is pending.
+-- The legacy four-column key included period_end, which admitted two pending
+-- balances for one week when an old one-day row and the canonical seven-day
+-- row coexisted. It also cannot represent a future negative receivable beside
+-- immutable PAID history when both use the same dates. Keep paid rows exactly
+-- as evidence, collapse only duplicate pending projections, canonicalize their
+-- end date, and enforce one pending row with a partial unique index.
+ALTER TABLE public.rakeback_periods
+  DROP CONSTRAINT rakeback_periods_user_id_club_id_period_start_period_end_key;
+
+DO $canonicalize_pending_period_identity$
+DECLARE
+  v_bad bigint;
+BEGIN
+  SELECT count(*) INTO v_bad
+    FROM public.rakeback_periods p
+    JOIN public.rakeback_period_payouts pp ON pp.rakeback_period_id = p.id
+   WHERE p.status = 'pending';
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION
+      'RAKEBACK_PENDING_PERIOD_HAS_PAYOUT_CHILD: % pending rows already own payout evidence',
+      v_bad;
+  END IF;
+
+  WITH ranked AS (
+    SELECT p.id,
+           row_number() OVER (
+             PARTITION BY p.user_id, p.club_id, p.period_start
+             ORDER BY (p.period_end = p.period_start + 6) DESC,
+                      p.created_at, p.id
+           ) AS keep_rank
+      FROM public.rakeback_periods p
+     WHERE p.status = 'pending'
+  )
+  DELETE FROM public.rakeback_periods p
+   USING ranked r
+   WHERE p.id = r.id
+     AND r.keep_rank > 1;
+
+  UPDATE public.rakeback_periods p
+     SET period_end = p.period_start + 6
+   WHERE p.status = 'pending'
+     AND p.period_end IS DISTINCT FROM p.period_start + 6;
+END
+$canonicalize_pending_period_identity$;
+
+CREATE UNIQUE INDEX rakeback_periods_one_pending_user_club_week_idx
+  ON public.rakeback_periods (user_id, club_id, period_start)
+  WHERE status = 'pending';
+
+CREATE TEMP TABLE rakeback_cutover_basis ON COMMIT DROP AS
+SELECT date_trunc(
+         'week',
+         COALESCE(
+           (SELECT min(period_start)
+              FROM public.rakeback_periods
+             WHERE status = 'pending'),
+           CURRENT_DATE
+         )::timestamp
+       )::date AS day;
+
+DO $source_shape$
+DECLARE
+  v_bad bigint;
+BEGIN
+  SELECT count(*) INTO v_bad
+    FROM public.rake_records r
+    CROSS JOIN rakeback_cutover_basis b
+   WHERE r.rake_amount > 0
+     AND r.player_contributions IS NOT NULL
+     AND r.player_contributions <> '{}'::jsonb
+     AND (
+       r.club_id IS NULL
+       OR r.created_at IS NULL
+       OR (
+         r.created_at >= (b.day::timestamp AT TIME ZONE 'UTC')
+         AND (
+           jsonb_typeof(r.player_contributions) <> 'object'
+           OR round(r.rake_amount * 100)::bigint <= 0
+         )
+       )
+     );
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION
+      '% positive source rows cannot enter the exact rakeback cutover', v_bad;
+  END IF;
+END
+$source_shape$;
+
+-- Negative rake rows are append-only refund evidence. Link every refund which
+-- ever affected the open rakeback basis to whole original source records. The
+-- link is exact, not a fresh split of the negative amount: registration_id and
+-- original_rake_record_id win when present; a user-scoped cancellation then
+-- takes all still-unreversed, single-player fee rows for that event. Historic
+-- refund rows whose positive source never had an attribution affected no old
+-- rakeback basis and are retained below as explicit no-balance-change events.
+CREATE TEMP TABLE rakeback_cutover_compensation_links (
+  compensation_rake_record_id uuid NOT NULL,
+  original_rake_record_id uuid NOT NULL UNIQUE,
+  PRIMARY KEY (compensation_rake_record_id, original_rake_record_id)
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE rakeback_cutover_unapplied_compensations (
+  compensation_rake_record_id uuid PRIMARY KEY,
+  reason text NOT NULL
+) ON COMMIT DROP;
+
+DO $link_cutover_compensations$
+DECLARE
+  v_negative record;
+  v_negative_cents bigint;
+  v_linked_cents bigint;
+  v_attributed_candidates bigint;
+  v_original_id uuid;
+  v_user_id uuid;
+  v_registration_id text;
+BEGIN
+  FOR v_negative IN
+    SELECT r.*
+      FROM public.rake_records r
+     WHERE r.rake_amount < 0
+       AND round(abs(r.rake_amount) * 100)::bigint > 0
+     ORDER BY r.created_at, r.id
+  LOOP
+    IF v_negative.club_id IS NULL OR v_negative.created_at IS NULL THEN
+      RAISE EXCEPTION
+        'negative rake record % has no club or accounting time', v_negative.id;
+    END IF;
+    v_negative_cents := round(abs(v_negative.rake_amount) * 100)::bigint;
+    v_original_id := NULL;
+    v_user_id := NULL;
+    v_registration_id := NULLIF(v_negative.metadata->>'registration_id', '');
+
+    IF COALESCE(v_negative.metadata->>'original_rake_record_id', '')
+         ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+      v_original_id := (v_negative.metadata->>'original_rake_record_id')::uuid;
+    ELSIF COALESCE(v_negative.metadata->>'user_id', '')
+         ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+      v_user_id := (v_negative.metadata->>'user_id')::uuid;
+    ELSIF NULLIF(v_negative.metadata->>'original_rake_record_id', '') IS NOT NULL
+       OR NULLIF(v_negative.metadata->>'user_id', '') IS NOT NULL THEN
+      RAISE EXCEPTION 'negative rake record % has a malformed source selector',
+        v_negative.id;
+    END IF;
+
+    INSERT INTO rakeback_cutover_compensation_links (
+      compensation_rake_record_id, original_rake_record_id
+    )
+    SELECT v_negative.id, p.id
+      FROM public.rake_records p
+     WHERE p.rake_amount > 0
+       AND p.club_id = v_negative.club_id
+       AND p.tournament_id IS NOT DISTINCT FROM v_negative.tournament_id
+       AND p.created_at <= v_negative.created_at
+       AND round(p.rake_amount * 100)::bigint > 0
+       AND p.player_contributions IS NOT NULL
+       AND p.player_contributions <> '{}'::jsonb
+       AND jsonb_typeof(p.player_contributions) = 'object'
+       AND NOT public.fn_rake_record_is_ghost_twin(p.hand_id, p.table_id, p.metadata)
+       AND (
+         (v_original_id IS NOT NULL AND p.id = v_original_id)
+         OR (
+           v_original_id IS NULL
+           AND v_registration_id IS NOT NULL
+           AND p.metadata->>'registration_id' = v_registration_id
+           AND (v_user_id IS NULL OR p.metadata->>'user_id' = v_user_id::text)
+         )
+         OR (
+           v_original_id IS NULL
+           AND v_registration_id IS NULL
+           AND v_user_id IS NOT NULL
+           AND p.metadata->>'user_id' = v_user_id::text
+           AND (SELECT count(*)
+                  FROM public.fn_allocate_rake_credits(
+                    p.rake_amount, p.player_contributions,
+                    COALESCE(p.rake_method, 'DEALT_EQUAL')
+                  ) a) = 1
+           AND EXISTS (
+             SELECT 1
+               FROM public.fn_allocate_rake_credits(
+                 p.rake_amount, p.player_contributions,
+                 COALESCE(p.rake_method, 'DEALT_EQUAL')
+               ) a
+              WHERE a.user_id = v_user_id
+           )
+         )
+         OR (
+           v_original_id IS NULL
+           AND v_registration_id IS NULL
+           AND v_user_id IS NULL
+           AND v_negative.player_contributions IS NOT NULL
+           AND jsonb_typeof(v_negative.player_contributions) = 'object'
+           AND v_negative.player_contributions <> '{}'::jsonb
+           AND p.player_contributions = v_negative.player_contributions
+           AND round(p.rake_amount * 100)::bigint = v_negative_cents
+         )
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM rakeback_cutover_compensation_links l
+          WHERE l.original_rake_record_id = p.id
+       )
+     ORDER BY p.created_at, p.id;
+
+    SELECT COALESCE(sum(round(p.rake_amount * 100)::bigint), 0)
+      INTO v_linked_cents
+      FROM rakeback_cutover_compensation_links l
+      JOIN public.rake_records p ON p.id = l.original_rake_record_id
+     WHERE l.compensation_rake_record_id = v_negative.id;
+
+    IF v_linked_cents = v_negative_cents THEN
+      CONTINUE;
+    END IF;
+
+    -- This count distinguishes a genuinely legacy, unattributed refund from
+    -- an ambiguous or duplicate refund. The latter must abort the cutover.
+    SELECT count(*) INTO v_attributed_candidates
+      FROM public.rake_records p
+     WHERE p.rake_amount > 0
+       AND p.club_id = v_negative.club_id
+       AND p.tournament_id IS NOT DISTINCT FROM v_negative.tournament_id
+       AND p.created_at <= v_negative.created_at
+       AND round(p.rake_amount * 100)::bigint > 0
+       AND p.player_contributions IS NOT NULL
+       AND p.player_contributions <> '{}'::jsonb
+       AND jsonb_typeof(p.player_contributions) = 'object'
+       AND NOT public.fn_rake_record_is_ghost_twin(p.hand_id, p.table_id, p.metadata)
+       AND (
+         (v_original_id IS NOT NULL AND p.id = v_original_id)
+         OR (v_registration_id IS NOT NULL
+             AND p.metadata->>'registration_id' = v_registration_id)
+         OR (v_user_id IS NOT NULL AND p.metadata->>'user_id' = v_user_id::text)
+         OR (v_original_id IS NULL AND v_registration_id IS NULL
+             AND v_user_id IS NULL)
+       );
+
+    IF v_linked_cents = 0 AND v_attributed_candidates = 0 THEN
+      INSERT INTO rakeback_cutover_unapplied_compensations
+        (compensation_rake_record_id, reason)
+      VALUES (v_negative.id, 'legacy_source_had_no_attributed_open_basis');
+    ELSE
+      RAISE EXCEPTION
+        'negative rake record % links % cents to an open attributed basis; expected exactly %',
+        v_negative.id, v_linked_cents, v_negative_cents;
+    END IF;
+  END LOOP;
+END
+$link_cutover_compensations$;
+
+-- The cutover does not trust the old derived rows. It computes the canonical
+-- per-player basis once from the locked source using the same integer-cent
+-- allocator as every future source transaction. This proves distribution, not
+-- merely a row count or grand total.
+CREATE TEMP TABLE rakeback_cutover_expected_daily_user ON COMMIT DROP AS
+SELECT r.club_id,
+       (r.created_at AT TIME ZONE 'UTC')::date AS day,
+       a.user_id,
+       sum(round(a.credit * 100)::bigint)::bigint AS cents
+  FROM public.rake_records r
+  CROSS JOIN rakeback_cutover_basis b
+  CROSS JOIN LATERAL public.fn_allocate_rake_credits(
+    r.rake_amount,
+    r.player_contributions,
+    COALESCE(r.rake_method, 'DEALT_EQUAL')
+  ) a
+ WHERE r.created_at >= (b.day::timestamp AT TIME ZONE 'UTC')
+   AND r.club_id IS NOT NULL
+   AND r.rake_amount > 0
+   AND round(r.rake_amount * 100)::bigint > 0
+   AND r.player_contributions IS NOT NULL
+   AND r.player_contributions <> '{}'::jsonb
+   AND jsonb_typeof(r.player_contributions) = 'object'
+   AND NOT CASE
+     WHEN r.hand_id IS NULL
+      AND r.table_id IS NOT NULL
+      AND COALESCE(r.metadata->>'hand_number', '') ~ '^[0-9]{1,18}$'
+      AND (r.metadata->>'hand_number')::bigint >= 1000000
+     THEN public.fn_rake_record_is_ghost_twin(r.hand_id, r.table_id, r.metadata)
+     ELSE false
+   END
+   AND NOT EXISTS (
+     SELECT 1 FROM rakeback_cutover_compensation_links l
+      WHERE l.original_rake_record_id = r.id
+   )
+ GROUP BY r.club_id, (r.created_at AT TIME ZONE 'UTC')::date, a.user_id;
+
+CREATE TEMP TABLE rakeback_cutover_counts ON COMMIT DROP AS
+WITH source_days AS (
+  SELECT r.club_id,
+         (r.created_at AT TIME ZONE 'UTC')::date AS day,
+         count(*)::bigint AS exact_rows,
+         sum(round(r.rake_amount * 100)::bigint)::bigint AS source_cents
+    FROM public.rake_records r
+    CROSS JOIN rakeback_cutover_basis b
+   WHERE r.created_at >= (b.day::timestamp AT TIME ZONE 'UTC')
+     AND r.club_id IS NOT NULL
+     AND r.rake_amount > 0
+     AND round(r.rake_amount * 100)::bigint > 0
+     AND r.player_contributions IS NOT NULL
+     AND r.player_contributions <> '{}'::jsonb
+     AND jsonb_typeof(r.player_contributions) = 'object'
+     AND NOT CASE
+       WHEN r.hand_id IS NULL
+        AND r.table_id IS NOT NULL
+        AND COALESCE(r.metadata->>'hand_number', '') ~ '^[0-9]{1,18}$'
+        AND (r.metadata->>'hand_number')::bigint >= 1000000
+       THEN public.fn_rake_record_is_ghost_twin(r.hand_id, r.table_id, r.metadata)
+       ELSE false
+     END
+     AND NOT EXISTS (
+       SELECT 1 FROM rakeback_cutover_compensation_links l
+        WHERE l.original_rake_record_id = r.id
+     )
+   GROUP BY r.club_id, (r.created_at AT TIME ZONE 'UTC')::date
+), pending_days AS (
+  SELECT DISTINCT p.club_id, g.day::date AS day
+    FROM public.rakeback_periods p
+    CROSS JOIN LATERAL generate_series(
+      p.period_start, p.period_end, interval '1 day'
+    ) g(day)
+   WHERE p.status = 'pending'
+), days AS (
+  SELECT club_id, day FROM source_days
+  UNION
+  SELECT club_id, day FROM pending_days
+)
+SELECT d.club_id,
+       d.day,
+       COALESCE(s.exact_rows, 0)::bigint AS exact_rows,
+       COALESCE(s.source_cents, 0)::bigint AS source_cents
+  FROM days d
+  LEFT JOIN source_days s USING (club_id, day);
+
+DO $canonical_basis_balances$
+DECLARE
+  v_bad bigint;
+BEGIN
+  SELECT count(*) INTO v_bad
+    FROM rakeback_cutover_counts c
+    LEFT JOIN (
+      SELECT club_id, day, sum(cents)::bigint AS allocated_cents
+        FROM rakeback_cutover_expected_daily_user
+       GROUP BY club_id, day
+    ) a USING (club_id, day)
+   WHERE c.source_cents <> COALESCE(a.allocated_cents, 0);
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION
+      '% cutover club-days do not allocate exactly to their source cents',
+      v_bad;
+  END IF;
+END
+$canonical_basis_balances$;
+
+DELETE FROM public.rakeback_daily_user d
+ USING rakeback_cutover_basis b
+ WHERE d.day >= b.day;
+
+INSERT INTO public.rakeback_daily_user (club_id, day, user_id, cents)
+SELECT club_id, day, user_id, cents
+  FROM rakeback_cutover_expected_daily_user
+ WHERE cents > 0;
+
+DELETE FROM public.rakeback_daily_state s
+ USING rakeback_cutover_basis b
+ WHERE s.day >= b.day;
+
+INSERT INTO public.rakeback_daily_state (club_id, day, rows_seen, computed_at)
+SELECT club_id, day, exact_rows, clock_timestamp()
+  FROM rakeback_cutover_counts;
+
+CREATE TABLE public.rakeback_basis_epoch (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  captured_at timestamptz NOT NULL,
+  basis_from_day date NOT NULL,
+  through_created_at timestamptz,
+  through_rake_record_id uuid,
+  source_records bigint NOT NULL CHECK (source_records >= 0),
+  source_cents bigint NOT NULL CHECK (source_cents >= 0),
+  daily_user_rows bigint NOT NULL CHECK (daily_user_rows >= 0)
+);
+
+CREATE TABLE public.rakeback_cutover_daily_user (
+  club_id uuid NOT NULL,
+  day date NOT NULL,
+  user_id uuid NOT NULL,
+  cents bigint NOT NULL CHECK (cents >= 0),
+  PRIMARY KEY (club_id, day, user_id)
+);
+
+CREATE TABLE public.rakeback_cutover_daily_state (
+  club_id uuid NOT NULL,
+  day date NOT NULL,
+  rows_seen bigint NOT NULL CHECK (rows_seen >= 0),
+  PRIMARY KEY (club_id, day)
+);
+
+-- Exact membership replaces a merely chronological watermark when a cutover
+-- source row is materialized later for a refund, delete, or hand relink. A
+-- post-cutover row with a backdated created_at can never impersonate baseline
+-- history just because it sorts before the epoch edge.
+CREATE TABLE public.rakeback_cutover_source_records (
+  rake_record_id uuid PRIMARY KEY,
+  snapshotted_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
+INSERT INTO public.rakeback_cutover_daily_user (club_id, day, user_id, cents)
+SELECT d.club_id, d.day, d.user_id, d.cents
+  FROM public.rakeback_daily_user d
+ WHERE d.day >= (SELECT day FROM rakeback_cutover_basis);
+
+INSERT INTO public.rakeback_cutover_daily_state (club_id, day, rows_seen)
+SELECT s.club_id, s.day, s.rows_seen
+  FROM public.rakeback_daily_state s
+ WHERE s.day >= (SELECT day FROM rakeback_cutover_basis);
+
+INSERT INTO public.rakeback_cutover_source_records (rake_record_id)
+SELECT r.id
+  FROM public.rake_records r
+ WHERE r.created_at >= (
+         (SELECT day FROM rakeback_cutover_basis)::timestamp AT TIME ZONE 'UTC'
+       )
+   AND r.club_id IS NOT NULL
+   AND r.rake_amount > 0
+   AND round(r.rake_amount * 100)::bigint > 0
+   AND r.player_contributions IS NOT NULL
+   AND r.player_contributions <> '{}'::jsonb
+   AND jsonb_typeof(r.player_contributions) = 'object'
+   AND NOT public.fn_rake_record_is_ghost_twin(
+     r.hand_id, r.table_id, r.metadata
+   );
+
+INSERT INTO public.rakeback_basis_epoch (
+  singleton, captured_at, basis_from_day,
+  through_created_at, through_rake_record_id,
+  source_records, source_cents, daily_user_rows
+)
+SELECT true,
+       clock_timestamp(),
+       (SELECT day FROM rakeback_cutover_basis),
+       edge.created_at,
+       edge.id,
+       (SELECT COALESCE(sum(exact_rows), 0) FROM rakeback_cutover_counts),
+       (SELECT COALESCE(sum(cents), 0) FROM public.rakeback_cutover_daily_user),
+       (SELECT count(*) FROM public.rakeback_cutover_daily_user)
+  FROM (VALUES (true)) seed(present)
+  LEFT JOIN LATERAL (
+    SELECT r.created_at, r.id
+      FROM public.rake_records r
+     ORDER BY r.created_at DESC NULLS LAST, r.id DESC
+     LIMIT 1
+  ) edge ON seed.present;
+
+CREATE TABLE public.rakeback_accrual_records (
+  rake_record_id uuid PRIMARY KEY,
+  club_id uuid NOT NULL,
+  hand_id uuid,
+  table_id uuid,
+  global_hand_id bigint,
+  tournament_id uuid,
+  is_tournament boolean NOT NULL,
+  source text,
+  source_created_at timestamptz NOT NULL,
+  source_contributions jsonb NOT NULL,
+  rake_method text NOT NULL,
+  day date NOT NULL,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  source_rake_cents bigint NOT NULL CHECK (source_rake_cents > 0),
+  allocated_cents bigint NOT NULL CHECK (allocated_cents > 0),
+  share_count integer NOT NULL CHECK (share_count > 0),
+  basis_origin text NOT NULL DEFAULT 'source_transaction'
+    CHECK (basis_origin IN (
+      'source_transaction', 'cutover_materialized',
+      'historical_source_evidence'
+    )),
+  source_fingerprint text NOT NULL CHECK (source_fingerprint ~ '^[0-9a-f]{32}$'),
+  accrued_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (allocated_cents = source_rake_cents),
+  CHECK (jsonb_typeof(source_contributions) = 'object'),
+  CHECK (source_contributions <> '{}'::jsonb),
+  CHECK (rake_method IN ('DEALT_EQUAL', 'WEIGHTED_CONTRIBUTED')),
+  CHECK (day = (source_created_at AT TIME ZONE 'UTC')::date),
+  CHECK (period_end = period_start + 6)
+);
+
+CREATE TABLE public.rakeback_accrual_receipts (
+  rake_record_id uuid NOT NULL
+    REFERENCES public.rakeback_accrual_records(rake_record_id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL,
+  club_id uuid NOT NULL,
+  day date NOT NULL,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  cents bigint NOT NULL CHECK (cents >= 0),
+  source_fingerprint text NOT NULL CHECK (source_fingerprint ~ '^[0-9a-f]{32}$'),
+  accrued_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (rake_record_id, user_id),
+  CHECK (period_end = period_start + 6)
+);
+
+CREATE TABLE public.rakeback_accrual_reversals (
+  rake_record_id uuid PRIMARY KEY
+    REFERENCES public.rakeback_accrual_records(rake_record_id) ON DELETE RESTRICT,
+  source_fingerprint text NOT NULL CHECK (source_fingerprint ~ '^[0-9a-f]{32}$'),
+  reversed_cents bigint NOT NULL CHECK (reversed_cents > 0),
+  share_count integer NOT NULL CHECK (share_count > 0),
+  applied_to_basis boolean NOT NULL,
+  compensation_rake_record_id uuid,
+  reason text NOT NULL DEFAULT 'source_record_deleted',
+  reversed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (
+    (applied_to_basis AND reason IN (
+      'source_record_deleted', 'negative_source_compensation',
+      'superseded_ghost_twin'
+    ))
+    OR (
+      NOT applied_to_basis
+      AND reason = 'source_deleted_before_basis_epoch_no_balance_change'
+    )
+  ),
+  CHECK (
+    (reason = 'negative_source_compensation'
+      AND compensation_rake_record_id IS NOT NULL)
+    OR (reason <> 'negative_source_compensation'
+      AND compensation_rake_record_id IS NULL)
+  )
+);
+
+CREATE TABLE public.rakeback_accrual_reversal_receipts (
+  rake_record_id uuid NOT NULL
+    REFERENCES public.rakeback_accrual_reversals(rake_record_id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL,
+  club_id uuid NOT NULL,
+  day date NOT NULL,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  cents bigint NOT NULL CHECK (cents >= 0),
+  source_fingerprint text NOT NULL CHECK (source_fingerprint ~ '^[0-9a-f]{32}$'),
+  reversed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (rake_record_id, user_id),
+  CHECK (period_end = period_start + 6)
+);
+
+CREATE TABLE public.rakeback_compensation_records (
+  rake_record_id uuid PRIMARY KEY,
+  club_id uuid NOT NULL,
+  tournament_id uuid,
+  hand_id uuid,
+  table_id uuid,
+  global_hand_id bigint,
+  is_tournament boolean NOT NULL,
+  source text,
+  source_created_at timestamptz NOT NULL,
+  source_contributions jsonb,
+  rake_method text NOT NULL,
+  compensation_cents bigint NOT NULL CHECK (compensation_cents > 0),
+  linked_original_count integer NOT NULL CHECK (linked_original_count >= 0),
+  linked_cents bigint NOT NULL CHECK (linked_cents >= 0),
+  applied_to_basis boolean NOT NULL,
+  basis_origin text NOT NULL CHECK (basis_origin IN ('source_transaction', 'cutover')),
+  selector jsonb NOT NULL,
+  source_fingerprint text NOT NULL CHECK (source_fingerprint ~ '^[0-9a-f]{32}$'),
+  reason text NOT NULL CHECK (reason IN (
+    'negative_source_compensation',
+    'legacy_source_had_no_attributed_open_basis'
+  )),
+  compensated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (
+    (applied_to_basis
+      AND linked_original_count > 0
+      AND linked_cents = compensation_cents
+      AND reason = 'negative_source_compensation')
+    OR (
+      NOT applied_to_basis
+      AND linked_original_count = 0
+      AND linked_cents = 0
+      AND reason = 'legacy_source_had_no_attributed_open_basis'
+    )
+  )
+);
+
+CREATE TABLE public.rakeback_compensation_links (
+  compensation_rake_record_id uuid NOT NULL
+    REFERENCES public.rakeback_compensation_records(rake_record_id) ON DELETE RESTRICT,
+  original_rake_record_id uuid NOT NULL UNIQUE
+    REFERENCES public.rakeback_accrual_records(rake_record_id) ON DELETE RESTRICT,
+  original_cents bigint NOT NULL CHECK (original_cents > 0),
+  linked_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (compensation_rake_record_id, original_rake_record_id)
+);
+
+-- When a refund reverses rake whose period is already paid/expired, the paid
+-- row is immutable.  The exact per-player basis therefore moves into the first
+-- current/future pending week as a negative daily movement.  This receipt is
+-- the one-to-one bridge from the original reversal line to that offset; it is
+-- never inferred from a mutable period total.
+CREATE TABLE public.rakeback_closed_period_offsets (
+  original_rake_record_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  compensation_rake_record_id uuid
+    REFERENCES public.rakeback_compensation_records(rake_record_id)
+    ON DELETE RESTRICT,
+  source_period_id uuid NOT NULL
+    REFERENCES public.rakeback_periods(id) ON DELETE RESTRICT,
+  club_id uuid NOT NULL,
+  original_day date NOT NULL,
+  original_period_start date NOT NULL,
+  original_period_end date NOT NULL,
+  offset_day date NOT NULL,
+  offset_period_start date NOT NULL,
+  offset_period_end date NOT NULL,
+  cents bigint NOT NULL CHECK (cents > 0),
+  reason text NOT NULL CHECK (reason IN (
+    'source_record_deleted', 'negative_source_compensation',
+    'superseded_ghost_twin'
+  )),
+  offset_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (original_rake_record_id, user_id),
+  FOREIGN KEY (original_rake_record_id, user_id)
+    REFERENCES public.rakeback_accrual_reversal_receipts(
+      rake_record_id, user_id
+    ) ON DELETE RESTRICT,
+  CHECK (original_period_end = original_period_start + 6),
+  CHECK (offset_period_end = offset_period_start + 6),
+  CHECK (offset_day BETWEEN offset_period_start AND offset_period_end),
+  CHECK (
+    (reason = 'negative_source_compensation'
+      AND compensation_rake_record_id IS NOT NULL)
+    OR (reason <> 'negative_source_compensation'
+      AND compensation_rake_record_id IS NULL)
+  )
+);
+
+-- If a week contains more closed-period offsets than new positive rake, its
+-- remaining negative basis must not disappear when that week closes at zero.
+-- Closing appends exactly one immutable carry and puts the deficit into the
+-- next open week in the same transaction.
+CREATE TABLE public.rakeback_period_carries (
+  from_period_id uuid PRIMARY KEY
+    REFERENCES public.rakeback_periods(id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL,
+  club_id uuid NOT NULL,
+  from_period_start date NOT NULL,
+  from_period_end date NOT NULL,
+  to_day date NOT NULL,
+  to_period_start date NOT NULL,
+  to_period_end date NOT NULL,
+  cents bigint NOT NULL CHECK (cents > 0),
+  carried_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (from_period_end = from_period_start + 6),
+  CHECK (to_period_end = to_period_start + 6),
+  CHECK (to_day BETWEEN to_period_start AND to_period_end),
+  CHECK (to_period_start > from_period_start)
+);
+
+-- hand_id is provenance, but the engine has one legitimate mutation: a cash
+-- rake row may be written while hand history is unavailable, then linked once
+-- from NULL to the exact late hand. The initial and current fingerprints are
+-- both retained; every other hand/provenance mutation is refused.
+CREATE TABLE public.rakeback_source_relinks (
+  rake_record_id uuid PRIMARY KEY
+    REFERENCES public.rakeback_accrual_records(rake_record_id) ON DELETE RESTRICT,
+  from_hand_id uuid CHECK (from_hand_id IS NULL),
+  to_hand_id uuid NOT NULL,
+  prior_fingerprint text NOT NULL CHECK (prior_fingerprint ~ '^[0-9a-f]{32}$'),
+  current_fingerprint text NOT NULL CHECK (current_fingerprint ~ '^[0-9a-f]{32}$'),
+  relinked_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (prior_fingerprint <> current_fingerprint)
+);
+
+-- A linked hand can still arrive after an older compatible writer banked the
+-- same (table, global hand number) with NULL hand_id.  The source RPC permits
+-- both identifiers, so the later canonical row must transactionally replace
+-- the temporary one in rakeback instead of accruing the hand twice.
+CREATE TABLE public.rakeback_source_supersessions (
+  ghost_rake_record_id uuid PRIMARY KEY
+    REFERENCES public.rakeback_accrual_records(rake_record_id)
+    ON DELETE RESTRICT,
+  canonical_rake_record_id uuid NOT NULL
+    REFERENCES public.rakeback_accrual_records(rake_record_id)
+    ON DELETE RESTRICT,
+  ghost_fingerprint text NOT NULL CHECK (ghost_fingerprint ~ '^[0-9a-f]{32}$'),
+  canonical_fingerprint text NOT NULL CHECK (canonical_fingerprint ~ '^[0-9a-f]{32}$'),
+  rake_cents bigint NOT NULL CHECK (rake_cents > 0),
+  superseded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  CHECK (ghost_rake_record_id <> canonical_rake_record_id)
+);
+
+ALTER TABLE public.rakeback_accrual_reversals
+  ADD CONSTRAINT rakeback_accrual_reversal_compensation_fk
+  FOREIGN KEY (compensation_rake_record_id)
+  REFERENCES public.rakeback_compensation_records(rake_record_id)
+  ON DELETE RESTRICT;
+
+CREATE INDEX rakeback_accrual_receipts_period_user_idx
+  ON public.rakeback_accrual_receipts (club_id, period_start, user_id)
+  INCLUDE (cents, day, rake_record_id);
+
+CREATE INDEX rakeback_accrual_records_club_day_idx
+  ON public.rakeback_accrual_records (club_id, day, rake_record_id)
+  INCLUDE (allocated_cents, basis_origin, accrued_at);
+
+CREATE INDEX rakeback_source_supersessions_canonical_idx
+  ON public.rakeback_source_supersessions (canonical_rake_record_id);
+
+ALTER TABLE public.rakeback_basis_epoch ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_cutover_daily_user ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_cutover_daily_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_cutover_source_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_accrual_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_accrual_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_accrual_reversals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_accrual_reversal_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_compensation_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_compensation_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_closed_period_offsets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_period_carries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_source_relinks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rakeback_source_supersessions ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.rakeback_basis_epoch
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_cutover_daily_user
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_cutover_daily_state
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_cutover_source_records
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_accrual_records
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_accrual_receipts
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_accrual_reversals
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_accrual_reversal_receipts
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_compensation_records
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_compensation_links
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_closed_period_offsets
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_period_carries
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_source_relinks
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON TABLE public.rakeback_source_supersessions
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.rakeback_basis_epoch TO service_role;
+GRANT SELECT ON TABLE public.rakeback_cutover_daily_user TO service_role;
+GRANT SELECT ON TABLE public.rakeback_cutover_daily_state TO service_role;
+GRANT SELECT ON TABLE public.rakeback_cutover_source_records TO service_role;
+GRANT SELECT ON TABLE public.rakeback_accrual_records TO service_role;
+GRANT SELECT ON TABLE public.rakeback_accrual_receipts TO service_role;
+GRANT SELECT ON TABLE public.rakeback_accrual_reversals TO service_role;
+GRANT SELECT ON TABLE public.rakeback_accrual_reversal_receipts TO service_role;
+GRANT SELECT ON TABLE public.rakeback_compensation_records TO service_role;
+GRANT SELECT ON TABLE public.rakeback_compensation_links TO service_role;
+GRANT SELECT ON TABLE public.rakeback_closed_period_offsets TO service_role;
+GRANT SELECT ON TABLE public.rakeback_period_carries TO service_role;
+GRANT SELECT ON TABLE public.rakeback_source_relinks TO service_role;
+GRANT SELECT ON TABLE public.rakeback_source_supersessions TO service_role;
+
+-- These two tables stop being a disposable cache at the epoch. Only the
+-- trigger functions (as their owner) may change the basis; service callers get
+-- read access and the compatibility RPCs below.
+REVOKE ALL ON TABLE public.rakeback_daily_user, public.rakeback_daily_state
+  FROM service_role;
+GRANT SELECT ON TABLE public.rakeback_daily_user, public.rakeback_daily_state
+  TO service_role;
+
+-- The player claim path is fn_claim_rakeback; a browser never needs to mutate
+-- its projection row directly. The historical UPDATE policy constrained only
+-- user_id, leaving identity, status and every money column writable. Close
+-- that source-of-truth bypass while preserving existing scoped SELECT policy.
+DROP POLICY IF EXISTS rakeback_periods_update_own
+  ON public.rakeback_periods;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON TABLE public.rakeback_periods FROM PUBLIC, anon, authenticated;
+
+-- One logical player/club/week lock serializes accrual, reversal and payout
+-- even when a period row does not exist yet. Existing rows are then locked in
+-- the same UUID order before any daily or period mutation. A close addressed
+-- by period id takes this key before its existing FOR UPDATE; if the row does
+-- not exist, there is no id a concurrent closer can address and the atomic
+-- source transaction creates it for the next close scan. The key deliberately
+-- omits period_end because legacy rows may carry a divergent end date; club is
+-- part of the canonical identity because a player earns in every club.
+CREATE OR REPLACE FUNCTION public.fn_rakeback_lock_period_keys(
+  p_club_id uuid,
+  p_period_start date,
+  p_period_end date,
+  p_user_ids uuid[]
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_user_id uuid;
+BEGIN
+  FOR v_user_id IN
+    SELECT DISTINCT u
+      FROM unnest(COALESCE(p_user_ids, ARRAY[]::uuid[])) u
+     WHERE u IS NOT NULL
+     ORDER BY u
+  LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+      'rakeback-period:' || p_club_id::text || ':'
+      || p_period_start::text || ':' || v_user_id::text,
+      0
+    ));
+  END LOOP;
+
+  -- Take every already-existing physical row only after all logical keys are
+  -- held, and always in the row UUID order shared by every caller. Missing
+  -- rows are serialized by the advisory key above; a concurrent closer cannot
+  -- slip between this probe and the later projection insert/update.
+  PERFORM p.id
+    FROM public.rakeback_periods p
+   WHERE p.club_id = p_club_id
+     AND p.period_start = p_period_start
+     AND p.user_id = ANY(COALESCE(p_user_ids, ARRAY[]::uuid[]))
+   ORDER BY p.id
+   FOR UPDATE;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_lock_period_id(p_period_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_period record;
+BEGIN
+  SELECT p.club_id, p.period_start, p.period_end, p.user_id
+    INTO v_period
+    FROM public.rakeback_periods p
+   WHERE p.id = p_period_id;
+  IF FOUND THEN
+    PERFORM public.fn_rakeback_lock_period_keys(
+      v_period.club_id, v_period.period_start, v_period.period_end,
+      ARRAY[v_period.user_id]
+    );
+  END IF;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_resolve_open_period(
+  p_club_id uuid,
+  p_user_id uuid,
+  p_not_before date
+)
+RETURNS TABLE(open_day date, open_period_start date, open_period_end date)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_start date;
+  v_period record;
+  v_attempt integer;
+BEGIN
+  IF p_club_id IS NULL OR p_user_id IS NULL OR p_not_before IS NULL THEN
+    RAISE EXCEPTION 'an open rakeback period needs club, player and day';
+  END IF;
+  v_start := date_trunc('week', p_not_before::timestamp)::date;
+  FOR v_attempt IN 0..520 LOOP
+    PERFORM public.fn_rakeback_lock_period_keys(
+      p_club_id, v_start, v_start + 6, ARRAY[p_user_id]
+    );
+    SELECT p.club_id, p.status INTO v_period
+      FROM public.rakeback_periods p
+     WHERE p.club_id = p_club_id
+       AND p.user_id = p_user_id
+       AND p.period_start = v_start
+     ORDER BY (p.status = 'pending') DESC, p.created_at, p.id
+     LIMIT 1
+     FOR UPDATE;
+    IF NOT FOUND OR v_period.status = 'pending' THEN
+      open_period_start := v_start;
+      open_period_end := v_start + 6;
+      open_day := GREATEST(p_not_before, v_start);
+      RETURN NEXT;
+      RETURN;
+    END IF;
+    v_start := v_start + 7;
+  END LOOP;
+  RAISE EXCEPTION
+    'no open rakeback period found for player % in club % after %',
+    p_user_id, p_club_id, p_not_before;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_carry_negative_period(
+  p_period_id uuid,
+  p_club_id uuid,
+  p_user_id uuid,
+  p_period_start date,
+  p_period_end date,
+  p_rake_total numeric
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_cents bigint;
+  v_open record;
+  v_inserted uuid;
+  v_existing public.rakeback_period_carries%ROWTYPE;
+BEGIN
+  v_cents := round(abs(p_rake_total) * 100)::bigint;
+  IF p_rake_total >= 0 OR v_cents <= 0 THEN
+    RETURN;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.rakeback_periods p
+     WHERE p.id = p_period_id
+       AND p.club_id = p_club_id
+       AND p.user_id = p_user_id
+       AND p.period_start = p_period_start
+       AND p.period_end = p_period_end
+       AND p.status = 'pending'
+  ) THEN
+    RAISE EXCEPTION 'negative rakeback carry source period % changed', p_period_id;
+  END IF;
+
+  SELECT * INTO STRICT v_open
+    FROM public.fn_rakeback_resolve_open_period(
+      p_club_id, p_user_id, p_period_end + 1
+    );
+
+  INSERT INTO public.rakeback_period_carries (
+    from_period_id, user_id, club_id, from_period_start, from_period_end,
+    to_day, to_period_start, to_period_end, cents
+  ) VALUES (
+    p_period_id, p_user_id, p_club_id, p_period_start, p_period_end,
+    v_open.open_day, v_open.open_period_start, v_open.open_period_end, v_cents
+  )
+  ON CONFLICT (from_period_id) DO NOTHING
+  RETURNING from_period_id INTO v_inserted;
+
+  IF v_inserted IS NULL THEN
+    SELECT * INTO STRICT v_existing
+      FROM public.rakeback_period_carries c
+     WHERE c.from_period_id = p_period_id;
+    IF v_existing.user_id <> p_user_id
+       OR v_existing.club_id <> p_club_id
+       OR v_existing.from_period_start <> p_period_start
+       OR v_existing.from_period_end <> p_period_end
+       OR v_existing.to_day <> v_open.open_day
+       OR v_existing.to_period_start <> v_open.open_period_start
+       OR v_existing.to_period_end <> v_open.open_period_end
+       OR v_existing.cents <> v_cents THEN
+      RAISE EXCEPTION 'negative rakeback carry % changed on replay', p_period_id;
+    END IF;
+    RETURN;
+  END IF;
+
+  INSERT INTO public.rakeback_daily_user (club_id, day, user_id, cents)
+  VALUES (p_club_id, v_open.open_day, p_user_id, -v_cents)
+  ON CONFLICT (club_id, day, user_id) DO UPDATE
+    SET cents = public.rakeback_daily_user.cents + EXCLUDED.cents;
+  INSERT INTO public.rakeback_daily_state (club_id, day, rows_seen, computed_at)
+  VALUES (p_club_id, v_open.open_day, 0, clock_timestamp())
+  ON CONFLICT (club_id, day) DO NOTHING;
+  PERFORM public.fn_rakeback_recompute_periods(
+    p_club_id, v_open.open_period_start, v_open.open_period_end,
+    ARRAY[p_user_id]
+  );
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_rakeback_lock_period_keys(
+  uuid, date, date, uuid[]
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_lock_period_id(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_resolve_open_period(uuid, uuid, date)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_carry_negative_period(
+  uuid, uuid, uuid, date, date, numeric
+) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Keep the audited payer body byte-for-byte except for one asserted insertion
+-- before its period-row lock. The source writer and closer now acquire the
+-- logical key in the same order, eliminating close-vs-accrual lock inversion.
+DO $patch_close_lock_order$
+DECLARE
+  v_definition text;
+  v_anchor text := E'BEGIN\n  SELECT * INTO v_period FROM public.rakeback_periods WHERE id = p_period_id FOR UPDATE;';
+  v_replacement text := E'BEGIN\n  PERFORM public.fn_rakeback_lock_period_id(p_period_id);\n  SELECT * INTO v_period FROM public.rakeback_periods WHERE id = p_period_id FOR UPDATE;';
+  v_negative_anchor text := E'  IF v_payout <= 0 THEN';
+  v_negative_replacement text := E'  IF v_rake_total < 0 THEN\n    PERFORM public.fn_rakeback_carry_negative_period(\n      p_period_id, v_period.club_id, v_period.user_id,\n      v_period.period_start, v_period.period_end, v_rake_total\n    );\n  END IF;\n\n  IF v_payout <= 0 THEN';
+BEGIN
+  SELECT pg_get_functiondef(
+           'public.fn_close_settlement_period(uuid)'::regprocedure
+         ) INTO v_definition;
+  IF (length(v_definition) - length(replace(v_definition, v_anchor, '')))
+       / length(v_anchor) <> 1
+     OR (length(v_definition) - length(replace(v_definition, v_negative_anchor, '')))
+       / length(v_negative_anchor) <> 1 THEN
+    RAISE EXCEPTION
+      'fn_close_settlement_period rakeback anchors did not occur exactly once';
+  END IF;
+  v_definition := replace(v_definition, v_anchor, v_replacement);
+  v_definition := replace(
+    v_definition, v_negative_anchor, v_negative_replacement
+  );
+  EXECUTE v_definition;
+END
+$patch_close_lock_order$;
+
+DO $patch_relink_authority$
+DECLARE
+  v_definition text;
+  v_update_anchor text := E'  update public.rake_records r\n     set hand_id = p_hand_id';
+  v_update_replacement text := E'  PERFORM set_config(\'app.rakeback_hand_relink_to\', p_hand_id::text, true);\n\n  update public.rake_records r\n     set hand_id = p_hand_id';
+  v_clear_anchor text := E'  get diagnostics v_linked = row_count;';
+  v_clear_replacement text := E'  get diagnostics v_linked = row_count;\n  PERFORM set_config(\'app.rakeback_hand_relink_to\', \'\', true);';
+BEGIN
+  SELECT pg_get_functiondef(
+           'public.fn_relink_rake_record_to_hand(uuid,bigint,uuid)'::regprocedure
+         ) INTO v_definition;
+  IF (length(v_definition) - length(replace(v_definition, v_update_anchor, '')))
+       / length(v_update_anchor) <> 1
+     OR (length(v_definition) - length(replace(v_definition, v_clear_anchor, '')))
+       / length(v_clear_anchor) <> 1 THEN
+    RAISE EXCEPTION
+      'fn_relink_rake_record_to_hand authority anchors did not occur exactly once';
+  END IF;
+  v_definition := replace(v_definition, v_update_anchor, v_update_replacement);
+  v_definition := replace(v_definition, v_clear_anchor, v_clear_replacement);
+  EXECUTE v_definition;
+END
+$patch_relink_authority$;
+
+-- The old name stays for compatibility, but the operation is now O(1): the
+-- daily basis was committed atomically with every source record. A force flag
+-- can no longer turn a read into a full source-table rebuild.
+CREATE OR REPLACE FUNCTION public.fn_rakeback_recompute_day(
+  p_club_id uuid,
+  p_day date,
+  p_force boolean DEFAULT false
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_from date;
+  v_rows bigint;
+BEGIN
+  IF p_club_id IS NULL OR p_day IS NULL THEN
+    RETURN jsonb_build_object('written', 0, 'error', 'missing params');
+  END IF;
+
+  SELECT basis_from_day INTO v_from
+    FROM public.rakeback_basis_epoch
+   WHERE singleton;
+  IF v_from IS NULL OR p_day < v_from THEN
+    RAISE EXCEPTION 'rakeback day % is outside the atomic basis epoch', p_day;
+  END IF;
+
+  INSERT INTO public.rakeback_daily_state (club_id, day, rows_seen, computed_at)
+  VALUES (p_club_id, p_day, 0, clock_timestamp())
+  ON CONFLICT (club_id, day) DO NOTHING;
+
+  SELECT rows_seen INTO v_rows
+    FROM public.rakeback_daily_state
+   WHERE club_id = p_club_id AND day = p_day;
+
+  RETURN jsonb_build_object(
+    'written', 0,
+    'fresh', true,
+    'rows_seen', v_rows,
+    'source', 'atomic_rake_record_accrual',
+    'force_ignored', p_force
+  );
+END
+$function$;
+
+-- This retains the established RPC signature and paid-period immutability.
+-- It now projects an already-atomic seven-row daily basis and never scans the
+-- 2.3-million-row source ledger.
+CREATE OR REPLACE FUNCTION public.fn_rakeback_recompute_periods(
+  p_club_id uuid,
+  p_period_start date,
+  p_period_end date,
+  p_user_ids uuid[] DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_from date;
+  v_written integer := 0;
+  v_lock_users uuid[];
+BEGIN
+  IF p_club_id IS NULL OR p_period_start IS NULL OR p_period_end IS NULL THEN
+    RETURN jsonb_build_object('written', 0, 'error', 'missing params');
+  END IF;
+  IF p_period_end < p_period_start OR p_period_end - p_period_start > 31 THEN
+    RAISE EXCEPTION 'invalid rakeback period % through %', p_period_start, p_period_end;
+  END IF;
+
+  SELECT basis_from_day INTO v_from
+    FROM public.rakeback_basis_epoch
+   WHERE singleton;
+  IF v_from IS NULL OR p_period_start < v_from THEN
+    RAISE EXCEPTION
+      'rakeback period % starts outside the atomic basis epoch %',
+      p_period_start, v_from;
+  END IF;
+
+  IF p_user_ids IS NULL THEN
+    SELECT array_agg(x.user_id ORDER BY x.user_id) INTO v_lock_users
+      FROM (
+        SELECT d.user_id
+          FROM public.rakeback_daily_user d
+         WHERE d.club_id = p_club_id
+           AND d.day BETWEEN p_period_start AND p_period_end
+        UNION
+        SELECT p.user_id
+          FROM public.rakeback_periods p
+         WHERE p.club_id = p_club_id
+           AND p.period_start = p_period_start
+           AND p.status = 'pending'
+      ) x;
+  ELSE
+    SELECT array_agg(DISTINCT u ORDER BY u) INTO v_lock_users
+      FROM unnest(p_user_ids) u
+     WHERE u IS NOT NULL;
+  END IF;
+
+  PERFORM public.fn_rakeback_lock_period_keys(
+    p_club_id, p_period_start, p_period_end, v_lock_users
+  );
+
+  INSERT INTO public.rakeback_daily_state (club_id, day, rows_seen, computed_at)
+  SELECT p_club_id, g.day::date, 0, clock_timestamp()
+    FROM generate_series(p_period_start, p_period_end, interval '1 day') g(day)
+  ON CONFLICT (club_id, day) DO NOTHING;
+
+  WITH requested AS (
+    SELECT DISTINCT u AS user_id
+      FROM unnest(COALESCE(p_user_ids, ARRAY[]::uuid[])) u
+  ), candidates AS (
+    SELECT d.user_id
+      FROM public.rakeback_daily_user d
+     WHERE d.club_id = p_club_id
+       AND d.day BETWEEN p_period_start AND p_period_end
+       AND (p_user_ids IS NULL OR d.user_id IN (SELECT user_id FROM requested))
+    UNION
+    SELECT p.user_id
+      FROM public.rakeback_periods p
+     WHERE p.club_id = p_club_id
+       AND p.period_start = p_period_start
+       AND p.status = 'pending'
+       AND (p_user_ids IS NULL OR p.user_id IN (SELECT user_id FROM requested))
+  ), totals AS (
+    SELECT c.user_id, (COALESCE(sum(d.cents), 0)::numeric / 100) AS total_rake
+      FROM candidates c
+      LEFT JOIN public.rakeback_daily_user d
+        ON d.club_id = p_club_id
+       AND d.user_id = c.user_id
+       AND d.day BETWEEN p_period_start AND p_period_end
+     GROUP BY c.user_id
+  ), eligible AS (
+    SELECT t.user_id,
+           t.total_rake,
+           public.fn_player_rakeback_rate(
+             t.user_id, p_club_id, t.total_rake
+           ) AS rate,
+           EXISTS (
+             SELECT 1 FROM public.rakeback_periods p
+              WHERE p.user_id = t.user_id
+                AND p.club_id = p_club_id
+                AND p.period_start = p_period_start
+                AND p.status = 'pending'
+           ) AS already_pending
+      FROM totals t
+  ), ins AS (
+    INSERT INTO public.rakeback_periods (
+      user_id, club_id, period_start, period_end,
+      rake_generated, rakeback_rate, rakeback_earned, rakeback_amount,
+      total_rake_paid, status
+    )
+    SELECT e.user_id, p_club_id, p_period_start, p_period_end,
+           round(e.total_rake, 2), e.rate,
+           round(e.total_rake * e.rate, 2),
+           round(e.total_rake * e.rate, 2),
+           round(e.total_rake, 2), 'pending'
+      FROM eligible e
+     WHERE e.rate > 0 OR e.already_pending OR e.total_rake < 0
+     ORDER BY e.user_id
+    ON CONFLICT (user_id, club_id, period_start)
+      WHERE status = 'pending'
+    DO UPDATE
+      SET period_end = EXCLUDED.period_end,
+          rake_generated = EXCLUDED.rake_generated,
+          rakeback_rate = EXCLUDED.rakeback_rate,
+          rakeback_earned = EXCLUDED.rakeback_earned,
+          rakeback_amount = EXCLUDED.rakeback_amount,
+          total_rake_paid = EXCLUDED.total_rake_paid
+      WHERE public.rakeback_periods.status = 'pending'
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_written FROM ins;
+
+  RETURN jsonb_build_object(
+    'written', v_written,
+    'days_scanned', 0,
+    'days_rebuilt', 0,
+    'source', 'atomic_rake_record_accrual'
+  );
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_rakeback_recompute_day(uuid, date, boolean)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rakeback_recompute_day(uuid, date, boolean)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_recompute_periods(uuid, date, date, uuid[])
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rakeback_recompute_periods(uuid, date, date, uuid[])
+  TO service_role;
+
+-- Bring every pending projection to the exact corrected cutover basis before
+-- the source trigger takes ownership. Paid history stays immutable.
+WITH totals AS (
+  SELECT p.id,
+         p.user_id,
+         p.club_id,
+         p.period_start,
+         p.period_end,
+         (COALESCE(sum(d.cents), 0)::numeric / 100) AS total_rake
+    FROM public.rakeback_periods p
+    LEFT JOIN public.rakeback_daily_user d
+      ON d.club_id = p.club_id
+     AND d.user_id = p.user_id
+     AND d.day BETWEEN p.period_start AND p.period_end
+   WHERE p.status = 'pending'
+     AND p.period_start >= (SELECT basis_from_day
+                              FROM public.rakeback_basis_epoch
+                             WHERE singleton)
+   GROUP BY p.id, p.user_id, p.club_id, p.period_start, p.period_end
+), rated AS (
+  SELECT t.*,
+         public.fn_player_rakeback_rate(t.user_id, t.club_id, t.total_rake) AS rate
+    FROM totals t
+)
+UPDATE public.rakeback_periods p
+   SET rake_generated = round(r.total_rake, 2),
+       rakeback_rate = r.rate,
+       rakeback_earned = round(r.total_rake * r.rate, 2),
+       rakeback_amount = round(r.total_rake * r.rate, 2),
+       total_rake_paid = round(r.total_rake, 2)
+  FROM rated r
+ WHERE p.id = r.id;
+
+WITH weekly AS (
+  SELECT d.user_id,
+         d.club_id,
+         date_trunc('week', d.day::timestamp)::date AS period_start,
+         (date_trunc('week', d.day::timestamp)::date + 6) AS period_end,
+         (sum(d.cents)::numeric / 100) AS total_rake
+    FROM public.rakeback_daily_user d
+   WHERE d.day >= (SELECT basis_from_day
+                     FROM public.rakeback_basis_epoch
+                    WHERE singleton)
+   GROUP BY d.user_id, d.club_id, date_trunc('week', d.day::timestamp)::date
+), rated AS (
+  SELECT w.*,
+         public.fn_player_rakeback_rate(w.user_id, w.club_id, w.total_rake) AS rate
+    FROM weekly w
+)
+INSERT INTO public.rakeback_periods (
+  user_id, club_id, period_start, period_end,
+  rake_generated, rakeback_rate, rakeback_earned, rakeback_amount,
+  total_rake_paid, status
+)
+SELECT r.user_id, r.club_id, r.period_start, r.period_end,
+       round(r.total_rake, 2), r.rate,
+       round(r.total_rake * r.rate, 2),
+       round(r.total_rake * r.rate, 2),
+       round(r.total_rake, 2), 'pending'
+  FROM rated r
+ WHERE r.rate > 0 OR r.total_rake < 0
+ON CONFLICT (user_id, club_id, period_start)
+  WHERE status = 'pending'
+DO UPDATE
+  SET period_end = EXCLUDED.period_end,
+      rake_generated = EXCLUDED.rake_generated,
+      rakeback_rate = EXCLUDED.rakeback_rate,
+      rakeback_earned = EXCLUDED.rakeback_earned,
+      rakeback_amount = EXCLUDED.rakeback_amount,
+      total_rake_paid = EXCLUDED.total_rake_paid
+  WHERE public.rakeback_periods.status = 'pending';
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_source_fingerprint(
+  p_rake_record_id uuid,
+  p_club_id uuid,
+  p_day date,
+  p_rake_cents bigint,
+  p_rake_method text,
+  p_player_contributions jsonb,
+  p_hand_id uuid,
+  p_table_id uuid,
+  p_global_hand_id bigint,
+  p_tournament_id uuid,
+  p_is_tournament boolean,
+  p_source text,
+  p_source_created_at timestamptz,
+  p_metadata jsonb,
+  p_shares_cents jsonb
+)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path TO 'public'
+AS $function$
+  SELECT md5(jsonb_build_object(
+    'rake_record_id', p_rake_record_id,
+    'club_id', p_club_id,
+    'day', p_day,
+    'rake_cents', p_rake_cents,
+    'rake_method', p_rake_method,
+    'player_contributions', p_player_contributions,
+    'hand_id', p_hand_id,
+    'table_id', p_table_id,
+    'global_hand_id', p_global_hand_id,
+    'tournament_id', p_tournament_id,
+    'is_tournament', p_is_tournament,
+    'source', p_source,
+    -- A timestamptz rendered through jsonb inherits the caller's TimeZone even
+    -- though it names the same instant.  Epoch microseconds are both exact for
+    -- PostgreSQL timestamps and independent of every session setting, which is
+    -- required for an IMMUTABLE receipt fingerprint.
+    'source_created_at_epoch_us', CASE
+      WHEN p_source_created_at IS NULL THEN NULL
+      ELSE round(extract(epoch FROM p_source_created_at) * 1000000)::bigint
+    END,
+    'metadata', p_metadata,
+    'shares_cents', p_shares_cents
+  )::text)
+$function$;
+
+-- Materialize the small set of positive cutover rows already compensated by
+-- a negative source row, then preserve every negative source transaction and
+-- its exact whole-record links. The daily cutover above already excluded these
+-- originals, so this is immutable evidence only; it does not mutate balances.
+WITH originals AS (
+  SELECT DISTINCT p.*
+    FROM rakeback_cutover_compensation_links l
+    JOIN public.rake_records p ON p.id = l.original_rake_record_id
+), allocated AS (
+  SELECT p.*,
+         (p.created_at AT TIME ZONE 'UTC')::date AS day,
+         date_trunc('week', p.created_at AT TIME ZONE 'UTC')::date AS period_start,
+         a.shares,
+         a.allocated_cents,
+         a.share_count
+    FROM originals p
+    CROSS JOIN LATERAL (
+      SELECT jsonb_object_agg(
+               x.user_id::text, round(x.credit * 100)::bigint
+               ORDER BY x.user_id::text
+             ) AS shares,
+             sum(round(x.credit * 100)::bigint)::bigint AS allocated_cents,
+             count(*)::integer AS share_count
+        FROM public.fn_allocate_rake_credits(
+          p.rake_amount, p.player_contributions,
+          COALESCE(p.rake_method, 'DEALT_EQUAL')
+        ) x
+    ) a
+)
+INSERT INTO public.rakeback_accrual_records (
+  rake_record_id, club_id, hand_id, table_id, global_hand_id, tournament_id,
+  is_tournament, source, source_created_at, source_contributions,
+  rake_method, day, period_start, period_end,
+  source_rake_cents, allocated_cents, share_count,
+  basis_origin, source_fingerprint
+)
+SELECT a.id, a.club_id, a.hand_id, a.table_id, a.global_hand_id, a.tournament_id,
+       a.is_tournament, a.source, a.created_at, a.player_contributions,
+       COALESCE(a.rake_method, 'DEALT_EQUAL'), a.day,
+       a.period_start, a.period_start + 6,
+       round(a.rake_amount * 100)::bigint,
+       a.allocated_cents, a.share_count, 'cutover_materialized',
+       public.fn_rakeback_source_fingerprint(
+         a.id, a.club_id, a.day, round(a.rake_amount * 100)::bigint,
+         COALESCE(a.rake_method, 'DEALT_EQUAL'), a.player_contributions,
+         a.hand_id, a.table_id, a.global_hand_id, a.tournament_id, a.is_tournament,
+         a.source, a.created_at, a.metadata, a.shares
+       )
+  FROM allocated a;
+
+INSERT INTO public.rakeback_accrual_receipts (
+  rake_record_id, user_id, club_id, day, period_start, period_end,
+  cents, source_fingerprint
+)
+SELECT h.rake_record_id, a.user_id, h.club_id, h.day,
+       h.period_start, h.period_end, round(a.credit * 100)::bigint,
+       h.source_fingerprint
+  FROM public.rakeback_accrual_records h
+  JOIN public.rake_records p ON p.id = h.rake_record_id
+  CROSS JOIN LATERAL public.fn_allocate_rake_credits(
+    p.rake_amount, p.player_contributions,
+    COALESCE(p.rake_method, 'DEALT_EQUAL')
+  ) a
+ WHERE h.basis_origin = 'cutover_materialized';
+
+WITH linked AS (
+  SELECT l.compensation_rake_record_id,
+         count(*)::integer AS original_count,
+         sum(h.source_rake_cents)::bigint AS linked_cents,
+         jsonb_object_agg(
+           l.original_rake_record_id::text, h.source_rake_cents
+           ORDER BY l.original_rake_record_id::text
+         ) AS linked_sources
+    FROM rakeback_cutover_compensation_links l
+    JOIN public.rakeback_accrual_records h
+      ON h.rake_record_id = l.original_rake_record_id
+   GROUP BY l.compensation_rake_record_id
+)
+INSERT INTO public.rakeback_compensation_records (
+  rake_record_id, club_id, tournament_id, hand_id, table_id, global_hand_id,
+  is_tournament, source, source_created_at, source_contributions,
+  rake_method, compensation_cents, linked_original_count, linked_cents,
+  applied_to_basis, basis_origin, selector, source_fingerprint, reason
+)
+SELECT n.id, n.club_id, n.tournament_id, n.hand_id, n.table_id, n.global_hand_id,
+       n.is_tournament, n.source, n.created_at, n.player_contributions,
+       COALESCE(n.rake_method, 'DEALT_EQUAL'),
+       round(abs(n.rake_amount) * 100)::bigint,
+       COALESCE(l.original_count, 0), COALESCE(l.linked_cents, 0),
+       l.original_count IS NOT NULL, 'cutover',
+       jsonb_strip_nulls(jsonb_build_object(
+         'original_rake_record_id', n.metadata->>'original_rake_record_id',
+         'registration_id', n.metadata->>'registration_id',
+         'user_id', n.metadata->>'user_id'
+       )),
+       public.fn_rakeback_source_fingerprint(
+         n.id, n.club_id, (n.created_at AT TIME ZONE 'UTC')::date,
+         round(n.rake_amount * 100)::bigint,
+         COALESCE(n.rake_method, 'DEALT_EQUAL'), n.player_contributions,
+         n.hand_id, n.table_id, n.global_hand_id, n.tournament_id, n.is_tournament,
+         n.source, n.created_at, n.metadata,
+         COALESCE(l.linked_sources, '{}'::jsonb)
+       ),
+       CASE WHEN l.original_count IS NOT NULL
+         THEN 'negative_source_compensation'
+         ELSE 'legacy_source_had_no_attributed_open_basis'
+       END
+  FROM public.rake_records n
+  LEFT JOIN linked l ON l.compensation_rake_record_id = n.id
+ WHERE n.rake_amount < 0
+   AND round(abs(n.rake_amount) * 100)::bigint > 0;
+
+INSERT INTO public.rakeback_compensation_links (
+  compensation_rake_record_id, original_rake_record_id, original_cents
+)
+SELECT l.compensation_rake_record_id, l.original_rake_record_id,
+       h.source_rake_cents
+  FROM rakeback_cutover_compensation_links l
+  JOIN public.rakeback_accrual_records h
+    ON h.rake_record_id = l.original_rake_record_id;
+
+INSERT INTO public.rakeback_accrual_reversals (
+  rake_record_id, source_fingerprint, reversed_cents, share_count,
+  applied_to_basis, compensation_rake_record_id, reason
+)
+SELECT h.rake_record_id, h.source_fingerprint, h.source_rake_cents,
+       h.share_count, true, l.compensation_rake_record_id,
+       'negative_source_compensation'
+  FROM rakeback_cutover_compensation_links l
+  JOIN public.rakeback_accrual_records h
+    ON h.rake_record_id = l.original_rake_record_id;
+
+INSERT INTO public.rakeback_accrual_reversal_receipts (
+  rake_record_id, user_id, club_id, day, period_start, period_end,
+  cents, source_fingerprint
+)
+SELECT r.rake_record_id, r.user_id, r.club_id, r.day,
+       r.period_start, r.period_end, r.cents, r.source_fingerprint
+  FROM public.rakeback_accrual_receipts r
+  JOIN rakeback_cutover_compensation_links l
+    ON l.original_rake_record_id = r.rake_record_id;
+
+DO $cutover_compensation_postcondition$
+DECLARE
+  v_bad bigint;
+BEGIN
+  SELECT count(*) INTO v_bad
+    FROM public.rakeback_compensation_records c
+   WHERE (c.applied_to_basis AND c.linked_cents <> c.compensation_cents)
+      OR (NOT c.applied_to_basis AND NOT EXISTS (
+        SELECT 1 FROM rakeback_cutover_unapplied_compensations u
+         WHERE u.compensation_rake_record_id = c.rake_record_id
+      ));
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION '% cutover compensation receipts do not balance', v_bad;
+  END IF;
+END
+$cutover_compensation_postcondition$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_materialize_cutover_record(
+  p_rake_record_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_source public.rake_records%ROWTYPE;
+  v_day date;
+  v_period_start date;
+  v_basis_from_day date;
+  v_basis_origin text;
+  v_is_cutover boolean;
+  v_source_cents bigint;
+  v_allocated_cents bigint;
+  v_share_count integer;
+  v_shares jsonb;
+  v_fingerprint text;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.rakeback_accrual_records h
+     WHERE h.rake_record_id = p_rake_record_id
+  ) THEN
+    RETURN;
+  END IF;
+  SELECT * INTO STRICT v_source
+    FROM public.rake_records r
+   WHERE r.id = p_rake_record_id
+   FOR UPDATE;
+  v_day := (v_source.created_at AT TIME ZONE 'UTC')::date;
+  v_period_start := date_trunc('week', v_day::timestamp)::date;
+  v_source_cents := round(v_source.rake_amount * 100)::bigint;
+  SELECT EXISTS (
+           SELECT 1 FROM public.rakeback_cutover_source_records c
+            WHERE c.rake_record_id = p_rake_record_id
+         ) INTO v_is_cutover;
+  SELECT basis_from_day INTO STRICT v_basis_from_day
+    FROM public.rakeback_basis_epoch
+   WHERE singleton;
+  IF v_is_cutover THEN
+    v_basis_origin := 'cutover_materialized';
+  ELSIF v_day < v_basis_from_day THEN
+    -- A future event may lawfully refund a fee whose already-paid source
+    -- predates this migration. It was not part of the open cutover set, but its
+    -- exact immutable shares are still needed to carry the refund into an open
+    -- period without mutating the paid week.
+    v_basis_origin := 'historical_source_evidence';
+  ELSE
+    RAISE EXCEPTION
+      'rake record % is not an exact member of the cutover basis',
+      p_rake_record_id;
+  END IF;
+
+  SELECT jsonb_object_agg(
+           a.user_id::text, round(a.credit * 100)::bigint
+           ORDER BY a.user_id::text
+         ),
+         sum(round(a.credit * 100)::bigint)::bigint,
+         count(*)::integer
+    INTO v_shares, v_allocated_cents, v_share_count
+    FROM public.fn_allocate_rake_credits(
+      v_source.rake_amount, v_source.player_contributions,
+      COALESCE(v_source.rake_method, 'DEALT_EQUAL')
+    ) a;
+  IF v_share_count IS NULL OR v_share_count = 0
+     OR v_allocated_cents IS DISTINCT FROM v_source_cents THEN
+    RAISE EXCEPTION 'cutover rake record % no longer allocates exactly',
+      p_rake_record_id;
+  END IF;
+
+  v_fingerprint := public.fn_rakeback_source_fingerprint(
+    v_source.id, v_source.club_id, v_day, v_source_cents,
+    COALESCE(v_source.rake_method, 'DEALT_EQUAL'),
+    v_source.player_contributions, v_source.hand_id, v_source.table_id,
+    v_source.global_hand_id, v_source.tournament_id,
+    v_source.is_tournament, v_source.source,
+    v_source.created_at, v_source.metadata, v_shares
+  );
+
+  INSERT INTO public.rakeback_accrual_records (
+    rake_record_id, club_id, hand_id, table_id, global_hand_id, tournament_id,
+    is_tournament, source, source_created_at, source_contributions,
+    rake_method, day, period_start, period_end,
+    source_rake_cents, allocated_cents, share_count,
+    basis_origin, source_fingerprint
+  ) VALUES (
+    v_source.id, v_source.club_id, v_source.hand_id, v_source.table_id,
+    v_source.global_hand_id, v_source.tournament_id,
+    v_source.is_tournament, v_source.source,
+    v_source.created_at, v_source.player_contributions,
+    COALESCE(v_source.rake_method, 'DEALT_EQUAL'), v_day,
+    v_period_start, v_period_start + 6, v_source_cents,
+    v_allocated_cents, v_share_count, v_basis_origin, v_fingerprint
+  );
+
+  INSERT INTO public.rakeback_accrual_receipts (
+    rake_record_id, user_id, club_id, day, period_start, period_end,
+    cents, source_fingerprint
+  )
+  SELECT v_source.id, s.key::uuid, v_source.club_id, v_day,
+         v_period_start, v_period_start + 6, s.value::text::bigint,
+         v_fingerprint
+    FROM jsonb_each(v_shares) s
+   ORDER BY s.key;
+END
+$function$;
+
+-- Apply one already-recorded reversal without ever rewriting a paid/expired
+-- period.  Pending originals are removed from their own daily basis.  Closed
+-- originals retain their historical row and get an equal negative movement in
+-- the first open period.  `p_cutover_baked` means the one-time baseline already
+-- excluded direct reversals; closed-period offsets still have to be posted.
+CREATE OR REPLACE FUNCTION public.fn_rakeback_apply_reversal_basis(
+  p_rake_record_id uuid,
+  p_compensation_rake_record_id uuid,
+  p_accounting_day date,
+  p_reason text,
+  p_cutover_baked boolean DEFAULT false
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_receipt record;
+  v_period record;
+  v_open record;
+  v_changed integer;
+BEGIN
+  IF p_accounting_day IS NULL OR p_reason NOT IN (
+    'source_record_deleted', 'negative_source_compensation',
+    'superseded_ghost_twin'
+  ) THEN
+    RAISE EXCEPTION 'invalid rakeback reversal application';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.rakeback_accrual_reversals x
+     WHERE x.rake_record_id = p_rake_record_id
+       AND x.applied_to_basis
+       AND x.reason = p_reason
+       AND x.compensation_rake_record_id
+             IS NOT DISTINCT FROM p_compensation_rake_record_id
+  ) THEN
+    RAISE EXCEPTION 'rake record % has no matching reversal receipt',
+      p_rake_record_id;
+  END IF;
+
+  FOR v_receipt IN
+    SELECT r.*
+      FROM public.rakeback_accrual_reversal_receipts r
+     WHERE r.rake_record_id = p_rake_record_id
+       AND r.cents > 0
+     ORDER BY r.user_id
+  LOOP
+    -- The caller took the same logical key first; this row lock is therefore
+    -- deterministic against payout even if the row appeared concurrently.
+    SELECT p.id, p.status INTO v_period
+      FROM public.rakeback_periods p
+     WHERE p.club_id = v_receipt.club_id
+       AND p.user_id = v_receipt.user_id
+       AND p.period_start = v_receipt.period_start
+     FOR UPDATE;
+
+    IF FOUND AND v_period.status <> 'pending' THEN
+      SELECT * INTO STRICT v_open
+        FROM public.fn_rakeback_resolve_open_period(
+          v_receipt.club_id, v_receipt.user_id, p_accounting_day
+        );
+      INSERT INTO public.rakeback_closed_period_offsets (
+        original_rake_record_id, user_id, compensation_rake_record_id,
+        source_period_id, club_id, original_day,
+        original_period_start, original_period_end,
+        offset_day, offset_period_start, offset_period_end, cents, reason
+      ) VALUES (
+        p_rake_record_id, v_receipt.user_id,
+        p_compensation_rake_record_id, v_period.id, v_receipt.club_id,
+        v_receipt.day, v_receipt.period_start, v_receipt.period_end,
+        v_open.open_day, v_open.open_period_start, v_open.open_period_end,
+        v_receipt.cents, p_reason
+      );
+      INSERT INTO public.rakeback_daily_user (club_id, day, user_id, cents)
+      VALUES (
+        v_receipt.club_id, v_open.open_day, v_receipt.user_id,
+        -v_receipt.cents
+      )
+      ON CONFLICT (club_id, day, user_id) DO UPDATE
+        SET cents = public.rakeback_daily_user.cents + EXCLUDED.cents;
+      INSERT INTO public.rakeback_daily_state (
+        club_id, day, rows_seen, computed_at
+      ) VALUES (
+        v_receipt.club_id, v_open.open_day, 0, clock_timestamp()
+      ) ON CONFLICT (club_id, day) DO NOTHING;
+      PERFORM public.fn_rakeback_recompute_periods(
+        v_receipt.club_id, v_open.open_period_start, v_open.open_period_end,
+        ARRAY[v_receipt.user_id]
+      );
+    ELSIF NOT p_cutover_baked THEN
+      UPDATE public.rakeback_daily_user d
+         SET cents = d.cents - v_receipt.cents
+       WHERE d.club_id = v_receipt.club_id
+         AND d.day = v_receipt.day
+         AND d.user_id = v_receipt.user_id
+         AND d.cents >= v_receipt.cents;
+      GET DIAGNOSTICS v_changed = ROW_COUNT;
+      IF v_changed <> 1 THEN
+        RAISE EXCEPTION
+          'rake record % reversal exceeds the daily basis for player %',
+          p_rake_record_id, v_receipt.user_id;
+      END IF;
+      DELETE FROM public.rakeback_daily_user d
+       WHERE d.club_id = v_receipt.club_id
+         AND d.day = v_receipt.day
+         AND d.user_id = v_receipt.user_id
+         AND d.cents = 0;
+      PERFORM public.fn_rakeback_recompute_periods(
+        v_receipt.club_id, v_receipt.period_start, v_receipt.period_end,
+        ARRAY[v_receipt.user_id]
+      );
+    END IF;
+  END LOOP;
+
+  IF NOT p_cutover_baked THEN
+    UPDATE public.rakeback_daily_state s
+       SET rows_seen = s.rows_seen - 1,
+           computed_at = clock_timestamp()
+      FROM public.rakeback_accrual_records h
+     WHERE h.rake_record_id = p_rake_record_id
+       AND s.club_id = h.club_id
+       AND s.day = h.day
+       AND s.rows_seen > 0;
+    GET DIAGNOSTICS v_changed = ROW_COUNT;
+    IF v_changed <> 1 THEN
+      RAISE EXCEPTION 'rake record % reversal has no daily row witness',
+        p_rake_record_id;
+    END IF;
+  END IF;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_supersede_ghost_source(
+  p_ghost_rake_record_id uuid,
+  p_canonical_rake_record_id uuid,
+  p_accounting_day date
+)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_ghost public.rake_records%ROWTYPE;
+  v_canonical public.rake_records%ROWTYPE;
+  v_header public.rakeback_accrual_records%ROWTYPE;
+  v_users uuid[];
+BEGIN
+  SELECT * INTO STRICT v_ghost
+    FROM public.rake_records r
+   WHERE r.id = p_ghost_rake_record_id
+   FOR UPDATE;
+  SELECT * INTO STRICT v_canonical
+    FROM public.rake_records r
+   WHERE r.id = p_canonical_rake_record_id;
+
+  IF v_ghost.hand_id IS NOT NULL OR v_canonical.hand_id IS NULL
+     OR v_ghost.table_id IS DISTINCT FROM v_canonical.table_id
+     OR COALESCE(v_ghost.metadata->>'hand_number', '')
+          <> COALESCE(v_canonical.metadata->>'hand_number', '')
+     OR COALESCE(v_canonical.metadata->>'hand_number', '')
+          !~ '^[0-9]{7,18}$'
+     OR v_ghost.club_id IS DISTINCT FROM v_canonical.club_id
+     OR v_ghost.tournament_id IS DISTINCT FROM v_canonical.tournament_id
+     OR v_ghost.is_tournament IS DISTINCT FROM v_canonical.is_tournament
+     OR round(v_ghost.rake_amount * 100)::bigint
+          <> round(v_canonical.rake_amount * 100)::bigint
+     OR v_ghost.player_contributions IS DISTINCT FROM
+          v_canonical.player_contributions
+     OR COALESCE(v_ghost.rake_method, 'DEALT_EQUAL') <>
+          COALESCE(v_canonical.rake_method, 'DEALT_EQUAL') THEN
+    RAISE EXCEPTION
+      'linked rake record % does not exactly match null-hand source %',
+      p_canonical_rake_record_id, p_ghost_rake_record_id;
+  END IF;
+
+  PERFORM public.fn_rakeback_materialize_cutover_record(
+    p_ghost_rake_record_id
+  );
+  SELECT * INTO STRICT v_header
+    FROM public.rakeback_accrual_records h
+   WHERE h.rake_record_id = p_ghost_rake_record_id
+   FOR UPDATE;
+  IF EXISTS (
+    SELECT 1 FROM public.rakeback_accrual_reversals x
+     WHERE x.rake_record_id = p_ghost_rake_record_id
+  ) THEN
+    RAISE EXCEPTION 'null-hand rake record % was already reversed',
+      p_ghost_rake_record_id;
+  END IF;
+
+  SELECT array_agg(r.user_id ORDER BY r.user_id) INTO v_users
+    FROM public.rakeback_accrual_receipts r
+   WHERE r.rake_record_id = p_ghost_rake_record_id
+     AND r.cents > 0;
+  PERFORM public.fn_rakeback_lock_period_keys(
+    v_header.club_id, v_header.period_start, v_header.period_end, v_users
+  );
+  INSERT INTO public.rakeback_accrual_reversals (
+    rake_record_id, source_fingerprint, reversed_cents, share_count,
+    applied_to_basis, reason
+  ) VALUES (
+    p_ghost_rake_record_id, v_header.source_fingerprint,
+    v_header.allocated_cents, v_header.share_count, true,
+    'superseded_ghost_twin'
+  );
+  INSERT INTO public.rakeback_accrual_reversal_receipts (
+    rake_record_id, user_id, club_id, day, period_start, period_end,
+    cents, source_fingerprint
+  )
+  SELECT r.rake_record_id, r.user_id, r.club_id, r.day,
+         r.period_start, r.period_end, r.cents, v_header.source_fingerprint
+    FROM public.rakeback_accrual_receipts r
+   WHERE r.rake_record_id = p_ghost_rake_record_id
+   ORDER BY r.user_id;
+  PERFORM public.fn_rakeback_apply_reversal_basis(
+    p_ghost_rake_record_id, NULL, p_accounting_day,
+    'superseded_ghost_twin', false
+  );
+  RETURN v_header.source_fingerprint;
+END
+$function$;
+
+-- The cutover snapshot already excludes every linked historical negative from
+-- pending daily basis.  If one of those originals belongs to a period that was
+-- closed before cutover, preserve the closed row and post its exact offset now.
+DO $apply_cutover_closed_offsets$
+DECLARE
+  v_link record;
+BEGIN
+  FOR v_link IN
+    SELECT l.original_rake_record_id, l.compensation_rake_record_id,
+           c.source_created_at
+      FROM public.rakeback_compensation_links l
+      JOIN public.rakeback_compensation_records c
+        ON c.rake_record_id = l.compensation_rake_record_id
+     WHERE c.basis_origin = 'cutover'
+       AND c.applied_to_basis
+     ORDER BY l.original_rake_record_id
+  LOOP
+    PERFORM public.fn_rakeback_apply_reversal_basis(
+      v_link.original_rake_record_id,
+      v_link.compensation_rake_record_id,
+      (transaction_timestamp() AT TIME ZONE 'UTC')::date,
+      'negative_source_compensation', true
+    );
+  END LOOP;
+END
+$apply_cutover_closed_offsets$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_accrue_source_record()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_day date;
+  v_period_start date;
+  v_period_end date;
+  v_source_cents bigint;
+  v_allocated_cents bigint;
+  v_share_count integer;
+  v_shares jsonb;
+  v_fingerprint text;
+  v_prior record;
+  v_share record;
+  v_users uuid[] := ARRAY[]::uuid[];
+  v_ghost_ids uuid[] := ARRAY[]::uuid[];
+  v_ghost_id uuid;
+  v_from date;
+BEGIN
+  IF NEW.rake_amount <= 0 OR NEW.player_contributions IS NULL THEN
+    RETURN NEW;
+  END IF;
+  IF jsonb_typeof(NEW.player_contributions) <> 'object' THEN
+    RAISE EXCEPTION 'rake record % contributions are not an object', NEW.id;
+  END IF;
+  IF NEW.player_contributions = '{}'::jsonb THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.club_id IS NULL OR NEW.created_at IS NULL THEN
+    RAISE EXCEPTION 'rake record % has no club or accounting time', NEW.id;
+  END IF;
+
+  -- Serialize the two still-compatible database writer shapes for a global
+  -- hand: a temporary NULL hand id and the later canonical UUID.  The newer
+  -- engine normally emits only the UUID, but exact-once accounting is a DB
+  -- invariant and cannot depend on every caller upgrading in lockstep.
+  IF NEW.table_id IS NOT NULL
+     AND COALESCE(NEW.metadata->>'hand_number', '') ~ '^[0-9]{7,18}$' THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+      'rakeback-hand:' || NEW.table_id::text || ':'
+      || (NEW.metadata->>'hand_number'), 0
+    ));
+  END IF;
+  IF public.fn_rake_record_is_ghost_twin(NEW.hand_id, NEW.table_id, NEW.metadata) THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.hand_id IS NOT NULL
+     AND NEW.table_id IS NOT NULL
+     AND COALESCE(NEW.metadata->>'hand_number', '') ~ '^[0-9]{7,18}$' THEN
+    SELECT COALESCE(array_agg(g.id ORDER BY g.id), ARRAY[]::uuid[])
+      INTO v_ghost_ids
+      FROM (
+        SELECT r.id
+          FROM public.rake_records r
+         WHERE r.id <> NEW.id
+           AND r.table_id = NEW.table_id
+           AND r.hand_id IS NULL
+           AND r.metadata->>'hand_number' = NEW.metadata->>'hand_number'
+           AND r.rake_amount > 0
+           AND r.player_contributions IS NOT NULL
+           AND r.player_contributions <> '{}'::jsonb
+           AND NOT EXISTS (
+             SELECT 1 FROM public.rakeback_accrual_reversals x
+              WHERE x.rake_record_id = r.id
+           )
+         ORDER BY r.id
+         FOR UPDATE
+      ) g;
+  END IF;
+
+  v_day := (NEW.created_at AT TIME ZONE 'UTC')::date;
+  v_period_start := date_trunc('week', v_day::timestamp)::date;
+  v_period_end := v_period_start + 6;
+  v_source_cents := round(NEW.rake_amount * 100)::bigint;
+
+  SELECT basis_from_day INTO v_from
+    FROM public.rakeback_basis_epoch
+   WHERE singleton;
+  IF v_from IS NULL OR v_day < v_from THEN
+    RAISE EXCEPTION
+      'rake record % targets day % outside the atomic rakeback basis epoch %',
+      NEW.id, v_day, v_from;
+  END IF;
+  IF v_source_cents <= 0 THEN
+    RAISE EXCEPTION 'rake record % rounds to no rakeback cents', NEW.id;
+  END IF;
+
+  SELECT jsonb_object_agg(
+           a.user_id::text,
+           round(a.credit * 100)::bigint
+           ORDER BY a.user_id::text
+         ),
+         sum(round(a.credit * 100)::bigint)::bigint,
+         count(*)::integer
+    INTO v_shares, v_allocated_cents, v_share_count
+    FROM public.fn_allocate_rake_credits(
+      NEW.rake_amount,
+      NEW.player_contributions,
+      COALESCE(NEW.rake_method, 'DEALT_EQUAL')
+    ) a;
+
+  IF v_share_count IS NULL OR v_share_count = 0
+     OR v_allocated_cents IS DISTINCT FROM v_source_cents THEN
+    RAISE EXCEPTION
+      'rake record % allocated % cents across % shares; source is % cents',
+      NEW.id, v_allocated_cents, v_share_count, v_source_cents;
+  END IF;
+
+  v_fingerprint := public.fn_rakeback_source_fingerprint(
+    NEW.id,
+    NEW.club_id,
+    v_day,
+    v_source_cents,
+    COALESCE(NEW.rake_method, 'DEALT_EQUAL'),
+    NEW.player_contributions,
+    NEW.hand_id,
+    NEW.table_id,
+    NEW.global_hand_id,
+    NEW.tournament_id,
+    NEW.is_tournament,
+    NEW.source,
+    NEW.created_at,
+    NEW.metadata,
+    v_shares
+  );
+
+  SELECT * INTO v_prior
+    FROM public.rakeback_accrual_records
+   WHERE rake_record_id = NEW.id
+   FOR UPDATE;
+  IF FOUND THEN
+    IF EXISTS (
+      SELECT 1 FROM public.rakeback_accrual_reversals r
+       WHERE r.rake_record_id = NEW.id
+    ) THEN
+      RAISE EXCEPTION
+        'rake record % cannot be reinserted after its source was reversed', NEW.id;
+    END IF;
+    IF v_prior.source_fingerprint <> v_fingerprint
+       OR v_prior.source_rake_cents <> v_source_cents
+       OR v_prior.allocated_cents <> v_allocated_cents
+       OR v_prior.share_count <> v_share_count
+       OR v_prior.basis_origin <> 'source_transaction' THEN
+      RAISE EXCEPTION 'rake record % changed after its accrual receipt', NEW.id;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  FOREACH v_ghost_id IN ARRAY v_ghost_ids
+  LOOP
+    PERFORM public.fn_rakeback_supersede_ghost_source(
+      v_ghost_id, NEW.id,
+      (transaction_timestamp() AT TIME ZONE 'UTC')::date
+    );
+  END LOOP;
+
+  SELECT array_agg(s.key::uuid ORDER BY s.key)
+    INTO v_users
+    FROM jsonb_each(v_shares) s
+   WHERE s.value::text::bigint > 0;
+
+  PERFORM public.fn_rakeback_lock_period_keys(
+    NEW.club_id, v_period_start, v_period_end, v_users
+  );
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.rakeback_periods p
+     WHERE p.club_id = NEW.club_id
+       AND p.period_start = v_period_start
+       AND p.user_id IN (
+         SELECT key::uuid
+           FROM jsonb_each(v_shares)
+          WHERE value::text::bigint > 0
+       )
+       AND p.status <> 'pending'
+  ) THEN
+    RAISE EXCEPTION
+      'rake record % targets an immutable closed rakeback period', NEW.id;
+  END IF;
+
+  INSERT INTO public.rakeback_accrual_records (
+    rake_record_id, club_id, hand_id, table_id, global_hand_id, tournament_id,
+    is_tournament, source, source_created_at, source_contributions,
+    rake_method, day, period_start, period_end,
+    source_rake_cents, allocated_cents, share_count, source_fingerprint
+  ) VALUES (
+    NEW.id, NEW.club_id, NEW.hand_id, NEW.table_id, NEW.global_hand_id,
+    NEW.tournament_id,
+    NEW.is_tournament, NEW.source, NEW.created_at, NEW.player_contributions,
+    COALESCE(NEW.rake_method, 'DEALT_EQUAL'), v_day, v_period_start, v_period_end,
+    v_source_cents, v_allocated_cents, v_share_count, v_fingerprint
+  );
+
+  INSERT INTO public.rakeback_accrual_receipts (
+    rake_record_id, user_id, club_id, day, period_start, period_end,
+    cents, source_fingerprint
+  )
+  SELECT NEW.id, s.key::uuid, NEW.club_id, v_day, v_period_start, v_period_end,
+         s.value::text::bigint, v_fingerprint
+    FROM jsonb_each(v_shares) s
+   ORDER BY s.key;
+
+  -- Every writer takes player rows in UUID order, then the one day-state row,
+  -- then period rows in UUID order. Concurrent multi-table hands therefore do
+  -- not acquire the same financial rows in opposite orders.
+  FOR v_share IN
+    SELECT s.key::uuid AS user_id, s.value::text::bigint AS cents
+      FROM jsonb_each(v_shares) s
+     WHERE s.value::text::bigint > 0
+     ORDER BY s.key
+  LOOP
+    INSERT INTO public.rakeback_daily_user (club_id, day, user_id, cents)
+    VALUES (NEW.club_id, v_day, v_share.user_id, v_share.cents)
+    ON CONFLICT (club_id, day, user_id) DO UPDATE
+      SET cents = public.rakeback_daily_user.cents + EXCLUDED.cents;
+  END LOOP;
+
+  INSERT INTO public.rakeback_daily_state (club_id, day, rows_seen, computed_at)
+  VALUES (NEW.club_id, v_day, 1, clock_timestamp())
+  ON CONFLICT (club_id, day) DO UPDATE
+    SET rows_seen = public.rakeback_daily_state.rows_seen + 1,
+        computed_at = clock_timestamp();
+
+  PERFORM public.fn_rakeback_recompute_periods(
+    NEW.club_id, v_period_start, v_period_end, v_users
+  );
+
+  FOREACH v_ghost_id IN ARRAY v_ghost_ids
+  LOOP
+    INSERT INTO public.rakeback_source_supersessions (
+      ghost_rake_record_id, canonical_rake_record_id,
+      ghost_fingerprint, canonical_fingerprint, rake_cents
+    )
+    SELECT v_ghost_id, NEW.id, h.source_fingerprint, v_fingerprint,
+           v_source_cents
+      FROM public.rakeback_accrual_records h
+     WHERE h.rake_record_id = v_ghost_id;
+  END LOOP;
+
+  RETURN NEW;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_compensate_source_record()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_negative_cents bigint;
+  v_original_id uuid;
+  v_user_id uuid;
+  v_registration_id text;
+  v_original record;
+  v_original_ids uuid[] := ARRAY[]::uuid[];
+  v_linked_cents bigint := 0;
+  v_linked_sources jsonb := '{}'::jsonb;
+  v_compensation_fingerprint text;
+  v_period record;
+  v_original_count integer;
+  v_original_cents bigint;
+  v_accounting_day date := (transaction_timestamp() AT TIME ZONE 'UTC')::date;
+BEGIN
+  IF NEW.rake_amount >= 0 THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.club_id IS NULL OR NEW.created_at IS NULL THEN
+    RAISE EXCEPTION 'negative rake record % has no club or accounting time', NEW.id;
+  END IF;
+  v_negative_cents := round(abs(NEW.rake_amount) * 100)::bigint;
+  IF v_negative_cents <= 0 THEN
+    RAISE EXCEPTION 'negative rake record % rounds to no compensation cents', NEW.id;
+  END IF;
+
+  IF COALESCE(NEW.metadata->>'original_rake_record_id', '')
+       ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+    v_original_id := (NEW.metadata->>'original_rake_record_id')::uuid;
+  ELSIF NULLIF(NEW.metadata->>'original_rake_record_id', '') IS NOT NULL THEN
+    RAISE EXCEPTION 'negative rake record % has a malformed original id', NEW.id;
+  END IF;
+  IF COALESCE(NEW.metadata->>'user_id', '')
+       ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+    v_user_id := (NEW.metadata->>'user_id')::uuid;
+  ELSIF NULLIF(NEW.metadata->>'user_id', '') IS NOT NULL THEN
+    RAISE EXCEPTION 'negative rake record % has a malformed player id', NEW.id;
+  END IF;
+  v_registration_id := NULLIF(NEW.metadata->>'registration_id', '');
+
+  IF v_original_id IS NULL AND v_registration_id IS NULL AND v_user_id IS NULL
+     AND (
+       NEW.player_contributions IS NULL
+       OR jsonb_typeof(NEW.player_contributions) <> 'object'
+       OR NEW.player_contributions = '{}'::jsonb
+     ) THEN
+    RAISE EXCEPTION 'negative rake record % names no exact source to reverse', NEW.id;
+  END IF;
+  IF v_original_id IS NULL AND NEW.tournament_id IS NULL THEN
+    RAISE EXCEPTION
+      'negative rake record % needs an original id outside a tournament', NEW.id;
+  END IF;
+
+  FOR v_original IN
+    SELECT p.*
+      FROM public.rake_records p
+     WHERE p.rake_amount > 0
+       AND p.club_id = NEW.club_id
+       AND p.tournament_id IS NOT DISTINCT FROM NEW.tournament_id
+       AND p.created_at <= NEW.created_at
+       AND (
+         EXISTS (
+           SELECT 1 FROM public.rakeback_accrual_records h
+            WHERE h.rake_record_id = p.id
+         )
+         OR EXISTS (
+           SELECT 1 FROM public.rakeback_cutover_source_records c
+            WHERE c.rake_record_id = p.id
+         )
+         OR EXISTS (
+           SELECT 1 FROM public.rakeback_basis_epoch e
+            WHERE e.singleton
+              AND (p.created_at AT TIME ZONE 'UTC')::date < e.basis_from_day
+         )
+       )
+       AND (
+         (v_original_id IS NOT NULL AND p.id = v_original_id)
+         OR (
+           v_original_id IS NULL
+           AND v_registration_id IS NOT NULL
+           AND p.metadata->>'registration_id' = v_registration_id
+           AND (v_user_id IS NULL OR p.metadata->>'user_id' = v_user_id::text)
+         )
+         OR (
+           v_original_id IS NULL
+           AND v_registration_id IS NULL
+           AND v_user_id IS NOT NULL
+           AND p.metadata->>'user_id' = v_user_id::text
+         )
+         OR (
+           v_original_id IS NULL
+           AND v_registration_id IS NULL
+           AND v_user_id IS NULL
+           AND p.player_contributions = NEW.player_contributions
+           AND round(p.rake_amount * 100)::bigint = v_negative_cents
+         )
+       )
+     ORDER BY p.created_at, p.id
+     FOR UPDATE
+  LOOP
+    PERFORM public.fn_rakeback_materialize_cutover_record(v_original.id);
+
+    IF EXISTS (
+      SELECT 1 FROM public.rakeback_accrual_reversals r
+       WHERE r.rake_record_id = v_original.id
+    ) THEN
+      RAISE EXCEPTION 'rake record % was already reversed', v_original.id;
+    END IF;
+    IF v_original_id IS NULL AND v_user_id IS NOT NULL AND (
+      (SELECT count(*) FROM public.rakeback_accrual_receipts r
+        WHERE r.rake_record_id = v_original.id) <> 1
+      OR NOT EXISTS (
+        SELECT 1 FROM public.rakeback_accrual_receipts r
+         WHERE r.rake_record_id = v_original.id
+           AND r.user_id = v_user_id
+           AND r.cents > 0
+      )
+    ) THEN
+      RAISE EXCEPTION
+        'player-scoped compensation % matched a non-single-player source %',
+        NEW.id, v_original.id;
+    END IF;
+
+    SELECT h.source_rake_cents INTO STRICT v_original_cents
+      FROM public.rakeback_accrual_records h
+     WHERE h.rake_record_id = v_original.id;
+    v_original_ids := array_append(v_original_ids, v_original.id);
+    v_linked_cents := v_linked_cents + v_original_cents;
+    v_linked_sources := v_linked_sources
+      || jsonb_build_object(v_original.id::text, v_original_cents);
+  END LOOP;
+
+  v_original_count := COALESCE(cardinality(v_original_ids), 0);
+  IF v_original_count = 0 OR v_linked_cents <> v_negative_cents THEN
+    RAISE EXCEPTION
+      'negative rake record % links % cents across % originals; expected exactly %',
+      NEW.id, v_linked_cents, v_original_count, v_negative_cents;
+  END IF;
+
+  -- Logical advisory keys come before existing period rows, daily rows and
+  -- projection rows. The closer takes the same key before its FOR UPDATE.
+  FOR v_period IN
+    SELECT r.club_id, r.period_start, r.period_end,
+           array_agg(DISTINCT r.user_id ORDER BY r.user_id) AS user_ids
+      FROM public.rakeback_accrual_receipts r
+     WHERE r.rake_record_id = ANY(v_original_ids)
+       AND r.cents > 0
+     GROUP BY r.club_id, r.period_start, r.period_end
+     ORDER BY r.club_id, r.period_start, r.period_end
+  LOOP
+    PERFORM public.fn_rakeback_lock_period_keys(
+      v_period.club_id, v_period.period_start, v_period.period_end,
+      v_period.user_ids
+    );
+  END LOOP;
+
+  v_compensation_fingerprint := public.fn_rakeback_source_fingerprint(
+    NEW.id, NEW.club_id, (NEW.created_at AT TIME ZONE 'UTC')::date,
+    round(NEW.rake_amount * 100)::bigint,
+    COALESCE(NEW.rake_method, 'DEALT_EQUAL'), NEW.player_contributions,
+    NEW.hand_id, NEW.table_id, NEW.global_hand_id, NEW.tournament_id,
+    NEW.is_tournament,
+    NEW.source, NEW.created_at, NEW.metadata, v_linked_sources
+  );
+
+  INSERT INTO public.rakeback_compensation_records (
+    rake_record_id, club_id, tournament_id, hand_id, table_id, global_hand_id,
+    is_tournament, source, source_created_at, source_contributions,
+    rake_method, compensation_cents, linked_original_count, linked_cents,
+    applied_to_basis, basis_origin, selector, source_fingerprint, reason
+  ) VALUES (
+    NEW.id, NEW.club_id, NEW.tournament_id, NEW.hand_id, NEW.table_id,
+    NEW.global_hand_id,
+    NEW.is_tournament, NEW.source, NEW.created_at, NEW.player_contributions,
+    COALESCE(NEW.rake_method, 'DEALT_EQUAL'), v_negative_cents,
+    v_original_count, v_linked_cents, true, 'source_transaction',
+    jsonb_strip_nulls(jsonb_build_object(
+      'original_rake_record_id', NEW.metadata->>'original_rake_record_id',
+      'registration_id', NEW.metadata->>'registration_id',
+      'user_id', NEW.metadata->>'user_id'
+    )),
+    v_compensation_fingerprint, 'negative_source_compensation'
+  );
+
+  FOREACH v_original_id IN ARRAY v_original_ids
+  LOOP
+    INSERT INTO public.rakeback_compensation_links (
+      compensation_rake_record_id, original_rake_record_id, original_cents
+    )
+    SELECT NEW.id, h.rake_record_id, h.source_rake_cents
+      FROM public.rakeback_accrual_records h
+     WHERE h.rake_record_id = v_original_id;
+
+    INSERT INTO public.rakeback_accrual_reversals (
+      rake_record_id, source_fingerprint, reversed_cents, share_count,
+      applied_to_basis, compensation_rake_record_id, reason
+    )
+    SELECT h.rake_record_id,
+           COALESCE(l.current_fingerprint, h.source_fingerprint),
+           h.source_rake_cents, h.share_count, true, NEW.id,
+           'negative_source_compensation'
+      FROM public.rakeback_accrual_records h
+      LEFT JOIN public.rakeback_source_relinks l
+        ON l.rake_record_id = h.rake_record_id
+     WHERE h.rake_record_id = v_original_id;
+
+    INSERT INTO public.rakeback_accrual_reversal_receipts (
+      rake_record_id, user_id, club_id, day, period_start, period_end,
+      cents, source_fingerprint
+    )
+    SELECT r.rake_record_id, r.user_id, r.club_id, r.day,
+           r.period_start, r.period_end, r.cents,
+           COALESCE(l.current_fingerprint, r.source_fingerprint)
+      FROM public.rakeback_accrual_receipts r
+      LEFT JOIN public.rakeback_source_relinks l
+        ON l.rake_record_id = r.rake_record_id
+     WHERE r.rake_record_id = v_original_id;
+    PERFORM public.fn_rakeback_apply_reversal_basis(
+      v_original_id, NEW.id, v_accounting_day,
+      'negative_source_compensation',
+      (
+        SELECT h.basis_origin = 'historical_source_evidence'
+          FROM public.rakeback_accrual_records h
+         WHERE h.rake_record_id = v_original_id
+      )
+    );
+  END LOOP;
+
+  RETURN NEW;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_reverse_deleted_source_record()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_day date;
+  v_period_start date;
+  v_period_end date;
+  v_source_cents bigint;
+  v_allocated_cents bigint;
+  v_share_count integer;
+  v_shares jsonb;
+  v_fingerprint text;
+  v_current_fingerprint text;
+  v_prior public.rakeback_accrual_records%ROWTYPE;
+  v_users uuid[] := ARRAY[]::uuid[];
+  v_from date;
+  v_applied boolean;
+  v_closed_receipts integer;
+  v_unclosed_receipts integer;
+BEGIN
+  IF OLD.rake_amount < 0 THEN
+    IF EXISTS (
+      SELECT 1 FROM public.rakeback_compensation_records c
+       WHERE c.rake_record_id = OLD.id
+    ) THEN
+      RAISE EXCEPTION
+        'negative rake record % is immutable compensation history', OLD.id;
+    END IF;
+    RETURN OLD;
+  END IF;
+  IF OLD.rake_amount = 0 OR OLD.player_contributions IS NULL
+     OR OLD.player_contributions = '{}'::jsonb THEN
+    RETURN OLD;
+  END IF;
+  IF jsonb_typeof(OLD.player_contributions) <> 'object' THEN
+    RAISE EXCEPTION 'rake record % contributions are not an object', OLD.id;
+  END IF;
+  IF OLD.club_id IS NULL OR OLD.created_at IS NULL THEN
+    RAISE EXCEPTION 'rake record % has no club or accounting time', OLD.id;
+  END IF;
+  IF public.fn_rake_record_is_ghost_twin(OLD.hand_id, OLD.table_id, OLD.metadata) THEN
+    RETURN OLD;
+  END IF;
+
+  v_day := (OLD.created_at AT TIME ZONE 'UTC')::date;
+  v_period_start := date_trunc('week', v_day::timestamp)::date;
+  v_period_end := v_period_start + 6;
+  v_source_cents := round(OLD.rake_amount * 100)::bigint;
+
+  SELECT jsonb_object_agg(
+           a.user_id::text,
+           round(a.credit * 100)::bigint
+           ORDER BY a.user_id::text
+         ),
+         sum(round(a.credit * 100)::bigint)::bigint,
+         count(*)::integer
+    INTO v_shares, v_allocated_cents, v_share_count
+    FROM public.fn_allocate_rake_credits(
+      OLD.rake_amount,
+      OLD.player_contributions,
+      COALESCE(OLD.rake_method, 'DEALT_EQUAL')
+    ) a;
+
+  IF v_source_cents <= 0 OR v_share_count IS NULL OR v_share_count = 0
+     OR v_allocated_cents IS DISTINCT FROM v_source_cents THEN
+    RAISE EXCEPTION
+      'deleted rake record % allocated % cents across % shares; source is % cents',
+      OLD.id, v_allocated_cents, v_share_count, v_source_cents;
+  END IF;
+
+  v_fingerprint := public.fn_rakeback_source_fingerprint(
+    OLD.id,
+    OLD.club_id,
+    v_day,
+    v_source_cents,
+    COALESCE(OLD.rake_method, 'DEALT_EQUAL'),
+    OLD.player_contributions,
+    OLD.hand_id,
+    OLD.table_id,
+    OLD.global_hand_id,
+    OLD.tournament_id,
+    OLD.is_tournament,
+    OLD.source,
+    OLD.created_at,
+    OLD.metadata,
+    v_shares
+  );
+
+  SELECT basis_from_day INTO STRICT v_from
+    FROM public.rakeback_basis_epoch
+   WHERE singleton;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.rakeback_accrual_records h
+     WHERE h.rake_record_id = OLD.id
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM public.rakeback_cutover_source_records c
+       WHERE c.rake_record_id = OLD.id
+    ) THEN
+      PERFORM public.fn_rakeback_materialize_cutover_record(OLD.id);
+    ELSIF v_day < v_from THEN
+      INSERT INTO public.rakeback_accrual_records (
+        rake_record_id, club_id, hand_id, table_id, global_hand_id, tournament_id,
+        is_tournament, source, source_created_at, source_contributions,
+        rake_method, day, period_start, period_end,
+        source_rake_cents, allocated_cents, share_count,
+        basis_origin, source_fingerprint
+      ) VALUES (
+        OLD.id, OLD.club_id, OLD.hand_id, OLD.table_id, OLD.global_hand_id,
+        OLD.tournament_id,
+        OLD.is_tournament, OLD.source, OLD.created_at, OLD.player_contributions,
+        COALESCE(OLD.rake_method, 'DEALT_EQUAL'), v_day,
+        v_period_start, v_period_end, v_source_cents, v_allocated_cents,
+        v_share_count, 'historical_source_evidence', v_fingerprint
+      );
+      INSERT INTO public.rakeback_accrual_receipts (
+        rake_record_id, user_id, club_id, day, period_start, period_end,
+        cents, source_fingerprint
+      )
+      SELECT OLD.id, s.key::uuid, OLD.club_id, v_day,
+             v_period_start, v_period_end, s.value::text::bigint, v_fingerprint
+        FROM jsonb_each(v_shares) s
+       ORDER BY s.key;
+    ELSE
+      RAISE EXCEPTION
+        'rake record % is inside the atomic epoch without an accrual receipt',
+        OLD.id;
+    END IF;
+  END IF;
+
+  SELECT * INTO v_prior
+    FROM public.rakeback_accrual_records
+   WHERE rake_record_id = OLD.id
+   FOR UPDATE;
+
+  SELECT COALESCE(l.current_fingerprint, v_prior.source_fingerprint)
+    INTO v_current_fingerprint
+    FROM (VALUES (true)) seed(present)
+    LEFT JOIN public.rakeback_source_relinks l
+      ON l.rake_record_id = OLD.id;
+
+  IF v_current_fingerprint <> v_fingerprint
+     OR v_prior.source_rake_cents <> v_source_cents
+     OR v_prior.allocated_cents <> v_allocated_cents
+     OR v_prior.share_count <> v_share_count THEN
+    RAISE EXCEPTION 'rake record % changed after its accrual receipt', OLD.id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.rakeback_accrual_reversals r
+     WHERE r.rake_record_id = OLD.id
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM public.rakeback_accrual_reversals r
+       WHERE r.rake_record_id = OLD.id
+         AND r.reason = 'superseded_ghost_twin'
+    ) THEN
+      RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'rake record % already has a reversal receipt', OLD.id;
+  END IF;
+
+  SELECT array_agg(r.user_id ORDER BY r.user_id) INTO v_users
+    FROM public.rakeback_accrual_receipts r
+   WHERE r.rake_record_id = OLD.id AND r.cents > 0;
+  PERFORM public.fn_rakeback_lock_period_keys(
+    OLD.club_id, v_period_start, v_period_end, v_users
+  );
+
+  IF v_prior.basis_origin <> 'historical_source_evidence' THEN
+    v_applied := true;
+  ELSE
+    -- A pre-cutover source was outside the opening basis. It affects the
+    -- refund only when its exact player periods are already closed (normally a
+    -- future tournament bought in a prior paid week). All-absent history means
+    -- there was no rakeback balance to undo; a mixed state is ambiguous and is
+    -- refused rather than silently charging only some players.
+    SELECT count(*) FILTER (WHERE p.id IS NOT NULL AND p.status <> 'pending'),
+           count(*) FILTER (WHERE p.id IS NULL OR p.status = 'pending')
+      INTO v_closed_receipts, v_unclosed_receipts
+      FROM public.rakeback_accrual_receipts r
+      LEFT JOIN public.rakeback_periods p
+        ON p.club_id = r.club_id
+       AND p.user_id = r.user_id
+       AND p.period_start = r.period_start
+     WHERE r.rake_record_id = OLD.id
+       AND r.cents > 0;
+    IF v_closed_receipts > 0 AND v_unclosed_receipts > 0 THEN
+      RAISE EXCEPTION
+        'historical rake record % has mixed closed and unapplied player basis',
+        OLD.id;
+    END IF;
+    -- fn_allocate_rake_credits deliberately returns one row per eligible
+    -- player, including zero-cent rows when there are fewer cents than
+    -- players.  The closed/unclosed counts above deliberately inspect only
+    -- positive receipts because zero-cent shares have no basis to reverse.
+    -- Decide application against that same population; comparing it with the
+    -- header's all-share count would silently discard a paid one-cent source
+    -- split across multiple players.
+    v_applied := v_closed_receipts > 0 AND v_unclosed_receipts = 0;
+  END IF;
+
+  INSERT INTO public.rakeback_accrual_reversals (
+    rake_record_id, source_fingerprint, reversed_cents, share_count,
+    applied_to_basis, reason
+  ) VALUES (
+    OLD.id, v_current_fingerprint, v_allocated_cents, v_share_count, v_applied,
+    CASE WHEN v_applied THEN 'source_record_deleted'
+         ELSE 'source_deleted_before_basis_epoch_no_balance_change' END
+  );
+
+  INSERT INTO public.rakeback_accrual_reversal_receipts (
+    rake_record_id, user_id, club_id, day, period_start, period_end,
+    cents, source_fingerprint
+  )
+  SELECT r.rake_record_id, r.user_id, r.club_id, r.day,
+         r.period_start, r.period_end, r.cents, v_current_fingerprint
+    FROM public.rakeback_accrual_receipts r
+   WHERE r.rake_record_id = OLD.id
+   ORDER BY r.user_id;
+
+  IF v_applied THEN
+    PERFORM public.fn_rakeback_apply_reversal_basis(
+      OLD.id, NULL, (transaction_timestamp() AT TIME ZONE 'UTC')::date,
+      'source_record_deleted',
+      v_prior.basis_origin = 'historical_source_evidence'
+    );
+  END IF;
+
+  RETURN OLD;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_source_basis_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_has_basis boolean;
+  v_authorized_relink boolean;
+BEGIN
+  v_has_basis := (
+    OLD.rake_amount > 0
+    AND OLD.player_contributions IS NOT NULL
+    AND OLD.player_contributions <> '{}'::jsonb
+  ) OR OLD.rake_amount < 0
+    OR EXISTS (
+      SELECT 1 FROM public.rakeback_accrual_records h
+       WHERE h.rake_record_id = OLD.id
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.rakeback_compensation_records c
+       WHERE c.rake_record_id = OLD.id
+    );
+
+  IF NOT v_has_basis THEN
+    RETURN NEW;
+  END IF;
+
+  v_authorized_relink := OLD.rake_amount > 0
+    AND OLD.is_tournament IS FALSE
+    AND OLD.hand_id IS NULL
+    AND NEW.hand_id IS NOT NULL
+    AND OLD.table_id IS NOT NULL
+    AND COALESCE(OLD.metadata->>'hand_number', '') ~ '^[0-9]{1,18}$'
+    AND current_setting('app.rakeback_hand_relink_to', true) = NEW.hand_id::text;
+
+  IF NEW.hand_id IS DISTINCT FROM OLD.hand_id AND NOT v_authorized_relink THEN
+    RAISE EXCEPTION 'rake record % hand provenance is immutable financial history', OLD.id;
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.club_id IS DISTINCT FROM OLD.club_id
+     OR NEW.table_id IS DISTINCT FROM OLD.table_id
+     OR NEW.global_hand_id IS DISTINCT FROM OLD.global_hand_id
+     OR NEW.tournament_id IS DISTINCT FROM OLD.tournament_id
+     OR NEW.is_tournament IS DISTINCT FROM OLD.is_tournament
+     OR NEW.source IS DISTINCT FROM OLD.source
+     OR NEW.rake_amount IS DISTINCT FROM OLD.rake_amount
+     OR NEW.player_contributions IS DISTINCT FROM OLD.player_contributions
+     OR NEW.rake_method IS DISTINCT FROM OLD.rake_method
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR NEW.metadata IS DISTINCT FROM OLD.metadata THEN
+    RAISE EXCEPTION 'rake record % basis is immutable financial history', OLD.id;
+  END IF;
+  RETURN NEW;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_record_hand_relink()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_day date;
+  v_period_start date;
+  v_source_cents bigint;
+  v_allocated_cents bigint;
+  v_share_count integer;
+  v_shares jsonb;
+  v_prior_fingerprint text;
+  v_current_fingerprint text;
+  v_header public.rakeback_accrual_records%ROWTYPE;
+  v_from date;
+  v_basis_origin text;
+BEGIN
+  IF OLD.hand_id IS NOT NULL OR NEW.hand_id IS NULL
+     OR OLD.hand_id IS NOT DISTINCT FROM NEW.hand_id THEN
+    RETURN NEW;
+  END IF;
+  IF OLD.rake_amount <= 0 OR OLD.player_contributions IS NULL
+     OR OLD.player_contributions = '{}'::jsonb THEN
+    RETURN NEW;
+  END IF;
+
+  v_day := (OLD.created_at AT TIME ZONE 'UTC')::date;
+  v_period_start := date_trunc('week', v_day::timestamp)::date;
+  v_source_cents := round(OLD.rake_amount * 100)::bigint;
+  SELECT jsonb_object_agg(
+           a.user_id::text, round(a.credit * 100)::bigint
+           ORDER BY a.user_id::text
+         ),
+         sum(round(a.credit * 100)::bigint)::bigint,
+         count(*)::integer
+    INTO v_shares, v_allocated_cents, v_share_count
+    FROM public.fn_allocate_rake_credits(
+      OLD.rake_amount, OLD.player_contributions,
+      COALESCE(OLD.rake_method, 'DEALT_EQUAL')
+    ) a;
+  IF v_share_count IS NULL OR v_share_count = 0
+     OR v_allocated_cents IS DISTINCT FROM v_source_cents THEN
+    RAISE EXCEPTION 'relinked rake record % no longer allocates exactly', OLD.id;
+  END IF;
+
+  v_prior_fingerprint := public.fn_rakeback_source_fingerprint(
+    OLD.id, OLD.club_id, v_day, v_source_cents,
+    COALESCE(OLD.rake_method, 'DEALT_EQUAL'), OLD.player_contributions,
+    OLD.hand_id, OLD.table_id, OLD.global_hand_id, OLD.tournament_id,
+    OLD.is_tournament,
+    OLD.source, OLD.created_at, OLD.metadata, v_shares
+  );
+  v_current_fingerprint := public.fn_rakeback_source_fingerprint(
+    NEW.id, NEW.club_id, v_day, v_source_cents,
+    COALESCE(NEW.rake_method, 'DEALT_EQUAL'), NEW.player_contributions,
+    NEW.hand_id, NEW.table_id, NEW.global_hand_id, NEW.tournament_id,
+    NEW.is_tournament,
+    NEW.source, NEW.created_at, NEW.metadata, v_shares
+  );
+
+  SELECT * INTO v_header
+    FROM public.rakeback_accrual_records h
+   WHERE h.rake_record_id = OLD.id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    SELECT basis_from_day INTO STRICT v_from
+      FROM public.rakeback_basis_epoch
+     WHERE singleton;
+    IF EXISTS (
+      SELECT 1 FROM public.rakeback_cutover_source_records c
+       WHERE c.rake_record_id = OLD.id
+    ) THEN
+      v_basis_origin := 'cutover_materialized';
+    ELSIF v_day < v_from THEN
+      v_basis_origin := 'historical_source_evidence';
+    ELSE
+      RAISE EXCEPTION
+        'rake record % is inside the atomic epoch without an accrual receipt',
+        OLD.id;
+    END IF;
+    INSERT INTO public.rakeback_accrual_records (
+      rake_record_id, club_id, hand_id, table_id, global_hand_id, tournament_id,
+      is_tournament, source, source_created_at, source_contributions,
+      rake_method, day, period_start, period_end,
+      source_rake_cents, allocated_cents, share_count,
+      basis_origin, source_fingerprint
+    ) VALUES (
+      OLD.id, OLD.club_id, OLD.hand_id, OLD.table_id, OLD.global_hand_id,
+      OLD.tournament_id,
+      OLD.is_tournament, OLD.source, OLD.created_at, OLD.player_contributions,
+      COALESCE(OLD.rake_method, 'DEALT_EQUAL'), v_day,
+      v_period_start, v_period_start + 6, v_source_cents,
+      v_allocated_cents, v_share_count, v_basis_origin,
+      v_prior_fingerprint
+    );
+    INSERT INTO public.rakeback_accrual_receipts (
+      rake_record_id, user_id, club_id, day, period_start, period_end,
+      cents, source_fingerprint
+    )
+    SELECT OLD.id, s.key::uuid, OLD.club_id, v_day,
+           v_period_start, v_period_start + 6, s.value::text::bigint,
+           v_prior_fingerprint
+      FROM jsonb_each(v_shares) s
+     ORDER BY s.key;
+  ELSIF v_header.source_fingerprint <> v_prior_fingerprint THEN
+    RAISE EXCEPTION 'rake record % relink does not match its original receipt', OLD.id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.rakeback_source_relinks l
+     WHERE l.rake_record_id = OLD.id
+  ) THEN
+    RAISE EXCEPTION 'rake record % was already relinked once', OLD.id;
+  END IF;
+  INSERT INTO public.rakeback_source_relinks (
+    rake_record_id, from_hand_id, to_hand_id,
+    prior_fingerprint, current_fingerprint
+  ) VALUES (
+    OLD.id, OLD.hand_id, NEW.hand_id,
+    v_prior_fingerprint, v_current_fingerprint
+  );
+  RETURN NEW;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_rakeback_receipt_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+BEGIN
+  RAISE EXCEPTION '% is immutable financial history', TG_TABLE_NAME;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_rakeback_source_fingerprint(
+  uuid, uuid, date, bigint, text, jsonb, uuid, uuid, bigint, uuid, boolean,
+  text, timestamptz, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_materialize_cutover_record(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_apply_reversal_basis(
+  uuid, uuid, date, text, boolean
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_supersede_ghost_source(
+  uuid, uuid, date
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_accrue_source_record()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_compensate_source_record()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_reverse_deleted_source_record()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_source_basis_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_record_hand_relink()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_receipt_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER trg_rakeback_accrues_with_rake_record
+AFTER INSERT ON public.rake_records
+FOR EACH ROW
+WHEN (
+  NEW.rake_amount > 0
+  AND NEW.player_contributions IS NOT NULL
+  AND NEW.player_contributions <> '{}'::jsonb
+)
+EXECUTE FUNCTION public.fn_rakeback_accrue_source_record();
+
+CREATE TRIGGER trg_rakeback_compensates_with_negative_record
+AFTER INSERT ON public.rake_records
+FOR EACH ROW
+WHEN (NEW.rake_amount < 0)
+EXECUTE FUNCTION public.fn_rakeback_compensate_source_record();
+
+-- Some historical writers created a shell row and filled its attribution in a
+-- later statement. That first complete attribution is also a source door; a
+-- same-value replay reaches the receipt fingerprint and is a no-op.
+CREATE TRIGGER trg_rakeback_accrues_with_first_attribution
+AFTER UPDATE OF club_id, table_id, rake_amount, player_contributions,
+  rake_method, created_at, metadata
+ON public.rake_records
+FOR EACH ROW
+WHEN (
+  NEW.rake_amount > 0
+  AND NEW.player_contributions IS NOT NULL
+  AND NEW.player_contributions <> '{}'::jsonb
+  AND NOT (
+    OLD.rake_amount > 0
+    AND OLD.player_contributions IS NOT NULL
+    AND OLD.player_contributions <> '{}'::jsonb
+  )
+)
+EXECUTE FUNCTION public.fn_rakeback_accrue_source_record();
+
+CREATE TRIGGER trg_rakeback_records_one_authorized_hand_relink
+AFTER UPDATE OF hand_id ON public.rake_records
+FOR EACH ROW
+WHEN (OLD.hand_id IS NULL AND NEW.hand_id IS NOT NULL)
+EXECUTE FUNCTION public.fn_rakeback_record_hand_relink();
+
+CREATE TRIGGER trg_rakeback_source_basis_is_immutable
+BEFORE UPDATE OF id, club_id, hand_id, table_id, global_hand_id,
+  tournament_id, is_tournament,
+  source, rake_amount, player_contributions, rake_method, created_at, metadata
+ON public.rake_records
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_rakeback_source_basis_is_immutable();
+
+CREATE TRIGGER trg_rakeback_source_delete_is_reversed
+BEFORE DELETE ON public.rake_records
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_rakeback_reverse_deleted_source_record();
+
+CREATE TRIGGER trg_rakeback_epoch_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_basis_epoch
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_cutover_user_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_cutover_daily_user
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_cutover_state_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_cutover_daily_state
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_cutover_source_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_cutover_source_records
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_accrual_record_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_accrual_records
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_accrual_receipt_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_accrual_receipts
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_accrual_reversal_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_accrual_reversals
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_accrual_reversal_receipt_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_accrual_reversal_receipts
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_compensation_record_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_compensation_records
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_compensation_link_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_compensation_links
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_closed_period_offset_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_closed_period_offsets
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_period_carry_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_period_carries
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_source_relink_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_source_relinks
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+CREATE TRIGGER trg_rakeback_source_supersession_is_immutable
+BEFORE UPDATE OR DELETE ON public.rakeback_source_supersessions
+FOR EACH ROW EXECUTE FUNCTION public.fn_rakeback_receipt_is_immutable();
+
+COMMENT ON TABLE public.rakeback_accrual_records IS
+  'One immutable exact-cents accrual receipt committed by the source rake_records transaction.';
+COMMENT ON TABLE public.rakeback_accrual_receipts IS
+  'Immutable per-player lines for a rakeback accrual record; line cents sum exactly to source rake cents.';
+COMMENT ON TABLE public.rakeback_accrual_reversals IS
+  'One immutable compensating event when a legitimate source rake row is deleted, such as a pre-start tournament unregister.';
+COMMENT ON TABLE public.rakeback_accrual_reversal_receipts IS
+  'Immutable per-player reversal lines; the original accrual and reversal remain visible after the source row is gone.';
+COMMENT ON TABLE public.rakeback_closed_period_offsets IS
+  'Immutable exact-cents offsets posted to an open period when the original rakeback period is already closed.';
+COMMENT ON TABLE public.rakeback_period_carries IS
+  'Immutable carry of a negative net rakeback basis into the next open period; a closed period can never discard a refund debt.';
+COMMENT ON TABLE public.rakeback_source_supersessions IS
+  'Immutable link proving a later canonical hand source transactionally reversed every prior null-hand twin before accruing exactly once.';
+COMMENT ON TABLE public.rakeback_basis_epoch IS
+  'The locked no-gap cutover from daily rebuilds to source-transaction rakeback accrual.';
+
+DO $postcondition$
+DECLARE
+  v_epoch public.rakeback_basis_epoch%ROWTYPE;
+BEGIN
+  SELECT * INTO STRICT v_epoch FROM public.rakeback_basis_epoch WHERE singleton;
+  IF v_epoch.source_cents IS DISTINCT FROM (
+       SELECT COALESCE(sum(cents), 0)
+         FROM public.rakeback_cutover_daily_user
+     ) THEN
+    RAISE EXCEPTION 'the immutable rakeback cutover snapshot does not balance';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+     WHERE tgrelid = 'public.rake_records'::regclass
+       AND tgname = 'trg_rakeback_accrues_with_rake_record'
+       AND tgenabled = 'O'
+  ) THEN
+    RAISE EXCEPTION 'the source-transaction rakeback trigger is not armed';
+  END IF;
+  IF has_function_privilege(
+       'service_role', 'public.fn_rakeback_accrue_source_record()', 'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'service_role can bypass the rake record source door';
+  END IF;
+  IF has_function_privilege(
+       'service_role', 'public.fn_rakeback_reverse_deleted_source_record()', 'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'service_role can bypass the rake record reversal door';
+  END IF;
+  IF has_table_privilege('service_role', 'public.rakeback_daily_user', 'INSERT')
+     OR has_table_privilege('service_role', 'public.rakeback_daily_user', 'UPDATE')
+     OR has_table_privilege('service_role', 'public.rakeback_daily_state', 'INSERT')
+     OR has_table_privilege('service_role', 'public.rakeback_daily_state', 'UPDATE') THEN
+    RAISE EXCEPTION 'service_role can directly mutate the atomic rakeback basis';
+  END IF;
+END
+$postcondition$;
+
+COMMIT;

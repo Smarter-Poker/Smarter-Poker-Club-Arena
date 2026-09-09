@@ -14,6 +14,28 @@ export interface TableViewerAccess {
   allowed: boolean;
   reason: TableViewerAccessReason;
   clubId: string | null;
+  /**
+   * Authoritative table policy captured in the same read that grants access.
+   * Optional only so injected test doubles and an older rolling-deploy peer
+   * fail closed instead of becoming a source of card visibility. Production
+   * results from authorizeTableViewer always set it.
+   */
+  observerShowCards?: boolean;
+}
+
+/**
+ * The one visibility decision shared by HTTP and both WebSocket transports.
+ * A verified current seat always receives the player view. Everyone else
+ * needs an explicit literal-true table policy; missing/skewed data is private.
+ */
+export function viewerCanSeeTabledCards(access: TableViewerAccess): boolean {
+  return (
+    access.allowed === true && (access.reason === 'seated' || access.observerShowCards === true)
+  );
+}
+
+export function isSeatedTableViewer(access: TableViewerAccess): boolean {
+  return access.allowed === true && access.reason === 'seated';
 }
 
 /**
@@ -32,7 +54,7 @@ export async function authorizeTableViewer(
     supabase
       .from('tables')
       .select(
-        'club_id, union_id, restrict_observers, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+        'club_id, union_id, restrict_observers, observer_show_cards, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
       )
       .eq('id', tableId)
       .maybeSingle(),
@@ -46,27 +68,48 @@ export async function authorizeTableViewer(
       .maybeSingle(),
   ]);
 
-  if (tableError) return { allowed: false, reason: 'check_failed', clubId: null };
-  if (!table) return { allowed: false, reason: 'table_not_found', clubId: null };
+  if (tableError) {
+    return { allowed: false, reason: 'check_failed', clubId: null, observerShowCards: false };
+  }
+  if (!table) {
+    return { allowed: false, reason: 'table_not_found', clubId: null, observerShowCards: false };
+  }
 
   const clubId = typeof table.club_id === 'string' ? table.club_id : null;
   const unionId = typeof table.union_id === 'string' ? table.union_id : null;
   const accessScopeId = unionId || clubId;
-  if (!accessScopeId) return { allowed: false, reason: 'check_failed', clubId: null };
+  const observerShowCards = table.observer_show_cards === true;
+  if (!accessScopeId) {
+    return { allowed: false, reason: 'check_failed', clubId: null, observerShowCards: false };
+  }
   let arena;
   try {
     arena = parseTableArenaIdentity(table);
     if (!userId) throw new Error('Authentication Required');
   } catch {
-    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+    return {
+      allowed: false,
+      reason: 'check_failed',
+      clubId: accessScopeId,
+      observerShowCards: false,
+    };
   }
-  if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
-  if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
+  if (seatResult.error) {
+    return {
+      allowed: false,
+      reason: 'check_failed',
+      clubId: accessScopeId,
+      observerShowCards: false,
+    };
+  }
+  if (seatResult.data) {
+    return { allowed: true, reason: 'seated', clubId: accessScopeId, observerShowCards };
+  }
 
   if (arena.kind === 'diamond_arena') {
     return table.restrict_observers === true
-      ? { allowed: false, reason: 'observers_restricted', clubId }
-      : { allowed: true, reason: 'diamond_member', clubId };
+      ? { allowed: false, reason: 'observers_restricted', clubId, observerShowCards: false }
+      : { allowed: true, reason: 'diamond_member', clubId, observerShowCards };
   }
 
   /*
@@ -87,7 +130,12 @@ export async function authorizeTableViewer(
   ]);
 
   if (membershipsResult.error || scopeResult.error) {
-    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+    return {
+      allowed: false,
+      reason: 'check_failed',
+      clubId: accessScopeId,
+      observerShowCards: false,
+    };
   }
   const scopeIds = new Set(
     Array.isArray(scopeResult.data)
@@ -98,8 +146,20 @@ export async function authorizeTableViewer(
     (membership) => typeof membership.club_id === 'string' && scopeIds.has(membership.club_id)
   );
   if (isMember && table.restrict_observers === true) {
-    return { allowed: false, reason: 'observers_restricted', clubId: accessScopeId };
+    return {
+      allowed: false,
+      reason: 'observers_restricted',
+      clubId: accessScopeId,
+      observerShowCards: false,
+    };
   }
-  if (isMember) return { allowed: true, reason: 'club_member', clubId: accessScopeId };
-  return { allowed: false, reason: 'membership_required', clubId: accessScopeId };
+  if (isMember) {
+    return { allowed: true, reason: 'club_member', clubId: accessScopeId, observerShowCards };
+  }
+  return {
+    allowed: false,
+    reason: 'membership_required',
+    clubId: accessScopeId,
+    observerShowCards: false,
+  };
 }

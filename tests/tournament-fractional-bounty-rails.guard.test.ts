@@ -8,7 +8,7 @@ const refundSql = read(
   'supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql'
 );
 const purchaseSql = read(
-  'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+  'supabase/migrations/20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
 );
 const service = read('src/services/TournamentService.ts');
 const modal = read('src/components/table/RebuyModal.tsx');

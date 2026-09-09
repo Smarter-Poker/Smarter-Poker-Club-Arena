@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const equityWorker = vi.hoisted(() => ({
   estimateEquity: vi.fn(),
   estimateInsurance: vi.fn(),
+  estimateLayeredEquity: vi.fn(),
 }));
 
 vi.mock('./equity/EquityWorkerPool.js', () => ({
@@ -37,6 +38,7 @@ beforeEach(() => {
   TABLE = 'eeeeeeee-eeee-eeee-eeee-' + String(++tableSequence).padStart(12, '0');
   equityWorker.estimateEquity.mockReset();
   equityWorker.estimateInsurance.mockReset();
+  equityWorker.estimateLayeredEquity.mockReset();
   equityWorker.estimateEquity.mockImplementation(async (hands: unknown[][]) =>
     hands.map(() => 1 / hands.length)
   );
@@ -48,6 +50,31 @@ beforeEach(() => {
       exact: false,
       runouts: 6000,
     }))
+  );
+  equityWorker.estimateLayeredEquity.mockImplementation(
+    async (
+      hands: unknown[][],
+      _ids: string[],
+      _seats: number[],
+      _boards: unknown[][],
+      _dead: unknown[],
+      _iters: number,
+      _variant: string,
+      pots: unknown[],
+      _dealer: number,
+      totalWinnings: number
+    ) => ({
+      equities: hands.map((_, index) => (index === 0 ? 0.82 : 0.18)),
+      layerEquities: pots.map(() => hands.map((_, index) => (index === 0 ? 0.82 : 0.18))),
+      expectedNetReturns: hands.map((_, index) =>
+        index === 0 ? totalWinnings * 0.82 : totalWinnings * 0.18
+      ),
+      strictLossPcts: hands.map((_, index) => (index === 0 ? 18 : 82)),
+      pushPcts: hands.map(() => 0),
+      seed: 424242,
+      exact: false,
+      runouts: 6000,
+    })
   );
 });
 
@@ -168,6 +195,13 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
     username: p.username,
     stack: p.stack,
     is_horse: false, // humans: nothing auto-responds, offers stay pending
+  }));
+  engine.currentHandActions = players.map((player, index) => ({
+    seat: player.seat,
+    userId: player.user_id,
+    action: index === 0 ? 'all_in' : 'call',
+    timestamp: 1,
+    stage: 'preflop',
   }));
   /* The second half of the same de-flake. NO test in this file exercises a
      timeout - the windows exist only so the machinery does not hang - and at

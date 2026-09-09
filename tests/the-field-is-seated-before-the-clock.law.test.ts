@@ -109,7 +109,7 @@ describe('ITEM 2 — seating moves, the poker does not', () => {
     // late_reg_mins is measured from started_at on both sides; stamping the
     // seating instant would close a 30-minute window 29 minutes in.
     expect(start).toMatch(/const requestedStartedAtIso\s*=[\s\S]{0,240}?scheduledStartMs/);
-    expect(start).toMatch(/const \{ launchId, startedAtIso \} = launchClaim/);
+    expect(start).toMatch(/const \{ launchId, startedAtIso, supplyVersion \} = launchClaim/);
     expect(start).toMatch(/tournament\.started_at\s*=\s*startedAtIso/);
     expect(start).not.toMatch(/started_at:\s*new Date\(\)\.toISOString\(\)/);
   });

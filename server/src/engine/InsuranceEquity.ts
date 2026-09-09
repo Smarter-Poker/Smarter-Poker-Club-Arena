@@ -151,7 +151,8 @@ export function leaderOuts(
   opponentsCards: Card[][],
   board: Card[],
   variant: string,
-  shortDeck: boolean = false
+  shortDeck: boolean = false,
+  visibleDeadCards: Card[] = []
 ): Card[] {
   if (board.length < 3 || board.length >= 5) return [];
   const isOmaha = isOmahaVariant(variant);
@@ -163,6 +164,7 @@ export function leaderOuts(
   for (const c of heroCards) known.add(cardKey(c));
   for (const opp of opponentsCards) for (const c of opp) known.add(cardKey(c));
   for (const c of board) known.add(cardKey(c));
+  for (const c of visibleDeadCards) known.add(cardKey(c));
 
   const baseDeck = shortDeck ? FULL_DECK.filter((c) => !SHORT_DECK_REMOVED.has(c.rank)) : FULL_DECK;
   const remaining = baseDeck.filter((c) => !known.has(cardKey(c)));

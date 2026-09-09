@@ -109,7 +109,7 @@ describe('the SQL side matches: a paid rebuy commits its seat or nothing', () =>
     const sql = fs.readFileSync(
       path.join(
         MIGRATIONS,
-        '20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+        '20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
       ),
       'utf8'
     );

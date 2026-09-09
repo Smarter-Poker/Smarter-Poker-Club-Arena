@@ -35,6 +35,115 @@
 /** Anything the draw patch can be applied onto: the row object or the cache. */
 export type SpinDrawTarget = Record<string, unknown> | null | undefined;
 
+const INVALID_STRUCTURED_VALUE = Symbol('invalid-structured-launch-value');
+
+type CanonicalLaunchValue =
+  | null
+  | boolean
+  | number
+  | string
+  | CanonicalLaunchValue[]
+  | { [key: string]: CanonicalLaunchValue };
+
+/**
+ * Canonicalize a JSON value without changing array order. Object keys are
+ * sorted because Postgres json/jsonb and PostgREST do not promise to preserve
+ * the insertion order used by the JavaScript patch.
+ */
+function canonicalLaunchValue(
+  value: unknown
+): CanonicalLaunchValue | typeof INVALID_STRUCTURED_VALUE {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return value;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : INVALID_STRUCTURED_VALUE;
+  }
+  if (Array.isArray(value)) {
+    const out: CanonicalLaunchValue[] = [];
+    for (const item of value) {
+      const normalized = canonicalLaunchValue(item);
+      if (normalized === INVALID_STRUCTURED_VALUE) return INVALID_STRUCTURED_VALUE;
+      out.push(normalized);
+    }
+    return out;
+  }
+  if (!value || typeof value !== 'object') return INVALID_STRUCTURED_VALUE;
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return INVALID_STRUCTURED_VALUE;
+  // A normal `{}` would execute the inherited `__proto__` setter instead of
+  // recording that own JSON key. The key could then disappear and make an
+  // over-specified/malformed database value compare equal to the launch
+  // patch. A null-prototype record makes every JSON key data, including
+  // `__proto__`, `constructor`, and `prototype`.
+  const out = Object.create(null) as { [key: string]: CanonicalLaunchValue };
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const normalized = canonicalLaunchValue((value as Record<string, unknown>)[key]);
+    if (normalized === INVALID_STRUCTURED_VALUE) return INVALID_STRUCTURED_VALUE;
+    out[key] = normalized;
+  }
+  return out;
+}
+
+/**
+ * Compare a structured launch field as JSON semantics, not transport shape.
+ * PostgREST can return legacy json columns as encoded JSON text while jsonb
+ * columns arrive as arrays/objects. Only a root string which parses to a
+ * structured value is accepted; malformed or scalar JSON fails closed.
+ */
+export function launchStructuredValueMatches(actual: unknown, expected: object): boolean {
+  let decoded = actual;
+  if (typeof decoded === 'string') {
+    try {
+      decoded = JSON.parse(decoded) as unknown;
+    } catch {
+      return false;
+    }
+  }
+  if (!decoded || typeof decoded !== 'object') return false;
+  const canonicalActual = canonicalLaunchValue(decoded);
+  const canonicalExpected = canonicalLaunchValue(expected);
+  return (
+    canonicalActual !== INVALID_STRUCTURED_VALUE &&
+    canonicalExpected !== INVALID_STRUCTURED_VALUE &&
+    JSON.stringify(canonicalActual) === JSON.stringify(canonicalExpected)
+  );
+}
+
+/**
+ * Compare one projected launch column without JavaScript coercion turning a
+ * missing or malformed PostgREST value into proof. Numeric database columns
+ * may legitimately arrive as finite numbers or JSON-number strings; booleans,
+ * nulls, blank strings, arrays, and inherited/missing properties are never
+ * numeric read-back evidence.
+ */
+export function launchPatchValueMatches(
+  row: Record<string, unknown>,
+  key: string,
+  expected: unknown
+): boolean {
+  if (!Object.prototype.hasOwnProperty.call(row, key)) return false;
+  const actual = row[key];
+  if (expected === null) return actual === null;
+  if (typeof expected === 'number') {
+    if (!Number.isFinite(expected)) return false;
+    if (typeof actual === 'number') return Number.isFinite(actual) && actual === expected;
+    if (typeof actual !== 'string' || actual.trim() !== actual) return false;
+    if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(actual)) return false;
+    const parsed = Number(actual);
+    return Number.isFinite(parsed) && parsed === expected;
+  }
+  if (key.endsWith('_at') && typeof expected === 'string') {
+    if (typeof actual !== 'string') return false;
+    const actualMs = Date.parse(actual);
+    const expectedMs = Date.parse(expected);
+    return Number.isFinite(actualMs) && actualMs === expectedMs;
+  }
+  if (expected !== null && typeof expected === 'object') {
+    return launchStructuredValueMatches(actual, expected);
+  }
+  return actual === expected;
+}
+
 /**
  * Copy EVERY field of the draw patch onto each in-memory target.
  *

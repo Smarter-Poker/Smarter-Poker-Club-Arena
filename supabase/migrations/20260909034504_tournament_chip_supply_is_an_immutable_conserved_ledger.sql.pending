@@ -1,0 +1,3103 @@
+-- 20260909034504_tournament_chip_supply_is_an_immutable_conserved_ledger.sql
+--
+-- Version reserved by scripts/new-migration.mjs against origin/main and every
+-- remote branch, so it cannot collide with another agent's in-flight work.
+--
+-- A launch used to prove only a lower bound: field size multiplied by the
+-- starting stack. Early-bird chips, seat-first stacks, rebuys and add-ons had
+-- no single durable issuance record, so a missing stack could be hidden by a
+-- different player's bonus. This migration makes supply an append-only fact.
+--
+-- New entry generations are ledgered from their INSERT onward. Existing
+-- generations are deliberately NOT reconstructed from mutable balances: a
+-- launch containing even one of them is permanently supply_version 0 and
+-- drains through the bounded compatibility path. A fully ledgered field is
+-- version 1 and can become RUNNING only when exact issued, roster and felt
+-- totals agree. Spins retain the public reveal contract: supply is issued to
+-- the roster at launch, seats remain zero through the wheel, and a separate
+-- database-timed RPC projects the already-issued supply after the chip-drop
+-- beat. No timer or cron repairs an incomplete transaction later.
+--
+-- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
+-- Supabase's schema-cache reload, which takes about 28 seconds on this database.
+
+BEGIN;
+
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '120s';
+
+DO $preconditions$
+DECLARE
+  v_chip_type text;
+  v_complete_source text;
+BEGIN
+  IF to_regprocedure(
+       'public.fn_complete_tournament_launch_before_lease_generation(uuid,uuid)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamptz,uuid)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.fn_assert_tournament_manager_write_scope(uuid)'
+     ) IS NULL
+     OR to_regprocedure(
+       'smarter_private.fn_smarter_data_api_pre_request()'
+     ) IS NULL THEN
+    RAISE EXCEPTION
+      'immutable tournament supply requires the generation-fenced launch and canonical purchase predecessors';
+  END IF;
+
+  SELECT format_type(a.atttypid, a.atttypmod)
+    INTO v_chip_type
+    FROM pg_attribute a
+   WHERE a.attrelid = 'public.tournament_players'::regclass
+     AND a.attname = 'chips'
+     AND NOT a.attisdropped;
+  IF v_chip_type IS DISTINCT FROM 'bigint' THEN
+    RAISE EXCEPTION
+      'immutable tournament supply requires normalized bigint roster chips, found %',
+      COALESCE(v_chip_type, '<missing>');
+  END IF;
+
+  SELECT p.prosrc INTO v_complete_source
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_complete_tournament_launch_before_lease_generation(uuid,uuid)'::regprocedure;
+  IF position('launch_stacks_uncredited' in v_complete_source) = 0
+     OR position('s.stack = p.chips' in v_complete_source) = 0
+     OR position('public.tournament_knockout_candidates' in v_complete_source) = 0 THEN
+    RAISE EXCEPTION
+      'immutable tournament supply requires the exact-stack launch-completion predecessor';
+  END IF;
+END;
+$preconditions$;
+
+/* One roster row may be deleted and later bought again before the event. The
+   row id is not a durable generation because the row itself is deleted. Keep
+   an explicit UUID on the row and copy it into every immutable event. */
+ALTER TABLE public.tournament_players
+  ADD COLUMN IF NOT EXISTS chip_supply_generation uuid DEFAULT gen_random_uuid();
+
+UPDATE public.tournament_players
+   SET chip_supply_generation = gen_random_uuid()
+ WHERE chip_supply_generation IS NULL;
+
+ALTER TABLE public.tournament_players
+  ALTER COLUMN chip_supply_generation SET DEFAULT gen_random_uuid(),
+  ALTER COLUMN chip_supply_generation SET NOT NULL;
+
+ALTER TABLE public.tournament_launch_receipts
+  ADD COLUMN IF NOT EXISTS supply_version smallint NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS supply_roster_count integer,
+  ADD COLUMN IF NOT EXISTS supply_roster_hash text,
+  ADD COLUMN IF NOT EXISTS supply_starting_chips bigint,
+  ADD COLUMN IF NOT EXISTS supply_expected_issued_chips bigint,
+  ADD COLUMN IF NOT EXISTS supply_projection_deferred boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS supply_projected_at timestamptz;
+
+ALTER TABLE public.tournament_launch_receipts
+  DROP CONSTRAINT IF EXISTS tournament_launch_receipts_supply_version_check;
+ALTER TABLE public.tournament_launch_receipts
+  ADD CONSTRAINT tournament_launch_receipts_supply_version_check
+  CHECK (supply_version IN (0, 1)) NOT VALID;
+ALTER TABLE public.tournament_launch_receipts
+  VALIDATE CONSTRAINT tournament_launch_receipts_supply_version_check;
+
+/* Rows which predate this migration stay explicit version 0. Only the INSERT
+   snapshot trigger below may select version 1 for a new receipt. The
+   predecessor's immutability trigger must be removed before this one-time
+   conversion; its stricter replacement is installed below in this same DDL
+   transaction, so no concurrent writer can observe an unfenced table. */
+DROP TRIGGER IF EXISTS tournament_launch_receipt_is_immutable
+  ON public.tournament_launch_receipts;
+
+UPDATE public.tournament_launch_receipts
+   SET supply_version = 0,
+       supply_roster_count = NULL,
+       supply_roster_hash = NULL,
+       supply_starting_chips = NULL,
+       supply_expected_issued_chips = NULL,
+       supply_projection_deferred = false,
+       supply_projected_at = NULL;
+
+ALTER TABLE public.tournament_launch_receipts
+  ALTER COLUMN supply_version SET DEFAULT 1;
+
+CREATE TABLE public.tournament_chip_supply_events (
+  event_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id uuid NOT NULL
+    REFERENCES public.tournaments(id) ON DELETE RESTRICT,
+  tournament_player_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  entry_generation uuid NOT NULL,
+  event_kind text NOT NULL,
+  amount_delta bigint NOT NULL,
+  semantic_key text NOT NULL,
+  source text NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  recorded_txid bigint NOT NULL DEFAULT txid_current(),
+  CONSTRAINT tournament_chip_supply_events_kind_check CHECK (
+    event_kind IN (
+      'entry_opened', 'registration_bonus', 'initial_stack',
+      'rebuy', 'reentry', 'addon', 'entry_closed'
+    )
+  ),
+  CONSTRAINT tournament_chip_supply_events_amount_check CHECK (
+    (event_kind = 'entry_opened' AND amount_delta = 0)
+    OR (event_kind IN (
+          'registration_bonus', 'initial_stack', 'rebuy', 'reentry', 'addon'
+        ) AND amount_delta > 0 AND amount_delta <= 9999999999999)
+    OR (event_kind = 'entry_closed'
+        AND amount_delta <= 0 AND amount_delta >= -9999999999999)
+  ),
+  CONSTRAINT tournament_chip_supply_events_semantic_key_check CHECK (
+    length(btrim(semantic_key)) BETWEEN 16 AND 300
+  ),
+  CONSTRAINT tournament_chip_supply_events_source_check CHECK (
+    length(btrim(source)) BETWEEN 3 AND 80
+  ),
+  CONSTRAINT tournament_chip_supply_events_metadata_check CHECK (
+    jsonb_typeof(metadata) = 'object'
+  ),
+  CONSTRAINT tournament_chip_supply_events_semantic_unique
+    UNIQUE (tournament_id, semantic_key)
+);
+
+CREATE INDEX tournament_chip_supply_events_entry_idx
+  ON public.tournament_chip_supply_events (
+    tournament_id, user_id, entry_generation, recorded_at, event_id
+  );
+
+/* The insert guard and cancellation close address one generation without a
+   user predicate. Keep that proof indexed, and make the one-open/one-close
+   cardinality physical as well as procedural. The table is born empty in
+   this activation, so these builds do not scan or lock legacy rows. */
+CREATE INDEX tournament_chip_supply_events_generation_idx
+  ON public.tournament_chip_supply_events (
+    tournament_id, entry_generation, event_id
+  );
+CREATE UNIQUE INDEX tournament_chip_supply_events_one_open_idx
+  ON public.tournament_chip_supply_events (tournament_id, entry_generation)
+  WHERE event_kind = 'entry_opened';
+CREATE UNIQUE INDEX tournament_chip_supply_events_one_close_idx
+  ON public.tournament_chip_supply_events (tournament_id, entry_generation)
+  WHERE event_kind = 'entry_closed';
+
+ALTER TABLE public.tournament_chip_supply_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.tournament_chip_supply_events
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.trg_tournament_chip_supply_event_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'tournament chip supply events are append-only'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+CREATE TRIGGER tournament_chip_supply_event_is_immutable
+  BEFORE UPDATE OR DELETE ON public.tournament_chip_supply_events
+  FOR EACH ROW EXECUTE FUNCTION public.trg_tournament_chip_supply_event_is_immutable();
+
+REVOKE ALL ON FUNCTION public.trg_tournament_chip_supply_event_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_append_tournament_chip_supply_event(
+  p_tournament_id uuid,
+  p_tournament_player_id uuid,
+  p_user_id uuid,
+  p_entry_generation uuid,
+  p_event_kind text,
+  p_amount_delta bigint,
+  p_semantic_key text,
+  p_source text,
+  p_metadata jsonb DEFAULT '{}'::jsonb
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_event_id uuid;
+BEGIN
+  INSERT INTO public.tournament_chip_supply_events (
+    tournament_id, tournament_player_id, user_id, entry_generation,
+    event_kind, amount_delta, semantic_key, source, metadata
+  ) VALUES (
+    p_tournament_id, p_tournament_player_id, p_user_id, p_entry_generation,
+    p_event_kind, p_amount_delta, p_semantic_key, p_source,
+    COALESCE(p_metadata, '{}'::jsonb)
+  )
+  RETURNING event_id INTO v_event_id;
+  RETURN v_event_id;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_append_tournament_chip_supply_event(
+  uuid, uuid, uuid, uuid, text, bigint, text, text, jsonb
+) FROM PUBLIC, anon, authenticated, service_role;
+
+/* The table itself is the trust boundary. Every insert, including an owner
+   insert which bypasses fn_append_tournament_chip_supply_event, takes the
+   exact tournament row lock before inspecting one generation's immutable
+   opening row. That serializes cancellation with every possible issuance
+   writer without a collision-prone advisory hash. Once a generation closes,
+   no later event can revive it; a close is accepted only when it is the exact
+   inverse of the committed pre-close net. */
+CREATE OR REPLACE FUNCTION public.trg_validate_tournament_chip_supply_event_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_tournament_status text;
+  v_event_count bigint;
+  v_open_count bigint;
+  v_close_count bigint;
+  v_net bigint;
+  v_identity_mismatch boolean;
+BEGIN
+  SELECT upper(COALESCE(t.status::text, ''))
+    INTO v_tournament_status
+    FROM public.tournaments t
+   WHERE t.id = NEW.tournament_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_TOURNAMENT_NOT_FOUND: tournament %',
+      NEW.tournament_id USING ERRCODE = '23503';
+  END IF;
+
+  IF NEW.event_kind = 'entry_opened' THEN
+    IF v_tournament_status IN ('CANCELLED', 'CANCELED') THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_EVENT_AFTER_CANCEL: tournament % is %',
+        NEW.tournament_id, v_tournament_status USING ERRCODE = '55000';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+        FROM public.tournament_chip_supply_events e
+       WHERE e.tournament_id = NEW.tournament_id
+         AND e.entry_generation = NEW.entry_generation
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_OPEN_DUPLICATE: generation % already exists',
+        NEW.entry_generation USING ERRCODE = '23505';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  /* The opening fact is the collision-free row-level generation lock. The
+     tournament lock above orders it with terminal-status transitions; this
+     second lock prevents two semantic keys from mutating one generation in
+     parallel even if future callers widen tournament concurrency. */
+  PERFORM 1
+    FROM public.tournament_chip_supply_events e
+   WHERE e.tournament_id = NEW.tournament_id
+     AND e.entry_generation = NEW.entry_generation
+     AND e.event_kind = 'entry_opened'
+   ORDER BY e.event_id
+   FOR UPDATE;
+
+  SELECT count(*)::bigint,
+         count(*) FILTER (WHERE e.event_kind = 'entry_opened')::bigint,
+         count(*) FILTER (WHERE e.event_kind = 'entry_closed')::bigint,
+         COALESCE(sum(e.amount_delta), 0)::bigint,
+         COALESCE(bool_or(
+           e.user_id IS DISTINCT FROM NEW.user_id
+           OR e.tournament_player_id IS DISTINCT FROM NEW.tournament_player_id
+         ), false)
+    INTO v_event_count, v_open_count, v_close_count, v_net,
+         v_identity_mismatch
+    FROM public.tournament_chip_supply_events e
+   WHERE e.tournament_id = NEW.tournament_id
+     AND e.entry_generation = NEW.entry_generation;
+
+  IF v_event_count = 0 OR v_open_count <> 1 OR v_identity_mismatch THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_GENERATION_UNPROVEN: generation % has no exact immutable identity',
+      NEW.entry_generation USING ERRCODE = '23514';
+  END IF;
+  IF v_close_count <> 0 THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_EVENT_AFTER_CLOSE: generation % is already closed',
+      NEW.entry_generation USING ERRCODE = '55000';
+  END IF;
+
+  IF NEW.event_kind = 'entry_closed' THEN
+    IF NEW.amount_delta IS DISTINCT FROM -v_net THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_CLOSE_DELTA_MISMATCH: generation % requires %, got %',
+        NEW.entry_generation, -v_net, NEW.amount_delta
+        USING ERRCODE = '23514';
+    END IF;
+    IF NEW.amount_delta = 0 AND v_event_count <> 1 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_ZERO_CLOSE_REQUIRES_UNISSUED_ENTRY: generation % has % pre-close facts',
+        NEW.entry_generation, v_event_count USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF v_tournament_status IN ('CANCELLED', 'CANCELED') THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_EVENT_AFTER_CANCEL: tournament % is %',
+      NEW.tournament_id, v_tournament_status USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER tournament_chip_supply_event_insert_is_valid
+  BEFORE INSERT ON public.tournament_chip_supply_events
+  FOR EACH ROW EXECUTE FUNCTION public.trg_validate_tournament_chip_supply_event_insert();
+
+REVOKE ALL ON FUNCTION public.trg_validate_tournament_chip_supply_event_insert()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* Cancellation retires the whole tournament supply, including generations
+   whose players were eliminated before the cancellation. Closing only the
+   rows which transition from playing/registered to eliminated strands every
+   previously eliminated entrant's issuance even though the canonical cancel
+   refunds that entrant too. Anchor retirement to the tournament's terminal
+   transition instead: atomic_cancel_tournament updates the tournament before
+   its refunds, so these immutable reversals share that transaction and roll
+   back with any refused refund. The existing deferred refund constraint still
+   decides whether the cancellation may commit. */
+CREATE OR REPLACE FUNCTION public.trg_close_tournament_chip_supply_on_cancel()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_generation record;
+BEGIN
+  IF upper(COALESCE(NEW.status::text, '')) NOT IN ('CANCELLED', 'CANCELED')
+     OR upper(COALESCE(OLD.status::text, '')) IN ('CANCELLED', 'CANCELED') THEN
+    RETURN NEW;
+  END IF;
+
+  /* One generation has one immutable identity, one opening marker and at
+     most one close. Refuse corrupt history instead of blessing it with a
+     compensating row whose meaning cannot be proven. */
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_chip_supply_events e
+     WHERE e.tournament_id = NEW.id
+     GROUP BY e.entry_generation
+    HAVING count(*) FILTER (WHERE e.event_kind = 'entry_opened') <> 1
+        OR count(*) FILTER (WHERE e.event_kind = 'entry_closed') > 1
+        OR count(DISTINCT e.user_id) <> 1
+        OR count(DISTINCT e.tournament_player_id) <> 1
+        OR (
+          count(*) FILTER (WHERE e.event_kind = 'entry_closed') = 1
+          AND sum(e.amount_delta) <> 0
+        )
+  ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_CANCEL_HISTORY_CORRUPT: tournament % has an ambiguous entry generation',
+      NEW.id USING ERRCODE = '23514';
+  END IF;
+
+  /* UPDATE already owns NEW's tournament row. Every event insert now takes
+     that same row lock before its generation lock, so this ordered snapshot
+     cannot miss a committed issuance or be overtaken by a new one. Route
+     each close through the canonical append door as an additional defense;
+     its table trigger independently proves the exact inverse at insertion. */
+  FOR v_generation IN
+    SELECT e.tournament_player_id,
+           e.user_id,
+           e.entry_generation,
+           sum(e.amount_delta)::bigint AS net
+      FROM public.tournament_chip_supply_events e
+     WHERE e.tournament_id = NEW.id
+     GROUP BY e.tournament_player_id, e.user_id, e.entry_generation
+    HAVING count(*) FILTER (WHERE e.event_kind = 'entry_opened') = 1
+       AND count(*) FILTER (WHERE e.event_kind = 'entry_closed') = 0
+     ORDER BY e.entry_generation, e.user_id, e.tournament_player_id
+  LOOP
+    PERFORM public.fn_append_tournament_chip_supply_event(
+      NEW.id,
+      v_generation.tournament_player_id,
+      v_generation.user_id,
+      v_generation.entry_generation,
+      'entry_closed',
+      -v_generation.net,
+      'entry:' || v_generation.entry_generation::text || ':closed',
+      'tournament_cancelled',
+      jsonb_build_object(
+        'old_status', OLD.status::text,
+        'new_status', NEW.status::text
+      )
+    );
+  END LOOP;
+
+  IF COALESCE((
+       SELECT sum(e.amount_delta)::bigint
+         FROM public.tournament_chip_supply_events e
+        WHERE e.tournament_id = NEW.id
+     ), 0) <> 0 THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_CANCEL_NOT_CONSERVED: tournament % did not retire to zero',
+      NEW.id USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.trg_close_tournament_chip_supply_on_cancel()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS ay_close_tournament_chip_supply_on_cancel
+  ON public.tournaments;
+CREATE TRIGGER ay_close_tournament_chip_supply_on_cancel
+  AFTER UPDATE OF status ON public.tournaments
+  FOR EACH ROW EXECUTE FUNCTION public.trg_close_tournament_chip_supply_on_cancel();
+
+/* Snapshot exactly what a launch is allowed to issue. Missing entry-opened
+   markers mean legacy version 0, never guessed events. A malformed ledgered
+   subset is corruption and aborts instead of silently downgrading it. */
+CREATE OR REPLACE FUNCTION public.trg_snapshot_tournament_launch_chip_supply()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_roster_count integer;
+  v_ledgered_count integer;
+  v_bad_ledgered_count integer;
+  v_starting_chips bigint;
+  v_roster_hash text;
+  v_expected bigint;
+  v_variant text;
+  v_tournament_type text;
+BEGIN
+  SELECT COALESCE(t.starting_chips, 0)::bigint,
+         lower(COALESCE(t.variant, '')),
+         upper(COALESCE(t.tournament_type, ''))
+    INTO v_starting_chips, v_variant, v_tournament_type
+    FROM public.tournaments t
+   WHERE t.id = NEW.tournament_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'launch supply snapshot cannot find tournament %', NEW.tournament_id
+      USING ERRCODE = '23503';
+  END IF;
+
+  SELECT count(*)::integer,
+         count(*) FILTER (WHERE opened.entry_generation IS NOT NULL)::integer,
+         md5(COALESCE(string_agg(p.user_id::text, ',' ORDER BY p.user_id), ''))
+    INTO v_roster_count, v_ledgered_count, v_roster_hash
+    FROM public.tournament_players p
+    LEFT JOIN LATERAL (
+      SELECT e.entry_generation
+        FROM public.tournament_chip_supply_events e
+       WHERE e.tournament_id = p.tournament_id
+         AND e.user_id = p.user_id
+         AND e.entry_generation = p.chip_supply_generation
+         AND e.event_kind = 'entry_opened'
+       LIMIT 1
+    ) opened ON true
+   WHERE p.tournament_id = NEW.tournament_id
+     AND p.status::text IN ('registered', 'playing');
+
+  SELECT count(*)::integer
+    INTO v_bad_ledgered_count
+    FROM public.tournament_players p
+   WHERE p.tournament_id = NEW.tournament_id
+     AND p.status::text IN ('registered', 'playing')
+     AND EXISTS (
+       SELECT 1
+         FROM public.tournament_chip_supply_events e
+        WHERE e.tournament_id = p.tournament_id
+          AND e.user_id = p.user_id
+          AND e.entry_generation = p.chip_supply_generation
+          AND e.event_kind = 'entry_opened'
+     )
+     AND (
+       p.chips IS NULL
+       OR p.chips < 0
+       OR p.chips > 9999999999999
+       OR p.chips IS DISTINCT FROM (
+         SELECT COALESCE(sum(e.amount_delta), 0)::bigint
+           FROM public.tournament_chip_supply_events e
+          WHERE e.tournament_id = p.tournament_id
+            AND e.user_id = p.user_id
+            AND e.entry_generation = p.chip_supply_generation
+       )
+       OR (
+         p.status::text = 'playing'
+         AND NOT EXISTS (
+           SELECT 1 FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'initial_stack'
+         )
+       )
+     );
+
+  IF v_bad_ledgered_count <> 0 THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SUPPLY_CORRUPT: % ledgered launch entrant(s) do not equal their immutable events',
+      v_bad_ledgered_count
+      USING ERRCODE = '23514';
+  END IF;
+
+  NEW.supply_roster_count := v_roster_count;
+  NEW.supply_roster_hash := v_roster_hash;
+  NEW.supply_starting_chips := v_starting_chips;
+  NEW.supply_projected_at := NULL;
+
+  IF v_roster_count = v_ledgered_count THEN
+    IF v_starting_chips <= 0 OR v_starting_chips > 9999999999999 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_INVALID: ledgered launch requires positive whole starting chips'
+        USING ERRCODE = '23514';
+    END IF;
+
+    SELECT COALESCE(sum(
+             p.chips + CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM public.tournament_chip_supply_events e
+                  WHERE e.tournament_id = p.tournament_id
+                    AND e.user_id = p.user_id
+                    AND e.entry_generation = p.chip_supply_generation
+                    AND e.event_kind = 'initial_stack'
+               ) THEN 0 ELSE v_starting_chips END
+           ), 0)::bigint
+      INTO v_expected
+      FROM public.tournament_players p
+     WHERE p.tournament_id = NEW.tournament_id
+       AND p.status::text IN ('registered', 'playing');
+
+    IF v_expected <= 0 OR v_expected > 9999999999999 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_INVALID: expected launch supply % is outside the supported domain',
+        v_expected USING ERRCODE = '23514';
+    END IF;
+
+    NEW.supply_version := 1;
+    NEW.supply_expected_issued_chips := v_expected;
+    /* Begin precedes the draw. The persisted format, not a future multiplier,
+       is the database fact that says this field has a reveal beat. */
+    NEW.supply_projection_deferred :=
+      v_variant = 'spin' OR v_tournament_type = 'SPIN';
+  ELSE
+    NEW.supply_version := 0;
+    NEW.supply_expected_issued_chips := NULL;
+    NEW.supply_projection_deferred := false;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS a0_snapshot_tournament_launch_chip_supply
+  ON public.tournament_launch_receipts;
+CREATE TRIGGER a0_snapshot_tournament_launch_chip_supply
+  BEFORE INSERT ON public.tournament_launch_receipts
+  FOR EACH ROW EXECUTE FUNCTION public.trg_snapshot_tournament_launch_chip_supply();
+
+REVOKE ALL ON FUNCTION public.trg_snapshot_tournament_launch_chip_supply()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* Keep every snapshot field immutable. The only additional legal receipt
+   mutation is the once-only deferred-stack projection stamped by its exact
+   launch generation. Completion and lease adoption retain their old rules. */
+CREATE OR REPLACE FUNCTION public.trg_tournament_launch_receipt_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $function$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'tournament launch receipts cannot be deleted'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NEW.tournament_id IS DISTINCT FROM OLD.tournament_id
+     OR NEW.launch_id IS DISTINCT FROM OLD.launch_id
+     OR NEW.started_at IS DISTINCT FROM OLD.started_at
+     OR NEW.claimed_at IS DISTINCT FROM OLD.claimed_at
+     OR NEW.supply_version IS DISTINCT FROM OLD.supply_version
+     OR NEW.supply_roster_count IS DISTINCT FROM OLD.supply_roster_count
+     OR NEW.supply_roster_hash IS DISTINCT FROM OLD.supply_roster_hash
+     OR NEW.supply_starting_chips IS DISTINCT FROM OLD.supply_starting_chips
+     OR NEW.supply_expected_issued_chips
+        IS DISTINCT FROM OLD.supply_expected_issued_chips
+     OR NEW.supply_projection_deferred
+        IS DISTINCT FROM OLD.supply_projection_deferred THEN
+    RAISE EXCEPTION 'tournament launch receipt identity and supply snapshot are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF OLD.completed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'completed tournament launch receipts are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NEW.completed_at IS NOT NULL THEN
+    IF NEW.lease_generation IS DISTINCT FROM OLD.lease_generation
+       OR NEW.supply_projected_at IS DISTINCT FROM OLD.supply_projected_at THEN
+      RAISE EXCEPTION
+        'a tournament launch receipt generation or projection cannot change during completion'
+        USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.lease_generation IS DISTINCT FROM OLD.lease_generation
+     AND NEW.supply_projected_at IS NOT DISTINCT FROM OLD.supply_projected_at
+     AND current_setting('app.atomic_tournament_launch_lease_adoption', true)
+         = OLD.tournament_id::text || ':' || OLD.lease_generation::text || ':'
+           || NEW.lease_generation::text THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.lease_generation IS NOT DISTINCT FROM OLD.lease_generation
+     AND OLD.supply_projected_at IS NULL
+     AND NEW.supply_projected_at IS NOT NULL
+     AND NEW.supply_projection_deferred
+     AND current_setting('app.tournament_chip_supply_projection', true)
+         = OLD.tournament_id::text || ':' || OLD.launch_id::text || ':'
+           || OLD.lease_generation::text THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION
+    'an incomplete tournament launch receipt may only adopt a lease or record its exact deferred projection'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+CREATE TRIGGER tournament_launch_receipt_is_immutable
+  BEFORE UPDATE OR DELETE ON public.tournament_launch_receipts
+  FOR EACH ROW EXECUTE FUNCTION public.trg_tournament_launch_receipt_is_immutable();
+
+REVOKE ALL ON FUNCTION public.trg_tournament_launch_receipt_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* Every source mutation and its supply event share one statement transaction.
+   The trigger does not infer issuance from an arbitrary positive balance
+   change. It recognizes only entry creation, first-stack activation, or the
+   canonical rebuy wrapper's exact transaction marker. Accepted hands remain
+   redistribution, not issuance. */
+CREATE OR REPLACE FUNCTION public.trg_record_tournament_chip_supply()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_row public.tournament_players%ROWTYPE;
+  v_tournament_status text;
+  v_starting_chips bigint;
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_has_incomplete_receipt boolean := false;
+  v_is_ledgered boolean := false;
+  v_initial_exists boolean := false;
+  v_net bigint := 0;
+  v_delta bigint;
+  v_source text;
+  v_purchase jsonb;
+  v_purchase_kind text;
+  v_candidate public.tournament_knockout_candidates%ROWTYPE;
+  v_candidate_count integer;
+  v_marker text;
+BEGIN
+  v_row := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+
+  SELECT upper(COALESCE(t.status::text, '')),
+         COALESCE(t.starting_chips, 0)::bigint
+    INTO v_tournament_status, v_starting_chips
+    FROM public.tournaments t
+   WHERE t.id = v_row.tournament_id;
+  IF NOT FOUND THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  SELECT * INTO v_receipt
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id = v_row.tournament_id
+     AND r.completed_at IS NULL;
+  v_has_incomplete_receipt := FOUND;
+
+  IF TG_OP <> 'DELETE' THEN
+    IF NEW.chip_supply_generation IS NULL
+       OR NEW.chips IS NULL
+       OR NEW.chips < 0
+       OR NEW.chips > 9999999999999 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_INVALID: roster chips and entry generation must be present and in range'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+     AND (NEW.id IS DISTINCT FROM OLD.id
+          OR NEW.tournament_id IS DISTINCT FROM OLD.tournament_id
+          OR NEW.user_id IS DISTINCT FROM OLD.user_id
+          OR NEW.chip_supply_generation IS DISTINCT FROM OLD.chip_supply_generation) THEN
+    RAISE EXCEPTION 'TOURNAMENT_CHIP_SUPPLY_IDENTITY_IMMUTABLE'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status::text NOT IN ('registered', 'playing') THEN
+      RETURN NEW;
+    END IF;
+    IF v_has_incomplete_receipt AND v_receipt.supply_version = 1 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: a version-1 launch cannot admit another entry'
+        USING ERRCODE = '55000';
+    END IF;
+
+    PERFORM public.fn_append_tournament_chip_supply_event(
+      NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+      'entry_opened', 0,
+      'entry:' || NEW.chip_supply_generation::text || ':opened',
+      'tournament_player_insert',
+      jsonb_build_object('status', NEW.status::text)
+    );
+
+    IF NEW.status::text = 'playing' THEN
+      IF v_starting_chips <= 0 OR NEW.chips < v_starting_chips THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_CHIP_SUPPLY_INVALID: a directly playing entry must include its positive starting stack'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.chips > v_starting_chips THEN
+        PERFORM public.fn_append_tournament_chip_supply_event(
+          NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+          'registration_bonus', NEW.chips - v_starting_chips,
+          'entry:' || NEW.chip_supply_generation::text || ':registration-bonus',
+          'tournament_player_insert', '{}'::jsonb
+        );
+      END IF;
+      PERFORM public.fn_append_tournament_chip_supply_event(
+        NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+        'initial_stack', v_starting_chips,
+        'entry:' || NEW.chip_supply_generation::text || ':initial-stack',
+        'direct_playing_entry', '{}'::jsonb
+      );
+    ELSIF NEW.chips > 0 THEN
+      PERFORM public.fn_append_tournament_chip_supply_event(
+        NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+        'registration_bonus', NEW.chips,
+        'entry:' || NEW.chip_supply_generation::text || ':registration-bonus',
+        'registration',
+        jsonb_build_object(
+          'configured_early_bird',
+          NEW.chips = COALESCE(
+            (SELECT t.early_bird_chips::bigint
+               FROM public.tournaments t WHERE t.id = NEW.tournament_id),
+            0
+          )
+        )
+      );
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  SELECT EXISTS (
+           SELECT 1 FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = OLD.tournament_id
+              AND e.user_id = OLD.user_id
+              AND e.entry_generation = OLD.chip_supply_generation
+              AND e.event_kind = 'entry_opened'
+         ),
+         EXISTS (
+           SELECT 1 FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = OLD.tournament_id
+              AND e.user_id = OLD.user_id
+              AND e.entry_generation = OLD.chip_supply_generation
+              AND e.event_kind = 'initial_stack'
+         ),
+         COALESCE((
+           SELECT sum(e.amount_delta)::bigint
+             FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = OLD.tournament_id
+              AND e.user_id = OLD.user_id
+              AND e.entry_generation = OLD.chip_supply_generation
+         ), 0)
+    INTO v_is_ledgered, v_initial_exists, v_net;
+
+  /* Legacy rows never acquire guessed events from a current balance. */
+  IF NOT v_is_ledgered THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    IF v_has_incomplete_receipt
+       AND v_receipt.supply_version = 1
+       AND v_tournament_status <> 'CANCELLED' THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: a version-1 launch roster cannot be deleted'
+        USING ERRCODE = '55000';
+    END IF;
+    IF v_tournament_status IN ('ANNOUNCED', 'REGISTERING', 'CANCELLED')
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_chip_supply_events e
+          WHERE e.tournament_id = OLD.tournament_id
+            AND e.user_id = OLD.user_id
+            AND e.entry_generation = OLD.chip_supply_generation
+            AND e.event_kind = 'entry_closed'
+       ) THEN
+      PERFORM public.fn_append_tournament_chip_supply_event(
+        OLD.tournament_id, OLD.id, OLD.user_id, OLD.chip_supply_generation,
+        'entry_closed', -v_net,
+        'entry:' || OLD.chip_supply_generation::text || ':closed',
+        CASE WHEN v_tournament_status = 'CANCELLED'
+             THEN 'tournament_cancelled' ELSE 'prestart_unregister' END,
+        jsonb_build_object('status', OLD.status::text)
+      );
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF v_has_incomplete_receipt AND v_receipt.supply_version = 1 THEN
+    IF NEW.table_id IS DISTINCT FROM OLD.table_id
+       OR NEW.seat_number IS DISTINCT FROM OLD.seat_number THEN
+      v_marker := OLD.tournament_id::text || ':' || v_receipt.launch_id::text
+                  || ':' || v_receipt.lease_generation::text;
+      IF current_setting('app.tournament_chip_supply_materialize', true)
+           IS DISTINCT FROM v_marker THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: launch coordinates require the atomic materialization receipt'
+          USING ERRCODE = '55000';
+      END IF;
+    END IF;
+    IF NEW.chips IS DISTINCT FROM OLD.chips
+       OR NEW.rebuys IS DISTINCT FROM OLD.rebuys
+       OR NEW.add_on IS DISTINCT FROM OLD.add_on
+       OR NEW.status IS DISTINCT FROM OLD.status THEN
+      v_marker := OLD.tournament_id::text || ':' || v_receipt.launch_id::text
+                  || ':' || v_receipt.lease_generation::text;
+      IF current_setting('app.tournament_chip_supply_launch_issue', true)
+           IS DISTINCT FROM v_marker
+         AND v_tournament_status <> 'CANCELLED' THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: launch supply requires the atomic issuance receipt'
+          USING ERRCODE = '55000';
+      END IF;
+    END IF;
+  END IF;
+
+  /* A cancellation reverses still-unplayed entry supply. Ordinary in-game
+     elimination does not: those chips were redistributed to other players. */
+  IF OLD.status::text IN ('registered', 'playing')
+     AND NEW.status::text NOT IN ('registered', 'playing')
+     AND v_tournament_status = 'CANCELLED'
+     AND NOT EXISTS (
+       SELECT 1 FROM public.tournament_chip_supply_events e
+        WHERE e.tournament_id = OLD.tournament_id
+          AND e.user_id = OLD.user_id
+          AND e.entry_generation = OLD.chip_supply_generation
+          AND e.event_kind = 'entry_closed'
+     ) THEN
+    PERFORM public.fn_append_tournament_chip_supply_event(
+      OLD.tournament_id, OLD.id, OLD.user_id, OLD.chip_supply_generation,
+      'entry_closed', -v_net,
+      'entry:' || OLD.chip_supply_generation::text || ':closed',
+      'tournament_cancelled', jsonb_build_object('new_status', NEW.status::text)
+    );
+    RETURN NEW;
+  END IF;
+
+  /* First activation issues exactly one configured starting stack and keeps
+     every already-issued registration bonus. */
+  IF OLD.status::text = 'registered'
+     AND NEW.status::text = 'playing'
+     AND NOT v_initial_exists THEN
+    IF v_starting_chips <= 0
+       OR NEW.chips IS DISTINCT FROM OLD.chips + v_starting_chips THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_INITIAL_MISMATCH: expected % existing plus % starting, got %',
+        OLD.chips, v_starting_chips, NEW.chips
+        USING ERRCODE = '23514';
+    END IF;
+    PERFORM public.fn_append_tournament_chip_supply_event(
+      NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+      'initial_stack', v_starting_chips,
+      'entry:' || NEW.chip_supply_generation::text || ':initial-stack',
+      CASE
+        WHEN v_has_incomplete_receipt THEN 'launch'
+        WHEN v_tournament_status = 'RUNNING' THEN 'late_registration'
+        ELSE 'seat_first'
+      END,
+      jsonb_build_object(
+        'table_id', NEW.table_id,
+        'seat_number', NEW.seat_number
+      )
+    );
+    RETURN NEW;
+  END IF;
+
+  IF NEW.rebuys IS DISTINCT FROM OLD.rebuys
+     OR NEW.add_on IS DISTINCT FROM OLD.add_on THEN
+    BEGIN
+      v_purchase := NULLIF(
+        current_setting('app.tournament_chip_supply_purchase', true), ''
+      )::jsonb;
+    EXCEPTION WHEN invalid_text_representation THEN
+      RAISE EXCEPTION 'TOURNAMENT_CHIP_SUPPLY_PURCHASE_CONTEXT_INVALID'
+        USING ERRCODE = '22023';
+    END;
+    IF v_purchase IS NULL
+       OR v_purchase ->> 'tournament_id' IS DISTINCT FROM OLD.tournament_id::text
+       OR v_purchase ->> 'user_id' IS DISTINCT FROM OLD.user_id::text THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_PURCHASE_CONTEXT_REQUIRED'
+        USING ERRCODE = '42501';
+    END IF;
+    v_purchase_kind := v_purchase ->> 'rebuy_type';
+
+    IF v_purchase_kind = 'addon' THEN
+      IF COALESCE(OLD.add_on, false)
+         OR NOT COALESCE(NEW.add_on, false)
+         OR NEW.rebuys IS DISTINCT FROM OLD.rebuys
+         OR NEW.chips <= OLD.chips THEN
+        RAISE EXCEPTION 'TOURNAMENT_CHIP_SUPPLY_ADDON_MISMATCH'
+          USING ERRCODE = '23514';
+      END IF;
+      v_delta := NEW.chips - OLD.chips;
+      v_source := 'process_tournament_rebuy';
+      PERFORM public.fn_append_tournament_chip_supply_event(
+        NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+        'addon', v_delta,
+        'entry:' || NEW.chip_supply_generation::text || ':addon',
+        v_source, jsonb_build_object('rebuys', NEW.rebuys)
+      );
+      RETURN NEW;
+    END IF;
+
+    IF v_purchase_kind NOT IN ('rebuy', 'reentry')
+       OR NEW.rebuys IS DISTINCT FROM COALESCE(OLD.rebuys, 0) + 1
+       OR NEW.chips <= OLD.chips THEN
+      RAISE EXCEPTION 'TOURNAMENT_CHIP_SUPPLY_REBUY_MISMATCH'
+        USING ERRCODE = '23514';
+    END IF;
+
+    IF v_purchase_kind = 'reentry' AND OLD.chips <> 0 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SUPPLY_REENTRY_REQUIRES_EXACT_ZERO: current stack is %',
+        OLD.chips USING ERRCODE = '23514';
+    END IF;
+
+    IF OLD.chips = 0 THEN
+      SELECT count(*)::integer
+        INTO v_candidate_count
+        FROM public.tournament_knockout_candidates c
+        JOIN public.hand_atomic_commits h
+          ON h.table_id = c.table_id
+         AND h.hand_id = c.hand_id
+         AND h.hand_number = c.hand_number
+        JOIN public.table_seats s
+          ON s.id = c.seat_id
+         AND s.table_id = c.table_id
+         AND s.user_id = OLD.user_id
+         AND s.joined_at = c.seat_joined_at
+         AND s.left_at IS NULL
+         AND s.stack = 0
+       WHERE c.tournament_id = OLD.tournament_id
+         AND c.eliminated_user_id = OLD.user_id
+         AND c.state IN ('pending', 'eliminated')
+         AND c.stack_before > 0
+         AND c.stack_after = 0
+         AND c.hand_id IS NOT NULL
+         AND c.hand_number >= 1000000
+         AND OLD.table_id = c.table_id
+         AND OLD.seat_number = s.seat_number;
+      IF v_candidate_count <> 1 THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_CHIP_SUPPLY_REENTRY_GENERATION_UNPROVEN: found % accepted zero-stack generations',
+          v_candidate_count USING ERRCODE = '23514';
+      END IF;
+      SELECT c.* INTO STRICT v_candidate
+        FROM public.tournament_knockout_candidates c
+        JOIN public.hand_atomic_commits h
+          ON h.table_id = c.table_id
+         AND h.hand_id = c.hand_id
+         AND h.hand_number = c.hand_number
+        JOIN public.table_seats s
+          ON s.id = c.seat_id
+         AND s.table_id = c.table_id
+         AND s.user_id = OLD.user_id
+         AND s.joined_at = c.seat_joined_at
+         AND s.left_at IS NULL
+         AND s.stack = 0
+       WHERE c.tournament_id = OLD.tournament_id
+         AND c.eliminated_user_id = OLD.user_id
+         AND c.state IN ('pending', 'eliminated')
+         AND c.stack_before > 0
+         AND c.stack_after = 0
+         AND c.hand_id IS NOT NULL
+         AND c.hand_number >= 1000000
+         AND OLD.table_id = c.table_id
+         AND OLD.seat_number = s.seat_number
+       FOR UPDATE OF c;
+      IF EXISTS (
+        SELECT 1
+          FROM public.table_seats s
+          JOIN public.tables t ON t.id = s.table_id
+         WHERE t.tournament_id = OLD.tournament_id
+           AND s.user_id = OLD.user_id
+           AND s.left_at IS NULL
+           AND (s.id IS DISTINCT FROM v_candidate.seat_id
+                OR s.joined_at IS DISTINCT FROM v_candidate.seat_joined_at
+                OR s.table_id IS DISTINCT FROM v_candidate.table_id
+                OR s.stack IS DISTINCT FROM 0)
+      ) THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_CHIP_SUPPLY_REENTRY_GENERATION_CHANGED'
+          USING ERRCODE = '23514';
+      END IF;
+    END IF;
+
+    v_delta := NEW.chips - OLD.chips;
+    PERFORM public.fn_append_tournament_chip_supply_event(
+      NEW.tournament_id, NEW.id, NEW.user_id, NEW.chip_supply_generation,
+      v_purchase_kind, v_delta,
+      'entry:' || NEW.chip_supply_generation::text || ':'
+        || v_purchase_kind || ':' || NEW.rebuys::text,
+      'process_tournament_rebuy',
+      CASE WHEN OLD.chips = 0 THEN jsonb_build_object(
+        'knockout_candidate_id', v_candidate.id,
+        'hand_id', v_candidate.hand_id,
+        'hand_number', v_candidate.hand_number,
+        'seat_id', v_candidate.seat_id,
+        'seat_joined_at', v_candidate.seat_joined_at
+      ) ELSE '{}'::jsonb END
+    );
+    RETURN NEW;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS ab_record_tournament_chip_supply
+  ON public.tournament_players;
+CREATE TRIGGER ab_record_tournament_chip_supply
+  BEFORE INSERT OR UPDATE OR DELETE ON public.tournament_players
+  FOR EACH ROW EXECUTE FUNCTION public.trg_record_tournament_chip_supply();
+
+REVOKE ALL ON FUNCTION public.trg_record_tournament_chip_supply()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* A current manager may legitimately write tournament seats, but it may not
+   bypass the launch RPCs and mutate a version-1 launch a row at a time. The
+   existing `aa_` child trigger has already locked receipt then tournament by
+   the time this `ab_` trigger runs. Only the exact transaction marker minted
+   by materialization/projection may cross this boundary. */
+CREATE OR REPLACE FUNCTION public.trg_fence_tournament_launch_seat_supply()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_old_tournament_id uuid;
+  v_new_tournament_id uuid;
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_marker text;
+  v_materializing boolean;
+  v_projecting boolean;
+  v_status text;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    SELECT t.tournament_id INTO v_old_tournament_id
+      FROM public.tables t
+     WHERE t.id = OLD.table_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT t.tournament_id INTO v_new_tournament_id
+      FROM public.tables t
+     WHERE t.id = NEW.table_id;
+  END IF;
+
+  IF v_old_tournament_id IS NULL AND v_new_tournament_id IS NULL THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+  IF v_old_tournament_id IS NOT NULL
+     AND v_new_tournament_id IS NOT NULL
+     AND v_old_tournament_id IS DISTINCT FROM v_new_tournament_id THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: a seat cannot cross tournament launch inventories'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT * INTO v_receipt
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id = COALESCE(v_new_tournament_id, v_old_tournament_id)
+     AND r.completed_at IS NULL
+     AND r.supply_version = 1;
+  IF NOT FOUND THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  SELECT upper(COALESCE(t.status::text, '')) INTO v_status
+    FROM public.tournaments t
+   WHERE t.id = v_receipt.tournament_id;
+  IF v_status = 'CANCELLED' THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  v_marker := v_receipt.tournament_id::text || ':' || v_receipt.launch_id::text
+              || ':' || v_receipt.lease_generation::text;
+  v_materializing :=
+    current_setting('app.tournament_chip_supply_materialize', true) = v_marker;
+  v_projecting :=
+    current_setting('app.tournament_chip_supply_projection', true) = v_marker;
+
+  IF TG_OP = 'INSERT' THEN
+    IF NOT v_materializing THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: launch seats require the atomic materialization receipt'
+        USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: version-1 launch seats cannot be deleted'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NEW.table_id IS NOT DISTINCT FROM OLD.table_id
+     AND NEW.seat_number IS NOT DISTINCT FROM OLD.seat_number
+     AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id
+     AND NEW.left_at IS NOT DISTINCT FROM OLD.left_at
+     AND NEW.stack IS NOT DISTINCT FROM OLD.stack THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_projecting THEN
+    IF NEW.table_id IS DISTINCT FROM OLD.table_id
+       OR NEW.seat_number IS DISTINCT FROM OLD.seat_number
+       OR NEW.user_id IS DISTINCT FROM OLD.user_id
+       OR NEW.left_at IS DISTINCT FROM OLD.left_at THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: projection may change only the stack'
+        USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NOT v_materializing THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_LAUNCH_SUPPLY_FROZEN: launch seat mutation requires its atomic receipt'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS ab_fence_tournament_launch_seat_supply
+  ON public.table_seats;
+CREATE TRIGGER ab_fence_tournament_launch_seat_supply
+  BEFORE INSERT OR UPDATE OR DELETE ON public.table_seats
+  FOR EACH ROW EXECUTE FUNCTION public.trg_fence_tournament_launch_seat_supply();
+
+REVOKE ALL ON FUNCTION public.trg_fence_tournament_launch_seat_supply()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* Cancellation owns the tournament row before it retires supply and later
+   touches roster/seat rows. Every canonical path which can append supply must
+   therefore take that same parent row before any child row. Registration,
+   horse seating, rebuys, satellite delivery and launch RPCs already do. These
+   were the three remaining inverted paths: human seat-first (table first),
+   late-reg seating (unlocked parent, then table), and seat-first leave/refund
+   (table first). Patch their exact live bodies before the supply trigger can
+   make those old orders participate in a parent/child deadlock. */
+DO $patch_human_seat_first_supply_lock_order$
+DECLARE
+  v_oid oid :=
+    'public.fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)'::regprocedure;
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_live_anchor constant text :=
+$old$  SELECT id, tournament_id, max_players, status
+    INTO v_tbl FROM public.tables WHERE id = p_table_id FOR UPDATE;$old$;
+  v_live_replacement constant text :=
+$new$  /* TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST: lock parent before table/player. */
+  PERFORM 1
+    FROM public.tournaments t
+    JOIN public.tables child_table ON child_table.tournament_id = t.id
+   WHERE child_table.id = p_table_id
+   FOR UPDATE OF t;
+
+  SELECT id, tournament_id, max_players, status
+    INTO v_tbl FROM public.tables WHERE id = p_table_id FOR UPDATE;$new$;
+  v_probe_anchor constant text :=
+$old$  SELECT t.id, t.starting_chips INTO STRICT v_t
+    FROM public.tournaments t
+    JOIN public.tables b ON b.tournament_id=t.id
+   WHERE b.id=p_table_id;$old$;
+  v_probe_replacement constant text :=
+$new$  /* TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST: lock parent before table/player. */
+  SELECT t.id, t.starting_chips INTO STRICT v_t
+    FROM public.tournaments t
+    JOIN public.tables b ON b.tournament_id=t.id
+   WHERE b.id=p_table_id
+   FOR UPDATE OF t;$new$;
+  v_live_count integer;
+  v_probe_count integer;
+BEGIN
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  v_live_count :=
+    (length(v_src) - length(replace(v_src, v_live_anchor, '')))
+      / length(v_live_anchor);
+  v_probe_count :=
+    (length(v_src) - length(replace(v_src, v_probe_anchor, '')))
+      / length(v_probe_anchor);
+  IF v_live_count + v_probe_count <> 1 THEN
+    RAISE EXCEPTION
+      'human seat-first live definition lost its once-only parent/table lock anchor';
+  END IF;
+  v_new := CASE WHEN v_live_count = 1
+    THEN replace(v_src, v_live_anchor, v_live_replacement)
+    ELSE replace(v_src, v_probe_anchor, v_probe_replacement)
+  END;
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in p.prosrc) > 0
+       AND position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in p.prosrc)
+           < position('UPDATE public.tournament_players' in p.prosrc)
+  ) THEN
+    RAISE EXCEPTION
+      'human seat-first parent-first edit changed security or did not land';
+  END IF;
+END;
+$patch_human_seat_first_supply_lock_order$;
+
+DO $patch_late_registration_supply_lock_order$
+DECLARE
+  v_oid oid := to_regprocedure(
+    'public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)'
+  );
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_anchor constant text :=
+$old$  SELECT status, COALESCE(starting_chips, 0), club_id
+    INTO v_status, v_start_chips, v_club
+    FROM public.tournaments WHERE id = p_tournament_id;$old$;
+  v_replacement constant text :=
+$new$  /* TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST: lock parent before table/player. */
+  SELECT status, COALESCE(starting_chips, 0), club_id
+    INTO v_status, v_start_chips, v_club
+    FROM public.tournaments WHERE id = p_tournament_id
+   FOR UPDATE;$new$;
+BEGIN
+  IF v_oid IS NULL THEN
+    RETURN;
+  END IF;
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_src) - length(replace(v_src, v_anchor, '')))
+       / length(v_anchor) <> 1 THEN
+    RAISE EXCEPTION
+      'late-registration live definition lost its once-only tournament anchor';
+  END IF;
+  v_new := replace(v_src, v_anchor, v_replacement);
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in p.prosrc) > 0
+       AND position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in p.prosrc)
+           < position('FOR UPDATE OF tb' in p.prosrc)
+  ) THEN
+    RAISE EXCEPTION
+      'late-registration parent-first edit changed security or did not land';
+  END IF;
+END;
+$patch_late_registration_supply_lock_order$;
+
+DO $patch_seat_leave_supply_lock_order$
+DECLARE
+  v_oid oid := to_regprocedure('public.fn_leave_seat_and_refund(uuid)');
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_anchor constant text :=
+$old$  SELECT id, tournament_id INTO v_tbl FROM public.tables WHERE id=p_table_id FOR UPDATE;$old$;
+  v_replacement constant text :=
+$new$  /* TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST: lock parent before table/player. */
+  PERFORM 1
+    FROM public.tournaments t
+    JOIN public.tables child_table ON child_table.tournament_id = t.id
+   WHERE child_table.id = p_table_id
+   FOR UPDATE OF t;
+  SELECT id, tournament_id INTO v_tbl FROM public.tables WHERE id=p_table_id FOR UPDATE;$new$;
+BEGIN
+  IF v_oid IS NULL THEN
+    RETURN;
+  END IF;
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_src) - length(replace(v_src, v_anchor, '')))
+       / length(v_anchor) <> 1 THEN
+    RAISE EXCEPTION
+      'seat-leave live definition lost its once-only table lock anchor';
+  END IF;
+  v_new := replace(v_src, v_anchor, v_replacement);
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in p.prosrc) > 0
+       AND position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in p.prosrc)
+           < position('FROM public.tables WHERE id=p_table_id FOR UPDATE' in p.prosrc)
+  ) THEN
+    RAISE EXCEPTION
+      'seat-leave parent-first edit changed security or did not land';
+  END IF;
+END;
+$patch_seat_leave_supply_lock_order$;
+
+/* Both seat-first cores used `chips = starting_chips`, erasing a registration
+   bonus. Edit the exact live definitions rather than retyping either body.
+   A re-adopted already-playing row keeps its current stack; a registered row
+   receives current issued bonus plus one starting stack. */
+DO $patch_human_seat_first$
+DECLARE
+  v_oid oid :=
+    'public.fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)'::regprocedure;
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_anchor constant text :=
+$old$  UPDATE public.tournament_players
+     SET status = 'playing', chips = v_stack, table_id = p_table_id, seat_number = p_seat_number
+   WHERE tournament_id = v_t.id AND user_id = v_uid;$old$;
+  v_replacement constant text :=
+$new$  SELECT CASE
+           WHEN tp.status::text = 'registered'
+             THEN tp.chips + v_stack
+           ELSE tp.chips
+         END
+    INTO STRICT v_stack
+    FROM public.tournament_players tp
+   WHERE tp.tournament_id = v_t.id
+     AND tp.user_id = v_uid;
+
+  UPDATE public.tournament_players
+     SET status = 'playing', chips = v_stack, table_id = p_table_id, seat_number = p_seat_number
+   WHERE tournament_id = v_t.id AND user_id = v_uid;$new$;
+BEGIN
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_src) - length(replace(v_src, v_anchor, ''))) / length(v_anchor) <> 1 THEN
+    RAISE EXCEPTION 'human seat-first live definition lost its once-only stack anchor';
+  END IF;
+  v_new := replace(v_src, v_anchor, v_replacement);
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND position('THEN tp.chips + v_stack' in p.prosrc) > 0
+  ) THEN
+    RAISE EXCEPTION 'human seat-first bonus-preserving edit changed its security boundary or did not land';
+  END IF;
+END;
+$patch_human_seat_first$;
+
+DO $patch_horse_seat_first$
+DECLARE
+  v_oid oid :=
+    'public.fn_seat_horse_in_seat_first_game_before_maintenance_gate(uuid,uuid)'::regprocedure;
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_anchor constant text :=
+$old$  IF NOT v_already THEN
+    v_reg := public.fn_register_horse_for_tournament(p_tournament_id, p_user_id);
+    IF COALESCE((v_reg->>'ok')::boolean, false) IS NOT TRUE
+       AND COALESCE(v_reg->>'reason','') <> 'already_registered' THEN
+      RETURN jsonb_build_object('ok', false, 'reason', COALESCE(v_reg->>'reason','register_failed'));
+    END IF;
+  END IF;
+
+  UPDATE public.table_seats$old$;
+  v_replacement constant text :=
+$new$  IF NOT v_already THEN
+    v_reg := public.fn_register_horse_for_tournament(p_tournament_id, p_user_id);
+    IF COALESCE((v_reg->>'ok')::boolean, false) IS NOT TRUE
+       AND COALESCE(v_reg->>'reason','') <> 'already_registered' THEN
+      RETURN jsonb_build_object('ok', false, 'reason', COALESCE(v_reg->>'reason','register_failed'));
+    END IF;
+  END IF;
+
+  SELECT CASE
+           WHEN tp.status::text = 'registered'
+             THEN tp.chips + v_stack
+           ELSE tp.chips
+         END
+    INTO STRICT v_stack
+    FROM public.tournament_players tp
+   WHERE tp.tournament_id = p_tournament_id
+     AND tp.user_id = p_user_id;
+
+  UPDATE public.table_seats$new$;
+BEGIN
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_src) - length(replace(v_src, v_anchor, ''))) / length(v_anchor) <> 1 THEN
+    RAISE EXCEPTION 'horse seat-first live definition lost its once-only stack anchor';
+  END IF;
+  v_new := replace(v_src, v_anchor, v_replacement);
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND position('THEN tp.chips + v_stack' in p.prosrc) > 0
+  ) THEN
+    RAISE EXCEPTION 'horse seat-first bonus-preserving edit changed its security boundary or did not land';
+  END IF;
+END;
+$patch_horse_seat_first$;
+
+/* The canonical purchase door supplies the one trusted classification marker
+   around the already-audited wallet/stack transaction. Its old body remains
+   owner-only; there is still only one public seven-argument signature. */
+DO $wrap_tournament_purchase_supply$
+BEGIN
+  IF to_regprocedure(
+       'public.process_tournament_rebuy_before_chip_supply_ledger(uuid,uuid,text,numeric,numeric,integer,text)'
+     ) IS NOT NULL THEN
+    RAISE EXCEPTION 'tournament purchase supply wrapper already exists unexpectedly';
+  END IF;
+  ALTER FUNCTION public.process_tournament_rebuy(
+    uuid, uuid, text, numeric, numeric, integer, text
+  ) RENAME TO process_tournament_rebuy_before_chip_supply_ledger;
+END;
+$wrap_tournament_purchase_supply$;
+
+REVOKE ALL ON FUNCTION public.process_tournament_rebuy_before_chip_supply_ledger(
+  uuid, uuid, text, numeric, numeric, integer, text
+) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION public.process_tournament_rebuy(
+  p_tournament_id uuid,
+  p_user_id uuid,
+  p_rebuy_type text,
+  p_cost numeric,
+  p_chips numeric,
+  p_current_level integer DEFAULT NULL,
+  p_client_token text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $function$
+BEGIN
+  PERFORM set_config(
+    'app.tournament_chip_supply_purchase',
+    jsonb_build_object(
+      'tournament_id', p_tournament_id,
+      'user_id', p_user_id,
+      'rebuy_type', p_rebuy_type,
+      'client_token', p_client_token
+    )::text,
+    true
+  );
+  RETURN public.process_tournament_rebuy_before_chip_supply_ledger(
+    p_tournament_id, p_user_id, p_rebuy_type, p_cost, p_chips,
+    p_current_level, p_client_token
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.process_tournament_rebuy(
+  uuid, uuid, text, numeric, numeric, integer, text
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.process_tournament_rebuy(
+  uuid, uuid, text, numeric, numeric, integer, text
+) TO authenticated, service_role;
+
+/* Return the supply protocol selected by the receipt snapshot on both a fresh
+   claim and a takeover replay. This is an asserted one-substitution edit of
+   the live generation-fenced wrapper; its lock order and security envelope do
+   not change. */
+DO $patch_launch_begin_supply_version$
+DECLARE
+  v_oid oid :=
+    'public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamptz,uuid)'::regprocedure;
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_anchor constant text :=
+$old$  RETURN v_result || jsonb_build_object('lease_generation', p_lease_generation);$old$;
+  v_replacement constant text :=
+$new$  RETURN v_result || jsonb_build_object(
+    'lease_generation', p_lease_generation,
+    'supply_version', CASE
+      WHEN COALESCE((v_result ->> 'ok')::boolean, false) THEN (
+        SELECT r.supply_version
+          FROM public.tournament_launch_receipts r
+         WHERE r.tournament_id = p_tournament_id
+           AND r.launch_id = (v_result ->> 'launch_id')::uuid
+      )
+      ELSE NULL
+    END
+  );$new$;
+BEGIN
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_src) - length(replace(v_src, v_anchor, ''))) / length(v_anchor) <> 1 THEN
+    RAISE EXCEPTION 'generation-fenced begin lost its once-only return anchor';
+  END IF;
+  v_new := replace(v_src, v_anchor, v_replacement);
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND position($needle$'supply_version'$needle$ in p.prosrc) > 0
+       AND position('tournament_launch_receipts' in p.prosrc) > 0
+  ) THEN
+    RAISE EXCEPTION 'launch-begin supply-version edit changed its security boundary or did not land';
+  END IF;
+END;
+$patch_launch_begin_supply_version$;
+
+/* One owner-only helper owns the authority, lock order and immutable roster
+   snapshot checks shared by issuance, materialization and Spin projection.
+   Every caller enters lease -> receipt -> tournament -> roster. */
+CREATE OR REPLACE FUNCTION public.fn_lock_tournament_launch_supply_request(
+  p_tournament_id uuid,
+  p_launch_id uuid,
+  p_lease_generation uuid,
+  p_expected_user_ids uuid[]
+) RETURNS public.tournament_launch_receipts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_expected uuid[];
+  v_actual uuid[];
+  v_hash text;
+  v_protocol integer;
+  v_current_generation uuid;
+  v_heartbeat_at timestamptz;
+  v_authority_generation uuid;
+  v_status text;
+BEGIN
+  IF p_tournament_id IS NULL
+     OR p_launch_id IS NULL
+     OR p_lease_generation IS NULL
+     OR p_expected_user_ids IS NULL
+     OR cardinality(p_expected_user_ids) = 0
+     OR array_position(p_expected_user_ids, NULL::uuid) IS NOT NULL THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_REQUEST_INVALID'
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT array_agg(x.user_id ORDER BY x.user_id)
+    INTO v_expected
+    FROM unnest(p_expected_user_ids) AS x(user_id);
+  IF cardinality(v_expected) IS DISTINCT FROM (
+       SELECT count(DISTINCT x.user_id)::integer
+         FROM unnest(p_expected_user_ids) AS x(user_id)
+     ) THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_EXPECTED_USERS_DUPLICATE'
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM public.fn_assert_tournament_manager_write_scope(p_tournament_id);
+  BEGIN
+    v_authority_generation := NULLIF(
+      current_setting('app.smarter_tournament_lease_generation', true), ''
+    )::uuid;
+  EXCEPTION WHEN invalid_text_representation OR null_value_not_allowed THEN
+    RAISE EXCEPTION 'TOURNAMENT_MANAGER_SCOPE_INVALID: malformed launch supply generation'
+      USING ERRCODE = '22023';
+  END;
+  IF v_authority_generation IS DISTINCT FROM p_lease_generation THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_MANAGER_SCOPE_VIOLATION: launch supply generation differs from request authority'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT l.protocol_version, l.lease_generation, l.heartbeat_at
+    INTO v_protocol, v_current_generation, v_heartbeat_at
+    FROM public.engine_tournament_leases l
+   WHERE l.tournament_id = p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND
+     OR v_protocol IS DISTINCT FROM 2
+     OR v_current_generation IS DISTINCT FROM p_lease_generation
+     OR v_heartbeat_at < clock_timestamp() - interval '30 seconds' THEN
+    RAISE EXCEPTION 'TOURNAMENT_MANAGER_FENCED: launch supply lease is no longer current'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_receipt
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id = p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND
+     OR v_receipt.launch_id IS DISTINCT FROM p_launch_id
+     OR v_receipt.lease_generation IS DISTINCT FROM p_lease_generation
+     OR v_receipt.completed_at IS NOT NULL
+     OR v_receipt.supply_version IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_RECEIPT_MISMATCH'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT upper(COALESCE(t.status::text, '')) INTO v_status
+    FROM public.tournaments t
+   WHERE t.id = p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_status <> 'REGISTERING' THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_STATUS_CHANGED: %', COALESCE(v_status, '<missing>')
+      USING ERRCODE = '55000';
+  END IF;
+
+  PERFORM 1
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing')
+   ORDER BY p.user_id
+   FOR UPDATE;
+
+  SELECT array_agg(p.user_id ORDER BY p.user_id),
+         md5(COALESCE(string_agg(p.user_id::text, ',' ORDER BY p.user_id), ''))
+    INTO v_actual, v_hash
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing');
+  IF v_actual IS DISTINCT FROM v_expected
+     OR cardinality(v_actual) IS DISTINCT FROM v_receipt.supply_roster_count
+     OR v_hash IS DISTINCT FROM v_receipt.supply_roster_hash THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_ROSTER_CHANGED'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.hand_atomic_commits h
+      JOIN public.tables t ON t.id = h.table_id
+     WHERE t.tournament_id = p_tournament_id
+  ) THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_ALREADY_DEALT'
+      USING ERRCODE = '55000';
+  END IF;
+
+  RETURN v_receipt;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_lock_tournament_launch_supply_request(
+  uuid, uuid, uuid, uuid[]
+) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_issue_tournament_launch_stacks(
+  p_tournament_id uuid,
+  p_launch_id uuid,
+  p_lease_generation uuid,
+  p_expected_user_ids uuid[]
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_marker text;
+  v_created integer;
+  v_bad integer;
+  v_credited integer;
+  v_issued bigint;
+  v_roster bigint;
+  v_players jsonb;
+BEGIN
+  v_receipt := public.fn_lock_tournament_launch_supply_request(
+    p_tournament_id, p_launch_id, p_lease_generation, p_expected_user_ids
+  );
+  v_marker := p_tournament_id::text || ':' || p_launch_id::text || ':'
+              || p_lease_generation::text;
+  PERFORM set_config('app.tournament_chip_supply_launch_issue', v_marker, true);
+
+  UPDATE public.tournament_players p
+     SET chips = p.chips + v_receipt.supply_starting_chips,
+         status = 'playing'
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text = 'registered'
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.tournament_chip_supply_events e
+        WHERE e.tournament_id = p.tournament_id
+          AND e.user_id = p.user_id
+          AND e.entry_generation = p.chip_supply_generation
+          AND e.event_kind = 'initial_stack'
+     );
+  GET DIAGNOSTICS v_created = ROW_COUNT;
+
+  SELECT count(*)::integer,
+         COALESCE(sum(p.chips), 0)::bigint,
+         COALESCE(jsonb_agg(
+           jsonb_build_object('user_id', p.user_id, 'chips', p.chips)
+           ORDER BY p.user_id
+         ), '[]'::jsonb)
+    INTO v_credited, v_roster, v_players
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text = 'playing';
+
+  SELECT count(*)::integer INTO v_bad
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing')
+     AND (
+       p.status::text <> 'playing'
+       OR p.chips <= 0
+       OR (SELECT count(*) FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'entry_opened') <> 1
+       OR (SELECT count(*) FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'initial_stack') <> 1
+       OR p.chips IS DISTINCT FROM (
+         SELECT COALESCE(sum(e.amount_delta), 0)::bigint
+           FROM public.tournament_chip_supply_events e
+          WHERE e.tournament_id = p.tournament_id
+            AND e.user_id = p.user_id
+            AND e.entry_generation = p.chip_supply_generation
+       )
+     );
+  SELECT COALESCE(sum(e.amount_delta), 0)::bigint INTO v_issued
+    FROM public.tournament_chip_supply_events e
+   WHERE e.tournament_id = p_tournament_id;
+
+  IF v_bad <> 0
+     OR v_credited IS DISTINCT FROM v_receipt.supply_roster_count
+     OR v_issued IS DISTINCT FROM v_receipt.supply_expected_issued_chips
+     OR v_roster IS DISTINCT FROM v_issued THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SUPPLY_ISSUANCE_NOT_CONSERVED'
+      USING ERRCODE = '23514',
+            DETAIL = jsonb_build_object(
+              'bad_players', v_bad,
+              'credited_players', v_credited,
+              'expected_players', v_receipt.supply_roster_count,
+              'expected_issued_chips', v_receipt.supply_expected_issued_chips,
+              'issued_chips', v_issued,
+              'roster_chips', v_roster
+            )::text;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'tournament_id', p_tournament_id,
+    'launch_id', p_launch_id,
+    'lease_generation', p_lease_generation,
+    'supply_version', 1,
+    'expected_player_count', v_receipt.supply_roster_count,
+    'credited_player_count', v_credited,
+    'created_event_count', v_created,
+    'issued_chips', v_issued,
+    'roster_chips', v_roster,
+    'players', v_players
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_issue_tournament_launch_stacks(
+  uuid, uuid, uuid, uuid[]
+) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_issue_tournament_launch_stacks(
+  uuid, uuid, uuid, uuid[]
+) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_materialize_tournament_launch_seats(
+  p_tournament_id uuid,
+  p_launch_id uuid,
+  p_lease_generation uuid,
+  p_expected_user_ids uuid[],
+  p_assignments jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_item jsonb;
+  v_assignments jsonb;
+  v_expected uuid[];
+  v_assignment_users uuid[];
+  v_assignment_count integer;
+  v_distinct_users integer;
+  v_distinct_coordinates integer;
+  v_table_count integer;
+  v_valid_table_count integer;
+  v_bad integer;
+  v_written integer;
+  v_live integer;
+  v_matching integer;
+  v_issued bigint;
+  v_roster bigint;
+  v_felt bigint;
+  v_deferred boolean;
+  v_marker text;
+  v_players jsonb;
+  v_tables jsonb;
+BEGIN
+  v_receipt := public.fn_lock_tournament_launch_supply_request(
+    p_tournament_id, p_launch_id, p_lease_generation, p_expected_user_ids
+  );
+
+  IF p_assignments IS NULL OR jsonb_typeof(p_assignments) <> 'array'
+     OR jsonb_array_length(p_assignments) = 0 THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_ASSIGNMENTS_INVALID'
+      USING ERRCODE = '22023';
+  END IF;
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_assignments)
+  LOOP
+    IF jsonb_typeof(v_item) <> 'object'
+       OR (SELECT count(*) FROM jsonb_object_keys(v_item)) <> 3
+       OR NOT (v_item ?& ARRAY['user_id', 'table_id', 'seat_number'])
+       OR COALESCE(v_item ->> 'user_id', '') !~*
+            '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       OR COALESCE(v_item ->> 'table_id', '') !~*
+            '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       OR COALESCE(v_item ->> 'seat_number', '') !~ '^[1-9][0-9]*$'
+       OR length(v_item ->> 'seat_number') > 2
+       OR (v_item ->> 'seat_number')::integer > 10 THEN
+      RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_ASSIGNMENT_INVALID: %', v_item
+        USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'user_id', a.user_id,
+             'table_id', a.table_id,
+             'seat_number', a.seat_number
+           ) ORDER BY a.user_id
+         ), '[]'::jsonb),
+         count(*)::integer,
+         count(DISTINCT a.user_id)::integer,
+         count(DISTINCT (a.table_id, a.seat_number))::integer,
+         count(DISTINCT a.table_id)::integer,
+         array_agg(a.user_id ORDER BY a.user_id)
+    INTO v_assignments, v_assignment_count, v_distinct_users,
+         v_distinct_coordinates, v_table_count, v_assignment_users
+    FROM jsonb_to_recordset(p_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer);
+  SELECT array_agg(x.user_id ORDER BY x.user_id) INTO v_expected
+    FROM unnest(p_expected_user_ids) AS x(user_id);
+  IF v_assignment_count IS DISTINCT FROM cardinality(v_expected)
+     OR v_distinct_users IS DISTINCT FROM v_assignment_count
+     OR v_distinct_coordinates IS DISTINCT FROM v_assignment_count
+     OR v_assignment_users IS DISTINCT FROM v_expected THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_ASSIGNMENT_SET_MISMATCH'
+      USING ERRCODE = '23514';
+  END IF;
+
+  /* The tournament parent is already locked. Lock every board in canonical
+     order so empty adopted boards also receive an exact headcount. */
+  PERFORM 1 FROM public.tables t
+   WHERE t.tournament_id = p_tournament_id
+   ORDER BY t.id
+   FOR UPDATE;
+  SELECT count(DISTINCT a.table_id)::integer INTO v_valid_table_count
+    FROM jsonb_to_recordset(v_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer)
+    JOIN public.tables t ON t.id = a.table_id
+   WHERE t.tournament_id = p_tournament_id
+     AND COALESCE(t.max_players, 0) >= a.seat_number;
+  IF v_valid_table_count IS DISTINCT FROM v_table_count THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_TABLE_OR_CAPACITY_MISMATCH'
+      USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM 1
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = p_tournament_id
+   ORDER BY s.table_id, s.seat_number
+   FOR UPDATE OF s;
+
+  SELECT count(*)::integer INTO v_bad
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing')
+     AND (
+       p.status::text <> 'playing'
+       OR p.chips <= 0
+       OR (SELECT count(*) FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'entry_opened') <> 1
+       OR (SELECT count(*) FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'initial_stack') <> 1
+       OR p.chips IS DISTINCT FROM (
+         SELECT COALESCE(sum(e.amount_delta), 0)::bigint
+           FROM public.tournament_chip_supply_events e
+          WHERE e.tournament_id = p.tournament_id
+            AND e.user_id = p.user_id
+            AND e.entry_generation = p.chip_supply_generation
+       )
+     );
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_ROSTER_SUPPLY_UNPROVEN: %', v_bad
+      USING ERRCODE = '23514';
+  END IF;
+
+  /* Every current live seat must already be the exact coordinate the caller
+     supplied for that owner. This rejects a player at a different coordinate,
+     another owner on a target, ghost seats and duplicate live ownership. */
+  SELECT count(*)::integer INTO v_bad
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+    LEFT JOIN jsonb_to_recordset(v_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer)
+      ON a.user_id = s.user_id
+   WHERE t.tournament_id = p_tournament_id
+     AND s.left_at IS NULL
+     AND (
+       s.user_id IS NULL
+       OR a.user_id IS NULL
+       OR s.table_id IS DISTINCT FROM a.table_id
+       OR s.seat_number IS DISTINCT FROM a.seat_number
+     );
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_EXISTING_OWNERSHIP_MISMATCH: %', v_bad
+      USING ERRCODE = '23514';
+  END IF;
+  SELECT count(*)::integer INTO v_bad
+    FROM jsonb_to_recordset(v_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer)
+    JOIN public.table_seats s
+      ON s.table_id = a.table_id
+     AND s.seat_number = a.seat_number
+     AND s.left_at IS NULL
+   WHERE s.user_id IS DISTINCT FROM a.user_id;
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_TARGET_OCCUPIED: %', v_bad
+      USING ERRCODE = '23514';
+  END IF;
+
+  v_marker := p_tournament_id::text || ':' || p_launch_id::text || ':'
+              || p_lease_generation::text;
+  v_deferred := v_receipt.supply_projection_deferred
+                AND v_receipt.supply_projected_at IS NULL;
+  PERFORM set_config('app.tournament_chip_supply_materialize', v_marker, true);
+
+  UPDATE public.tournament_players p
+     SET table_id = a.table_id,
+         seat_number = a.seat_number
+    FROM jsonb_to_recordset(v_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer)
+   WHERE p.tournament_id = p_tournament_id
+     AND p.user_id = a.user_id
+     AND p.status::text = 'playing';
+  GET DIAGNOSTICS v_written = ROW_COUNT;
+  IF v_written IS DISTINCT FROM v_assignment_count THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_ROSTER_WRITE_COUNT_MISMATCH'
+      USING ERRCODE = '40001';
+  END IF;
+
+  INSERT INTO public.table_seats AS existing (
+    table_id, user_id, seat_number, stack, joined_at, left_at
+  )
+  SELECT a.table_id,
+         a.user_id,
+         a.seat_number,
+         CASE WHEN v_deferred THEN 0 ELSE p.chips END,
+         clock_timestamp(),
+         NULL
+    FROM jsonb_to_recordset(v_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer)
+    JOIN public.tournament_players p
+      ON p.tournament_id = p_tournament_id
+     AND p.user_id = a.user_id
+     AND p.status::text = 'playing'
+  ON CONFLICT (table_id, seat_number) DO UPDATE
+    SET user_id = EXCLUDED.user_id,
+        stack = EXCLUDED.stack,
+        left_at = NULL,
+        joined_at = CASE
+          WHEN existing.left_at IS NULL
+           AND existing.user_id = EXCLUDED.user_id THEN existing.joined_at
+          ELSE EXCLUDED.joined_at
+        END
+  WHERE existing.left_at IS NOT NULL
+     OR existing.user_id = EXCLUDED.user_id;
+  GET DIAGNOSTICS v_written = ROW_COUNT;
+  IF v_written IS DISTINCT FROM v_assignment_count THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_WRITE_COUNT_MISMATCH'
+      USING ERRCODE = '40001';
+  END IF;
+
+  UPDATE public.tables t
+     SET current_players = (
+       SELECT count(*)::integer
+         FROM public.table_seats s
+        WHERE s.table_id = t.id
+          AND s.left_at IS NULL
+     )
+   WHERE t.tournament_id = p_tournament_id;
+
+  SELECT count(*)::integer,
+         COALESCE(sum(s.stack), 0)::bigint
+    INTO v_live, v_felt
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = p_tournament_id
+     AND s.left_at IS NULL;
+  SELECT count(*)::integer INTO v_matching
+    FROM public.tournament_players p
+    JOIN jsonb_to_recordset(v_assignments)
+      AS a(user_id uuid, table_id uuid, seat_number integer)
+      ON a.user_id = p.user_id
+    JOIN public.table_seats s
+      ON s.table_id = a.table_id
+     AND s.seat_number = a.seat_number
+     AND s.user_id = a.user_id
+     AND s.left_at IS NULL
+     AND s.stack = CASE WHEN v_deferred THEN 0 ELSE p.chips END
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text = 'playing'
+     AND p.table_id = a.table_id
+     AND p.seat_number = a.seat_number;
+  SELECT COALESCE(sum(e.amount_delta), 0)::bigint INTO v_issued
+    FROM public.tournament_chip_supply_events e
+   WHERE e.tournament_id = p_tournament_id;
+  SELECT COALESCE(sum(p.chips), 0)::bigint,
+         COALESCE(jsonb_agg(jsonb_build_object(
+           'user_id', p.user_id,
+           'chips', p.chips,
+           'table_id', p.table_id,
+           'seat_number', p.seat_number
+         ) ORDER BY p.user_id), '[]'::jsonb)
+    INTO v_roster, v_players
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text = 'playing';
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'table_id', t.id,
+           'current_players', t.current_players
+         ) ORDER BY t.id), '[]'::jsonb)
+    INTO v_tables
+    FROM public.tables t
+   WHERE t.tournament_id = p_tournament_id;
+
+  IF v_live IS DISTINCT FROM v_assignment_count
+     OR v_matching IS DISTINCT FROM v_assignment_count
+     OR v_issued IS DISTINCT FROM v_receipt.supply_expected_issued_chips
+     OR v_roster IS DISTINCT FROM v_issued
+     OR v_felt IS DISTINCT FROM (
+       CASE WHEN v_deferred THEN 0 ELSE v_issued END
+     ) THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SEAT_MATERIALIZATION_NOT_CONSERVED'
+      USING ERRCODE = '23514',
+            DETAIL = jsonb_build_object(
+              'live_seats', v_live,
+              'matching_seats', v_matching,
+              'expected_players', v_assignment_count,
+              'issued_chips', v_issued,
+              'roster_chips', v_roster,
+              'felt_chips', v_felt,
+              'stacks_deferred', v_deferred
+            )::text;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'tournament_id', p_tournament_id,
+    'launch_id', p_launch_id,
+    'lease_generation', p_lease_generation,
+    'supply_version', 1,
+    'stacks_deferred', v_deferred,
+    'materialized_player_count', v_assignment_count,
+    'issued_chips', v_issued,
+    'roster_chips', v_roster,
+    'felt_chips', v_felt,
+    'players', v_players,
+    'tables', v_tables
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_materialize_tournament_launch_seats(
+  uuid, uuid, uuid, uuid[], jsonb
+) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_materialize_tournament_launch_seats(
+  uuid, uuid, uuid, uuid[], jsonb
+) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_project_tournament_launch_seat_stacks(
+  p_tournament_id uuid,
+  p_launch_id uuid,
+  p_lease_generation uuid,
+  p_expected_user_ids uuid[]
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_variant text;
+  v_tournament_type text;
+  v_multiplier numeric;
+  v_reveal_at timestamptz;
+  v_marker text;
+  v_bad integer;
+  v_count integer;
+  v_created integer := 0;
+  v_issued bigint;
+  v_roster bigint;
+  v_felt bigint;
+  v_players jsonb;
+BEGIN
+  v_receipt := public.fn_lock_tournament_launch_supply_request(
+    p_tournament_id, p_launch_id, p_lease_generation, p_expected_user_ids
+  );
+  IF NOT v_receipt.supply_projection_deferred THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_STACK_PROJECTION_NOT_DEFERRED'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT lower(COALESCE(t.variant, '')),
+         upper(COALESCE(t.tournament_type, '')),
+         t.spin_multiplier,
+         t.spin_reveal_at
+    INTO v_variant, v_tournament_type, v_multiplier, v_reveal_at
+    FROM public.tournaments t
+   WHERE t.id = p_tournament_id;
+  IF (v_variant <> 'spin' AND v_tournament_type <> 'SPIN')
+     OR COALESCE(v_multiplier, 0) <= 0
+     OR v_reveal_at IS NULL THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SPIN_REVEAL_UNPROVEN'
+      USING ERRCODE = '23514';
+  END IF;
+  /* spinRevealTotalMs() is 1,000 + 3,000 + 6,000 + 1,600 + 3,200. The
+     database gates the same chip-drop instant rather than trusting a timer. */
+  IF clock_timestamp() < v_reveal_at + interval '14.8 seconds' THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SPIN_PROJECTION_TOO_EARLY'
+      USING ERRCODE = '55000';
+  END IF;
+
+  PERFORM 1 FROM public.tables t
+   WHERE t.tournament_id = p_tournament_id
+   ORDER BY t.id
+   FOR UPDATE;
+  PERFORM 1
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = p_tournament_id
+   ORDER BY s.table_id, s.seat_number
+   FOR UPDATE OF s;
+
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE p.status::text <> 'playing'
+              OR p.chips <= 0
+              OR p.table_id IS NULL
+              OR p.seat_number IS NULL
+              OR s.user_id IS DISTINCT FROM p.user_id
+              OR s.left_at IS NOT NULL
+              OR (
+                v_receipt.supply_projected_at IS NULL
+                AND s.stack IS DISTINCT FROM 0
+              )
+              OR (
+                v_receipt.supply_projected_at IS NOT NULL
+                AND s.stack IS DISTINCT FROM p.chips
+              )
+              OR p.chips IS DISTINCT FROM (
+                SELECT COALESCE(sum(e.amount_delta), 0)::bigint
+                  FROM public.tournament_chip_supply_events e
+                 WHERE e.tournament_id = p.tournament_id
+                   AND e.user_id = p.user_id
+                   AND e.entry_generation = p.chip_supply_generation
+              )
+         )::integer
+    INTO v_count, v_bad
+    FROM public.tournament_players p
+    LEFT JOIN public.table_seats s
+      ON s.table_id = p.table_id
+     AND s.seat_number = p.seat_number
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing');
+  IF v_count IS DISTINCT FROM v_receipt.supply_roster_count OR v_bad <> 0 THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SPIN_PROJECTION_ROSTER_UNPROVEN'
+      USING ERRCODE = '23514';
+  END IF;
+  SELECT count(*)::integer INTO v_bad
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = p_tournament_id
+     AND s.left_at IS NULL;
+  IF v_bad IS DISTINCT FROM v_count THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SPIN_PROJECTION_SEAT_SET_MISMATCH'
+      USING ERRCODE = '23514';
+  END IF;
+
+  v_marker := p_tournament_id::text || ':' || p_launch_id::text || ':'
+              || p_lease_generation::text;
+  PERFORM set_config('app.tournament_chip_supply_projection', v_marker, true);
+  PERFORM set_config('app.tournament_chip_supply_materialize', v_marker, true);
+
+  UPDATE public.table_seats s
+     SET stack = p.chips
+    FROM public.tournament_players p,
+         public.tables t
+   WHERE t.id = s.table_id
+     AND t.tournament_id = p_tournament_id
+     AND p.tournament_id = p_tournament_id
+     AND p.status::text = 'playing'
+     AND p.table_id = s.table_id
+     AND p.seat_number = s.seat_number
+     AND p.user_id = s.user_id
+     AND s.left_at IS NULL
+     AND s.stack IS DISTINCT FROM p.chips;
+
+  UPDATE public.tournament_launch_receipts r
+     SET supply_projected_at = clock_timestamp()
+   WHERE r.tournament_id = p_tournament_id
+     AND r.launch_id = p_launch_id
+     AND r.lease_generation = p_lease_generation
+     AND r.completed_at IS NULL
+     AND r.supply_version = 1
+     AND r.supply_projection_deferred
+     AND r.supply_projected_at IS NULL;
+  GET DIAGNOSTICS v_created = ROW_COUNT;
+
+  SELECT COALESCE(sum(e.amount_delta), 0)::bigint INTO v_issued
+    FROM public.tournament_chip_supply_events e
+   WHERE e.tournament_id = p_tournament_id;
+  SELECT count(*)::integer,
+         COALESCE(sum(p.chips), 0)::bigint,
+         COALESCE(jsonb_agg(jsonb_build_object(
+           'user_id', p.user_id,
+           'chips', p.chips,
+           'table_id', p.table_id,
+           'seat_number', p.seat_number
+         ) ORDER BY p.user_id), '[]'::jsonb)
+    INTO v_count, v_roster, v_players
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text = 'playing';
+  SELECT COALESCE(sum(s.stack), 0)::bigint INTO v_felt
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = p_tournament_id
+     AND s.left_at IS NULL;
+  SELECT count(*)::integer INTO v_bad
+    FROM public.tournament_players p
+    LEFT JOIN public.table_seats s
+      ON s.table_id = p.table_id
+     AND s.seat_number = p.seat_number
+     AND s.user_id = p.user_id
+     AND s.left_at IS NULL
+     AND s.stack = p.chips
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text = 'playing'
+     AND s.table_id IS NULL;
+
+  IF v_created NOT IN (0, 1)
+     OR v_count IS DISTINCT FROM v_receipt.supply_roster_count
+     OR v_bad <> 0
+     OR v_issued IS DISTINCT FROM v_receipt.supply_expected_issued_chips
+     OR v_roster IS DISTINCT FROM v_issued
+     OR v_felt IS DISTINCT FROM v_issued THEN
+    RAISE EXCEPTION 'TOURNAMENT_LAUNCH_SPIN_PROJECTION_NOT_CONSERVED'
+      USING ERRCODE = '23514',
+            DETAIL = jsonb_build_object(
+              'players', v_count,
+              'bad_seats', v_bad,
+              'issued_chips', v_issued,
+              'roster_chips', v_roster,
+              'felt_chips', v_felt,
+              'created_projection_count', v_created
+            )::text;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'tournament_id', p_tournament_id,
+    'launch_id', p_launch_id,
+    'lease_generation', p_lease_generation,
+    'supply_version', 1,
+    'stacks_deferred', false,
+    'projected_player_count', v_count,
+    'created_projection_count', v_created,
+    'issued_chips', v_issued,
+    'roster_chips', v_roster,
+    'felt_chips', v_felt,
+    'players', v_players
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_project_tournament_launch_seat_stacks(
+  uuid, uuid, uuid, uuid[]
+) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_project_tournament_launch_seat_stacks(
+  uuid, uuid, uuid, uuid[]
+) TO service_role;
+
+/* These are manager mutations, not generic service recovery. Extend the exact
+   Stage-B manager-exclusive allowlist without retyping its shared-estate hook,
+   and refuse any source drift or security-envelope change. */
+DO $patch_strict_manager_supply_routes$
+DECLARE
+  v_oid oid :=
+    'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure;
+  v_src text;
+  v_new text;
+  v_old_acl aclitem[];
+  v_old_config text[];
+  v_old_owner oid;
+  v_old_secdef boolean;
+  v_anchor constant text :=
+$old$    'rpc/fn_complete_tournament_launch_atomic',
+    'rpc/fn_decline_tournament_rebuy',$old$;
+  v_replacement constant text :=
+$new$    'rpc/fn_complete_tournament_launch_atomic',
+    'rpc/fn_issue_tournament_launch_stacks',
+    'rpc/fn_materialize_tournament_launch_seats',
+    'rpc/fn_project_tournament_launch_seat_stacks',
+    'rpc/fn_decline_tournament_rebuy',$new$;
+BEGIN
+  SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
+    INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef
+    FROM pg_proc p WHERE p.oid = v_oid;
+  IF (length(v_src) - length(replace(v_src, v_anchor, ''))) / length(v_anchor) <> 1 THEN
+    RAISE EXCEPTION 'strict manager hook lost its once-only launch route anchor';
+  END IF;
+  IF position('rpc/fn_issue_tournament_launch_stacks' in v_src) > 0
+     OR position('rpc/fn_materialize_tournament_launch_seats' in v_src) > 0
+     OR position('rpc/fn_project_tournament_launch_seat_stacks' in v_src) > 0 THEN
+    RAISE EXCEPTION 'strict manager hook already classifies a supply route unexpectedly';
+  END IF;
+  v_new := replace(v_src, v_anchor, v_replacement);
+  EXECUTE v_new;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid = v_oid
+       AND p.proacl IS NOT DISTINCT FROM v_old_acl
+       AND p.proconfig IS NOT DISTINCT FROM v_old_config
+       AND p.proowner = v_old_owner
+       AND p.prosecdef = v_old_secdef
+       AND (length(p.prosrc) - length(replace(
+             p.prosrc, 'rpc/fn_issue_tournament_launch_stacks', ''
+           ))) / length('rpc/fn_issue_tournament_launch_stacks') = 1
+       AND (length(p.prosrc) - length(replace(
+             p.prosrc, 'rpc/fn_materialize_tournament_launch_seats', ''
+           ))) / length('rpc/fn_materialize_tournament_launch_seats') = 1
+       AND (length(p.prosrc) - length(replace(
+             p.prosrc, 'rpc/fn_project_tournament_launch_seat_stacks', ''
+           ))) / length('rpc/fn_project_tournament_launch_seat_stacks') = 1
+       AND position('v_manager_exclusive_paths' in p.prosrc) > 0
+       AND position('v_engine_service_paths' in p.prosrc) > 0
+  ) THEN
+    RAISE EXCEPTION 'strict manager supply-route edit changed its security boundary or did not land exactly once';
+  END IF;
+END;
+$patch_strict_manager_supply_routes$;
+
+/* This helper is the database half of exact launch conservation. It is
+   owner-only and side-effect free. The completion wrapper and the status
+   trigger both call the same proof, so there is no second formula. */
+CREATE OR REPLACE FUNCTION public.fn_prove_tournament_chip_supply_for_launch(
+  p_tournament_id uuid,
+  p_launch_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_active_count integer;
+  v_roster_hash text;
+  v_bad_players integer;
+  v_live_count integer;
+  v_bad_seats integer;
+  v_matching_count integer;
+  v_issued bigint;
+  v_roster bigint;
+  v_felt bigint;
+BEGIN
+  SELECT * INTO v_receipt
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id = p_tournament_id;
+  IF NOT FOUND OR v_receipt.launch_id IS DISTINCT FROM p_launch_id THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', false, 'reason', 'launch_receipt_mismatch'
+    );
+  END IF;
+
+  IF v_receipt.supply_version = 0 THEN
+    RETURN jsonb_build_object(
+      'ok', true,
+      'ledgered', false,
+      'supply_version', 0,
+      'reason', 'legacy_supply_unversioned',
+      'stacks_deferred', false,
+      'issued_chips', NULL,
+      'roster_chips', NULL,
+      'felt_chips', NULL
+    );
+  END IF;
+
+  IF v_receipt.supply_version IS DISTINCT FROM 1 THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', false,
+      'reason', 'launch_supply_version_invalid',
+      'supply_version', v_receipt.supply_version
+    );
+  END IF;
+
+  /* A replay describes the immutable launch boundary, not chips which have
+     since moved between players in normal play. Exact completion already
+     proved these three equal values before completed_at was stamped. */
+  IF v_receipt.completed_at IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'ok', true,
+      'ledgered', true,
+      'supply_version', 1,
+      'stacks_deferred', false,
+      'issued_chips', v_receipt.supply_expected_issued_chips,
+      'roster_chips', v_receipt.supply_expected_issued_chips,
+      'felt_chips', v_receipt.supply_expected_issued_chips,
+      'proved_at', v_receipt.completed_at
+    );
+  END IF;
+
+  SELECT count(*)::integer,
+         md5(COALESCE(string_agg(p.user_id::text, ',' ORDER BY p.user_id), '')),
+         COALESCE(sum(p.chips), 0)::bigint
+    INTO v_active_count, v_roster_hash, v_roster
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing');
+
+  SELECT count(*)::integer
+    INTO v_bad_players
+    FROM public.tournament_players p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing')
+     AND (
+       p.status::text <> 'playing'
+       OR p.user_id IS NULL
+       OR p.chips IS NULL
+       OR p.chips <= 0
+       OR p.chips > 9999999999999
+       OR p.table_id IS NULL
+       OR p.seat_number IS NULL
+       OR p.seat_number <= 0
+       OR (SELECT count(*)
+             FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'entry_opened') <> 1
+       OR (SELECT count(*)
+             FROM public.tournament_chip_supply_events e
+            WHERE e.tournament_id = p.tournament_id
+              AND e.user_id = p.user_id
+              AND e.entry_generation = p.chip_supply_generation
+              AND e.event_kind = 'initial_stack') <> 1
+       OR p.chips IS DISTINCT FROM (
+         SELECT COALESCE(sum(e.amount_delta), 0)::bigint
+           FROM public.tournament_chip_supply_events e
+          WHERE e.tournament_id = p.tournament_id
+            AND e.user_id = p.user_id
+            AND e.entry_generation = p.chip_supply_generation
+       )
+     );
+
+  SELECT COALESCE(sum(e.amount_delta), 0)::bigint
+    INTO v_issued
+    FROM public.tournament_chip_supply_events e
+   WHERE e.tournament_id = p_tournament_id;
+
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE s.user_id IS NULL
+              OR s.stack IS NULL
+              OR lower(s.stack::text) IN ('nan', 'infinity', '-infinity')
+              OR s.stack < 0
+              OR s.stack <> trunc(s.stack)
+              OR s.stack > 9999999999999
+         )::integer,
+         COALESCE(sum(s.stack), 0)::bigint
+    INTO v_live_count, v_bad_seats, v_felt
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = p_tournament_id
+     AND s.left_at IS NULL;
+
+  SELECT count(*)::integer
+    INTO v_matching_count
+    FROM public.tournament_players p
+    JOIN public.table_seats s
+      ON s.table_id = p.table_id
+     AND s.seat_number = p.seat_number
+     AND s.user_id = p.user_id
+     AND s.left_at IS NULL
+     AND s.stack = p.chips
+   WHERE p.tournament_id = p_tournament_id
+     AND p.status::text IN ('registered', 'playing');
+
+  IF v_active_count IS DISTINCT FROM v_receipt.supply_roster_count
+     OR v_roster_hash IS DISTINCT FROM v_receipt.supply_roster_hash THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', true, 'supply_version', 1,
+      'reason', 'launch_supply_roster_changed',
+      'active_players', v_active_count,
+      'expected_players', v_receipt.supply_roster_count,
+      'issued_chips', v_issued,
+      'roster_chips', v_roster,
+      'felt_chips', v_felt
+    );
+  END IF;
+
+  IF v_bad_players <> 0 THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', true, 'supply_version', 1,
+      'reason', 'launch_supply_players_unproven',
+      'invalid_players', v_bad_players,
+      'issued_chips', v_issued,
+      'roster_chips', v_roster,
+      'felt_chips', v_felt
+    );
+  END IF;
+
+  IF v_receipt.supply_projection_deferred
+     AND v_receipt.supply_projected_at IS NULL THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', true, 'supply_version', 1,
+      'reason', 'launch_chip_projection_pending',
+      'stacks_deferred', true,
+      'issued_chips', v_issued,
+      'roster_chips', v_roster,
+      'felt_chips', v_felt
+    );
+  END IF;
+
+  IF v_bad_seats <> 0
+     OR v_live_count <> v_active_count
+     OR v_matching_count <> v_active_count THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', true, 'supply_version', 1,
+      'reason', 'launch_supply_seats_unproven',
+      'invalid_seats', v_bad_seats,
+      'live_seats', v_live_count,
+      'matching_seats', v_matching_count,
+      'issued_chips', v_issued,
+      'roster_chips', v_roster,
+      'felt_chips', v_felt
+    );
+  END IF;
+
+  IF v_issued IS DISTINCT FROM v_receipt.supply_expected_issued_chips
+     OR v_roster IS DISTINCT FROM v_issued
+     OR v_felt IS DISTINCT FROM v_issued THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'ledgered', true, 'supply_version', 1,
+      'reason', 'launch_supply_not_conserved',
+      'expected_issued_chips', v_receipt.supply_expected_issued_chips,
+      'issued_chips', v_issued,
+      'roster_chips', v_roster,
+      'felt_chips', v_felt
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'ledgered', true,
+    'supply_version', 1,
+    'stacks_deferred', false,
+    'issued_chips', v_issued,
+    'roster_chips', v_roster,
+    'felt_chips', v_felt
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_prove_tournament_chip_supply_for_launch(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* Preserve the inspected predecessor as an owner-only compatibility core.
+   The new core locks receipt then tournament, proves versioned supply in that
+   same transaction, and delegates all established roster/table/Spin checks. */
+DO $wrap_launch_completion_supply$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_complete_tournament_launch_before_chip_supply_ledger(uuid,uuid)'
+     ) IS NOT NULL THEN
+    RAISE EXCEPTION 'launch completion supply wrapper already exists unexpectedly';
+  END IF;
+  ALTER FUNCTION public.fn_complete_tournament_launch_before_lease_generation(uuid, uuid)
+    RENAME TO fn_complete_tournament_launch_before_chip_supply_ledger;
+END;
+$wrap_launch_completion_supply$;
+
+REVOKE ALL ON FUNCTION public.fn_complete_tournament_launch_before_chip_supply_ledger(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION public.fn_complete_tournament_launch_before_lease_generation(
+  p_tournament_id uuid,
+  p_launch_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_supply jsonb;
+  v_result jsonb;
+BEGIN
+  SELECT * INTO v_receipt
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id = p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_receipt.launch_id IS DISTINCT FROM p_launch_id THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'launch_receipt_mismatch');
+  END IF;
+
+  PERFORM 1 FROM public.tournaments t
+   WHERE t.id = p_tournament_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+  END IF;
+
+  v_supply := public.fn_prove_tournament_chip_supply_for_launch(
+    p_tournament_id, p_launch_id
+  );
+  IF NOT COALESCE((v_supply ->> 'ok')::boolean, false) THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'reason', COALESCE(v_supply ->> 'reason', 'launch_supply_unproven'),
+      'supply_version', v_receipt.supply_version,
+      'chip_supply', v_supply,
+      'issued_chips', v_supply -> 'issued_chips',
+      'roster_chips', v_supply -> 'roster_chips',
+      'felt_chips', v_supply -> 'felt_chips'
+    );
+  END IF;
+
+  v_result := public.fn_complete_tournament_launch_before_chip_supply_ledger(
+    p_tournament_id, p_launch_id
+  );
+  RETURN v_result || jsonb_build_object(
+    'supply_version', v_receipt.supply_version,
+    'chip_supply', v_supply,
+    'issued_chips', v_supply -> 'issued_chips',
+    'roster_chips', v_supply -> 'roster_chips',
+    'felt_chips', v_supply -> 'felt_chips'
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_complete_tournament_launch_before_lease_generation(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.trg_prove_tournament_chip_supply_before_launch()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_receipt public.tournament_launch_receipts%ROWTYPE;
+  v_supply jsonb;
+BEGIN
+  IF upper(COALESCE(OLD.status::text, '')) = 'REGISTERING'
+     AND upper(COALESCE(NEW.status::text, '')) = 'RUNNING' THEN
+    SELECT * INTO v_receipt
+      FROM public.tournament_launch_receipts r
+     WHERE r.tournament_id = OLD.id;
+    IF FOUND AND v_receipt.supply_version = 1 THEN
+      v_supply := public.fn_prove_tournament_chip_supply_for_launch(
+        OLD.id, v_receipt.launch_id
+      );
+      IF NOT COALESCE((v_supply ->> 'ok')::boolean, false) THEN
+        RAISE EXCEPTION 'TOURNAMENT_CHIP_SUPPLY_LAUNCH_REFUSED: %',
+          COALESCE(v_supply ->> 'reason', 'unproven')
+          USING ERRCODE = '23514', DETAIL = v_supply::text;
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS az_prove_tournament_chip_supply_before_launch
+  ON public.tournaments;
+CREATE TRIGGER az_prove_tournament_chip_supply_before_launch
+  BEFORE UPDATE OF status ON public.tournaments
+  FOR EACH ROW EXECUTE FUNCTION public.trg_prove_tournament_chip_supply_before_launch();
+
+REVOKE ALL ON FUNCTION public.trg_prove_tournament_chip_supply_before_launch()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* The minute-later credit path is now both wrong and unnecessary: every
+   ledgered launch issues/materializes atomically and a legacy launch retains
+   its bounded in-process compatibility path. Remove the scheduler and its
+   callable body in this same cutover; never reconcile missing supply later. */
+DO $retire_stalled_stack_repair$
+DECLARE
+  v_job_id bigint;
+BEGIN
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    FOR v_job_id IN EXECUTE
+      'SELECT jobid::bigint FROM cron.job WHERE jobname = $1 ORDER BY jobid'
+      USING 'credit-stalled-seat-first-stacks'
+    LOOP
+      EXECUTE 'SELECT cron.unschedule($1)' USING v_job_id;
+    END LOOP;
+  END IF;
+END;
+$retire_stalled_stack_repair$;
+
+DROP FUNCTION IF EXISTS public.fn_credit_stalled_seat_first_stacks() RESTRICT;
+
+COMMENT ON TABLE public.tournament_chip_supply_events IS
+  'Append-only issuance and reversal facts for tournament chip supply. No application role has DML; canonical owner functions append in the source transaction.';
+COMMENT ON FUNCTION public.fn_issue_tournament_launch_stacks(uuid,uuid,uuid,uuid[]) IS
+  'Issues each missing initial stack from the immutable version-1 launch snapshot under exact protocol-2 manager authority. Idempotent by entry-generation semantic keys.';
+COMMENT ON FUNCTION public.fn_materialize_tournament_launch_seats(uuid,uuid,uuid,uuid[],jsonb) IS
+  'Atomically binds the exact version-1 launch roster to collision-free coordinates, projects non-Spin stacks, preserves deferred Spin zeroes, and derives all table headcounts.';
+COMMENT ON FUNCTION public.fn_project_tournament_launch_seat_stacks(uuid,uuid,uuid,uuid[]) IS
+  'Projects already-issued deferred Spin supply only after the database reveal timestamp plus the canonical 14.8-second wheel sequence; retry is receipt-idempotent.';
+
+DO $assert_tournament_chip_supply_ledger$
+DECLARE
+  v_hook text;
+  v_begin text;
+  v_complete text;
+  v_proof text;
+  v_issue text;
+  v_materialize text;
+  v_project text;
+  v_cancel text;
+  v_event_insert text;
+  v_human_seat text;
+  v_late_seat text;
+  v_seat_leave text;
+  v_job_exists boolean := false;
+BEGIN
+  SELECT p.prosrc INTO STRICT v_hook
+    FROM pg_proc p
+   WHERE p.oid =
+     'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
+     AND p.prosecdef
+     AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp'];
+  SELECT p.prosrc INTO STRICT v_begin
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_begin_tournament_launch_atomic(uuid,uuid,timestamptz,uuid)'::regprocedure
+     AND p.prosecdef;
+  SELECT p.prosrc INTO STRICT v_complete
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_complete_tournament_launch_before_lease_generation(uuid,uuid)'::regprocedure
+     AND p.prosecdef;
+  SELECT p.prosrc INTO STRICT v_proof
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_prove_tournament_chip_supply_for_launch(uuid,uuid)'::regprocedure
+     AND p.prosecdef;
+  SELECT p.prosrc INTO STRICT v_issue
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_issue_tournament_launch_stacks(uuid,uuid,uuid,uuid[])'::regprocedure
+     AND p.prosecdef
+     AND p.proconfig @> ARRAY['search_path=public, pg_temp'];
+  SELECT p.prosrc INTO STRICT v_materialize
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_materialize_tournament_launch_seats(uuid,uuid,uuid,uuid[],jsonb)'::regprocedure
+     AND p.prosecdef
+     AND p.proconfig @> ARRAY['search_path=public, pg_temp'];
+  SELECT p.prosrc INTO STRICT v_project
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_project_tournament_launch_seat_stacks(uuid,uuid,uuid,uuid[])'::regprocedure
+     AND p.prosecdef
+     AND p.proconfig @> ARRAY['search_path=public, pg_temp'];
+  SELECT p.prosrc INTO STRICT v_cancel
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.trg_close_tournament_chip_supply_on_cancel()'::regprocedure
+     AND p.prosecdef
+     AND p.proconfig @> ARRAY['search_path=public, pg_temp'];
+  SELECT p.prosrc INTO STRICT v_event_insert
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.trg_validate_tournament_chip_supply_event_insert()'::regprocedure
+     AND p.prosecdef
+     AND p.proconfig @> ARRAY['search_path=public, pg_temp'];
+  SELECT p.prosrc INTO STRICT v_human_seat
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)'::regprocedure;
+  SELECT p.prosrc INTO v_late_seat
+    FROM pg_proc p
+   WHERE p.oid = to_regprocedure(
+     'public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)'
+   );
+  SELECT p.prosrc INTO v_seat_leave
+    FROM pg_proc p
+   WHERE p.oid = to_regprocedure('public.fn_leave_seat_and_refund(uuid)');
+
+  IF to_regclass('public.tournament_chip_supply_events') IS NULL
+     OR to_regclass('public.tournament_chip_supply_events_generation_idx') IS NULL
+     OR to_regclass('public.tournament_chip_supply_events_one_open_idx') IS NULL
+     OR to_regclass('public.tournament_chip_supply_events_one_close_idx') IS NULL
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+        WHERE g.tgrelid = 'public.tournament_chip_supply_events'::regclass
+          AND g.tgname = 'tournament_chip_supply_event_is_immutable'
+          AND NOT g.tgisinternal
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+        WHERE g.tgrelid = 'public.tournament_chip_supply_events'::regclass
+          AND g.tgname = 'tournament_chip_supply_event_insert_is_valid'
+          AND NOT g.tgisinternal
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+        WHERE g.tgrelid = 'public.tournament_players'::regclass
+          AND g.tgname = 'ab_record_tournament_chip_supply'
+          AND NOT g.tgisinternal
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+        WHERE g.tgrelid = 'public.tournaments'::regclass
+          AND g.tgname = 'ay_close_tournament_chip_supply_on_cancel'
+          AND NOT g.tgisinternal
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+        WHERE g.tgrelid = 'public.table_seats'::regclass
+          AND g.tgname = 'ab_fence_tournament_launch_seat_supply'
+          AND NOT g.tgisinternal
+     )
+     OR has_table_privilege('anon', 'public.tournament_chip_supply_events', 'SELECT,INSERT,UPDATE,DELETE')
+     OR has_table_privilege('authenticated', 'public.tournament_chip_supply_events', 'SELECT,INSERT,UPDATE,DELETE')
+     OR has_table_privilege('service_role', 'public.tournament_chip_supply_events', 'SELECT,INSERT,UPDATE,DELETE')
+     OR has_function_privilege(
+          'service_role',
+          'public.trg_close_tournament_chip_supply_on_cancel()',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'authenticated',
+          'public.trg_close_tournament_chip_supply_on_cancel()',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'anon',
+          'public.trg_close_tournament_chip_supply_on_cancel()',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'service_role',
+          'public.trg_validate_tournament_chip_supply_event_insert()',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'authenticated',
+          'public.trg_validate_tournament_chip_supply_event_insert()',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'anon',
+          'public.trg_validate_tournament_chip_supply_event_insert()',
+          'EXECUTE'
+        ) THEN
+    RAISE EXCEPTION 'tournament chip supply event storage is not private and immutable';
+  END IF;
+
+  IF position($needle$'supply_version'$needle$ in v_begin) = 0
+     OR position('fn_prove_tournament_chip_supply_for_launch' in v_complete) = 0
+     OR position($needle$'legacy_supply_unversioned'$needle$ in v_proof) = 0
+     OR position('fn_lock_tournament_launch_supply_request' in v_issue) = 0
+     OR position('app.tournament_chip_supply_launch_issue' in v_issue) = 0
+     OR position('ON CONFLICT (table_id, seat_number)' in v_materialize) = 0
+     OR position('app.tournament_chip_supply_materialize' in v_materialize) = 0
+     OR position($needle$interval '14.8 seconds'$needle$ in v_project) = 0
+     OR position('app.tournament_chip_supply_projection' in v_project) = 0
+     OR position('TOURNAMENT_CHIP_SUPPLY_CANCEL_HISTORY_CORRUPT' in v_cancel) = 0
+     OR position('TOURNAMENT_CHIP_SUPPLY_CANCEL_NOT_CONSERVED' in v_cancel) = 0
+     OR position('fn_append_tournament_chip_supply_event' in v_cancel) = 0
+     OR position('TOURNAMENT_CHIP_SUPPLY_EVENT_AFTER_CLOSE' in v_event_insert) = 0
+     OR position('TOURNAMENT_CHIP_SUPPLY_CLOSE_DELTA_MISMATCH' in v_event_insert) = 0
+     OR position('TOURNAMENT_CHIP_SUPPLY_ZERO_CLOSE_REQUIRES_UNISSUED_ENTRY' in v_event_insert) = 0
+     OR position('TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in v_human_seat) = 0
+     OR (
+       to_regprocedure(
+         'public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)'
+       ) IS NOT NULL
+       AND position(
+         'TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in COALESCE(v_late_seat, '')
+       ) = 0
+     )
+     OR (
+       to_regprocedure('public.fn_leave_seat_and_refund(uuid)') IS NOT NULL
+       AND position(
+         'TOURNAMENT_CHIP_SUPPLY_PARENT_FIRST' in COALESCE(v_seat_leave, '')
+       ) = 0
+     )
+     OR position('FOR UPDATE' in v_event_insert) = 0 THEN
+    RAISE EXCEPTION 'tournament launch supply functions lost a required root invariant';
+  END IF;
+
+  IF position('rpc/fn_issue_tournament_launch_stacks' in v_hook) = 0
+     OR position('rpc/fn_materialize_tournament_launch_seats' in v_hook) = 0
+     OR position('rpc/fn_project_tournament_launch_seat_stacks' in v_hook) = 0
+     OR position('rpc/fn_issue_tournament_launch_stacks' in v_hook) >
+          position('v_engine_service_paths' in v_hook)
+     OR position('rpc/fn_materialize_tournament_launch_seats' in v_hook) >
+          position('v_engine_service_paths' in v_hook)
+     OR position('rpc/fn_project_tournament_launch_seat_stacks' in v_hook) >
+          position('v_engine_service_paths' in v_hook) THEN
+    RAISE EXCEPTION 'launch supply RPCs are not manager-exclusive routes';
+  END IF;
+
+  IF has_function_privilege(
+       'anon', 'public.fn_issue_tournament_launch_stacks(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated', 'public.fn_issue_tournament_launch_stacks(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role', 'public.fn_issue_tournament_launch_stacks(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon', 'public.fn_materialize_tournament_launch_seats(uuid,uuid,uuid,uuid[],jsonb)', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated', 'public.fn_materialize_tournament_launch_seats(uuid,uuid,uuid,uuid[],jsonb)', 'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role', 'public.fn_materialize_tournament_launch_seats(uuid,uuid,uuid,uuid[],jsonb)', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon', 'public.fn_project_tournament_launch_seat_stacks(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated', 'public.fn_project_tournament_launch_seat_stacks(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role', 'public.fn_project_tournament_launch_seat_stacks(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'service_role', 'public.fn_lock_tournament_launch_supply_request(uuid,uuid,uuid,uuid[])', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'service_role', 'public.fn_prove_tournament_chip_supply_for_launch(uuid,uuid)', 'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'tournament launch supply function ACLs are not fail-closed';
+  END IF;
+
+  IF to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NOT NULL THEN
+    RAISE EXCEPTION 'the timer-driven stalled-stack repair function still exists';
+  END IF;
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    EXECUTE
+      'SELECT EXISTS (SELECT 1 FROM cron.job WHERE jobname = $1)'
+      INTO v_job_exists
+      USING 'credit-stalled-seat-first-stacks';
+  END IF;
+  IF v_job_exists THEN
+    RAISE EXCEPTION 'the timer-driven stalled-stack repair cron still exists';
+  END IF;
+END;
+$assert_tournament_chip_supply_ledger$;
+
+COMMIT;

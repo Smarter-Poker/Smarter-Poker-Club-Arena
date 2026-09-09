@@ -12,7 +12,12 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { sendJSON } from '../http/respond.js';
 import { authenticateRequest } from '../http/auth.js';
-import { authorizeTableViewer } from '../services/TableViewerAccess.js';
+import {
+  authorizeTableViewer,
+  isSeatedTableViewer,
+  viewerCanSeeTabledCards,
+} from '../services/TableViewerAccess.js';
+import { projectTableStateForViewer, type GameStateSnapshot } from '../transport/TableStateHub.js';
 
 export interface StateDeps {
   gameServer: {
@@ -20,7 +25,8 @@ export interface StateDeps {
     getTableEngine(tableId: string):
       | {
           getPlayerActions(userId: string): unknown;
-          getTableState(userId: string): unknown;
+          getTableState(userId: string): GameStateSnapshot | null;
+          getObserverState?(): GameStateSnapshot | null;
         }
       | null
       | undefined;
@@ -96,10 +102,27 @@ export async function handleGetState(
     return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
   }
 
-  const state = engine.getTableState(auth.userId);
+  const seatedViewer = isSeatedTableViewer(access);
+  const hasObserverSerializer = typeof engine.getObserverState === 'function';
+  // The player serializer deliberately includes the requesting player's own
+  // private cards before showdown. A non-seated viewer must never reach it
+  // when the engine can supply its stage-aware observer serializer. During a
+  // rolling deploy, an older peer without that method falls back to the player
+  // shape only behind the restricted projector below.
+  const state =
+    !seatedViewer && hasObserverSerializer
+      ? engine.getObserverState!()
+      : engine.getTableState(auth.userId);
   if (!state) {
     return sendJSON(res, 200, { table_id: tableId, stage: 'idle', players: [] });
   }
 
-  return sendJSON(res, 200, state);
+  return sendJSON(
+    res,
+    200,
+    projectTableStateForViewer(
+      state,
+      seatedViewer || (hasObserverSerializer && viewerCanSeeTabledCards(access))
+    )
+  );
 }

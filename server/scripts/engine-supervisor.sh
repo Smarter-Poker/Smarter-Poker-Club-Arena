@@ -26,6 +26,13 @@ CONTAINER="${CONTAINER:-club-arena-engine}"
 IMAGE="${IMAGE:-club-arena-engine:current}"
 PORT="${PORT:-8080}"
 UP_SCRIPT="${UP_SCRIPT:-/opt/club-arena/server/scripts/engine-up.sh}"
+CANONICAL_ENV_FILE="/opt/club-arena/server/.env"
+# Fixed recovery authority written and fsynced by the maintenance wrapper before
+# an environment candidate can replace the running engine. This is deliberately
+# not a workflow run-scoped path: the supervisor must find it after runner loss
+# or host reboot without GitHub metadata.
+ENV_ROLLBACK_SENTINEL="/opt/club-arena/server/.env.pending-rollback"
+ENV_TRANSACTION_RECONCILED=0
 STATE_DIR="${STATE_DIR:-/var/lib/club-arena}"
 STATE_FILE="$STATE_DIR/supervisor-fails"
 COUNTER_FILE="$STATE_DIR/recoveries"
@@ -80,6 +87,60 @@ readnum() { local n; n=$(cat "$1" 2>/dev/null || echo 0); case "$n" in ''|*[!0-9
 writenum() { echo "$2" > "$1" 2>/dev/null || true; }
 bump() { local n; n=$(readnum "$1"); n=$((n + 1)); writenum "$1" "$n"; echo "$n"; }
 
+file_sha256() {
+  sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+durable_copy_replace() {
+  local source="$1" destination="$2" transaction_tmp="${2}.replace"
+  cp -p "$source" "$transaction_tmp" || return 1
+  python3 - "$transaction_tmp" <<'PY' || return 1
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+  mv -f "$transaction_tmp" "$destination" || return 1
+  python3 - "$destination" <<'PY' || return 1
+import os
+import sys
+
+path = os.path.abspath(sys.argv[1])
+descriptor = os.open(path, os.O_RDONLY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+directory = os.open(os.path.dirname(path), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+}
+
+durable_remove() {
+  local path="$1"
+  rm -f -- "$path" || return 1
+  python3 - "$path" <<'PY' || return 1
+import os
+import sys
+
+directory = os.open(
+    os.path.dirname(os.path.abspath(sys.argv[1])),
+    os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0),
+)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+}
+
 act() {
   # Records an intervention in the journal AND in Prometheus. A supervisor that
   # silently papers over a crash loop is worse than no supervisor, because it
@@ -100,7 +161,7 @@ emit_metrics() {
   restarting=$(readnum "$RESTARTING_FILE")
   mkdir -p "$TEXTFILE_DIR" 2>/dev/null || return 0
   local tmp="$METRIC_FILE.$$"
-  {
+  if {
     echo "# HELP club_arena_supervisor_last_run_timestamp_seconds Unix time of the last supervisor run."
     echo "# TYPE club_arena_supervisor_last_run_timestamp_seconds gauge"
     echo "club_arena_supervisor_last_run_timestamp_seconds $(date +%s)"
@@ -119,7 +180,13 @@ emit_metrics() {
     echo "# HELP club_arena_engine_restarting_samples Consecutive supervisor runs that found the container in Docker's 'restarting' state."
     echo "# TYPE club_arena_engine_restarting_samples gauge"
     echo "club_arena_engine_restarting_samples $restarting"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$METRIC_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  } > "$tmp" 2>/dev/null; then
+    if ! mv -f "$tmp" "$METRIC_FILE" 2>/dev/null; then
+      rm -f "$tmp" 2>/dev/null
+    fi
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
 }
 
 recreate() {
@@ -130,7 +197,12 @@ recreate() {
   # supervisor recovery into a guaranteed no-op.
   export ENGINE_UP_LOCK_HELD=1
   if [ -x "$UP_SCRIPT" ]; then
-    CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT" || log "engine-up.sh failed"
+    if CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" ENV_FILE="$CANONICAL_ENV_FILE" \
+      ENGINE_UP_RESTART_POLICY=always "$UP_SCRIPT"; then
+      return 0
+    fi
+    log "engine-up.sh failed"
+    return 1
   elif [ -f "$UP_SCRIPT" ]; then
     # `git reset --hard` used to strip the exec bit (the scripts were 100644 in
     # the index until 2026-08-15). Recover rather than give up: being unable to
@@ -138,13 +210,69 @@ recreate() {
     log "WARN: $UP_SCRIPT is not executable — restoring the exec bit"
     chmod +x "$UP_SCRIPT" 2>/dev/null
     if [ -x "$UP_SCRIPT" ]; then
-      CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT" || log "engine-up.sh failed"
+      if CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" ENV_FILE="$CANONICAL_ENV_FILE" \
+        ENGINE_UP_RESTART_POLICY=always "$UP_SCRIPT"; then
+        return 0
+      fi
+      log "engine-up.sh failed"
+      return 1
     else
       log "FATAL: cannot make $UP_SCRIPT executable — cannot recreate"
+      return 1
     fi
   else
     log "FATAL: $UP_SCRIPT missing — cannot recreate"
+    return 1
   fi
+}
+
+verify_reconciled_environment_container() {
+  local expected_env_sha expected_image_id fingerprint
+  local actual_status actual_role actual_autoheal actual_restart actual_env_sha actual_image_id
+  expected_env_sha="$(file_sha256 "$ENV_ROLLBACK_SENTINEL")" || return 1
+  expected_image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null)" || return 1
+  [ -n "$expected_env_sha" ] && [ -n "$expected_image_id" ] || return 1
+  fingerprint="$(docker container inspect \
+    -f '{{.State.Status}}|{{index .Config.Labels "sp.role"}}|{{index .Config.Labels "autoheal"}}|{{.HostConfig.RestartPolicy.Name}}|{{index .Config.Labels "sp.env-sha256"}}|{{.Image}}' \
+    "$CONTAINER" 2>/dev/null)" || return 1
+  IFS='|' read -r actual_status actual_role actual_autoheal actual_restart actual_env_sha actual_image_id <<EOF
+$fingerprint
+EOF
+  [ "$actual_status" = "running" ] \
+    && [ "$actual_role" = "engine" ] \
+    && [ "$actual_autoheal" = "true" ] \
+    && [ "$actual_restart" = "always" ] \
+    && [ "$actual_env_sha" = "$expected_env_sha" ] \
+    && [ "$actual_image_id" = "$expected_image_id" ]
+}
+
+reconcile_pending_environment_transaction() {
+  [ -e "$ENV_ROLLBACK_SENTINEL" ] || return 0
+  if [ ! -s "$ENV_ROLLBACK_SENTINEL" ]; then
+    log "FATAL: pending environment rollback sentinel is empty; refusing to boot any environment"
+    return 1
+  fi
+  act "pending environment transaction survived its wrapper; restoring the durable pre-transaction environment before boot evaluation"
+  if ! durable_copy_replace "$ENV_ROLLBACK_SENTINEL" "$CANONICAL_ENV_FILE" \
+    || ! cmp -s "$ENV_ROLLBACK_SENTINEL" "$CANONICAL_ENV_FILE"; then
+    log "FATAL: could not durably restore the canonical environment from the rollback sentinel"
+    return 1
+  fi
+  if ! recreate; then
+    log "FATAL: could not recreate $CONTAINER from the restored canonical environment; rollback sentinel retained"
+    return 1
+  fi
+  if ! verify_reconciled_environment_container; then
+    log "FATAL: recreated container did not prove the exact rollback environment, image, and run spec; rollback sentinel retained"
+    return 1
+  fi
+  if ! durable_remove "$ENV_ROLLBACK_SENTINEL"; then
+    log "FATAL: rollback was recreated and verified but its durable sentinel could not be retired"
+    return 1
+  fi
+  ENV_TRANSACTION_RECONCILED=1
+  log "verified rollback convergence and durably retired the pending environment sentinel"
+  return 0
 }
 
 if ! docker info >/dev/null 2>&1; then
@@ -165,6 +293,20 @@ if ! flock -n 9 2>/dev/null; then
   exit 0
 fi
 
+# This check is deliberately the first action after the shared lock. A pending
+# environment transaction outranks Docker status, restart policy, and the full
+# boot-grace window: those observations may all belong to an uncommitted
+# candidate whose wrapper was SIGKILLed or whose host rebooted.
+if ! reconcile_pending_environment_transaction; then
+  emit_metrics 0 0
+  exit 0
+fi
+if [ "$ENV_TRANSACTION_RECONCILED" = "1" ]; then
+  writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
+  emit_metrics -1 1
+  exit 0
+fi
+
 # ── 1. Does the container exist at all? ──────────────────────────────────────
 if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   act "container '$CONTAINER' does not exist — recreating from $IMAGE"
@@ -175,6 +317,22 @@ if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
 fi
 
 STATUS=$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo unknown)
+
+# restart=no is the environment transaction's durable uncommitted marker. It
+# must never be started, unpaused, or trusted after the lock-holding wrapper
+# disappears: Docker has embedded candidate env bytes in that container even
+# though the canonical env file may still contain the old configuration.
+# Recreate from the hard-coded canonical boot source instead. This also repairs
+# any other non-canonical restart policy rather than silently normalizing and
+# reviving an unknown container.
+RESTART_POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo unknown)
+if [ "$RESTART_POLICY" != "always" ]; then
+  act "container has uncommitted/non-canonical restart policy '$RESTART_POLICY' — recreating from the canonical environment"
+  recreate
+  writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
+  emit_metrics 0 0
+  exit 0
+fi
 
 # ── 2. Wrong run-spec is as bad as no container ──────────────────────────────
 # A container created by any path other than engine-up.sh may be missing

@@ -41,42 +41,6 @@
   box-shadow: none !important;
 }
 
-.tbs-master {
-  position: relative;
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-.tbs-head {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1000 / 348;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
-    center / 100% auto no-repeat;
-}
-
-.tbs-stage {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 2cqw;
-  padding: 1cqw 11% 2cqw;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
-    center / 100% auto repeat-y;
-}
-
-.tbs-deck {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1000 / 627;
-  background: url('/hub/club-arena/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100%
-    auto no-repeat;
-}
-
 .tbs-body {
   font-size: 3.4cqw;
 }
@@ -124,4 +88,35 @@
   .tbs-overlay {
     animation: none;
   }
+}
+
+/* The three figures print as rows on the glass, divided by engraved rules -
+   NOT in the four-bay deck (Dan 2026-09-09: the bays belong to the buy-in
+   family, and their frame stands proud of the body rails). */
+.tbs-figures {
+  display: grid;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.tbs-figure {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4cqw;
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tbs-figure dt {
+  margin: 0;
+}
+
+.tbs-figure__value {
+  margin: 0;
+  font-size: 5cqw;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }

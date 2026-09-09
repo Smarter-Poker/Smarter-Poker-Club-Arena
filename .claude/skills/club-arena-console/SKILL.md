@@ -280,17 +280,26 @@ you, and rebuilding on a stale copy silently reverts somebody's fix.
 
 ### Step 4 — Choose the chassis
 
-| Surface shape                           | Chassis                                              |
-| --------------------------------------- | ---------------------------------------------------- |
-| A message and two actions               | `SpadeConsole` + `plates`                            |
-| A page of content and two staff actions | `SpadeConsole` + `plates`                            |
-| A page of content, no actions           | `SpadeConsole` with `foot="foot"`                    |
-| Four figures and two actions (money)    | the Buy-In deck: `BUY_IN_ZONES` + `BUY_IN_DECK_H`    |
-| A list of tables/games                  | the lobby's own `ArenaGameCard` — never invent a row |
+| Surface shape                                     | Chassis                                              |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| A message and two actions                         | `SpadeConsole` + `plates`                            |
+| A page of content and two staff actions           | `SpadeConsole` + `plates`                            |
+| A page of content, no actions                     | `SpadeConsole` with `foot="foot"`                    |
+| Sitting down or rebuying (the buy-in family ONLY) | the Buy-In deck: `BUY_IN_ZONES` + `BUY_IN_DECK_H`    |
+| A list of tables/games                            | the lobby's own `ArenaGameCard` — never invent a row |
 
 **One master per surface.** Never assemble a surface out of a rail from here, a
 plate from there and a CSS pill. That single mistake is what produced three
 rejected rounds.
+
+**THE FOUR-BAY DECK IS THE BUY-IN FAMILY'S, AND NOBODY ELSE'S** (Dan
+2026-09-09: "I'M NOT A BIG FAN OF THESE CARDS. I DON'T LIKE THE 4 BOXES, AND
+THE WAY IT STICKS OUT ON THE SIDES ... I'D MUCH RATHER SEE THEM LOOK MORE LIKE
+[the plain console]"). The bays are the sheets a player sits down and rebuys
+through, and their frame stands proud of the body rails, which reads as a
+second frame bolted on. Every other surface - however many figures it has -
+prints them as rows on the glass, label in lit blue on the left, value in
+silver on the right, an engraved rule between them.
 
 ### Step 5 — Print into the zones
 

@@ -221,10 +221,12 @@ BEGIN
  RETURN public.fn_cash_seat_move_execute(p_move_id);
 END;
 $function$;
-REVOKE ALL ON FUNCTION public.fn_cash_seat_move_execute(uuid),public.fn_cash_seat_swap_execute(uuid)
- FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_cash_seat_move_execute(uuid),public.fn_cash_seat_swap_execute(uuid)
- TO service_role;
-REVOKE ALL ON FUNCTION public.fn_cash_seat_move_execute_before_maintenance_gate(uuid),
- public.fn_cash_seat_swap_execute_before_maintenance_gate(uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_seat_move_execute(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_cash_seat_swap_execute(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_seat_move_execute(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_cash_seat_swap_execute(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_seat_move_execute_before_maintenance_gate(uuid)
+ FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_seat_swap_execute_before_maintenance_gate(uuid)
+ FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

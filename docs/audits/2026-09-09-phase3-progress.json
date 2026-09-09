@@ -604,5 +604,27 @@
     "status": "blocked_pending_explicit_phase3_authorization",
     "source_pushed": false,
     "reason": "Automatic approval review rejected the Phase 3 cherry-pick and push because explicit publication authorization covered Phase 2 only."
-  }
+  },
+  "open_source_findings": [
+    {
+      "controls": ["S07"],
+      "status": "requires_concurrent_funding_and_authority_proof",
+      "finding": "Draw and settle use separate transactions. Draw does not persist a reservation; settle can record a shortfall note without a bank debit in its body. Installed obligation payment is escrow-capped. Full transitive trigger/funding and concurrency proof remains pending."
+    },
+    {
+      "controls": ["AX07", "AX10"],
+      "status": "requires_contract_and_replay_race_proof",
+      "finding": "Installed admin cancellation considers all entrants and gross purchase refunds; engine cancellation recovery selects open entrants and skips any positive prize. A common remaining contractual entitlement is unverified."
+    }
+  ],
+  "additional_installed_definitions": [
+    {
+      "name": "fn_settle_tournament_obligation",
+      "definition_md5": "53c0ff5d2215dfcfbd271b7b13d43b8f"
+    },
+    {
+      "name": "fn_settle_tournament_obligation_before_atomic_batch_gate",
+      "definition_md5": "0fbfd867868fe2485dc9c66f565be15e"
+    }
+  ]
 }

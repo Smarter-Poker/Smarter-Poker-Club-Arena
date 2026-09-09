@@ -215,6 +215,7 @@ function asComponent(
     illegalActions: result.illegalActions,
     truncatedStreets: result.truncatedStreets,
     candidatePolicyHits: result.candidatePolicyHits,
+    candidateExecutionMismatches: result.candidateExecutionMismatches,
     candidateNodeRoles: [...result.candidateNodeRoles],
   };
 }
@@ -249,6 +250,10 @@ export function aggregateGtoV31Evaluation(
       (total, component) => total + component.candidatePolicyHits,
       0
     ),
+    candidateExecutionMismatches: components.reduce(
+      (total, component) => total + component.candidateExecutionMismatches,
+      0
+    ),
     candidateNodeRoles: [
       ...new Set(components.flatMap((component) => component.candidateNodeRoles)),
     ].sort(),
@@ -276,7 +281,7 @@ export async function runGtoV31EvaluationFamily(args: {
     components.push(asComponent(scenario, result));
   }
   return aggregateGtoV31Evaluation(
-    `gto_v31_${args.kind}_${args.family}_${args.datasetChecksum.slice(0, 12)}`,
+    `gto_v31_${args.kind}_${args.family}_${args.datasetChecksum}`,
     components
   );
 }

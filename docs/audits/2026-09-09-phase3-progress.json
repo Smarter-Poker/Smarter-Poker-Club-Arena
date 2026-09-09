@@ -689,6 +689,20 @@
     "installed_bodies_match": true,
     "receipt_roles_verified": true,
     "schema_manifests_regenerated": true,
-    "club_foreign_key_gate": "passed"
+    "club_foreign_key_gate": "passed",
+    "ownership_client_tests": {
+      "tests_passed": 31,
+      "files_passed": 2,
+      "includes": "Spin reserve ownership and engine wiring"
+    },
+    "acl_followup": {
+      "migration": "20260909190430_spin_settlement_keeps_engine_only_execution.sql",
+      "applied_version": "20260909190630",
+      "sha256": "5902cfe55b14f054aa1923ae08186f1885e5bd71fa05ea4e175cadf4d9759b98",
+      "browser_execute": false,
+      "service_execute": true,
+      "settlement_body_md5": "a0f5a4d8edb0c0e403d3c00a9aadaa95",
+      "reason": "Explicitly restate preserved service-only ACL for the branch permission gate; original applied migration remains unchanged"
+    }
   }
 }

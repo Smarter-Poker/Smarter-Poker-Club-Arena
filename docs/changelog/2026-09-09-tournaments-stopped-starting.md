@@ -44,10 +44,10 @@ scope change, refusal of a close over a live seat. Rolled-back probes found two
 defects in my own first shape before any live write met them, hence three
 files:
 
-| version          | what                                                                                                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `20260909205508` | drop both composite keys; seat-side and table-side guards; assert exactly ONE FK remains                                                                                                                                  |
-| `20260909205646` | the cascade ran in a BEFORE trigger and read the parent's OLD scope, so it refused itself. Moved to AFTER, where a real FK cascades                                                                                        |
+| version          | what                                                                                                                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20260909205508` | drop both composite keys; seat-side and table-side guards; assert exactly ONE FK remains                                                                                                                                                                                                                   |
+| `20260909205646` | the cascade ran in a BEFORE trigger and read the parent's OLD scope, so it refused itself. Moved to AFTER, where a real FK cascades                                                                                                                                                                        |
 | `20260909205854` | `UPDATE OF <column>` fires on the statement's column list, and both keys are DERIVED by stamp triggers (`cluster_id` -> scope, `status` -> admission key), so neither guard ever fired. Both now fire on values (`WHEN OLD IS DISTINCT FROM NEW`); the seat guard renamed `zzzzz_` to sort after its stamp |
 
 Verified before the engine came back: the engine's exact embed returns
@@ -113,8 +113,8 @@ a minute early, so the break lands on the advertised clock). Wrong for a field
 that sits down late: every Free Buy on the board was hours past
 `late_reg + break`, so `end < now`, the open threw, `start()` stood down before
 dealer admission, and the next discovery pass did exactly the same thing.
-Nine events - Morning, Midday, Afternoon, Prime Time and Midnight Free Buys -
-about nine hundred paid entrants, permanently unlaunchable.
+Ten events - Morning, Midday, Afternoon, Prime Time and Midnight Free Buys -
+1,143 paid entrants (read at 21:24), permanently unlaunchable.
 
 The anchor is now the LATER of the advertised start and the moment the field
 actually sits down. On time nothing changes. Late, the players get the same

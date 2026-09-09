@@ -6280,7 +6280,7 @@ export abstract class TournamentManagerBase {
          late-reg-plus-break past its advertised start: requestedEnd landed
          before requestedStart, this threw, start() stood down "before dealer
          admission", and the next discovery pass did exactly the same thing.
-         Nine events, about nine hundred paid entrants, permanently unlaunchable
+         Ten events, 1,143 paid entrants, permanently unlaunchable
          - not for any reason a player could see, but because the promise
          "add on as soon as they sit down, and also at the break" had been
          written as a wall-clock instant instead of as a window that starts

@@ -71,7 +71,7 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     // 2026-09-09: the anchor is max(advertised, seat). On time that IS the
     // advertised start (the pre-seat minute runs early), so the break still
     // falls at the advertised clock. A field seated late - the 2026-09-09
-    // outage left nine Free Buys hours past their start - gets the full
+    // outage left ten Free Buys hours past their start - gets the full
     // promised window from the seat instead of a window that ends before it
     // starts and a launch that can never complete.
     expect(trigger).toMatch(

@@ -1,3 +1,4 @@
+import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
 /**
  * ServerTableEngine, layer 6/8 — the HAND_COMPLETE settlement pipeline and post-hand tasks.
  *
@@ -31,7 +32,6 @@ import {
   persistTimeBanks,
   reconcileTableSeatCount,
   autoRebuyHorse,
-  markSeatAsLeft,
   processLeavePending,
   atomicCashoutVoluntary,
   logBBJCollection,
@@ -2308,6 +2308,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       let obligationsApplied = false;
       let lastObligationError: unknown = null;
       let attempt = 0;
+      /* How many frozen add-on rows the envelope resolved, from the RPC's
+         own receipt. Undefined until it answers; the announcer treats an
+         absent count as "read to find out". */
+      let resolvedAddOnCount: number | undefined;
       this.setLoopPhase('settlement_post_commit_obligations');
       while (!obligationsApplied && this.lifecycleCanMutate()) {
         attempt++;
@@ -2316,6 +2320,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (outcome.ok !== true) {
             throw new Error(`post-commit obligations refused (${outcome.reason ?? 'unknown'})`);
           }
+          resolvedAddOnCount =
+            typeof outcome.pending_addons === 'number' && Number.isFinite(outcome.pending_addons)
+              ? outcome.pending_addons
+              : undefined;
           obligationsApplied = true;
         } catch (err) {
           lastObligationError = err;
@@ -2393,6 +2401,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             const persisted = stackByUser.get(player.user_id);
             if (persisted !== undefined && Number.isFinite(persisted)) player.stack = persisted;
           }
+          /* The envelope resolved the frozen add-ons silently. Say what it
+             did (the add_on_applied bubble, the private add_on_adjusted
+             frame) and rebuild the cap cache - see announceEnvelopeResolvedAddOns. */
+          await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players, resolvedAddOnCount);
+          if (!this.lifecycleCanMutate()) postCommitStateCanReflect = false;
         }
       }
     }
@@ -2997,20 +3010,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            * it. A nit gives up a buy-in earlier, a gambler one later.
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
-            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            /* One door out for a busted seat (releaseBustedSeat, 10.5): the
+               money path, then `seat_left`, then the trackers. This branch
+               used to call markSeatAsLeft by hand and emit nothing, so a
+               busted horse's chair cleared on clients only when a snapshot
+               happened to be diffed - a tell against the human exit. */
+            const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
             if (!this.lifecycleCanMutate()) return;
-            this.chipContinuity.forget(horse.user_id);
-            // Round 57: clear FSM tracking so the horse doesn't leave a ghost
-            // entry in disconnect_states.
-            this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-            // Round 64: same for TimeBankEngine.
-            this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-            // Round 66: same for StraddleEngine — symmetric cleanup.
-            this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-            this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+            if (!released) continue;
             this.horseRebuys.delete(horse.user_id);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
+              `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} reached the stop-loss and has been removed.`
             );
             continue;
           }
@@ -3052,16 +3062,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
             );
           } else {
-            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
             if (!this.lifecycleCanMutate()) return;
-            this.chipContinuity.forget(horse.user_id);
-            // Round 57: clear FSM tracking on insufficient-funds leave too.
-            this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-            // Round 64: same for TimeBankEngine.
-            this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-            // Round 66: same for StraddleEngine.
-            this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-            this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+            if (!released) continue;
             this.horseRebuys.delete(horse.user_id);
             console.log(
               `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left - insufficient funds`
@@ -3189,16 +3192,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // persists in hand_state_snapshots.disconnect_states forever.
         // Round 64: extended to also call timeBankEngine.removePlayer so the
         // playerBanks Map sheds its entry too — same architectural fix.
-        const cashedOutIds = await processLeavePending(
-          this.tableId,
-          this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs) => {
-            if (this.lifecycleCanMutate()) {
-              this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
-            }
-          },
-          this.forcedLeaves
-        );
+        const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
         if (!this.lifecycleCanMutate()) return;
         for (const userId of cashedOutIds) {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
@@ -3215,7 +3209,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // This Hand"; a move planned during the hand waits for the next deal
         // to be announced, so nobody is moved off a hand they were not told
         // about.
-        await this.executePendingSeatMoves({ announcedOnly: true });
+        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves);
         if (!this.lifecycleCanMutate()) return;
       }
     });
@@ -3257,5 +3251,36 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // the recount is written. The game's ClusterController tick is woken so a
     // must-move plan or a break decision follows this boundary, not the clock.
     this.wakeClusterGame('hand_complete');
+  }
+
+  /**
+   * Read move candidates while the leave sweep runs. Candidates carry no cash
+   * amount and execute only AFTER every leave has completed. Their executor
+   * still rechecks the live source seat, destination and expiry under its existing
+   * database locks; the caller retains the announced-only filter. This list belongs to this boundary only.
+   */
+  protected async readCashHandDepartures(): Promise<{
+    cashedOutIds: string[];
+    pendingMoves: PendingSeatMove[];
+  }> {
+    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: [] };
+    const [leaves, moves] = await Promise.allSettled([
+      processLeavePending(
+        this.tableId,
+        this.tableInfo?.club_id || '',
+        (lockedUserId, stayRemainingMs) => {
+          if (this.lifecycleCanMutate()) {
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
+          }
+        },
+        this.forcedLeaves
+      ),
+      this.tableInfo?.cluster_id ? pendingSeatMoves(this.tableId) : Promise.resolve([]),
+    ]);
+    // Own both rejections immediately and let neither attempt outlive the
+    // boundary on a retry. No move may run after a failed leave sweep.
+    if (leaves.status === 'rejected') throw leaves.reason;
+    if (moves.status === 'rejected') throw moves.reason;
+    return { cashedOutIds: leaves.value, pendingMoves: moves.value };
   }
 }

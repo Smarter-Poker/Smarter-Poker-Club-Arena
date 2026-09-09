@@ -44,6 +44,11 @@ import { getThrowableImageUrl } from '../../services/ThrowableService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { triggerScreenShake } from '../../utils/ScreenShake';
 import './BombPotOverlay.css';
+import {
+  measureTitleAnchor,
+  TITLE_FALLBACK_TOP,
+  type TitleAnchor,
+} from '../../lib/bombPotTitleAnchor';
 
 interface BombPotOverlayProps {
   tableId: string;
@@ -101,46 +106,6 @@ const TITLE_TEXT = 'BOMB POT!';
  * to measure (the table has not painted yet). It is above the old 42%, not
  * at it, so the failure mode is "a little high" and never "on the cards".
  */
-const TITLE_GAP_PX = 10;
-const TITLE_MIN_SCALE = 0.62;
-const TITLE_FALLBACK_TOP = '22%';
-
-export type TitleAnchor = { bottomPx: number; scale: number };
-
-export function measureTitleAnchor(scope: ParentNode, blockHeight: number): TitleAnchor | null {
-  if (typeof window === 'undefined') return null;
-  const rectOf = (sel: string) => {
-    const el = scope.querySelector(sel);
-    if (!el) return null;
-    const r = (el as HTMLElement).getBoundingClientRect();
-    return r.height > 0 && r.width > 0 ? r : null;
-  };
-  // The pot's chip pile is absolutely positioned above the pill, so it is not
-  // inside `.pot-display`'s own box; it is measured on its own.
-  const ceilings = [
-    rectOf('.pot-display'),
-    rectOf('.pot-display__pile--pot'),
-    rectOf('.community-area'),
-  ].filter((r): r is DOMRect => r !== null);
-  if (ceilings.length === 0) return null;
-  const ceiling = Math.min(...ceilings.map((r) => r.top));
-
-  // The seats that stand ABOVE the pot are the ones the block must not climb
-  // onto. A seat is "above" when its whole box is above the ceiling.
-  let floor = 0;
-  scope.querySelectorAll('.seat-wrapper').forEach((el) => {
-    const r = (el as HTMLElement).getBoundingClientRect();
-    if (r.height > 0 && r.bottom <= ceiling) floor = Math.max(floor, r.bottom);
-  });
-
-  const band = ceiling - floor - 2 * TITLE_GAP_PX;
-  const scale =
-    blockHeight > 0 && band > 0 && band < blockHeight
-      ? Math.max(TITLE_MIN_SCALE, band / blockHeight)
-      : 1;
-  return { bottomPx: Math.max(0, window.innerHeight - (ceiling - TITLE_GAP_PX)), scale };
-}
-
 export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSounds = true }) => {
   const [phase, setPhase] = useState<BombPhase>('idle');
   const [anteAmount, setAnteAmount] = useState(0);
@@ -172,7 +137,11 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
         containerRef.current?.closest('.table-page') ??
         containerRef.current?.ownerDocument ??
         document;
-      const blockH = titleBlockRef.current?.getBoundingClientRect().height ?? 0;
+      // offsetHeight, not getBoundingClientRect: after the first anchor the
+      // block may be SCALED, and the rect reports the scaled height. A
+      // re-measure on resize would then read band == height, set scale 1,
+      // and climb back onto the seats.
+      const blockH = titleBlockRef.current?.offsetHeight ?? 0;
       setTitleAnchor(measureTitleAnchor(scope, blockH));
     };
     measure();

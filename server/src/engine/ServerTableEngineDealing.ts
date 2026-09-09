@@ -26,7 +26,7 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -53,6 +53,7 @@ import {
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
+import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -2950,28 +2951,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
+  private holeCardWriteBatches?: Map<
+    string,
+    {
+      rows: Array<{ userId: string; seat: number; json: string }>;
+      promise: Promise<void>;
+    }
+  >;
+
   protected async persistHoleCardsWithRetry(
     userId: string,
     seat: number,
     cards: unknown
   ): Promise<void> {
-    const payload = JSON.stringify([{ user_id: userId, seat_number: seat, cards }]);
-    // 2026-08-31: captured ONCE. this.handCount is reallocated when the next
-    // hand deals; the retry loop below awaits between attempts, so re-reading
-    // it per attempt could stamp THIS hand's cards with the NEXT hand's
-    // number on a slow attempt. Same class as the settlement snapshot fix.
+    if (!this.lifecycleCanMutate()) return;
+    // Freeze the payload now: a later draw may replace or mutate these cards.
+    const row = {
+      userId,
+      seat,
+      json: JSON.stringify({ user_id: userId, seat_number: seat, cards }),
+    };
     const handNumberAtDeal = this.handCount;
-    /* 2026-09-04 (disconnect audit item 12): THE CARDS GO DOWN THE SOCKET
-       TOO. The database row below is still written - it is the durable copy
-       and the client's poll reads it - but the hero's cards used to reach
-       the screen only through a Supabase Realtime subscription on that row
-       (a second transport, with its own reconnect, its own INSERT-only
-       history, and the bounded poll behind it). The engine socket the felt
-       is already drawn from now carries them privately to this player's
-       sockets, in the same row shape the Realtime handler accepts, so every
-       guard on that path (heroHoleCardsAreForThisHand) applies unchanged.
-       Sent before the write so a slow database does not delay the deal on
-       screen. */
+    // Private socket delivery stays synchronous and never waits for PostgREST.
     this.hub?.sendToUser(this.tableId, userId, {
       kind: 'hole_cards',
       row: {
@@ -2982,7 +2983,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         cards,
       },
     });
+
+    // HandController emits the whole deal synchronously. One microtask groups
+    // those rows into the existing array RPC, without an added timer or cache.
+    // Each engine owns its queue. Service work and manager generations cannot
+    // share it, and the flush inherits the first caller's async authority.
+    const authority = currentTournamentDataAuthority();
+    const key = JSON.stringify([
+      handNumberAtDeal,
+      authority?.tournamentId,
+      authority?.leaseGeneration,
+    ]);
+    const batches = (this.holeCardWriteBatches ??= new Map());
+    const pending = batches.get(key);
+    if (pending) {
+      pending.rows.push(row);
+      return pending.promise;
+    }
+    const batch = {
+      rows: [row],
+      promise: Promise.resolve().then(async () => {
+        // Retire the queue BEFORE awaiting HTTP. A later reconnect/draw must
+        // get its own write, even while this batch is still in flight.
+        if (batches.get(key) === batch) batches.delete(key);
+        await this.persistHoleCardBatchWithRetry(handNumberAtDeal, batch.rows);
+      }),
+    };
+    batches.set(key, batch);
+    return batch.promise;
+  }
+
+  private async persistHoleCardBatchWithRetry(
+    handNumberAtDeal: number,
+    rows: ReadonlyArray<{ userId: string; seat: number; json: string }>
+  ): Promise<void> {
+    const payload = '[' + rows.map((row) => row.json).join(',') + ']';
+    const isCurrent = () => this.handCount === handNumberAtDeal && this.lifecycleCanMutate();
     for (let attempt = 1; attempt <= 3; attempt++) {
+      if (!isCurrent()) return;
       try {
         const { error } = await supabase.rpc('insert_hole_cards', {
           p_table_id: this.tableId,
@@ -2991,12 +3029,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         });
         if (!error) return;
         console.warn(
-          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for seat ${seat}:`,
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for ${rows.length} seats:`,
           error.message
         );
       } catch (err) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for seat ${seat}:`,
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for ${rows.length} seats:`,
           err
         );
       }
@@ -3004,21 +3042,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         await new Promise((r) => setTimeout(r, 150 * attempt));
       }
     }
-    // All retries exhausted — tell the client its cards are missing so it can
-    // re-query table_hole_cards instead of sitting blind until the auto-fold.
+    if (!isCurrent()) return;
     reportError(
       new Error('insert_hole_cards failed after 3 attempts'),
       `ServerTableEngine.${this.tableId}.insert_hole_cards_failed`,
-      { userId, seat, handNumber: handNumberAtDeal }
+      { seats: rows.map((row) => row.seat), handNumber: handNumberAtDeal }
     );
-    this.hub?.emitEvent(this.tableId, {
-      type: 'hole_cards_unavailable',
-      table_id: this.tableId,
-      hand_number: handNumberAtDeal,
-      user_id: userId,
-      seat,
-      timestamp: Date.now(),
-    });
+    // The recovery event carries identities only, never another player's cards.
+    for (const row of rows) {
+      this.hub?.emitEvent(this.tableId, {
+        type: 'hole_cards_unavailable',
+        table_id: this.tableId,
+        hand_number: handNumberAtDeal,
+        user_id: row.userId,
+        seat: row.seat,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   /**
@@ -3147,6 +3187,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
+    // THE FREEZE (CLAUDE.md 13.5): the horse twin below checks it twice; this
+    // one stood humans up through the break. Same gate, same place.
+    if (isMaintenanceFrozen()) return;
 
     // Horses have their own recovery pass with its own stop-loss and treasury
     // accounting; removing them here too would double-handle the same seat.
@@ -3207,39 +3250,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const inHand = liveHand?.players.find((p) => p.user_id === player.user_id);
       if (inHand?.is_all_in && !inHand.is_folded) continue;
 
-      try {
-        /* atomicCashout, not markSeatAsLeft-by-hand: it takes the seat lock,
-           credits any residual stack through atomic_credit_wallet_and_log under
-           an idempotency key, and stamps left_at — all in one RPC. The stack is
-           zero here by definition, so no chips actually move, but going through
-           the money path anyway is what keeps this seat exit OFF
-           fn_unaccounted_seat_exits (CLAUDE.md 11.5). */
-        await atomicCashout(player.user_id, this.tableId, player.seat_number);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: player.seat_number,
-          user_id: player.user_id,
-          mid_hand: false,
-          reason: 'busted_no_rebuy',
-          timestamp: Date.now(),
-        });
-        this.chipContinuity.forget(player.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
-        this.straddleEngine.removePlayer(this.tableId, player.user_id);
-        this.preActionEngine.removePlayer(this.tableId, player.user_id);
-        this.bustedSince.delete(player.user_id);
-        this.rebuyPromptOpenAt.delete(player.user_id);
-        removed.push(player.user_id);
-        console.log(
-          `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
-        );
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
-        // Keep the roster and grace tracking intact until this same cashout
-        // confirms departure on a later sweep. An unknown outcome is not a leave.
-      }
+      /* One door out for a busted seat (releaseBustedSeat): the money path,
+         then the event, then the trackers - and on a failed write nothing at
+         all, so the roster and grace tracking wait for a later sweep to ask
+         the same cashout again. An unknown outcome is not a leave. */
+      const released = await this.releaseBustedSeat(player, 'busted_no_rebuy');
+      if (!released) continue;
+      this.bustedSince.delete(player.user_id);
+      this.rebuyPromptOpenAt.delete(player.user_id);
+      removed.push(player.user_id);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
+      );
     }
 
     if (removed.length > 0) {
@@ -3261,38 +3283,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
       const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-      // Stop-Loss Bankroll logic (same rule as Settlement step 5): after two
-      // rebuys (3 buy-ins lost) the horse leaves instead of rebuying again.
-      if (currentRebuys >= 2) {
-        /* ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ────────────────────────────
-           This branch used to release the seat SILENTLY: no `seat_left` event,
-           where the human path immediately above emits one. Both stand a busted
-           player up for the same reason — out of chips, not coming back — but a
-           busted human's seat cleared on every client the instant the event
-           arrived, and a busted horse's seat cleared only when a client next
-           happened to diff a snapshot.
-
-           That is a TELL, and it is the one this file's own comment warns
-           about in the other direction: "a felt that clears a busted horse's
-           seat promptly and leaves a busted human's sitting there is a tell
-           either way round." Timing is part of the treatment (Dan 2026-08-27) —
-           the rhythm of the table is what gives the fleet away, not any one
-           hand. Same event, same reason, same moment. */
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: horse.seat_number,
-          user_id: horse.user_id,
-          mid_hand: false,
-          reason: 'busted_no_rebuy',
-          timestamp: Date.now(),
-        });
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        this.chipContinuity.forget(horse.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+      // Stop-loss: the SAME rule Settlement step 5 applies (HorseRebuyPolicy,
+      // the temperament's own figure). This site used to hard-code `>= 2`
+      // while Settlement had moved on, which is the "two sites reloading on
+      // two different rules" the comment below warns about.
+      if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
+        /* HORSES ARE PLAYERS (CLAUDE.md 10.5): the same door the busted human
+           leaves through - money path, then `seat_left`, then the trackers -
+           so a busted horse's seat clears on every client at the same moment
+           a human's does. Timing is part of the treatment (Dan 2026-08-27). */
+        const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
+        if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -3333,12 +3334,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: rebought ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
         );
       } else {
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        this.chipContinuity.forget(horse.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+        const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
+        if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(

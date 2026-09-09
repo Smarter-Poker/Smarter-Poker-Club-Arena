@@ -108,7 +108,25 @@ export function cashBuyInLabel(row: CashBuyInSource): string {
  * The messages carry the server's own numbers wherever the server sent them —
  * a minimum a player cannot see is a minimum they cannot meet.
  */
+/** Only these two seat indexes can prove a seat collision after receipt claim.
+ * Other unique violations, especially receipt conflicts, remain unresolved.
+ */
+export function cashBuyInSeatConflictText(raw: unknown): string | null {
+  const error = raw as { code?: unknown; message?: unknown } | null;
+  if (error?.code !== '23505' || typeof error.message !== 'string') return null;
+  const constraint = error.message.match(
+    /^duplicate key value violates unique constraint "(table_seats_table_id_seat_number_key|idx_unique_active_user_per_table)"$/
+  )?.[1];
+  if (constraint === 'table_seats_table_id_seat_number_key')
+    return 'That Seat Was Taken. Please Choose Another Seat.';
+  if (constraint === 'idx_unique_active_user_per_table')
+    return 'You Are Already Seated At This Table';
+  return null;
+}
+
 export function cashBuyInRefusalText(raw: unknown): string | null {
+  const seatConflict = cashBuyInSeatConflictText(raw);
+  if (seatConflict) return seatConflict;
   const m = String((raw as { message?: string })?.message ?? raw ?? '');
   if (!m) return null;
 
@@ -154,6 +172,8 @@ export function cashBuyInRefusalText(raw: unknown): string | null {
   }
   if (/VIP_ONLY/.test(m)) return 'This Table Is Open To VIP Members Only';
   if (/IS_TEMPLATE/.test(m)) return 'This Is A Saved Table Template, Not A Live Game';
+  if (/^SEAT_RESERVED:/.test(m))
+    return 'This Seat Is Reserved For The Next Player On The Waiting List. Please Join The Waitlist.';
   if (/TABLE_SIZE: table is full/.test(m)) return 'This Table Is Full';
   if (/TABLE_SIZE: seat/.test(m)) return 'That Seat Does Not Exist At This Table';
   if (/Player already seated at this table/i.test(m)) {
@@ -173,10 +193,10 @@ export function cashBuyInRefusalText(raw: unknown): string | null {
       : 'Your Buy In Is Above This Table Maximum';
   }
   if (/Invalid buy-in amount/i.test(m)) return 'That Buy In Amount Is Not Valid';
-  /* Both wallet shortfalls. The player's own balance is the ONLY case where
-     "check your balance" was ever the right advice, so it is the only case
-     that still says it. */
-  if (/Insufficient club chips/i.test(m)) return 'The Club Treasury Cannot Cover This Buy In';
+  // The server raises this after the conditional club_members wallet debit.
+  // It is the player's club wallet, not the club treasury.
+  if (/Insufficient club chips/i.test(m))
+    return 'Your Club Wallet Does Not Have Enough Chips For This Buy In';
   if (/No club wallet resolves/i.test(m)) return 'No Club Wallet Was Found For You At This Table';
   return null;
 }

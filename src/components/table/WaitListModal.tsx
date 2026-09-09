@@ -106,7 +106,12 @@ export function WaitListModal({
   players,
   myPlayerId,
   onLeaveWaitList,
-  avgWaitTimeMinutes = 5,
+  /* No default (final sweep 2026-09-08). This used to default to 5, and no
+     caller ever passed it, so every player on every wait list was quoted
+     "(position - 1) x 5 min" - a number nobody measured. A wait estimate is
+     printed only when the caller supplies a real one; otherwise the position
+     stands alone, which is true. */
+  avgWaitTimeMinutes,
 }: WaitListModalProps) {
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
 
@@ -124,7 +129,8 @@ export function WaitListModal({
 
   // Estimated wait time
   const estimatedWait = useMemo(() => {
-    if (myPosition <= 0) return 0;
+    if (myPosition <= 0) return null;
+    if (typeof avgWaitTimeMinutes !== 'number' || !(avgWaitTimeMinutes >= 0)) return null;
     return (myPosition - 1) * avgWaitTimeMinutes;
   }, [myPosition, avgWaitTimeMinutes]);
 
@@ -215,7 +221,9 @@ export function WaitListModal({
                 <p className="sc-copy sc-copy--center waitlist-modal__eta">
                   {myPosition === 1
                     ? 'You Are Next. Stay Close To The Table.'
-                    : `You Are ${ordinal(myPosition)} In Line. Estimated Wait ${formatDuration(estimatedWait)}.`}
+                    : estimatedWait === null
+                      ? `You Are ${ordinal(myPosition)} In Line.`
+                      : `You Are ${ordinal(myPosition)} In Line. Estimated Wait ${formatDuration(estimatedWait)}.`}
                 </p>
               )}
               {players.length === 0 ? (

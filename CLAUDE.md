@@ -31,6 +31,25 @@ Phases 1-3 of 8 are merged (squash `c22a3bb00`) and live; phase 4 is the club
 dashboard, and it starts on a fresh branch off `main`. The plan is
 [`docs/club-operations/OPERATIONS-UPGRADE-PLAN.md`](./docs/club-operations/OPERATIONS-UPGRADE-PLAN.md).
 
+## ↗ REDESIGNING A PAGE, POPUP, CARD OR BUTTON? READ `.claude/skills/club-arena-console/SKILL.md`
+
+Every visual surface in Club Arena is rebuilt on Dan's approved master art -
+you do not style it, you print live text into zones measured on a render he
+signed off. The standard is **#ClubArenaConsole**, and it lives in the repo so
+every agent, on every account and in every tool, works from the same one:
+
+[`.claude/skills/club-arena-console/SKILL.md`](./.claude/skills/club-arena-console/SKILL.md)
+
+It carries Dan's rulings verbatim, the console kit and its zone constants, the
+art-surgery techniques for deriving new art from a master, the headless render
+harness that produces the before/after he reviews, twelve traps that have each
+cost hours, and the definition of done. Read it in full before touching a
+surface, and pass it to any subagent you spawn. If you find yourself writing
+`border-radius` or a gradient to make something look like a control, you have
+already gone wrong: the control is painted in the art.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -459,6 +478,22 @@ Rules for every agent working this project:
    pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
    "extend" them to retry other 5xx — replaying an executed write is a
    money-integrity hazard.
+7. **A PROBE NEVER CARRIES DDL, AND A CURSOR TABLE NEVER CARRIES A FOREIGN
+   KEY TO A HOT TABLE (2026-09-08, after a 4-minute production outage).** An
+   agent probed a migration by running it inside a transaction - `CREATE
+TABLE ... REFERENCES public.tournaments(id)` followed by ~10 s of function
+   work - then the client hung. Adding a foreign key takes SHARE ROW EXCLUSIVE
+   on the referenced table for the rest of the transaction, so every writer to
+   `tournaments` (the engine, the per-minute reconcile crons) queued behind it,
+   and Postgres was hard-killed at 22:53:36 UTC and came back at 22:57:05 with
+   "not properly shut down; automatic recovery". Rule 3 already said no DDL
+   probes; this is what it costs. So: probe a function by timing its QUERY, or
+   build its fixture in `pg_temp`; apply DDL in its own short transaction with
+   `lock_timeout` set, detached from any tool that can time out and kill the
+   client; and a scan/cache/cursor table that references a hot relation gets
+   NO foreign key - an orphan row in a scan log is harmless, a lock on
+   `tournaments` is not.
+   `docs/changelog/2026-09-08-deep-sweep-two-and-the-probe-that-took-the-database-down.md`.
 
 ---
 

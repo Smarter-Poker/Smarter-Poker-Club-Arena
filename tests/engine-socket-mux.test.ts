@@ -528,3 +528,167 @@ describe('physical transport identity', () => {
     expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
   });
 });
+
+describe('foreground recovery belongs to the current table facade', () => {
+  it('cannot close the replacement transport through a superseded facade', async () => {
+    const old = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const replacement = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    old.recoverAfterUnansweredProbe(Date.now());
+    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+    expect(replacement.readyState).toBe(FakeWebSocket.OPEN);
+  });
+
+  it('keeps another table live when traffic proves the physical socket is responsive', async () => {
+    const first = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const second = engineSocketMux.acquire('https://engine.example', T2, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    ws._frame({ type: 'SUBSCRIBED', tableId: T2 });
+    const startedAt = Date.now();
+    await vi.advanceTimersByTimeAsync(1);
+    ws._frame({ type: 'PING', ts: Date.now() });
+    first.recoverAfterUnansweredProbe(startedAt);
+    expect(first.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(second.readyState).toBe(FakeWebSocket.OPEN);
+    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+  });
+});
+
+describe('warm entry must prove current table state', () => {
+  function prepareWarm() {
+    const warm = engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt')!;
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 10, state: { pot: 3 } });
+    return { warm, ws };
+  }
+
+  it('cached state cannot keep an adopted dead socket alive', async () => {
+    const { ws } = prepareWarm();
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const messages = vi.fn();
+    live.onmessage = messages;
+    await Promise.resolve();
+    expect(live.readyState).toBe(1);
+    expect(messages).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(ws.readyState).toBe(3);
+    expect(live.readyState).toBe(3);
+  });
+
+  it('an unchanged fresh snapshot satisfies the entry probe', async () => {
+    const { ws } = prepareWarm();
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(4000);
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 10, state: { pot: 3 } });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(live.readyState).toBe(1);
+    expect(ws.readyState).toBe(1);
+  });
+
+  it('a warm probe keeps its original deadline when a user enters', async () => {
+    const { warm, ws } = prepareWarm();
+    warm.probeWarmState();
+    await vi.advanceTimersByTimeAsync(4000);
+    warm.probeWarmState();
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(live.readyState).toBe(3);
+    expect(ws.readyState).toBe(3);
+  });
+
+  it('PING and an older snapshot cannot satisfy the table probe', async () => {
+    const { warm, ws } = prepareWarm();
+    warm.probeWarmState();
+    await vi.advanceTimersByTimeAsync(4000);
+    ws._frame({ type: 'PING', ts: Date.now() });
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 9, state: { pot: 1 } });
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(warm.readyState).toBe(3);
+    // Other transport traffic preserves the physical connection.
+    expect(ws.readyState).toBe(1);
+  });
+
+  it('healthy lobby state keeps the speculative subscription warm', async () => {
+    const { warm, ws } = prepareWarm();
+    warm.probeWarmState();
+    expect(ws.sent.map((s) => JSON.parse(s))).toContainEqual({ type: 'RESYNC', tableId: T1 });
+    await vi.advanceTimersByTimeAsync(4000);
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 11, state: { pot: 4 } });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(warm.readyState).toBe(1);
+  });
+
+  it('a superseded warm facade cannot close its replacement later', async () => {
+    const { warm, ws } = prepareWarm();
+    warm.probeWarmState();
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 11, state: { pot: 4 } });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(live.readyState).toBe(1);
+    expect(ws.readyState).toBe(1);
+  });
+
+  it('an announced break suspends the probe without spending the reconnect ladder', async () => {
+    const { warm, ws } = prepareWarm();
+    warm.probeWarmState();
+    ws._frame({
+      type: 'EVENT',
+      tableId: T1,
+      payload: {
+        type: 'maintenance_break',
+        resume_expected_at: Date.now() + 60000,
+      },
+    });
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(live.readyState).toBe(1);
+    expect(ws.readyState).toBe(1);
+  });
+
+  it('a hidden page does not tear down its socket on an expired probe', async () => {
+    const { warm, ws } = prepareWarm();
+    warm.probeWarmState();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(ws.readyState).toBe(1);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+});
+
+it('an initial warm SUBSCRIBED without a snapshot recovers within five seconds', async () => {
+  const warm = engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt')!;
+  const ws = lastSocket();
+  ws._open();
+  ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+  await vi.advanceTimersByTimeAsync(5001);
+  expect(warm.readyState).toBe(3);
+  expect(ws.readyState).toBe(3);
+});
+
+it('a table rebuild can satisfy the warm state probe with its new lower sequence', async () => {
+  const warm = engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt')!;
+  const ws = lastSocket();
+  ws._open();
+  ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+  ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 10, state: { pot: 3 } });
+  warm.probeWarmState();
+  ws._frame({ type: 'EVENT', tableId: T1, payload: { type: 'engine_restarting' } });
+  ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 1, state: { pot: 0 } });
+  await vi.advanceTimersByTimeAsync(5001);
+  expect(warm.readyState).toBe(1);
+  expect(ws.readyState).toBe(1);
+});

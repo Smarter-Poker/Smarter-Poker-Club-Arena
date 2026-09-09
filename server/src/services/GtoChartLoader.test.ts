@@ -106,7 +106,7 @@ describe('GTO chart corpus refresh guard', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('loads each live store exactly once before arming its periodic refresh', () => {
+  it('loads each live store exactly once before arming its failure-adaptive refresh', () => {
     const workerSource = readFileSync(
       fileURLToPath(new URL('../engine/horseDecision/workerRuntime.ts', import.meta.url)),
       'utf8'
@@ -142,9 +142,12 @@ describe('GTO chart corpus refresh guard', () => {
       expect(workerSource.indexOf(`${store.load}()`)).toBeLessThan(
         workerSource.indexOf(`${store.start}()`)
       );
+      expect(loaderSource).toContain('createAdaptiveRefreshLoop({');
+      expect(loaderSource).toContain('retryMs: RETRY_MS');
+      expect(loaderSource).toContain('maxRetryMs: MAX_RETRY_MS');
       expect(loaderSource).not.toContain('setTimeout(');
       expect(loaderSource).not.toContain('BOOT_DELAY_MS');
-      expect(loaderSource.match(/setInterval\(/g) ?? []).toHaveLength(1);
+      expect(loaderSource).not.toContain('setInterval(');
     }
   });
 });

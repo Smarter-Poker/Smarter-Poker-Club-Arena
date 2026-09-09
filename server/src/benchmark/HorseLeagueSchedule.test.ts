@@ -64,7 +64,9 @@ describe('nightly jobs - a restart must trigger the run, not prevent it', () => 
     // has a same-day receipt bound to its exact dataset identity.
     expect(leagueSrc).toContain('distinct.size < LEAGUE_MATCHUPS.length');
     expect(leagueSrc).toContain("from('gto_v31_datasets')");
+    expect(leagueSrc).toContain(".select('dataset_id,dataset_checksum')");
     expect(leagueSrc).toContain("from('horse_solver_agreement_v31_decisions')");
+    expect(leagueSrc).toContain('dataset_id === active.dataset_id');
     expect(leagueSrc).toContain('dataset_checksum === active.dataset_checksum');
     expect(leagueSrc).toContain('rotateBy');
   });

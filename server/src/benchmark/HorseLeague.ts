@@ -1297,12 +1297,12 @@ async function alreadyRanToday(date: string): Promise<boolean> {
     // agreement probe instead of latching the day as done.
     const { data: activeRows, error: activeError } = await supabase
       .from('gto_v31_datasets')
-      .select('id,dataset_checksum')
+      .select('dataset_id,dataset_checksum')
       .eq('state', 'active')
       .limit(1);
     if (activeError) throw new Error(activeError.message);
     const active = (activeRows?.[0] ?? null) as {
-      id: string;
+      dataset_id: string;
       dataset_checksum: string;
     } | null;
     if (!active) return true;
@@ -1319,7 +1319,7 @@ async function alreadyRanToday(date: string): Promise<boolean> {
         !!seal &&
         typeof seal === 'object' &&
         !Array.isArray(seal) &&
-        (seal as Record<string, unknown>).dataset_id === active.id &&
+        (seal as Record<string, unknown>).dataset_id === active.dataset_id &&
         (seal as Record<string, unknown>).dataset_checksum === active.dataset_checksum
       );
     });

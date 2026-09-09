@@ -1749,21 +1749,47 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       );
     }
   );
-  it('keeps seat expiry available only to the service role', () => {
+
+  it.each(['anon', 'authenticated', 'service_role'])(
+    'denies every unbound cashout door to %s after adoption',
+    (role) => {
+      const occupancy = seedOccupancy();
+      const calls = [
+        `atomic_seat_cashout_locked('${USER}','${TABLE}',2,'forced')`,
+        `atomic_table_cashout('${USER}','${TABLE}',2)`,
+        `player_leave_table('${TABLE}','${USER}')`,
+        `fn_admin_kick_player('${TABLE}','${USER}','reason')`,
+      ];
+      for (const call of calls) {
+        expect(() => sql(`BEGIN; SET LOCAL ROLE ${role}; SELECT ${call}; COMMIT;`)).toThrow(
+          /permission denied/
+        );
+        expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+      }
+      if (role === 'service_role') {
+        expect(
+          sql(`BEGIN; SET LOCAL ROLE service_role;
+        SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${occupancy}',NULL); COMMIT;`)
+        ).toMatchObject({ ok: true, stack: 25 });
+      }
+    }
+  );
+
+  it('retires the unbound seat-expiry alias for every application role', () => {
     expect(
       sql(`SELECT json_build_object(
       'anon',has_function_privilege('anon','public.player_leave_table(uuid,uuid)','EXECUTE'),
       'authenticated',has_function_privilege('authenticated','public.player_leave_table(uuid,uuid)','EXECUTE'),
       'service_role',has_function_privilege('service_role','public.player_leave_table(uuid,uuid)','EXECUTE'))`)
-    ).toEqual({ anon: false, authenticated: false, service_role: true });
+    ).toEqual({ anon: false, authenticated: false, service_role: false });
   });
-  it('keeps anonymous cashout forbidden and authorized roles executable', () => {
+  it('keeps the unbound cashout primitive private after engine adoption', () => {
     expect(
       sql(`SELECT json_build_object(
       'anon',has_function_privilege('anon','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
       'authenticated',has_function_privilege('authenticated','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
       'service_role',has_function_privilege('service_role','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'))`)
-    ).toEqual({ anon: false, authenticated: false, service_role: true });
+    ).toEqual({ anon: false, authenticated: false, service_role: false });
   });
   it.each([
     'NULL',

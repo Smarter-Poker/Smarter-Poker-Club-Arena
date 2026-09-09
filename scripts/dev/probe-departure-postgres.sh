@@ -77,10 +77,7 @@ for departure_apply in 1 2; do
 done
 "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -f "$repo/scripts/dev/fixtures/departure-admin-function.sql" >/dev/null
-for departure_apply in 1 2; do
-  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
-    -d postgres -f "$repo/supabase/migrations/20260909031204_retire_direct_browser_cashout_after_occupancy_adoption.sql" >/dev/null
-done
+
 for departure_apply in 1 2; do
   "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
     -d postgres -f "$repo/supabase/migrations/20260909031958_club_credit_requires_an_actual_destination_wallet_write.sql" >/dev/null
@@ -289,6 +286,13 @@ DO $proof$ BEGIN
 END $proof$;
 SQL
 
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-legacy-cashout-alias.sql" >/dev/null
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/scripts/deploy/phase-two-retire-unbound-cashout.sql" >/dev/null
+done
 
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \

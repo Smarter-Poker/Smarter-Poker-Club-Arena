@@ -197,7 +197,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // SB/BB chips flying from each blind seat into the pot, instead of
         // letting the chips just appear in the pot via snapshot.
         const postings = (event as any).postings as
-          Array<{ seat: number; type: string; amount: number }> | undefined;
+          | Array<{ seat: number; type: string; amount: number }>
+          | undefined;
         if (postings && postings.length > 0) {
           this.hub?.emitEvent(this.tableId, {
             type: 'blinds_posted',

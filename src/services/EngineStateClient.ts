@@ -353,7 +353,12 @@ export const RESTART_WINDOW_GRACE_MS = 90_000;
 export { PROTOCOL_VERSION, engineSocketUrl } from './EngineSocketMux';
 
 export type EngineConnectionStatus =
-  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'auth_failed';
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed'
+  | 'auth_failed';
 
 export interface EngineStateClientOptions {
   /** Base URL, e.g. https://engine.smarter.poker. Scheme is rewritten to ws(s). */

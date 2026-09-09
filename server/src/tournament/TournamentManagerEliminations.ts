@@ -1355,7 +1355,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                     reason: 'satellite_has_no_awards',
                   });
                   if (sweepStopped()) return;
-                  for (const engine of this.tableEngines.values()) engine.resumeDealing();
+                  if (!this.isOnBreak()) {
+                    for (const engine of this.tableEngines.values()) engine.resumeDealing();
+                  }
                 }
                 break handForHandStage;
               }
@@ -1413,9 +1415,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                   paidPositions: payoutCount,
                 });
                 if (sweepStopped()) return;
-                // Pause all table engines for hand-for-hand sync
-                for (const engine of this.tableEngines.values()) {
-                  engine.pauseAfterHand();
+                // A current break already parks these tables with its longer budget.
+                if (!this.isOnBreak()) {
+                  for (const engine of this.tableEngines.values()) {
+                    engine.pauseAfterHand();
+                  }
                 }
                 // Start hand-for-hand sync check
                 this.startHandForHandSync();
@@ -1429,9 +1433,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               );
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               if (sweepStopped()) return;
-              // Resume all engines permanently
-              for (const engine of this.tableEngines.values()) {
-                engine.resumeDealing();
+              // Ending the bubble cannot release an overlapping tournament break.
+              if (!this.isOnBreak()) {
+                for (const engine of this.tableEngines.values()) {
+                  engine.resumeDealing();
+                }
               }
             }
           }

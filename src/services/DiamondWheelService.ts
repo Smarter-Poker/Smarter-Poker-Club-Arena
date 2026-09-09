@@ -153,6 +153,7 @@ export interface WheelMetrics {
     spin_price_diamonds: number;
     segment_version: number;
     exposure_allowance_chips: number;
+    diamond_seed: number;
     purchased_only: boolean;
     allow_fixture_accounts: boolean;
     max_spins_per_player_per_day: number;
@@ -194,6 +195,7 @@ export interface WheelConfigPatch {
   spin_price_diamonds?: number;
   segment_version?: number;
   exposure_allowance_chips?: number;
+  diamond_seed?: number;
   purchased_only?: boolean;
   allow_fixture_accounts?: boolean;
   max_spins_per_player_per_day?: number;
@@ -416,6 +418,7 @@ const DiamondWheelService = {
             spin_price_diamonds: num(cfg.spin_price_diamonds),
             segment_version: num(cfg.segment_version),
             exposure_allowance_chips: num(cfg.exposure_allowance_chips),
+            diamond_seed: num(cfg.diamond_seed),
             purchased_only: Boolean(cfg.purchased_only),
             allow_fixture_accounts: Boolean(cfg.allow_fixture_accounts),
             max_spins_per_player_per_day: num(cfg.max_spins_per_player_per_day),

@@ -1,0 +1,642 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   #SMARTERCASINOREALISM - THE DIAMOND GAMES CHASSIS
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   Dan 2026-09-08: "ALL YOUR BUILDS NEED TO FOLLOW THE #SMARTERCASINOREALISM AND
+   ALL THE BUTTONS, FRAMES, ICONS ETC NEED THE PREMIUM, HIGH DEF, DYNAMIC LOOK
+   AND FEEL AS THEY ARE INSIDE THE REST OF THE CLUB ARENA PAGES."
+
+   So the Diamond Games draw NO material of their own. Every frame, plaque and
+   button here is the approved shark-panel-v1 artwork the lobby's game panel
+   already ships (public/assets/club-buttons/lobby/shark-panel-v1): the riveted
+   gunmetal rails with their blue lamps, the bay plaque, the lit JOIN face and
+   the dark VIEW face. Sizes are in cqw against each frame's own container so a
+   frame on a 375px phone and a frame on a desktop column share one scale, the
+   way PremiumGameLobbyPanel.css sizes the same artwork.
+
+   House rules: no :hover anywhere (tests/no-hover-effects.law.test.ts) - the
+   press is :active; motion collapses under reduced motion, meaning never does
+   (CLAUDE.md 10.6); the page ground stays black. */
+
+.frameWrap {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.frame {
+  position: relative;
+  /* top.png is 143/900 of the width, bottom.png 139/900: the padding clears
+     both rails with a little air, so nothing ever prints over the rivets. */
+  padding: 17cqw 7.6cqw 17cqw;
+  background:
+    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto
+      no-repeat,
+    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100%
+      auto no-repeat,
+    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto
+      repeat-y;
+}
+
+.frameTight {
+  padding-top: 14.5cqw;
+}
+
+.frameHead {
+  margin: 0 0 3cqw;
+  text-align: center;
+}
+
+.eyebrow {
+  display: block;
+  margin: 0;
+  color: #5bb8ff;
+  font:
+    700 2.6cqw/1.2 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+.title {
+  display: block;
+  margin: 0.6cqw 0 0;
+  color: #f2f5f8;
+  font:
+    800 5.4cqw/1.05 'Roboto Condensed',
+    'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 25%),
+    0 -1px 0 rgb(0 0 0 / 80%),
+    0 2px 6px rgb(0 0 0 / 70%);
+  text-wrap: balance;
+}
+
+@media (min-width: 640px) {
+  .eyebrow {
+    font-size: 12px;
+  }
+
+  .title {
+    font-size: 30px;
+  }
+}
+
+/* ── Bays: the card's plaques ─────────────────────────────────────────────── */
+
+.bays {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2cqw 2.4cqw;
+}
+
+.bays3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bays4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bay {
+  position: relative;
+  aspect-ratio: 200 / 258;
+  display: grid;
+  grid-template-rows: 27% 1fr 12%;
+  align-items: center;
+  justify-items: stretch;
+  padding: 0 9%;
+  border: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
+    100% no-repeat;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bayButton {
+  cursor: pointer;
+}
+
+.bayButton:active {
+  filter: brightness(1.12);
+}
+
+.bayButton:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -6%;
+}
+
+.bayLabel {
+  align-self: end;
+  padding-bottom: 6%;
+  color: #5bb8ff;
+  font:
+    700 2.6cqw/1 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bayValue {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  color: #ffffff;
+  font:
+    800 5.2cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 22%),
+    0 -1px 0 rgb(0 0 0 / 80%),
+    0 2px 5px rgb(0 0 0 / 70%);
+}
+
+.bayValueSmall {
+  font-size: 4.2cqw;
+}
+
+.baySub {
+  align-self: start;
+  color: #9fb0c3;
+  font:
+    600 2.2cqw/1 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bays3 .bayLabel,
+.bays4 .bayLabel {
+  font-size: 2.1cqw;
+  letter-spacing: 0.1em;
+}
+
+.bays3 .bayValue {
+  font-size: 4.2cqw;
+}
+
+.bays4 .bayValue {
+  font-size: 3.6cqw;
+}
+
+.bays4 .baySub,
+.bays3 .baySub {
+  font-size: 1.9cqw;
+}
+
+/* The selected bay: its inner plaque lit blue, the way a live pill is lit. */
+.baySelected::after {
+  content: '';
+  position: absolute;
+  inset: 25% 14% 16%;
+  z-index: 0;
+  border-radius: 6%;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(0 136 255 / 42%),
+    rgb(0 136 255 / 6%) 70%,
+    transparent
+  );
+  box-shadow: 0 0 3cqw rgb(0 136 255 / 45%);
+  pointer-events: none;
+}
+
+.bayLocked .bayValue,
+.bayLocked .bayLabel {
+  opacity: 0.45;
+}
+
+.bayGold .bayValue {
+  color: #ffd76a;
+}
+
+.bayGreen .bayValue {
+  color: #7cf5b0;
+}
+
+.bayCyan .bayValue {
+  color: #7fe6ff;
+}
+
+.bayRed .bayValue {
+  color: #ff8a8a;
+}
+
+/* ── Buttons: the lit JOIN face and the dark VIEW face ────────────────────── */
+
+.button {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.3cqw;
+  width: 100%;
+  min-height: 44px;
+  aspect-ratio: 348 / 114;
+  padding: 0 8%;
+  border: 0;
+  margin: 0;
+  border-radius: 0;
+  color: #ffffff;
+  font:
+    800 4.6cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-primary.png')
+    center / 100% 100% no-repeat;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%),
+    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+  -webkit-tap-highlight-color: transparent;
+  transition: filter 0.12s ease;
+}
+
+.buttonSecondary {
+  color: #dfe7ef;
+  background-image: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  text-shadow:
+    0 0.25cqw 0 rgb(0 0 0 / 80%),
+    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+}
+
+.buttonGold {
+  color: #fff2c4;
+  filter: hue-rotate(190deg) saturate(1.15);
+  text-shadow:
+    0 0 1cqw rgb(255 214 120 / 85%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.buttonDanger {
+  color: #ffd0d2;
+  background-image: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  text-shadow:
+    0 0 1cqw rgb(255 75 82 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.buttonGreen {
+  filter: hue-rotate(-80deg) saturate(1.1);
+  color: #e6ffef;
+  text-shadow:
+    0 0 1cqw rgb(120 255 180 / 85%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.button:active:not(:disabled) {
+  filter: brightness(1.18);
+  transform: translateY(1px);
+}
+
+.buttonGold:active:not(:disabled) {
+  filter: hue-rotate(190deg) saturate(1.15) brightness(1.18);
+}
+
+.buttonGreen:active:not(:disabled) {
+  filter: hue-rotate(-80deg) saturate(1.1) brightness(1.18);
+}
+
+.button:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -6px;
+}
+
+.button:disabled {
+  cursor: default;
+  filter: grayscale(0.55) brightness(0.62);
+}
+
+.buttonSub {
+  color: #bfe3ff;
+  font:
+    600 2.4cqw/1 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.buttonRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.4cqw;
+  align-items: center;
+}
+
+.buttonWide {
+  font-size: 5.2cqw;
+}
+
+@media (min-width: 640px) {
+  .button {
+    font-size: 22px;
+  }
+
+  .buttonWide {
+    font-size: 24px;
+  }
+
+  .buttonSub {
+    font-size: 11px;
+  }
+
+  .bayLabel {
+    font-size: 11px;
+  }
+
+  .bayValue {
+    font-size: 24px;
+  }
+
+  .bays3 .bayLabel,
+  .bays4 .bayLabel {
+    font-size: 10px;
+  }
+
+  .bays3 .bayValue,
+  .bays4 .bayValue {
+    font-size: 18px;
+  }
+
+  .baySub,
+  .bays3 .baySub,
+  .bays4 .baySub {
+    font-size: 10px;
+  }
+}
+
+/* ── Chips: the lobby's filter row (ALL / MTT / NLH ...) ──────────────────── */
+
+.chips {
+  display: flex;
+  gap: 1.6cqw;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-block: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: 1 1 auto;
+  min-width: 56px;
+  min-height: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  font:
+    700 0.7rem/1 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chipSub {
+  color: #6f7d8f;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+}
+
+.chipActive {
+  background: linear-gradient(135deg, #0088ff, #0055ff);
+  border-color: rgba(0, 136, 255, 0.75);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 0 14px rgba(0, 136, 255, 0.35);
+}
+
+.chipActive .chipSub {
+  color: #cfe6ff;
+}
+
+.chip:active {
+  filter: brightness(1.15);
+}
+
+.chip:focus-visible {
+  outline: 2px solid rgba(0, 136, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Readouts: chrome numerals under a blue label ─────────────────────────── */
+
+.readout {
+  display: grid;
+  gap: 0.6cqw;
+  text-align: center;
+}
+
+.readoutLabel {
+  color: #5bb8ff;
+  font:
+    700 2.4cqw/1 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+.readoutValue {
+  color: #ffffff;
+  font:
+    800 9cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 22%),
+    0 -1px 0 rgb(0 0 0 / 80%),
+    0 0 3cqw rgb(0 136 255 / 35%),
+    0 2px 6px rgb(0 0 0 / 70%);
+}
+
+.readoutGold .readoutValue {
+  color: #ffd76a;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 22%),
+    0 0 3cqw rgb(255 180 40 / 40%),
+    0 2px 6px rgb(0 0 0 / 70%);
+}
+
+.readoutRed .readoutValue {
+  color: #ff7b7b;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 15%),
+    0 0 3cqw rgb(255 60 60 / 45%),
+    0 2px 6px rgb(0 0 0 / 70%);
+}
+
+.readoutGreen .readoutValue {
+  color: #8dffbe;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 15%),
+    0 0 3cqw rgb(60 220 130 / 45%),
+    0 2px 6px rgb(0 0 0 / 70%);
+}
+
+@media (min-width: 640px) {
+  .readoutLabel {
+    font-size: 11px;
+  }
+
+  .readoutValue {
+    font-size: 40px;
+  }
+}
+
+/* ── Inset well: a machined cavity inside a frame (a board, a chart) ─────── */
+
+.well {
+  position: relative;
+  padding: 3px;
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    #7c8895 0%,
+    #2a343e 18%,
+    #151c24 50%,
+    #2a343e 82%,
+    #6b7784 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 26px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.8);
+}
+
+.wellInner {
+  position: relative;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #05070a 0%, #0b1017 100%);
+  box-shadow:
+    inset 0 2px 10px rgba(0, 0, 0, 0.9),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 0 40px rgba(22, 139, 255, 0.06);
+  overflow: hidden;
+}
+
+/* Four rivets, one per corner, and the specular line along the top edge. */
+.well::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 9px 9px, #e6edf3 0, #8c98a6 1.2px, #2a343e 2.2px, transparent 3px),
+    radial-gradient(
+      circle at calc(100% - 9px) 9px,
+      #e6edf3 0,
+      #8c98a6 1.2px,
+      #2a343e 2.2px,
+      transparent 3px
+    ),
+    radial-gradient(
+      circle at 9px calc(100% - 9px),
+      #e6edf3 0,
+      #8c98a6 1.2px,
+      #2a343e 2.2px,
+      transparent 3px
+    ),
+    radial-gradient(
+      circle at calc(100% - 9px) calc(100% - 9px),
+      #e6edf3 0,
+      #8c98a6 1.2px,
+      #2a343e 2.2px,
+      transparent 3px
+    ),
+    linear-gradient(90deg, transparent 12%, rgba(255, 255, 255, 0.35) 50%, transparent 88%) top /
+      100% 1px no-repeat;
+}
+
+.wellLamp .wellInner::before,
+.wellLamp .wellInner::after {
+  content: '';
+  position: absolute;
+  top: 14%;
+  bottom: 14%;
+  width: 3px;
+  z-index: 3;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    #35a9ff 25%,
+    #9fe0ff 50%,
+    #35a9ff 75%,
+    transparent
+  );
+  box-shadow:
+    0 0 12px rgb(53 169 255 / 90%),
+    0 0 24px rgb(53 169 255 / 45%);
+  pointer-events: none;
+}
+
+.wellLamp .wellInner::before {
+  left: 2px;
+}
+
+.wellLamp .wellInner::after {
+  right: 2px;
+}
+
+.note {
+  margin: 2cqw 0 0;
+  color: #8a97a8;
+  font:
+    500 0.78rem/1.5 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.noteWarn {
+  color: #ffd76a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

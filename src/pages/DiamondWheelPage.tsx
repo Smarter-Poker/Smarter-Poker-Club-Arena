@@ -26,17 +26,32 @@
  * is the roll, recomputable here with WebCrypto (src/utils/wheelFairness.ts).
  *
  * Every user-facing string is Title Case and every message goes through the
- * Toast layer (CLAUDE.md 5.7). No emoji, no em dashes.
+ * Toast layer (CLAUDE.md 5.7). No emoji, no em dashes. The material is the
+ * approved #SmarterCasinoRealism chassis (Dan 2026-09-08; components/diamond-games).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import DiamondWheel from '../components/wheel/DiamondWheel';
+import DiamondGamesHeader, {
+  chipsText,
+  dollarsText,
+} from '../components/diamond-games/DiamondGamesHeader';
+import {
+  CasinoBay,
+  CasinoBays,
+  CasinoButton,
+  CasinoChips,
+  CasinoFrame,
+  CasinoNote,
+  CasinoReadout,
+  CasinoWell,
+} from '../components/diamond-games/CasinoChassis';
 import DiamondWheelService, {
   type WheelSegment,
   type WheelSpinResult,
@@ -50,15 +65,7 @@ import {
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
-import styles from './DiamondWheelPage.module.css';
-
-function chips(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function dollars(chipsValue: number): string {
-  return `$${chipsValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+import styles from '../components/diamond-games/gameDetails.module.css';
 
 function odds(probability: number): string {
   if (probability <= 0) return '';
@@ -69,21 +76,20 @@ function odds(probability: number): string {
 function prizeLabel(seg: { kind: string; amount: number; label: string }): string {
   if (seg.kind === 'nothing') return 'Nothing';
   if (seg.kind === 'diamonds') return `${seg.amount.toLocaleString()} Diamonds`;
-  return `${chips(seg.amount)} Chips`;
+  return `${chipsText(seg.amount)} Chips`;
 }
 
 function outcomeHeadline(result: WheelSpinResult): string {
   const o = result.outcome;
   if (o.kind === 'nothing') return 'No Prize This Spin';
   if (o.kind === 'diamonds') return `You Won ${o.amount.toLocaleString()} Diamonds`;
-  return `You Won ${chips(o.amount)} Chips`;
+  return `You Won ${chipsText(o.amount)} Chips`;
 }
 
 const MAX_CLIENT_SEED = 64;
 
 export default function DiamondWheelPage() {
   const { clubId: routeClubId } = useParams();
-  const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
   const isMountedRef = useIsMounted();
@@ -294,160 +300,165 @@ export default function DiamondWheelPage() {
     : waitSeconds > 0
       ? `Ready In ${waitSeconds}s`
       : `Spin For ${price.toLocaleString()} Diamonds`;
+  const wheelSize = Math.min(340, typeof window !== 'undefined' ? window.innerWidth - 72 : 340);
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <button
-          type="button"
-          className={styles.back}
-          onClick={() => navigate(-1)}
-          aria-label="Back"
-        >
-          ‹
-        </button>
-        <div className={styles.titleBlock}>
-          <p className={styles.eyebrow}>Rewards Circuit / Diamond Wheel</p>
-          <h1 className={styles.title}>Diamond Wheel</h1>
-        </div>
-        <div className={styles.balances}>
-          <div className={styles.balance}>
-            <span className={styles.balanceLabel}>Diamonds</span>
-            <span className={styles.balanceValue}>
-              ◆ {(player?.diamonds ?? 0).toLocaleString()}
+      <DiamondGamesHeader
+        eyebrow="Diamond Games"
+        title="Diamond Wheel"
+        diamonds={player?.diamonds ?? 0}
+        spendable={player?.spendable ?? 0}
+        memberChips={player?.member_chips ?? null}
+        purchasedOnly={Boolean(cfg?.purchased_only)}
+        backTo={`/clubs/${routeClubId}/diamond-games`}
+      />
+
+      <CasinoFrame eyebrow="Spin The Wheel" title="Eleven Prizes">
+        <CasinoWell lamps>
+          <div className={styles.wheelWell}>
+            <DiamondWheel
+              segments={segments}
+              landingOrd={landingOrd}
+              spinKey={spinKey}
+              spinning={spinning}
+              onLanded={handleLanded}
+              size={wheelSize}
+            />
+          </div>
+        </CasinoWell>
+
+        {lastResult && !spinning ? (
+          <div className={styles.result} role="status">
+            <CasinoReadout
+              label={lastResult.outcome.kind === 'nothing' ? 'No Prize' : 'You Won'}
+              value={
+                lastResult.outcome.kind === 'nothing'
+                  ? 'Nothing'
+                  : lastResult.outcome.kind === 'diamonds'
+                    ? `${lastResult.outcome.amount.toLocaleString()} Diamonds`
+                    : `${chipsText(lastResult.outcome.amount)} Chips`
+              }
+              tone={lastResult.outcome.kind === 'nothing' ? 'red' : 'gold'}
+            />
+            <span className={styles.resultSub}>
+              {lastResult.outcome.kind === 'nothing'
+                ? 'Better Luck On The Next Spin'
+                : `Worth ${dollarsText(lastResult.outcome.value_chips)} At Today’s Rate`}
             </span>
           </div>
-          <div className={styles.balance}>
-            <span className={styles.balanceLabel}>Club Chips</span>
-            <span className={styles.balanceValue}>{chips(player?.member_chips ?? 0)}</span>
-          </div>
-        </div>
-      </header>
-
-      <section className={styles.wheelPanel}>
-        <DiamondWheel
-          segments={segments}
-          landingOrd={landingOrd}
-          spinKey={spinKey}
-          spinning={spinning}
-          onLanded={handleLanded}
-          size={Math.min(340, typeof window !== 'undefined' ? window.innerWidth - 48 : 340)}
-        />
+        ) : null}
 
         <div className={styles.controls}>
-          {lastResult && !spinning ? (
-            <div
-              className={`${styles.result} ${lastResult.outcome.kind === 'nothing' ? styles.resultQuiet : styles.resultWin}`}
-              role="status"
-            >
-              <span className={styles.resultHeadline}>{outcomeHeadline(lastResult)}</span>
-              <span className={styles.resultSub}>
-                {lastResult.outcome.kind === 'nothing'
-                  ? 'Better Luck On The Next Spin'
-                  : `Worth ${dollars(lastResult.outcome.value_chips)} At Today’s Rate`}
-              </span>
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            className={styles.spinButton}
+          <CasinoButton
             onClick={handleSpin}
             disabled={!canSpin}
+            wide
+            sub={
+              !spinning && waitSeconds <= 0 ? `${dollarsText(priceChips)} Of Diamonds` : undefined
+            }
           >
-            <span className={styles.spinButtonText}>{spinLabel}</span>
-            {!spinning && waitSeconds <= 0 ? (
-              <span className={styles.spinButtonSub}>{dollars(priceChips)} Of Diamonds</span>
-            ) : null}
-          </button>
-
-          {blocker ? <p className={styles.blocker}>{blocker}</p> : null}
-
-          <div className={styles.facts}>
-            <span>Return To Player {cfg ? (cfg.spec_rtp * 100).toFixed(0) : '80'}%</span>
-            <span>Hit Rate {cfg ? (cfg.hit_rate * 100).toFixed(1) : ''}%</span>
-            <span>
-              Spins Today {(player?.spins_today ?? 0).toLocaleString()} Of{' '}
-              {(cfg?.max_spins_per_player_per_day ?? 0).toLocaleString()}
-            </span>
-            {cfg?.purchased_only ? <span>Purchased Diamonds Only</span> : null}
-          </div>
+            {spinLabel}
+          </CasinoButton>
+          {blocker ? <CasinoNote warn>{blocker}</CasinoNote> : null}
         </div>
-      </section>
 
-      <nav className={styles.tabs} aria-label="Wheel Details">
-        {(['odds', 'fair', 'history'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={`${styles.tab} ${tab === t ? styles.tabActive : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t === 'odds' ? 'Odds' : t === 'fair' ? 'Fairness' : 'History'}
-          </button>
-        ))}
-      </nav>
+        <CasinoBays columns={3} className={styles.facts}>
+          <CasinoBay
+            label="Return"
+            value={cfg ? `${(cfg.spec_rtp * 100).toFixed(0)}%` : '80%'}
+            sub="To Player"
+            small
+          />
+          <CasinoBay
+            label="Pays"
+            value={cfg ? `${(cfg.hit_rate * 100).toFixed(1)}%` : ''}
+            sub="Of Spins"
+            small
+          />
+          <CasinoBay
+            label="Today"
+            value={`${(player?.spins_today ?? 0).toLocaleString()}`}
+            sub={`Of ${(cfg?.max_spins_per_player_per_day ?? 0).toLocaleString()}`}
+            small
+          />
+        </CasinoBays>
+      </CasinoFrame>
+
+      <div className={styles.tabs}>
+        <CasinoChips
+          label="Wheel Details"
+          value={tab}
+          onChange={(v) => setTab(v as 'odds' | 'fair' | 'history')}
+          items={[
+            { value: 'odds', label: 'Odds' },
+            { value: 'fair', label: 'Fairness' },
+            { value: 'history', label: 'History' },
+          ]}
+        />
+      </div>
 
       {tab === 'odds' ? (
-        <section className={styles.panel}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Prize</th>
-                <th className={styles.num}>Odds</th>
-                <th className={styles.num}>Chance</th>
-                <th className={styles.num}>Worth</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...segments]
-                .sort((a, b) => b.value_chips - a.value_chips)
-                .map((seg) => (
-                  <tr key={seg.ord} className={seg.locked ? styles.rowLocked : undefined}>
-                    <td>
-                      <span
-                        className={`${styles.kindDot} ${seg.kind === 'chips' ? styles.dotGold : seg.kind === 'diamonds' ? styles.dotCyan : styles.dotDark}`}
-                      />
-                      {prizeLabel(seg)}
-                      {seg.locked ? (
-                        <span className={styles.lockNote}>
-                          {seg.kind === 'diamonds'
-                            ? ` Locked Until The Pool Holds ${(seg.unlocks_at ?? 0).toLocaleString()} More Diamonds`
-                            : ' Locked Until The Pool Can Cover It'}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className={styles.num}>{odds(seg.probability)}</td>
-                    <td className={styles.num}>
-                      {(seg.probability * 100).toFixed(seg.probability < 0.01 ? 2 : 1)}%
-                    </td>
-                    <td className={styles.num}>
-                      {seg.kind === 'nothing' ? '' : dollars(seg.value_chips)}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          <p className={styles.footnote}>
-            Every Spin Is {price.toLocaleString()} Diamonds ({dollars(priceChips)}). The Wheel
+        <CasinoFrame eyebrow="The Prizes" title="Odds" tight>
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Prize</th>
+                  <th className={styles.num}>Odds</th>
+                  <th className={styles.num}>Chance</th>
+                  <th className={styles.num}>Worth</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...segments]
+                  .sort((a, b) => b.value_chips - a.value_chips)
+                  .map((seg) => (
+                    <tr key={seg.ord} className={seg.locked ? styles.rowDead : undefined}>
+                      <td>
+                        <span
+                          className={`${styles.dot} ${seg.kind === 'chips' ? styles.dotGold : seg.kind === 'diamonds' ? styles.dotCyan : styles.dotDark}`}
+                        />{' '}
+                        {prizeLabel(seg)}
+                        {seg.locked ? (
+                          <span className={styles.trim}>
+                            {seg.kind === 'diamonds'
+                              ? ` Locked Until The Pool Holds ${(seg.unlocks_at ?? 0).toLocaleString()} More Diamonds`
+                              : ' Locked Until The Pool Can Cover It'}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className={styles.num}>{odds(seg.probability)}</td>
+                      <td className={styles.num}>
+                        {(seg.probability * 100).toFixed(seg.probability < 0.01 ? 2 : 1)}%
+                      </td>
+                      <td className={styles.num}>
+                        {seg.kind === 'nothing' ? '' : dollarsText(seg.value_chips)}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+          <CasinoNote>
+            Every Spin Is {price.toLocaleString()} Diamonds ({dollarsText(priceChips)}). The Wheel
             Returns 80% Of Everything It Takes In Over Time And Never Pays Out More Than It Has
             Taken In. A Locked Prize Is One The Pool Cannot Cover Yet; It Unlocks As The Pool Grows.
             {state.pool && state.pool.spins > 0 && state.pool.realized_rtp !== null
               ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(1)}% Over ${state.pool.spins.toLocaleString()} Spins.`
               : ''}
-          </p>
-        </section>
+          </CasinoNote>
+        </CasinoFrame>
       ) : null}
 
       {tab === 'fair' ? (
-        <section className={styles.panel}>
-          <h2 className={styles.h2}>Provably Fair</h2>
-          <p className={styles.copy}>
+        <CasinoFrame eyebrow="Provably Fair" title="Check Any Spin" tight>
+          <CasinoNote>
             Before You Spin, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash.
             Your Spin Reveals The Seed. The Result Is HMAC-SHA256(Server Seed, Your Seed:Nonce),
             Read As A Number From 0 To 2^48 And Mapped Onto The Prizes That Were Available. You Can
             Check Every Spin Right Here.
-          </p>
+          </CasinoNote>
           <label className={styles.field}>
             <span className={styles.fieldLabel}>
               Next Spin Commitment (SHA-256 Of The Server Seed)
@@ -467,7 +478,6 @@ export default function DiamondWheelPage() {
           </label>
           {lastResult ? (
             <div className={styles.reveal}>
-              <h3 className={styles.h3}>Last Spin</h3>
               <dl className={styles.dl}>
                 <dt>Server Seed</dt>
                 <dd className={styles.mono}>{lastResult.fairness.server_seed}</dd>
@@ -484,42 +494,39 @@ export default function DiamondWheelPage() {
                 <dt>Outcome</dt>
                 <dd>{lastResult.outcome.label}</dd>
               </dl>
-              <button
-                type="button"
-                className={styles.verifyButton}
+              <CasinoButton
+                tone="secondary"
                 onClick={() => handleVerify(lastResult)}
                 disabled={verifying}
               >
                 {verifying ? 'Checking' : 'Verify This Spin'}
-              </button>
+              </CasinoButton>
               {verdict ? (
-                <p
-                  className={`${styles.verdict} ${verdict.fair ? styles.verdictOk : styles.verdictBad}`}
-                >
+                <CasinoNote warn={!verdict.fair}>
                   {verdict.fair
                     ? 'Verified: The Hash, The Roll And The Outcome All Match'
                     : `Mismatch: Hash ${verdict.hashMatches ? 'Ok' : 'Differs'}, Roll ${verdict.rollMatches ? 'Ok' : 'Differs'}, Outcome ${verdict.outcomeMatches ? 'Ok' : 'Differs'}`}
-                </p>
+                </CasinoNote>
               ) : null}
             </div>
           ) : (
-            <p className={styles.footnote}>
+            <CasinoNote>
               Spin Once And The Revealed Seed Will Appear Here For You To Check.
-            </p>
+            </CasinoNote>
           )}
-        </section>
+        </CasinoFrame>
       ) : null}
 
       {tab === 'history' ? (
-        <section className={styles.panel}>
+        <CasinoFrame eyebrow="Your Spins" title="History" tight>
           {history.length === 0 ? (
-            <p className={styles.footnote}>No Spins Yet.</p>
+            <CasinoNote>No Spins Yet.</CasinoNote>
           ) : (
             <ul className={styles.history}>
               {history.map((h) => (
                 <li key={h.spin_id} className={styles.historyRow}>
                   <span
-                    className={`${styles.kindDot} ${h.outcome.kind === 'chips' ? styles.dotGold : h.outcome.kind === 'diamonds' ? styles.dotCyan : styles.dotDark}`}
+                    className={`${styles.dot} ${h.outcome.kind === 'chips' ? styles.dotGold : h.outcome.kind === 'diamonds' ? styles.dotCyan : styles.dotDark}`}
                   />
                   <span className={styles.historyLabel}>{prizeLabel(h.outcome)}</span>
                   <span className={styles.historyMeta}>
@@ -531,16 +538,16 @@ export default function DiamondWheelPage() {
                     })}
                   </span>
                   <span className={styles.historyValue}>
-                    {h.outcome.kind === 'nothing' ? '' : dollars(h.outcome.value_chips)}
+                    {h.outcome.kind === 'nothing' ? '' : dollarsText(h.outcome.value_chips)}
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </CasinoFrame>
       ) : null}
 
-      {!user ? <p className={styles.footnote}>Sign In To Spin.</p> : null}
+      {!user ? <CasinoNote>Sign In To Spin.</CasinoNote> : null}
     </div>
   );
 }

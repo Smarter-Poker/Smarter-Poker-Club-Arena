@@ -112,6 +112,12 @@ const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatistic
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
 const DiamondWheelPage = lazyWithRetry(() => import('./pages/DiamondWheelPage'));
 const ClubWheelOperationsPage = lazyWithRetry(() => import('./pages/club/ClubWheelOperationsPage'));
+const DiamondGamesPage = lazyWithRetry(() => import('./pages/DiamondGamesPage'));
+const DiamondPlinkoPage = lazyWithRetry(() => import('./pages/DiamondPlinkoPage'));
+const DiamondCrashPage = lazyWithRetry(() => import('./pages/DiamondCrashPage'));
+const ClubDiamondGamesOperationsPage = lazyWithRetry(
+  () => import('./pages/club/ClubDiamondGamesOperationsPage')
+);
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -1373,6 +1379,58 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Diamond Wheel Operations">
                           <ClubWheelOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* THE DIAMOND GAMES (Dan 2026-09-08): the lobby for the three
+                    diamond-to-chip games, Plinko and Crash beside the wheel, and one
+                    operator console for the two new games (finance access).
+                    docs/changelog/2026-09-08-diamond-plinko-and-crash.md */}
+                <Route
+                  path="clubs/:clubId/diamond-games"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Games">
+                          <DiamondGamesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/plinko"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Plinko">
+                          <DiamondPlinkoPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/crash"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Crash">
+                          <DiamondCrashPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-games-operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Games Operations">
+                          <ClubDiamondGamesOperationsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

@@ -1,0 +1,42 @@
+{
+  "_owner": "feat/diamond-games",
+  "tables": [
+    "diamond_game_configs",
+    "diamond_game_config_history",
+    "diamond_game_pools",
+    "diamond_game_commits",
+    "plinko_tables",
+    "plinko_drops",
+    "crash_rounds"
+  ],
+  "functions": [
+    "fn_diamond_game_append_only",
+    "fn_diamond_game_config_history",
+    "fn_plinko_table_audit",
+    "fn_plinko_activate_table",
+    "fn_diamond_game_commit",
+    "fn_diamond_game_cap_cents",
+    "fn_crash_point_cents",
+    "fn_crash_multiplier_cents",
+    "fn_diamond_game_mint_leg",
+    "fn_diamond_game_prize_leg",
+    "fn_diamond_game_take_bet",
+    "fn_crash_decide",
+    "fn_crash_settle_decided",
+    "fn_plinko_drop_result",
+    "fn_crash_round_result",
+    "fn_diamond_game_state",
+    "fn_diamond_game_admit",
+    "fn_plinko_drop",
+    "fn_crash_start",
+    "fn_crash_settle",
+    "fn_diamond_game_history",
+    "fn_diamond_game_set_config",
+    "fn_diamond_game_metrics",
+    "fn_wheel_pool_seed"
+  ],
+  "columns": {
+    "wheel_configs": ["diamond_seed"],
+    "wheel_pools": ["diamond_seed"]
+  }
+}

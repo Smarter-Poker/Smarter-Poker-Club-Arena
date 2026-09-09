@@ -1,6 +1,9 @@
 /* DIAMOND WHEEL OPERATIONS - the operator console. Realism tokens, no :hover. */
 
 .page {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
   min-height: 100vh;
   min-height: 100dvh;
   padding: 0.9rem 0.9rem var(--bottom-nav-clearance, 74px);
@@ -371,4 +374,22 @@
   .fields {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ── The console frames (#SmarterCasinoRealism, Dan 2026-09-08) ─────────── */
+
+.scroll {
+  overflow-x: auto;
+}
+
+.bayRow {
+  margin-top: 0.9rem;
+}
+
+.linkButton {
+  margin-top: 0.8rem;
+}
+
+.header {
+  margin-bottom: 0;
 }

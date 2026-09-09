@@ -242,6 +242,16 @@ const DEFINITIONS: OperationDefinition[] = [
     access: 'finance',
   },
   {
+    /* THE DIAMOND GAMES (2026-09-08): Plinko and Crash, the two alternates to
+       the wheel, in one console. Finance access: they move the union bank. */
+    id: 'diamond-games',
+    label: 'Diamond Games',
+    description: 'Open Plinko And Crash, Set Their Bets, Watch Their Return',
+    suffix: 'diamond-games-operations',
+    group: 'finance',
+    access: 'finance',
+  },
+  {
     id: 'settlement',
     label: 'Settlement',
     description: 'Square Up Club Balances And Settlement Records',
@@ -441,6 +451,7 @@ const OPERATION_SUFFIXES = new Set([
   'cashier-classic',
   'settlement',
   'wheel-operations',
+  'diamond-games-operations',
   'insurance-report',
   'bomb-pot-report',
   'table-management',
@@ -457,6 +468,7 @@ const FINANCE_SUFFIXES = new Set([
   'financials',
   'settlement',
   'wheel-operations',
+  'diamond-games-operations',
   'insurance-report',
 ]);
 

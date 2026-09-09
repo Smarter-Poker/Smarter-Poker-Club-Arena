@@ -351,9 +351,12 @@ export default function PromotionsPage() {
 
       {/* THE DIAMOND WHEEL (Dan 2026-09-07): the player's door to the wheel.
           The page itself says whether this host has opened it. */}
-      <div className="diamond-wheel-banner" onClick={() => navigate(`/clubs/${clubId}/wheel`)}>
+      <div
+        className="diamond-wheel-banner"
+        onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}
+      >
         <span className="bonus-icon">◆</span>
-        <span className="bonus-text">Spin The Diamond Wheel For Chips!</span>
+        <span className="bonus-text">Diamond Games: Wheel, Plinko And Crash!</span>
         <span className="bonus-arrow">›</span>
       </div>
 

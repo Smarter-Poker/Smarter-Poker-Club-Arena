@@ -1442,10 +1442,15 @@ multiple of it.
    conversion was revoked on 2026-08-19 and the Diamond Standard treats the
    closed loop as a hard property (D5, DR16). The wheel reopens it with dice,
    under the 20 percent edge and the never-pay-more-than-intake gate pinned by
-   `tests/the-wheel-never-pays-more-than-it-takes-in.law.test.ts`. No host's
-   wheel is enabled until Dan turns it on, and DR16 should name the wheel as
-   its exception before the first one is. Do not add a second bridge on the
-   strength of this one.
+   `tests/the-wheel-never-pays-more-than-it-takes-in.law.test.ts`. On
+   2026-09-08 Dan ruled the wheel's open items were the agent's, not his
+   ("NOTHING IS MINE, THESE ARE ALL 100% YOURS"), and asked for two alternates:
+   Diamond Plinko and Diamond Crash (`20260908010241`, pinned by
+   `tests/the-games-never-pay-more-than-they-take-in.law.test.ts`). All three
+   are open on every host, purchased diamonds only, and named as the ONLY
+   exception in `docs/DIAMOND-ACCOUNTING-STANDARD.md` DR16a. Do not add a
+   fourth bridge on the strength of these three: a new game is a new DR16a
+   row, a new law test, and Dan's word.
 
 ---
 

@@ -672,7 +672,7 @@
     }
   },
   "atomic_spin_correction": {
-    "status": "merged_frontend_published_awaiting_engine",
+    "status": "merged_frontend_and_engine_adoption_verified",
     "migration": "20260909174722_spin_draw_books_one_funded_rule_receipt.sql",
     "postgres_checks_passed": 36,
     "server_scope_tests_passed": 1394,
@@ -729,10 +729,12 @@
       "contains_atomic_merge": true
     },
     "last_engine_read": {
-      "adoption": "pending",
-      "observed_at": "2026-09-09T20:18:49.962022Z",
-      "version": "5dd902e9",
-      "heartbeat_at": "2026-09-09T20:18:44.018175Z"
+      "adoption": "verified",
+      "observed_at": "2026-09-09T20:58:22.979902Z",
+      "version": "561eaa52",
+      "heartbeat_at": "2026-09-09T20:58:13.458337Z",
+      "contains_merge": "61796f8f4c0c5f10ffbc0ec253575ff8a970af49",
+      "ancestry_command_passed": true
     },
     "staged_engine": {
       "run": 34398550383,
@@ -774,7 +776,7 @@
     "satellite_unregistration": "Current public unregister RPC delegates to fn_ca_unregister_tournament_player_exact, which returns a ticket for satellite-funded entries; this conflicts with the cash-refund rule still present on origin/main docs/LAWS.md. No policy reversal or historical ticket repair performed."
   },
   "break_clock_correction": {
-    "status": "behavior_verified_awaiting_publication",
+    "status": "merged_engine_dispatch_active",
     "controls": ["K01", "K06", "K12", "BX08"],
     "baseline": "Ten-minute level at 12:50, break at 12:55, restart at 12:57 restored 180000ms instead of 300000ms",
     "behavioral_tests_passed": 8,
@@ -793,13 +795,71 @@
         "skipped": 145
       },
       "failure": "An existing SDK deadline test selected the old 100ms wrapper after reloading a 2000ms wrapper",
-      "gate_fix": "Clear only the stale test capture before the 2000ms import; runtime code unchanged"
+      "gate_fix": "Clear only the stale test capture before the 2000ms import; runtime code unchanged",
+      "head": "52cb0b837c3b4e071ae1a13b38a064fdf7a471f9",
+      "merge_commit": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+      "passing_ci": 34402482634,
+      "server_tests_passed": 8446,
+      "server_tests_skipped": 145,
+      "server_files_passed": 631,
+      "engine_workflow": 34404673124,
+      "first_attempt_shipped": false,
+      "first_attempt": 300,
+      "staged_image": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+      "staged_job_redispatched": 102644685381,
+      "force": false
     }
   },
   "execution_scope": {
     "confirmed_defects_only": true,
     "unchanged_evidence_reused": true,
     "optional_duplicate_testing": false,
-    "phase_4_started": false
+    "phase_4_started": false,
+    "dispatch_staged_hetzner_immediately": true,
+    "passive_wait_for_engine_window": false,
+    "engine_force_restart": false,
+    "continue_audit_during_deployment": true
+  },
+  "satellite_cash_correction": {
+    "status": "database_draft_verified_client_compatibility_in_progress",
+    "controls": ["T06", "B08"],
+    "policy_source": "docs/LAWS.md and preserved Club Arena audit decision: eligible satellite unregisters use approved cash treatment",
+    "baseline_observed": {
+      "funded_entry": 200,
+      "wallet_before": 100,
+      "wallet_after": 100,
+      "cash_refund": 0,
+      "new_ticket": 200,
+      "remaining_escrow": 0
+    },
+    "corrected_isolated_observed": {
+      "wallet_after": 300,
+      "cash_refund": 200,
+      "new_ticket": 0,
+      "remaining_escrow": 0
+    },
+    "isolated_checks": [
+      "wrong source wallet refused",
+      "wrong component rails refused",
+      "foreign transfer owner refused",
+      "short escrow rolls back wallet, journal, authorization and obligation",
+      "exact request replay preserves receipt",
+      "consumed entitlement cannot be paid twice",
+      "fee reversal names original fee club",
+      "historical ticket receipt survives function update",
+      "already-issued ticket value cannot fund another cash refund"
+    ],
+    "fixture_limit": "23 captured table definitions and 19 real payment/escrow/ledger functions with selected actual money triggers; excludes production financial data, unrelated membership triggers and foreign keys. Not full database certification.",
+    "production_database_changed": false,
+    "publish_order": [
+      "client accepts verified satellite cash receipt",
+      "database correction after frontend adoption"
+    ],
+    "full_controls_closed": false,
+    "client_checks": {
+      "passed": 120,
+      "files": 4,
+      "typescript_build_mode": "passed"
+    }
   }
 }

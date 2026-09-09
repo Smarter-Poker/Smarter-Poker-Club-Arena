@@ -204,7 +204,8 @@ export function parseTournamentUnregisterResult(
     response.registration_id.length === 0 ||
     refundedChips === null ||
     returnedTicketValue === null ||
-    satelliteWalletChips !== 0
+    satelliteWalletChips === null ||
+    satelliteWalletChips > refundedChips
   ) {
     throw new Error('Tournament unregistration returned an invalid settlement receipt');
   }

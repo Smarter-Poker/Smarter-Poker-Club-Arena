@@ -12,7 +12,6 @@ import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
-import { notifyServerLeave } from './GameServerAPI';
 
 /**
  * The governed command gateway, loaded on demand.
@@ -295,346 +294,34 @@ class TableService {
     seatNumber: number,
     userId: string
   ): Promise<{ success: boolean; chipsReturned: number; deferred?: boolean; error?: string }> {
+    // Resolve and persist the original occupancy before contacting the engine.
+    // A stale UI seat number must never retarget an interrupted cashout.
+    void seatNumber;
+    const { leaveSeatWithIntent } = await import('./SeatLeaveIntent');
+    const result = await leaveSeatWithIntent(tableId, userId);
+    if (!result.success) return result;
+    if (!result.deferred) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
+    }
+    // Activity is presentation history. Failure here cannot negate an already
+    // committed cashout or authorize a second financial mutation.
+    const confirmedAmount = result.deferred ? null : result.chipsReturned;
     try {
-      // Step 1: Notify the game server engine — it will auto-fold if mid-hand
-      // This is critical: without this, the engine keeps the player in-memory
-      // and the game freezes waiting for their action
-      // 2026-08-20: `notifyServerLeave` NEVER throws — it resolves
-      // `{ success: false }` on a non-OK status, on an unreachable engine and
-      // whenever GameServerAPI's circuit breaker is open. So the catch below was
-      // dead code and the result was discarded, and we fell straight through to
-      // `atomic_table_cashout`.
-      //
-      // That combination is the dangerous one. The comment above states the
-      // stakes: without this notification the engine keeps the player seated
-      // in memory with a live stack. Cashing out anyway credits their wallet and
-      // clears the seat row while the engine still holds them — engine memory
-      // and the database now disagree about real chips, and every other player
-      // at the table waits on the action clock of someone who has gone.
-      //
-      // Refuse to cash out unless the engine has acknowledged the departure. The
-      // caller surfaces this and the player stays seated, which is recoverable;
-      // a desynced stack is not.
-      const serverLeave = await notifyServerLeave(tableId);
-      if (!serverLeave?.success) {
-        // CHIP CONTINUITY (2026-09-04): a leave refused by the stay clock is
-        // the house rule working - the label is the whole message and it is
-        // not an error to report.
-        if (serverLeave?.code !== 'LEAVE_LOCKED') {
-          reportError(
-            new Error(serverLeave?.error || 'notifyServerLeave rejected'),
-            'TableService.leaveTable.serverRefused'
-          );
-        }
-        return {
-          success: false,
-          chipsReturned: 0,
-          error:
-            serverLeave?.error ||
-            'Could not reach the game server - your chips were not moved. Please try again.',
-        };
-      }
-
-      // Get the player's current seat data.
-      // BUGFIX 2026-07-24: resolve the seat by USER_ID, not the passed seat_number.
-      // The caller passes tableState.heroSeat, which can drift out of sync with the
-      // DB (snapshot races, re-seating), and when it did the (seat_number,user_id)
-      // lookup returned nothing → leaveTable returned false → the UI showed
-      // "Unable to leave right now. You may be in an active hand" even though the
-      // player was simply seated. A player has at most one active seat per table, so
-      // user_id alone unambiguously identifies it. We prefer the passed seat_number
-      // when it matches, else fall back to whatever active seat the user actually holds.
-      const { data: seatRows, error: seatError } = await supabase
-        .from('table_seats')
-        .select('seat_number, stack, status')
-        .eq('table_id', tableId)
-        .eq('user_id', userId)
-        .is('left_at', null)
-        .order('joined_at', { ascending: true });
-
-      if (seatError) {
-        reportError(seatError, 'TableService.seatNotFound');
-        return { success: false, chipsReturned: 0 };
-      }
-      const seat =
-        (seatRows || []).find((s) => s.seat_number === seatNumber) || (seatRows || [])[0];
-      if (!seat) {
-        // The engine acknowledged the leave and the database confirms absence.
-        // Its atomic cashout can finish before this read; do not report that
-        // completed departure as a failure or invent its amount from old UI state.
-        return { success: true, chipsReturned: 0, deferred: true };
-      }
-      // Authoritative seat number from the DB — used for every downstream op.
-      const seatNo = seat.seat_number;
-
-      // ── Dan 2026-08-21 P0 (hand #1458859, chips vanished): honor the
-      // ENGINE's word on whether the player is mid-hand, not the seat row's
-      // status. The engine's own /leave handler marks the seat
-      // status='sitting_out' + leave_pending BEFORE this code reads it, so
-      // the old `status === 'playing'` guard could never fire for a mid-hand
-      // leave — we fell through to atomic_table_cashout with the STALE
-      // pre-hand stack while the player's real chips were still in the pot.
-      // The settlement then wrote the true final stack into a seat whose
-      // left_at was already stamped — a silent no-op. A player who WON the
-      // hand was paid their old stack and the winnings were destroyed.
-      //
-      // `immediate:false` from the engine means exactly "a hand is running
-      // and I have marked you leave_pending — processLeavePending will cash
-      // out your true post-hand stack at settlement." Trust it and stop here.
-      if (serverLeave.immediate === false) {
-        // Belt & suspenders: make sure leave_pending is set even if the
-        // engine's async DB write hasn't landed yet.
-        await supabase
-          .from('table_seats')
-          .update({ status: 'sitting_out', is_sitting_out: true, leave_pending: true })
-          .eq('table_id', tableId)
-          .eq('seat_number', seatNo)
-          .is('left_at', null);
-        /* Dan 2026-08-22 (Session Complete card showed a full-buy-in "loss"):
-           chipsReturned 0 here does NOT mean the player left with nothing —
-           the true stack is cashed out at settlement. `deferred` lets the
-           caller estimate P/L from the live stack instead of reporting the
-           whole buy-in as lost. */
-        return { success: true, chipsReturned: 0, deferred: true };
-      }
-
-      // Check if player is in active hand (server already folded them, but seat may still be 'playing')
-      if (seat.status === 'playing') {
-        // Mark as leave_pending — server's processLeavePending will handle cashout at end of hand
-        await supabase
-          .from('table_seats')
-          .update({ status: 'sitting_out', is_sitting_out: true, leave_pending: true })
-          .eq('table_id', tableId)
-          .eq('seat_number', seatNo)
-          .is('left_at', null);
-
-        // Same as above: cashout happens at settlement, not here.
-        return { success: true, chipsReturned: 0, deferred: true };
-      }
-
-      // Get table context (needed for tournament leave + transaction log)
-      const { data: tableData, error: tableCtxErr } = await supabase
-        .from('tables')
-        .select('club_id, union_id, tournament_id, name')
-        .eq('id', tableId)
-        .maybeSingle();
-
-      // ROUND 9 (2026-08-29): this read decides WHICH money path the leave
-      // takes - `!tableData?.tournament_id` selects the CASH cash-out RPC. A
-      // discarded error made a FAILED read indistinguishable from "this is a
-      // cash table", so a transient timeout routed a tournament seat down the
-      // cash path. The RPC would refuse it, but a money-path fork must never
-      // be decided by a guess: refuse the leave and let the player retry.
-      if (tableCtxErr || !tableData) {
-        reportError(
-          tableCtxErr || new Error('Table context missing'),
-          'TableService.leaveTable_table_context_read_failed',
-          {
-            tableId,
-          }
-        );
-        return { success: false, chipsReturned: 0 };
-      }
-
-      const clubId = tableData?.club_id;
-      // Union tables may have club_id=NULL — that's OK for cash games
-      // (atomic_table_cashout uses table_id directly, doesn't need club_id)
-
-      let returnedChips = 0;
-      let engineOwnsCashout = false;
-
-      // ATOMIC CASH-OUT: Return chips to Player Wallet (ONLY for cash games) and clear seat
-      if (!tableData?.tournament_id) {
-        /* CHIP STANDARD C1 (2026-09-02): ONE cash-out path, and the browser
-           only walks it when the engine has said so.
-
-           This used to call `atomic_table_cashout` unconditionally. Two things
-           were wrong with that. First, EXECUTE on it was revoked from
-           authenticated on 2026-08-26, so every call here has failed with
-           permission denied since - the leave "failed" while the engine had
-           already cashed the seat out, and the player lost their session
-           summary. Second, when the engine acknowledges a between-hands leave
-           it cashes the seat out ITSELF, after awaiting the settlement that
-           persists the final stack; a browser cash-out racing that would credit
-           the PRE-hand stack and stamp left_at, and the settlement write would
-           then be refused whole ("seat missing or left"). So when a live engine
-           acknowledged the leave, the engine owns the money and this returns
-           `deferred` - the session card reconciles against the engine's
-           wallet_transactions row exactly as it does for a mid-hand leave.
-
-           The browser cashes out only when the engine has explicitly handed it
-           the cleanup: no engine is running for the table, or the engine never
-           had this player in its hand roster (a reserved seat). Both come back
-           as `clientCashout: true` (the older engine's no-engine reply carries
-           `note` instead). That path uses atomic_seat_cashout_locked - the
-           function the engine itself uses - keyed per seat occupancy, so a
-           retry, or the engine arriving after all, credits nobody twice. */
-        const engineHandedOverCleanup =
-          serverLeave.clientCashout === true || typeof serverLeave.note === 'string';
-
-        if (!engineHandedOverCleanup) {
-          console.debug(
-            `[TableService] Engine owns the cash-out for user ${userId} at ${tableId} - deferring to settlement`
-          );
-          engineOwnsCashout = true;
-        } else {
-          const { data: cashoutRes, error: cashoutError } = await supabase.rpc(
-            'atomic_seat_cashout_locked',
-            {
-              p_user_id: userId,
-              p_table_id: tableId,
-              p_seat_number: seatNo,
-            }
-          );
-
-          if (cashoutError) {
-            // CHIP CONTINUITY (2026-09-04): the database refuses a browser
-            // cash-out while the stay clock runs. That is a refusal to show,
-            // not "you were never seated" - the caller navigated away on an
-            // error-less failure. Map it to the one label and return it.
-            const locked = /LEAVE_LOCKED:(\d+)/.exec(String(cashoutError.message || ''));
-            if (locked) {
-              // Lazy: TableService is in the entry chunk and the label helper
-              // must not ride into first paint (entry-chunk-delta gate).
-              const { leaveAvailableLabel } = await import('../lib/chipContinuity');
-              return {
-                success: false,
-                chipsReturned: 0,
-                error: leaveAvailableLabel(Number(locked[1])),
-              };
-            }
-            // RPC returned an error (e.g. seat not found) - check explicitly
-            // since supabase.rpc does NOT throw on SQL errors
-            reportError(cashoutError, 'TableService.atomicCashout');
-            return {
-              success: false,
-              chipsReturned: 0,
-              error:
-                'Could Not Leave The Table Right Now. Your Chips Are Still In Your Seat. Please Try Again.',
-            };
-          }
-
-          const cashout = cashoutRes as Record<string, unknown> | null;
-          const validAmount =
-            typeof cashout?.stack === 'number' &&
-            Number.isFinite(cashout.stack) &&
-            cashout.stack >= 0 &&
-            Math.round(cashout.stack * 100) / 100 === cashout.stack;
-          const absent =
-            cashout?.ok === true && cashout.reason === 'no_active_seat' && cashout.stack === 0;
-          const completed =
-            cashout?.ok === true &&
-            cashout.reason === undefined &&
-            cashout.seat_number === seatNo &&
-            typeof cashout.credited === 'boolean' &&
-            cashout.tournament_table === false &&
-            typeof cashout.idempotency_key === 'string' &&
-            cashout.idempotency_key.startsWith('cashout:') &&
-            cashout.idempotency_key.length > 'cashout:'.length;
-          if (!cashout || Array.isArray(cashout) || !validAmount || (!absent && !completed)) {
-            throw new Error('The Server Did Not Confirm The Cashout');
-          }
-          // This is the locked transaction's amount, including any add-on that
-          // committed after our seat read. A replay is still that same cashout.
-          returnedChips = cashout.stack as number;
-          console.debug(
-            `[TableService] Returned ${returnedChips} chips to Player Wallet for user ${userId}` +
-              (cashout?.reason ? ` (${cashout.reason})` : '')
-          );
-          masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
-        }
-
-        /* CHIP CONTINUITY (2026-09-04): the per-table `record_table_cashout`
-           write is gone. The rejoin floor is written by the database inside
-           atomic_seat_cashout_locked (cash_rejoin_constraints, keyed on the
-           GAME, not this table); nothing reads table_cashout_history any more. */
-      } else {
-        // In tournaments, leaving the table NEVER cashes out chips, deletes the seat,
-        // or eliminates the player. The player is placed in sit-out mode, chips stay
-        // on the table, and the server continues to blind them out / auto-muck until
-        // they return or bust.
-        await supabase
-          .from('table_seats')
-          .update({ status: 'sitting_out', is_sitting_out: true })
-          .eq('table_id', tableId)
-          .eq('seat_number', seatNo)
-          .eq('user_id', userId)
-          .is('left_at', null);
-      }
-
-      // Update player count for TOURNAMENT leaves only
-      // (atomic_table_cashout already updates current_players for cash game leaves)
-      if (tableData?.tournament_id) {
-        /* `id`, not `*`: a count needs one column, and `*` asks PostgREST to
-           expand every column the row has - which will include one a player
-           has no grant on once table_seats moves to column-level grants (the
-           horse_id read in docs/laws.d/horse-identity-is-not-readable.md).
-           A count that names a column keeps working across that change. */
-        const { count, error: countErr } = await supabase
-          .from('table_seats')
-          .select('id', { count: 'exact', head: true })
-          .eq('table_id', tableId)
-          .is('left_at', null);
-
-        if (!countErr) {
-          await this.updatePlayerCount(tableId, count ?? 0);
-        } else {
-          reportError(countErr, 'TableService.recountAfterLeave');
-        }
-      }
-
-      /**
-       * ── WAITLIST PROMOTION IS THE ENGINE'S JOB, AND ALWAYS WAS ──────────
-       *
-       * REMOVED 2026-08-28. This block invoked an RPC named
-       * promote-next-waitlisted-player — A FUNCTION THAT DOES NOT EXIST IN
-       * THE DATABASE (verified against pg_proc: of the 213 RPC names
-       * reachable from src/, it was the only one with no definition). Every
-       * cash leave therefore issued a failing round trip and swallowed it
-       * into a console.warn, so nothing here has ever run.
-       *
-       * Nothing is lost by deleting it, because the engine already owns this
-       * path correctly: `notifyWaitlistSeatOpen` in
-       * server/src/services/supabase/seats.ts fires on every seat vacate and
-       * claims the queue head by flipping the row to 'notified' — which is
-       * the authoritative signal GlobalWaitlistListener listens for and turns
-       * into the seat offer.
-       *
-       * And it must NOT be revived as written: the notification it sent told
-       * the player they had already been seated, which would have been a lie
-       * (nobody was), and a client-side path that genuinely auto-seated a
-       * player would spend their chips on a buy-in they never consented to.
-       */
-
-      // Record in table history
-      // The columns are `action`, `metadata` and `chips_cashed_out`. Writing
-      // `activity_type` and `data` was rejected on every leave, so the table
-      // history recorded nobody leaving at all.
-      const confirmedAmount = engineOwnsCashout ? null : returnedChips;
-      await supabase.from('table_activity').insert({
+      const { error } = await supabase.from('table_activity').insert({
         table_id: tableId,
         user_id: userId,
         action: 'leave',
         chips_cashed_out: confirmedAmount,
         metadata: {
           chips_cashed_out: confirmedAmount,
-          cashout_pending: engineOwnsCashout,
+          cashout_pending: result.deferred === true,
         },
       });
-
-      // Note: Transaction already logged via WalletService.logTransaction above
-
-      // An engine-owned cash-out is settled by the engine a moment from now;
-      // `deferred` tells the session card to reconcile against the
-      // wallet_transactions row rather than read 0 as "lost the buy-in".
-      if (engineOwnsCashout) {
-        return { success: true, chipsReturned: 0, deferred: true };
-      }
-      return { success: true, chipsReturned: returnedChips };
-    } catch (err: unknown) {
-      reportError(err, 'TableService.leaveTable');
-      return { success: false, chipsReturned: 0 };
+      if (error) reportError(error, 'TableService.leaveActivity');
+    } catch (error) {
+      reportError(error, 'TableService.leaveActivity');
     }
+    return result;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -753,65 +440,18 @@ class TableService {
     }
   }
 
-  /**
-   * Kick a player from a table — refunds their stack and vacates the seat.
-   *
-   * AUDIT M17: the old version read the seat, credited `seat.stack` through
-   * `atomic_credit_wallet_and_log`, then marked the seat left — three round
-   * trips, of which the credit was always 42501 (wallets has no UPDATE policy)
-   * and the seat UPDATE always matched zero rows (table_seats is service-role
-   * write-only). It returned false when the credit failed, but
-   * TableOperationsPanel discarded that boolean, so an admin saw no error at
-   * all while nothing whatsoever happened.
-   *
-   * `fn_admin_kick_player` does the whole thing in one transaction and derives
-   * the refund from the seat row itself, so a kick can never pay out more than
-   * the player actually had. It is idempotent on the occupancy row id — the
-   * same key shape the engine's markSeatAsLeft uses — so the two paths cannot
-   * double-pay each other if they race.
-   */
-  async kickPlayer(tableId: string, userId: string, reason?: string): Promise<boolean> {
-    const { data, error } = await supabase.rpc('fn_admin_kick_player', {
-      p_table_id: tableId,
-      p_user_id: userId,
-      p_reason: reason ?? null,
-    });
-
-    if (error) {
-      reportError(error, 'TableService.kickPlayer', { tableId, userId });
-      throw new Error('Could not kick the player');
-    }
-
-    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
-
-    // Throw rather than return false. The previous signature let the one caller
-    // ignore the outcome; an exception cannot be ignored by accident.
-    if (!res?.ok) {
-      throw new Error(adminActionReasonText(res?.reason));
-    }
-
-    if ((res.refunded ?? 0) > 0) {
+  /** Admin removals enter the engine's hand and cashout boundary. */
+  async kickPlayer(
+    tableId: string,
+    userId: string,
+    reason?: string
+  ): Promise<{ deferred: boolean }> {
+    const { adminRemovePlayerFromTable } = await import('./IntegrityActionService');
+    const outcome = await adminRemovePlayerFromTable(tableId, userId, reason ?? 'admin kick');
+    if (!outcome.ok) throw new Error(outcome.error || 'Could Not Kick The Player');
+    if (!outcome.deferred)
       masterBus.emit('BALANCE_UPDATED', { source: 'table_kick_cashout', userId });
-    }
-
-    // The seat count is recomputed here rather than in the RPC: it is display
-    // state, and a stale count is a cosmetic problem, not a money one.
-    const { count, error: countErr } = await supabase
-      .from('table_seats')
-      .select('id', { count: 'exact', head: true })
-      .eq('table_id', tableId)
-      .is('left_at', null);
-
-    if (!countErr) {
-      await supabase
-        .from('tables')
-        .update({ current_players: count ?? 0 })
-        .eq('id', tableId);
-    } else {
-      reportError(countErr, 'TableService.recountAfterKick');
-    }
-
-    return true;
+    return { deferred: outcome.deferred === true };
   }
 
   /**

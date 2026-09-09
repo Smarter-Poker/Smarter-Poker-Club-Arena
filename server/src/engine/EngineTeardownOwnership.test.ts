@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
+import * as db from '../services/supabase.js';
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -80,6 +81,115 @@ describe('table-engine lifecycle ownership', () => {
     expect(engine.hasSettlementInFlight()).toBe(false);
     expect(successor.claimProcessOwnership()).toBe(true);
     await successor.stop();
+  });
+
+  it('retains ownership until an accepted seat cashout releases its boundary', async () => {
+    const tableId = '23232323-2323-4232-8232-232323232323';
+    const engine = new ServerTableEngine(tableId) as any;
+    expect(engine.claimProcessOwnership()).toBe(true);
+    engine.running = true;
+    engine.flushSnapshot = vi.fn(async () => undefined);
+    const release = await engine.acquireSeatBoundary();
+    const stopping = engine.stop();
+    const successor = new ServerTableEngine(tableId) as any;
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(engine.flushSnapshot).not.toHaveBeenCalled();
+    expect(successor.claimProcessOwnership()).toBe(false);
+    await expect(engine.acquireSeatBoundary()).rejects.toThrow('Table Engine Is Stopping');
+    release();
+    await stopping;
+    expect(engine.flushSnapshot).toHaveBeenCalledOnce();
+    expect(successor.claimProcessOwnership()).toBe(true);
+    await successor.stop();
+  });
+
+  it('retains an accepted preparation cashout when its sibling roster read fails', async () => {
+    const tableId = '24242424-2424-4242-8242-242424242424';
+    const engine = new ServerTableEngine(tableId) as any;
+    expect(engine.claimProcessOwnership()).toBe(true);
+    engine.running = true;
+    engine.tableInfo = { club_id: 'club' };
+    engine.pendingAddOnSweepNeeded = false;
+    engine.flushSnapshot = vi.fn(async () => undefined);
+    engine.readNextHandInputs = vi.fn(async () => {
+      throw new Error('roster unavailable');
+    });
+    engine.allocateGlobalHandNumber = vi.fn(async () => 1);
+    let finish!: () => void;
+    const cashout = new Promise<[]>((resolve) => {
+      finish = () => resolve([]);
+    });
+    const sweep = vi.spyOn(db, 'processLeavePending').mockReturnValue(cashout);
+    let stopping: Promise<void> | undefined;
+    const successor = new ServerTableEngine(tableId) as any;
+    try {
+      const preparation = engine.prepareNextHand();
+      const preparationFailure = expect(preparation).rejects.toThrow('roster unavailable');
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(sweep).toHaveBeenCalledOnce();
+      stopping = engine.stop();
+      for (let i = 0; i < 15; i++) await Promise.resolve();
+      expect(engine.flushSnapshot).not.toHaveBeenCalled();
+      expect(successor.claimProcessOwnership()).toBe(false);
+      finish();
+      await preparationFailure;
+      await stopping;
+      expect(successor.claimProcessOwnership()).toBe(true);
+    } finally {
+      finish();
+      await stopping;
+      sweep.mockRestore();
+      await successor.stop();
+    }
+  });
+
+  it('an elapsed preparation budget cannot detach cashout or release the next hand boundary', async () => {
+    vi.useFakeTimers();
+    const engine = new ServerTableEngine('25252525-2525-4252-8252-252525252525') as any;
+    engine.running = true;
+    engine.tableInfo = { club_id: 'club' };
+    engine.pendingAddOnSweepNeeded = false;
+    engine.flushSnapshot = vi.fn(async () => undefined);
+    const original = { user_id: 'player', seat_number: 1, occupancy_id: 'original', stack: 25 };
+    const replacement = { ...original, occupancy_id: 'replacement', stack: 40 };
+    engine.seatedPlayers = [original];
+    engine.readNextHandInputs = vi.fn(async () => [original]);
+    engine.allocateGlobalHandNumber = vi.fn(async () => 1);
+    let finish!: () => void;
+    const cashout = new Promise<Array<{ userId: string; occupancyId: string }>>((resolve) => {
+      finish = () => resolve([{ userId: 'player', occupancyId: 'original' }]);
+    });
+    const sweep = vi.spyOn(db, 'processLeavePending').mockReturnValue(cashout);
+    const failed = vi.fn();
+    let releaseNext: (() => void) | undefined;
+    try {
+      const preparing = engine.prepareNextHand().catch(failed);
+      await vi.advanceTimersByTimeAsync(120000);
+      expect(sweep).toHaveBeenCalledOnce();
+      expect(failed).not.toHaveBeenCalled();
+      const nextBoundary = engine.acquireSeatBoundary().then((release: () => void) => {
+        releaseNext = release;
+      });
+      await Promise.resolve();
+      expect(releaseNext).toBeUndefined();
+      engine.seatedPlayers = [replacement];
+      finish();
+      await preparing;
+      await nextBoundary;
+      expect(failed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('deal_step_timeout: leave_pending'),
+        })
+      );
+      expect(engine.seatedPlayers).toEqual([replacement]);
+      expect(releaseNext).toBeTypeOf('function');
+    } finally {
+      finish();
+      releaseNext?.();
+      sweep.mockRestore();
+      await engine.stop();
+      vi.useRealTimers();
+    }
   });
 
   it('makes a stopped generation terminal', async () => {

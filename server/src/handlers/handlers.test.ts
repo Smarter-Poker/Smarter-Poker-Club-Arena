@@ -464,17 +464,27 @@ describe('handleGetState', () => {
   });
 });
 
-// ── /leave has a special 200 path when engine missing ──────────────────
-
-describe('handleLeave - engine-missing edge case', () => {
+// Retired requests must never retarget a seat or authorize browser cashout.
+describe('handleLeave - retired unbound contract', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('200 with immediate:true when engine not running (client does DB cleanup)', async () => {
-    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
-    vi.mocked(readBody).mockResolvedValue(JSON.stringify({ tableId: 'orphan' }));
-    const { res, captured } = mockRes();
-    await handleLeave(mockReq(), res, { gameServer: mockGameServer(mockEngine(), 't1') });
-    expect(captured.statusCode).toBe(200);
-    expect(parseJson(captured)).toMatchObject({ success: true, immediate: true });
-  });
+  it.each(['orphan', 't1'])(
+    'requires reload without touching the engine for %s',
+    async (tableId) => {
+      vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
+      vi.mocked(readBody).mockResolvedValue(JSON.stringify({ tableId }));
+      const { res, captured } = mockRes();
+      const getTableEngine = vi.fn(() => ({ leaveTable: vi.fn(async () => ({ success: true })) }));
+      await handleLeave(mockReq(), res, { gameServer: { getTableEngine } });
+      expect(captured.statusCode).toBe(200);
+      expect(parseJson(captured)).toMatchObject({
+        success: false,
+        code: 'SEAT_OCCUPANCY_REQUIRED',
+        reloadRequired: true,
+      });
+      expect(parseJson(captured)).not.toHaveProperty('clientCashout');
+      expect(parseJson(captured)).not.toHaveProperty('immediate');
+      expect(getTableEngine).not.toHaveBeenCalled();
+    }
+  );
 });

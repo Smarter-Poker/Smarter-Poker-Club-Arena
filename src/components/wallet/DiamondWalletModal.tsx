@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { DiamondService } from '../../services/DiamondService';
+import DiamondCustodyBalance from '../arena/DiamondCustodyBalance';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -237,7 +237,6 @@ export default function DiamondWalletModal({
 }: DiamondWalletModalProps) {
   const { user } = useAuthUser();
   const [transactions, setTransactions] = useState<DiamondTransaction[]>([]);
-  const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState('all');
@@ -249,11 +248,6 @@ export default function DiamondWalletModal({
     setLoadError(false);
 
     try {
-      // Get balance from Triple-Wallet Architecture source-of-truth
-      const diamondWallet = await DiamondService.getBalance(user.id);
-
-      if (isMounted.current) setBalance(diamondWallet.balance || 0);
-
       /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
          It filtered on `category IN (diamond_purchase, diamond_deduction,
          vip_purchase, mint, diamond_reward, diamond_refund)`. Five of those six
@@ -367,11 +361,8 @@ export default function DiamondWalletModal({
         {/* Header — Balance Display */}
         <div className="diamond-wallet-modal__header">
           <div className="diamond-wallet-modal__header-label">Diamond Wallet</div>
-          <div className="diamond-wallet-modal__balance-row">
-            <span className="diamond-wallet-modal__balance-icon">◆</span>
-            <span className="diamond-wallet-modal__balance-value">
-              {loading ? '...' : balance.toLocaleString()}
-            </span>
+          <div className="diamond-wallet-modal__custody-balances">
+            <DiamondCustodyBalance />
           </div>
           <button
             className="diamond-wallet-modal__buy-btn"

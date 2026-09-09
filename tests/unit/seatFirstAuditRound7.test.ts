@@ -125,7 +125,7 @@ describe('a bought seat reads SEATED in the lobby', () => {
   it('the seat set carries the tournament id alongside the table id', () => {
     // A spin row is keyed by tournament id, so a set of table ids alone could
     // never satisfy playerStateOf's first branch.
-    expect(club).toContain("select('table_id, tables(tournament_id)')");
+    expect(club).toContain("select('table_id, tables!table_seats_table_id_fkey(tournament_id)')");
     expect(club).toContain('tournamentId ? [r.table_id, tournamentId] : [r.table_id]');
   });
 });

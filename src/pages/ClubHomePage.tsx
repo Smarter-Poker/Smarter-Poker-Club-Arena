@@ -3358,7 +3358,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
              the set makes the seated branch reachable for seat-first games
              and changes nothing for cash rows, which still key on table_id. */
           .from('table_seats')
-          .select('table_id, tables(tournament_id)')
+          .select('table_id, tables!table_seats_table_id_fkey(tournament_id)')
           .eq('user_id', currentUserId)
           .is('left_at', null)
           .limit(QUERY_LIMITS.LIST),

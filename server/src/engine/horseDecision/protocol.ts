@@ -33,6 +33,8 @@ export type LiveHorseDecideOpts = Omit<
 export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {
   /** Epoch captured while this turn snapshot was authoritative, before FIFO wait. */
   decisionTimeMs: number;
+  /** Stable serialization of the hand/decision state that keys mixed strategy. */
+  decisionKey: string;
   player: SeatPlayer;
   gameState: HorseGameStateV2;
   style?: HorseStyle;

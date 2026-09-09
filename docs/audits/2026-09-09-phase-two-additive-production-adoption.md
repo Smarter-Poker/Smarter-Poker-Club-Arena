@@ -48,3 +48,7 @@ The PostgreSQL installer now scopes APT to the runner Ubuntu sources and officia
 Read-only production catalog verification found every one of the 16 missing manifest objects. Commit 93e4e9918 adds the verified fragment; the normal migration, definer-authorization and no-band-aid gates passed. The subsequent hosted TypeScript and PostgreSQL jobs passed. This is CI evidence, not final release acceptance.
 
 The 18:09 UTC runtime observation still served engine 5dd902e9 and frontend 14107e8b6ffabba74d7134f661e244cc03efd252. Neither observation establishes adoption of PR 3974. The scheduled deployment must carry the occupancy implementation before the staged unbound RPC retirement can run.
+
+## Final Retirement Applied
+
+The current checkpoint is docs/audits/2026-09-09-accounting-phase-two-acceptance.json. Compatible frontend and engine adoption are proved; the exact staged unbound-cashout retirement is applied and application-role denial verified. The final migration and evidence still require normal publication. Earlier pending-runtime and not-started-Phase-3 statements above are historical, not current status. Phase 3 is underway and remains incomplete.

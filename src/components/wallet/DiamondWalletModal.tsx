@@ -14,6 +14,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import DiamondCustodyBalance from '../arena/DiamondCustodyBalance';
+import DiamondWalletTransfer from './DiamondWalletTransfer';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -240,6 +241,7 @@ export default function DiamondWalletModal({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [balanceRevision, setBalanceRevision] = useState(0);
   const [historyOwnerId, setHistoryOwnerId] = useState<string | null>(null);
   const historyRequest = useRef(0);
   const isMounted = useIsMounted();
@@ -349,6 +351,10 @@ export default function DiamondWalletModal({
     if (isMounted.current && isOpen) fetchTransactions();
   });
 
+  useMasterBusSubscription('PROFILE_UPDATED', ({ userId }) => {
+    if (userId === user?.id && isMounted.current && isOpen) void fetchTransactions();
+  });
+
   // Client-side filter over the fetched page.
   const filteredTx = (historyOwnerId === user?.id ? transactions : []).filter((tx) => {
     const txType = tx.transaction_type || tx.type || '';
@@ -379,7 +385,7 @@ export default function DiamondWalletModal({
         <div className="diamond-wallet-modal__header">
           <div className="diamond-wallet-modal__header-label">Diamond Wallet</div>
           <div className="diamond-wallet-modal__custody-balances">
-            <DiamondCustodyBalance />
+            <DiamondCustodyBalance key={balanceRevision} />
           </div>
           <button
             className="diamond-wallet-modal__buy-btn"
@@ -391,6 +397,17 @@ export default function DiamondWalletModal({
             + Buy Diamonds
           </button>
         </div>
+
+        {user?.id && (
+          <DiamondWalletTransfer
+            key={user.id}
+            userId={user.id}
+            onComplete={() => {
+              setBalanceRevision((value) => value + 1);
+              void fetchTransactions();
+            }}
+          />
+        )}
 
         {/* Filter Bar */}
         <div className="diamond-wallet-modal__filters">

@@ -27,7 +27,9 @@
 #    4. inside the grace window, says so and stops - a deploy in progress or one
 #       waiting on the drain gate is NORMAL and must not raise an alarm;
 #    5. past it, DISPATCHES the deploy itself (RULE 5: never ask a human to run
-#       a command) and raises one self-closing issue.
+#       a command) - unless a deploy run is already in flight, in which case
+#       that run IS the fix and a second dispatch would only cancel it - and
+#       raises one self-closing issue.
 #
 #  IT NEVER FAILS THE JOB ON AN UNREADABLE ENGINE. /health being unreachable is
 #  an availability problem with its own alerting; guessing "behind" from silence
@@ -340,7 +342,43 @@ NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
 # describes it.
 MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
 CUTOVER_REACH_MIN=${CUTOVER_REACH_MIN:-30}
-if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
+# ── ONE DEPLOY AT A TIME (2026-09-09) ───────────────────────────────────────
+#
+# This dispatched unconditionally, and this job runs on EVERY completion of
+# the publisher plus two crons - eight or more times an hour on a busy
+# afternoon. auto-deploy-hetzner.yml's concurrency group keeps one run active
+# and ONE pending, and each new dispatch cancels the pending one (that is
+# `cancel-in-progress: false` working as documented). So while the engine was
+# behind, every sweep dispatched a fresh run, and every fresh run cancelled
+# the run that was sitting in the break gate waiting for :55. The watchdog was
+# the thing keeping the engine from catching up.
+#
+# MEASURED 2026-09-09. The engine served 5dd902e9 (deployed in the 17:55
+# break). Nine engine commits merged from 17:39 on; the 18:55 and 19:55 breaks
+# both passed without a cutover; every deploy run in that stretch was either
+# cancelled by the next dispatch or shipped nothing. The engine was three
+# hours behind main and this script had "dispatched" the fix about twenty
+# times.
+#
+# So: if a deploy run is already queued, pending on the concurrency group, or
+# in progress, this sweep does NOT dispatch. The one in flight is the fix. The
+# only run this ignores is one older than the deploy's own ceiling
+# (timeout-minutes 55, plus a margin): GitHub will have timed it out, or it is
+# one of the pre-queued zombies publish-watchdog.sh describes, and a dispatch
+# is then the right answer again.
+INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-65}
+INFLIGHT=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 20 \
+  --json databaseId,status,createdAt,headSha,event,url \
+  --jq "[.[] | select(.status != \"completed\")
+          | select((now - (.createdAt | fromdateiso8601)) < (${INFLIGHT_STALE_MIN} * 60))]
+        | .[0] // empty
+        | \"\\(.databaseId) \\(.status) \\(.headSha[0:8]) \\(.event) \\(((now - (.createdAt | fromdateiso8601)) / 60) | floor)m \\(.url)\"" \
+  2>/dev/null || echo "")
+if [ -n "${INFLIGHT:-}" ]; then
+  DISPATCHED="no - a deploy run is already in flight ($INFLIGHT). A second dispatch would cancel the one waiting for the break, not hurry it."
+  say "  not dispatching: a deploy run is already in flight ($INFLIGHT)"
+  say "  the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away; that run is the fix"
+elif gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
   if [ "$MINS_TO_WINDOW" -le "$CUTOVER_REACH_MIN" ]; then
     DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, inside the run's wait budget, so this dispatch should cut over"
     say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - should cut over)"
@@ -406,8 +444,22 @@ EOF
 
 EXISTING=$(find_issue "$ISSUE_TITLE")
 if [ -n "${EXISTING:-}" ]; then
-  gh_write "comment on #$EXISTING" issue comment "$EXISTING" --repo "$REPO" \
-    --body "Still behind. main needs \`$REQ_SHORT\` (${AGE_MIN}m old); the engine serves \`$SERVED\`. Deploy dispatched by this run: $DISPATCHED." || true
+  # One progress comment per COMMENT_EVERY_MIN, not one per sweep. This job
+  # runs on every publisher completion; on 2026-09-09 that was a "Still
+  # behind" comment every few minutes for three hours, and the reader who
+  # opened the issue had to scroll past forty of them to find the table that
+  # says why. A comment that says nothing new is noise on the alarm.
+  COMMENT_EVERY_MIN=${COMMENT_EVERY_MIN:-30}
+  LAST_COMMENT_AGE_MIN=$(GH_TOKEN="${GH_TOKEN_ISSUES:-${GH_TOKEN:-}}" \
+    gh issue view "$EXISTING" --repo "$REPO" --json comments,createdAt \
+      --jq '((now - ((.comments | last | .createdAt) // .createdAt | fromdateiso8601)) / 60) | floor' \
+      2>/dev/null || echo "")
+  if [ -n "${LAST_COMMENT_AGE_MIN:-}" ] && [ "$LAST_COMMENT_AGE_MIN" -lt "$COMMENT_EVERY_MIN" ]; then
+    say "  #$EXISTING already says so (last comment ${LAST_COMMENT_AGE_MIN}m ago, < ${COMMENT_EVERY_MIN}m) - not commenting again"
+  else
+    gh_write "comment on #$EXISTING" issue comment "$EXISTING" --repo "$REPO" \
+      --body "Still behind. main needs \`$REQ_SHORT\` (${AGE_MIN}m old); the engine serves \`$SERVED\`. Deploy dispatched by this run: $DISPATCHED." || true
+  fi
 else
   gh_write "open an issue" issue create --repo "$REPO" --title "$ISSUE_TITLE" --body "$BODY" || true
 fi

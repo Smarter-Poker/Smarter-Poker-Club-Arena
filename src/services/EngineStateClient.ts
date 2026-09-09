@@ -244,6 +244,8 @@ function closeMeansAuth(code: number | undefined, reason: string | undefined): b
  * anyway. The first one wins the navigation; the rest are noise. Latched
  * rather than debounced: there is no second attempt to make.
  */
+// Also gates new and in-flight handshakes while the shared reload is pending.
+// Once the engine refuses this protocol, reconnecting the same bundle cannot help.
 let reloadingForNewBundle = false;
 
 function reloadForNewBundle(): Promise<void> {
@@ -492,6 +494,7 @@ export class EngineStateClient {
 
   /** Open the connection. Call once from the owning hook. */
   async connect(): Promise<void> {
+    if (reloadingForNewBundle) return;
     // P2-1: guard against concurrent connects (React StrictMode double-invoke,
     // rapid re-mounts / tableId switches). If a socket is already OPEN or
     // CONNECTING, do nothing — otherwise we'd leak a second zombie socket.
@@ -608,6 +611,7 @@ export class EngineStateClient {
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private async openOnce(): Promise<void> {
+    if (reloadingForNewBundle) return;
     // Single-flight + live-socket guard (see `openingGeneration`). scheduleReconnect's
     // timer, the online handler and connect() can all race into here.
     const generation = this.connectionGeneration;
@@ -650,7 +654,8 @@ export class EngineStateClient {
     // creating the socket — opening one now would spawn a zombie WS the owning
     // hook's cleanup can never reach (clientRef already points at a new client),
     // leaking a server table-slot and flip-flopping cross-table snapshots.
-    if (this.intentionalClose || generation !== this.connectionGeneration) return;
+    if (reloadingForNewBundle || this.intentionalClose || generation !== this.connectionGeneration)
+      return;
     if (!token) {
       // No token available. Retry on backoff — the auth layer may be warming up.
       this.scheduleReconnect();
@@ -813,7 +818,10 @@ export class EngineStateClient {
       // facade. Reconnecting would evict IT and ping-pong forever — the old
       // owner stands down for good. The newer instance carries the game.
       if (e.code === CLOSE_MUX_SUPERSEDED) {
-        this.setStatus('idle');
+        // Retire the entire lifecycle, including wake listeners and queued
+        // events. An idle status alone lets online/pageshow reclaim the mux
+        // and evict the newer owner. Facade release is identity-guarded.
+        this.disconnect();
         return;
       }
 
@@ -824,9 +832,9 @@ export class EngineStateClient {
          host, which knows how to fetch a fresh bundle rather than a fresh
          copy of the same one. */
       if (e.code === CLOSE_UPGRADE_REQUIRED) {
-        this.setStatus('idle');
-        this.opts.onError({ code: e.code, reason: e.reason || 'upgrade_required' });
+        this.disconnect();
         void reloadForNewBundle();
+        this.opts.onError({ code: e.code, reason: e.reason || 'upgrade_required' });
         return;
       }
 
@@ -834,6 +842,9 @@ export class EngineStateClient {
       // rejoining the thundering herd at the fast end of the ladder.
       if (e.code === CLOSE_RATE_LIMITED) {
         this.retryCount = Math.max(this.retryCount, 4);
+        // Capacity has an explicit verdict. It is not a failed auth handshake.
+        this.scheduleReconnect();
+        return;
       }
 
       // 2026-09-04: an engine that still writes a bare 401 before the
@@ -1422,6 +1433,7 @@ export class EngineStateClient {
   }
 
   private scheduleReconnect(): void {
+    if (reloadingForNewBundle) return;
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
     /* ═══ A SCHEDULED RESTART IS NOT A FAILURE (Phase 4, 2026-09-05) ═══════
@@ -1804,6 +1816,7 @@ export class EngineChannelClient {
 
   /** Open the channel connection. Safe to call multiple times (no-op if already connected). */
   async connect(): Promise<void> {
+    if (reloadingForNewBundle) return;
     if (this.sessionBlocked) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
@@ -2004,6 +2017,7 @@ export class EngineChannelClient {
   private tokenWait: AbortController | null = null;
 
   private async openOnce(): Promise<void> {
+    if (reloadingForNewBundle) return;
     // Single-flight + live-socket guard — same race as EngineStateClient:
     // openOnce awaits getToken before assigning this.ws, so overlapping
     // invocations would create a second socket and orphan one.
@@ -2038,7 +2052,8 @@ export class EngineChannelClient {
     }
     // P2-1: disconnect() may have fired while getToken() was in flight. Abort
     // before creating the socket to avoid leaking a zombie channel connection.
-    if (this.intentionalClose || generation !== this.connectionGeneration) return;
+    if (reloadingForNewBundle || this.intentionalClose || generation !== this.connectionGeneration)
+      return;
     if (!token) {
       this.scheduleReconnect();
       return;
@@ -2119,6 +2134,16 @@ export class EngineChannelClient {
         this.setStatus('auth_failed');
         // 2026-09-04: see EngineStateClient.checkSessionThenReconnect.
         this.checkSessionThenReconnect('channel:4401');
+        return;
+      }
+      if (e.code === CLOSE_UPGRADE_REQUIRED) {
+        this.disconnect();
+        void reloadForNewBundle();
+        return;
+      }
+      if (e.code === CLOSE_RATE_LIMITED) {
+        this.retryCount = Math.max(this.retryCount, 4);
+        this.scheduleReconnect();
         return;
       }
       this.handshakeFailures++;
@@ -2356,6 +2381,7 @@ export class EngineChannelClient {
   }
 
   private scheduleReconnect(): void {
+    if (reloadingForNewBundle) return;
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
     // 2026-08-22: NEVER stop trying (same contract as EngineStateClient).

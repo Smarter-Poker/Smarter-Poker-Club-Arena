@@ -151,6 +151,7 @@ const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubIns
 const ClubBombPotReportPage = lazyWithRetry(() => import('./pages/club/ClubBombPotReportPage'));
 const TableBombSettingsPage = lazyWithRetry(() => import('./pages/club/TableBombSettingsPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
+const ClubAdvertisePage = lazyWithRetry(() => import('./pages/ClubAdvertisePage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
@@ -1619,6 +1620,20 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Announcements">
                           <ClubAnnouncementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* A club owner buys a picture on a surface, in diamonds
+                    (2026-09-03). Staff-only inside the page, fail-closed. */}
+                <Route
+                  path="clubs/:clubId/advertise"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Advertise">
+                          <ClubAdvertisePage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

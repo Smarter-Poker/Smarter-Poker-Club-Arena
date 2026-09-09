@@ -2436,13 +2436,13 @@ DECLARE
   v_old_secdef boolean;
   v_anchor constant text :=
 $old$    'rpc/fn_complete_tournament_launch_atomic',
-    'rpc/fn_decline_tournament_rebuy',$old$;
+    'rpc/fn_eliminate_tournament_player_atomic',$old$;
   v_replacement constant text :=
 $new$    'rpc/fn_complete_tournament_launch_atomic',
     'rpc/fn_issue_tournament_launch_stacks',
     'rpc/fn_materialize_tournament_launch_seats',
     'rpc/fn_project_tournament_launch_seat_stacks',
-    'rpc/fn_decline_tournament_rebuy',$new$;
+    'rpc/fn_eliminate_tournament_player_atomic',$new$;
 BEGIN
   SELECT pg_get_functiondef(p.oid), p.proacl, p.proconfig, p.proowner, p.prosecdef
     INTO STRICT v_src, v_old_acl, v_old_config, v_old_owner, v_old_secdef

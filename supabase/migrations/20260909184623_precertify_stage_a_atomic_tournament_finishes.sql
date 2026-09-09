@@ -1,0 +1,298 @@
+-- 20260909184623_precertify_stage_a_atomic_tournament_finishes
+--
+-- Reserved by scripts/reserve-migration-version.sh on 2026-09-09 18:46:23 UTC.
+--
+-- Stage A deliberately leaves the seven strict tournament completion guards
+-- disabled while the exact atomic engine rolls out. Every atomic completion in
+-- that compatibility window owns an immutable finish claim, but the disabled
+-- certificate trigger cannot fill certified_at/evidence. Production measured
+-- 5,661 such claims on 2026-09-09; evaluating their complete financial proof
+-- read-only took 16.9 seconds.
+--
+-- Stage B used to repeat that whole proof while holding its DDL and tournament
+-- writer locks under a 30-second statement timeout. The extra 5,661 row locks,
+-- updates and duplicate winner/kind lookups made that cutover deadline an
+-- unproven wager. This stopped-engine DML-only boundary certifies the finite
+-- Stage-A cohort first. It neither creates a claim nor moves money: a missing,
+-- conflicting or partial immutable receipt aborts the entire transaction.
+-- Stage B now does only a fast zero-candidate assertion while it activates the
+-- permanent trigger.
+
+BEGIN;
+
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '120s';
+
+/* This is a maintenance-only boundary, not a background repair path. The
+   durable platform gate must have at least three minutes left. Maintenance
+   writers take this advisory key exclusively before changing the break or thaw
+   ledger; the shared hold keeps the validated freeze identity stable through
+   commit. */
+DO $lock_durable_maintenance_window$
+BEGIN
+  IF NOT pg_try_advisory_xact_lock_shared(530090,1) THEN
+    RAISE EXCEPTION
+      'atomic finish precertification could not lock the durable platform freeze';
+  END IF;
+END;
+$lock_durable_maintenance_window$;
+
+DO $require_durable_maintenance_window$
+BEGIN
+  IF to_regprocedure('public.fn_platform_frozen()') IS NULL
+     OR NOT public.fn_platform_frozen() THEN
+    RAISE EXCEPTION
+      'atomic finish precertification requires the durable platform freeze';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.engine_maintenance_break b
+     WHERE b.id
+       AND b.enforce_freeze
+       AND b.phase = 'counting_down'
+       AND b.break_started_at IS NOT NULL
+       AND b.break_ends_at >= clock_timestamp() + interval '3 minutes'
+  ) THEN
+    RAISE EXCEPTION
+      'atomic finish precertification requires three minutes of counting-down maintenance headroom';
+  END IF;
+END;
+$require_durable_maintenance_window$;
+
+/* Freeze the exact evidence read by fn_tournament_finish_readiness and both of
+   its nested domain checkers. Every lock is NOWAIT, so an overlooked live
+   writer aborts the transaction rather than producing a mixed-time receipt.
+   Engine authority relations are locked last; a live or restarting engine
+   therefore fails whole at this boundary. */
+LOCK TABLE public.engine_maintenance_break IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_finish_receipts IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_players IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_obligations IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_payouts IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_place_settlement_batches IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_final_table_deal_batches IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_satellite_settlement_batches IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_escrow IN SHARE MODE NOWAIT;
+LOCK TABLE public.rake_records IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_rake_settlements IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_bounty_completion_receipts IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_bounty_obligations IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_bounty_awards IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_bounty_award_recipients IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_bounties IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournament_satellite_entitlements IN SHARE MODE NOWAIT;
+LOCK TABLE public.chip_ledger IN SHARE MODE NOWAIT;
+LOCK TABLE public.engine_leader IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_table_leases IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
+
+DO $require_stopped_engine_and_terminal_invariant$
+DECLARE
+  v_terminal_trigger "char";
+  v_terminal_constraint_valid boolean;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.engine_leader l
+     WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+  ) OR EXISTS (
+    SELECT 1 FROM public.engine_table_leases l
+     WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+  ) OR EXISTS (
+    SELECT 1 FROM public.engine_tournament_leases l
+     WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+  ) THEN
+    RAISE EXCEPTION
+      'atomic finish precertification requires every engine authority heartbeat to be stale';
+  END IF;
+
+  SELECT tg.tgenabled INTO v_terminal_trigger
+    FROM pg_trigger tg
+   WHERE tg.tgrelid = 'public.tournaments'::regclass
+     AND tg.tgname = 'aaa_guard_terminal_tournament_break_state'
+     AND NOT tg.tgisinternal;
+  SELECT c.convalidated INTO v_terminal_constraint_valid
+    FROM pg_constraint c
+   WHERE c.conrelid = 'public.tournaments'::regclass
+     AND c.conname = 'tournaments_terminal_break_state_is_clear';
+  IF v_terminal_trigger IS DISTINCT FROM 'O'
+     OR v_terminal_constraint_valid IS DISTINCT FROM true THEN
+    RAISE EXCEPTION
+      'atomic finish precertification requires the terminal break invariant first';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.tournaments t
+     WHERE upper(t.status::text) IN ('COMPLETED','CANCELLED')
+       AND (
+         COALESCE(t.on_break,false)
+         OR t.break_started_at IS NOT NULL
+         OR t.break_ends_at IS NOT NULL
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'atomic finish precertification found terminal break residue';
+  END IF;
+END;
+$require_stopped_engine_and_terminal_invariant$;
+
+DO $precertify_stage_a_atomic_finishes$
+DECLARE
+  r record;
+  v_kind text;
+  v_winner uuid;
+  v_receipt public.tournament_finish_receipts%ROWTYPE;
+  v_ready jsonb;
+  v_candidates bigint := 0;
+  v_certified bigint := 0;
+  v_rows integer := 0;
+BEGIN
+  SELECT count(*) INTO v_candidates
+    FROM public.tournaments t
+   WHERE t.status = 'COMPLETED'
+     AND (
+       EXISTS (
+         SELECT 1 FROM public.tournament_place_settlement_batches b
+          WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.tournament_final_table_deal_batches b
+          WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.tournament_satellite_settlement_batches b
+          WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+       )
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM public.tournament_finish_receipts f
+        WHERE f.tournament_id=t.id AND f.certified_at IS NOT NULL
+     );
+
+  FOR r IN
+    SELECT t.id,t.ended_at
+      FROM public.tournaments t
+     WHERE t.status = 'COMPLETED'
+       AND (
+         EXISTS (
+           SELECT 1 FROM public.tournament_place_settlement_batches b
+            WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+         )
+         OR EXISTS (
+           SELECT 1 FROM public.tournament_final_table_deal_batches b
+            WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+         )
+         OR EXISTS (
+           SELECT 1 FROM public.tournament_satellite_settlement_batches b
+            WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+         )
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_finish_receipts f
+          WHERE f.tournament_id=t.id AND f.certified_at IS NOT NULL
+       )
+     ORDER BY t.id
+  LOOP
+    IF r.ended_at IS NULL THEN
+      RAISE EXCEPTION 'completed atomic tournament % has no durable ended_at',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+
+    v_kind:=public.fn_tournament_finish_kind(r.id);
+    IF v_kind='final_table_deal' THEN
+      SELECT b.chip_leader INTO v_winner
+        FROM public.tournament_final_table_deal_batches b
+       WHERE b.tournament_id=r.id AND b.settled_at IS NOT NULL;
+    ELSE
+      SELECT (array_agg(tp.user_id ORDER BY tp.user_id))[1] INTO v_winner
+        FROM public.tournament_players tp
+       WHERE tp.tournament_id=r.id AND tp.status='winner' AND tp.position=1;
+    END IF;
+    IF v_winner IS NULL THEN
+      RAISE EXCEPTION 'completed atomic tournament % has no unique domain winner',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+
+    SELECT * INTO v_receipt
+      FROM public.tournament_finish_receipts f
+     WHERE f.tournament_id=r.id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION
+        'completed atomic tournament % has no immutable Stage-A finish claim',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+    IF v_receipt.winner_user_id IS DISTINCT FROM v_winner
+       OR v_receipt.finish_kind IS DISTINCT FROM v_kind THEN
+      RAISE EXCEPTION 'completed atomic tournament % conflicts with its finish receipt',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+    IF v_receipt.certified_at IS NOT NULL
+       OR v_receipt.completed_at IS NOT NULL
+       OR v_receipt.evidence IS NOT NULL THEN
+      RAISE EXCEPTION 'completed atomic tournament % has a partial finish certificate',r.id
+        USING ERRCODE='check_violation';
+    END IF;
+
+    v_ready:=public.fn_tournament_finish_readiness(r.id,v_winner);
+    IF COALESCE((v_ready->>'ok')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'completed atomic tournament % cannot be precertified: %',
+        r.id,COALESCE(v_ready->'failures','[]'::jsonb)
+        USING ERRCODE='check_violation';
+    END IF;
+
+    UPDATE public.tournament_finish_receipts
+       SET certified_at=transaction_timestamp(),
+           completed_at=r.ended_at,
+           evidence=v_ready,
+           updated_at=transaction_timestamp()
+     WHERE tournament_id=r.id
+       AND certified_at IS NULL
+       AND completed_at IS NULL
+       AND evidence IS NULL;
+    GET DIAGNOSTICS v_rows=ROW_COUNT;
+    IF v_rows<>1 THEN
+      RAISE EXCEPTION 'finish certificate CAS changed % rows for tournament %',v_rows,r.id
+        USING ERRCODE='40001';
+    END IF;
+    v_certified:=v_certified+1;
+  END LOOP;
+
+  IF v_certified<>v_candidates THEN
+    RAISE EXCEPTION 'atomic finish precertification expected % rows but wrote %',
+      v_candidates,v_certified USING ERRCODE='check_violation';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE t.status='COMPLETED'
+       AND (
+         EXISTS (
+           SELECT 1 FROM public.tournament_place_settlement_batches b
+            WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+         )
+         OR EXISTS (
+           SELECT 1 FROM public.tournament_final_table_deal_batches b
+            WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+         )
+         OR EXISTS (
+           SELECT 1 FROM public.tournament_satellite_settlement_batches b
+            WHERE b.tournament_id=t.id AND b.settled_at IS NOT NULL
+         )
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tournament_finish_receipts f
+          WHERE f.tournament_id=t.id
+            AND f.certified_at IS NOT NULL
+            AND f.completed_at IS NOT NULL
+            AND jsonb_typeof(f.evidence)='object'
+       )
+  ) THEN
+    RAISE EXCEPTION 'atomic finish precertification left an uncertified claim';
+  END IF;
+END;
+$precertify_stage_a_atomic_finishes$;
+
+COMMIT;

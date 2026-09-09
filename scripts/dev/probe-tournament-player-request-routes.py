@@ -12,8 +12,13 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 BINDIR = Path(os.environ.get("PG17_BINDIR", "/opt/homebrew/opt/postgresql@17/bin"))
-STAGED = ROOT / "scripts/deploy/phase-three-strict-tournament-cutover.sql"
-source = STAGED.read_text()
+strict_candidates = sorted(
+    (ROOT / "supabase/migrations").glob(
+        "*_tournament_manager_request_fencing_is_strict.sql"
+    )
+)
+assert len(strict_candidates) == 1, "expected one strict tournament-manager migration"
+source = strict_candidates[0].read_text()
 match = re.search(
     r"CREATE OR REPLACE FUNCTION smarter_private\.fn_smarter_data_api_pre_request\(\)"
     r".*?\$function\$;", source, re.S
@@ -110,11 +115,16 @@ END $assert$;
             "x-smarter-tournament-id": "10000000-0000-4000-8000-000000000001",
             "x-smarter-tournament-lease-generation": "50000000-0000-4000-8000-000000000001",
         }
-        for route in ["/rpc/process_tournament_rebuy", "/rest/v1/rpc/fn_decline_tournament_rebuy"]:
+        player_or_manager_routes = [
+            "/rpc/process_tournament_rebuy",
+            "/rest/v1/rpc/fn_decline_tournament_rebuy",
+            "/rpc/fn_mystery_bounty_reveal",
+        ]
+        for route in player_or_manager_routes:
             check("authenticated", route, {}, "browser")
-            check("anon", route, {}, error="TOURNAMENT_MANAGER_AUTHORITY_REQUIRED")
-            check("service_role", route, {}, error="TOURNAMENT_MANAGER_AUTHORITY_REQUIRED")
-            check("service_role", route, service, error="TOURNAMENT_MANAGER_AUTHORITY_REQUIRED")
+            check("anon", route, {}, error="PLAYER_OR_MANAGER_AUTHORITY_REQUIRED")
+            check("service_role", route, {}, error="PLAYER_OR_MANAGER_AUTHORITY_REQUIRED")
+            check("service_role", route, service, error="PLAYER_OR_MANAGER_AUTHORITY_REQUIRED")
             check("authenticated", route, manager, error="DATA_ACTOR_FORBIDDEN")
             check("service_role", route, manager, "tournament-manager")
         check("authenticated", "/rpc/fn_spin_draw_and_settle_atomic", {},
@@ -125,7 +135,8 @@ END $assert$;
         check("service_role", "/rpc/claim_table_lease_v2", service, "service")
         check("service_role", "/unrelated_shared_table", {}, "shared-estate-service")
         stale = dict(manager, **{"x-smarter-tournament-lease-generation": "50000000-0000-4000-8000-000000000099"})
-        check("service_role", "/rpc/process_tournament_rebuy", stale, error="TOURNAMENT_MANAGER_FENCED")
+        for route in player_or_manager_routes:
+            check("service_role", route, stale, error="TOURNAMENT_MANAGER_FENCED")
         print(f"{count} PostgreSQL request-route cases passed; full cutover remains separately gated.")
     finally:
         subprocess.run([str(BINDIR / "pg_ctl"), "-D", str(data), "-m", "immediate", "-w", "stop"],

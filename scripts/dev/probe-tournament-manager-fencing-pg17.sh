@@ -34,6 +34,7 @@ optional_migration_by_suffix() {
 tournament_lease_migration="$(migration_by_suffix tournament_leases_have_fencing_generations.sql)"
 launch_child_migration="$(migration_by_suffix tournament_launch_children_share_the_transition_lock.sql)"
 table_lease_migration="$(migration_by_suffix table_leases_and_hand_commits_have_generations.sql)"
+lease_heartbeat_migration="$(migration_by_suffix lease_heartbeats_skip_busy_generations.sql)"
 stage_a_request_migration="$(migration_by_suffix tournament_manager_requests_carry_lease_authority.sql)"
 seat_first_atomic_migration="$(migration_by_suffix seat_first_board_creation_is_one_transaction.sql)"
 post_commit_migration="$(migration_by_suffix post_commit_obligations_are_atomic_and_resumable.sql)"
@@ -43,6 +44,8 @@ stage_b_migration="$(optional_migration_by_suffix tournament_manager_request_fen
 if [[ "$stage_a_request_migration" > "$seat_first_atomic_migration" ]] ||
   [[ "$seat_first_atomic_migration" > "$post_commit_migration" ]] ||
   [[ "$post_commit_migration" > "$seat_first_retirement_migration" ]] ||
+  [[ "$table_lease_migration" > "$lease_heartbeat_migration" ]] ||
+  [[ -n "$stage_b_migration" && "$lease_heartbeat_migration" > "$stage_b_migration" ]] ||
   [[ -n "$stage_b_migration" && "$seat_first_retirement_migration" > "$stage_b_migration" ]]; then
   echo 'Migration order must be Stage A request authority, atomic seat-first creation, post-commit obligations, cutover-only seat-first repair retirement, then Stage B.' >&2
   exit 1
@@ -98,6 +101,10 @@ psql_cmd=("${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 -h "$socket_dir" -p "$port" -
   "$table_lease_migration" >/dev/null
 "${psql_cmd[@]}" -f \
   "$table_lease_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$lease_heartbeat_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$lease_heartbeat_migration" >/dev/null
 "${psql_cmd[@]}" -f \
   "$stage_a_request_migration" >/dev/null
 "${psql_cmd[@]}" -f \
@@ -159,11 +166,47 @@ if [[ -z "$stage_b_migration" ]]; then
   exit 0
 fi
 
-legacy_session_log="${probe_root}/legacy-capacity-session-a.log"
+# Commit the boundary table through the exact old PostgREST request shape
+# while its protocol-1 lease still exists. The former two-session version
+# mixed this rolling compatibility proof with the later Stage-B DDL lock proof,
+# even though Stage B now requires protocol-1 retirement before reaching that
+# lock. Keep the two independently truthful instead.
+"${psql_cmd[@]}" -c \
+  "BEGIN; SELECT set_config('request.headers','{}',true); SELECT set_config('request.jwt.claims','{\"role\":\"service_role\"}',true); SELECT set_config('request.method','POST',true); SELECT set_config('request.path','/tables',true); SET LOCAL ROLE service_role; SELECT smarter_private.fn_smarter_data_api_pre_request(); INSERT INTO public.tables(id,tournament_id,status,current_players,max_players) VALUES ('20000000-0000-4000-8000-000000000005','10000000-0000-4000-8000-000000000004','running',0,9); COMMIT;" \
+  >/dev/null
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT count(*) FROM public.tournament_table_origins o JOIN public.tournament_capacity_table_receipts c USING (table_id,tournament_id) JOIN public.tournament_manager_wakes w ON w.id=c.manager_wake_id WHERE o.table_id='20000000-0000-4000-8000-000000000005' AND o.origin_kind='capacity' AND w.reason='late_registration'")" != '1' ]]; then
+  echo 'The final Stage-A raw writer did not commit canonical capacity provenance.' >&2
+  exit 1
+fi
+
+# Stage B's precondition is stronger than the rolling Stage-A bridge: every
+# protocol-1 manager must drain and the timer-driven seat-first repair must be
+# retired before Stage B may reach its table-writer lock. Prove that cutover
+# boundary first. The Stage-A probe above has already proved the old raw-table
+# request and its canonical receipt as an actual service-role transaction.
+"${psql_cmd[@]}" -c \
+  "DELETE FROM public.engine_tournament_leases WHERE protocol_version=1;" \
+  >/dev/null
 "${psql_cmd[@]}" -f \
-  "$repo_dir/scripts/dev/probe-stage-a-legacy-capacity-session-a.sql" \
-  >"$legacy_session_log" 2>&1 &
-legacy_session_pid=$!
+  "$seat_first_retirement_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$seat_first_retirement_migration" >/dev/null
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NULL AND to_regprocedure('public.fn_repair_seat_first_games_before_maintenance_gate(integer)') IS NULL")" != 't' ]]; then
+  echo 'The cutover prerequisite left a timer-driven seat-first repair function installed.' >&2
+  exit 1
+fi
+
+# A concurrent table writer is the remaining state that can cross the strict
+# DDL boundary after protocol-1 has drained. Hold a genuine ROW EXCLUSIVE lock
+# before advertising readiness; Stage B must fail at its NOWAIT relation lock
+# and commit no partial catalog change.
+writer_session_log="${probe_root}/table-writer-session-a.log"
+"${psql_cmd[@]}" -c \
+  "BEGIN; UPDATE public.tables SET name='stage-b-writer-boundary' WHERE id='20000000-0000-4000-8000-000000000002'; SELECT pg_advisory_lock(9080430); SELECT pg_sleep(10); SELECT pg_advisory_unlock(9080430); COMMIT;" \
+  >"$writer_session_log" 2>&1 &
+writer_session_pid=$!
 
 legacy_ready='f'
 for _ in {1..80}; do
@@ -173,16 +216,16 @@ for _ in {1..80}; do
   sleep 0.05
 done
 if [[ "$legacy_ready" != 't' ]]; then
-  wait "$legacy_session_pid" || true
-  cat "$legacy_session_log" >&2
-  echo 'Legacy table writer did not reach the Stage-A cutover boundary.' >&2
+  wait "$writer_session_pid" || true
+  cat "$writer_session_log" >&2
+  echo 'Table writer did not reach the Stage-B cutover boundary.' >&2
   exit 1
 fi
 
 inflight_cutover_log="${probe_root}/inflight-legacy-cutover.log"
 if "${psql_cmd[@]}" -f "$stage_b_migration" \
   >"$inflight_cutover_log" 2>&1; then
-  echo 'Stage B crossed an in-flight legacy raw table writer.' >&2
+  echo 'Stage B crossed an in-flight table writer.' >&2
   exit 1
 fi
 if ! grep -Eq 'could not obtain lock on relation "(public\.)?tables"' \
@@ -197,13 +240,21 @@ if [[ "$("${psql_cmd[@]}" -Atc \
   exit 1
 fi
 
-wait "$legacy_session_pid"
-if [[ "$("${psql_cmd[@]}" -Atc \
-  "SELECT count(*) FROM public.tournament_table_origins o JOIN public.tournament_capacity_table_receipts c USING (table_id,tournament_id) JOIN public.tournament_manager_wakes w ON w.id=c.manager_wake_id WHERE o.table_id='20000000-0000-4000-8000-000000000005' AND o.origin_kind='capacity' AND w.reason='late_registration'")" != '1' ]]; then
-  cat "$legacy_session_log" >&2
-  echo 'In-flight Stage-A table did not commit canonical capacity provenance.' >&2
+if ! wait "$writer_session_pid"; then
+  cat "$writer_session_log" >&2
+  echo 'In-flight table writer failed before committing its transaction.' >&2
   exit 1
 fi
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT count(*) FROM public.tables WHERE id='20000000-0000-4000-8000-000000000002' AND name='stage-b-writer-boundary'")" != '1' ]]; then
+  cat "$writer_session_log" >&2
+  echo 'In-flight table writer did not commit after the refused cutover.' >&2
+  exit 1
+fi
+
+"${psql_cmd[@]}" -c \
+  "INSERT INTO public.engine_tournament_leases(tournament_id,instance_id,engine_version,heartbeat_at,lease_generation,protocol_version) VALUES ('10000000-0000-4000-8000-000000000004','pg17-legacy-boundary','old-engine',clock_timestamp(),'50000000-0000-4000-8000-000000000004',1);" \
+  >/dev/null
 
 live_protocol_one_log="${probe_root}/live-protocol-one-cutover.log"
 if "${psql_cmd[@]}" -f "$stage_b_migration" \
@@ -227,20 +278,6 @@ fi
 "${psql_cmd[@]}" -c \
   "DELETE FROM public.engine_tournament_leases WHERE protocol_version=1;" \
   >/dev/null
-
-# The production protocol-1 engine invokes this RPC. Retiring it during the
-# rolling Stage-A expand would turn the interval before the exact new engine
-# cutover into an error path. Once the protocol-1 lease is gone, run the
-# bounded final cleanup and remove both legacy doors before strict Stage B.
-"${psql_cmd[@]}" -f \
-  "$seat_first_retirement_migration" >/dev/null
-"${psql_cmd[@]}" -f \
-  "$seat_first_retirement_migration" >/dev/null
-if [[ "$("${psql_cmd[@]}" -Atc \
-  "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NULL AND to_regprocedure('public.fn_repair_seat_first_games_before_maintenance_gate(integer)') IS NULL")" != 't' ]]; then
-  echo 'The cutover left a timer-driven seat-first repair function installed.' >&2
-  exit 1
-fi
 
 # The post-commit migration has a full money-path rehearsal of its own. This
 # minimal authority fixture declares its exact 12-argument settlement and

@@ -34,7 +34,7 @@ BEGIN
 END;
 $authenticated_hook_execution$;
 
-/* Both are intentionally authenticated player RPCs as well as manager RPCs.
+/* All three are intentionally authenticated player RPCs as well as manager RPCs.
    Test the actual hook under the request role before any routine body runs. */
 SELECT set_config('request.method', 'POST', true);
 SELECT set_config('request.path', '/rpc/process_tournament_rebuy', true);
@@ -42,6 +42,10 @@ SET LOCAL ROLE authenticated;
 SELECT smarter_private.fn_smarter_data_api_pre_request();
 RESET ROLE;
 SELECT set_config('request.path', '/rest/v1/rpc/fn_decline_tournament_rebuy', true);
+SET LOCAL ROLE authenticated;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+SELECT set_config('request.path', '/rpc/fn_mystery_bounty_reveal', true);
 SET LOCAL ROLE authenticated;
 SELECT smarter_private.fn_smarter_data_api_pre_request();
 RESET ROLE;
@@ -93,6 +97,7 @@ DO $probe$
 DECLARE
   v_denied boolean;
   v_kind text;
+  v_route text;
   v_result jsonb;
 BEGIN
   FOREACH v_kind IN ARRAY ARRAY[
@@ -182,11 +187,49 @@ BEGIN
   UPDATE public.tournaments SET name = 'shared-estate-service'
    WHERE id = '10000000-0000-4000-8000-000000000002';
 
+  /* Shared player/manager routines are not a generic service back door.
+     Their unmarked authenticated shape is tested above; every service shape
+     except an exact manager lease must stop at the request boundary. */
+  FOREACH v_route IN ARRAY ARRAY[
+    'rpc/fn_decline_tournament_rebuy',
+    'rpc/fn_mystery_bounty_reveal',
+    'rpc/process_tournament_rebuy'
+  ]::text[] LOOP
+    v_denied := false;
+    PERFORM set_config('request.headers', '{}', true);
+    PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    PERFORM set_config('request.path', '/' || v_route, true);
+    BEGIN
+      PERFORM smarter_private.fn_smarter_data_api_pre_request();
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_denied := true;
+    END;
+    IF NOT v_denied THEN
+      RAISE EXCEPTION 'unmarked service entered shared player/manager route %', v_route;
+    END IF;
+
+    v_denied := false;
+    PERFORM set_config(
+      'request.headers',
+      '{"x-smarter-data-actor":"service","x-smarter-data-protocol":"1"}',
+      true
+    );
+    BEGIN
+      PERFORM smarter_private.fn_smarter_data_api_pre_request();
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_denied := true;
+    END;
+    IF NOT v_denied THEN
+      RAISE EXCEPTION 'generic service actor entered shared player/manager route %', v_route;
+    END IF;
+  END LOOP;
+
   /* The same unmarked credential cannot enter an engine-private exact lease
      route. This closes old/headerless engine binaries without rejecting
      unrelated World Hub or Club Arena work. Exercise the gateway-prefixed
      path shape as well as the direct PostgREST shape. */
   v_denied := false;
+  PERFORM set_config('request.headers', '{}', true);
   PERFORM set_config('request.path', '/rest/v1/rpc/claim_table_lease_v2', true);
   BEGIN
     PERFORM smarter_private.fn_smarter_data_api_pre_request();
@@ -251,6 +294,18 @@ BEGIN
   IF current_setting('app.smarter_manager_request_fenced', true) <> 'protocol-2' THEN
     RAISE EXCEPTION 'fresh exact manager did not acquire request proof';
   END IF;
+
+  FOREACH v_route IN ARRAY ARRAY[
+    'rpc/fn_decline_tournament_rebuy',
+    'rpc/fn_mystery_bounty_reveal',
+    'rpc/process_tournament_rebuy'
+  ]::text[] LOOP
+    PERFORM set_config('request.path', '/' || v_route, true);
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
+    IF current_setting('app.smarter_manager_request_fenced', true) <> 'protocol-2' THEN
+      RAISE EXCEPTION 'exact manager lost lease proof on shared route %', v_route;
+    END IF;
+  END LOOP;
 
   /* Use the relation path for the direct write transaction represented by
      this probe. */

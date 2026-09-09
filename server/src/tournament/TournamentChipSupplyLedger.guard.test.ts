@@ -235,11 +235,11 @@ describe('tournament chip supply is one immutable conserved ledger', () => {
     const issue = migration.indexOf("'rpc/fn_issue_tournament_launch_stacks'");
     const materialize = migration.indexOf("'rpc/fn_materialize_tournament_launch_seats'");
     const project = migration.indexOf("'rpc/fn_project_tournament_launch_seat_stacks'");
-    const servicePaths = migration.indexOf("'rpc/fn_decline_tournament_rebuy'", issue);
+    const nextManagerPath = migration.indexOf("'rpc/fn_eliminate_tournament_player_atomic'", issue);
     expect(issue).toBeGreaterThan(-1);
     expect(materialize).toBeGreaterThan(issue);
     expect(project).toBeGreaterThan(materialize);
-    expect(servicePaths).toBeGreaterThan(project);
+    expect(nextManagerPath).toBeGreaterThan(project);
     expect(migration).toContain('fn_assert_tournament_manager_write_scope(p_tournament_id)');
     expect(migration).toContain('v_current_generation IS DISTINCT FROM p_lease_generation');
     expect(migration).toContain("v_heartbeat_at < clock_timestamp() - interval '30 seconds'");

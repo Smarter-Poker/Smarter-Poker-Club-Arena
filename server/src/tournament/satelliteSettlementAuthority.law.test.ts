@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 const here = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = join(here, '..');
 const manager = readFileSync(join(here, 'TournamentManager.ts'), 'utf8');
+const settlementRpc = readFileSync(join(here, 'satelliteSettlementRpc.ts'), 'utf8');
 
 function runtimeTypeScriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -81,10 +82,11 @@ function satelliteSettlementMethod(): string {
 }
 
 describe('the database is the only satellite settlement planner', () => {
-  it('settles through exactly one atomic database RPC call site', () => {
-    expect(
-      satelliteSettlementMethod().match(/supabase\.rpc\('fn_settle_satellite_finish_atomic'/g)
-    ).toHaveLength(1);
+  it('delegates to exactly one receipt-verified atomic database RPC call site', () => {
+    const managerMethod = satelliteSettlementMethod();
+    expect(managerMethod.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+    expect(managerMethod).not.toContain('supabase.rpc(');
+    expect(settlementRpc.match(/supabase\.rpc\('fn_settle_satellite_tournament'/g)).toHaveLength(1);
   });
 
   it('does not import, re-export, or call the legacy plan from any runtime module', () => {

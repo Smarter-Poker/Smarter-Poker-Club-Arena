@@ -364,4 +364,27 @@ describe('Tournament details snapshot recovery', () => {
     await flush();
     expect(fixture.navigate).toHaveBeenCalledWith('/table/table-a');
   });
+  it('does not replay a patch received before the entry query over newer database rows', async () => {
+    rows('tournament_players', { data: [entry()], error: null });
+    render(<Page />);
+    await flush();
+    const header = deferred<any>();
+    fixture.getTournament.mockReturnValueOnce(header.promise);
+    act(() => update());
+    await flush();
+    act(() =>
+      fixture.channels[0].bindings
+        .find((b: any) => b.filter.table === 'tournament_players')
+        .callback({
+          eventType: 'UPDATE',
+          new: entry('entry-a', { chips: 600 }),
+        })
+    );
+    await flush();
+    rows('tournament_players', { data: [entry('entry-a', { chips: 700 })], error: null });
+    header.resolve(tournament());
+    await flush();
+    expect(snapshot().entries[0].chips).toBe(700);
+    expect(fixture.getTournament).toHaveBeenCalledTimes(2);
+  });
 });

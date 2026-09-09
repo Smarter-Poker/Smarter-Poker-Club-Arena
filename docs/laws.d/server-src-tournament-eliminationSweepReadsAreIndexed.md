@@ -1,3 +1,3 @@
 # server/src/tournament/eliminationSweepReadsAreIndexed.law.test.ts
 
-The elimination sweep reads through indexes, so it cannot degrade into a table scan as the field grows
+The elimination sweep consumes the transactionally mirrored tournament standings and contains no seat-to-standings reconciler, strike-based repair writer, or secondary post-hand chip sync

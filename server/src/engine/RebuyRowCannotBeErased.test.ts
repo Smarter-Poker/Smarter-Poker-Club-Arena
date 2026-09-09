@@ -6,7 +6,7 @@
  * wallet and writes a `table_pending_addons` row (kind 'rebuy') in the same
  * transaction, exactly like a mid-hand add-on, and only the engine's
  * `resolve_pending_addon` sweep puts the chips on the felt. That closes the
- * hole where `syncStacks` (an ABSOLUTE write from engine memory) overwrote a
+ * hole where the retired stack-only writer (an ABSOLUTE write from engine memory) overwrote a
  * relative DB credit that landed between loadSeatedPlayers and the next sync,
  * leaving the wallet debited and the felt empty.
  *
@@ -19,8 +19,8 @@
  *   2. the busted-seat stand-up keeps a seat that has a row;
  *   3. a sweep request that lands while a sweep is mid-read survives it
  *      (generation counter), so the row is delivered before the next deal and
- *      the first hand after the rebuy starts with the chips in memory - which
- *      is what syncStacks then persists.
+ *      the first hand after the rebuy starts with the chips in memory, which
+ *      the next accepted-hand transaction persists atomically with its history.
  *
  * And the negative: a bust with NO row still stands the player up after the
  * grace, and the pause runs its full course.
@@ -222,7 +222,7 @@ describe('a sweep request cannot be erased by a sweep already in flight', () => 
 });
 
 describe('the rebuy is on the felt for the first hand after it', () => {
-  it('delivers the row into the next deal, in memory, before syncStacks could persist a zero', async () => {
+  it('delivers the row into the next deal before the accepted-hand commit could persist a zero', async () => {
     const engine = bareEngine();
     const hero = {
       user_id: 'hero',
@@ -271,8 +271,8 @@ describe('the rebuy is on the felt for the first hand after it', () => {
     await engine.processPendingAddOns(engine.seatedPlayers);
 
     expect(resolved).toEqual(['row-rebuy']);
-    // The chips are in ENGINE MEMORY, so the next absolute syncStacks writes
-    // 200 rather than the 0 it would have written before the sweep.
+    // The chips are in ENGINE MEMORY, so the next accepted-hand transaction
+    // commits 200 rather than the 0 it would have seen before the sweep.
     expect(hero.stack).toBe(200);
     // ...and the seat is funded for the deal.
     const active = engine.seatedPlayers.filter((p: { stack: number }) => p.stack > 0);

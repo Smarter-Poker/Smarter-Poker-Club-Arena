@@ -50,13 +50,7 @@ export type MemberRole =
   | 'guest';
 
 export type MemberStatus =
-  | 'active'
-  | 'approved'
-  | 'pending'
-  | 'suspended'
-  | 'banned'
-  | 'rejected'
-  | 'left';
+  'active' | 'approved' | 'pending' | 'suspended' | 'banned' | 'rejected' | 'left';
 
 export interface ClubMembership {
   id: string;

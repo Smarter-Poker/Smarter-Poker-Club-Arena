@@ -24,7 +24,7 @@ function cards(text: string): Card[] {
 
 const BOARD = cards('Ks9d7c2h');
 
-/** Heads-up: dealer seat 2 bet 60 into a 100 pot (60% — bet_mid); hero faces it. */
+/** Heads-up: dealer seat 2 bet 50 into a 100 pot (50%, bet_small); hero faces it. */
 function state(hole: string) {
   const players = [
     {
@@ -40,7 +40,7 @@ function state(hole: string) {
       seat: 2,
       user_id: 'villain',
       stack: 8000,
-      bet: 60,
+      bet: 50,
       is_folded: false,
       is_sitting_out: false,
       cards: [],
@@ -49,9 +49,9 @@ function state(hole: string) {
   return {
     players,
     communityCards: BOARD,
-    pot: 160, // 100 before + villain's 60 = a 60%-pot bet, bucket bet_mid
-    currentBet: 60,
-    minRaise: 60,
+    pot: 150, // 100 before + villain's 50 = a 50%-pot bet, bucket bet_small
+    currentBet: 50,
+    minRaise: 50,
     stage: 'turn',
     gameVariant: 'nlh',
     // explicit: without it the legacy bb>=10 heuristic reads 100bb CASH as a
@@ -60,7 +60,7 @@ function state(hole: string) {
     bigBlind: 100,
     smallBlind: 50,
     dealerSeat: 2,
-    actionHistory: [{ stage: 'turn', seat: 2, userId: 'villain', action: 'bet', amount: 60 }],
+    actionHistory: [{ stage: 'turn', seat: 2, userId: 'villain', action: 'bet', amount: 50 }],
   };
 }
 
@@ -75,12 +75,12 @@ function stock() {
       texture_class: tex,
       facing: 'open',
       hand_matrix: {
-        KK: { bet_mid: 1.0 },
-        '99': { bet_mid: 1.0 },
-        '77': { bet_mid: 1.0 },
-        A5s: { bet_mid: 1.0 },
-        '54s': { bet_mid: 1.0 },
-        '65s': { bet_mid: 1.0 },
+        KK: { bet_small: 1.0 },
+        '99': { bet_small: 1.0 },
+        '77': { bet_small: 1.0 },
+        A5s: { bet_small: 1.0 },
+        '54s': { bet_small: 1.0 },
+        '65s': { bet_small: 1.0 },
       },
     } as never,
   ]);
@@ -101,7 +101,7 @@ beforeEach(() => {
 });
 
 describe('the consult is WIRED', () => {
-  it('air facing a 60%-pot turn bet folds from the solver range', () => {
+  it('air facing a 50%-pot turn bet folds from the solver range', () => {
     stock();
     let folds = 0;
     for (let i = 0; i < 30; i++) if (decide('3c4d').action === 'fold') folds++;

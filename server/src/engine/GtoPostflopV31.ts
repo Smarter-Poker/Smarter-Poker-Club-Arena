@@ -150,7 +150,18 @@ const RESPONSE_ROLES = new Set<GtoV31NodeRole>([
   'all_in',
 ]);
 const TEXTURE_CLASS = /^[ABML][mtr][pu][cd]$/;
-const HAND_KEY = /^[AKQJT98765432]{2}(s|o)?:[0-2]$/;
+const RANK_INDEX: Record<string, number> = Object.fromEntries(
+  [...'AKQJT98765432'].map((rank, index) => [rank, index])
+);
+
+function canonicalHandKey(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  const match = /^([AKQJT98765432])([AKQJT98765432])([so]?):([0-2])$/.exec(value);
+  if (!match) return false;
+  const [, first, second, suitedness] = match;
+  if (first === second) return suitedness === '';
+  return suitedness !== '' && RANK_INDEX[first] < RANK_INDEX[second];
+}
 
 const TABLE_POSITIONS: Record<number, ReadonlySet<string>> = {
   2: new Set(['SB', 'BB']),
@@ -402,7 +413,7 @@ function rowIsValid(
     return false;
   }
   for (const [handKey, mix] of hands) {
-    if (!HAND_KEY.test(handKey)) return false;
+    if (!canonicalHandKey(handKey)) return false;
     if (!mix || typeof mix !== 'object' || Array.isArray(mix)) return false;
     const entries = Object.entries(mix);
     if (
@@ -412,8 +423,14 @@ function rowIsValid(
     ) {
       return false;
     }
-    const values = entries.map(([, value]) => Number(value));
-    if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) return false;
+    const values = entries.map(([, value]) => value);
+    if (
+      values.some(
+        (value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1
+      )
+    ) {
+      return false;
+    }
     const sum = values.reduce((total, value) => total + value, 0);
     if (Math.abs(sum - 1) > 0.002) return false;
 

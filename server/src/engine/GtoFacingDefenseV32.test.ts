@@ -38,12 +38,14 @@ beforeEach(() => {
   _clearGtoPostflop();
 });
 
-describe('bet size buckets mirror fn_aggregate_gto_v31_next exactly', () => {
-  it('the aggregator edges: <60 small, <110 mid, else big', () => {
+describe('bet size buckets match the V30 compact store action domain', () => {
+  it('uses only unambiguous tails and refuses the size-lost middle band', () => {
     expect(betBucketForFraction(0.33)).toBe('bet_small');
     expect(betBucketForFraction(0.599)).toBe('bet_small');
-    expect(betBucketForFraction(0.6)).toBe('bet_mid');
-    expect(betBucketForFraction(1.099)).toBe('bet_mid');
+    expect(betBucketForFraction(0.6)).toBeNull();
+    expect(betBucketForFraction(0.999)).toBeNull();
+    expect(betBucketForFraction(1)).toBeNull();
+    expect(betBucketForFraction(1.099)).toBeNull();
     expect(betBucketForFraction(1.1)).toBe('bet_big');
     expect(betBucketForFraction(2.62)).toBe('bet_big');
   });
@@ -323,11 +325,11 @@ describe('gtoFacingDefense - the line itself', () => {
 });
 
 describe('the raw bet defines the RANGE, the effective call defines the PRICE', () => {
-  it('a three-pot jam into a short hero consults the OVERBET range, not mid', () => {
+  it('a three-pot jam into a short hero consults the OVERBET range, not small', () => {
     loadV30();
-    // Effective numbers alone: pot 160, toCall 60 -> frac 0.6 -> bet_mid,
-    // which this cell does not have. The RAW fraction says bet_big, which
-    // it does. Only the rawBetFraction path can answer here.
+    // Effective numbers alone: pot 160, toCall 60 -> frac 0.6 -> unknown.
+    // The RAW fraction says bet_big, which this cell has. Only the exact raw
+    // bet path can answer here.
     const withRaw = gtoFacingDefense({
       street: 'turn',
       family: 'cash',
@@ -352,6 +354,6 @@ describe('the raw bet defines the RANGE, the effective call defines the PRICE', 
       toCall: 60,
       rand: mulberry(11),
     });
-    expect(withoutRaw).toBeNull(); // frac 0.6 -> bet_mid -> no such range here
+    expect(withoutRaw).toBeNull(); // frac 0.6 -> intentionally unsupported
   });
 });

@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   planOrphanReseats,
+  planSeatlessReseats,
   describeUnmovableOrphans,
   isOpenTable,
   MAX_ORPHAN_RESEATS_PER_PASS,
+  SEATLESS_RESEAT_REASON,
   type OrphanSeatRow,
   type OrphanTableRow,
+  type SeatlessRosterRow,
 } from './orphanedSeatRepair.js';
 
 /**
@@ -148,5 +151,133 @@ describe('planOrphanReseats', () => {
     const seats = [seat('t2', 'p1', 1, '11481.50')];
 
     expect(planOrphanReseats(tables, seats)).toHaveLength(1);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A PLAYER WITH CHIPS AND NO CHAIR (2026-09-09)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Eight players across four running events were holding 673,500 chips with no
+ * live seat anywhere, one of them since 04:48 the previous morning. The
+ * conservation check could only say "Midday Free Buy drift -296,000", which
+ * is, to the chip, five of those players' stacks.
+ */
+const seatless = (
+  userId: string,
+  stack: number,
+  tableId = 'closed-1',
+  seatNumber = 4
+): SeatlessRosterRow => ({
+  user_id: userId,
+  last_table_id: tableId,
+  last_seat_number: seatNumber,
+  last_stack: stack,
+});
+
+describe('a player with chips and no chair is brought back to the felt', () => {
+  it('seats them, from the chair they left, on the open felt', () => {
+    const plans = planSeatlessReseats(
+      [open('t-open'), closed('closed-1')],
+      [{ table_id: 't-open', user_id: 'seated', seat_number: 1, stack: 500 }],
+      [seatless('stranded', 84000)]
+    );
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({
+      playerId: 'stranded',
+      fromTableId: 'closed-1',
+      fromSeat: 4,
+      toTableId: 't-open',
+      reason: SEATLESS_RESEAT_REASON,
+    });
+    // The lowest free chair, not the one somebody is sitting in.
+    expect(plans[0].toSeat).toBe(2);
+  });
+
+  it('never moves a player who holds a live seat after all', () => {
+    // The roster read and the seat read are not simultaneous. If they turn up
+    // in liveSeats, they are not stranded, whatever the caller believed.
+    const plans = planSeatlessReseats(
+      [open('t-open')],
+      [{ table_id: 't-open', user_id: 'stranded', seat_number: 3, stack: 84000 }],
+      [seatless('stranded', 84000)]
+    );
+    expect(plans).toEqual([]);
+  });
+
+  it('never seats a player who has no chips', () => {
+    // A zero stack is a busted player and the elimination path owns them.
+    // Re-seating one would put an empty chair back into the game.
+    expect(planSeatlessReseats([open('t-open')], [], [seatless('busted', 0)])).toEqual([]);
+    expect(
+      planSeatlessReseats([open('t-open')], [], [{ user_id: 'nostack', last_table_id: 'c' }])
+    ).toEqual([]);
+  });
+
+  it('plans nothing when there is no open table to seat them at', () => {
+    // liveTournamentTableRecovery puts felt back first; this never reopens one.
+    expect(planSeatlessReseats([closed('c1')], [], [seatless('stranded', 84000)])).toEqual([]);
+  });
+
+  it('plans nothing without a chair to read their stack from', () => {
+    expect(planSeatlessReseats([open('t-open')], [], [{ user_id: 'u', last_stack: 5000 }])).toEqual(
+      []
+    );
+  });
+
+  it('gives one player exactly one chair', () => {
+    // Two left rows for the same player must not become two live seats - the
+    // duplicate-seat failure executePlayerMoves earned mayTakeSeat for.
+    const plans = planSeatlessReseats(
+      [open('t-open')],
+      [],
+      [seatless('twice', 1000, 'closed-1', 2), seatless('twice', 900, 'closed-2', 7)]
+    );
+    expect(plans).toHaveLength(1);
+    expect(plans[0].playerId).toBe('twice');
+  });
+
+  it('seats the biggest stack first and honours the budget', () => {
+    const plans = planSeatlessReseats(
+      [open('t-open')],
+      [],
+      [seatless('small', 100), seatless('big', 90000), seatless('mid', 5000)],
+      2
+    );
+    expect(plans.map((p) => p.playerId)).toEqual(['big', 'mid']);
+  });
+
+  it('fills the emptiest open table first, deterministically', () => {
+    const plans = planSeatlessReseats(
+      [open('t-busy'), open('t-quiet')],
+      [
+        { table_id: 't-busy', user_id: 'a', seat_number: 1, stack: 1 },
+        { table_id: 't-busy', user_id: 'b', seat_number: 2, stack: 1 },
+        { table_id: 't-quiet', user_id: 'c', seat_number: 1, stack: 1 },
+      ],
+      [seatless('stranded', 84000)]
+    );
+    expect(plans[0].toTableId).toBe('t-quiet');
+    expect(plans[0].toSeat).toBe(2);
+  });
+
+  it('stops when every open table is full rather than overfilling one', () => {
+    const plans = planSeatlessReseats(
+      [open('t-open', 2)],
+      [
+        { table_id: 't-open', user_id: 'a', seat_number: 1, stack: 1 },
+        { table_id: 't-open', user_id: 'b', seat_number: 2, stack: 1 },
+      ],
+      [seatless('stranded', 84000)]
+    );
+    expect(plans).toEqual([]);
+  });
+
+  it('carries the one reason string executePlayerMoves keys its stack read on', () => {
+    // executePlayerMoves reads the source stack from a LIVE seat and aborts
+    // without one - correctly, for every other caller. This reason is what
+    // tells it to read the chair they left instead.
+    expect(SEATLESS_RESEAT_REASON).toBe('rostered_without_a_chair');
   });
 });

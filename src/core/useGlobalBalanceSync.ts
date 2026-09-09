@@ -22,7 +22,13 @@ export function useGlobalBalanceSync() {
   useEffect(() => {
     if (!user?.id) return;
 
+    let active = true;
+    let latestRead = 0;
+    const ownsAccount = () => active && useUserStore.getState().user?.id === user.id;
+
     const fetchTrueBalance = async () => {
+      if (!ownsAccount()) return;
+      const read = ++latestRead;
       try {
         /* A READ THAT NEVER HAPPENED IS NOT A BALANCE OF ZERO (2026-08-27).
            This used getPlayerBalance, whose own docstring says it "collapses
@@ -40,6 +46,9 @@ export function useGlobalBalanceSync() {
            network failure must not replace a good number with zeros on
            screen": on unknown we leave the last known good value in place. */
         const r = await WalletService.readPlayerBalance(user.id);
+        // A newer refresh or identity change retires this response. Check the
+        // store too: an account can change before React cleans up this effect.
+        if (!ownsAccount() || read !== latestRead) return;
         if (r.balance !== null) {
           useUserStore.getState().updateTotalChips(Number(r.balance));
         }
@@ -87,6 +96,7 @@ export function useGlobalBalanceSync() {
     );
 
     return () => {
+      active = false;
       unsubscribeLocal();
       unsubscribeReconnect();
     };

@@ -249,3 +249,19 @@
   color: rgba(255, 255, 255, 0.2);
   margin-top: 2px;
 }
+
+/* Available funds and game custody are distinct balances, never a total. */
+.diamond-wallet-modal__custody-balances dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin: 16px 0;
+  text-align: left;
+}
+.diamond-wallet-modal__custody-balances dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.35rem;
+  color: #00d4ff;
+}

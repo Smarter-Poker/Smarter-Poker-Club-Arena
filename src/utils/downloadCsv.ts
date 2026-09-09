@@ -1,8 +1,8 @@
 /**
- * CSV DOWNLOAD
+ * HANDING THE USER A FILE
  * ============================================================================
- * One definition of "hand the user a file", because three financial screens
- * had three copies of it and every copy shared the same two faults:
+ * One definition of it, because three financial screens had three copies and
+ * every copy shared the same two faults:
  *
  *   1. The anchor was never added to the document. Firefox will not act on a
  *      click for a detached element, so the tap did nothing at all.
@@ -37,12 +37,19 @@ export function toCsv(header: string[], rows: unknown[][]): string {
   );
 }
 
-export function downloadCsv(filename: string, csv: string): boolean {
+/**
+ * Hand the user any blob as a file. THE ONE implementation.
+ *
+ * Ten screens rolled their own `<a download>` between them (audited
+ * 2026-09-09), two of them behind a local function also called `downloadCsv`,
+ * which is why a grep for the helper looked clean. In the app every one of
+ * them produced nothing at all: a webview does not honour the download
+ * attribute, and there is no error to notice. Anything that hands the user a
+ * file goes through here, so the native branch is written once.
+ */
+export function downloadBlob(filename: string, blob: Blob): boolean {
   if (typeof document === 'undefined' || typeof URL?.createObjectURL !== 'function') return false;
 
-  // The BOM is what makes Excel read this as UTF-8 instead of guessing;
-  // club and player names are not all ASCII.
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   // THE APP (2026-09-08): a webview does not honour the download attribute,
   // so the file goes to the system share sheet (src/lib/native/share.ts).
   if (isNativePlatform()) {
@@ -64,4 +71,10 @@ export function downloadCsv(filename: string, csv: string): boolean {
   // Deferred, not synchronous: Safari may not have read the blob yet.
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
   return true;
+}
+
+export function downloadCsv(filename: string, csv: string): boolean {
+  // The BOM is what makes Excel read this as UTF-8 instead of guessing;
+  // club and player names are not all ASCII.
+  return downloadBlob(filename, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
 }

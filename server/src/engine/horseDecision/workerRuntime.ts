@@ -8,7 +8,7 @@ import { equityGovernor } from '../EquityLoadGovernor.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
 import { gtoPostflopCount } from '../GtoPostflop.js';
-import { gtoPostflopV31Count } from '../GtoPostflopV31.js';
+import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
 import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
 import {
   hydrateHorseMindFromDb,
@@ -83,6 +83,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),
         postflopV31: gtoPostflopV31Count(),
+        postflopV31Dataset: gtoPostflopV31Dataset(),
       },
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
@@ -117,6 +118,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),
         postflopV31: gtoPostflopV31Count(),
+        postflopV31Dataset: gtoPostflopV31Dataset(),
       },
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
@@ -154,6 +156,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       charts: gtoChartCount(),
       postflop: gtoPostflopCount(),
       postflopV31: gtoPostflopV31Count(),
+      postflopV31Dataset: gtoPostflopV31Dataset(),
     },
     solverPolicyArtifact: solverPolicyArtifactStatus(),
     governor: equityGovernor.snapshot(),

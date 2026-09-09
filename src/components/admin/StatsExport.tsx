@@ -27,6 +27,7 @@ import './StatsExport.css';
 import { clubGamesOrFilter } from '../../utils/unionScope';
 import { fetchAllRows } from '../../utils/fetchAllRows';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
+import { downloadBlob } from '../../utils/downloadCsv';
 
 interface StatsExportProps {
   clubId?: string;
@@ -247,21 +248,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const convertToCSV = (data: any[]) => toCSV(data);
 
   const downloadFile = (content: string, filename: string, mimeType: string) => {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    // Anchor must be in the document for the click to count in some browsers,
-    // and revoking the URL synchronously can cancel the download before it
-    // starts — release it on the next tick instead.
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 0);
+    downloadBlob(filename, new Blob([content], { type: mimeType }));
   };
 
   if (!isOpen) return null;

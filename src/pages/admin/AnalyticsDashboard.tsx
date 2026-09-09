@@ -6,6 +6,7 @@ import './AnalyticsDashboard.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
+import { downloadCsv } from '../../utils/downloadCsv';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -347,12 +348,10 @@ export default function AnalyticsDashboard() {
       vipHeader +
       vipRows;
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `club-analytics-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    downloadCsv(
+      `club-analytics-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvContent
+    );
   }, [positionStats, vipLedger, timeRange]);
 
   // ── Computed values ─────────────────────────────────────────────────────

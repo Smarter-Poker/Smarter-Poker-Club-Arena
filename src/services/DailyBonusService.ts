@@ -5,8 +5,13 @@
  *
  * Two RPCs, both server-authoritative (docs/DAILY-CLUB-ARENA-BONUS.md):
  *
- *   fn_ca_daily_bonus_status()            what today offers and what is claimed
- *   fn_ca_daily_bonus_claim(slot, req)    pay one tile, exactly once
+ *   fn_ca_daily_bonus_status()                 what today offers and what is claimed
+ *   fn_ca_daily_bonus_claim(slot, req, day)    pay one tile, exactly once
+ *
+ * The claim names the day the sheet showed (`p_bonus_date`). A tap that lands
+ * after Chicago midnight is refused with `day_rolled_over` and the sheet
+ * re-reads, rather than the server paying slot N of a day the player never
+ * saw (20260909203926).
  *
  * The client never sends an amount and never credits anything itself. A tile
  * pays diamonds through award_diamonds_v2 or a consumable credit in
@@ -68,6 +73,8 @@ export interface DailyBonusWeekDay {
   streak: number;
   diamonds: number | null;
   extras: string | null;
+  /** Today's entry on a chest day (streak 14, 30): the strip shows the chest, not the cycle row. */
+  chest?: boolean;
   state: 'done' | 'today' | 'upcoming';
 }
 
@@ -117,6 +124,9 @@ export interface DailyBonusClaimResult {
   reason?: string;
   idempotent?: boolean;
   slot?: number;
+  /** The Chicago day the claim was paid on (success) or the server's today (day_rolled_over). */
+  bonus_date?: string;
+  today?: string;
   granted?: DailyBonusGranted;
   revealed?: { kind: DailyBonusTileKind; diamonds: number; quantity: number } | null;
   streak?: number;
@@ -139,7 +149,13 @@ export const CLAIM_REASON_TEXT: Record<string, string> = {
   fixture: 'Not Available On This Account',
   horse: 'Not Available On This Account',
   unauthenticated: 'Sign In To Claim',
+  no_profile: 'Sign In To Claim',
   request_id_required: 'Could Not Claim, Try Again',
+  day_rolled_over: 'A New Day Has Started, Here Is Today’s Sheet',
+  invalid_amount: 'Nothing To Pay On This Tile',
+  award_refused: 'Could Not Claim, Try Again',
+  empty_response: 'Could Not Claim, Try Again',
+  transport: 'Could Not Claim, Try Again',
 };
 
 export function claimReasonText(reason: string | undefined): string {
@@ -196,6 +212,9 @@ class DailyBonusServiceClass {
     }
     return {
       ...status,
+      eligible: status.eligible === true,
+      unclaimed: Number(status.unclaimed) || 0,
+      seconds_to_reset: Math.max(0, Number(status.seconds_to_reset) || 0),
       tiles: Array.isArray(status.tiles) ? status.tiles : [],
       week: Array.isArray(status.week) ? status.week : [],
       tomorrow: Array.isArray(status.tomorrow) ? status.tomorrow : [],
@@ -212,6 +231,7 @@ class DailyBonusServiceClass {
     const { data, error } = await supabase.rpc('fn_ca_daily_bonus_claim', {
       p_slot: slot,
       p_request_id: requestId,
+      p_bonus_date: today,
     });
     if (error) {
       reportError(error, 'DailyBonusService.claim.fn_ca_daily_bonus_claim', { slot });
@@ -220,11 +240,19 @@ class DailyBonusServiceClass {
     const result = (data ?? { success: false, reason: 'empty_response' }) as DailyBonusClaimResult;
     if (result.success && result.granted) {
       // The header and wallet re-read their balances; the amount comes from
-      // the ledger, never from here.
+      // the ledger, never from here. When the ledger reported the balance it
+      // left behind, the header can paint it now rather than after a re-read.
       masterBus.emit('BALANCE_UPDATED', {
         source: result.granted.kind === 'diamonds' ? 'daily_bonus_diamonds' : 'daily_bonus_credit',
         slot,
       });
+      if (result.granted.kind === 'diamonds' && typeof result.granted.balance_after === 'number') {
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: result.granted.balance_after,
+          delta: result.granted.diamonds,
+          source: 'daily_bonus',
+        });
+      }
       masterBus.emit('DAILY_REWARD_CLAIMED', {
         amount:
           result.granted.kind === 'diamonds' ? result.granted.diamonds : result.granted.quantity,

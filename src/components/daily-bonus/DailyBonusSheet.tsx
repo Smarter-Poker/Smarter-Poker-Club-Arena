@@ -279,6 +279,10 @@ export default function DailyBonusSheet({
             ? `Claimed +${g.diamonds} Diamonds (${diamondsToCentsLabel(g.diamonds)})`
             : `Claimed ×${g.quantity} ${KIND_TITLE[g.kind]}`
         );
+      } else if (outcome.result.reason === 'day_rolled_over') {
+        // Midnight passed under the sheet; the hook has re-read today's tiles.
+        triggerHaptic('light');
+        toast.info(outcome.refusal);
       } else {
         triggerHaptic('error');
         toast.error(outcome.refusal);
@@ -357,8 +361,13 @@ export default function DailyBonusSheet({
 
         <ol className="dbs__week" aria-label="This Week">
           {status.week.map((d) => (
-            <li key={d.day} className="dbs__day dbs-plaque" data-state={d.state}>
-              <span className="dbs-plaque__label">Day {d.day}</span>
+            <li
+              key={d.day}
+              className="dbs__day dbs-plaque"
+              data-state={d.state}
+              data-chest={d.chest || undefined}
+            >
+              <span className="dbs-plaque__label">{d.chest ? 'Chest' : `Day ${d.day}`}</span>
               <span className="dbs-plaque__well">
                 <span className="dbs-plaque__value">
                   {d.diamonds != null ? `+${d.diamonds}` : ''}

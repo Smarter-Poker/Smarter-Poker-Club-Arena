@@ -59,6 +59,16 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
     expect(barrier).toContain('post_commit_stack_refresh_failed');
     expect(barrier).not.toMatch(/attempt\s*[<>]=?\s*\d+[^\n]*break/);
     expect(barrier).not.toContain('void processHandPostCommitObligations');
+    /* 2026-09-08: the envelope resolves the frozen add-ons silently (the RPC
+       returns a count). What it did is announced from HERE - the bubble, the
+       private adjustment frame, the cap-cache rebuild - after the stack
+       refresh, with the receipt's own count. Delete this call and every
+       other suite stays green while the announcement is dead on production;
+       that is the defect this pin exists for. */
+    expect(barrier).toContain('outcome.pending_addons');
+    expect(barrier).toContain(
+      'await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players, resolvedAddOnCount)'
+    );
   });
 
   it('never applies a protocol-2 pending add-on through the legacy engine path', () => {

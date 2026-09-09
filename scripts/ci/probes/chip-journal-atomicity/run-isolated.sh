@@ -32,3 +32,6 @@ python3 "$probe_dir/test_satellite_split.py"
 
 "$PGNODE" "$probe_dir/postgres-runtime/lease-heartbeat-concurrency.mjs"
 "$PGNODE" "$probe_dir/postgres-runtime/maintenance-expired-owner.mjs"
+
+# The prepared cutover must preserve authenticated rebuy/decline routes.
+PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-player-request-routes.py"

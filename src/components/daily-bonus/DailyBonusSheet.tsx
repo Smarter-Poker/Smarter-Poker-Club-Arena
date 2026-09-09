@@ -35,7 +35,11 @@ import { ThrowableImage } from '../table/ThrowableImage';
 import { triggerHaptic } from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { mediaUrl } from '../../utils/mediaBase';
-import { diamondsToCentsLabel, type DailyBonusTile } from '../../services/DailyBonusService';
+import {
+  dailyBonusService,
+  diamondsToCentsLabel,
+  type DailyBonusTile,
+} from '../../services/DailyBonusService';
 import { formatCountdown, useDailyBonus } from './useDailyBonus';
 import './DailyBonusSheet.css';
 
@@ -224,6 +228,17 @@ export default function DailyBonusSheet({
     };
   }, []);
 
+  // The sheet is in front of the player: today is spent, on every device.
+  // Once per day per mount; the server keeps the first mark.
+  const shownFor = useRef<string | null>(null);
+  const statusToday = status?.eligible ? status.today : null;
+  const statusShown = status?.shown_today ?? true;
+  useEffect(() => {
+    if (!statusToday || statusShown || shownFor.current === statusToday) return;
+    shownFor.current = statusToday;
+    void dailyBonusService.markShown();
+  }, [statusToday, statusShown]);
+
   // Modal chrome: lock scroll, focus the close control, Escape closes.
   useEffect(() => {
     if (mode !== 'modal' || !open) return;
@@ -279,6 +294,10 @@ export default function DailyBonusSheet({
             ? `Claimed +${g.diamonds} Diamonds (${diamondsToCentsLabel(g.diamonds)})`
             : `Claimed ×${g.quantity} ${KIND_TITLE[g.kind]}`
         );
+      } else if (outcome.result.reason === 'day_rolled_over') {
+        // Midnight passed under the sheet; the hook has re-read today's tiles.
+        triggerHaptic('light');
+        toast.info(outcome.refusal);
       } else {
         triggerHaptic('error');
         toast.error(outcome.refusal);
@@ -357,8 +376,13 @@ export default function DailyBonusSheet({
 
         <ol className="dbs__week" aria-label="This Week">
           {status.week.map((d) => (
-            <li key={d.day} className="dbs__day dbs-plaque" data-state={d.state}>
-              <span className="dbs-plaque__label">Day {d.day}</span>
+            <li
+              key={d.day}
+              className="dbs__day dbs-plaque"
+              data-state={d.state}
+              data-chest={d.chest || undefined}
+            >
+              <span className="dbs-plaque__label">{d.chest ? 'Chest' : `Day ${d.day}`}</span>
               <span className="dbs-plaque__well">
                 <span className="dbs-plaque__value">
                   {d.diamonds != null ? `+${d.diamonds}` : ''}

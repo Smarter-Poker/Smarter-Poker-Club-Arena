@@ -8,7 +8,7 @@ Final poker consent, evaluator-card selection, cash-button and published-rule co
 
 ## 2026-09-09: Poker Consent, Card Selection And Published Rules
 
-RIT decisions require offer participation and remain final; events carry the stored run count and evaluator-selected winning cards. Omaha subsets retain exact two-plus-three selection. Cash button prediction/dealing agree through newcomers and heads-up transitions. Rules show all live variants, limits, low qualifiers and the cash blind convention. Re-read: yes. Both TypeScript projects pass; focused rules, money, privacy, independent evaluator and display tests pass. No database migration or financial repair. See docs/audits/2026-09-09-phase2-final-boundaries.md for coverage and pending ordinary release gates.
+RIT decisions require offer participation and remain final; events carry the stored run count and evaluator-selected winning cards. Omaha subsets retain exact two-plus-three selection. Cash button prediction/dealing agree through newcomers and heads-up transitions. Rules show all live variants, limits, low qualifiers and the cash blind convention. Re-read: yes. Both TypeScript projects pass; focused rules, money, privacy, independent evaluator and display tests pass. No database migration or financial repair. See docs/audits/2026-09-09-phase2-final-boundaries.md for coverage and completed ordinary release gates.
 
 ## 2026-09-09: Pot-Limit Sizing Includes Full Preflop Blinds
 

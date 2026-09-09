@@ -1,6 +1,6 @@
 # Phase 2: Final Rules And Consent Boundaries
 
-Status: local corrections and final build verified; published as PR #3934. Required CI, merge and production adoption pending. Club Arena only. Other phases and external certification are not closed by this report.
+Status: Phase 2 Of 12 Is Done for the defined internal poker-rules scope. Final corrections are merged, required CI passed, deployed source matches, and the engine completed its normal maintenance resume. Other phases and external certification are not closed by this report.
 
 ## Confirmed Corrections
 

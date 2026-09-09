@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
+  events: {} as Record<string, () => void>,
   balance: vi.fn(),
   history: vi.fn(),
   user: { id: 'wallet-owner' },
@@ -12,7 +13,16 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: mocks.user }),
 }));
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({ useMasterBusSubscription: vi.fn() }));
-vi.mock('../../src/core/MasterBus', () => ({ masterBus: { subscribe: () => () => {} } }));
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: {
+    subscribe: (event: string, callback: () => void) => {
+      mocks.events[event] = callback;
+      return () => {
+        delete mocks.events[event];
+      };
+    },
+  },
+}));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -29,6 +39,13 @@ beforeEach(() => {
   mocks.history.mockResolvedValue({ data: [], error: null });
 });
 describe('wallet custody integration', () => {
+  it('refreshes an incoming transfer from profile updates without an old balance', async () => {
+    render(<DiamondWalletModal isOpen onClose={() => {}} />);
+    await screen.findByText('125');
+    mocks.balance.mockResolvedValueOnce({ available: 150, inPlay: 75 });
+    await act(async () => mocks.events.PROFILE_UPDATED());
+    expect(await screen.findByText('150')).toBeTruthy();
+  });
   it('shows spendable and held funds separately alongside the history', async () => {
     render(<DiamondWalletModal isOpen onClose={() => {}} />);
     await screen.findByText('125');

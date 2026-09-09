@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/tournaments-stopped-starting. Applied to production inside the 20:55 break on 2026-09-09 as 20260909205508 / 20260909205646 / 20260909205854: the two composite foreign keys table_seats -> tables became triggers so PostgREST sees ONE relationship again and every hint-less embed between the two tables works.",
+  "functions": [
+    "trg_seat_parent_keys_match",
+    "trg_table_parent_keys_guard",
+    "trg_table_scope_cascade"
+  ]
+}

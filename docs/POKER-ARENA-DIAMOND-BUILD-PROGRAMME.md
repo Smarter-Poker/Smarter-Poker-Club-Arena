@@ -8,7 +8,7 @@ Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is mon
 
 ## Execution Update, September 9, 2026
 
-Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 remains open until its remaining repairs, running-engine adoption and live regression checks pass. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
+Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
 
 ## Approved Product Contract
 
@@ -177,27 +177,31 @@ Exit: access and wrong-asset integration tests pass, merged frontend and server 
 
 ### Phase 3 Of 12: Diamond Custody, Ledger And Reconciliation
 
-- [ ] Select dedicated diamond custody records; retire dependence on chip_balance.
-- [ ] Implement atomic reserve/release and entry/seat contracts using proven Club Arena semantics.
-- [ ] Enforce nonnegative amounts, valid denominations and request-bound idempotency.
-- [ ] Inventory/forward-migrate any old arena balances without erasing history.
-- [ ] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
-- [ ] Preserve provenance, purchased-lot/debt treatment and audit identities.
-- [ ] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
+- [x] Select dedicated diamond custody records; retire dependence on chip_balance.
+- [x] Implement atomic reserve/release and entry/seat contracts using proven Club Arena semantics.
+- [x] Enforce nonnegative amounts, valid denominations and request-bound idempotency.
+- [x] Inventory/forward-migrate any old arena balances without erasing history.
+- [x] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
+- [x] Preserve provenance, purchased-lot/debt treatment and audit identities.
+- [x] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
 
 Exit: concurrent/replayed/failure-path movements conserve diamonds and produce zero chip effects.
 
+Runtime adoption verified September 9 at 21:05 UTC: healthy engine 561eaa52 contains final repair 4c385b09; both frontend origins serve descendant b30e1b85. See docs/audits/2026-09-08-diamond-phase-3-custody.md for exact ancestry and reused acceptance evidence.
+
 ### Phase 4 Of 12: Wallet And Player-To-Player Transfers
 
-- [ ] Inspect current platform transfer route, UI and database status; reconcile earlier retirement.
-- [ ] Reuse current wallet components/services where compatible; restore one atomic transfer path if absent.
-- [ ] Verify recipient identity, confirmation, server-side eligibility and existing policy.
-- [ ] Show available and in-play diamonds separately, with no chip conversion action.
-- [ ] Make transfer UI accessible while seated and while browsing.
-- [ ] Verify both-party ledger/balance updates and retry behavior.
-- [ ] Test transfer versus buy-in, store spend and other outgoing transfer races.
+- [x] Inspect current platform transfer route, UI and database status; reconcile earlier retirement.
+- [x] Reuse current wallet components/services where compatible; restore one atomic transfer path if absent.
+- [x] Verify recipient identity, confirmation, server-side eligibility and existing policy.
+- [x] Show available and in-play diamonds separately, with no chip conversion action.
+- [x] Make transfer UI accessible while seated and while browsing.
+- [x] Verify both-party ledger/balance updates and retry behavior.
+- [x] Test transfer versus buy-in, store spend and other outgoing transfer races.
 
 Exit: authorized test users can transfer available diamonds once; reserved game funds remain untouched.
+
+Release and acceptance verified September 9, 2026: Club Arena 70fd31cf, World Hub f278b167 plus evidence 27235a03, and applied migration 20260909200327. See docs/changelog/2026-09-09-wallet-transfers-commit-together.md for exact source, CI, SQL, publication and authenticated review evidence. Production acceptance did not submit a real-player transfer.
 
 ### Phase 5 Of 12: Poker Arena Shell And Diamond Skin
 
@@ -322,4 +326,4 @@ The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTI
 
 ## Immediate Next Batch
 
-Phase 2: expand current access and currency call chains, implement the player-only Diamond entitlement/policy boundary, and keep private chip-club membership enforcement intact. The inherited member-wallet funding functions are inspection/retirement targets. No new Diamond table opens until the proper diamond-only money path has been implemented and verified.
+Phase 5: implement the approved Poker Arena shell and Diamond selection using the shared Club Arena application and original approved artwork. Preserve active tables and private chip-club membership rules. Phase 4 wallet/transfer acceptance is verified; public funded Diamond games remain subject to later gameplay and accounting release gates.

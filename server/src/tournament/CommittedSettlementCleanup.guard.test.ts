@@ -406,7 +406,13 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
 
   it('gates a normal finish before claiming or attempting atomic settlement', () => {
     const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
-    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen()) return;');
+    // The entry gate is still first and still refuses; on 2026-09-09 it stopped
+    // being a BARE return. It now logs and re-arms the sweep, because the break
+    // holds the platform five minutes an hour and a decided event that is
+    // dropped inside one has no hands left to trigger another attempt
+    // (CLAUDE.md 13 rule 4 - a deadline is thawed, not burned). What this pin
+    // guards is the ORDER, which is unchanged.
+    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen())');
     const claim = finish.indexOf('claimTournamentFinish(');
     const atomic = finish.indexOf('settleTournamentPlacesAtomically(');
     const lastFreeze = finish.lastIndexOf('if (isMaintenanceFrozen())');

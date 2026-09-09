@@ -2,6 +2,14 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Phase 2 Release And Resume Verified
+
+Final poker consent, evaluator-card selection, cash-button and published-rule corrections merged in #3934. Required CI passed; engine release 34320141403 shipped df5e82a6 after 8044 passing server tests. Matching engine health/database heartbeat, both frontend stamps, all nine source blobs and normal maintenance resume are recorded in docs/audits/2026-09-09-phase2-release-status.json. The 18 Phase 2 controls are internally reconciled. Database skips, unrelated production E2E failures and unavailable external certification remain explicit. Re-read: yes. Documentation-only closeout; no new runtime or financial change.
+
+## 2026-09-09: Poker Consent, Card Selection And Published Rules
+
+RIT decisions require offer participation and remain final; events carry the stored run count and evaluator-selected winning cards. Omaha subsets retain exact two-plus-three selection. Cash button prediction/dealing agree through newcomers and heads-up transitions. Rules show all live variants, limits, low qualifiers and the cash blind convention. Re-read: yes. Both TypeScript projects pass; focused rules, money, privacy, independent evaluator and display tests pass. No database migration or financial repair. See docs/audits/2026-09-09-phase2-final-boundaries.md for coverage and completed ordinary release gates.
+
 ## 2026-09-09: Pot-Limit Sizing Includes Full Preflop Blinds
 
 A short blind reduced the preflop ceiling in both engine and client. Shared wagering math now includes the normal blind shortfall until the flop. Real pot accounting, eligibility and pot odds still use actual chips. Snapshots, HTTP actions, tile bounds and the POT preset agree on the maximum.

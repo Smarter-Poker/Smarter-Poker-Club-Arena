@@ -1086,20 +1086,26 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -x /usr/lib/postgresql/17/bin/initdb ]]; then exit 0; fi
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-common curl ca-certificates
-          if ! apt-cache show postgresql-17 >/dev/null 2>&1; then
-            sudo install -d /usr/share/postgresql-common/pgdg
-            sudo curl --fail --silent --show-error --location \
-              --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-              https://www.postgresql.org/media/keys/ACCC4CF8.asc
-            pg_ci_codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
-            printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
-              "$pg_ci_codename" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
-            sudo apt-get update
-          fi
+          # The hosted image also configures Chrome and Microsoft repositories.
+          # An unrelated Chrome index hash mismatch blocked this accounting job.
+          # Limit this installation to signed Ubuntu and PostgreSQL sources.
+          pg_ci_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_ci_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_ci_sources/ubuntu.sources"
+          pg_ci_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_ci_sources")
+          sudo apt-get "${pg_ci_apt[@]}" update
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          pg_ci_codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
+          sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get install -y --no-install-recommends postgresql-17
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin

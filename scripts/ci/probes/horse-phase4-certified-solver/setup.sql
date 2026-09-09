@@ -9,7 +9,37 @@ $roles$;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT 'service_role'::text $$;
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid $$;
-CREATE OR REPLACE FUNCTION public.fn_training_canonical_jsonb_text_v1(p jsonb) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT p::text $$;
+CREATE OR REPLACE FUNCTION public.fn_training_canonical_jsonb_text_v1(p_value jsonb)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE STRICT
+SET search_path TO 'pg_catalog'
+AS $function$
+DECLARE
+  v_result text;
+BEGIN
+  CASE jsonb_typeof(p_value)
+    WHEN 'object' THEN
+      SELECT '{' || coalesce(string_agg(
+        to_jsonb(entry.key)::text || ':'
+          || public.fn_training_canonical_jsonb_text_v1(entry.value),
+        ',' ORDER BY entry.key COLLATE "C"
+      ), '') || '}'
+      INTO v_result
+      FROM jsonb_each(p_value) AS entry;
+    WHEN 'array' THEN
+      SELECT '[' || coalesce(string_agg(
+        public.fn_training_canonical_jsonb_text_v1(entry.value),
+        ',' ORDER BY entry.ordinality
+      ), '') || ']'
+      INTO v_result
+      FROM jsonb_array_elements(p_value) WITH ORDINALITY AS entry(value, ordinality);
+    ELSE
+      v_result := p_value::text;
+  END CASE;
+  RETURN v_result;
+END;
+$function$;
 CREATE OR REPLACE FUNCTION public.fn_gto_texture_class(p_board text)
 RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE ranks int[]:='{}'; suits text[]:='{}'; i int; r int; hi int:=0; high text; sk text; paired bool; conn bool:=false; distinct_r int[];

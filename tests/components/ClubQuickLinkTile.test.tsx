@@ -10,7 +10,7 @@
 // the casing of copy makes these fail on a styling rule rather than on the
 // behaviour they exist to protect. The words are the contract.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const authState = vi.hoisted(() => ({ userId: 'test-user-123' }));
@@ -170,7 +170,8 @@ describe('ClubQuickLinkTile', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
     expect(screen.getByRole('menuitem', { name: /Balance Unavailable/i })).toBeInTheDocument();
     const retry = screen.getByRole('button', { name: /Retry/i });
-    expect(retry).toHaveFocus();
+    // Finding the committed button does not flush its passive focus effect.
+    await waitFor(() => expect(retry).toHaveFocus());
     await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();

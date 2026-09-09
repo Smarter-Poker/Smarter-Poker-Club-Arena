@@ -287,6 +287,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return { success: false, error: 'No RIT state found' };
     }
 
+    // Only participants in this offer can decide how their pot runs. Once
+    // consent is final, late requests must not publish a different decision.
+    if (!state.allPlayerIds.includes(userId)) {
+      return { success: false, error: 'Player is not part of this Run It Twice offer' };
+    }
+    if (state.status !== 'offered') {
+      return { success: false, error: 'Run It Twice decision is already final' };
+    }
+
     /**
      * ── THE CHOOSER CANNOT "ACCEPT" (2026-08-27) ─────────────────────────
      *
@@ -341,7 +350,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         type: 'rit_chooser_decided',
         table_id: this.tableId,
         chooserPlayerId: userId,
-        chosenRuns: runs,
+        chosenRuns: state.chosenRuns,
         waitingFor: state.allPlayerIds.filter((pid) => !state.acceptedBy.has(pid)),
         accepted_ids: [...state.acceptedBy],
         deadline_ts: this.ritOfferDeadlineTs,
@@ -2157,7 +2166,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         const key = `${a.board ?? 1}|${a.userId}|${low ? 'lo' : 'hi'}`;
         const existing = byRunWinner.get(key);
         if (existing) {
-          existing.amount += a.amount;
+          // To the cent, as the single-board sibling does
+          // (HandController, currentHandWinners): this accumulator is
+          // written verbatim into hand_history.winners_by_board (jsonb,
+          // no scale).
+          existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
         } else {
           byRunWinner.set(key, {
             board: a.board ?? 1,
@@ -2284,6 +2297,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         amount: a.amount,
         low: a.low === true,
         hand_name: a.hand?.name ?? null,
+        cards: a.hand?.cards ?? [],
       })),
       // What is actually paid out across every run, after rake and drops.
       // The felt's per-board share labels divide THIS, not the gross pot.

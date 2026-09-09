@@ -217,16 +217,16 @@ describe('V34 realization: the solver defence needs more than raw pot odds', () 
     _clearGtoPostflop();
     _clearGtoPostflopV31();
     const tex = textureClass(BOARD)!;
-    // The bettor bets mid with everything: a pure range, so hero's equity
+    // The bettor bets small with everything: a pure range, so hero's equity
     // against it is hero's equity against random-ish holdings.
     const matrix: Record<string, Record<string, number>> = {};
     const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
     for (let i = 0; i < ranks.length; i++) {
       for (let j = i; j < ranks.length; j++) {
-        if (i === j) matrix[ranks[j] + ranks[i]] = { bet_mid: 1 };
+        if (i === j) matrix[ranks[j] + ranks[i]] = { bet_small: 1 };
         else {
-          matrix[ranks[j] + ranks[i] + 's'] = { bet_mid: 1 };
-          matrix[ranks[j] + ranks[i] + 'o'] = { bet_mid: 1 };
+          matrix[ranks[j] + ranks[i] + 's'] = { bet_small: 1 };
+          matrix[ranks[j] + ranks[i] + 'o'] = { bet_small: 1 };
         }
       }
     }
@@ -255,7 +255,7 @@ describe('V34 realization: the solver defence needs more than raw pot odds', () 
       stackBB: 80,
       board: BOARD,
       heroCards: cards('6h5h'),
-      betFraction: 0.75,
+      betFraction: 0.5,
     });
     expect(r).not.toBeNull();
   });
@@ -268,8 +268,8 @@ describe('V34 realization: the solver defence needs more than raw pot odds', () 
       stackBB: 80,
       board: BOARD,
       heroCards: cards('6h5h'),
-      pot: 175,
-      toCall: 75,
+      pot: 150,
+      toCall: 50,
     };
     const raw = gtoFacingDefense({ ...base, rand: prng(7), realization: 1 });
     const oop = gtoFacingDefense({ ...base, rand: prng(7), realization: 0.75 });
@@ -277,14 +277,14 @@ describe('V34 realization: the solver defence needs more than raw pot odds', () 
     const icm = gtoFacingDefense({ ...base, rand: prng(7), realization: 1, riskPremium: 0.06 });
     expect(raw && oop && raked && icm).toBeTruthy();
     expect(icm!.required).toBeCloseTo(raw!.required + 0.06, 6);
-    expect(raw!.potOdds).toBeCloseTo(75 / 250, 6);
+    expect(raw!.potOdds).toBeCloseTo(50 / 200, 6);
     expect(raw!.required).toBeCloseTo(raw!.potOdds, 6);
     expect(oop!.required).toBeCloseTo(raw!.potOdds / 0.75, 6);
     expect(raked!.required).toBeGreaterThan(raw!.required);
   });
 
   it('a hand that clears raw pot odds but not realized odds now folds', () => {
-    // 75 into 175 is a 3-to-1 price: 30% raw. Hero's weak holding sits in
+    // 50 into 150 is a 3-to-1 price: 25% raw. Hero's weak holding sits in
     // the band that realization is meant to move.
     const base = {
       street: 'flop' as const,
@@ -292,10 +292,10 @@ describe('V34 realization: the solver defence needs more than raw pot odds', () 
       bettorPosition: 'SB',
       stackBB: 80,
       board: BOARD,
-      pot: 175,
-      toCall: 75,
+      pot: 150,
+      toCall: 50,
     };
-    // Find a holding whose equity lands between 0.30 and 0.40 vs the range.
+    // Find a holding whose equity lands between 0.25 and 0.334 vs the range.
     let found = false;
     for (const hole of ['4h3h', '6h5h', '8s6s', 'Jd2d', 'Qs3s', '5d4c', 'Td8d', 'Js8s']) {
       const d = gtoFacingDefense({
@@ -305,7 +305,7 @@ describe('V34 realization: the solver defence needs more than raw pot odds', () 
         realization: 1,
       });
       if (!d || d.action === 'pass_strong') continue;
-      if (d.equity >= 0.3 && d.equity < 0.4) {
+      if (d.equity >= 0.25 && d.equity < 1 / 3) {
         const oop = gtoFacingDefense({
           ...base,
           heroCards: cards(hole),
@@ -343,8 +343,8 @@ describe('V34 a solver call with a draw still lets the semi-bluff raise roll', (
         user_id: 'villain',
         username: 'villain',
         stack: 8000,
-        bet: 300,
-        totalInvested: 550,
+        bet: 250,
+        totalInvested: 500,
         is_folded: false,
         is_all_in: false,
         is_sitting_out: false,
@@ -356,9 +356,9 @@ describe('V34 a solver call with a draw still lets the semi-bluff raise roll', (
       gs: {
         players,
         communityCards: BOARD,
-        pot: 800,
-        currentBet: 300,
-        minRaise: 300,
+        pot: 750,
+        currentBet: 250,
+        minRaise: 250,
         stage: 'flop',
         gameVariant: 'nlh',
         gameMode: 'cash',
@@ -375,7 +375,7 @@ describe('V34 a solver call with a draw still lets the semi-bluff raise roll', (
           },
           { stage: 'preflop', seat: 1, userId: 'hero', action: 'call', amount: 150, timestamp: 2 },
           { stage: 'flop', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 3 },
-          { stage: 'flop', seat: 2, userId: 'villain', action: 'bet', amount: 300, timestamp: 4 },
+          { stage: 'flop', seat: 2, userId: 'villain', action: 'bet', amount: 250, timestamp: 4 },
         ],
       },
     };
@@ -389,10 +389,10 @@ describe('V34 a solver call with a draw still lets the semi-bluff raise roll', (
     const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
     for (let i = 0; i < ranks.length; i++)
       for (let j = i; j < ranks.length; j++) {
-        if (i === j) matrix[ranks[j] + ranks[i]] = { bet_mid: 1 };
+        if (i === j) matrix[ranks[j] + ranks[i]] = { bet_small: 1 };
         else {
-          matrix[ranks[j] + ranks[i] + 's'] = { bet_mid: 1 };
-          matrix[ranks[j] + ranks[i] + 'o'] = { bet_mid: 1 };
+          matrix[ranks[j] + ranks[i] + 's'] = { bet_small: 1 };
+          matrix[ranks[j] + ranks[i] + 'o'] = { bet_small: 1 };
         }
       }
     setGtoPostflop([

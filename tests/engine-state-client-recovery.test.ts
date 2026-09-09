@@ -1320,3 +1320,55 @@ describe('foreground channel liveness probe', () => {
     expect(c.getStatus()).toBe('idle');
   });
 });
+
+describe('a superseded table cannot return through browser wake', () => {
+  it.each(['online', 'pageshow', 'visibilitychange'])(
+    '%s keeps the current owner',
+    async (event) => {
+      localStorage.removeItem('ca_ws_mux');
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      const first = client(),
+        second = client();
+      try {
+        await first.c.connect();
+        const ws = live();
+        ws._open();
+        ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        await second.c.connect();
+        await flush();
+        expect(first.statuses[first.statuses.length - 1]).toBe('idle');
+        expect(second.statuses[second.statuses.length - 1]).toBe('connected');
+        const before = ws.sent.filter((raw) => JSON.parse(raw).type === 'SUBSCRIBE').length;
+        (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+        await flush();
+        expect(first.statuses[first.statuses.length - 1]).toBe('idle');
+        expect(second.statuses[second.statuses.length - 1]).toBe('connected');
+        expect(ws.sent.filter((raw) => JSON.parse(raw).type === 'SUBSCRIBE')).toHaveLength(before);
+      } finally {
+        first.c.disconnect();
+        second.c.disconnect();
+      }
+    }
+  );
+});
+
+it('drops an event queued by the superseded owner before it can reach the page', async () => {
+  localStorage.removeItem('ca_ws_mux');
+  const oldEvent = vi.fn();
+  const first = client({ onEvent: oldEvent }),
+    second = client();
+  try {
+    await first.c.connect();
+    const ws = live();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    ws._frame({ type: 'EVENT', tableId: TABLE, seq: 1, payload: { type: 'HAND_STARTED' } });
+    await second.c.connect();
+    await flush();
+    expect(oldEvent).not.toHaveBeenCalled();
+    expect(second.statuses[second.statuses.length - 1]).toBe('connected');
+  } finally {
+    first.c.disconnect();
+    second.c.disconnect();
+  }
+});

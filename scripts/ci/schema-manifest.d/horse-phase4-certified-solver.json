@@ -17,6 +17,8 @@
   "functions": [
     "fn_gto_v31_json_checksum",
     "fn_gto_v31_source_artifact_checksum",
+    "fn_gto_v31_input_bundle_checksum",
+    "fn_gto_v31_input_bundle_id",
     "ca_gto_v31_approve_input_bundle",
     "ca_gto_v31_revoke_input_bundle",
     "fn_gto_v31_node_checksum",

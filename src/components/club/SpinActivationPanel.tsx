@@ -22,7 +22,7 @@
  *      rather than leaving the owner to wonder whether it ever will.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   spinActivationApi,
   requiredSeedForStake,
@@ -108,10 +108,37 @@ export default function SpinActivationPanel({ clubId }: Props) {
    */
   const canAct = routeCanManage === true;
 
+  /* ONE KEY PER ACTIVATION, HELD ACROSS RETRIES (2026-09-09). Activation
+     seeds the spin pool out of a real wallet; the key used to be minted
+     inside the transport on every request, so a committed activation whose
+     response was lost seeded the pool AGAIN on the next press. Keyed on what
+     is being bought (the seed and the ceiling), so a genuinely different
+     activation gets its own key. Retired on success. */
+  const activateKeyRef = useRef<{ seed: number; stake: number; key: string } | null>(null);
+  const deactivateKeyRef = useRef<string | null>(null);
+
   const activate = async () => {
     setBusy(true);
     try {
-      await spinActivationApi.activate(clubId, stillNeeded, maxStake, wallet);
+      if (
+        !activateKeyRef.current ||
+        activateKeyRef.current.seed !== stillNeeded ||
+        activateKeyRef.current.stake !== maxStake
+      ) {
+        activateKeyRef.current = {
+          seed: stillNeeded,
+          stake: maxStake,
+          key: crypto.randomUUID(),
+        };
+      }
+      await spinActivationApi.activate(
+        clubId,
+        stillNeeded,
+        maxStake,
+        wallet,
+        activateKeyRef.current.key
+      );
+      activateKeyRef.current = null;
       toast.success(`Spins Activated With A Seed Of ${chips(stillNeeded)} Chips`);
       await load();
     } catch (err) {
@@ -124,7 +151,9 @@ export default function SpinActivationPanel({ clubId }: Props) {
   const deactivate = async () => {
     setBusy(true);
     try {
-      const response = await spinActivationApi.deactivate(clubId);
+      if (!deactivateKeyRef.current) deactivateKeyRef.current = crypto.randomUUID();
+      const response = await spinActivationApi.deactivate(clubId, deactivateKeyRef.current);
+      deactivateKeyRef.current = null;
       const returned = Number(response.result.seed_returned ?? 0);
       toast.success(
         returned > 0

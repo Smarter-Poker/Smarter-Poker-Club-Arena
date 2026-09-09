@@ -93,9 +93,15 @@ export function horseRebuyOperationId(tableId: string, userId: string, handNumbe
   ].join('-');
 }
 
-/** The flat sizing both call sites used before this module existed. */
+/** The flat sizing both call sites used before this module existed.
+ *
+ *  TO THE CENT (2026-09-09). `bb * 100` is a float product for some blinds,
+ *  and `autoRebuyHorse` REFUSES a non-2dp amount - so the horse's rebuy
+ *  silently never happened on those tables while a human's did. Horses are
+ *  players (10.5); a fail-closed money guard must not fall unevenly. */
 export function legacyRebuyAmount(bigBlind: number): number {
-  return bigBlind > 0 ? bigBlind * 100 : 200;
+  const raw = bigBlind > 0 ? bigBlind * 100 : 200;
+  return Math.round(raw * 100) / 100;
 }
 
 /** Is this horse done reloading, on temperament alone? Cheap and synchronous. */

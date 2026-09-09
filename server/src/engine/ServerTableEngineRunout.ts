@@ -2166,7 +2166,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         const key = `${a.board ?? 1}|${a.userId}|${low ? 'lo' : 'hi'}`;
         const existing = byRunWinner.get(key);
         if (existing) {
-          existing.amount += a.amount;
+          // To the cent, as the single-board sibling does
+          // (HandController, currentHandWinners): this accumulator is
+          // written verbatim into hand_history.winners_by_board (jsonb,
+          // no scale).
+          existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
         } else {
           byRunWinner.set(key, {
             board: a.board ?? 1,

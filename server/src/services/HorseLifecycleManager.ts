@@ -99,8 +99,13 @@ export class HorseLifecycleManager {
     const generation = ++this.lifecycleGeneration;
     console.log(`[Lifecycle] Starting monitoring (interval: ${MONITORING_INTERVAL}ms)`);
 
-    // Initial check
-    this.launchMaintenanceCycle(generation);
+    /* Initial check - BEHIND THE SAME FREEZE GATE as the recurring one
+       (2026-09-09). The engine boots inside the :55 break more often than
+       not (the deploy cuts over during it), and this first pass stands
+       horses up and reaps seats: exactly what "EVERYTHING JUST FREEZES,
+       THEN PICKS BACK UP EXACTLY AS IT WAS" forbids. The interval below has
+       carried the gate since 2026-09-01; the boot call never did. */
+    if (!isMaintenanceFrozen()) this.launchMaintenanceCycle(generation);
 
     // Recurring checks
     // 2026-08-15: async setInterval callbacks with no overlap guard stack up
@@ -585,8 +590,26 @@ export class HorseLifecycleManager {
             .maybeSingle();
           if (recentHand) continue;
 
-          // FIX 208: Use direct atomicCashout instead of RPC
-          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
+          /* FIX 208: Use direct atomicCashout instead of RPC.
+             AND A FAILED CASH-OUT IS REPORTED (2026-09-09). Without
+             `onFailed`, `atomicCashout` THROWS - straight into the bare
+             `catch {}` below - so a stale seat whose chips could not be
+             returned produced no reportError, no metric and no financial
+             alert, and `cleaned` still counted it. That is chips left on a
+             felt nobody is watching, invisible. The callback exists for
+             precisely this; every other caller passes one. */
+          let cashedOut = true;
+          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number, {
+            onFailed: (message) => {
+              cashedOut = false;
+              reportError(
+                new Error(`stale-seat cashout refused: ${message}`),
+                'HorseLifecycleManager.stale_seat_cashout_failed',
+                { userId: seat.user_id, tableId: seat.table_id, seatNumber: seat.seat_number }
+              );
+            },
+          });
+          if (!cashedOut) continue;
           cleaned++;
 
           // If horse, reset to available
@@ -605,8 +628,14 @@ export class HorseLifecycleManager {
               joinedAt: seat.joined_at,
             });
           }
-        } catch {
-          // Skip individual errors
+        } catch (err) {
+          /* One seat's failure must not stop the sweep - but it is no longer
+             silent either. A bare `catch {}` here is how the cash-out above
+             lost its only failure signal. */
+          reportError(err, 'HorseLifecycleManager.stale_seat_cleanup_failed', {
+            userId: seat.user_id,
+            tableId: seat.table_id,
+          });
         }
       }
 

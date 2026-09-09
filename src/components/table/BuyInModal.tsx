@@ -131,9 +131,19 @@ export function BuyInModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, minBuyIn, maxBuyIn, recovery?.amount]);
 
-  // Clamp buy-in to valid range
+  /* Clamp buy-in to valid range, TO THE CENT (2026-09-09).
+     `CashBuyInRecovery.validIntent` refuses any amount where
+     `Math.round(x*100)/100 !== x`, and TablePage surfaces that refusal as
+     "Unable To Start Your Buy-In. Please Try Again." The 33%/66% presets
+     below are `min + (max - min) * 0.33`, which on ordinary stakes is a
+     float artifact (min 40 / max 137.50 -> 72.17500000000001), so pressing
+     the 66BB button could not seat the player at all, repeatably. Rounding
+     here covers the presets, the slider and the typed value in one place -
+     which is what the comment beside the bust rebuy already claimed was
+     true of this component. */
   const clampedBuyIn = useMemo(() => {
-    return recovery?.amount ?? Math.max(effectiveMinBuyIn, Math.min(maxBuyIn, buyInAmount));
+    const raw = recovery?.amount ?? Math.max(effectiveMinBuyIn, Math.min(maxBuyIn, buyInAmount));
+    return Math.round(raw * 100) / 100;
   }, [buyInAmount, effectiveMinBuyIn, maxBuyIn, recovery?.amount]);
 
   // Calculate slider percentage

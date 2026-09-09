@@ -598,12 +598,22 @@
       "executed": "Stage-A legacy and canonical authority and capacity receipts",
       "not_executed": "Stage-B cutover-only retirement, because that migration is absent"
     },
-    "production_database_activity": "read_only_catalog_and_operational_metadata"
+    "production_database_activity": "read_only_catalog_and_operational_metadata",
+    "resumed_after_merge": {
+      "main_commit": "7dd926c9d87a67371b33df63ecc0f65c199288bc",
+      "tests_passed": 1384,
+      "files_passed": 130,
+      "server_typescript_exit": 0,
+      "server_build_exit": 0,
+      "new_code_stub_markers": []
+    }
   },
   "publication": {
-    "status": "blocked_pending_explicit_phase3_authorization",
+    "status": "explicitly_authorized_local_verification_passed",
     "source_pushed": false,
-    "reason": "Automatic approval review rejected the Phase 3 cherry-pick and push because explicit publication authorization covered Phase 2 only."
+    "authorization": "User explicitly authorized pushing and publishing Phase 3 changes to Smarter-Poker/Smarter-Poker-Club-Arena in this chat.",
+    "recovered_local_commit": "165ec0ce03012ce8b3f548b4b6895a415e73f4a9",
+    "reconnection_verified_date_utc": "2026-09-09"
   },
   "open_source_findings": [
     {

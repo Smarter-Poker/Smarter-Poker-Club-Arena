@@ -1,8 +1,8 @@
 {
   "phase": 2,
   "of": 12,
-  "status": "blocked_on_publication_approval",
-  "observed_at": "2026-09-09T03:46:06.968882+00:00",
+  "status": "complete_for_defined_phase2_scope",
+  "observed_at": "2026-09-09T07:00:58.751085+00:00",
   "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
   "branch": "agent/codex-poker-audit-sep09/fix/phase-two-consent-and-rules",
   "verified_code_commit": "0e57f979775c2664680f09cfcc3c3eb54d1f7c4a",
@@ -41,10 +41,12 @@
     "action": "Normal SSH branch push to existing Club Arena GitHub repository",
     "attempts": 2,
     "reason": "Automatic approval review requires explicit user authorization for the private-source payload and repository destination. Verified canonical remote and documented route were not accepted as sufficient authorization.",
-    "push_completed": false,
-    "final_pr_created": false,
-    "final_ci_verified": false,
-    "final_deployment_verified": false
+    "push_completed": true,
+    "final_pr_created": true,
+    "final_ci_verified": true,
+    "final_deployment_verified": true,
+    "resolved": true,
+    "resolution": "User explicitly authorized pushing and publishing Phase 2 changes to Smarter-Poker/Smarter-Poker-Club-Arena; normal SSH branch push succeeded."
   },
   "prior_release_adoption": {
     "observedAt": "2026-09-09T03:40:42.737674+00:00",
@@ -104,11 +106,366 @@
     }
   },
   "external_certification": "No external RNG/evaluator/fairness certificate located. No external certification claim.",
-  "remaining_gates": [
-    "Explicit publication authorization",
-    "Normal push and PR gates",
-    "Required CI and automated merge",
-    "Frontend origin/rewrite and engine adoption verification",
-    "Phase 2 completion evidence after actual rollout"
+  "remaining_gates": [],
+  "publication": {
+    "pr": 3934,
+    "url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3934",
+    "pushed_head": "43cdd6c09d5c12e0fbad1bf82286bc168705cd8f",
+    "prepush_tests_passed": 4406,
+    "prepush_tests_skipped": 18,
+    "verified_implementation_blobs_preserved": true,
+    "local_main_merge_commit": "b2073f2a730f28d3e04975052b7316308a67c64f",
+    "merged_at": "2026-09-09T05:51:22Z",
+    "merge_commit": "993798a5052879b34e198001558344800ab064af",
+    "evidence_pr": 3941,
+    "evidence_merge_commit": "5c0e2de8acf1cdf01c17b7df4e991cb1abd45582"
+  },
+  "required_ci": {
+    "run_id": 34316226342,
+    "conclusion": "success",
+    "source_head": "43cdd6c09d5c12e0fbad1bf82286bc168705cd8f",
+    "server_tests": {
+      "job_id": 102352923629,
+      "passed": 8023,
+      "passed_files": 600,
+      "skipped": 18,
+      "skipped_files": 1
+    },
+    "client_tests": {
+      "passed": 17382,
+      "passed_files": 1254,
+      "shards": [
+        {
+          "job_id": 102352923592,
+          "passed": 5286,
+          "files": 314
+        },
+        {
+          "job_id": 102352923609,
+          "passed": 4069,
+          "files": 313
+        },
+        {
+          "job_id": 102352923646,
+          "passed": 3878,
+          "files": 313
+        },
+        {
+          "job_id": 102352923657,
+          "passed": 4149,
+          "files": 314
+        }
+      ]
+    },
+    "typescript": "passed",
+    "production_build": "passed",
+    "source_windows_structural": "passed",
+    "stub_gate": "passed",
+    "css_beat_e2e": {
+      "job_id": 102352923571,
+      "passed_by_command": [150, 13, 3]
+    },
+    "live_production_e2e": "skipped",
+    "post_deploy_verification": "skipped"
+  },
+  "frontend_first_final_adoption": {
+    "observed_at": "2026-09-09T05:59:37Z",
+    "origin_and_rewrite_sha": "993798a5052879b34e198001558344800ab064af",
+    "built_at": "2026-09-09T05:57:05Z",
+    "publisher_run_id": 34316791738
+  },
+  "deferred_engine_attempt": {
+    "run_id": 34315869301,
+    "target_sha": "e658bea440f6c6dfd2f28bd54cea7311c3844a6c",
+    "workflow_conclusion": "success",
+    "shipped": false,
+    "reason": "Maintenance readyForRestart never opened during the allowed wait; green workflow did not mean a release."
+  },
+  "live_browser_check": {
+    "result": "redirected_to_sign_in",
+    "authenticated_gameplay_executed": false,
+    "detail": "Public Club Arena route redirected to the secure login page. No authenticated production rules-modal or gameplay check was performed."
+  },
+  "separate_production_e2e": {
+    "run_id": 34318954548,
+    "job_id": 102361676623,
+    "conclusion": "failure",
+    "not_claimed_as_phase2_pass": true,
+    "reported_executed": 292,
+    "reported_failed": 9,
+    "reported_skipped": 2,
+    "known_failures": [
+      "The then-running engine 5a620865 did not match the newer expected release",
+      "The fixture club exposed no occupied running cash table for a read-only observation",
+      "Profile readiness timed out in customization and daily-mission flows",
+      "Club advertisement dots failed the 44px touch-target check",
+      "Authenticated Cashier certification failed"
+    ],
+    "boundary": "These observations remain unresolved in the relevant later phases. Required Phase 2 CI results are recorded separately. No global production E2E pass is claimed."
+  },
+  "final_engine_deployment": {
+    "run_id": 34320141403,
+    "job_id": 102364736782,
+    "target_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+    "workflow_conclusion": "success",
+    "shipped": true,
+    "tests": {
+      "passed": 8044,
+      "passed_files": 603,
+      "skipped": 18,
+      "skipped_files": 1
+    },
+    "container_healthy_at": "2026-09-09T06:56:21Z",
+    "engine_database_version_proof_at": "2026-09-09T06:56:23Z",
+    "deployment_recorded_at": "2026-09-09T06:56:28Z",
+    "previous_version": "5a620865",
+    "new_version": "df5e82a6",
+    "normal_resume": "verified"
+  },
+  "final_adoption": {
+    "observed_at": "2026-09-09T07:00:58.751085+00:00",
+    "engine": {
+      "liveness": "ok",
+      "status": "ok",
+      "version": "df5e82a6",
+      "running": true,
+      "uptime": 306,
+      "activeTables": 332,
+      "activeTournaments": 100,
+      "dealableTableCount": 148,
+      "handsInFlightTotal": 148,
+      "stalledTableCount": 0,
+      "blockedSettlementCount": 0,
+      "settlementStatus": "ok",
+      "full_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+      "maintenance": {
+        "active": false,
+        "phase": "idle",
+        "breakEndsAt": null,
+        "remainingMs": 0,
+        "unparkedTables": 0,
+        "readyForRestart": false,
+        "reason": "Scheduled Engine Maintenance",
+        "resumeWaves": {
+          "total": 8,
+          "done": 8,
+          "startedAt": 1788937207636,
+          "finishedAt": 1788937218136,
+          "tables": 332,
+          "tablesResumed": 332,
+          "gapMs": 1500
+        },
+        "dbClockSkewMs": -45
+      }
+    },
+    "origin": {
+      "ca_sha": "53b0284585d5f254f472ec99fae142aaa8f36e28",
+      "built_at": "2026-09-09T06:56:58Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34321218856"
+    },
+    "rewrite": {
+      "ca_sha": "53b0284585d5f254f472ec99fae142aaa8f36e28",
+      "built_at": "2026-09-09T06:56:58Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34321218856"
+    },
+    "source_blobs": {
+      "server/src/engine/PokerEngine.ts": {
+        "deployed_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+        "blob": "baaa30910c64d908a6cf1e75b824b6f3901b2be3",
+        "matches_verified_source": true
+      },
+      "server/src/engine/RunItTwiceEngine.ts": {
+        "deployed_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+        "blob": "ffc1ca36d84738fe8cfa410e43652978f1a6abfc",
+        "matches_verified_source": true
+      },
+      "server/src/engine/ServerTableEngineBase.ts": {
+        "deployed_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+        "blob": "16faeb5b2d618873d38c80b25e05c02ee1eda87d",
+        "matches_verified_source": true
+      },
+      "server/src/engine/ServerTableEngineDealing.ts": {
+        "deployed_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+        "blob": "b9b960fa0ba7577eefe25eab570ccbcd3cfec6e6",
+        "matches_verified_source": true
+      },
+      "server/src/engine/ServerTableEngineRunout.ts": {
+        "deployed_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042",
+        "blob": "a4ee9f7111c4d4359c643f582138e65872ac32fe",
+        "matches_verified_source": true
+      },
+      "src/components/table/GameRulesModal.tsx": {
+        "deployed_sha": "53b0284585d5f254f472ec99fae142aaa8f36e28",
+        "blob": "1556874d6c46657072bb869d731ce75fda09a70a",
+        "matches_verified_source": true
+      },
+      "src/components/table/RunItTwice.tsx": {
+        "deployed_sha": "53b0284585d5f254f472ec99fae142aaa8f36e28",
+        "blob": "c3fe33299e631e5bd7f8a50421dba65fb976f9e1",
+        "matches_verified_source": true
+      },
+      "src/pages/TablePage.tsx": {
+        "deployed_sha": "53b0284585d5f254f472ec99fae142aaa8f36e28",
+        "blob": "481700d23fea48631633a709321e8c714b891597",
+        "matches_verified_source": true
+      },
+      "src/utils/ritAwardHighlights.ts": {
+        "deployed_sha": "53b0284585d5f254f472ec99fae142aaa8f36e28",
+        "blob": "5962c135a43a5809b516a2b12579738ba8f01840",
+        "matches_verified_source": true
+      }
+    },
+    "phase2_merge_is_ancestor_of_all_deployed_versions": true
+  },
+  "final_database_evidence": {
+    "database_started_at": "2026-09-09 05:59:39.501337+00",
+    "deploy_attempts": [
+      {
+        "at": "2026-09-09T06:56:28.50428+00:00",
+        "reason": "deployed and verified serving this commit",
+        "run_id": "34320141403",
+        "shipped": true,
+        "target_sha": "df5e82a68b90c91bd31bc5ed5a2e3e7253ada042"
+      },
+      {
+        "at": "2026-09-09T05:10:31.397047+00:00",
+        "reason": "coalesced or already serving this commit",
+        "run_id": "34313758822",
+        "shipped": false,
+        "target_sha": "5a62086589933c7c2d56f7e07acfb1f4c93f695f"
+      },
+      {
+        "at": "2026-09-09T04:56:39.593044+00:00",
+        "reason": "deployed and verified serving this commit",
+        "run_id": "34311919485",
+        "shipped": true,
+        "target_sha": "5a62086589933c7c2d56f7e07acfb1f4c93f695f"
+      }
+    ],
+    "latest_thaw": {
+      "freeze_started_at": "2026-09-09T06:55:00.001+00:00",
+      "frozen_seconds": 300,
+      "thawed_at": "2026-09-09T07:00:00.067797+00:00"
+    },
+    "leader": {
+      "acquired_at": "2026-09-09T06:55:51.076105+00:00",
+      "engine_version": "df5e82a6",
+      "heartbeat_at": "2026-09-09T07:01:01.223089+00:00"
+    },
+    "observed_at": "2026-09-09 07:01:08.803927+00"
+  },
+  "evidence_branch": "agent/codex-poker-audit-sep09/docs/phase-two-verified-release",
+  "scope_boundary": "Internal poker-rule, fairness, privacy and release verification for the 18 Phase 2 controls. No external certificate or all-platform production E2E pass is claimed.",
+  "phase2_control_reconciliation": [
+    {
+      "id": "W08",
+      "requirement": "Handle partial antes/blinds without negative stacks or lost pot eligibility. Test several differently short stacks together.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C01",
+      "requirement": "Validate legal actions and acting player on the server with hand/action versions. Reject stale, duplicated and out-of-turn actions.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C02",
+      "requirement": "Certify Holdem and each Omaha hand evaluator against an independent oracle, including exactly two Omaha hole cards.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C03",
+      "requirement": "Certify minimum raises, cumulative short-all-in reopening and unacted players. Cover no-limit, pot-limit and fixed-limit separately.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C04",
+      "requirement": "Compute pot-limit maximum from the pot, outstanding bets and call. Compare server acceptance with displayed maximum.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C05",
+      "requirement": "Return unmatched bets before rake and award calculations. Uncalled chips never become contributed rake or a side pot.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C06",
+      "requirement": "Construct main/side pots from contribution caps, retaining folded dead money but excluding folded players from winning.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C07",
+      "requirement": "Apply exact tie/odd-chip rules independently to each pot. Test three-way ties, fractional splits and heads-up transitions.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C08",
+      "requirement": "Define show/muck order and winning-hand display. All shown best-five cards must match the evaluator and hand record.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C09",
+      "requirement": "Apply the correct dealer/blind convention after departures and heads-up transition. Verify it is the published cash rule.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "C10",
+      "requirement": "Separate showdown evaluation from payout presentation. A cancelled browser animation cannot cancel or repeat a financial award.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "G01",
+      "requirement": "Protect deck entropy, RNG state and unrevealed cards from clients, observers, staff tools and logs. Test recipient-level payloads.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "G02",
+      "requirement": "Validate shuffle uniformity and unpredictability with appropriate independent testing. Never use predictable game-outcome randomness.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "BX01",
+      "requirement": "Hand fixture A100, B250, C400 folded, D500 creates pots 400/450/300 and a 100 uncalled return; if A wins then B, awards are A400/B450/D300 before deductions.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "BX03",
+      "requirement": "Test short all-ins below, at and above reopening thresholds separately for previously acted and unacted seats.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "BX04",
+      "requirement": "Run multiple boards with several side pots and indivisible units: fixed eligibility, deterministic residuals and exact contribution conservation.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "BX05",
+      "requirement": "Late RIT consent cannot change the run count after any additional card is disclosed.",
+      "status": "verified_within_defined_phase2_scope",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    },
+    {
+      "id": "CX11",
+      "requirement": "Map test/certification evidence to exact deployed RNG, evaluator, payout, platform and client versions; fairness-affecting changes receive required external review where applicable.",
+      "status": "internal_release_traceability_verified_external_certificate_not_located",
+      "evidence": "docs/audits/2026-09-09-phase2-final-boundaries.md"
+    }
   ]
 }

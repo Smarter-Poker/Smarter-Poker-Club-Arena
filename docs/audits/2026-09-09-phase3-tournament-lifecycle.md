@@ -28,7 +28,7 @@ The existing `scripts/dev/probe-tournament-manager-fencing-pg17.sh` completed wi
 
 ## Publication Boundary
 
-Both Phase 3 corrections are prepared locally. Automatic approval review rejected cherry-picking and pushing Phase 3 source because the user's explicit publication authorization covered Phase 2 only. No Phase 3 source was pushed. Phase 3 publication requires explicit authorization; local implementation and verification remain reviewable.
+The user explicitly authorized pushing and publishing Phase 3 changes to Smarter-Poker/Smarter-Poker-Club-Arena in this audit chat. This supersedes the earlier automatic approval rejection, which applied when only Phase 2 publication was authorized. The Mac connection was restored on 2026-09-09, and all three saved Phase 3 commits were recovered intact. Both corrections were reconciled with main at 7dd926c9d87a67371b33df63ecc0f65c199288bc. Refreshed tournament, maintenance and engine-pause verification passed 1384 tests in 130 files; server TypeScript and build exited 0. The production diff and all changed tests were reread; no new TODO, FIXME, HACK or not-implemented marker was found. Normal publication is next. Phase 3 remains incomplete until all 58 controls and deployed behavior are verified.
 
 ## Live Database Review Begun
 
@@ -46,6 +46,6 @@ Additional read-only definitions: `fn_settle_tournament_obligation` MD5 `53c0ff5
 
 ## Remaining Work
 
-Every original Phase 3 control is present in the companion progress register. Financial concurrency, entry provenance, payout freezing, cancellation after prior awards, persistent Spin draws, reserves, bounties, satellites and table-move races still require full behavioral and installed-source reconciliation. Installed cancellation and draw functions have been retrieved for that review; their presence or historical comments are not a current pass. Phase 2 publication remains separately tracked until the final engine adopts its merged corrections.
+Every original Phase 3 control is present in the companion progress register. Financial concurrency, entry provenance, payout freezing, cancellation after prior awards, persistent Spin draws, reserves, bounties, satellites and table-move races still require full behavioral and installed-source reconciliation. Installed cancellation and draw functions have been retrieved for that review; their presence or historical comments are not a current pass. Phase 2 is complete for its defined internal scope, with merged source and production adoption recorded in the Phase 2 release status.
 
 Bots, Horses and RTA feature/policy work remain excluded. No World Hub repository was inspected or changed. No manual balance repair, blanket lock or forced engine restart was used.

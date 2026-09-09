@@ -189,8 +189,8 @@ jobs:
           # it. Production froze at 19:10 while main kept moving. Same lesson
           # as the migrations line above, one directory over.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^(tests/|supabase/migrations/|server/)')"   >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/)')" >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/|server/|scripts/dev/)')"   >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -1057,6 +1057,54 @@ jobs:
               exit 1 ;;
           esac
 
+  # Real transaction/constraint tests run on a disposable PostgreSQL 17 server.
+  # No production credentials or production SQL probes are used by this job.
+  accounting_postgres:
+    needs: changes
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'pull_request' &&
+        (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
+    name: Accounting transactions (PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install server test dependencies
+        working-directory: server
+        run: npm ci
+      - name: Install PostgreSQL 17 tools without a default database service
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -x /usr/lib/postgresql/17/bin/initdb ]]; then exit 0; fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-common curl ca-certificates
+          if ! apt-cache show postgresql-17 >/dev/null 2>&1; then
+            sudo install -d /usr/share/postgresql-common/pgdg
+            sudo curl --fail --silent --show-error --location \
+              --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+              https://www.postgresql.org/media/keys/ACCC4CF8.asc
+            pg_ci_codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+            printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+              "$pg_ci_codename" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+            sudo apt-get update
+          fi
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get install -y --no-install-recommends postgresql-17
+      - name: Atomic departures, ownership, rollback and concurrency
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-departure-postgres.sh
+
   server:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
@@ -1065,7 +1113,7 @@ jobs:
     # when it takes twenty seconds.
     # 78% of pull requests never touch server/. This suite is two billed
     # minutes and cannot be broken by a file outside it.
-    needs: changes
+    needs: [changes, accounting_postgres]
     # FAILS CLOSED, and this is the whole point.
     #
     # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
@@ -1096,6 +1144,12 @@ jobs:
         working-directory: server
 
     steps:
+      - name: Require successful real PostgreSQL accounting tests
+        if: needs.accounting_postgres.result != 'success'
+        run: |
+          echo "::error::The required isolated PostgreSQL accounting tests did not pass."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
 

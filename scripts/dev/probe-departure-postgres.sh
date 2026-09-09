@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PGBIN="${PGBIN:-/opt/homebrew/opt/postgresql@17/bin}"
+if [[ -z "${PGBIN:-}" ]]; then
+  if [[ -x /opt/homebrew/opt/postgresql@17/bin/initdb ]]; then
+    PGBIN=/opt/homebrew/opt/postgresql@17/bin
+  elif [[ -x /usr/lib/postgresql/17/bin/initdb ]]; then
+    PGBIN=/usr/lib/postgresql/17/bin
+  else
+    echo "PostgreSQL 17 tools are required; set PGBIN to their bin directory." >&2
+    exit 1
+  fi
+fi
+case "$("$PGBIN/postgres" --version)" in
+  "postgres (PostgreSQL) 17."*) ;;
+  *) echo "The accounting contract suite requires PostgreSQL 17." >&2; exit 1 ;;
+esac
 test -x "$PGBIN/initdb"
 test -x "$PGBIN/psql"
 # Homebrew may place support files inside the keg rather than the compiled path.

@@ -3,6 +3,21 @@
  *  CLUB ENGINE - XMTT (Cross-Club Multi-Table Tournament) Lobby
  *  Ported from World Hub native page → Club Arena TSX
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE CONSOLE (#ClubArenaConsole, 2026-09-08). The page was a two-column split
+ * of rounded cards: a coloured status pill per row, a four-cell detail GRID, a
+ * gold value, a green value and four gradient buttons. It is Dan's approved
+ * spade master now - one console for the lobby head and its filters, one per
+ * tournament, one for the detail pane - and every figure prints as a row on the
+ * black glass, label in the master's lit blue on the left, value in silver on
+ * the right, with an engraved rule between rows. The status is a word in the
+ * well's painted pill slot rather than a coloured chip, and the two money
+ * actions are the plates painted into the foot.
+ *
+ * Nothing about what the page DOES has changed: the club resolution, the
+ * 30-second poll, the realtime and visibility refreshes, the shared
+ * registration hook that owns the one buy-in confirmation, the waitlist calls
+ * and the error banner are all exactly as they were.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -17,7 +32,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './XMTTPage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
-import { fmt, fmtChips } from '../utils/format';
+import { compactChips, fmtChips } from '../utils/format';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
@@ -28,6 +43,11 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolvePageClubId } from '../utils/resolvePageClubId';
+import {
+  SpadeConsole,
+  type ConsoleInk,
+  type PlateButtonProps,
+} from '../components/console/SpadeConsole';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -39,19 +59,19 @@ const formatDate = (ts: string | null) => {
   });
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { bg: string; color: string; label: string }> = {
-    registering: { bg: '#31A24C22', color: '#31A24C', label: 'REG OPEN' },
-    running: { bg: '#F5A62322', color: '#F5A623', label: 'RUNNING' },
-    completed: { bg: '#3A3B3C', color: '#B0B3B8', label: 'COMPLETE' },
-    cancelled: { bg: '#FA383E22', color: '#FA383E', label: 'CANCELLED' },
-  };
-  const c = map[status] || { bg: '#3A3B3C', color: '#B0B3B8', label: status?.toUpperCase() || '-' };
-  return (
-    <span className={styles.statusBadge} style={{ background: c.bg, color: c.color }}>
-      {c.label}
-    </span>
-  );
+/**
+ * The status, as a word in the master's own ink. It used to be a rounded chip
+ * with its own background and an amber that is not a house colour.
+ */
+const STATUS_INK: Record<string, { ink: ConsoleInk; label: string }> = {
+  registering: { ink: 'green', label: 'Reg Open' },
+  running: { ink: 'blue', label: 'Running' },
+  completed: { ink: 'muted', label: 'Complete' },
+  cancelled: { ink: 'red', label: 'Cancelled' },
+};
+
+function statusInk(status: string): { ink: ConsoleInk; label: string } {
+  return STATUS_INK[status] ?? { ink: 'muted', label: status?.toUpperCase() || '-' };
 }
 
 interface Tournament {
@@ -365,198 +385,261 @@ export default function XMTTPage() {
 
   if (loading) return <PageSkeleton variant="dashboard" />;
 
+  /** The two plates a listed tournament offers. Both, or neither. */
+  const platesFor = (t: Tournament): { secondary: PlateButtonProps; primary: PlateButtonProps } => {
+    const atCapacity = (t.registered_count || 0) >= (t.max_players || Infinity) && !!t.max_players;
+
+    if (t.status !== 'registering') {
+      return {
+        secondary: {
+          label: 'Details',
+          onClick: (e) => {
+            e.stopPropagation();
+            setSelectedTournament(t.id);
+            loadDetail(t.id);
+          },
+        },
+        primary: { label: statusInk(t.status).label, ink: 'muted', disabled: true },
+      };
+    }
+
+    if (atCapacity) {
+      const inLine = waitlistPositions[t.id];
+      return {
+        secondary: {
+          label: 'Details',
+          onClick: (e) => {
+            e.stopPropagation();
+            setSelectedTournament(t.id);
+            loadDetail(t.id);
+          },
+        },
+        primary: inLine
+          ? {
+              label: waitlistProcessing === t.id ? 'Working...' : 'Leave Waitlist',
+              ink: 'red',
+              disabled: waitlistProcessing === t.id,
+              onClick: (e) => {
+                e.stopPropagation();
+                handleLeaveWaitlist(t.id);
+              },
+            }
+          : {
+              label: waitlistProcessing === t.id ? 'Joining...' : 'Join Waitlist',
+              ink: 'white',
+              disabled: waitlistProcessing === t.id,
+              onClick: (e) => {
+                e.stopPropagation();
+                handleJoinWaitlist(t.id);
+              },
+            },
+      };
+    }
+
+    return {
+      secondary: {
+        label: 'Unregister',
+        ink: 'red',
+        onClick: (e) => {
+          e.stopPropagation();
+          handleUnregister(t.id);
+        },
+      },
+      primary: {
+        label: isRegisteringMtt ? 'Working...' : 'Register',
+        ink: 'white',
+        disabled: isRegisteringMtt,
+        onClick: (e) => {
+          e.stopPropagation();
+          handleRegister(t.id);
+        },
+      },
+    };
+  };
+
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>XMTT Tournament Lobby</h1>
-        <div className={styles.headerActions}>
-          <Link to="/tournaments" className={styles.btnGhost}>
+      {/* ── The lobby head: title, filters, and the two ways out ─────────── */}
+      <SpadeConsole
+        as="section"
+        className={styles.head}
+        eyebrow="Cross Club"
+        title="XMTT Lobby"
+        subtitle="Multi-Table Tournaments"
+        pill={`${filtered.length}`}
+        pillInk="blue"
+        foot="foot"
+      >
+        <nav className={styles.filters} aria-label="Tournament Filters">
+          {(['all', 'registering', 'running', 'completed'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              className={`${styles.filter} ${filter === f ? styles.filterActive : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f !== 'all' &&
+                ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
+            </button>
+          ))}
+        </nav>
+
+        <p className={styles.links}>
+          <Link to="/tournaments" className={`${styles.link} sc-ink--blue`}>
             All Tournaments
           </Link>
-          <Link to="/" className={styles.btnGhost}>
+          <Link to="/" className={`${styles.link} sc-ink--blue`}>
             Lobby
           </Link>
-        </div>
-      </header>
+        </p>
 
-      {/* Filters */}
-      <nav className={styles.tabNav}>
-        {(['all', 'registering', 'running', 'completed'] as const).map((f) => (
-          <button
-            key={f}
-            className={`${styles.tab} ${filter === f ? styles.tabActive : ''}`}
-            onClick={() => setFilter(f)}
-          >
-            {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-            {f !== 'all' &&
-              ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
-          </button>
-        ))}
-      </nav>
-
-      {actionError && (
-        <div className={styles.actionError}>
-          <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} className={styles.dismissBtn}>
-            ✕
-          </button>
-        </div>
-      )}
-
-      <div className={styles.splitLayout}>
-        {/* Tournament List */}
-        <div className={styles.listPanel}>
-          {filtered.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>★</span>
-              <span className={styles.emptyText}>No MTT Tournaments Found For This Filter.</span>
-              <Link to="/" className={styles.btnPrimary} style={{ marginTop: 12 }}>
-                Go To Lobby
-              </Link>
-            </div>
-          ) : (
-            filtered.map((t) => (
-              <div
-                key={t.id}
-                className={`${styles.tournCard} ${selectedTournament === t.id ? styles.tournCardSelected : ''}`}
-                onClick={() => {
-                  setSelectedTournament(t.id);
-                  loadDetail(t.id);
-                }}
-              >
-                <div className={styles.tournCardHeader}>
-                  <span className={styles.tournName}>{t.name || 'Tournament'}</span>
-                  <StatusBadge status={t.status} />
-                </div>
-                <div className={styles.tournMeta}>
-                  {/* The advertised buy-in is the TOTAL (prize + fee), as whole
-                      chips. buy_in_amount alone understated it by the fee and
-                      could print a decimal on legacy rows. */}
-                  <span> Buy-In: {money(totalBuyIn(t.buy_in, t.buy_in_fee))}</span>
-                  <span>
-                    {t.registered_count || 0} / {t.max_players || '∞'}
-                  </span>
-                  <span> {formatDate(t.start_time || t.created_at)}</span>
-                </div>
-                {t.status === 'registering' && (
-                  <div className={styles.tournActions}>
-                    {/* Register/Unregister - show when not at capacity */}
-                    {(t.registered_count || 0) < (t.max_players || Infinity) && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRegister(t.id);
-                          }}
-                          className={styles.btnRegister}
-                        >
-                          Register
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnregister(t.id);
-                          }}
-                          className={styles.btnUnregister}
-                        >
-                          Unregister
-                        </button>
-                      </>
-                    )}
-                    {/* Waitlist - show when at capacity */}
-                    {(t.registered_count || 0) >= (t.max_players || Infinity) && t.max_players && (
-                      <>
-                        {waitlistPositions[t.id] ? (
-                          <>
-                            <span
-                              style={{ color: '#F5A623', fontSize: '0.75rem', fontWeight: 600 }}
-                            >
-                              Position #{waitlistPositions[t.id]}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleLeaveWaitlist(t.id);
-                              }}
-                              disabled={waitlistProcessing === t.id}
-                              className={styles.btnUnregister}
-                            >
-                              {waitlistProcessing === t.id ? '...' : 'Leave Waitlist'}
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleJoinWaitlist(t.id);
-                            }}
-                            disabled={waitlistProcessing === t.id}
-                            className={styles.btnRegister}
-                          >
-                            {waitlistProcessing === t.id ? 'Joining...' : 'Join Waitlist'}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Detail Panel */}
-        {selectedTournament && (
-          <div className={styles.detailPanel}>
-            {detailLoading ? (
-              <div className={styles.detailLoading}>Loading Details...</div>
-            ) : detail ? (
-              <>
-                <h3 className={styles.detailTitle}>
-                  {detail.tournament?.name || 'Tournament Details'}
-                </h3>
-                <div className={styles.detailGrid}>
-                  <div>
-                    <div className={styles.detailLabel}>Buy-In</div>
-                    <div className={styles.detailValueGold}>
-                      {formatBuyIn(detail.tournament?.buy_in ?? 0, detail.tournament?.buy_in_fee)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className={styles.detailLabel}>Prize Pool</div>
-                    <div className={styles.detailValueGreen}>
-                      {money(detail.tournament?.prize_pool || 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className={styles.detailLabel}>Status</div>
-                    <StatusBadge status={detail.tournament?.status} />
-                  </div>
-                  <div>
-                    <div className={styles.detailLabel}>Players</div>
-                    <div className={styles.detailValue}>{detail.registrations?.length || 0}</div>
-                  </div>
-                </div>
-                <h4 className={styles.playerListTitle}>Registered Players</h4>
-                <div className={styles.playerList}>
-                  {(detail.registrations || []).length === 0 ? (
-                    <div className={styles.noPlayers}>No Registrations Yet</div>
-                  ) : (
-                    (detail.registrations || []).map((r, i) => (
-                      <div key={r.user_id || i} className={styles.playerRow}>
-                        <span>{r.display_name || r.username || 'Player'}</span>
-                        <span className={styles.playerChips}>{fmtChips(r.chips ?? 0)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className={styles.noSelection}>Select A Tournament</div>
-            )}
+        {actionError && (
+          <div className={styles.error} role="alert">
+            <span className="sc-ink--red">{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className={`${styles.link} sc-ink--muted`}
+            >
+              Dismiss
+            </button>
           </div>
         )}
-      </div>
+      </SpadeConsole>
+
+      {/* ── The tournaments ──────────────────────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <SpadeConsole
+          as="div"
+          className={styles.card}
+          eyebrow="Cross Club"
+          title="No Tournaments"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center">No MTT Tournaments Found For This Filter.</p>
+          <p className={styles.links}>
+            <Link to="/" className={`${styles.link} sc-ink--blue`}>
+              Go To Lobby
+            </Link>
+          </p>
+        </SpadeConsole>
+      ) : (
+        filtered.map((t) => {
+          const s = statusInk(t.status);
+          const inLine = waitlistPositions[t.id];
+          return (
+            <SpadeConsole
+              key={t.id}
+              as="div"
+              className={`${styles.card} ${selectedTournament === t.id ? styles.cardSelected : ''}`}
+              eyebrow="Tournament"
+              title={t.name || 'Tournament'}
+              pill={s.label}
+              pillInk={s.ink}
+              onClick={() => {
+                setSelectedTournament(t.id);
+                loadDetail(t.id);
+              }}
+              style={{ cursor: 'pointer' }}
+              plates={platesFor(t)}
+            >
+              <div className={styles.rows}>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Buy-In</span>
+                  {/* The advertised buy-in is the TOTAL (prize + fee), as whole
+                      chips, and EXACT: it is what the server charges.
+                      buy_in_amount alone understated it by the fee and could
+                      print a decimal on legacy rows. */}
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {money(totalBuyIn(t.buy_in, t.buy_in_fee))}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Entries</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {(t.registered_count || 0).toLocaleString()}
+                    {t.max_players ? ` / ${t.max_players.toLocaleString()}` : ' / Open'}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Starts</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {formatDate(t.start_time || t.created_at)}
+                  </span>
+                </div>
+                {inLine ? (
+                  <div className={styles.row}>
+                    <span className="sc-label sc-ink--blue">Waitlist</span>
+                    <span className={`${styles.value} sc-ink--gold`}>Position {inLine}</span>
+                  </div>
+                ) : null}
+              </div>
+            </SpadeConsole>
+          );
+        })
+      )}
+
+      {/* ── The detail pane ──────────────────────────────────────────────── */}
+      {selectedTournament && (
+        <SpadeConsole
+          as="div"
+          className={styles.card}
+          eyebrow="Tournament"
+          title={detail?.tournament?.name || 'Tournament Details'}
+          pill={detail ? statusInk(detail.tournament?.status).label : undefined}
+          pillInk={detail ? statusInk(detail.tournament?.status).ink : 'muted'}
+          foot="foot"
+        >
+          {detailLoading ? (
+            <p className="sc-copy sc-copy--center">Loading Details...</p>
+          ) : detail ? (
+            <>
+              <div className={styles.rows}>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Buy-In</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {formatBuyIn(detail.tournament?.buy_in ?? 0, detail.tournament?.buy_in_fee)}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Prize Pool</span>
+                  <span className={`${styles.value} sc-ink--gold`}>
+                    {compactChips(detail.tournament?.prize_pool || 0)}
+                  </span>
+                </div>
+                <div className={styles.row}>
+                  <span className="sc-label sc-ink--blue">Registered</span>
+                  <span className={`${styles.value} sc-ink--silver`}>
+                    {(detail.registrations?.length || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Registered Players</h4>
+              <div className={styles.rows}>
+                {(detail.registrations || []).length === 0 ? (
+                  <p className="sc-copy sc-copy--center">No Registrations Yet</p>
+                ) : (
+                  (detail.registrations || []).map((r, i) => (
+                    <div key={r.user_id || i} className={styles.row}>
+                      <span className={`${styles.player} sc-ink--silver`}>
+                        {r.display_name || r.username || 'Player'}
+                      </span>
+                      <span className={`${styles.value} sc-ink--blue`}>
+                        {fmtChips(r.chips ?? 0)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="sc-copy sc-copy--center">Select A Tournament</p>
+          )}
+        </SpadeConsole>
+      )}
     </div>
   );
 }

@@ -513,17 +513,17 @@ export function GameRulesModal({
                   <h3 className="rules-modal__section-title">Table Features</h3>
                   <div className="rules-modal__features">
                     <div
-                      className={`rules-modal__feature ${isStraddleEnabled ? 'rules-modal__feature--active' : ''}`}
+                      className={`rules-modal__feature ${isStraddleEnabled ? 'rules-modal__feature--active sc-ink--green' : 'sc-ink--muted'}`}
                     >
                       <span className="rules-modal__feature-text">Straddle</span>
                     </div>
                     <div
-                      className={`rules-modal__feature ${isRunItTwiceEnabled ? 'rules-modal__feature--active' : ''}`}
+                      className={`rules-modal__feature ${isRunItTwiceEnabled ? 'rules-modal__feature--active sc-ink--green' : 'sc-ink--muted'}`}
                     >
                       <span className="rules-modal__feature-text">Run It Twice</span>
                     </div>
                     <div
-                      className={`rules-modal__feature ${isInsuranceEnabled ? 'rules-modal__feature--active' : ''}`}
+                      className={`rules-modal__feature ${isInsuranceEnabled ? 'rules-modal__feature--active sc-ink--green' : 'sc-ink--muted'}`}
                     >
                       <span className="rules-modal__feature-text">Insurance</span>
                     </div>

@@ -1,16 +1,35 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  FINAL TABLE OVERLAY — Dramatic tournament final table announcement
+ *  FINAL TABLE OVERLAY - the announcement, on the spade console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Shows:
- * - "FINAL TABLE" headline with cinematic entrance
+ * - "FINAL TABLE" engraved in the master's header well
  * - Player lineup with auto-classified styles (Shark/Fish/Rock etc.)
- * - Chip counts + rankings
+ * - Chip counts + rankings, printed as rows on the black glass
  * - Prize pool reminder
  * - Auto-dismiss after 8 seconds (or tap to dismiss)
  *
  * NO player introductions per user requirement.
+ *
+ * THE CONSOLE (#ClubArenaConsole, 2026-09-08). This was a rounded violet sheet
+ * with a crown glyph on top, a headline painted with a clipped gradient, avatar
+ * discs and a row of soft-filled tiles. It is now Dan's approved spade master:
+ * the event name is the eyebrow, FINAL TABLE is engraved in the header well,
+ * the survivor count sits in the well's painted pill slot, and the lineup
+ * prints as rows on the glass - rank in the master's lit blue, name and stack
+ * in silver, an engraved rule between rows. Nothing is drawn except the
+ * chip-share bar, which is data rather than a control (see the stylesheet).
+ *
+ * EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): ftSlideIn, ftSlideOut,
+ * ftPlayerIn (with its per-row stagger), ftPulse and ftCrownPulse are all
+ * present at their original durations. Only ftCrownPulse moved - the crown it
+ * breathed on is painted into the master now, so the beat runs on the prize
+ * figure, which is the thing that moment is actually about.
+ *
+ * FIGURES ARE WHOLE (Dan: never a decimal on a forward-facing page). The chip
+ * share printed `chipPct.toFixed(1)` - "18.3%" - and the stacks printed raw
+ * separators; both go through the house formatters now.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -20,6 +39,8 @@ import {
   type PlayerStyleResult,
 } from '../../services/PlayerStyleClassifier';
 import { soundService } from '../../services/SoundService';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
 import './FinalTableOverlay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -129,87 +150,86 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
   if (!isVisible) return null;
 
   const totalChips = players.reduce((s, p) => s + p.chips, 0);
+  const seatsLeft = players.length;
 
   return (
     <div className={`ft-overlay ft-overlay--${phase}`} onClick={handleDismiss}>
       <div className="ft-overlay__backdrop" />
 
       <div className="ft-overlay__content">
-        {/* Title */}
-        <div className="ft-overlay__title-wrap">
-          <div className="ft-overlay__crown">♛</div>
-          <h1 className="ft-overlay__title">FINAL TABLE</h1>
-          <div className="ft-overlay__subtitle">{tournamentName}</div>
+        <SpadeConsole
+          as="div"
+          className="ft-overlay__console"
+          eyebrow={tournamentName}
+          title="Final Table"
+          subtitle="The Last Table Standing"
+          pill={seatsLeft > 0 ? `${seatsLeft} Left` : undefined}
+          pillInk="gold"
+          foot="foot"
+        >
           {prizePool > 0 && (
-            <div className="ft-overlay__prize">Prize Pool: {prizePool.toLocaleString()} Chips</div>
+            <div className="ft-overlay__prize-row">
+              <span className="ft-overlay__prize-label sc-label sc-ink--blue">Prize Pool</span>
+              <span className="ft-overlay__prize sc-ink--gold">
+                {compactChips(prizePool)} Chips
+              </span>
+            </div>
           )}
-        </div>
 
-        {/* Player List */}
-        <div className="ft-overlay__players">
-          {classifiedPlayers.map((player, index) => {
-            const chipPct = totalChips > 0 ? (player.chips / totalChips) * 100 : 0;
-            return (
-              <div
-                key={player.userId}
-                className="ft-player"
-                style={{ animationDelay: `${index * 100 + 400}ms` }}
-              >
-                {/* Rank */}
-                <div className="ft-player__rank">#{index + 1}</div>
+          {/* Player List */}
+          <div className="ft-overlay__players">
+            {classifiedPlayers.map((player, index) => {
+              const chipPct = totalChips > 0 ? (player.chips / totalChips) * 100 : 0;
+              return (
+                <div
+                  key={player.userId}
+                  className="ft-player"
+                  style={{ animationDelay: `${index * 100 + 400}ms` }}
+                >
+                  {/* Rank */}
+                  <div className="ft-player__rank sc-ink--blue">{index + 1}</div>
 
-                {/* Avatar */}
-                <div className="ft-player__avatar">
-                  {player.avatar ? (
-                    <img
-                      loading="lazy"
-                      decoding="async"
-                      src={player.avatar}
-                      alt={player.username}
-                      className="ft-player__avatar-img"
-                    />
-                  ) : (
-                    <span className="ft-player__avatar-initial">
-                      {player.username.charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="ft-player__info">
-                  <div className="ft-player__name-row">
-                    <span className="ft-player__name">{player.username}</span>
-                    {/* Player Style Badge */}
-                    {player.styleResult.style !== 'unknown' && (
-                      <span
-                        className="ft-player__style-badge"
-                        style={{
-                          color: player.styleResult.color,
-                          backgroundColor: player.styleResult.bgColor,
-                        }}
-                        title={player.styleResult.tooltip}
-                      >
-                        {player.styleResult.icon} {player.styleResult.label}
+                  {/* Info */}
+                  <div className="ft-player__info">
+                    <div className="ft-player__name-row">
+                      <span className="ft-player__name sc-ink--silver">{player.username}</span>
+                      {/* Player Style. Printed as type in the master's muted
+                          ink, never as a coloured chip: the classifier's own
+                          palette carries ambers and oranges, and Dan's rule is
+                          brand colours only. The full description stays on the
+                          title so nothing is lost. */}
+                      {player.styleResult.style !== 'unknown' && (
+                        <span
+                          className="ft-player__style sc-ink--muted"
+                          title={player.styleResult.tooltip}
+                        >
+                          {player.styleResult.label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="ft-player__chips-row">
+                      <span className="ft-player__chips sc-ink--silver">
+                        {compactChips(player.chips)}
                       </span>
-                    )}
+                      {/* Whole numbers on a forward-facing page. */}
+                      <span className="ft-player__chip-pct sc-ink--muted">
+                        {Math.round(chipPct)}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="ft-player__chips-row">
-                    <span className="ft-player__chips">{player.chips.toLocaleString()}</span>
-                    <span className="ft-player__chip-pct">{chipPct.toFixed(1)}%</span>
+
+                  {/* Chip Bar */}
+                  <div className="ft-player__bar-wrap">
+                    <div className="ft-player__bar" style={{ width: `${chipPct}%` }} />
                   </div>
                 </div>
+              );
+            })}
+          </div>
 
-                {/* Chip Bar */}
-                <div className="ft-player__bar-wrap">
-                  <div className="ft-player__bar" style={{ width: `${chipPct}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Tap to dismiss */}
-        <div className="ft-overlay__dismiss">Tap To Continue</div>
+          {/* Tap to dismiss */}
+          <p className="sc-copy sc-copy--center ft-overlay__dismiss">Tap To Continue</p>
+        </SpadeConsole>
       </div>
     </div>
   );

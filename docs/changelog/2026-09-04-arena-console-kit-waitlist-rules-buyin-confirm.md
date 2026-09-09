@@ -242,3 +242,64 @@ are the terms of the contract being bought, and a rounded display once charged
 76.66 for a dialog that said 75.62. Every handler, focus trap, countdown,
 single-flight guard and pinned literal survived; `classNamesResolve` fell from
 41 unresolved names to 36 on the way.
+
+## Round eight (2026-09-09): the sweep, waves one and two
+
+Dan: "UPGRADE EVERY REMAINING PAGE, SUB PAGE, POP UP, BUTTON, FRAME AND
+ANYTHING ELSE INSIDE EVERY CLUB ARENA PAGE THAT NEEDS THE #ClubArenaConsole
+UPGRADE."
+
+### What the inventory actually found
+
+The first pass counted 165 generic surfaces. It was wrong twice over, and both
+corrections are now in the scanner:
+
+- **31 have no importer at all.** `FoldProtectionDialog` was rebuilt on the
+  console before anyone noticed it is not on `origin/main` and nothing has
+  imported it for weeks. The scanner prints an importer count and marks `DEAD?`.
+- **Another 14 are already on a different approved master.** Club Arena has
+  more than one visual authority - the spade console, the #SmarterCasinoRealism
+  cinematic routes (Daily Challenges, Player Stats, Leaderboard, Notifications,
+  Search, Friends), the community and account surface headers, and one page Dan
+  art-directed himself (Invite, black glass and gold, 2026-08-28). Their tests
+  pin bevel frames, conic gradients, named animations, a horizontal snap rail
+  and exact hexes - the precise shapes this standard forbids. The scanner now
+  reads the tests: any surface named inside a test that pins a LOOK is off the
+  sweep, and stays that way.
+
+**102 surfaces are genuinely generic and live.** 21 of them are done.
+
+### Rebuilt in these two waves
+
+Wallet cashier, deposit / withdraw, cashout request; player statistics,
+achievements; clubs and club discovery; tournament lobby and its cards, XMTT,
+tournament info, mystery bounty, final table, heads-up, the sign-up dialog;
+create club, join club, find player, complete profile, the welcome door, block
+player.
+
+### Defects found on the way, all fixed
+
+- **Two competing compact formatters.** `chipsCompact` rounded UP (1,250 read
+  "1.3K", overstating what a player holds) and kept the tenth on a round figure
+  ("5.0K", a decimal on a forward-facing page). It delegates to `compactChips`
+  now - one formatter, Dan's rule, 25 call sites corrected at once - and the
+  test that pinned "1.3K" moved with it.
+- Tournament payouts and the final-standings podium printed decimal prizes; the
+  podium's 1st/2nd/3rd printed empty strings where an emoji had been stripped.
+- Club discovery printed its top three clubs twice (a "featured" rail above the
+  same list), and was a clickable `div` with a nested button, so a keyboard
+  could not open a club.
+- The welcome door - a blocking modal - announced as nothing: no `role`, no
+  `aria-modal`, no accessible name.
+- A tournament card's title carried the guarantee and truncated
+  ("5K GTD SUNDAY DEEPSTAC"); the guarantee already prints on its own row.
+- `GameRulesModal` restated a house colour as a raw hex, which the gameplay
+  palette law reads and rightly refuses; it uses the console's ink class now.
+
+### Two rules the sweep paid for
+
+- **Two actions or none.** The foot paints BOTH plates, so one action leaves the
+  other painted and empty. One way out uses the flat cap and a lit word.
+- **The four-bay deck belongs to the buy-in family.** Dan: "I DON'T LIKE THE 4
+  BOXES, AND THE WAY IT STICKS OUT ON THE SIDES." Every other surface prints
+  rows on the glass.

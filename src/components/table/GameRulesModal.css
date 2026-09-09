@@ -213,14 +213,9 @@
   white-space: nowrap;
 }
 
-.rules-modal__feature--active .rules-modal__feature-text {
-  color: #c8ffd2;
-  -webkit-text-fill-color: #c8ffd2;
-  text-shadow:
-    0 0 1cqw rgb(53 217 90 / 80%),
-    0 0 2cqw rgb(53 217 90 / 35%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-}
+/* The active ink is the console's own green (sc-ink--green). A table
+   stylesheet never restates a house colour as a hex - the palette law reads
+   these files and it is right to. */
 
 /* ── The two staff controls: lit words on the glass, never pills ──────── */
 

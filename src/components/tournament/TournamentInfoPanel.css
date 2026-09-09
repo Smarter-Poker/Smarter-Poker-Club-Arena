@@ -1,160 +1,180 @@
-/* Tournament Info Panel — mobile-first (375px), sheet on phones, card above. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENT INFO PANEL - on the spade console (2026-09-08)
+
+   The frame, the crest, the header well, the pill slot, the inks and the flat
+   closing cap come from the approved master via SpadeConsole.css. This sheet
+   only places the console on the scrim and types the numbers on the black
+   glass between the rails.
+
+   Nothing here draws a card, a tile, a pill or a button: the nine-tile stat
+   grid became rows, the filled tab pills became lit words, and the four
+   bordered tables became rows separated by an engraved rule - a black cut with
+   a light lip, the same cut the master's own chrome rules are made of. Sizes
+   are cqw against the console; no :hover anywhere.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .tip__scrim {
   position: fixed;
   inset: 0;
-  z-index: 9990;
+  z-index: 3000;
   display: flex;
-  align-items: flex-end;
+  align-items: safe center;
   justify-content: center;
-  background: rgba(2, 6, 23, 0.72);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  animation: tipScrimIn 0.2s ease both;
+  padding: 12px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgb(0 0 0 / 90%);
+  animation: tipScrimIn 0.18s ease-out both;
+}
+
+@keyframes tipScrimIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .tip {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 34rem;
-  max-height: min(88vh, 46rem);
-  border-radius: 1.1rem 1.1rem 0 0;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-bottom: none;
-  background: linear-gradient(180deg, #111827 0%, #0b1120 100%);
-  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.7);
-  animation: tipSheetUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-  overflow: hidden;
+  position: relative;
+  width: min(100%, 460px);
+  max-height: calc(100dvh - 24px);
+  overflow: visible auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  animation: tipPanelIn 0.26s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
-@media (min-width: 640px) {
-  .tip__scrim {
-    align-items: center;
+@keyframes tipPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
   }
-  .tip {
-    border-radius: 1.1rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
-.tip__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem 0.7rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-}
+/* ── The masthead, as rows on the glass ──────────────────────────────────── */
 
-.tip__title {
-  font-size: 0.98rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: #f8fafc;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tip__close {
-  flex: 0 0 auto;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(148, 163, 184, 0.1);
-  color: #e2e8f0;
-  font-size: 1.15rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-/* The header numbers — the reference lobby leads with these. */
-.tip__statGrid {
+.tip__stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: rgba(148, 163, 184, 0.12);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .tip__stat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.6rem 0.55rem;
-  background: #0f172a;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.tip__stat:first-child {
+  border-top: 0;
+  box-shadow: none;
 }
 
 .tip__statLabel {
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #94a3b8;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tip__statValue {
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: #6fdcff;
-  font-variant-numeric: tabular-nums;
+  justify-self: end;
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: right;
 }
+
+/* ── The tabs: lit words, nothing drawn ──────────────────────────────────── */
 
 .tip__tabs {
   display: flex;
-  gap: 0.35rem;
-  padding: 0.6rem 0.7rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  flex-wrap: wrap;
+  gap: 5cqw;
+  padding: 1.6cqw 0.5cqw 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .tip__tab {
-  flex: 1;
-  padding: 0.45rem 0.3rem;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: rgba(148, 163, 184, 0.09);
-  color: #cbd5e1;
-  font-size: 0.8rem;
-  font-weight: 600;
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7f8b99;
+  font:
+    800 3cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
-.tip__tab.is-active {
-  color: #0b1120;
-  background: linear-gradient(180deg, #fcd34d, #0a5dc2);
-  border-color: rgba(111, 220, 255, 0.6);
+.tip__tab:active {
+  filter: brightness(1.3);
 }
 
+.tip__tab.is-active {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0 2cqw rgb(49 168 255 / 30%);
+}
+
+.tip__tab:focus-visible {
+  outline: 0.5cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+/* ── The boards ──────────────────────────────────────────────────────────── */
+
 .tip__body {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  display: grid;
+  min-height: 22cqw;
 }
 
 .tip__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 .tip__table th {
-  position: sticky;
-  top: 0;
-  padding: 0.5rem 0.75rem;
+  padding: 0 0.5cqw 1.4cqw;
+  color: #45adff;
+  font:
+    700 2.5cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
   text-align: left;
-  font-size: 0.64rem;
-  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #94a3b8;
-  background: #0b1120;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  white-space: nowrap;
 }
 
 .tip__table td {
-  padding: 0.5rem 0.75rem;
-  color: #e2e8f0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.07);
-  font-variant-numeric: tabular-nums;
+  padding: 2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #dbe2ea;
+  font:
+    600 3.3cqw/1.2 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .tip__num {
@@ -162,60 +182,62 @@
 }
 
 .tip__name {
-  max-width: 12rem;
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Your own row, and the level you are on, are the two things you look for. */
+/* The viewer's own row, and the level being played, in the master's own
+   white. Lit type, never a filled band. */
 .tip__table tr.is-me td {
-  background: rgba(111, 220, 255, 0.1);
-  color: #fde68a;
-  font-weight: 700;
+  color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 55%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.tip__empty {
-  padding: 1.4rem 1rem;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 0.85rem;
-}
-
-/* "We could not ask" - deliberately not styled like an empty result. */
+.tip__empty,
 .tip__error {
-  margin: 0.6rem 0.75rem;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid rgba(239, 68, 68, 0.45);
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-  font-size: 0.8rem;
+  padding: 3cqw 1cqw;
+  color: #9aa5b3;
   text-align: center;
 }
 
-@keyframes tipScrimIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.tip__error {
+  color: #ff5b6e;
 }
-@keyframes tipSheetUp {
-  from {
-    opacity: 0;
-    transform: translateY(22px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+
+/* ── The one action: a lit word on the glass ─────────────────────────────── */
+
+.tip__close {
+  appearance: none;
+  justify-self: center;
+  margin: 1cqw 0 0;
+  padding: 1.4cqw 3cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.6cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.tip__close:active {
+  filter: brightness(1.3);
+}
+
+.tip__close:focus-visible {
+  outline: 0.5cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .tip__scrim,
   .tip {
-    animation: none !important;
+    animation: none;
   }
 }

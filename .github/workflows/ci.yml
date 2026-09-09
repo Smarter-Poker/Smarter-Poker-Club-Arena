@@ -1110,6 +1110,12 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+      - name: Tournament reminder receipts, rollback and overlapping consumers
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: |
+          npm ci --omit=optional --prefix scripts/ci/probes/chip-journal-atomicity/postgres-runtime
+          bash scripts/dev/probe-tournament-reminders.sh
 
   server:
     # COST 2026-08-23: this already ran, and passed, on the pull request -

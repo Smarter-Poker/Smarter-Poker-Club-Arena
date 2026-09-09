@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Reminder Receipts Do Not Lock Players
+
+The former reminder generator updates player rows after enqueueing pushes. The replacement commits versioned notification receipts with the outbox and never updates a player row. An isolated PostgreSQL 17 execution reproduced the old lock timeout and verified the replacement through 40 checks, including legacy overlap, bounded batches, rollback, cancellation, rescheduling and abandoned claims. Source re-read: yes. No gameplay timing or accounting changes. The workers service is the intended primary caller; the compatibility cron remains active. Application and publication evidence: docs/audits/2026-09-09-tournament-reminder-execution.md.
+
 ## 2026-09-09: Spin Reveals Follow The Booked Result
 
 The engine could announce a locally drawn 2x outcome before an idempotent reserve receipt restored a booked 10x outcome, or announce before settlement failed. The early reveal now follows successful settlement and booked-multiplier validation, retaining the existing hold and reconnect window and preceding table work. Five production-fragment cases cover unresolved, replayed, failed, malformed and matching receipts. The complete tournament/maintenance/pause suite passes 1348 tests in 127 files; server TypeScript and build pass. Re-read: yes. No migration or financial repair. Phase 3 publication is explicitly authorized in the audit chat; refreshed verification and publication are in progress; see docs/audits/2026-09-09-phase3-tournament-lifecycle.md.

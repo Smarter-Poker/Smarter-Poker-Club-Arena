@@ -509,12 +509,14 @@ export default function TableOperationsPanel({ clubId }: Props) {
       // a refund that failed produced no error anywhere — the admin saw the
       // dialog close and assumed it worked. kickPlayer now throws, and the
       // failure is shown rather than only reported to Sentry.
-      await tableService.kickPlayer(
+      const removal = await tableService.kickPlayer(
         confirmAction.tableId,
         confirmAction.userId,
         'Removed by admin'
       );
-      toast.success('Player removed and their chips returned');
+      if (removal.deferred)
+        toast.info('Removal accepted. Cashout is pending until the hand finishes.');
+      else toast.success('Player removed.');
       await loadSeatedPlayers(confirmAction.tableId);
       await loadTables();
     } catch (err) {

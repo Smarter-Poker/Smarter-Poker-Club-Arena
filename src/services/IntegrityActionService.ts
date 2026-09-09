@@ -25,24 +25,11 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
-
-const ENGINE_BASE_URL =
-  (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL ??
-  'https://engine.smarter.poker';
-
-function engineAuthHeader(): Record<string, string> {
-  try {
-    const raw =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('smarter-poker-auth') : null;
-    const token = raw ? (JSON.parse(raw) as { access_token?: string }).access_token : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
+import type { SeatOccupancyTarget } from './SeatLeaveIntent';
 
 export interface RemovalOutcome {
   removed: number;
+  pending: number;
   failed: number;
   /** The first refusal, so the operator is told why rather than just a count. */
   firstError: string | null;
@@ -52,26 +39,16 @@ export interface RemovalOutcome {
 export async function adminRemovePlayerFromTable(
   tableId: string,
   userId: string,
-  reason: string
-): Promise<{ ok: boolean; error: string | null }> {
+  reason: string,
+  target?: SeatOccupancyTarget
+): Promise<{ ok: boolean; error: string | null; deferred?: boolean }> {
   try {
-    const response = await fetch(`${ENGINE_BASE_URL}/admin/kick`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...engineAuthHeader() },
-      body: JSON.stringify({ tableId, userId, reason }),
-    });
-    const result = (await response.json().catch(() => ({}))) as {
-      success?: boolean;
-      error?: string;
-    };
-    if (!response.ok || result.success === false) {
-      return {
-        ok: false,
-        error: result.error || `The engine refused this removal (${response.status}).`,
-      };
-    }
+    const { kickSeatWithIntent } = await import('./SeatLeaveIntent');
+    const result = await kickSeatWithIntent(tableId, userId, reason, target);
+    if (!result.success)
+      return { ok: false, error: result.error || 'The Engine Refused This Removal.' };
     masterBus.emit('TABLE_UPDATED', { tableId, status: 'running' });
-    return { ok: true, error: null };
+    return { ok: true, error: null, deferred: result.deferred === true };
   } catch (error) {
     reportError(error, 'IntegrityActionService.Remove_failed');
     return { ok: false, error: 'The engine could not be reached.' };
@@ -109,18 +86,45 @@ export async function adminRemovePlayerFromClubTables(
   reason: string
 ): Promise<RemovalOutcome> {
   let removed = 0;
+  let pending = 0;
   let failed = 0;
   let firstError: string | null = null;
 
-  for (const tableId of tableIds) {
-    const outcome = await adminRemovePlayerFromTable(tableId, userId, reason);
+  // Freeze every target before the first asynchronous departure. A replacement
+  // seat appearing while another table's removal waits is never part of this action.
+  const targets = await Promise.all(
+    [...new Set(tableIds)].map(async (tableId) => {
+      try {
+        const { data, error } = await supabase
+          .from('table_seats')
+          .select('seat_number, occupancy_id')
+          .eq('table_id', tableId)
+          .eq('user_id', userId)
+          .is('left_at', null)
+          .maybeSingle();
+        if (error || !data) return { tableId, error: 'The Original Seat Could Not Be Read.' };
+        return {
+          tableId,
+          target: { seatNumber: data.seat_number, occupancyId: data.occupancy_id },
+        };
+      } catch {
+        return { tableId, error: 'The Original Seat Could Not Be Read.' };
+      }
+    })
+  );
+  for (const selected of targets) {
+    const outcome = selected.target
+      ? await adminRemovePlayerFromTable(selected.tableId, userId, reason, selected.target)
+      : { ok: false, error: selected.error };
+
     if (outcome.ok) {
-      removed += 1;
+      if (outcome.deferred) pending += 1;
+      else removed += 1;
     } else {
       failed += 1;
       if (!firstError) firstError = outcome.error;
     }
   }
 
-  return { removed, failed, firstError };
+  return { removed, pending, failed, firstError };
 }

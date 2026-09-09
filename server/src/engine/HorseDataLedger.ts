@@ -49,7 +49,13 @@ export type LedgerKind =
   | 'tag';
 
 export type LedgerCadence =
-  'per_action' | 'per_hand' | 'per_sit' | 'minute' | 'boot' | 'nightly' | 'legacy_unused';
+  | 'per_action'
+  | 'per_hand'
+  | 'per_sit'
+  | 'minute'
+  | 'boot'
+  | 'nightly'
+  | 'legacy_unused';
 
 export interface LedgerEntry {
   key: string;
@@ -554,25 +560,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
       ],
     ] as const
-  ).map(([key, note]): LedgerEntry => ({
-    key,
-    kind: 'param',
-    source: 'STYLE_PARAMS[style] resolved with HorseProfileMods in HorseLogic.decide',
-    cadence: 'per_action',
-    consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
-    note,
-    since:
-      key === 'ploStackoffLoad'
-        ? 'V40'
-        : key === 'nlhStackoffLoad' ||
-            key === 'riverWarLoad' ||
-            key === 'limpBloatLoad' ||
-            key === 'tourneyLeakPremium'
-          ? 'V41'
-          : key === 'familyBias'
-            ? 'V18'
-            : 'V2',
-  })),
+  ).map(
+    ([key, note]): LedgerEntry => ({
+      key,
+      kind: 'param',
+      source: 'STYLE_PARAMS[style] resolved with HorseProfileMods in HorseLogic.decide',
+      cadence: 'per_action',
+      consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
+      note,
+      since:
+        key === 'ploStackoffLoad'
+          ? 'V40'
+          : key === 'nlhStackoffLoad' ||
+              key === 'riverWarLoad' ||
+              key === 'limpBloatLoad' ||
+              key === 'tourneyLeakPremium'
+            ? 'V41'
+            : key === 'familyBias'
+              ? 'V18'
+              : 'V2',
+    })
+  ),
 
   // ─────────────────────────────────────────────────────────────────────────
   // PROFILE KEYS. profiles.horse_profile (jsonb). Read at sit-down today
@@ -608,20 +616,22 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         'V48',
       ],
     ] as const
-  ).map(([key, note, since]): LedgerEntry => ({
-    key,
-    kind: 'profile',
-    source: 'profiles.horse_profile (jsonb) via resolveHorseStyle',
-    cadence: 'per_sit',
-    consumer:
-      key === 'persona'
-        ? 'HorsePersona.resolvePersona (ServerTableEngineDealing straddle round); HorseLogic.followsSolver (the GTO consult)'
-        : key.startsWith('leaks')
-          ? 'HorseLogic.leakLoad'
-          : 'HorseLogic.decide',
-    note,
-    since,
-  })),
+  ).map(
+    ([key, note, since]): LedgerEntry => ({
+      key,
+      kind: 'profile',
+      source: 'profiles.horse_profile (jsonb) via resolveHorseStyle',
+      cadence: 'per_sit',
+      consumer:
+        key === 'persona'
+          ? 'HorsePersona.resolvePersona (ServerTableEngineDealing straddle round); HorseLogic.followsSolver (the GTO consult)'
+          : key.startsWith('leaks')
+            ? 'HorseLogic.leakLoad'
+            : 'HorseLogic.decide',
+      note,
+      since,
+    })
+  ),
 
   // ─────────────────────────────────────────────────────────────────────────
   // HORSEMIND COUNTERS. One OpponentStats per observed player, shared by the

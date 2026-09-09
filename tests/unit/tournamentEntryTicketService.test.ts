@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 const { mockEmit, mockRpc, mockUuid } = vi.hoisted(() => ({
   mockEmit: vi.fn(),
@@ -38,6 +38,7 @@ vi.mock('../../src/lib/supabase', () => {
   };
 
   return {
+    getAuthUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }),
     supabase: {
       rpc: mockRpc,
       from: vi.fn((table: string) =>
@@ -69,6 +70,14 @@ import {
   tournamentUnregisterSuccessText,
 } from '../../src/services/TournamentService';
 
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.stubGlobal('navigator', {
+    locks: { request: (_key: string, fn: () => Promise<unknown>) => fn() },
+  });
+});
+afterEach(() => vi.unstubAllGlobals());
 describe('tournament-entry ticket client service', () => {
   beforeEach(() => {
     mockEmit.mockReset();

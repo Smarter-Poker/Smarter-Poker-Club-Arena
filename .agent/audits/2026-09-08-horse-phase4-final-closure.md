@@ -53,6 +53,6 @@ Scope: certified NLH V31 ingestion, in-memory stores, decision execution receipt
 
 ## E. Release boundary
 
-Protected-main reconciliation, complete repository suites, protected PR merge, static publication, engine cutover, and final live readback are required before this software correction may be called published. Those receipts will be appended after the protected release finishes.
+Protected-main reconciliation and the complete repository suites are complete on this candidate. Protected PR merge, static publication, engine cutover, and final live readback are still required before this software correction may be called published. Final protected-release receipts are recorded in the external Phase 4 build plan so this reviewed repository audit remains an immutable pre-release record.
 
 Phase 4 itself cannot be called complete until an authorized human approves an immutable licensed input bundle, three independent HMAC principals are provisioned, licensed Pio hosts generate the corpus, all held-out and eight candidate gates pass, one dataset is promoted, and production liveness plus decision agreement are nonzero.

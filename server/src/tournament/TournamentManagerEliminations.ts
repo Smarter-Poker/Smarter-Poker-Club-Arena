@@ -1708,6 +1708,43 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('result, completed_at')
         .eq('table_id', tableId)
         .eq('status', 'succeeded')
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  STOP READING AT THE SEAT THIS BUST BELONGS TO (2026-09-09)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This bound is not a new rule. Twenty lines below, a settlement older
+         * than `seatJoinedAt` is REFUSED - "accepted zero-stack settlement
+         * predates this seat generation" - because a rebuy starts a new seat
+         * generation and an older zero must never authorise it. So every row
+         * before `seatJoinedAt` was being read off disk and then thrown away.
+         *
+         * On a long-running table that is the whole history. Measured on
+         * production 2026-09-09, table bd52ccec with 5,617 settlements:
+         *
+         *     Index Scan using settlement_idempotency_keys_pkey
+         *       Index Cond: (table_id = ...)
+         *       Filter: (result @> ...) AND (status = 'succeeded')
+         *       Rows Removed by Filter: 5613
+         *       Buffers: shared hit=2599 read=3156
+         *     Execution Time: 8523.518 ms
+         *
+         * `service_role`'s statement timeout is 8s (CLAUDE.md section 2), so
+         * that read does not return slowly - it ERRORS. `defer()` then re-arms,
+         * the next sweep runs the same query, and it errors again. Every bust
+         * in a bounty event on an old table was stuck in that loop: 10 of the 16
+         * tournaments stalled over an hour at 06:58 were bounty events, each
+         * carrying between 2 and 13 players sitting at zero chips who could not
+         * be eliminated, so no table could reach two live players and no hand
+         * could be dealt.
+         *
+         * Paired with the partial index on (table_id, completed_at DESC) WHERE
+         * status = 'succeeded' (migration of the same date), this becomes an
+         * ordered range scan over one seat's own lifetime instead of a full
+         * scan plus a sort. It cannot change which row is chosen: the rows it
+         * no longer reads are exactly the rows the guard below already refused.
+         */
+        .gte('completed_at', seatJoinedAt)
         .contains('result', { written: { [userId]: 0 } })
         .order('completed_at', { ascending: false })
         .limit(1)

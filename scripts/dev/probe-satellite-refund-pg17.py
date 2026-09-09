@@ -14,8 +14,10 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[2]
 fixture = repo / 'scripts/dev/fixtures/satellite-refund'
-migration = repo / 'supabase/migrations/20260909214216_satellite_unregister_returns_its_funded_cash.sql'
-pending = repo / 'supabase/migrations/20260909183657_seat_first_unregistration_uses_actual_start_truth.sql'
+migration = repo / 'supabase/migrations/20260909221505_satellite_unregister_returns_its_funded_cash.sql'
+start_migrations = list((repo / 'supabase/migrations').glob('*_seat_first_unregistration_uses_actual_start_truth.sql'))
+assert len(start_migrations) == 1, 'Expected one recorded actual-start migration'
+pending = start_migrations[0]
 configured = os.environ.get('POKER_AUDIT_PG_BIN')
 pg = Path(configured) if configured else Path(subprocess.check_output(
     ['brew', '--prefix', 'postgresql@17'], text=True).strip()) / 'bin'
@@ -87,8 +89,8 @@ with (root / 'results.log').open('w') as log:
         check('late receipt failure rolls back wallet and all financial receipts')
         check('observed overlapping requests commit one refund and one replay')
 
-        # The reserved start-time migration has not run in production. Execute
-        # its actual updated receipt/core definitions on the changed row shape.
+        # The actual-start migration is now installed in production. Execute
+        # its recorded receipt/core definitions on the changed row shape.
         # Empty hand/launch read fixtures isolate this cash-compatibility check;
         # their unrelated settlement and scheduling behavior is not certified.
         fresh('pending_start')
@@ -106,7 +108,7 @@ with (root / 'results.log').open('w') as log:
         load(migration)
         load(migration)  # Required clean-replay boundary, not an extra business test.
         run(args + ['-c', "SET test.expect_cash='true'", '-f', str(fixture/'probe.sql')])
-        check('reserved start migration and later replay preserve the cash correction')
+        check('installed start migration and later replay preserve the cash correction')
     finally:
         if started:
             subprocess.run([str(pg/'pg_ctl'), '-D', str(cluster), '-m', 'fast', '-w', 'stop'],

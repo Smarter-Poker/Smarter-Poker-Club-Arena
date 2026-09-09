@@ -123,13 +123,15 @@
       "id": "K08",
       "requirement": "Balance tables with the published seat-selection rule. Transfer scoring stacks once and preserve in-progress hands.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "blocked_live_database_move_authority_missing",
+      "evidence": "table_move_dependency_review"
     },
     {
       "id": "K09",
       "requirement": "Break tables and form the final table without missing/duplicating players. Test moves alongside elimination and reconnect.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "blocked_live_database_move_authority_missing",
+      "evidence": "table_move_dependency_review"
     },
     {
       "id": "K10",
@@ -355,7 +357,8 @@
       "id": "BX14",
       "requirement": "Table balancing races blind posting and disconnect: player occupies one seat, stack transfers once, and forced bets are not duplicated.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "blocked_live_database_move_authority_missing",
+      "evidence": "table_move_dependency_review"
     }
   ],
   "first_correction": {
@@ -874,13 +877,12 @@
       "files": 4,
       "typescript_build_mode": "passed"
     },
-    "migration": "20260909214216_satellite_unregister_returns_its_funded_cash.sql",
-    "migration_sha256": "c0f87a2dc4e0392da09bba09ecc408a5f9b692045820113f84441d6f6da50ed6",
+    "migration": "20260909221505_satellite_unregister_returns_its_funded_cash.sql",
+    "migration_sha256": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
     "postgres17_scenario_groups_passed": 8,
-    "source_guard_tests_passed": 8,
     "reproducible_probe": "scripts/dev/probe-satellite-refund-pg17.py",
     "reserved_actual_start_migration": "20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
-    "reserved_actual_start_migration_applied": false,
+    "reserved_actual_start_migration_applied": true,
     "reserved_source_cash_compatibility_verified": true,
     "security_advisors_target_function_findings": 0,
     "production_application_blocker": "Automatic approval review rejected apply_migration: repository publishing/deployment authorization did not explicitly authorize this production financial database mutation. No retry or indirect mutation performed.",
@@ -892,6 +894,40 @@
       "sha": "65931a248c4f35b15e6dbd50aedd3b2f8d08a576",
       "publisher_run": 34408248982,
       "contains_client_merge": true
+    },
+    "actual_start_applied_version": "20260909215545",
+    "actual_start_applied_by_this_audit": false,
+    "historical_actual_start_source_modified": false,
+    "actual_start_cash_transform_matches_previously_tested_bodies": true,
+    "source_guard_tests_passed_before_restoring_applied_source": 8,
+    "source_publication": {
+      "pr": 4035,
+      "head": "fdcc2132e42421ec495c4c4cad6bd85ff6f2f524",
+      "merge_commit": "fb7d568b8b94ca96e7b391157a538eaeae7deb9c",
+      "passing_ci": 34410459871,
+      "forward_order_followup": "required after concurrent actual-start application"
     }
+  },
+  "table_move_dependency_review": {
+    "observed_at": "2026-09-09T22:11:28.280556Z",
+    "engine_commit": "b53ad9b212cf586ffdc6fed888ad6b738c348191",
+    "controls": ["K08", "K09", "BX14"],
+    "installed_writer": false,
+    "installed_receipt_resolver": false,
+    "installed_receipt_table": false,
+    "writer": "fn_move_tournament_player",
+    "resolver": "fn_resolve_committed_tournament_seat_move",
+    "receipt_table": "tournament_seat_move_receipts",
+    "active_caller": "TournamentManager.executePlayerMovesOwned -> requestTournamentSeatMoveAtBoundary -> moveTournamentPlayerAtomically",
+    "source_migration": "20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql",
+    "resolver_migration": "20260909182952_a_committed_tournament_move_receipt_survives_lease_loss.sql",
+    "scope_boundary": "Existing writer migration also contains historical repairs and a maintenance cutover. It was not applied or split to evade those controls. No manual repair or alternate move writer introduced.",
+    "source_tests_reviewed": [
+      "TournamentMoveManagerBoundary.test.ts",
+      "tournamentSeatMoveRpc.test.ts",
+      "TournamentTableBreakRetirement.test.ts"
+    ],
+    "source_test_limit": "Manager and transport tests stub database effects; the separate PostgreSQL probe validates preseeded receipt lookup, not execution of a complete live move.",
+    "full_controls_closed": false
   }
 }

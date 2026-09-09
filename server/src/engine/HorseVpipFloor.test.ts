@@ -102,7 +102,7 @@ describe('the wiring', () => {
 
   it("the engine hands the brain the floor and the seat's own judged figure", () => {
     expect(TURNS).toMatch(/vpipFloor: this\.vpipFloor\(\),/);
-    expect(TURNS).toMatch(/this\.nitStatus\.get\(enginePlayer\.user_id\)/);
+    expect(TURNS).toMatch(/this\.nitStatus\.get\(authoritativePlayer\.user_id\)/);
   });
 
   it('the judged figures are read beside the eviction, from the same rows', () => {

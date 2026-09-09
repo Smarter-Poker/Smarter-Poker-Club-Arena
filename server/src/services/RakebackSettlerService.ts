@@ -563,6 +563,42 @@ export class RakebackSettlerService {
         // week. Ordered after the union 90% because that is what funds it.
         await this.runRakebackDrain();
         await this.runWeeklyFinancialClose();
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  THE SENTINELS MUST NOT STARVE THE DRAIN (2026-09-09)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Everything ABOVE this line moves money and stays inside `isSettling`.
+         * Everything BELOW it reports rather than settles - and two of those
+         * RPCs, `fn_union_treasury_selftest` and `fn_union_rake_rollup_catchup_all`,
+         * reliably hit `canceling statement due to statement timeout` on this
+         * database, which costs the full timeout before they fail.
+         *
+         * That is what made `scheduleCatchUp()` useless. It armed its 60-second
+         * retry above, the retry fired while this tail was still burning
+         * timeouts, hit the `isSettling` guard at the top of this method, and
+         * logged "settlement already in progress - skipping overlapping run".
+         * The catch-up never caught up: the drain ran once per THIRTY-MINUTE
+         * interval instead.
+         *
+         * Measured 2026-09-09: a page of 999 records takes 22-28s, so three
+         * batches is ~75s and the drain's real capacity is ~80,000 records/hour
+         * against ~6,000/hour arriving. Yet the settler sat 10.3 hours behind
+         * with a 60,870-row backlog, gaining only 1.65x real time - because
+         * 3,000 records per 30 minutes IS 6,000/hour, exactly the inflow. It
+         * could never gain, and any hiccup lost ground for good.
+         *
+         * So while there is backlog, the read-only sentinels are skipped. They
+         * are idempotent, they run on the next cycle once the queue is clear,
+         * and draining a player's rakeback outranks re-checking an invariant.
+         */
+        if (backlogRemains) {
+          console.log(
+            '[RakebackSettler] backlog remains - deferring the read-only sentinels so the drain keeps the floor'
+          );
+          return;
+        }
         // SWEEP #6: post-tournament money-conservation sentinel. Scans every
         // tournament that reached COMPLETED since the last cycle and asserts the
         // invariants that the whole rake/payout audit is meant to guarantee, so a

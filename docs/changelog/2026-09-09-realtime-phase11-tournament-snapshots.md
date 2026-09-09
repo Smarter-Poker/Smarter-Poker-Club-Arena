@@ -47,8 +47,33 @@ for both routed and embedded mounts.
 - Production build: npm run build passed; Vite completed in 15.52 seconds.
 - Controlled Chrome opened a running tournament read-only; this is a baseline
   rendered-page check, before publication of this repair.
-- CI, main adoption, and public asset verification are pending.
+- CI, main adoption, public/origin assets and the corrected controlled-Chrome
+  page were verified. Exact evidence: `../audits/2026-09-09-realtime-phase11-release.md`.
 
 Physical iPad/PWA acceptance remains open. A Chrome page or a server metric is
 not physical-device acceptance. No live seats, registrations, balances, or push
 notifications are modified as test probes.
+
+## Ordering Review
+
+PR4043 merged as c79e2687f8446d47488dd8c17990cc6abf263f5d. A final
+ordering regression then reproduced a narrower issue: an entry patch arriving
+while the tournament header query was pending could overwrite a newer entry
+query result (600 instead of 700 in the isolated case). The entry and table
+patch buffers now open immediately before their own queries. They preserve
+updates received during that query without replaying earlier updates over a
+newer database answer. The added case failed before this correction.
+
+The correction uses a fresh branch from main because PR4043 had already merged.
+Publication verification must include this correction as well as PR4043.
+
+## Corrective Release Verification
+
+PR4046 merged as 65f1f4eed01300459545332eb7d4a90bddffba2a. All 15 mounted
+recovery cases and TypeScript passed after the query-boundary correction. CI
+34414946450 passed on its normal failed-job retry after an isolated PostgreSQL
+shared-memory error. Publisher 34415964089 adopted this exact merge; both
+public and origin stamps and the referenced tournament bundle were verified
+at 23:19:43 UTC. Controlled Chrome loaded that bundle and matched the read-only
+field and table counts, with no displayed error alert. Physical-device
+acceptance remains open. See the release audit for exact timestamps and hashes.

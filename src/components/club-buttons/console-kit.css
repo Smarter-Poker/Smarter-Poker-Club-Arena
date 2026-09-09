@@ -1,0 +1,351 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB ARENA CONSOLE KIT (#SmarterCasinoRealism / #ClubArenaConsole)
+
+   The hardware every page surface is cut from, so a page is never drawn
+   with borders, gradients and clipped rectangles again. Every piece is an
+   approved painted asset already in the lobby:
+
+     lobby-header-frame-universal-v4.png   .ck-frame        chrome rails, any
+                                                            size (border-image,
+                                                            the lobby's welcome
+                                                            plaque)
+     lobby-campaign-frame-v3.png           .ck-frame--art   the picture frame
+                                                            (the lobby's campaign
+                                                            plaque)
+     shark-panel-v1/bay.png                .ck-plaque       a label slot over an
+                                                            octagon well
+     shark-panel-v1/button-primary.png     .ck-btn          the blue-lit face
+     shark-panel-v1/button-secondary.png   .ck-btn--dark    the dark face
+     lobby-selector-default/active-v3.png  .ck-selector     the lobby's filter
+                                                            pills
+
+   Text is printed the way the game card prints its own: labels in the
+   family's cyan with a soft glow, values in chrome with the milled shadow.
+   Sizes clamp against the surface's own width (container units) so a phone
+   and a desktop share one scale. Dan 2026-09-08/09: every button, frame and
+   icon carries the premium, high-def, dynamic look of the rest of Club
+   Arena. No :hover anywhere (tests/no-hover-effects.law.test.ts).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ck {
+  --ck-blue: var(--realism-cyan, #168bff);
+  --ck-sky: #5bb8ff;
+  --ck-cyan: #65d9ff;
+  --ck-green: var(--realism-green, #58e07c);
+  --ck-brass: var(--realism-gold, #d6ad52);
+  --ck-steel: var(--realism-muted, #7f8a97);
+  --ck-chrome: var(--realism-chrome-hot, #e4e7ec);
+  --ck-font-label: Inter, 'Roboto Condensed', system-ui, sans-serif;
+  --ck-font-value: 'Roboto Condensed', 'Rajdhani', system-ui, sans-serif;
+  --ck-chrome-shadow:
+    0 -1px 0 rgb(255 255 255 / 55%), 0 1px 0 #6d747c, 0 2px 0 #050607, 0 4px 6px rgb(0 0 0 / 90%);
+  --ck-lit-shadow: 0 0 10px rgb(49 168 255 / 85%), 0 2px 0 #050607, 0 4px 6px rgb(0 0 0 / 90%);
+  position: relative;
+  container-type: inline-size;
+  color: var(--ck-chrome);
+  font-family: var(--ck-font-label);
+  color-scheme: dark;
+}
+
+/* Chromium exposes the first source pixel of a stretched border-image as a
+   white seam down the left edge; the lobby covers it with the page's own
+   black, and so does the kit. */
+.ck::before {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: #000;
+  pointer-events: none;
+}
+
+/* ── Frames ───────────────────────────────────────────────────────────── */
+
+.ck-frame {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 14px solid transparent;
+  border-image: url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-universal-v4.png')
+    22 38 22 38 / 14px stretch;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(45 53 60 / 20%), transparent 55%),
+    repeating-linear-gradient(115deg, rgb(255 255 255 / 1.2%) 0 1px, transparent 1px 4px), #05080a;
+  box-shadow: 0 18px 34px rgb(0 0 0 / 70%);
+}
+
+.ck-frame--art {
+  border-image-source: url('/hub/club-arena/assets/club-buttons/lobby/lobby-campaign-frame-v3.png');
+  border-image-slice: 18 38 18 38;
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────── */
+
+.ck-h {
+  margin: 0;
+  color: var(--ck-sky);
+  font: 800 clamp(10px, 2.2cqw, 12px) / 1 var(--ck-font-label);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgb(49 168 255 / 55%);
+}
+
+.ck-title {
+  margin: 0;
+  color: var(--ck-chrome);
+  font: 800 clamp(22px, 4.6cqw, 44px) / 1 var(--ck-font-value);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  text-shadow: var(--ck-chrome-shadow);
+}
+
+.ck-copy {
+  margin: 0;
+  color: #d5dbe2;
+  font: 400 clamp(13px, 1.5cqw, 15px) / 1.5 var(--ck-font-label);
+}
+
+/* ── Plaque: the card's bay, label slot over the well ─────────────────── */
+
+.ck-plaque {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 200 / 258;
+  /* The plaque is its own container, so its slots and type scale with the
+     plaque (cqi), never with whatever row it happens to sit in. */
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 34% 49% 17%;
+  align-items: center;
+  justify-items: stretch;
+  padding: 0;
+  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
+    100% no-repeat;
+}
+
+.ck-plaque__label {
+  grid-row: 1;
+  align-self: end;
+  overflow: hidden;
+  margin: 0 6cqi;
+  padding-bottom: 12cqi;
+  color: var(--ck-sky);
+  font: 700 8.6cqi/1 var(--ck-font-label);
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+.ck-plaque__well {
+  grid-row: 2;
+  display: grid;
+  margin: 0 12cqi;
+  padding: 0;
+  align-content: center;
+  justify-items: center;
+  min-height: 0;
+  overflow: hidden;
+  text-align: center;
+}
+
+.ck-plaque__value {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ck-chrome);
+  font: 800 17cqi/1 var(--ck-font-value);
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--ck-chrome-shadow);
+}
+
+.ck-plaque--live .ck-plaque__value {
+  color: #cfeeff;
+  text-shadow: var(--ck-lit-shadow);
+}
+
+.ck-plaque--attention .ck-plaque__label {
+  color: var(--ck-green);
+  text-shadow: 0 0 6px rgb(50 210 122 / 60%);
+}
+
+.ck-plaque--attention .ck-plaque__value {
+  color: #d6ffe1;
+  text-shadow:
+    0 0 10px rgb(50 210 122 / 85%),
+    0 2px 0 #050607,
+    0 4px 6px rgb(0 0 0 / 90%);
+}
+
+/* ── Buttons: the console's own faces ─────────────────────────────────── */
+
+.ck-btn {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  width: min(100%, 220px);
+  min-height: 0;
+  aspect-ratio: 348 / 114;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  font: 800 clamp(13px, 2.4cqw, 17px) / 1 var(--ck-font-value);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-primary.png')
+    center / 100% 100% no-repeat;
+  text-shadow:
+    0 0 6px rgb(140 210 255 / 90%),
+    0 1px 0 rgb(0 0 0 / 70%),
+    0 2px 6px rgb(0 0 0 / 60%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ck-btn:active:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.ck-btn:disabled {
+  cursor: default;
+}
+
+.ck-btn:focus-visible {
+  outline: 2px solid #9be7ff;
+  outline-offset: -4px;
+}
+
+.ck-btn--dark {
+  color: #d6ffe1;
+  background-image: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  text-shadow:
+    0 0 6px rgb(50 210 122 / 80%),
+    0 1px 0 rgb(0 0 0 / 70%);
+}
+
+.ck-btn--busy {
+  animation: ck-busy 900ms ease-in-out infinite;
+}
+
+/* ── Selectors: the lobby's filter pills ──────────────────────────────── */
+
+.ck-selectors {
+  display: flex;
+  gap: clamp(4px, 1cqw, 8px);
+}
+
+.ck-selector {
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 0;
+  box-sizing: border-box;
+  min-width: 0;
+  height: clamp(30px, 4.08cqw, 36px);
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  color: #c7cdd2;
+  font: 700 clamp(10px, 1.7cqw, 12px) / 1 var(--ck-font-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* The lobby's recipe exactly: the pill art, with its printed label covered by
+     the machined patch the live label is printed on. */
+  background-image:
+    linear-gradient(180deg, #0d1115, #040608 72%),
+    url('/hub/club-arena/assets/club-buttons/lobby/lobby-selector-default-v3.png');
+  background-position: center, center;
+  background-size:
+    72% 40%,
+    100% 100%;
+  background-repeat: no-repeat;
+  text-shadow: 0 1px 2px #000;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 92%));
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ck-selector[aria-pressed='true'],
+.ck-selector.is-active {
+  color: #f2f9ff;
+  background-image:
+    linear-gradient(180deg, #0d2436, #04101a 72%),
+    url('/hub/club-arena/assets/club-buttons/lobby/lobby-selector-active-v3.png');
+  filter: drop-shadow(0 0 3px rgb(29 158 255 / 86%)) drop-shadow(0 1px 1px #000);
+}
+
+.ck-selector:active {
+  filter: brightness(1.2) drop-shadow(0 1px 1px #000);
+}
+
+.ck-selector:focus-visible {
+  outline: 2px solid #9be7ff;
+  outline-offset: -3px;
+}
+
+/* ── Renders: a painted icon on the well ──────────────────────────────── */
+
+.ck-render {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 85%));
+}
+
+.ck-render img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* ── Rule: printed on the well under a blue rail ──────────────────────── */
+
+.ck-rule {
+  margin: 0;
+  padding: clamp(6px, 1.4cqw, 10px) clamp(10px, 2cqw, 16px);
+  border-left: 4px solid var(--ck-blue);
+  background: linear-gradient(90deg, rgb(22 139 255 / 14%), transparent 70%);
+  color: #d5dbe2;
+  font-size: clamp(12px, 1.6cqw, 14px);
+  line-height: 1.35;
+}
+
+.ck-rule b {
+  margin-right: 0.6em;
+  color: var(--ck-sky);
+  font: 700 clamp(9px, 1.4cqw, 11px) / 1 var(--ck-font-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+@keyframes ck-busy {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-btn--busy {
+    animation: none;
+  }
+}

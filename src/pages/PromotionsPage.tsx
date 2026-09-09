@@ -2,7 +2,7 @@
  *  PROMOTIONS PAGE — Club Promotions & Bonuses with Live Updates
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
@@ -10,6 +10,8 @@ import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
 import { ArenaActionButton, ClubButtonsSurface } from '../components/club-buttons/ClubButtons';
+import { ThrowableImage } from '../components/table/ThrowableImage';
+import '../components/club-buttons/console-kit.css';
 import ReferralModal from '../components/social/ReferralModal';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -20,7 +22,6 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
-import PageSkeleton from '../components/common/PageSkeleton';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
@@ -291,18 +292,24 @@ export default function PromotionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredPromos.length]);
 
-  const getTypeIcon = (type: string): string => {
-    switch (type) {
+  // Every offer type is a 3D render from the throwable kit, drawn through the
+  // same cutout pipeline the table uses (no glyphs, no line icons).
+  const getTypeRender = (type: string): string => {
+    switch (type.toLowerCase()) {
       case 'bonus':
-        return '◈';
+        return 'diamond';
       case 'freeroll':
-        return '★';
+        return 'star';
       case 'leaderboard':
-        return '▦';
+      case 'high_hand':
+        return 'trophy';
       case 'rakeback':
-        return '◆';
+      case 'rake_race':
+        return 'cash_stack';
+      case 'milestone':
+        return 'horseshoe';
       default:
-        return '★';
+        return 'star';
     }
   };
 
@@ -328,9 +335,9 @@ export default function PromotionsPage() {
     const diffDays = Math.floor(diffMs / 86400000);
     const diffHours = Math.floor((diffMs % 86400000) / 3600000);
 
-    if (diffDays > 0) return `${diffDays}d ${diffHours}h left`;
-    if (diffHours > 0) return `${diffHours}h left`;
-    return 'Ending soon';
+    if (diffDays > 0) return `${diffDays}d ${diffHours}h`;
+    if (diffHours > 0) return `${diffHours}h`;
+    return 'Ending Soon';
   };
 
   return (
@@ -346,8 +353,8 @@ export default function PromotionsPage() {
           { label: 'View', value: filter.toUpperCase() },
         ]}
       />
-      {/* Daily Club Arena Bonus: the painted action shell, not a flat banner. */}
-      <ClubButtonsSurface className="promotions-daily-bonus">
+      {/* The doors: the painted action shells, side by side. */}
+      <ClubButtonsSurface className="promotions-doors">
         <ArenaActionButton
           icon="diamond"
           label="Daily Club Arena Bonus"
@@ -355,156 +362,181 @@ export default function PromotionsPage() {
           size="large"
           onClick={() => navigate('/bonuses')}
         />
+        <ArenaActionButton
+          icon="add"
+          label="Invite Friends"
+          sublabel="Earn 5% Of Their Rake"
+          size="large"
+          onClick={() => setShowReferral(true)}
+        />
       </ClubButtonsSurface>
 
-      {/* Referral Banner */}
-      <div className="referral-banner" onClick={() => setShowReferral(true)}>
-        <span className="bonus-icon">◈</span>
-        <span className="bonus-text">Invite Friends & Earn 5% Rake!</span>
-        <span className="bonus-arrow">›</span>
-      </div>
-
-      <div className="promo-filters">
-        {(['active', 'upcoming', 'all'] as const).map((f) => (
-          <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div className="promotions-list">
-        {loading ? (
-          <div className="promo-skeleton-list">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="promo-skeleton-card">
-                <div className="promo-skel-icon" />
-                <div className="promo-skel-body">
-                  <div className="promo-skel-line" style={{ width: '60%' }} />
-                  <div className="promo-skel-line" style={{ width: '80%' }} />
-                  <div className="promo-skel-line" style={{ width: '45%' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : loadError ? (
-          <ErrorState message={loadError} onRetry={() => void loadPromotions()} />
-        ) : filteredPromos.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-            <span
-              style={{
-                fontSize: '2.5rem',
-                display: 'block',
-                marginBottom: '0.75rem',
-                opacity: 0.5,
-              }}
+      <div className="ck promotions-console">
+        <div className="ck-selectors promo-filters" role="group" aria-label="Offer View">
+          {(['active', 'upcoming', 'all'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className="ck-selector"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
             >
-              ◈
-            </span>
-            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              {filter === 'active'
-                ? 'No Active Promotions'
-                : filter === 'upcoming'
-                  ? 'No Upcoming Promotions'
-                  : 'No Promotions'}
-            </p>
-            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-              {filter === 'active'
-                ? 'There Are No Promotions Running Right Now. Check Back Soon!'
-                : filter === 'upcoming'
-                  ? 'No Promotions Are Scheduled Yet. Stay Tuned!'
-                  : 'No Promotions Have Been Created For This Club Yet.'}
-            </p>
-          </div>
-        ) : (
-          filteredPromos.map((promo, index) => (
-            <div
-              key={promo.id}
-              className="promo-card"
-              style={{
-                opacity: visiblePromoCards.has(index) ? 1 : 0,
-                transform: visiblePromoCards.has(index) ? 'translateY(0)' : 'translateY(10px)',
-                transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
-              {promo.image_url && (
-                <div className="promo-image">
-                  <img src={promo.image_url} alt="" loading="lazy" />
-                </div>
-              )}
-              <div className="promo-content">
-                <div className="promo-header">
-                  <span className="promo-icon">{getTypeIcon(promo.type)}</span>
-                  <span className="promo-type">{formatPromoType(promo.type)}</span>
-                </div>
-                <h3 className="promo-title">{promo.title}</h3>
-                <p className="promo-desc">{promo.description}</p>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
 
-                <div className="promo-meta">
-                  <span className="promo-dates">
-                    {formatDate(promo.start_date)} - {formatDate(promo.end_date)}
-                  </span>
-                  {promo.prize_pool && (
-                    <span className="promo-prize">{promo.prize_pool.toLocaleString()}</span>
-                  )}
-                </div>
-
-                {new Date(promo.end_date) > now && new Date(promo.start_date) <= now && (
-                  <div className="promo-countdown-row">
-                    <span className="promo-countdown">{getTimeRemaining(promo.end_date)}</span>
-                    {new Date(promo.end_date).getTime() - now.getTime() < 86400000 && (
-                      <span className="ending-soon-badge">⚠ Ending Soon</span>
-                    )}
+        <div className="promotions-list">
+          {loading ? (
+            <div className="promo-skeleton-list" aria-busy="true">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="ck-frame promo-skeleton-card">
+                  <div className="promo-skel-icon" />
+                  <div className="promo-skel-body">
+                    <div className="promo-skel-line" style={{ width: '60%' }} />
+                    <div className="promo-skel-line" style={{ width: '80%' }} />
+                    <div className="promo-skel-line" style={{ width: '45%' }} />
                   </div>
-                )}
-
-                {/* Show LeaderboardCard for leaderboard promotions */}
-                {promo.type === 'leaderboard' && (
-                  <div className="promo-leaderboard">
-                    <LeaderboardCard
-                      promotionId={promo.id}
-                      title={`${promo.title || 'Leaderboard'} Rankings`}
-                      limit={5}
-                      showCurrentUser={true}
-                    />
-                  </div>
-                )}
-
-                {/* Claim action — active, non-leaderboard promos (leaderboard payouts
-                    are ranked, not manually claimed). */}
-                {promo.type !== 'leaderboard' &&
-                  new Date(promo.end_date) > now &&
-                  new Date(promo.start_date) <= now && (
-                    <button
-                      className="promo-claim-btn"
-                      disabled={claimedIds.has(promo.id) || claimingId === promo.id}
-                      onClick={() => handleClaimPromo(promo.id)}
-                      style={{
-                        marginTop: '0.75rem',
-                        width: '100%',
-                        padding: '0.7rem',
-                        borderRadius: '10px',
-                        border: 'none',
-                        fontWeight: 700,
-                        fontSize: '0.9rem',
-                        cursor: claimedIds.has(promo.id) ? 'default' : 'pointer',
-                        color: '#fff',
-                        background: claimedIds.has(promo.id)
-                          ? 'rgba(255,255,255,0.12)'
-                          : 'linear-gradient(135deg,#31A24C,#248a3d)',
-                        opacity: claimingId === promo.id ? 0.6 : 1,
-                      }}
-                    >
-                      {claimedIds.has(promo.id)
-                        ? '✓ Claimed'
-                        : claimingId === promo.id
-                          ? 'Claiming…'
-                          : 'Claim'}
-                    </button>
-                  )}
-              </div>
+                </div>
+              ))}
             </div>
-          ))
-        )}
+          ) : loadError ? (
+            <div className="ck-frame promo-state">
+              <ErrorState message={loadError} onRetry={() => void loadPromotions()} />
+            </div>
+          ) : filteredPromos.length === 0 ? (
+            <div className="ck-frame promo-state">
+              <span className="ck-render promo-state__render" aria-hidden="true">
+                <ThrowableImage throwableId="star" size={96} loading="lazy" />
+              </span>
+              <p className="ck-title promo-state__title">
+                {filter === 'active'
+                  ? 'No Active Promotions'
+                  : filter === 'upcoming'
+                    ? 'No Upcoming Promotions'
+                    : 'No Promotions'}
+              </p>
+              <p className="ck-copy promo-state__copy">
+                {filter === 'active'
+                  ? 'There Are No Promotions Running Right Now. Check Back Soon.'
+                  : filter === 'upcoming'
+                    ? 'No Promotions Are Scheduled Yet. Stay Tuned.'
+                    : 'No Promotions Have Been Created For This Club Yet.'}
+              </p>
+            </div>
+          ) : (
+            filteredPromos.map((promo, index) => {
+              const running = new Date(promo.end_date) > now && new Date(promo.start_date) <= now;
+              const endingSoon =
+                running && new Date(promo.end_date).getTime() - now.getTime() < 86400000;
+              const claimed = claimedIds.has(promo.id);
+              const claiming = claimingId === promo.id;
+              return (
+                <article
+                  key={promo.id}
+                  className="ck-frame promo-card"
+                  data-type={promo.type}
+                  style={{
+                    opacity: visiblePromoCards.has(index) ? 1 : 0,
+                    transform: visiblePromoCards.has(index) ? 'translateY(0)' : 'translateY(10px)',
+                    transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  }}
+                >
+                  {promo.image_url && (
+                    <div className="ck-frame ck-frame--art promo-image">
+                      <img src={promo.image_url} alt="" loading="lazy" />
+                    </div>
+                  )}
+                  <div className="promo-body">
+                    <div className="ck-plaque promo-emblem" aria-hidden="true">
+                      <span className="ck-plaque__label">{formatPromoType(promo.type)}</span>
+                      <span className="ck-plaque__well">
+                        <span className="ck-render promo-emblem__render">
+                          <ThrowableImage
+                            throwableId={getTypeRender(promo.type)}
+                            size={96}
+                            loading="lazy"
+                          />
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="promo-content">
+                      <h3 className="ck-title promo-title">{promo.title}</h3>
+                      <p className="ck-copy promo-desc">{promo.description}</p>
+
+                      <dl className="promo-meta">
+                        <div className="ck-plaque promo-meta__plaque">
+                          <dt className="ck-plaque__label">Runs</dt>
+                          <dd className="ck-plaque__well">
+                            <span className="ck-plaque__value promo-dates">
+                              <span>{formatDate(promo.start_date)}</span>
+                              <span>{formatDate(promo.end_date)}</span>
+                            </span>
+                          </dd>
+                        </div>
+                        {promo.prize_pool != null && promo.prize_pool > 0 && (
+                          <div className="ck-plaque ck-plaque--live promo-meta__plaque">
+                            <dt className="ck-plaque__label">Prize Pool</dt>
+                            <dd className="ck-plaque__well">
+                              <span className="ck-plaque__value promo-prize">
+                                {promo.prize_pool.toLocaleString()}
+                              </span>
+                            </dd>
+                          </div>
+                        )}
+                        {running && (
+                          <div
+                            className={`ck-plaque promo-meta__plaque${endingSoon ? ' ck-plaque--attention' : ''}`}
+                          >
+                            <dt className="ck-plaque__label">Time Left</dt>
+                            <dd className="ck-plaque__well">
+                              <span className="ck-plaque__value promo-countdown">
+                                {getTimeRemaining(promo.end_date)}
+                              </span>
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
+
+                      {endingSoon && <span className="ending-soon-badge">Ending Soon</span>}
+
+                      {/* Show LeaderboardCard for leaderboard promotions */}
+                      {promo.type === 'leaderboard' && (
+                        <div className="promo-leaderboard">
+                          <LeaderboardCard
+                            promotionId={promo.id}
+                            title={`${promo.title || 'Leaderboard'} Rankings`}
+                            limit={5}
+                            showCurrentUser={true}
+                          />
+                        </div>
+                      )}
+
+                      {/* Claim action: active, non-leaderboard promos (leaderboard payouts
+                          are ranked, not manually claimed). The console's own faces. */}
+                      {promo.type !== 'leaderboard' &&
+                        running &&
+                        (claimed ? (
+                          <span className="ck-btn ck-btn--dark promo-claim-btn">Claimed</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`ck-btn promo-claim-btn${claiming ? ' ck-btn--busy' : ''}`}
+                            disabled={claiming}
+                            aria-busy={claiming || undefined}
+                            onClick={() => handleClaimPromo(promo.id)}
+                          >
+                            {claiming ? 'Claiming' : 'Claim'}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
       </div>
 
       {/* Referral Modal */}

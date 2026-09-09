@@ -1892,6 +1892,7 @@ CREATE TABLE public.tournament_seat_move_receipts (
   destination_seat_id uuid NOT NULL REFERENCES public.table_seats(id) ON DELETE RESTRICT,
   source_seat_number integer NOT NULL CHECK (source_seat_number BETWEEN 1 AND 10),
   destination_seat_number integer NOT NULL CHECK (destination_seat_number BETWEEN 1 AND 10),
+  source_mode text NOT NULL CHECK (source_mode IN ('live_source','closed_orphan')),
   stack numeric NOT NULL CHECK (
     stack::text NOT IN ('NaN','Infinity','-Infinity') AND stack > 0),
   moved_at timestamptz NOT NULL,
@@ -3090,6 +3091,7 @@ AS $move_receipt$
     'destination_seat_id',r.destination_seat_id,
     'source_seat_number',r.source_seat_number,
     'destination_seat_number',r.destination_seat_number,
+    'source_mode',r.source_mode,
     'stack',r.stack,
     'moved_at',r.moved_at)
   FROM public.tournament_seat_move_receipts r
@@ -3102,13 +3104,16 @@ REVOKE ALL ON FUNCTION public.fn_ca_tournament_seat_move_receipt(uuid)
 -- The balancer now submits one operation identity to one transaction. Source
 -- release, destination occupancy, roster coordinates, table counts and the
 -- replay receipt are inseparable.
+DROP FUNCTION IF EXISTS public.fn_move_tournament_player(
+  uuid,uuid,uuid,uuid,integer,uuid);
 CREATE OR REPLACE FUNCTION public.fn_move_tournament_player(
   p_tournament_id uuid,
   p_user_id uuid,
   p_source_table_id uuid,
   p_destination_table_id uuid,
   p_destination_seat_number integer,
-  p_request_id uuid
+  p_request_id uuid,
+  p_source_mode text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -3135,6 +3140,7 @@ BEGIN
   IF p_tournament_id IS NULL OR p_user_id IS NULL
      OR p_source_table_id IS NULL OR p_destination_table_id IS NULL
      OR p_request_id IS NULL OR p_source_table_id=p_destination_table_id
+     OR p_source_mode NOT IN ('live_source','closed_orphan')
      OR p_destination_seat_number NOT BETWEEN 1 AND 10 THEN
     RAISE EXCEPTION 'invalid tournament move identity' USING ERRCODE='22023';
   END IF;
@@ -3151,6 +3157,7 @@ BEGIN
        OR (v_result->>'source_table_id')::uuid IS DISTINCT FROM p_source_table_id
        OR (v_result->>'destination_table_id')::uuid
             IS DISTINCT FROM p_destination_table_id
+       OR v_result->>'source_mode' IS DISTINCT FROM p_source_mode
        OR (v_result->>'destination_seat_number')::integer
             IS DISTINCT FROM p_destination_seat_number THEN
       RAISE EXCEPTION 'tournament move request id belongs to another operation'
@@ -3195,6 +3202,22 @@ BEGIN
          OR lower(COALESCE(tb.status,''))='closed'
          OR p_destination_seat_number>COALESCE(tb.max_players,9))) THEN
     RAISE EXCEPTION 'tournament move destination is not open'
+      USING ERRCODE='55000';
+  END IF;
+  IF p_source_mode='closed_orphan' AND NOT EXISTS (
+    SELECT 1 FROM public.tables tb
+     WHERE tb.id=p_source_table_id
+       AND (COALESCE(tb.is_deleted,false)
+         OR lower(COALESCE(tb.status,''))='closed')) THEN
+    RAISE EXCEPTION 'closed-orphan move source is not closed'
+      USING ERRCODE='55000';
+  END IF;
+  IF p_source_mode='live_source' AND EXISTS (
+    SELECT 1 FROM public.tables tb
+     WHERE tb.id=p_source_table_id
+       AND (COALESCE(tb.is_deleted,false)
+         OR lower(COALESCE(tb.status,''))='closed')) THEN
+    RAISE EXCEPTION 'live-source move source is closed'
       USING ERRCODE='55000';
   END IF;
 
@@ -3339,11 +3362,12 @@ BEGIN
     INSERT INTO public.tournament_seat_move_receipts(
       request_id,tournament_id,user_id,source_table_id,destination_table_id,
       source_seat_id,destination_seat_id,source_seat_number,
-      destination_seat_number,stack,moved_at)
+      destination_seat_number,source_mode,stack,moved_at)
     VALUES(
       p_request_id,p_tournament_id,p_user_id,p_source_table_id,
       p_destination_table_id,v_source.id,v_destination_id,
-      v_source.seat_number,p_destination_seat_number,v_source.stack,v_moved_at);
+      v_source.seat_number,p_destination_seat_number,p_source_mode,
+      v_source.stack,v_moved_at);
 
     PERFORM public.fn_ca_close_tournament_seat_exit_authority(v_token,true);
   EXCEPTION WHEN OTHERS THEN
@@ -3361,9 +3385,9 @@ END;
 $atomic_tournament_move$;
 
 REVOKE ALL ON FUNCTION public.fn_move_tournament_player(
-  uuid,uuid,uuid,uuid,integer,uuid) FROM PUBLIC,anon,authenticated;
+  uuid,uuid,uuid,uuid,integer,uuid,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_move_tournament_player(
-  uuid,uuid,uuid,uuid,integer,uuid) TO service_role;
+  uuid,uuid,uuid,uuid,integer,uuid,text) TO service_role;
 
 -- Unfilled Spins still expire, but cancellation itself owns every refund and
 -- count. There is no post-cancel counter reconciler and no estimate presented
@@ -4478,12 +4502,14 @@ BEGIN
        'EXECUTE') THEN
     RAISE EXCEPTION 'denormal write ownership is not hard-coded at source';
   END IF;
-  IF has_function_privilege(
-       'anon','public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)','EXECUTE')
+  IF to_regprocedure(
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)') IS NOT NULL
      OR has_function_privilege(
-       'authenticated','public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)','EXECUTE')
+       'anon','public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)','EXECUTE')
+     OR has_function_privilege(
+       'authenticated','public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)','EXECUTE')
      OR NOT has_function_privilege(
-       'service_role','public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)','EXECUTE') THEN
+       'service_role','public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)','EXECUTE') THEN
     RAISE EXCEPTION 'tournament move authority ACL is not service-only';
   END IF;
   IF has_table_privilege(

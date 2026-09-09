@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 import { loadSchemaManifest } from '../scripts/ci/schema-manifest.mjs';
+import { runtimeFilesMatching } from './helpers/runtimeSourceSearch';
 
 const root = resolve(__dirname, '..');
 const migration = readFileSync(
@@ -111,24 +111,11 @@ describe('terminal settlement DB-first hardening', () => {
     }
 
     const forbiddenQuotedRpc = `["']fn_(?:prepare_tournament_place_obligations|settle_tournament_places_atomic|settle_final_table_deal_atomic|settle_satellite_finish_atomic)["']`;
-    const result = spawnSync(
-      'rg',
-      [
-        '-n',
-        '--glob',
-        '!*.test.*',
-        '--glob',
-        '!*.spec.*',
-        forbiddenQuotedRpc,
-        'server/src',
-        'src',
-        'supabase/functions',
-      ],
-      { cwd: root, encoding: 'utf8' }
+    const matches = runtimeFilesMatching(
+      ['server/src', 'src', 'supabase/functions'].map((directory) => resolve(root, directory)),
+      new RegExp(forbiddenQuotedRpc)
     );
-    expect(result.error).toBeUndefined();
-    expect(result.status, result.stdout).toBe(1);
-    expect(result.stdout.trim()).toBe('');
+    expect(matches).toEqual([]);
   });
 
   it('declares every branch object and tombstones only functions already removed', () => {

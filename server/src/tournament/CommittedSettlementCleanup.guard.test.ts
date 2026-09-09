@@ -91,7 +91,9 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
     const proof = refusal.indexOf('settlementErr instanceof TerminalSettlementRefusedError');
     const alarm = refusal.indexOf('raiseFinancialAlert(');
     const release = refusal.indexOf('if (provenRefusal) releaseFinishGuard()');
-    const stop = refusal.indexOf('if (!provenRefusal) await this.stopAndWait()');
+    const stop = refusal.indexOf(
+      "this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_manager_stop_failed')"
+    );
     expect(proof).toBeGreaterThanOrEqual(0);
     expect(alarm).toBeGreaterThan(proof);
     expect(release).toBeGreaterThan(alarm);
@@ -239,7 +241,9 @@ describe('a committed final-table deal cannot be stranded by a lost receipt or t
     const release = checkDeal.indexOf('engine.releaseTerminalCloseoutPause()');
     const refusal = checkDeal.slice(unknown, release);
     expect(unknown).toBeGreaterThanOrEqual(0);
-    expect(refusal).toContain('await this.stopAndWait()');
+    expect(refusal).toContain(
+      "this.fenceUnknownTerminalOutcome('Tournament.final_table_deal_manager_stop_failed')"
+    );
     expect(refusal).toContain('return false;');
     expect(release).toBeGreaterThan(unknown);
   });

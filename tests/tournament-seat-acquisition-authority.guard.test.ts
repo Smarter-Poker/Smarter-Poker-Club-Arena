@@ -16,6 +16,10 @@ const transport = readFileSync(
   root('server/src/tournament/tournamentSeatAssignmentRpc.ts'),
   'utf8'
 );
+const revokedRegistrationProbe = readFileSync(
+  root('scripts/ci/probes/tournament-wallet-registration-revoked-session.sql'),
+  'utf8'
+);
 
 function taggedBody(tag: string): string {
   const delimiter = `$${tag}$`;
@@ -84,6 +88,17 @@ describe('tournament seats are acquired below one hard root authority', () => {
     expect(taggedBody('horse_registration_terminal_gate_compat')).toContain(
       'p_tournament_id,p_user_id,true'
     );
+    const walletRegistration = taggedBody('registration_terminal_gate');
+    const sessionGate = walletRegistration.indexOf('public.fn_caller_session_is_live()');
+    const rootGate = walletRegistration.indexOf('fn_ca_lock_tournament_seat_acquisition');
+    expect(sessionGate).toBeGreaterThan(-1);
+    expect(walletRegistration).toContain('SESSION_REVOKED');
+    expect(rootGate).toBeGreaterThan(sessionGate);
+    expect(revokedRegistrationProbe).toContain("WHEN SQLSTATE '28000'");
+    expect(revokedRegistrationProbe).toContain(
+      'revoked registration created entry or financial evidence'
+    );
+    expect(revokedRegistrationProbe).toContain('all probe work rolled back');
   });
 
   it('keeps one service-only wrapper over one owner-only seat/roster/count core', () => {

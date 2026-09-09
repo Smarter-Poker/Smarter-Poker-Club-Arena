@@ -91,7 +91,7 @@ describe('a refused finish asks for another pass', () => {
       FINISH.indexOf('let receipt: VerifiedTournamentCompletionReceipt;')
     );
     expect(ordinaryFailure).toMatch(
-      /const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;[\s\S]*?const outcomeUnknown =[\s\S]*?TerminalSettlementOutcomeUnknownError \|\| !provenRefusal;[\s\S]*?if \(provenRefusal\) releaseFinishGuard\(\);[\s\S]*?if \(!provenRefusal\) await this\.stopAndWait\(\);/
+      /const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;[\s\S]*?const outcomeUnknown =[\s\S]*?TerminalSettlementOutcomeUnknownError \|\| !provenRefusal;[\s\S]*?if \(provenRefusal\) releaseFinishGuard\(\);[\s\S]*?if \(!provenRefusal\) \{[\s\S]*?this\.fenceUnknownTerminalOutcome\('Tournament\.atomic_finish_manager_stop_failed'\);[\s\S]*?\}/
     );
   });
 

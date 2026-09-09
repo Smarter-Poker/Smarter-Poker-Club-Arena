@@ -55,7 +55,10 @@ describe('a final-table deal is settled only from a physically parked table', ()
   it('releases only on a proven refusal and stops ownership for every unknown outcome', () => {
     const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
     const proven = check.indexOf('err instanceof TerminalSettlementRefusedError');
-    const stop = check.indexOf('await this.stopAndWait()', proven);
+    const stop = check.indexOf(
+      "this.fenceUnknownTerminalOutcome('Tournament.final_table_deal_manager_stop_failed')",
+      proven
+    );
     const release = check.indexOf('engine.releaseTerminalCloseoutPause()', stop);
     expect(proven).toBeGreaterThanOrEqual(0);
     expect(stop).toBeGreaterThan(proven);

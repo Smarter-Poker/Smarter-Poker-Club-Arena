@@ -34,7 +34,9 @@ BEGIN
      OR to_regprocedure(
        'public.fn_tournament_live_seat_exit_requires_authority()') IS NULL
      OR to_regprocedure(
-       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)') IS NULL
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)') IS NOT NULL
+     OR to_regprocedure(
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)') IS NULL
      OR to_regprocedure(
        'public.fn_ca_tournament_seat_move_receipt(uuid)') IS NULL THEN
     RAISE EXCEPTION 'FAIL tournament seat-exit authority is incomplete';
@@ -407,15 +409,15 @@ BEGIN
        'EXECUTE')
      OR has_function_privilege(
        'anon',
-       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)',
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
        'EXECUTE')
      OR has_function_privilege(
        'authenticated',
-       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)',
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
        'EXECUTE')
      OR NOT has_function_privilege(
        'service_role',
-       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)',
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
        'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL tournament seat-exit ACL boundary changed';
   END IF;
@@ -464,11 +466,14 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(
-    'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid)'::regprocedure)
+    'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)'::regprocedure)
     INTO v_source;
   IF position('tournament_seat_move_receipts' IN v_source)=0
      OR position('fn_ca_open_tournament_seat_exit_authority' IN v_source)=0
      OR position('fn_ca_close_tournament_seat_exit_authority' IN v_source)=0
+     OR position('closed-orphan move source is not closed' IN v_source)=0
+     OR position('live-source move source is closed' IN v_source)=0
+     OR position('source_mode' IN v_source)=0
      OR position('UPDATE public.tournament_players' IN v_source)=0
      OR position('UPDATE public.table_seats' IN v_source)=0 THEN
     RAISE EXCEPTION 'FAIL atomic tournament move lost a required commit member';

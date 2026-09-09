@@ -7015,6 +7015,10 @@ export class GameServer {
     replacement: ServerTableEngine
   ): Promise<boolean> {
     if (!this.running) return false;
+    // A lost transport response may follow a committed seat move. The old
+    // source engine remains the physical fence until that exact UUID replays;
+    // replacing it here would let the successor deal from an unknown roster.
+    if (expected.hasClaimedTournamentMoveBoundary()) return false;
     let replaced = false;
     try {
       replaced = await replaceOwnedTableEngine(
@@ -7022,7 +7026,8 @@ export class GameServer {
         this.tournamentOwnedTables,
         tableId,
         expected,
-        replacement
+        replacement,
+        () => !expected.hasClaimedTournamentMoveBoundary()
       );
     } catch (error) {
       // ServerTableEngine reports cleanup failures only after releasing its
@@ -7426,6 +7431,16 @@ export class GameServer {
    */
   getTableEngine(tableId: string): ServerTableEngine | undefined {
     return this.tableEngines.get(tableId);
+  }
+
+  /**
+   * Synchronous identity proof for a TournamentManager about to mutate a
+   * source table.  The engine object and the ownership classification must
+   * agree; a recovery swaps the global object before it swaps the manager's
+   * local map, and that post-await window may never authorize a seat move.
+   */
+  ownsTournamentTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    return this.tableEngines.get(tableId) === engine && this.tournamentOwnedTables.has(tableId);
   }
 
   private sleep(ms: number): Promise<void> {

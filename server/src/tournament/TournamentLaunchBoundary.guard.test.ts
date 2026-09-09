@@ -142,7 +142,8 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     // stronger: the roster and the felt must each hold what the seats were bought
     // for. See TheSweepReachesTheTable.test.ts.
     expect(prove).toContain('Number(row.chips) < 0');
-    expect(prove).toContain('const expectedFloor = roster.length * startingChips;');
+    expect(prove).toContain('const expectedFloor = fundingFieldSize * startingChips;');
+    expect(prove).toContain('launchStacksMeetFundingFloor(');
     expect(prove).toContain('the playing roster holds no chips at all');
     expect(prove).toContain('durableTables.length !== this.tableEngines.size');
     expect(prove).toContain('ownedSeats.length !== 1');

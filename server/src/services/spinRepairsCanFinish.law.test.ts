@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { SPIN_TIERS } from '../config/spinSpec.js';
 
 const gameServer = readFileSync(join(__dirname, '..', 'GameServer.ts'), 'utf8');
 const executableGameServer = gameServer
@@ -31,6 +32,72 @@ const currentOverlayFixture = readFileSync(
   'utf8'
 );
 describe('the Spin payout repair fleet has one stage-one replacement', () => {
+  it('separates a new draw admission from immutable replay after chips move', () => {
+    const entryAt = stageOne.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_spin_book_entry(p_tournament_id uuid)'
+    );
+    const entryEnd = stageOne.indexOf('$spin_entry$;', entryAt);
+    const entry = stageOne.slice(entryAt, entryEnd);
+    const authorityAt = stageOne.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_spin_draw_and_settle('
+    );
+    const authorityEnd = stageOne.indexOf('$spin_authority$;', authorityAt);
+    const authority = stageOne.slice(authorityAt, authorityEnd);
+
+    expect(entry).toContain('v_entry_existed boolean := false');
+    expect(entry).toMatch(/IF \(NOT v_entry_existed AND \([\s\S]*?v_exact_seat_stacks <> 3/);
+    expect(entry).toMatch(
+      /OR v_roster_users <> 3 OR v_paid_users <> 3[\s\S]*?OR v_buyin_debits <> 3/
+    );
+
+    const drawRead = authority.indexOf("r.kind = 'jackpot_draw'");
+    const strictAdmission = authority.indexOf('IF NOT v_draw_existed', drawRead);
+    const bookEntry = authority.indexOf('v_book := public.fn_spin_book_entry', strictAdmission);
+    const replayEvidence = authority.indexOf('IF v_draw_existed THEN', bookEntry);
+    const replayEvidenceEnd = authority.indexOf('\n  END IF;\n\n  IF NOT EXISTS', replayEvidence);
+    const drawBranch = authority.indexOf('IF v_booked_multiplier IS NULL THEN', replayEvidenceEnd);
+    const drawBranchElse = authority.indexOf('\n  ELSE\n', drawBranch);
+    const replayEnvelopeEnd = authority.indexOf('\n  END IF;\n\n  IF COALESCE', drawBranchElse);
+    expect(drawRead).toBeGreaterThan(-1);
+    expect(strictAdmission).toBeGreaterThan(drawRead);
+    expect(bookEntry).toBeGreaterThan(strictAdmission);
+    expect(replayEvidence).toBeGreaterThan(bookEntry);
+    expect(replayEvidenceEnd).toBeGreaterThan(replayEvidence);
+    expect(drawBranch).toBeGreaterThan(replayEvidenceEnd);
+    expect(drawBranchElse).toBeGreaterThan(drawBranch);
+    expect(replayEnvelopeEnd).toBeGreaterThan(drawBranchElse);
+    expect(authority.slice(drawRead, strictAdmission)).not.toMatch(
+      /v_exact_seat_stacks <> 3|v_exact_roster_stacks <> 3/
+    );
+    expect(authority.slice(replayEvidence, replayEvidenceEnd)).not.toMatch(
+      /fn_spin_book_entry|fn_spin_settle_game/
+    );
+    expect(authority.slice(drawBranchElse, replayEnvelopeEnd)).not.toMatch(
+      /fn_spin_book_entry|fn_spin_settle_game/
+    );
+    expect(authority.slice(drawBranchElse, replayEnvelopeEnd)).toContain(
+      "'reason','already_settled'"
+    );
+    expect(authority).toContain('does not have exactly three immutable paid identities');
+    expect(authority).toContain('tournament contract did not read back exactly');
+    expect(authority).toContain('v_canonical_tiers constant jsonb');
+    expect(authority).toContain('IF NOT v_draw_existed AND (');
+    expect(authority).toContain('p_tiers IS DISTINCT FROM v_canonical_tiers');
+    expect(authority).toContain('jsonb_array_elements(v_canonical_tiers)');
+    expect(authority).not.toContain('jsonb_array_elements(p_tiers)');
+    const canonicalLiteral = authority.match(
+      /v_canonical_tiers constant jsonb := '(\[[\s\S]*?\])'::jsonb;/
+    );
+    expect(canonicalLiteral).not.toBeNull();
+    expect(JSON.parse(canonicalLiteral![1])).toEqual(
+      SPIN_TIERS.map(({ multiplier, freq, reserveThresholdX }) => ({
+        multiplier,
+        freq,
+        reserveThresholdX,
+      }))
+    );
+  });
+
   it('has no GameServer winner-backpay caller or timer', () => {
     expect(executableGameServer).not.toMatch(/fn_backpay_spin_unpaid_winners/);
     expect(executableGameServer).not.toMatch(/lastSpinBackpayAt/);
@@ -109,11 +176,14 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
     const creditorLock = stageOne.indexOf(
       "pg_advisory_xact_lock(hashtext('credit-stalled-seat-first-stacks'))"
     );
-    const cronLock = stageOne.indexOf('LOCK TABLE cron.job IN SHARE MODE', creditorLock);
-    const unschedule = stageOne.indexOf('cron.unschedule(v_job.jobid)', cronLock);
+    const reschedulerProof = stageOne.indexOf(
+      'a stored function can still recreate or call the stack repair',
+      creditorLock
+    );
+    const unschedule = stageOne.indexOf('cron.unschedule(v_job.jobid)', reschedulerProof);
     expect(creditorLock).toBeGreaterThan(-1);
-    expect(cronLock).toBeGreaterThan(creditorLock);
-    expect(unschedule).toBeGreaterThan(cronLock);
+    expect(reschedulerProof).toBeGreaterThan(creditorLock);
+    expect(unschedule).toBeGreaterThan(reschedulerProof);
     const retirementEnd = stageOne.indexOf('$retire_stack_repair$;', unschedule);
     const dropRepair = stageOne.indexOf(
       'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT',

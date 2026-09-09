@@ -20,8 +20,15 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
 import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
-import { moveTournamentPlayerAtomically } from './tournamentSeatMoveRpc.js';
 import {
+  moveTournamentPlayerAtomically,
+  TournamentSeatMoveOutcomeUnknownError,
+  type TournamentSeatMoveInput,
+  type TournamentSeatMoveSourceMode,
+  type VerifiedTournamentSeatMoveReceipt,
+} from './tournamentSeatMoveRpc.js';
+import {
+  CLOSED_ORPHAN_RESEAT_REASON,
   planOrphanReseats,
   describeUnmovableOrphans,
   type OrphanTableRow,
@@ -50,7 +57,36 @@ interface TournamentTableCloseResult {
   current_players?: number;
 }
 
+interface ClaimedTournamentMoveBoundary {
+  sourceMode: TournamentSeatMoveSourceMode;
+  engine: ServerTableEngine | null;
+}
+
+interface PendingTournamentSeatMoveOutcome {
+  move: MoveInstruction;
+  input: TournamentSeatMoveInput;
+}
+
 export class TournamentManager extends TournamentManagerEliminations {
+  private static readonly MOVE_BOUNDARY_PROBE_MS = 1_000;
+  /** Exact manager generation that owns every live-source move fence it arms. */
+  private readonly tournamentMoveBoundaryOwner = randomUUID();
+  /** Ambiguous replies retain the exact UUID and source fence until replay resolves. */
+  private readonly pendingTournamentSeatMoveOutcomes = new Map<
+    string,
+    PendingTournamentSeatMoveOutcome
+  >();
+  /** One manager generation has exactly one seat-move authority at a time. */
+  private tournamentSeatMoveSerialTail: Promise<void> = Promise.resolve();
+
+  private runWithTournamentSeatMoveAuthority<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.tournamentSeatMoveSerialTail.then(operation);
+    this.tournamentSeatMoveSerialTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
   /**
    * Read a complete balancer picture in bounded ID-list chunks. The former
    * implementation issued two sequential requests per table, twice per pass;
@@ -224,8 +260,243 @@ export class TournamentManager extends TournamentManagerEliminations {
     return true;
   }
 
+  /**
+   * Own the exact source-table generation before a seat can be vacated.
+   * Closed-orphan recovery is the sole no-engine mode; its database function
+   * independently proves that the source table is closed or deleted.
+   */
+  private async claimTournamentMoveBoundary(
+    move: MoveInstruction,
+    sourceMode: TournamentSeatMoveSourceMode
+  ): Promise<ClaimedTournamentMoveBoundary | null> {
+    const managerEngine = this.tableEngines.get(move.fromTableId);
+    const serverEngine = this.gameServer.getTableEngine(move.fromTableId);
+
+    if (sourceMode === 'closed_orphan') {
+      if (managerEngine || serverEngine) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] closed-orphan move ${move.playerId.slice(0, 8)} found a live source engine generation`
+          ),
+          'Tournament.closed_orphan_move_has_live_engine',
+          { sourceTableId: move.fromTableId }
+        );
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return null;
+      }
+      return { sourceMode, engine: null };
+    }
+
+    if (
+      !managerEngine ||
+      serverEngine !== managerEngine ||
+      !this.gameServer.ownsTournamentTableEngine(move.fromTableId, managerEngine)
+    ) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] live-source move ${move.playerId.slice(0, 8)} does not own one identical source engine generation`
+        ),
+        'Tournament.atomic_move_source_generation_unproven',
+        { sourceTableId: move.fromTableId }
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+
+    const parked = await managerEngine.parkForTournamentMove(
+      this.tournamentMoveBoundaryOwner,
+      TournamentManager.MOVE_BOUNDARY_PROBE_MS
+    );
+    if (!this.eliminationMutationAllowed()) {
+      managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      return null;
+    }
+    if (!parked) {
+      // The pause owner remains armed. A long current hand lands normally;
+      // the next causal sweep claims the physical gate without polling it.
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+    if (
+      this.tableEngines.get(move.fromTableId) !== managerEngine ||
+      !this.gameServer.ownsTournamentTableEngine(move.fromTableId, managerEngine)
+    ) {
+      managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+    return { sourceMode, engine: managerEngine };
+  }
+
+  /** Invoke the RPC only while the exact source generation remains fenced. */
+  private requestTournamentSeatMoveAtBoundary(
+    input: TournamentSeatMoveInput,
+    boundary: ClaimedTournamentMoveBoundary,
+    outcomeWasAlreadyUnknown = false
+  ): Promise<VerifiedTournamentSeatMoveReceipt> {
+    if (!boundary.engine) {
+      if (
+        input.sourceMode !== 'closed_orphan' ||
+        this.tableEngines.has(input.sourceTableId) ||
+        this.gameServer.getTableEngine(input.sourceTableId)
+      ) {
+        return Promise.reject(new Error('closed-orphan source boundary is no longer exact'));
+      }
+      return moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown });
+    }
+    if (
+      input.sourceMode !== 'live_source' ||
+      this.tableEngines.get(input.sourceTableId) !== boundary.engine ||
+      !this.gameServer.ownsTournamentTableEngine(input.sourceTableId, boundary.engine)
+    ) {
+      return Promise.reject(new Error('live-source engine generation changed before move RPC'));
+    }
+    return boundary.engine.executeTournamentMoveAtBoundary(this.tournamentMoveBoundaryOwner, () =>
+      moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })
+    );
+  }
+
+  /**
+   * Complete an ambiguous operation by replaying its immutable UUID. Nothing
+   * else in this tournament may be planned from possibly stale seats first.
+   */
+  protected redrivePendingTournamentSeatMoveOutcomes(): Promise<boolean> {
+    return this.runWithTournamentSeatMoveAuthority(() =>
+      this.redrivePendingTournamentSeatMoveOutcomesOwned()
+    );
+  }
+
+  private async redrivePendingTournamentSeatMoveOutcomesOwned(): Promise<boolean> {
+    for (const [requestId, pending] of this.pendingTournamentSeatMoveOutcomes) {
+      if (!this.eliminationMutationAllowed()) return false;
+      const boundary = await this.claimTournamentMoveBoundary(
+        pending.move,
+        pending.input.sourceMode
+      );
+      if (!boundary) return false;
+
+      let releaseBoundary = true;
+      try {
+        const receipt = await this.requestTournamentSeatMoveAtBoundary(
+          pending.input,
+          boundary,
+          true
+        );
+        this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} replay certified for ${pending.move.playerId.slice(0, 8)}`
+        );
+      } catch (moveErr) {
+        releaseBoundary = false;
+        if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
+          reportError(moveErr, 'Tournament.atomic_move_outcome_still_unknown', {
+            tournamentId: this.tournamentId,
+            requestId,
+            sourceTableId: pending.move.fromTableId,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          return false;
+        }
+        // A refusal on a later invocation cannot prove that the earlier request
+        // did not commit: authentication and other preconditions run before the
+        // receipt lookup. Only the verified receipt path above may delete an
+        // already-ambiguous UUID. Local boundary failures follow the same rule.
+        reportError(moveErr, 'Tournament.atomic_move_replay_boundary_unavailable', {
+          tournamentId: this.tournamentId,
+          requestId,
+          sourceTableId: pending.move.fromTableId,
+        });
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return false;
+      } finally {
+        if (releaseBoundary && boundary.engine) {
+          boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        }
+      }
+    }
+    return this.pendingTournamentSeatMoveOutcomes.size === 0;
+  }
+
+  /**
+   * Resolve retained UUIDs after the exact source engine has stopped and joined
+   * every writer. Runtime recovery passes one source; manager shutdown passes
+   * null to certify the complete pending set before releasing either registry.
+   */
+  protected resolveTournamentSeatMoveQuarantine(
+    tableId: string | null,
+    engine: ServerTableEngine | null
+  ): Promise<boolean> {
+    return this.runWithTournamentSeatMoveAuthority(async () => {
+      const pending = [...this.pendingTournamentSeatMoveOutcomes.entries()].filter(
+        ([, item]) => tableId === null || item.input.sourceTableId === tableId
+      );
+
+      for (const [requestId, item] of pending) {
+        let boundary: ClaimedTournamentMoveBoundary;
+        if (item.input.sourceMode === 'closed_orphan') {
+          if (
+            this.tableEngines.has(item.input.sourceTableId) ||
+            this.gameServer.getTableEngine(item.input.sourceTableId)
+          ) {
+            return false;
+          }
+          boundary = { sourceMode: 'closed_orphan', engine: null };
+        } else {
+          const sourceEngine = engine ?? this.tableEngines.get(item.input.sourceTableId) ?? null;
+          if (
+            !sourceEngine ||
+            (tableId !== null && item.input.sourceTableId !== tableId) ||
+            this.tableEngines.get(item.input.sourceTableId) !== sourceEngine ||
+            !this.gameServer.ownsTournamentTableEngine(item.input.sourceTableId, sourceEngine) ||
+            !sourceEngine.hasReleasedProcessOwnership() ||
+            !(await sourceEngine.parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0))
+          ) {
+            return false;
+          }
+          boundary = { sourceMode: 'live_source', engine: sourceEngine };
+        }
+
+        try {
+          const receipt = await this.requestTournamentSeatMoveAtBoundary(
+            item.input,
+            boundary,
+            true
+          );
+          this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Quarantined move ${receipt.requestId.slice(0, 8)} replay certified before engine release`
+          );
+        } catch (error) {
+          reportError(error, 'Tournament.atomic_move_quarantine_unresolved', {
+            tournamentId: this.tournamentId,
+            requestId,
+            sourceTableId: item.input.sourceTableId,
+          });
+          return false;
+        }
+      }
+
+      if (tableId !== null && engine) {
+        const stillPending = [...this.pendingTournamentSeatMoveOutcomes.values()].some(
+          (item) => item.input.sourceTableId === tableId
+        );
+        if (stillPending) return false;
+        engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        return !engine.hasClaimedTournamentMoveBoundary();
+      }
+
+      if (this.pendingTournamentSeatMoveOutcomes.size > 0) return false;
+      for (const sourceEngine of this.tableEngines.values()) {
+        sourceEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        if (sourceEngine.hasClaimedTournamentMoveBoundary()) return false;
+      }
+      return true;
+    });
+  }
+
   protected async checkTableBalance(): Promise<void> {
     if (!this.eliminationMutationAllowed()) return;
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
     // Check for final table (table_size or fewer players remaining, 2026-08-22
     // parity: was hardcoded 9) — only announce once
     if (!this.isFinalTable) {
@@ -537,6 +808,7 @@ export class TournamentManager extends TournamentManagerEliminations {
    * stranded" and never "everybody is".
    */
   public async absorbOrphanedSeats(): Promise<number> {
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return 0;
     const { data: tableRows, error: tableErr } = await supabase
       .from('tables')
       .select('id, status, is_deleted, max_players')
@@ -582,36 +854,102 @@ export class TournamentManager extends TournamentManagerEliminations {
     return this.executePlayerMoves(moves);
   }
 
-  protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
+  protected executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
+    return this.runWithTournamentSeatMoveAuthority(() => this.executePlayerMovesOwned(moves));
+  }
+
+  private async executePlayerMovesOwned(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
     const batch = moves.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (moves.length > batch.length) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
     }
+    if (batch.length === 0) return moved;
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomesOwned())) return moved;
+
+    const sourcePlans = new Map<
+      string,
+      { move: MoveInstruction; sourceMode: TournamentSeatMoveSourceMode }
+    >();
     for (const move of batch) {
-      if (!this.eliminationMutationAllowed()) return moved;
-      try {
-        const receipt = await moveTournamentPlayerAtomically({
-          requestId: randomUUID(),
+      const sourceMode: TournamentSeatMoveSourceMode =
+        move.reason === CLOSED_ORPHAN_RESEAT_REASON ? 'closed_orphan' : 'live_source';
+      const prior = sourcePlans.get(move.fromTableId);
+      if (prior && prior.sourceMode !== sourceMode) {
+        reportError(
+          new Error('one source table was assigned contradictory move authority modes'),
+          'Tournament.atomic_move_source_mode_conflict',
+          { sourceTableId: move.fromTableId }
+        );
+        continue;
+      }
+      sourcePlans.set(move.fromTableId, { move, sourceMode });
+    }
+
+    // Arm every source together. A slow current hand costs this scheduler one
+    // short probe, not one serial minute per table; its owner stays armed and
+    // the next causal sweep claims the physical park.
+    const boundaryResults = await Promise.all(
+      [...sourcePlans.entries()].map(
+        async ([sourceTableId, plan]) =>
+          [
+            sourceTableId,
+            await this.claimTournamentMoveBoundary(plan.move, plan.sourceMode),
+          ] as const
+      )
+    );
+    const boundaries = new Map(boundaryResults);
+    const retainedUnknownSources = new Set<string>();
+    const refusedSources = new Set<string>();
+
+    try {
+      for (const move of batch) {
+        if (!this.eliminationMutationAllowed()) break;
+        if (refusedSources.has(move.fromTableId)) continue;
+        const boundary = boundaries.get(move.fromTableId);
+        if (!boundary) continue;
+        const requestId = randomUUID();
+        const input: TournamentSeatMoveInput = {
+          requestId,
           tournamentId: this.tournamentId,
           userId: move.playerId,
           sourceTableId: move.fromTableId,
           destinationTableId: move.toTableId,
           destinationSeatNumber: move.toSeat,
-        });
-        moved++;
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
-        );
-      } catch (moveErr) {
-        reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
-          tournamentId: this.tournamentId,
-          playerId: move.playerId,
-          sourceTableId: move.fromTableId,
-          destinationTableId: move.toTableId,
-          destinationSeat: move.toSeat,
-        });
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          sourceMode: boundary.sourceMode,
+        };
+        try {
+          const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
+          moved++;
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
+          );
+        } catch (moveErr) {
+          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
+            this.pendingTournamentSeatMoveOutcomes.set(requestId, { move, input });
+            retainedUnknownSources.add(move.fromTableId);
+          } else {
+            refusedSources.add(move.fromTableId);
+          }
+          reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
+            tournamentId: this.tournamentId,
+            requestId,
+            playerId: move.playerId,
+            sourceTableId: move.fromTableId,
+            destinationTableId: move.toTableId,
+            destinationSeat: move.toSeat,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          // An unknown source shape invalidates every remaining destination
+          // chosen from the same snapshot. Resolve that UUID before planning.
+          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) break;
+        }
+      }
+    } finally {
+      for (const [sourceTableId, boundary] of boundaries) {
+        if (boundary?.engine && !retainedUnknownSources.has(sourceTableId)) {
+          boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        }
       }
     }
     return moved;
@@ -632,7 +970,12 @@ export class TournamentManager extends TournamentManagerEliminations {
    */
   protected async waitForHandComplete(tableId: string): Promise<boolean> {
     const engine = this.tableEngines.get(tableId);
-    return Boolean(engine && engine.isBetweenHands() && !engine.hasSettlementInFlight());
+    return Boolean(
+      engine &&
+      this.gameServer.ownsTournamentTableEngine(tableId, engine) &&
+      engine.isBetweenHands() &&
+      !engine.hasSettlementInFlight()
+    );
   }
 
   /**

@@ -17,7 +17,14 @@ const compiled = ts.transpileModule(
     '\nreturn spinPresentationPatch; }\nreturn run.call(this);',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
-const execute = new Function('spinMultiplier', 'spinTier', 'spinBlindsForLevel', compiled);
+const execute = new Function(
+  'spinMultiplier',
+  'spinTier',
+  'spinBlindsForLevel',
+  'playedSpinRecovery',
+  'tournament',
+  compiled
+);
 
 describe('the committed Spin tier determines the presentation patch', () => {
   it.each([
@@ -29,7 +36,9 @@ describe('the committed Spin tier determines the presentation patch', () => {
       { spinRevealLagMs: 12, spinRevealAt: 0 },
       committed,
       spinTier,
-      spinBlindsForLevel
+      spinBlindsForLevel,
+      null,
+      {}
     );
     expect(patch.payout_structure).toEqual(
       (percentages as number[]).map((percentage, i) => ({ place: i + 1, percentage }))
@@ -41,5 +50,23 @@ describe('the committed Spin tier determines the presentation patch', () => {
     expect(patch).not.toHaveProperty('spin_multiplier');
     expect(patch).not.toHaveProperty('prize_pool');
     expect(patch).not.toHaveProperty('starting_chips');
+  });
+
+  it('preserves the historical reveal timestamps when recovering an already-played Spin', () => {
+    const historical = {
+      spin_reveal_lag_ms: 741,
+      spin_reveal_at: '2026-09-09T12:34:56.789Z',
+    };
+    const patch = execute.call(
+      { spinRevealLagMs: 99_999, spinRevealAt: Date.parse('2026-09-09T23:59:59.999Z') },
+      10,
+      spinTier,
+      spinBlindsForLevel,
+      { recovery: true },
+      historical
+    );
+
+    expect(patch.spin_reveal_lag_ms).toBe(historical.spin_reveal_lag_ms);
+    expect(patch.spin_reveal_at).toBe(historical.spin_reveal_at);
   });
 });

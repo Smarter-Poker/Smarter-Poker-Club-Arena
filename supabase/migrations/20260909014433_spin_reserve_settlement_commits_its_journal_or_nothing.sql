@@ -176,6 +176,7 @@ BEGIN
      OR to_regprocedure('public.fn_ca_escrow_on_reserve_leg()') IS NULL
      OR to_regprocedure('public.fn_ca_guard_seat_creation()') IS NULL
      OR to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL
+     OR to_regprocedure('public.fn_caller_session_is_live()') IS NULL
      OR to_regprocedure('public.fn_lock_daily_mission_user(uuid)') IS NULL
      OR to_regprocedure('public.fn_seat_change_syncs_seat_first_count()') IS NULL
      OR to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NULL
@@ -648,6 +649,11 @@ AS $registration_terminal_gate$
 DECLARE
   v_gate jsonb;
 BEGIN
+  IF public.fn_caller_session_is_live() IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION
+      'SESSION_REVOKED: this session is signed out - sign in again'
+      USING ERRCODE='28000';
+  END IF;
   v_gate:=public.fn_ca_lock_tournament_seat_acquisition(
     p_tournament_id,NULL,auth.uid());
   IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN
@@ -2550,6 +2556,7 @@ DECLARE
   v_reserve_count integer;
   v_journal_id uuid;
   v_journal_count integer;
+  v_entry_existed boolean := false;
   v_contrib jsonb;
   v_key text := 'spin:' || p_tournament_id::text || ':entry';
 BEGIN
@@ -2606,18 +2613,29 @@ BEGIN
    WHERE w.related_entity_id = p_tournament_id
      AND w.type = 'debit'
      AND w.category = 'tournament_buyin';
-  IF v_table_id IS NULL OR v_live_seats <> 3 OR v_seat_users <> 3
-     OR v_exact_seat_stacks <> 3
+  SELECT EXISTS (
+    SELECT 1 FROM public.spin_reserve_ledger r
+     WHERE r.tournament_id = p_tournament_id AND r.kind = 'contribution'
+  ) INTO v_entry_existed;
+
+  -- The live-seat distribution is an admission proof, not an immutable
+  -- receipt proof. The third-seat transaction must begin with three exact
+  -- starting stacks. Once its contribution exists, hands may redistribute or
+  -- vacate those stacks; replay proves the three paid identities and the
+  -- immutable contribution+journal below without demanding pre-hand state.
+  IF (NOT v_entry_existed AND (
+       v_table_id IS NULL OR v_live_seats <> 3 OR v_seat_users <> 3
+       OR v_exact_seat_stacks <> 3
+       OR EXISTS (
+         SELECT 1 FROM public.tournament_players tp
+          WHERE tp.tournament_id = p_tournament_id
+            AND NOT EXISTS (
+              SELECT 1 FROM public.table_seats s
+               WHERE s.table_id = v_table_id AND s.left_at IS NULL
+                 AND s.user_id = tp.user_id))))
      OR v_roster_users <> 3 OR v_paid_users <> 3
      OR v_buyin_debits <> 3
-     OR v_buyin_total <> round(v_t.buy_in_amount * 3,2)
-     OR EXISTS (
-       SELECT 1 FROM public.tournament_players tp
-        WHERE tp.tournament_id = p_tournament_id
-          AND NOT EXISTS (
-            SELECT 1 FROM public.table_seats s
-             WHERE s.table_id = v_table_id AND s.left_at IS NULL
-               AND s.user_id = tp.user_id)) THEN
+     OR v_buyin_total <> round(v_t.buy_in_amount * 3,2) THEN
     RETURN jsonb_build_object(
       'ok',false,'reason','three_paid_seats_required',
       'seats',v_live_seats,'seat_users',v_seat_users,
@@ -3185,12 +3203,22 @@ DECLARE
   v_escrow_prize_balance numeric;
   v_row_count integer;
   v_draw_key text := 'spin:' || p_tournament_id::text || ':draw';
+  -- Product economics live inside the money authority. The service still
+  -- submits its compiled copy during the rolling cutover, but a drifted or
+  -- alternate service caller cannot change RTP, the ladder, or reserve gates.
+  v_canonical_tiers constant jsonb := '[
+    {"multiplier":2,"freq":4809776,"reserveThresholdX":0},
+    {"multiplier":3,"freq":3930716,"reserveThresholdX":0},
+    {"multiplier":4,"freq":900000,"reserveThresholdX":0},
+    {"multiplier":5,"freq":250000,"reserveThresholdX":0},
+    {"multiplier":10,"freq":100000,"reserveThresholdX":0},
+    {"multiplier":25,"freq":7500,"reserveThresholdX":0},
+    {"multiplier":50,"freq":1000,"reserveThresholdX":0},
+    {"multiplier":100,"freq":1008,"reserveThresholdX":1.5}
+  ]'::jsonb;
 BEGIN
-  IF p_tournament_id IS NULL
-     OR p_tiers IS NULL
-     OR jsonb_typeof(p_tiers) <> 'array'
-     OR jsonb_array_length(p_tiers) = 0 THEN
-    RAISE EXCEPTION 'Spin draw-and-settle requires a tournament and tier array'
+  IF p_tournament_id IS NULL THEN
+    RAISE EXCEPTION 'Spin draw-and-settle requires a tournament'
       USING ERRCODE = '22023';
   END IF;
 
@@ -3224,6 +3252,32 @@ BEGIN
        ('COMPLETED','CANCELLED','CANCELED') THEN
     RAISE EXCEPTION 'Spin % cannot draw from status %',
       p_tournament_id, v_t.status USING ERRCODE = '55000';
+  END IF;
+
+  -- Decide admission versus replay while the tournament row is locked. No
+  -- other draw authority can cross that row lock. A committed draw is an
+  -- immutable money receipt: its replay must not depend on the live stack
+  -- distribution or on a busted player's seat still being occupied.
+  SELECT r.club_id, r.multiplier, round(-r.amount,2)
+    INTO v_owner, v_booked_multiplier, v_booked_draw
+    FROM public.spin_reserve_ledger r
+   WHERE r.tournament_id = p_tournament_id AND r.kind = 'jackpot_draw'
+   ORDER BY r.created_at, r.id
+   LIMIT 1;
+  v_draw_existed := v_booked_multiplier IS NOT NULL;
+
+  -- A committed draw replays from immutable evidence and is deliberately
+  -- independent of whatever tier payload a newer, older, or recovering
+  -- service happens to carry. Only a brand-new money decision authenticates
+  -- the caller's compiled copy against the database-owned product contract.
+  IF NOT v_draw_existed AND (
+       p_tiers IS NULL
+       OR jsonb_typeof(p_tiers) <> 'array'
+       OR p_tiers IS DISTINCT FROM v_canonical_tiers
+     ) THEN
+    RAISE EXCEPTION
+      'Spin draw-and-settle tier contract does not match canonical economics v2026-09-05'
+      USING ERRCODE = '22023';
   END IF;
 
   v_table_id := public.fn_tournament_primary_table(p_tournament_id);
@@ -3270,24 +3324,30 @@ BEGIN
    WHERE w.related_entity_id = p_tournament_id
      AND w.type = 'debit'
      AND w.category = 'tournament_buyin';
-  IF v_table_id IS NULL OR v_paid_seats <> 3 OR v_seat_users <> 3
-     OR v_exact_seat_stacks <> 3
-     OR v_roster_users <> 3
-     OR v_exact_roster_stacks <> 3
+  IF v_roster_users <> 3
      OR v_paid_users <> 3
      OR v_buyin_debits <> 3
-     OR v_buyin_total <> round(v_t.buy_in_amount * 3,2)
-     OR EXISTS (
-       SELECT 1
-         FROM public.tournament_players tp
-        WHERE tp.tournament_id = p_tournament_id
-          AND NOT EXISTS (
-            SELECT 1 FROM public.table_seats s
-             WHERE s.table_id = v_table_id
-               AND s.left_at IS NULL
-               AND s.user_id = tp.user_id
-          )
-     ) THEN
+     OR v_buyin_total <> round(v_t.buy_in_amount * 3,2) THEN
+    RAISE EXCEPTION
+      'Spin % does not have exactly three immutable paid identities (% roster users, % paid users, % debits, % total)',
+      p_tournament_id,v_roster_users,v_paid_users,v_buyin_debits,v_buyin_total
+      USING ERRCODE = '55000';
+  END IF;
+  IF NOT v_draw_existed
+     AND (v_table_id IS NULL OR v_paid_seats <> 3 OR v_seat_users <> 3
+       OR v_exact_seat_stacks <> 3
+       OR v_exact_roster_stacks <> 3
+       OR EXISTS (
+         SELECT 1
+           FROM public.tournament_players tp
+          WHERE tp.tournament_id = p_tournament_id
+            AND NOT EXISTS (
+              SELECT 1 FROM public.table_seats s
+               WHERE s.table_id = v_table_id
+                 AND s.left_at IS NULL
+                 AND s.user_id = tp.user_id
+            )
+       )) THEN
     RAISE EXCEPTION
       'Spin % is not exactly three paid rostered starting stacks (% seats, % exact seat stacks, % seat users, % roster users, % exact roster stacks, % paid users, % debits, % total)',
       p_tournament_id, v_paid_seats, v_exact_seat_stacks, v_seat_users,
@@ -3295,22 +3355,27 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  -- fn_spin_book_entry owns the escrow -> advisory -> reserve lock order. The
-  -- outer transaction retains every lock it takes through the draw below.
-  v_book := public.fn_spin_book_entry(p_tournament_id);
-  IF COALESCE((v_book->>'ok')::boolean,false) IS NOT TRUE THEN
-    RAISE EXCEPTION 'Spin % entry booking refused: %', p_tournament_id, v_book
-      USING ERRCODE = 'P0404';
-  END IF;
-  BEGIN
-    v_entry_reserve_id := (v_book->>'entry_reserve_id')::uuid;
-    v_entry_journal_id := (v_book->>'entry_journal_id')::uuid;
-  EXCEPTION WHEN OTHERS THEN
-    RAISE EXCEPTION 'Spin % entry returned no immutable evidence ids: %',
-      p_tournament_id,v_book USING ERRCODE = 'P0404';
-  END;
+  v_rake_rate := public.fn_spin_rake_rate(v_t.buy_in_amount);
+  v_reserve_in := round(v_t.buy_in_amount * 3 * (1 - v_rake_rate), 2);
 
-  v_owner := public.fn_spin_reserve_pool(v_t.club_id);
+  IF NOT v_draw_existed THEN
+    -- fn_spin_book_entry owns the escrow -> advisory -> reserve lock order.
+    -- The outer transaction retains every lock it takes through the new draw.
+    v_owner := public.fn_spin_reserve_pool(v_t.club_id);
+    v_book := public.fn_spin_book_entry(p_tournament_id);
+    IF COALESCE((v_book->>'ok')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'Spin % entry booking refused: %', p_tournament_id, v_book
+        USING ERRCODE = 'P0404';
+    END IF;
+    BEGIN
+      v_entry_reserve_id := (v_book->>'entry_reserve_id')::uuid;
+      v_entry_journal_id := (v_book->>'entry_journal_id')::uuid;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION 'Spin % entry returned no immutable evidence ids: %',
+        p_tournament_id,v_book USING ERRCODE = 'P0404';
+    END;
+  END IF;
+
   SELECT p.id, p.balance, GREATEST(p.highest_stake, v_t.buy_in_amount)
     INTO v_pool_id, v_available, v_highest_stake
     FROM public.spin_bonus_pools p
@@ -3321,8 +3386,42 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  v_rake_rate := public.fn_spin_rake_rate(v_t.buy_in_amount);
-  v_reserve_in := round(v_t.buy_in_amount * 3 * (1 - v_rake_rate), 2);
+  IF v_draw_existed THEN
+    -- Replay is evidence-only. Do not call either lower money primitive after
+    -- a draw exists: ownership may have changed since the draw, while the
+    -- immutable reserve row and journal still name the exact historical pool.
+    SELECT count(*), (array_agg(r.id ORDER BY r.created_at,r.id))[1]
+      INTO v_row_count,v_entry_reserve_id
+      FROM public.spin_reserve_ledger r
+     WHERE r.tournament_id = p_tournament_id
+       AND r.kind = 'contribution'
+       AND r.club_id = v_owner
+       AND r.amount = v_reserve_in
+       AND r.buy_in = v_t.buy_in_amount
+       AND r.seats = 3
+       AND r.house_rake = round(v_t.buy_in_amount * 3 * v_rake_rate,2);
+    IF v_row_count <> 1 THEN
+      RAISE EXCEPTION 'Spin % replay has % exact entry reserve rows',
+        p_tournament_id,v_row_count USING ERRCODE = 'P0404';
+    END IF;
+    SELECT count(*), (array_agg(l.id ORDER BY l.created_at,l.id))[1]
+      INTO v_leg_count,v_entry_journal_id
+      FROM public.chip_ledger l
+      JOIN public.spin_reserve_ledger r ON r.id = v_entry_reserve_id
+     WHERE l.category = 'spin_entry'
+       AND l.from_type = 'prize_liability'
+       AND l.from_entity_id = p_tournament_id
+       AND l.to_type = 'spin_reserve'
+       AND l.to_entity_id = v_pool_id
+       AND l.tournament_id = p_tournament_id
+       AND l.amount = v_reserve_in
+       AND l.post_to_balance IS NOT DISTINCT FROM r.balance_after;
+    IF v_leg_count <> 1 THEN
+      RAISE EXCEPTION 'Spin % replay entry has % exact journal legs',
+        p_tournament_id,v_leg_count USING ERRCODE = 'P0404';
+    END IF;
+  END IF;
+
   IF NOT EXISTS (
        SELECT 1 FROM public.spin_reserve_ledger r
         WHERE r.tournament_id = p_tournament_id
@@ -3341,14 +3440,6 @@ BEGIN
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
 
-  SELECT r.multiplier, round(-r.amount,2)
-    INTO v_booked_multiplier, v_booked_draw
-    FROM public.spin_reserve_ledger r
-   WHERE r.tournament_id = p_tournament_id AND r.kind = 'jackpot_draw'
-   ORDER BY r.created_at, r.id
-   LIMIT 1;
-  v_draw_existed := v_booked_multiplier IS NOT NULL;
-
   IF v_booked_multiplier IS NULL THEN
     IF COALESCE(v_t.spin_multiplier,0) > 0 THEN
       RAISE EXCEPTION
@@ -3356,7 +3447,7 @@ BEGIN
         p_tournament_id, v_t.spin_multiplier USING ERRCODE = 'P0404';
     END IF;
 
-    FOR v_tier IN SELECT value FROM jsonb_array_elements(p_tiers) LOOP
+    FOR v_tier IN SELECT value FROM jsonb_array_elements(v_canonical_tiers) LOOP
       BEGIN
         v_multiplier := (v_tier->>'multiplier')::numeric;
         v_frequency := (v_tier->>'freq')::numeric;
@@ -3419,13 +3510,13 @@ BEGIN
     v_booked_multiplier := v_pick;
     v_booked_draw := round(v_t.buy_in_amount * v_pick,2);
   ELSE
-    -- The lower-level primitive returns and verifies the immutable booked
-    -- truth; it never draws again on a retry.
-    PERFORM set_config('app.ledger_idempotency_key',v_draw_key,true);
-    v_settle := public.fn_spin_settle_game(
-      p_tournament_id, v_t.club_id, v_t.buy_in_amount, 3,
-      v_booked_multiplier, v_rake_rate);
-    PERFORM set_config('app.ledger_idempotency_key','',true);
+    -- The immutable reserve and journal rows are the receipt. Reconstruct only
+    -- the return envelope; no lower money function runs on a replay.
+    v_settle := jsonb_build_object(
+      'ok',true,'reason','already_settled',
+      'multiplier',v_booked_multiplier,
+      'pool_covered',v_booked_draw,
+      'operator_shortfall',0);
     v_locked := COALESCE(v_t.spin_locked_tiers,'[]'::jsonb);
   END IF;
 
@@ -3473,17 +3564,26 @@ BEGIN
 
   IF NOT EXISTS (
        SELECT 1 FROM public.spin_reserve_ledger r
-        WHERE r.id = v_entry_reserve_id
+       WHERE r.id = v_entry_reserve_id
           AND r.tournament_id = p_tournament_id
           AND r.kind = 'contribution'
           AND r.club_id = v_owner
-          AND r.amount = v_reserve_in)
+          AND r.amount = v_reserve_in
+          AND r.buy_in = v_t.buy_in_amount
+          AND r.seats = 3
+          AND r.house_rake = round(v_t.buy_in_amount * 3 * v_rake_rate,2))
      OR NOT EXISTS (
        SELECT 1 FROM public.chip_ledger l
+       JOIN public.spin_reserve_ledger r ON r.id = v_entry_reserve_id
         WHERE l.id = v_entry_journal_id
           AND l.tournament_id = p_tournament_id
           AND l.category = 'spin_entry'
-          AND l.amount = v_reserve_in) THEN
+          AND l.from_type = 'prize_liability'
+          AND l.from_entity_id = p_tournament_id
+          AND l.to_type = 'spin_reserve'
+          AND l.to_entity_id = v_pool_id
+          AND l.amount = v_reserve_in
+          AND l.post_to_balance IS NOT DISTINCT FROM r.balance_after) THEN
     RAISE EXCEPTION 'Spin % entry receipt ids do not resolve to exact evidence',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
@@ -3530,6 +3630,16 @@ BEGIN
   PERFORM set_config('app.spin_settlement_authority','',true);
   IF v_row_count <> 1 THEN
     RAISE EXCEPTION 'Spin % tournament contract could not be stamped',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+  IF NOT EXISTS (
+       SELECT 1 FROM public.tournaments t
+        WHERE t.id = p_tournament_id
+          AND t.spin_multiplier IS NOT DISTINCT FROM v_booked_multiplier
+          AND t.prize_pool IS NOT DISTINCT FROM v_booked_draw
+          AND t.spin_locked_tiers IS NOT DISTINCT FROM v_locked
+     ) THEN
+    RAISE EXCEPTION 'Spin % tournament contract did not read back exactly',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
   SELECT p.balance INTO v_available
@@ -3718,9 +3828,13 @@ $accept_6d688095$;
 --
 -- The job's session advisory lock is taken first. That waits for a running
 -- invocation to finish and makes every newly-started tick take its `-1` branch.
--- SHARE locks then hold all writers behind this transaction while the durable
--- seat invariants and the exact old-job candidate set are proven. Only a clean
--- database may lose the fallback; no row is changed to manufacture that proof.
+-- The migration then proves there is no stored function capable of recreating
+-- the schedule, removes every exact job row through pg_cron's public API, and
+-- drops the repair with RESTRICT. Supabase's migration role owns SELECT but not
+-- writer-level LOCK on extension-owned cron.job, so pretending to freeze that
+-- catalog would make the reviewed cutover undeployable. Only a clean database
+-- with no executable re-scheduler may lose the fallback; no row is changed to
+-- manufacture that proof.
 DO $retire_stack_repair$
 DECLARE
   v_source text;
@@ -3728,10 +3842,6 @@ DECLARE
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('credit-stalled-seat-first-stacks'));
 
-  -- Keep a scheduler writer from recreating the job after the final scan but
-  -- before COMMIT. SHARE conflicts with cron.schedule/unschedule's row writes;
-  -- this transaction can still delete the rows it has proved and owns.
-  LOCK TABLE cron.job IN SHARE MODE;
   LOCK TABLE public.tournaments IN SHARE MODE;
   LOCK TABLE public.tables IN SHARE MODE;
   LOCK TABLE public.table_seats IN SHARE MODE;
@@ -3776,6 +3886,27 @@ BEGIN
   -- Byte-for-byte predicate of the retiring function. Production evidence on
   -- 2026-09-08 found zero candidates; this locked check makes that observation
   -- a commit precondition rather than a deployment note.
+  IF EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE p.oid <> 'public.fn_credit_stalled_seat_first_stacks()'::regprocedure
+       AND n.nspname <> 'information_schema'
+       AND n.nspname !~ '^pg_'
+       AND (
+         p.prosrc ~* '(perform|select|call)[[:space:]]+(public[.])?fn_credit_stalled_seat_first_stacks[[:space:]]*[(]'
+         OR (
+           p.prosrc ~* 'cron[.]schedule[[:space:]]*[(]'
+           AND (
+             lower(p.prosrc) LIKE '%credit-stalled-seat-first-stacks%'
+             OR lower(p.prosrc) LIKE '%fn_credit_stalled_seat_first_stacks%'
+           )
+         )
+       )
+  ) THEN
+    RAISE EXCEPTION 'a stored function can still recreate or call the stack repair';
+  END IF;
+
   IF EXISTS (
     SELECT 1
       FROM public.tournaments t
@@ -4015,6 +4146,15 @@ BEGIN
      OR v_source NOT LIKE '%fn_spin_settle_game%'
      OR v_source NOT LIKE '%v_exact_seat_stacks%'
      OR v_source NOT LIKE '%v_exact_roster_stacks%'
+     OR v_source NOT LIKE '%IF NOT v_draw_existed%'
+     OR v_source NOT LIKE '%IF NOT v_draw_existed AND (%'
+     OR v_source NOT LIKE '%p_tiers IS DISTINCT FROM v_canonical_tiers%'
+     OR v_source NOT LIKE '%"multiplier":2,"freq":4809776,"reserveThresholdX":0%'
+     OR v_source NOT LIKE '%"multiplier":100,"freq":1008,"reserveThresholdX":1.5%'
+     OR v_source NOT LIKE '%jsonb_array_elements(v_canonical_tiers)%'
+     OR v_source LIKE '%jsonb_array_elements(p_tiers)%'
+     OR v_source NOT LIKE '%exactly three immutable paid identities%'
+     OR v_source NOT LIKE '%tournament contract did not read back exactly%'
      OR v_source NOT LIKE '%operator_shortfall%'
      OR v_source ~* 'EXCEPTION[[:space:]]+WHEN[[:space:]]+OTHERS[[:space:]]+THEN[[:space:]]+NULL([[:space:]]|;)'
      OR v_source LIKE '%v_available + v_reserve_in%' THEN
@@ -4341,7 +4481,11 @@ BEGIN
   END IF;
   SELECT prosrc INTO v_source FROM pg_proc
    WHERE oid='public.fn_register_for_tournament(uuid,boolean)'::regprocedure;
-  IF v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
+  IF v_source NOT LIKE '%public.fn_caller_session_is_live()%'
+     OR v_source NOT LIKE '%SESSION_REVOKED%'
+     OR position('public.fn_caller_session_is_live()' IN v_source)
+          > position('fn_ca_lock_tournament_seat_acquisition' IN v_source)
+     OR v_source NOT LIKE '%fn_ca_lock_tournament_seat_acquisition%'
      OR v_source NOT LIKE '%fn_register_for_tournament_before_terminal_seat_gate%'
      OR has_function_privilege(
        'authenticated','public.fn_register_for_tournament(uuid,boolean)','EXECUTE')

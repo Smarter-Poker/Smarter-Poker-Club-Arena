@@ -164,8 +164,10 @@ describe('the launch proof tells a bust from an uncredited stack', () => {
   });
 
   it('asserts conservation instead: the roster must hold what its seats were bought for', () => {
-    expect(BASE).toMatch(/const expectedFloor = roster\.length \* startingChips;/);
-    expect(BASE).toMatch(/if \(startingChips > 0 && rosterChips < expectedFloor\)/);
+    expect(BASE).toMatch(/const expectedFloor = fundingFieldSize \* startingChips;/);
+    expect(BASE).toMatch(
+      /launchStacksMeetFundingFloor\(\s*roster\.map\(\(row\) => row\.chips\),\s*startingChips/
+    );
     // The original hazard - a field with no money on it - is still refused.
     expect(BASE).toMatch(/the playing roster holds no chips at all/);
   });
@@ -173,16 +175,28 @@ describe('the launch proof tells a bust from an uncredited stack', () => {
   it('applies the same rule to the felt, and still requires a funded total there', () => {
     expect(BASE).toMatch(/Number\(seat\.stack\) < 0/);
     expect(BASE).toMatch(/const seatChips = seats\.reduce\(/);
+    expect(BASE).toMatch(
+      /launchStacksMeetFundingFloor\(\s*seats\.map\(\(seat\) => seat\.stack\),\s*startingChips/
+    );
     expect(BASE).toMatch(/the felt holds \$\{seatChips\} chips, short of the/);
+  });
+
+  it('allows redistribution only behind the exact played-Spin proof', () => {
+    expect(BASE).toContain('playedSpinRecovery === null');
+    expect(BASE).toContain('an ordinary seat-first roster does not hold its exact starting stacks');
+    expect(BASE).toContain('does not hold the exact seat-first starting stack');
+    expect(BASE).toMatch(/Number\(seat\.stack\) !== startingChips/);
+    expect(BASE).toMatch(/Number\(row\.chips\) !== startingChips/);
+    expect(BASE).toContain('Number(seat.stack) !== Number(player.chips)');
   });
 
   it('has no deferred-stack window: atomic launch credit is proven before both conservation checks', () => {
     expect(BASE).not.toMatch(/deferStacksForSpinReveal|stacksMayBeDeferred|seats_credited/);
     expect(BASE).toMatch(
-      /const rosterChips = roster\.reduce\([\s\S]*?const expectedFloor = roster\.length \* startingChips;\s*if \(startingChips > 0 && rosterChips < expectedFloor\)/
+      /const rosterChips = roster\.reduce\([\s\S]*?const expectedFloor = fundingFieldSize \* startingChips;[\s\S]*?launchStacksMeetFundingFloor\(\s*roster\.map\(\(row\) => row\.chips\),\s*startingChips,\s*fundingFieldSize/
     );
     expect(BASE).toMatch(
-      /const seatChips = seats\.reduce\([\s\S]*?if \(startingChips > 0 && seatChips < expectedFloor\)/
+      /const seatChips = seats\.reduce\([\s\S]*?launchStacksMeetFundingFloor\(\s*seats\.map\(\(seat\) => seat\.stack\),\s*startingChips,\s*fundingFieldSize/
     );
   });
 });

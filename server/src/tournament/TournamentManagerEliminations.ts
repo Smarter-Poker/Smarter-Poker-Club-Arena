@@ -3805,7 +3805,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               alertCode,
             });
           }
-          await this.stopAndWait();
+          this.fenceUnknownTerminalOutcome('Tournament.final_table_deal_manager_stop_failed');
           return false;
         }
 
@@ -4076,7 +4076,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
       }
       if (provenRefusal) releaseFinishGuard();
-      if (!provenRefusal) await this.stopAndWait();
+      if (!provenRefusal) {
+        this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_manager_stop_failed');
+      }
       return;
     }
 

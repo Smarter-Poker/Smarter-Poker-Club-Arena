@@ -1328,7 +1328,11 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
     let maintenanceSites = 0;
     let terminalOnlySites = 0;
     for (const m of sites) {
-      const guard = src.slice(Math.max(0, m.index! - 220), m.index!);
+      // Pause ownership gained an exact tournament-move owner in front of the
+      // existing maintenance condition. Inspect the complete local guard, not
+      // a formatting-sized fragment that can silently stop at a longer list
+      // of authorities while the runtime condition remains correctly wired.
+      const guard = src.slice(Math.max(0, m.index! - 500), m.index!);
       const hasMaintenance = /maintenancePaused/.test(guard);
       const hasTerminalCloseout = /terminalCloseoutPaused/.test(guard);
       expect(

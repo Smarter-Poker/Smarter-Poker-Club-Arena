@@ -369,8 +369,11 @@ describe('a table move must never leave a player holding two live seats', () => 
    * (15,000 against a true 2,728,737 in Union Grand Championship).
    */
   it('moves source and destination through one receipt authority', () => {
-    const move = sliceMethod(code(MANAGER), 'executePlayerMoves(moves: MoveInstruction[])');
-    const request = move.indexOf('moveTournamentPlayerAtomically({');
+    const move = sliceMethod(
+      code(MANAGER),
+      'private async executePlayerMovesOwned(moves: MoveInstruction[])'
+    );
+    const request = move.indexOf('requestTournamentSeatMoveAtBoundary(input, boundary)');
     const success = move.indexOf('moved++;', request);
     expect(request).toBeGreaterThanOrEqual(0);
     expect(success).toBeGreaterThan(request);
@@ -468,11 +471,16 @@ describe('no seating path may write a second live seat in the same tournament', 
 
   it('a move has one database authority and no compensating seat writes', () => {
     const src = code(MANAGER);
-    const fn = src.slice(src.indexOf('executePlayerMoves(moves: MoveInstruction[])'));
+    const fn = src.slice(
+      src.indexOf('private async executePlayerMovesOwned(moves: MoveInstruction[])')
+    );
     const end = fn.indexOf('protected async waitForHandComplete');
     const move = fn.slice(0, end);
-    expect(move).toContain('moveTournamentPlayerAtomically({');
-    expect(move).toContain('requestId: randomUUID()');
+    expect(move).toContain('requestTournamentSeatMoveAtBoundary(input, boundary)');
+    expect(move).toContain('const requestId = randomUUID()');
+    expect(src).toContain(
+      'return moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })'
+    );
     expect(move).not.toMatch(/\.from\('table_seats'\)/);
     expect(move).not.toMatch(/\.from\('tournament_players'\)/);
     expect(move).not.toMatch(/restore|compensat/i);

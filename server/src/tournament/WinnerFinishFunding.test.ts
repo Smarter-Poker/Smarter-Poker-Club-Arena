@@ -141,7 +141,10 @@ describe('live finish accepts only a verified immutable receipt', () => {
       refusal
     );
     const release = ordinary.indexOf('if (provenRefusal) releaseFinishGuard()', unknown);
-    const stop = ordinary.indexOf('if (!provenRefusal) await this.stopAndWait()', release);
+    const stop = ordinary.indexOf(
+      "this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_manager_stop_failed')",
+      release
+    );
     const cleanup = ordinary.indexOf('await this.cleanupCommittedTournament(receipt)', stop);
 
     expect(refusal).toBeGreaterThanOrEqual(0);

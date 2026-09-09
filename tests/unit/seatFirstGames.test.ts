@@ -266,7 +266,7 @@ describe('the stack repair fleet is retired behind one serialized proof', () => 
     expect(trigger).not.toMatch(/IN\s*\(\s*'spin'\s*,\s*'sng'\s*\)/i);
   });
 
-  it('takes the cron advisory lock, freezes writers, proves zero backlog, then drops the repair', () => {
+  it('takes the cron advisory lock, proves no re-scheduler or backlog, then drops the repair', () => {
     const retirementAt = SPIN_CUTOVER.indexOf('DO $retire_stack_repair$');
     const retirementEnd = SPIN_CUTOVER.indexOf('$retire_stack_repair$;', retirementAt);
     expect(retirementAt).toBeGreaterThan(-1);
@@ -275,6 +275,7 @@ describe('the stack repair fleet is retired behind one serialized proof', () => 
     expect(retirement).toContain(
       "pg_advisory_xact_lock(hashtext('credit-stalled-seat-first-stacks'))"
     );
+    expect(retirement).toContain('a stored function can still recreate or call the stack repair');
     for (const table of [
       'public.tournaments',
       'public.tables',

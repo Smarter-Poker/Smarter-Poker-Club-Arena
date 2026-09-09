@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { sliceMethod } from './helpers/sourceWindow';
 
 const root = (path: string) => resolve(__dirname, '..', path);
 const migration = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
@@ -408,13 +409,17 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('makes the manager call one retry-safe RPC instead of split writes', () => {
-    const start = manager.indexOf('protected async executePlayerMoves(');
-    const next = manager.indexOf('\n  protected ', start + 1);
-    const method = manager.slice(start, next < 0 ? undefined : next);
+    const wrapper = sliceMethod(manager, 'protected executePlayerMoves(');
+    const owned = sliceMethod(manager, 'private async executePlayerMovesOwned(');
+    const boundary = sliceMethod(manager, 'private requestTournamentSeatMoveAtBoundary(');
 
-    expect(start).toBeGreaterThan(-1);
-    expect(method).toContain('moveTournamentPlayerAtomically');
-    expect(method).not.toMatch(/\.from\(['"](?:table_seats|tournament_players|tables)['"]\)/);
+    expect(wrapper).toContain('runWithTournamentSeatMoveAuthority');
+    expect(wrapper).toContain('this.executePlayerMovesOwned(moves)');
+    expect(owned).toContain('this.requestTournamentSeatMoveAtBoundary(input, boundary)');
+    expect(boundary).toContain('moveTournamentPlayerAtomically');
+    for (const method of [wrapper, owned, boundary]) {
+      expect(method).not.toMatch(/\.from\(['"](?:table_seats|tournament_players|tables)['"]\)/);
+    }
     expect(moveRpc).toContain("rpc('fn_move_tournament_player'");
     expect(moveRpc).toContain('p_request_id: input.requestId');
     expect(moveRpc.match(/fn_move_tournament_player/g)?.length ?? 0).toBeGreaterThanOrEqual(1);

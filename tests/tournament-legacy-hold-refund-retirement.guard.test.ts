@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
+
+import { runtimeFilesMatching } from './helpers/runtimeSourceSearch';
 
 const migration = readFileSync(
   resolve(
@@ -48,30 +49,11 @@ describe('the obsolete tournament-hold refund door is retired', () => {
   });
 
   it('has no application or edge-function caller left behind', () => {
-    for (const directory of runtimeFiles) {
-      const result = spawnSync(
-        'rg',
-        [
-          '-l',
-          '--glob',
-          '!**/*.test.ts',
-          '--glob',
-          '!**/*.test.tsx',
-          '--glob',
-          '!**/*.spec.ts',
-          '--glob',
-          '!**/*.spec.tsx',
-          'fn_release_tournament_holds',
-          directory,
-        ],
-        {
-          cwd: resolve(__dirname, '..'),
-          encoding: 'utf8',
-        }
-      );
-      expect(result.error, directory).toBeUndefined();
-      expect(result.status, directory).toBe(1);
-      expect(result.stdout.trim(), directory).toBe('');
-    }
+    const root = resolve(__dirname, '..');
+    const matches = runtimeFilesMatching(
+      runtimeFiles.map((directory) => resolve(root, directory)),
+      /fn_release_tournament_holds/
+    );
+    expect(matches).toEqual([]);
   });
 });

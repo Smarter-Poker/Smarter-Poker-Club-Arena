@@ -47,7 +47,9 @@ describe('the live cash finish has one authoritative payer', () => {
       /const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;[\s\S]*const outcomeUnknown =[\s\S]*settlementErr instanceof TerminalSettlementOutcomeUnknownError \|\| !provenRefusal;/
     );
     expect(failure).toContain('if (provenRefusal) releaseFinishGuard()');
-    expect(failure).toContain('if (!provenRefusal) await this.stopAndWait()');
+    expect(failure).toMatch(
+      /if \(!provenRefusal\) \{[\s\S]*?this\.fenceUnknownTerminalOutcome\('Tournament\.atomic_finish_manager_stop_failed'\);[\s\S]*?\}/
+    );
   });
 
   it('a failed bubble announcement cannot bypass receipt-driven shutdown', () => {

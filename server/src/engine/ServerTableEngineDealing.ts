@@ -195,6 +195,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||
+          this.tournamentMovePauseOwners.size > 0 ||
           (this.handForHandPaused && this.holdBeforeNextHand)
         ) {
           this.setLoopPhase('parked_for_pause');
@@ -794,7 +795,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.announcePendingSeatMoves()
         );
-        if (this.terminalCloseoutPaused) {
+        if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
           await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -806,7 +807,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // this waits out whatever of it is left, records how long the felt
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
-        if (this.terminalCloseoutPaused) {
+        if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
           await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -817,7 +818,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            sole new-hand edge; a stale dealer cannot allocate a hand number,
            move the button, post blinds, or deal one more card. */
         if (!this.lifecycleCanMutate()) return;
-        if (this.terminalCloseoutPaused) {
+        if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
           await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -837,7 +838,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           (this.handForHandPaused ||
             this.maintenancePaused ||
             this.finalTableDealPaused ||
-            this.terminalCloseoutPaused) &&
+            this.terminalCloseoutPaused ||
+            this.tournamentMovePauseOwners.size > 0) &&
           this.running
         ) {
           this.setLoopPhase('parked_for_pause');

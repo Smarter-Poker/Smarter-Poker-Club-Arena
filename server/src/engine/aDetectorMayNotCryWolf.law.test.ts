@@ -27,6 +27,9 @@ const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8');
 const SETTLEMENT = read('./ServerTableEngineSettlement.ts');
 const PROJECTION = read('../services/supabase/handProjection.ts');
 const MOVES = read('../tournament/TournamentManager.ts');
+const ENGINE = read('./ServerTableEngineBase.ts');
+const GAME_SERVER = read('../GameServer.ts');
+const MANAGER_BASE = read('../tournament/TournamentManagerBase.ts');
 
 /** The body of `catch (err) {` inside the post-commit obligations retry loop. */
 function obligationsRetryCatch(): string {
@@ -110,35 +113,85 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
    * hand write rejected whole`, which aborts the whole commit and kills the
    * engine generation - every player at the table loses the hand.
    */
-  function vacateSite(): { guard: string } {
-    const vacate = MOVES.indexOf('.update({ left_at: new Date().toISOString() })');
-    expect(vacate, 'the source-seat vacate has moved').toBeGreaterThan(-1);
-    // look back over the immediately preceding block only
-    return { guard: MOVES.slice(Math.max(0, vacate - 2600), vacate) };
-  }
-
-  it('re-probes the hand boundary immediately before vacating the seat', () => {
-    expect(vacateSite().guard).toMatch(
-      /if \(!\(await this\.waitForHandComplete\(move\.fromTableId\)\)\) \{/
+  it('requires one identical tournament engine generation in both registries', () => {
+    const claim = MOVES.slice(
+      MOVES.indexOf('private async claimTournamentMoveBoundary'),
+      MOVES.indexOf('private requestTournamentSeatMoveAtBoundary')
     );
+    expect(claim).toContain('serverEngine !== managerEngine');
+    expect(claim).toContain('this.gameServer.ownsTournamentTableEngine');
+    expect(claim).toContain('await managerEngine.parkForTournamentMove(');
+    expect(GAME_SERVER).toContain('this.tournamentOwnedTables.has(tableId)');
   });
 
-  it('leaves the player where they are and retries, rather than moving them', () => {
-    const g = vacateSite().guard;
-    expect(g).toMatch(
-      /requestUrgentEliminationSweepAfter\(TournamentManagerBase\.BALANCE_REDRIVE_MS\)/
+  it('moves only inside the claimed physical engine boundary', () => {
+    const request = MOVES.slice(
+      MOVES.indexOf('private requestTournamentSeatMoveAtBoundary'),
+      MOVES.indexOf('protected redrivePendingTournamentSeatMoveOutcomes')
     );
-    expect(g).toMatch(/continue;/);
+    expect(request).toContain('executeTournamentMoveAtBoundary(');
+    expect(request).toContain(
+      '() => moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })'
+    );
+    expect(ENGINE).toContain('this.handForHandResolve !== null');
+    expect(ENGINE).toContain('this.postHandTasksPromise === null');
+    expect(ENGINE).toContain('this.tournamentMoveOperations.add(barrier)');
   });
 
-  it('checks before anything is stamped, so a refusal writes nothing', () => {
-    // The guard must sit AFTER the reads (source stack, duplicate-seat claim)
-    // and BEFORE the first write. If it ever lands after the vacate, a refusal
-    // would leave the player seatless.
-    const guardAt = MOVES.indexOf('if (!(await this.waitForHandComplete(move.fromTableId)))');
-    const vacateAt = MOVES.indexOf('.update({ left_at: new Date().toISOString() })');
-    const claimAt = MOVES.indexOf('const moveClaim = await mayTakeSeat(');
-    expect(guardAt).toBeGreaterThan(claimAt);
-    expect(guardAt).toBeLessThan(vacateAt);
+  it('retains an unknown move UUID and source fence until exact replay resolves', () => {
+    const execute = MOVES.slice(
+      MOVES.indexOf('private async executePlayerMovesOwned'),
+      MOVES.indexOf('protected async waitForHandComplete')
+    );
+    const unknown = execute.indexOf('moveErr instanceof TournamentSeatMoveOutcomeUnknownError');
+    const retain = execute.indexOf('this.pendingTournamentSeatMoveOutcomes.set(requestId', unknown);
+    const release = execute.indexOf('releaseTournamentMovePause', retain);
+    expect(unknown).toBeGreaterThan(-1);
+    expect(retain).toBeGreaterThan(unknown);
+    expect(release).toBeGreaterThan(retain);
+    expect(execute.slice(retain, release)).toContain('retainedUnknownSources.has(sourceTableId)');
+
+    const replay = MOVES.slice(
+      MOVES.indexOf('private async redrivePendingTournamentSeatMoveOutcomesOwned'),
+      MOVES.indexOf('protected resolveTournamentSeatMoveQuarantine')
+    );
+    expect(replay).toContain('pending.input');
+    expect(replay).not.toContain('randomUUID()');
+    expect(replay).toMatch(/pending\.input,[\s\S]{0,80}boundary,[\s\S]{0,40}true/);
+    const caught = replay.indexOf('} catch (moveErr)');
+    expect(replay.indexOf('pendingTournamentSeatMoveOutcomes.delete(requestId)', caught)).toBe(-1);
+    expect(replay).toContain('Tournament.atomic_move_replay_boundary_unavailable');
+  });
+
+  it('does not replace the fenced engine generation while a move outcome is unknown', () => {
+    const replace = GAME_SERVER.slice(
+      GAME_SERVER.indexOf('async replaceTableEngine('),
+      GAME_SERVER.indexOf(
+        'unregisterTournamentTableEngine(',
+        GAME_SERVER.indexOf('async replaceTableEngine(')
+      )
+    );
+    expect(replace).toContain('expected.hasClaimedTournamentMoveBoundary()');
+    expect(replace.indexOf('expected.hasClaimedTournamentMoveBoundary()')).toBeLessThan(
+      replace.indexOf('replaceOwnedTableEngine(')
+    );
+    const recovery = MANAGER_BASE.slice(
+      MANAGER_BASE.indexOf('private async performManagedTableEngineRecovery'),
+      MANAGER_BASE.indexOf(
+        'protected startManagedTableEngine',
+        MANAGER_BASE.indexOf('private async performManagedTableEngineRecovery')
+      )
+    );
+    expect(recovery).toContain('await this.resolveTournamentSeatMoveQuarantine(tableId, engine)');
+    expect(recovery).toContain('this.gameServer.ownsTournamentTableEngine(tableId, engine)');
+    expect(recovery).toContain("this.requestEliminationSweep('seat_move_outcome_pending')");
+  });
+
+  it('allows no-engine movement only through the closed-orphan database mode', () => {
+    expect(MOVES).toContain("move.reason === CLOSED_ORPHAN_RESEAT_REASON ? 'closed_orphan'");
+    expect(MOVES).toContain("input.sourceMode !== 'closed_orphan'");
+    expect(MOVES).not.toMatch(
+      /\.from\(['"]table_seats['"]\)[\s\S]{0,120}\.(?:update|insert|delete)\(/
+    );
   });
 });

@@ -60,6 +60,7 @@
       "request_id",
       "source_seat_id",
       "source_seat_number",
+      "source_mode",
       "source_table_id",
       "stack",
       "tournament_id",

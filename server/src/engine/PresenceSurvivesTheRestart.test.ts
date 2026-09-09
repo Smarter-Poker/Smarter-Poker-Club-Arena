@@ -133,6 +133,7 @@ describe('the break writes the FSM, the boot reads it', () => {
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||
+          this.tournamentMovePauseOwners.size > 0 ||
           (this.handForHandPaused && this.holdBeforeNextHand)
         ) {`
     );

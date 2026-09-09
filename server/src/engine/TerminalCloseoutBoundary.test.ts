@@ -10,7 +10,11 @@ function boundaryHarness(): any {
   engine.handForHandPaused = false;
   engine.maintenancePaused = false;
   engine.terminalCloseoutPaused = false;
-  engine.terminalCloseoutWaiters = new Set();
+  engine.tournamentMovePauseOwners = new Set();
+  engine.claimedTournamentMovePauseOwners = new Set();
+  engine.tournamentMovePauseExpiryTimers = new Map();
+  engine.tournamentMoveOperations = new Set();
+  engine.boundaryPauseWaiters = new Set();
   engine.handForHandResolve = null;
   engine.handController = null;
   engine.postHandTasksPromise = null;
@@ -205,9 +209,15 @@ describe('the terminal tournament boundary owns the next deal', () => {
   it('rechecks the terminal owner after every awaited pre-deal boundary', () => {
     const source = readFileSync(join(__dirname, 'ServerTableEngineDealing.ts'), 'utf8');
     const announce = source.indexOf("'announce_seat_moves'");
-    const announceGate = source.indexOf('if (this.terminalCloseoutPaused)', announce);
+    const announceGate = source.indexOf(
+      'if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0)',
+      announce
+    );
     const rest = source.indexOf('await this.awaitNextHandRest();', announceGate);
-    const restGate = source.indexOf('if (this.terminalCloseoutPaused)', rest);
+    const restGate = source.indexOf(
+      'if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0)',
+      rest
+    );
     const deal = source.indexOf('await this.dealHand(activePlayers)', announce);
     expect(announceGate).toBeGreaterThan(announce);
     expect(rest).toBeGreaterThan(announceGate);
@@ -238,7 +248,11 @@ describe('the terminal tournament boundary owns the next deal', () => {
     engine.tableId = '00000000-0000-4000-8000-000000000001';
     engine.handCount = 17;
     engine.handsDealtThisSession = 3;
-    engine.terminalCloseoutWaiters = new Set();
+    engine.boundaryPauseWaiters = new Set();
+    engine.tournamentMovePauseOwners = new Set();
+    engine.claimedTournamentMovePauseOwners = new Set();
+    engine.tournamentMovePauseExpiryTimers = new Map();
+    engine.tournamentMoveOperations = new Set();
     engine.handForHandResolve = null;
     engine.heartbeatActive = true;
     engine.tableFSM = { transition: vi.fn() };

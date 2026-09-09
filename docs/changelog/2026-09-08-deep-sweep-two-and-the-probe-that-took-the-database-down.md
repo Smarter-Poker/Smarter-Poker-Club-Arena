@@ -40,6 +40,66 @@ to a hot relation. The migration was rewritten to all three before it was
 applied - and then reverted for a different reason (section 1). The rule
 stands regardless of the fate of that migration.
 
+## WHAT THE OUTAGE ACTUALLY COST, MEASURED AFTERWARDS (00:10 UTC)
+
+The section above was written while the database was still coming back. These
+are the consequences once they could be counted. Nothing here is speculation;
+every number is a query against production.
+
+**No money moved wrongly and no human lost a seat.** `fn_unaccounted_seat_exits()`
+returns 0 rows for all time; `ledger_reconcile_log` has no critical row since
+22:53; no cash seat holds a null or negative stack; and no `financial_alerts`
+row was raised in the window (the database was down, so nothing could write
+one, and none appeared on recovery either).
+
+**It stranded 100 tournaments mid-hand, and the platform recovered 72 of them
+by itself.** Every tournament whose last hand fell in 22:50-22:57:
+
+| outcome by 00:10                          | count |
+| ----------------------------------------- | ----- |
+| resumed dealing after the restart         | 41    |
+| settled to COMPLETED by the recovery path | 31    |
+| still RUNNING and silent                  | 28    |
+
+The 28 hold 456 `playing` rows and **zero humans** - every seat is a horse, so
+no person is sitting at a dead felt and no player wallet is frozen. That is
+luck, not design: the same collision during a human-heavy hour would have
+stranded people.
+
+**Why they stranded, exactly.** The outage (22:53:36-22:57:05) overlapped the
+platform's own scheduled engine restart at :55. The engine came up at 22:55:52
+
+- 73 seconds before the database would accept connections - so its boot-time
+  adoption of RUNNING tournaments ran against a dead database and failed for
+  this cohort. The engine has been retrying ever since through the wrong door:
+  `GameServer.performTournamentManagerAdmission` routes them to
+  `TournamentManagerBase.startLifecycle`, whose `proveTournamentLaunchSetup`
+  refuses anything that is not `REGISTERING` - and these are `RUNNING`. That is
+  511 `Tournament.launch_setup_unproven` reports in 45 minutes, a refusal loop
+  that cannot converge. **The proof that a boot against a healthy database does
+  adopt them: the two previous breaks (20:55 and 21:55) stranded zero.**
+
+**It also cost one maintenance break.** At 23:53:00 the next break announced
+and its `engine_maintenance_break` persist hit the client's 15 s deadline
+(`supabase_timeout`). The break did the right thing with a state it could not
+prove: it resumed all 735 parked tables and rescheduled for 00:53 - fail-safe,
+no freeze, no stuck tables. But it meant no restart at 23:55, so the pending
+engine deploy waited a further hour. The row is still the stale
+`phase='last_hand'` from 22:53; it cannot freeze anything, because
+`fn_platform_frozen()` requires `phase='counting_down'` with a live
+`break_ends_at`, and `MaintenanceBreak` ignores-and-clears a row older than
+its adoption window on the next boot.
+
+**Two things this says about the platform, neither of them mine to fix here:**
+
+1. A `RUNNING` tournament whose manager died has no adoption path outside a
+   process boot. Discovery finds it and then offers it to the launch prover,
+   which must refuse it. It recovers only by restart, or by the decided /
+   never-dealt sweeps when it happens to match them.
+2. The `:55` break is one un-retried write away from being skipped. A single
+   `supabase_timeout` on the announcement persist cancels that hour's break -
+   and with it that hour's engine restart and any deploy waiting on the gate.
+
 ## Fixed here
 
 ### 1. A money check that could never finish - found, and then NOT fixed, on purpose

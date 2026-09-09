@@ -42,9 +42,10 @@ vi.mock('../services/supabase.js', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
   return {
     ...actual,
+    // This fixture has no departures; keep the idle timing test independent of transport.
+    processLeavePending: vi.fn(async () => []),
     loadSeatedPlayers: (...a: unknown[]) => loadSeatedPlayers(...a),
     loadTable: (...a: unknown[]) => loadTable(...a),
-    processLeavePending: vi.fn(async () => []),
   };
 });
 
@@ -55,6 +56,15 @@ const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  /* `../services/supabase/client.js` is replaced by the module factory above,
+     so `supabase.from`/`supabase.rpc` are plain `vi.fn()`s and NOT spies.
+     Two consequences that bit this file: `vi.spyOn` on an already-mocked
+     function hands back that same mock - call history and all - and
+     `restoreAllMocks` only restores what `spyOn` itself created, so it never
+     empties them. A read issued by one test was therefore still on the
+     counter when the next test asserted `not.toHaveBeenCalled()`. Clear the
+     counters (not the implementations) between tests. */
+  vi.clearAllMocks();
   loadSeatedPlayers.mockReset();
 });
 
@@ -74,12 +84,17 @@ function idleEngine() {
   engine.seatedPlayers = [busted];
   engine.tableInfo = { id: TABLE, tournament_id: null };
   engine.postHandTasksPromise = null;
+  engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+  engine.executePendingSeatMoves = vi.fn(async () => {});
+  engine.stopIfClusterTableClosed = vi.fn(async () => {});
   engine.refreshBlinds = vi.fn().mockResolvedValue(undefined);
   engine.refreshRakeConfig = vi.fn().mockResolvedValue(undefined);
   engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
   engine.executePendingSeatMoves = vi.fn(async () => {});
   engine.standUpBustedCashPlayers = vi.fn(async () => {});
   engine.recoverBustedSeatedHorses = vi.fn().mockResolvedValue(undefined);
+  // No outstanding rows in the stand-up guard; addon behavior is driven below.
+  engine.usersWithPendingLedgerChips = vi.fn(async () => new Set<string>());
   engine.isTournamentTable = () => false;
   // A real (tiny) yield, not an instantly-resolved promise: the idle branch
   // awaits sleep(), and a synchronously-resolving stub starves the event loop
@@ -206,7 +221,9 @@ describe('completed idle dealing sweeps are live work', () => {
     engine.running = true;
     const loop = engine.dealingLoop();
     try {
-      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled());
+      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled(), {
+        timeout: 5_000,
+      });
       now += 181_000;
       expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
       expect(progress).not.toHaveBeenCalled();

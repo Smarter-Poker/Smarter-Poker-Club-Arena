@@ -11,7 +11,7 @@ export {
 } from '../config/blindStructures';
 import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, type BlindLevel } from '../config/blindStructures';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
@@ -29,6 +29,31 @@ import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+import { uuid } from '../utils/uuid';
+import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
+import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
+import { withTournamentUnregistrationIntent } from './TournamentUnregistrationIntent';
+
+/** A transport success alone does not confirm a tournament chip purchase. */
+function confirmedTournamentPurchaseStack(
+  value: unknown,
+  kind: 'rebuy' | 'reentry' | 'addon'
+): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('The Tournament Purchase Could Not Be Confirmed.');
+  }
+  const receipt = value as Record<string, unknown>;
+  if (
+    receipt.success !== true ||
+    receipt.rebuy_type !== kind ||
+    typeof receipt.new_stack !== 'number' ||
+    !Number.isFinite(receipt.new_stack) ||
+    receipt.new_stack < 0
+  ) {
+    throw new Error('The Tournament Purchase Could Not Be Confirmed.');
+  }
+  return receipt.new_stack;
+}
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -36,8 +61,18 @@ import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 const UNREGISTER_REASON_TEXT: Record<string, string> = {
   tournament_not_found: 'That tournament no longer exists',
   registration_closed:
-    'Registration has closed for this tournament. Tournaments that have started cannot be refunded.',
-  too_close_to_start: 'You cannot unregister within a minute of the start time',
+    'Registration has closed for this tournament. You can only unregister before it starts.',
+  registration_schedule_unset:
+    'This tournament has no scheduled start time, so it cannot be unregistered from.',
+  tournament_started: 'This tournament has started. You can only unregister before it starts.',
+  already_started: 'This game has started. You can only unregister before it starts.',
+  not_registered: 'You are not registered for this tournament.',
+  not_seated: 'Your tournament seat could not be found. No chips were changed.',
+  spin_entry_already_booked: 'This Spin entry has already started and cannot be unregistered.',
+  // Legacy servers briefly returned this code for a pre-start lockout that no
+  // longer exists. Keep the code human-readable without repeating that false
+  // one-minute rule.
+  too_close_to_start: 'The tournament could not be unregistered. No chips were changed.',
   not_registered_or_seated:
     'You are not registered, or you have already been seated at a table. Tournaments that have started cannot be refunded.',
 };
@@ -59,6 +94,21 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   // The four-table cap, surfaced as a rule rather than a raw trigger message.
   table_limit_reached: 'You are already in four games. Leave one to join another.',
   platform_frozen: PLATFORM_FROZEN_MESSAGE,
+  ticket_not_found: 'That Tournament Ticket no longer exists.',
+  ticket_not_owned: 'That Tournament Ticket does not belong to you.',
+  ticket_is_wallet_only: 'That ticket can only be redeemed for wallet chips.',
+  ticket_already_used: 'That Tournament Ticket has already been used.',
+  ticket_not_available: 'That Tournament Ticket is no longer available.',
+  target_pool_finalized: 'Registration is closed because this tournament prize pool is final.',
+  ticket_club_membership_inactive: 'Your membership in the Tournament Ticket club is not active.',
+  ticket_club_mismatch: 'That Tournament Ticket belongs to a different club.',
+  ticket_union_mismatch: 'That Tournament Ticket does not belong to this union.',
+  ticket_source_club_unavailable:
+    'The club wallet behind that Tournament Ticket is not available for this event.',
+  ticket_entry_contract_mismatch:
+    'That Tournament Ticket does not match this tournament entry fee.',
+  matching_tournament_ticket_unavailable:
+    'Your Matching Tournament Ticket Could Not Be Verified. No Chips Were Charged.',
 };
 
 /**
@@ -82,6 +132,161 @@ function unregisterReasonText(reason: string | undefined): string {
 export interface PayoutStructure {
   place: number;
   percentage: number;
+}
+
+/** An exact, noncash tournament-entry instrument selected by the server. */
+export interface TournamentEntryTicket {
+  id: string;
+  value: number;
+}
+
+export interface TournamentUnregisterResult {
+  refundedChips: number;
+  returnedTicketValue: number;
+}
+
+/** A committed refusal is different from an unknown transport outcome. */
+export class TournamentUnregisterRefusalError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string | undefined) {
+    super(unregisterReasonText(reason));
+    this.name = 'TournamentUnregisterRefusalError';
+    this.reason = reason ?? 'unknown';
+  }
+}
+
+/** The pre-start exit controls need one truthful response to a started game. */
+export function tournamentUnregisterWasAlreadyStarted(error: unknown): boolean {
+  if (!(error instanceof TournamentUnregisterRefusalError)) return false;
+  return [
+    'already_started',
+    'tournament_started',
+    'registration_closed',
+    'spin_entry_already_booked',
+  ].includes(error.reason);
+}
+
+type TournamentUnregisterRpcResponse = {
+  ok?: unknown;
+  reason?: unknown;
+  request_id?: unknown;
+  registration_id?: unknown;
+  refunded_chips?: unknown;
+  returned_ticket_value?: unknown;
+  wallet_chips_from_satellite_entitlements?: unknown;
+};
+
+function unregisterNumber(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * Parse only the immutable receipt returned by the atomic database owner.
+ * Missing amounts are not zero, `refunded` is not an alias, and a response for
+ * another request can never be mistaken for this button press.
+ */
+export function parseTournamentUnregisterResult(
+  payload: unknown,
+  expectedRequestId: string
+): TournamentUnregisterResult {
+  const response = payload as TournamentUnregisterRpcResponse | null;
+  const refundedChips = unregisterNumber(response?.refunded_chips);
+  const returnedTicketValue = unregisterNumber(response?.returned_ticket_value);
+  const satelliteWalletChips = unregisterNumber(response?.wallet_chips_from_satellite_entitlements);
+  if (
+    response?.ok !== true ||
+    response.request_id !== expectedRequestId ||
+    typeof response.registration_id !== 'string' ||
+    response.registration_id.length === 0 ||
+    refundedChips === null ||
+    returnedTicketValue === null ||
+    satelliteWalletChips === null ||
+    satelliteWalletChips > refundedChips
+  ) {
+    throw new Error('Tournament unregistration returned an invalid settlement receipt');
+  }
+  return { refundedChips, returnedTicketValue };
+}
+
+type TournamentUnregisterRpcCall = () => Promise<{ data: unknown; error: unknown }>;
+
+async function invokeTournamentUnregisterRpc(
+  invoke: TournamentUnregisterRpcCall
+): Promise<{ data: unknown; error: unknown }> {
+  try {
+    return await invoke();
+  } catch (error) {
+    // Supabase normally resolves transport failures as `{ error }`, but a
+    // rejected fetch is the same unknown-outcome class. Normalize both forms
+    // so the caller performs the one permitted exact-request replay and never
+    // escapes into a second, legacy refund path.
+    return { data: null, error };
+  }
+}
+
+async function executeTournamentUnregisterRpc(
+  invoke: TournamentUnregisterRpcCall,
+  requestId: string,
+  errorContext: string,
+  metadata: Record<string, string>
+): Promise<TournamentUnregisterResult> {
+  // The database stores an immutable receipt by request_id. Repeating this
+  // exact request once is therefore the only safe answer to a response that
+  // may have been lost after commit. Never mint a second id for the retry.
+  let rpcCall = await invokeTournamentUnregisterRpc(invoke);
+  if (rpcCall.error) rpcCall = await invokeTournamentUnregisterRpc(invoke);
+  const { data, error } = rpcCall;
+
+  if (error) {
+    reportError(error, errorContext, { ...metadata, requestId });
+    throw new Error(
+      'Could Not Confirm Tournament Unregistration. Please Refresh Before Trying Again.'
+    );
+  }
+
+  const response = data as TournamentUnregisterRpcResponse | null;
+  if (response?.ok === false) {
+    throw new TournamentUnregisterRefusalError(
+      typeof response.reason === 'string' ? response.reason : undefined
+    );
+  }
+
+  try {
+    return parseTournamentUnregisterResult(response, requestId);
+  } catch (error) {
+    reportError(error as Error, `${errorContext}_receipt_invalid`, {
+      ...metadata,
+      requestId,
+      responseRequestId: typeof response?.request_id === 'string' ? response.request_id : 'missing',
+    });
+    throw new Error(
+      'Could Not Confirm Tournament Unregistration. Please Refresh Before Trying Again.'
+    );
+  }
+}
+
+const unregisterAmount = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+});
+
+/** Player-facing confirmation derived only from the committed refund rails. */
+export function tournamentUnregisterSuccessText(result: TournamentUnregisterResult): string {
+  const chips = unregisterAmount.format(result.refundedChips);
+  const ticket = unregisterAmount.format(result.returnedTicketValue);
+  if (result.refundedChips > 0 && result.returnedTicketValue > 0) {
+    return `${chips} Chips Were Refunded To Your Wallet. A Tournament Ticket For A ${ticket} Chip Entry Was Issued.`;
+  }
+  if (result.returnedTicketValue > 0) {
+    return `A Tournament Ticket For A ${ticket} Chip Entry Was Issued. No Chips Were Added To Your Wallet.`;
+  }
+  if (result.refundedChips > 0) {
+    return `${chips} Chips Were Refunded To Your Wallet.`;
+  }
+  return 'You Are No Longer Registered.';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1043,15 +1248,77 @@ class TournamentService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * Ask the server whether this player owns an exact entry-only ticket for the
+   * tournament. A failed or malformed selector is an error, never "no ticket":
+   * callers must not silently fall through to a wallet charge when ticket
+   * ownership could not be checked.
+   */
+  async findTournamentEntryTicket(tournamentId: string): Promise<TournamentEntryTicket | null> {
+    const { data, error } = await supabase.rpc('fn_find_tournament_entry_ticket', {
+      p_tournament_id: tournamentId,
+    });
+    if (error) {
+      reportError(error, 'TournamentService.findTournamentEntryTicket', { tournamentId });
+      throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
+    }
+
+    const res = data as {
+      ok?: boolean;
+      reason?: string;
+      ticket_id?: string | null;
+      ticket_value?: number | string | null;
+    } | null;
+    if (
+      !res ||
+      typeof res.ok !== 'boolean' ||
+      !Object.prototype.hasOwnProperty.call(res, 'ticket_id')
+    ) {
+      reportError(
+        new Error('Malformed tournament-entry ticket selector response'),
+        'TournamentService.findTournamentEntryTicket',
+        { tournamentId }
+      );
+      throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
+    }
+    if (!res.ok) throw new Error(registerReasonText(res.reason));
+    if (res.ticket_id === null) return null;
+
+    const ticketId = typeof res.ticket_id === 'string' ? res.ticket_id.trim() : '';
+    const ticketValue = res.ticket_value == null ? Number.NaN : Number(res.ticket_value);
+    if (!ticketId || !Number.isFinite(ticketValue) || ticketValue <= 0) {
+      reportError(
+        new Error('Malformed tournament-entry ticket selector payload'),
+        'TournamentService.findTournamentEntryTicket',
+        { tournamentId }
+      );
+      throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
+    }
+    return { id: ticketId, value: ticketValue };
+  }
+
+  /**
    * Register a player for a tournament
    */
   async registerPlayer(
     tournamentId: string,
     userId: string,
-    username: string
+    username: string,
+    tournamentTicketId?: string | null
   ): Promise<TournamentPlayer> {
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId) {
+      throw new Error('Sign In To The Correct Account Before Registering For A Tournament.');
+    }
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
+
+    // Presence, not truthiness, selects the noncash rail. If a caller says it
+    // found a ticket but hands us a malformed id, fail closed instead of
+    // silently charging the wallet.
+    const usesTournamentTicket = tournamentTicketId !== undefined && tournamentTicketId !== null;
+    if (usesTournamentTicket && !tournamentTicketId?.trim()) {
+      throw new Error('Could Not Use The Tournament Ticket. No Chips Were Charged.');
+    }
 
     // ═══ AUDIT 2026-08-15: registration is SERVER-AUTHORITATIVE ═══
     // The old path called atomic_tournament_register directly — a
@@ -1068,100 +1335,147 @@ class TournamentService {
     // the entry FEE to the rake_records fee ledger (what the finalize
     // settlement actually credits to the club/union), and bumps
     // current_players + prize_pool.
-    /* Registration debits a wallet and creates a seat. It is not safe to
-       replay without an idempotency key, so make one mutation attempt. If the
-       response is lost after commit, reconcile by reading the authoritative
-       registration row instead of charging again. */
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('fn_register_for_tournament', {
-      p_tournament_id: tournamentId,
-    });
-    const res = rpcResult as {
-      ok: boolean;
-      reason?: string;
-      registration_id?: string;
-      cost?: number;
-      mystery_bounty?: number | null;
-    } | null;
-    let registrationId = res?.registration_id;
-    if (rpcError) {
-      const { data: reconciled, error: reconcileError } = await supabase
-        .from('tournament_players')
-        .select('id')
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (reconcileError || !reconciled?.id) {
+    const invokeAdmission = async (requestId?: string) => {
+      try {
+        return usesTournamentTicket
+          ? await supabase.rpc('fn_register_for_tournament_with_ticket', {
+              p_tournament_id: tournamentId,
+              p_ticket_id: tournamentTicketId,
+            })
+          : await supabase.rpc('fn_register_for_tournament_request', {
+              p_tournament_id: tournamentId,
+              p_request_id: requestId,
+            });
+      } catch (error) {
+        return { data: null, error };
+      }
+    };
+    const performRegistration = async (requestId?: string): Promise<TournamentPlayer> => {
+      let rpcCall = await invokeAdmission(requestId);
+      if (rpcCall.error) rpcCall = await invokeAdmission(requestId);
+      const { data: rpcResult, error: rpcError } = rpcCall;
+      const res = rpcResult as {
+        ok: boolean;
+        reason?: string;
+        registration_id?: string;
+        request_id?: string;
+        tournament_id?: string;
+        user_id?: string;
+        ticket_id?: string;
+        cost?: number;
+        mystery_bounty?: number | null;
+      } | null;
+      const registrationId = res?.registration_id;
+      if (rpcError) {
         reportError(rpcError, 'TournamentService.registration_result_unconfirmed', {
           tournamentId,
           userId,
-          reconcileError: reconcileError?.message,
+          tournamentTicketId,
+          requestId,
         });
         throw new Error(
-          'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
+          usesTournamentTicket
+            ? 'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+            : 'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
         );
       }
-      registrationId = String(reconciled.id);
-    } else if (!res?.ok || !registrationId) {
-      throw new Error(registerReasonText(res?.reason));
-    }
-
-    // Re-fetch the player row the server created (the RPC returns only ids)
-    const { data, error } = await supabase
-      .from('tournament_players')
-      .select(
-        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
-      )
-      .eq('id', registrationId)
-      .maybeSingle();
-    if (error || !data) {
-      reportError(error, 'TournamentService.Could_not_refetch_registered_player');
-      throw new Error('Registration succeeded but player data could not be retrieved');
-    }
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
-    masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
-    masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
-
-    // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
-    // start_time to now so the server discovery loop starts it immediately.
-    const { data: freshTournament, error: freshErr } = await supabase
-      .from('tournaments')
-      .select('current_players, max_players, variant')
-      .eq('id', tournamentId)
-      .maybeSingle();
-    // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
-    // and the server discovery loop still starts a full game on its own
-    // schedule. But a silently skipped nudge is a slower start with no trace.
-    if (freshErr) {
-      reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
-        tournamentId,
-      });
-    }
-    if (
-      freshTournament?.max_players &&
-      (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
-      (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
-    ) {
-      // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
-      // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
-      // catch could only ever have caught a transport failure - an RLS denial
-      // on this client-side write (the likely outcome, since `tournaments` is
-      // not player-writable) resolved normally and was discarded. The nudge
-      // silently did nothing and the SNG/Spin sat waiting for a start that the
-      // discovery loop had not been told to bring forward.
-      const { error: autoStartError } = await supabase
-        .from('tournaments')
-        .update({ start_time: new Date().toISOString() })
-        .eq('id', tournamentId);
-      if (autoStartError) {
-        // Reported, not thrown: the player IS registered and paid, and the
-        // server discovery loop still starts the game on its own schedule.
-        // Failing the registration here would be a worse lie than the old one.
-        reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
+      if (res?.ok === false) throw new Error(registerReasonText(res.reason));
+      if (
+        res?.ok !== true ||
+        typeof registrationId !== 'string' ||
+        !registrationId ||
+        (!usesTournamentTicket &&
+          (res.request_id !== requestId ||
+            res.tournament_id !== tournamentId ||
+            res.user_id !== userId))
+      ) {
+        throw new Error(
+          usesTournamentTicket
+            ? 'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+            : 'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
+        );
       }
-    }
+      if (usesTournamentTicket && res?.ticket_id !== tournamentTicketId) {
+        reportError(
+          new Error('Tournament ticket admission returned a mismatched receipt'),
+          'TournamentService.ticket_registration_receipt_mismatch',
+          { tournamentId, userId, tournamentTicketId, receiptTicketId: res?.ticket_id }
+        );
+        throw new Error(
+          'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+        );
+      }
 
-    return data;
+      // Re-fetch the player row the server created (the RPC returns only ids)
+      const { data, error } = await supabase
+        .from('tournament_players')
+        .select(
+          'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
+        )
+        .eq('id', registrationId)
+        .maybeSingle();
+      if (error || !data) {
+        reportError(error, 'TournamentService.Could_not_refetch_registered_player');
+        throw new Error('Registration succeeded but player data could not be retrieved');
+      }
+
+      // Entry-only tickets move escrow into tournament liability; they do not
+      // debit or credit the player's Club Arena wallet.
+      if (!usesTournamentTicket) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+      }
+      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
+      masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
+
+      // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
+      // start_time to now so the server discovery loop starts it immediately.
+      const { data: freshTournament, error: freshErr } = await supabase
+        .from('tournaments')
+        .select('current_players, max_players, variant')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
+      // and the server discovery loop still starts a full game on its own
+      // schedule. But a silently skipped nudge is a slower start with no trace.
+      if (freshErr) {
+        reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
+          tournamentId,
+        });
+      }
+      if (
+        freshTournament?.max_players &&
+        (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
+        (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
+      ) {
+        // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
+        // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
+        // catch could only ever have caught a transport failure - an RLS denial
+        // on this client-side write (the likely outcome, since `tournaments` is
+        // not player-writable) resolved normally and was discarded. The nudge
+        // silently did nothing and the SNG/Spin sat waiting for a start that the
+        // discovery loop had not been told to bring forward.
+        const { error: autoStartError } = await supabase
+          .from('tournaments')
+          .update({ start_time: new Date().toISOString() })
+          .eq('id', tournamentId);
+        if (autoStartError) {
+          // Reported, not thrown: the player IS registered and paid, and the
+          // server discovery loop still starts the game on its own schedule.
+          // Failing the registration here would be a worse lie than the old one.
+          reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
+        }
+      }
+
+      return data;
+    };
+    // Keep the original operation pending until its receipt and roster are both
+    // confirmed. A failed read after commit must not permit a new paid request.
+    if (usesTournamentTicket) return performRegistration();
+    return withTournamentUnregistrationIntent(
+      userId,
+      'registration:' + tournamentId,
+      performRegistration
+    );
   }
 
   /**
@@ -1184,35 +1498,71 @@ class TournamentService {
    * `fn_unregister_from_tournament` does the whole thing in one transaction. It
    * takes no user id (a player may only unregister themselves, and the way to
    * guarantee that is to never accept a target) and no amount (the refund is
-   * read from the tournaments row). It also enforces the one-minute pre-start
-   * lockout that the old code documented but could not implement - the comment
-   * there admitted that nothing enforced it and players could yank their entry
-   * at the exact start instant and race the seating flow - because the server
-   * takes a row lock the seating flow cannot interleave with.
+   * derived from immutable entry entitlements). It permits unregistration at
+   * any time before the scheduled start and refuses it at or after the start;
+   * the server row lock keeps that boundary atomic with seating.
    *
    * The compensating re-INSERT is gone because it is no longer needed: a failed
    * refund rolls the delete back with it, so the player is simply still
    * registered.
    */
-  async unregisterPlayer(tournamentId: string, userId: string): Promise<void> {
-    const { data, error } = await supabase.rpc('fn_unregister_from_tournament', {
-      p_tournament_id: tournamentId,
+  async unregisterPlayer(
+    tournamentId: string,
+    userId: string
+  ): Promise<TournamentUnregisterResult> {
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId)
+      throw new Error('Sign In To The Correct Account Before Requesting A Refund.');
+    return withTournamentUnregistrationIntent(userId, tournamentId, async (requestId) => {
+      const result = await executeTournamentUnregisterRpc(
+        async () =>
+          supabase.rpc('fn_unregister_from_tournament', {
+            p_tournament_id: tournamentId,
+            p_request_id: requestId,
+          }),
+        requestId,
+        'TournamentService.unregisterPlayer_result_unconfirmed',
+        { tournamentId, userId }
+      );
+
+      if (result.refundedChips > 0) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+      }
+      return result;
     });
+  }
 
-    if (error) {
-      reportError(error, 'TournamentService.unregisterPlayer', { tournamentId, userId });
-      throw new Error('Could not unregister - please try again');
+  /**
+   * Release a reserved pre-start table seat through the same exact refund
+   * owner. The stable request id makes the one retry an exact receipt replay,
+   * including when the first response disappeared after commit.
+   */
+  async leaveTournamentSeatAndRefund(
+    tableId: string,
+    userId: string
+  ): Promise<TournamentUnregisterResult> {
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId) {
+      throw new Error(
+        'Please Sign In To The Correct Account Before Requesting A Tournament Refund.'
+      );
     }
-
-    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
-
-    if (!res?.ok) {
-      throw new Error(unregisterReasonText(res?.reason));
-    }
-
-    if ((res.refunded ?? 0) > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
-    }
+    return withTournamentUnregistrationIntent(userId, 'seat:' + tableId, async (requestId) => {
+      const result = await executeTournamentUnregisterRpc(
+        async () =>
+          supabase.rpc('fn_leave_seat_and_refund', {
+            p_table_id: tableId,
+            p_request_id: requestId,
+          }),
+        requestId,
+        'TournamentService.leaveTournamentSeatAndRefund_result_unconfirmed',
+        { tableId, userId }
+      );
+      if (result.refundedChips > 0) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+      }
+      return result;
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1566,10 +1916,13 @@ class TournamentService {
       }
     }
 
-    // Check current stack (must be at or below starting stack)
+    // Mirror the player-visible half of the atomic purchase authority. A
+    // normal short stack is not a rebuy candidate: only an unpaid zero-stack
+    // knockout generation can buy back in. The database still binds that row
+    // to the immutable accepted-hand candidate under lock when money moves.
     const { data: player, error: stackErr } = await supabase
       .from('tournament_players')
-      .select('chips')
+      .select('chips, status, prize, rebuys, rebuy_prompt_until')
       .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -1582,8 +1935,30 @@ class TournamentService {
       return { allowed: false, reason: 'Could not check your stack. Please try again.' };
     }
     if (!player) return { allowed: false, reason: 'Player not found' };
-    if (player.chips > tournament.starting_chips) {
-      return { allowed: false, reason: 'Stack too high for rebuy' };
+    const purchaseType = tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy';
+    const playerStatus = String(player.status ?? '').toLowerCase();
+    if (
+      Number(player.chips ?? 0) !== 0 ||
+      Number(player.prize ?? 0) > 0 ||
+      (purchaseType === 'rebuy'
+        ? playerStatus !== 'playing'
+        : !['playing', 'eliminated'].includes(playerStatus))
+    ) {
+      return { allowed: false, reason: 'Only An Unpaid Zero-Stack Entry Can Rebuy' };
+    }
+    if (purchaseType === 'rebuy') {
+      const promptUntil = Date.parse(String(player.rebuy_prompt_until ?? ''));
+      if (!Number.isFinite(promptUntil) || promptUntil <= Date.now()) {
+        return { allowed: false, reason: 'The Rebuy Decision Window Has Closed' };
+      }
+    }
+    const used = Math.max(0, Number(player.rebuys ?? 0));
+    const limit = purchaseType === 'reentry' ? tournament.max_reentries : tournament.max_rebuys;
+    if (limit !== null && limit !== undefined && used >= Number(limit)) {
+      return {
+        allowed: false,
+        reason: purchaseType === 'reentry' ? 'Re-Entry Limit Reached' : 'Rebuy Limit Reached',
+      };
     }
 
     return { allowed: true };
@@ -1611,21 +1986,19 @@ class TournamentService {
   }
 
   /**
-   * Fee for a given base cost, as a WHOLE number of chips.
+   * Fee cut out of the whole advertised price, floored to cents.
    *
-   * Dan 2026-08-20: "Sit and Go and any tournament buy-ins must never be
-   * decimal buy-ins, whole numbers only." That covers rebuys and re-entries,
-   * so the fee they carry is rounded to a whole chip rather than to the cent.
+   * The 2026-08-25 fractional-fee rule supersedes the earlier whole-fee rule:
+   * a 1-chip purchase pays 0.10 and a 5-chip purchase pays 0.50. Reuse the
+   * canonical buy-in splitter so this quote cannot round above the 10% cap or
+   * drift from tournament creation and the database purchase authority.
    */
   private calcTournamentFee(
     tournament: { buy_in_amount?: number | null; buy_in_fee?: number | null },
     baseCost: number
   ): number {
-    const base = Math.max(0, Math.round(Number(baseCost) || 0));
-    if (base <= 0) return 0;
-    // Floor of one chip so a small rebuy cannot slip through rake-free,
-    // mirroring fn_create_tournament and process_tournament_rebuy exactly.
-    return Math.min(base, Math.max(1, Math.round(base * this.getTournamentFeeRatio(tournament))));
+    const rate = Math.min(DEFAULT_RAKE_RATE, Math.max(0, this.getTournamentFeeRatio(tournament)));
+    return splitBuyIn(baseCost, rate).fee;
   }
 
   /**
@@ -1692,196 +2065,81 @@ class TournamentService {
   }
 
   /**
-   * RAKE-AUDIT 2026-07-24: Record a collected tournament/SNG fee in the rake
-   * ledger (rake_records, attributed to the paying player) and the
-   * tournament/union total_rake counters. Pass a NEGATIVE fee to record a
-   * reversal (e.g. unregister refund) — the ledger stays append-only.
-   */
-  private async recordTournamentFee(
-    tournament: { club_id?: string | null; union_id?: string | null },
-    tournamentId: string,
-    userId: string,
-    fee: number,
-    kind: string
-  ): Promise<void> {
-    if (!fee || fee === 0) return;
-    const clubId = tournament.club_id || null;
-    try {
-      const { error: rrError } = await supabase.from('rake_records').insert({
-        hand_id: null,
-        table_id: tournamentId,
-        club_id: clubId,
-        rake_amount: fee,
-        pot_size: Math.abs(fee),
-        num_players: 1,
-        bbj_contribution: 0,
-        is_tournament: true,
-        tournament_id: tournamentId,
-        source: `TournamentService.${kind}`,
-        player_contributions: { [userId]: fee },
-        metadata: { kind, user_id: userId },
-      });
-      if (rrError) reportError(rrError, 'TournamentService.recordTournamentFee_rake_records');
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.recordTournamentFee_rake_records');
-    }
-    // Tournament total_rake counter (atomic RPC, read-modify-write fallback)
-    try {
-      const { error: incErr } = await supabase.rpc('increment_tournament_rake', {
-        p_tournament_id: tournamentId,
-        p_amount: fee,
-      });
-      if (incErr) {
-        const { data: tData, error: tReadErr } = await supabase
-          .from('tournaments')
-          .select('total_rake')
-          .eq('id', tournamentId)
-          .maybeSingle();
-        // ROUND 8 (2026-08-29): both the RPC and the fallback read failing
-        // used to leave no trace at all - the club's rake total silently
-        // under-reported with nothing anywhere saying so.
-        if (tReadErr) {
-          reportError(tReadErr, 'TournamentService.recordTournamentFee_fallback_read_failed', {
-            tournamentId,
-          });
-        }
-        if (tData) {
-          // Same defect shape as D7: the catch below cannot see a PostgREST
-          // `{ error }`, so a failed rake counter fallback was invisible and
-          // the club's rake total silently under-reported.
-          const { error: rakeUpdErr } = await supabase
-            .from('tournaments')
-            .update({ total_rake: (tData.total_rake || 0) + fee })
-            .eq('id', tournamentId);
-          if (rakeUpdErr) {
-            reportError(rakeUpdErr, 'TournamentService.recordTournamentFee_total_rake', {
-              tournamentId,
-            });
-          }
-        }
-      }
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.recordTournamentFee_total_rake');
-    }
-    // Union-level counter
-    const unionId = tournament.union_id || undefined;
-    if (unionId) {
-      try {
-        const { data: unionData, error: unionReadErr } = await supabase
-          .from('unions')
-          .select('total_rake')
-          .eq('id', unionId)
-          .maybeSingle();
-        // ROUND 8 (2026-08-29): same silent under-report shape as the
-        // tournament counter above, on the union ledger.
-        if (unionReadErr) {
-          reportError(unionReadErr, 'TournamentService.recordTournamentFee_union_read_failed', {
-            tournamentId,
-            unionId,
-          });
-        }
-        if (unionData) {
-          // Same defect shape as D7, on the union ledger this time.
-          const { error: unionUpdErr } = await supabase
-            .from('unions')
-            .update({ total_rake: (unionData.total_rake || 0) + fee })
-            .eq('id', unionId);
-          if (unionUpdErr) {
-            reportError(unionUpdErr, 'TournamentService.recordTournamentFee_union_total_rake', {
-              tournamentId,
-              unionId,
-            });
-          }
-        }
-      } catch (e: unknown) {
-        reportError(e, 'TournamentService.recordTournamentFee_union_total_rake');
-      }
-    }
-  }
-
-  /**
    * Process a rebuy for a player.
    *
-   * `clientToken` is the IDEMPOTENCY TOKEN for one rebuy PROMPT (2026-08-27).
-   * It must be generated when the prompt OPENS and reused by every click of
-   * that same prompt; a new bust must generate a new one. See the note beside
-   * `p_client_token` in the RPC call below for what the server does without it.
+   * `clientToken` is the REQUIRED idempotency token for one rebuy prompt. It
+   * must be generated when that prompt opens and reused by every retry from the
+   * same prompt; a new bust must generate a new token.
    */
   async processRebuy(
     tournamentId: string,
     userId: string,
-    clientToken?: string
-  ): Promise<{ success: boolean; newStack?: number }> {
-    const canRebuyResult = await this.canRebuy(tournamentId, userId);
-    if (!canRebuyResult.allowed) {
-      throw new Error(canRebuyResult.reason || 'Rebuy not allowed');
+    clientToken: string
+  ): Promise<{ success: true; newStack: number }> {
+    if (typeof clientToken !== 'string' || !clientToken.trim()) {
+      throw new Error('A rebuy prompt token is required');
+    }
+    const normalizedClientToken = clientToken.trim();
+    if (normalizedClientToken.length > 128) {
+      throw new Error('The rebuy prompt token is invalid');
     }
 
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+    const newStack = await withTournamentPurchaseIntent(
+      { tournamentId, userId, kind: 'rebuy', token: normalizedClientToken },
+      async () => {
+        // Never put a mutable eligibility read in front of an idempotent money
+        // retry. If the first RPC committed and its response was lost, canRebuy
+        // now correctly says the player is funded; blocking here would prevent
+        // the immutable receipt from returning that already-committed result.
+        // The RPC owns replay and current eligibility under one transaction lock.
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
 
-    const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
-    // Whole chips only (Dan 2026-08-20) - no decimal rebuy prices.
-    const rebuyCost = Math.max(
-      0,
-      Math.round(Number(tournament.rebuy_cost || tournament.buy_in_amount || 0))
+        const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
+        // Whole chips only (Dan 2026-08-20) - no decimal rebuy prices.
+        const rebuyCost = Math.max(
+          0,
+          Math.round(Number(tournament.rebuy_cost || tournament.buy_in_amount || 0))
+        );
+        // RAKE-AUDIT 2026-07-24: rebuys were fee-free — 100% of rebuy money went to
+        // the prize pool and 0% to the house, breaking Dan's "10% on any and all
+        // tournament/SNG buy-ins" rule. The atomic RPC now splits the advertised
+        // price into fee, bounty head (when applicable), and prize contribution.
+        // Dan 2026-08-21 (binding): the 10% comes OUT of the rebuy price, exactly
+        // as it does out of an entry. The advertised price IS the total charged and
+        // the remainder feeds the prize pool. Until this, a 20 rebuy charged 22
+        // while a 20 entry charged 20 - two prices for one rule.
+        const rebuyTotalCost = rebuyCost;
+
+        // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+        // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+        // player with plenty of live chips could be refused before the atomic RPC
+        // (the real authority, which checks the LIVE pool and produces its own
+        // insufficient-funds error) ever ran. A "better error message" computed
+        // from a dead table was a false refusal gate on a money action.
+        // Process rebuy via ATOMIC RPC
+        // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
+        return {
+          p_tournament_id: tournamentId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+          p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
+          p_cost: rebuyTotalCost,
+          p_chips: rebuyChips,
+          p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+          // The helper persists this exact payload before I/O and the SQL
+          // receipt keys the purchase on this prompt-owned token.
+          p_client_token: normalizedClientToken,
+        };
+      },
+      async (request) => {
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', request);
+        if (error) {
+          reportError(error, 'TournamentService.Rebuy_RPC_outcome_unconfirmed');
+          throw error;
+        }
+        return confirmedTournamentPurchaseStack(data, request.p_rebuy_type);
+      }
     );
-    // RAKE-AUDIT 2026-07-24: rebuys were fee-free — 100% of rebuy money went to
-    // the prize pool and 0% to the house, breaking Dan's "10% on any and all
-    // tournament/SNG buy-ins" rule. The atomic RPC now splits the advertised
-    // price into fee, bounty head (when applicable), and prize contribution.
-    // Dan 2026-08-21 (binding): the 10% comes OUT of the rebuy price, exactly
-    // as it does out of an entry. The advertised price IS the total charged and
-    // the remainder feeds the prize pool. Until this, a 20 rebuy charged 22
-    // while a 20 entry charged 20 - two prices for one rule.
-    const rebuyTotalCost = rebuyCost;
-
-    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
-    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
-    // player with plenty of live chips could be refused before the atomic RPC
-    // (the real authority, which checks the LIVE pool and produces its own
-    // insufficient-funds error) ever ran. A "better error message" computed
-    // from a dead table was a false refusal gate on a money action.
-    // Process rebuy via ATOMIC RPC
-    // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
-    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-      p_tournament_id: tournamentId,
-      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-      p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
-      p_cost: rebuyTotalCost,
-      p_chips: rebuyChips,
-      p_current_level: this.getCurrentLevelState(tournament).levelIndex,
-      /**
-       * IDEMPOTENCY, EXACTLY (2026-08-27).
-       *
-       * With a token the server keys the purchase on it, so every click of ONE
-       * prompt collapses to one charge and a SECOND, genuine bust in the same
-       * tournament is a different purchase.
-       *
-       * Without one it falls back to a rebuy-ordinal key plus a 1.5s
-       * double-submit collapse — and before that fallback existed, ANY second
-       * rebuy inside 30 seconds was swallowed and reported as success. In a
-       * turbo that meant a player who really did bust twice was charged
-       * nothing, granted nothing, shown "Rebuy Successful", and left sitting at
-       * 0 chips.
-       *
-       * The token is minted per PROMPT, never per click — see the callers in
-       * TablePage (`beginRebuyPrompt` / `endRebuyPrompt`).
-       */
-      p_client_token: clientToken ?? null,
-    });
-
-    if (error) {
-      reportError(error, 'TournamentService.Rebuy_RPC_failed_No_chips_were_deducted');
-      throw error;
-    }
-
-    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
-    // same transaction as the chip deduction. This used to ALSO insert a
-    // rake_records row and increment total_rake here, so every fee was
-    // counted twice in union rake revenue and in rakeback.
-
-    // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
 
     /* The browser-side "broadcast rebuy event" that used to sit here was
@@ -1891,7 +2149,7 @@ class TournamentService {
        the event. The engine's own tournament manager announces what a table
        needs to know. */
 
-    return { success: true, newStack: data?.new_stack || rebuyChips };
+    return { success: true, newStack };
   }
 
   /**
@@ -1927,83 +2185,64 @@ class TournamentService {
   async processAddOn(
     tournamentId: string,
     userId: string
-  ): Promise<{ success: boolean; newStack?: number }> {
-    const canAddOnResult = await this.canAddOn(tournamentId);
-    if (!canAddOnResult.allowed) {
-      throw new Error(canAddOnResult.reason || 'Add-on not allowed');
-    }
+  ): Promise<{ success: true; newStack: number }> {
+    const newStack = await withTournamentPurchaseIntent(
+      { tournamentId, userId, kind: 'addon' },
+      async () => {
+        // Do not put mutable availability or duplicate reads in front of this
+        // idempotent money call. A retry after a committed/lost response must
+        // reach the immutable receipt even though the window is now closed or
+        // the add-on is now used. The RPC owns all eligibility under one lock;
+        // canAddOn remains display guidance only.
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
 
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+        const addonChips = tournament.addon_chips || tournament.starting_chips;
+        // Whole chips only (Dan 2026-08-20) - no decimal add-on prices.
+        const addonCost = Math.max(
+          0,
+          Math.round(Number(tournament.addon_cost || tournament.buy_in_amount || 0))
+        );
+        // Dan 2026-08-20 (binding): "ADD ON'S AREN'T RAKED. ONLY REBUYS."
+        // This reverses the 2026-07-24 change that put a 10% house fee on add-ons.
+        // process_tournament_rebuy now charges an add-on at face value and books
+        // no rake for it; the whole add-on goes to the prize pool.
+        const addonTotalCost = addonCost;
 
-    const addonChips = tournament.addon_chips || tournament.starting_chips;
-    // Whole chips only (Dan 2026-08-20) - no decimal add-on prices.
-    const addonCost = Math.max(
-      0,
-      Math.round(Number(tournament.addon_cost || tournament.buy_in_amount || 0))
+        // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+        // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+        // player with plenty of live chips could be refused before the atomic RPC
+        // (the real authority, which checks the LIVE pool and produces its own
+        // insufficient-funds error) ever ran. A "better error message" computed
+        // from a dead table was a false refusal gate on a money action.
+        // Process addon via ATOMIC RPC
+        // (This handles wallet deduction, logging, and rollback natively)
+        return {
+          p_tournament_id: tournamentId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+          p_rebuy_type: 'addon',
+          p_cost: addonTotalCost,
+          p_chips: addonChips,
+          p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+          p_client_token: null,
+        };
+      },
+      async (request) => {
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', request);
+        if (error) {
+          reportError(error, 'TournamentService.Addon_RPC_outcome_unconfirmed');
+          throw error;
+        }
+        return confirmedTournamentPurchaseStack(data, 'addon');
+      }
     );
-    // Dan 2026-08-20 (binding): "ADD ON'S AREN'T RAKED. ONLY REBUYS."
-    // This reverses the 2026-07-24 change that put a 10% house fee on add-ons.
-    // process_tournament_rebuy now charges an add-on at face value and books
-    // no rake for it; the whole add-on goes to the prize pool.
-    const addonTotalCost = addonCost;
-
-    // Check if player already used their add-on (each player gets max 1 add-on)
-    const { data: existingAddon, error: addonCheckErr } = await supabase
-      .from('wallet_transactions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('category', 'addon')
-      .eq('related_entity_id', tournamentId)
-      .limit(1);
-    // ROUND 8 (2026-08-29): a failed read used to pass the duplicate gate on a
-    // MONEY action - the one-add-on-per-player rule waved through anyone whose
-    // check query timed out. Fails closed and retryable instead.
-    if (addonCheckErr) {
-      reportError(addonCheckErr, 'TournamentService.addon_duplicate_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your add-on status. Please try again.');
-    }
-    if (existingAddon && existingAddon.length > 0) {
-      throw new Error('You have already used your add-on for this tournament');
-    }
-
-    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
-    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
-    // player with plenty of live chips could be refused before the atomic RPC
-    // (the real authority, which checks the LIVE pool and produces its own
-    // insufficient-funds error) ever ran. A "better error message" computed
-    // from a dead table was a false refusal gate on a money action.
-    // Process addon via ATOMIC RPC
-    // (This handles wallet deduction, logging, and rollback natively)
-    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-      p_tournament_id: tournamentId,
-      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-      p_rebuy_type: 'addon',
-      p_cost: addonTotalCost,
-      p_chips: addonChips,
-      p_current_level: this.getCurrentLevelState(tournament).levelIndex,
-    });
-
-    if (error) {
-      reportError(error, 'TournamentService.Addon_process_failed_No_chips_were_deduc');
-      throw error;
-    }
-
-    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
-    // same transaction as the chip deduction. This used to ALSO insert a
-    // rake_records row and increment total_rake here, so every fee was
-    // counted twice in union rake revenue and in rakeback.
-
-    // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
 
     /* The browser-side add-on broadcast was removed with the rebuy one
        (final sweep 2026-09-08): an INTERNAL_API_KEY route called with a player
        JWT, a 401 on every add-on, no consumer. */
 
-    return { success: true, newStack: data?.new_stack };
+    return { success: true, newStack };
   }
 
   /* ── `processReentry` DELETED 2026-09-02 — a broken duplicate money path ──

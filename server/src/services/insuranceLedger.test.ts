@@ -4,8 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * By the time this function runs, the table stacks have already been mutated
- * (+payout, -premium) and already persisted by syncStacks(). This is the
- * offsetting bank entry. The original implementation returned `Promise<void>`
+ * (+payout, -premium) and persisted by the accepted-hand transaction. This is
+ * the offsetting bank entry. The original implementation returned `Promise<void>`
  * and swallowed every failure, so a lost write minted or burned chips silently.
  *
  * The invariants that matter here:

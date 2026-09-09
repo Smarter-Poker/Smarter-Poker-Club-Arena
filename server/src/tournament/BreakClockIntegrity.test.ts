@@ -55,7 +55,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -118,7 +118,11 @@ describe('DEFECT 2 - a break with no end time yet is still a break', () => {
 
   it('reconstructs the end time from break_started_at plus grace plus break', () => {
     const at = BASE.indexOf('if (tournament.on_break)');
-    const block = sliceBlockAfter(BASE, 'if (tournament.on_break)');
+    const block = sliceBetween(
+      BASE,
+      'const breakStartedAt = tournament.break_started_at',
+      'this.startEliminationChecker();'
+    );
     expect(block).toMatch(/break_started_at/);
     expect(block).toMatch(/LAST_HAND_GRACE_MS/);
     expect(block).toMatch(/BREAK_DURATION_MS/);
@@ -194,9 +198,10 @@ describe('a registered player who cannot be seated is never silent', () => {
      * anywhere. A genuine unique-index race stays quiet because the resolved
      * state is correct.
      */
-    expect(seat).not.toMatch(/if\s*\(reuseErr\)\s*continue;/);
-    expect(seat).toMatch(/late_reg_seat_reuse_failed/);
-    expect(seat).toMatch(/late_reg_seat_insert_failed/);
-    expect(seat).toMatch(/quietRace/);
+    expect(seat).toContain('assignTournamentPlayerSeatAtomically({');
+    expect(seat).toMatch(/atomic_late_reg_seat_refused_or_unknown/);
+    expect(seat).toMatch(/requestUrgentEliminationSweepAfter/);
+    expect(seat).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.(?:insert|update|delete)\(/);
+    expect(seat).not.toMatch(/quietRace|restore|compensat/i);
   });
 });

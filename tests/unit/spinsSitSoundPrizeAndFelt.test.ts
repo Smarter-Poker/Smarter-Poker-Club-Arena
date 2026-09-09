@@ -91,13 +91,22 @@ describe('the wheel is anchored to the instant the engine chose', () => {
     for (const sel of selects) expect(sel).toContain('spin_reveal_at');
   });
 
-  it('the engine writes the anchor on the row that already carries the lag', () => {
-    expect(ENGINE_BASE).toContain('spin_reveal_lag_ms: Math.round(this.spinRevealLagMs)');
-    expect(ENGINE_BASE).toContain('spin_reveal_at:');
+  it('the engine writes a fresh anchor and preserves an already-played Spin anchor', () => {
+    const presentation = sliceEnclosingBlock(
+      ENGINE_BASE,
+      'spin_reveal_lag_ms: playedSpinRecovery',
+      0,
+      1
+    );
+    expect(presentation).toMatch(
+      /spin_reveal_lag_ms:\s*playedSpinRecovery\s*\?\s*tournament\.spin_reveal_lag_ms\s*:\s*Math\.round\(this\.spinRevealLagMs\)/
+    );
+    expect(presentation).toContain('spin_reveal_at: playedSpinRecovery');
+    expect(presentation).toContain('? tournament.spin_reveal_at');
     // Zero means never stamped; null then, so the client keeps its fallback
     // rather than being handed the epoch and skipping the whole sequence.
-    expect(ENGINE_BASE).toContain(
-      'this.spinRevealAt > 0 ? new Date(this.spinRevealAt).toISOString() : null'
+    expect(presentation).toMatch(
+      /this\.spinRevealAt\s*>\s*0\s*\?\s*new Date\(this\.spinRevealAt\)\.toISOString\(\)\s*:\s*null/
     );
   });
 });

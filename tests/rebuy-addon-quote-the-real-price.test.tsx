@@ -16,11 +16,34 @@ import { describe, it, expect, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RebuyModal from '../src/components/table/RebuyModal';
 import AddOnModal from '../src/components/table/AddOnModal';
+import { tournamentService } from '../src/services/TournamentService';
 
 vi.mock('../src/services/SoundService', () => ({
   haptic: { light: vi.fn(), medium: vi.fn(), heavy: vi.fn() },
   soundService: { playBuyInConfirm: vi.fn() },
 }));
+
+describe('TournamentService uses the canonical cent-accurate fee split', () => {
+  it.each([
+    [1, 0.9, 0.1],
+    [5, 4.5, 0.5],
+    [15, 13.5, 1.5],
+    [20, 18, 2],
+  ])('quotes %s as %s prize plus %s fee', (total, prize, fee) => {
+    expect(
+      tournamentService.quoteFromTournament(
+        {
+          buy_in_amount: 90,
+          buy_in_fee: 10,
+          starting_chips: 1_000,
+          rebuy_cost: total,
+          rebuy_chips: 1_000,
+        },
+        'rebuy'
+      )
+    ).toEqual({ baseCost: prize, fee, totalCost: total, chips: 1_000 });
+  });
+});
 
 describe('RebuyModal charges what it advertises', () => {
   const base = { isOpen: true, rebuyCost: 100, rebuyFee: 10, rebuyChips: 10000 };
@@ -38,6 +61,24 @@ describe('RebuyModal charges what it advertises', () => {
     expect(screen.getByText('House Fee')).toBeTruthy();
     expect(screen.getByText('Total Charged')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Rebuy 110/ })).toBeTruthy();
+  });
+
+  it('adds the exact cent split before rendering the whole advertised price', () => {
+    render(
+      <RebuyModal
+        {...base}
+        rebuyCost={13.5}
+        rebuyFee={1.5}
+        walletBalance={15}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+        isProcessing={false}
+      />
+    );
+    expect(screen.getByText('13.50')).toBeTruthy();
+    expect(screen.getByText('1.50')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Rebuy 15/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Rebuy 16/ })).toBeNull();
   });
 
   it('disables Confirm when the wallet covers the base but not the fee', () => {

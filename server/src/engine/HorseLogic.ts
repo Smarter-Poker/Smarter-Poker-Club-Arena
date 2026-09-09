@@ -56,8 +56,17 @@ import type {
   HorseDecision,
   HorseGameState,
   ActionRecord,
+  ActionType,
+  Pot,
+  RakeConfig,
+  HorseVariantRules,
 } from '../types.js';
-import { RANK_VALUES, validateAction, calculateBettingState } from './PokerEngine.js';
+import {
+  RANK_VALUES,
+  validateAction,
+  calculateBettingState,
+  HEADS_UP_RAKE_PERCENT,
+} from './PokerEngine.js';
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
@@ -97,6 +106,7 @@ import {
   type GtoV31ActionFamily,
   type GtoV31GameFamily,
   type GtoV31Objective,
+  type GtoV31SourceSeal,
 } from './GtoPostflopV31.js';
 import {
   classifyGtoDecisionContext,
@@ -105,7 +115,12 @@ import {
   gtoV31Position,
   gtoV31PotType,
   gtoV31UtilityContext,
+  type GtoV31FacingKind,
   type GtoV31NodeRole,
+  type GtoV31Position,
+  type GtoV31PotType,
+  type GtoV31SizeBucket,
+  type GtoV31UtilityContext,
 } from './GtoDecisionContext.js';
 import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
@@ -893,6 +908,25 @@ function scareShift(board: Card[]): ScareShift {
 
 /** Extended game state — ServerTableEngine passes the full HandController view. */
 export interface HorseGameStateV2 extends HorseGameState {
+  /** Phase 5 Round 1 canonical live-decision contract. Offline fixtures may
+   * omit it; every live worker request is runtime-validated at version 1. */
+  stateSchemaVersion?: 1;
+  heroSeat?: number;
+  currentPlayerSeat?: number;
+  legalActions?: ActionType[];
+  toCall?: number;
+  /** Absolute street wager / raise-to bounds from HandController. */
+  minRaiseTo?: number | null;
+  maxRaiseTo?: number | null;
+  bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  fixedBetSize?: number | null;
+  wagersCapped?: boolean;
+  commitmentCapRemaining?: number | null;
+  /** Live side-pot layers with exact eligibility, before settlement. */
+  pots?: Pot[];
+  /** Exact active per-hand rake schedule, not a strategy approximation. */
+  rakeConfig?: RakeConfig;
+  variantRules?: HorseVariantRules;
   dealerSeat?: number;
   lastRaise?: number;
   actionHistory?: ActionRecord[];
@@ -1365,6 +1399,55 @@ function icmRiskBase(
   return Math.min(endgameAdjust(Math.min(risk, 0.12), gs, stackBB, useV23End), 0.15);
 }
 
+export interface GtoV31DecisionStateReceipt {
+  schemaVersion: 1;
+  street: Extract<HandStage, 'flop' | 'turn' | 'river'>;
+  gameVariant: 'nlh';
+  gameFamily: GtoV31GameFamily;
+  objective: GtoV31Objective;
+  utilityContext: GtoV31UtilityContext;
+  format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  tableSize: number;
+  potType: GtoV31PotType;
+  heroPosition: GtoV31Position;
+  opponentPosition: GtoV31Position;
+  stackBb: number;
+  depthBucket: number;
+  textureClass: string;
+  nodeRole: GtoV31NodeRole;
+  facingKind: GtoV31FacingKind;
+  facingSizeBucket: GtoV31SizeBucket;
+  hand: string;
+  handKey: string;
+  cell: string;
+  board: Card[];
+  holeCards: Card[];
+  pot: number;
+  currentBet: number;
+  toCall: number;
+  bigBlind: number;
+}
+
+export interface GtoV31DecisionReceipt {
+  datasetId: string;
+  datasetChecksum: string;
+  decisionState: GtoV31DecisionStateReceipt;
+  nodeRole: GtoV31NodeRole;
+  cell: string;
+  handKey: string;
+  actionId: string;
+  sampledActionFamily: GtoV31ActionFamily;
+  sampledAmount: number | null;
+  finalAction: HorseDecision['action'];
+  finalAmount: number | null;
+  /** True only when legalization preserved the sampled family and wager size. */
+  executedAsIntended: boolean;
+  referenceDistribution: Record<string, number>;
+  policyEvBb: number | null;
+  actionEvsBb: Record<string, number | null> | null;
+  sourceSeal: GtoV31SourceSeal;
+}
+
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
 export interface HorseDecideOpts {
   /**
@@ -1611,19 +1694,12 @@ export interface HorseDecideOpts {
    * same action path without allowing a candidate to replace live policy.
    */
   gtoV31DatasetChecksum?: string;
-  /** Offline promotion evidence hook. Never set by the live engine. */
-  onGtoV31Decision?: (receipt: {
-    datasetChecksum: string;
-    nodeRole: GtoV31NodeRole;
-    cell: string;
-    actionId: string;
-    sampledActionFamily: GtoV31ActionFamily;
-    sampledAmount: number | null;
-    finalAction: HorseDecision['action'];
-    finalAmount: number | null;
-    /** True only when legalization preserved the sampled family and wager size. */
-    executedAsIntended: boolean;
-  }) => void;
+  /**
+   * Offline evidence hook used by candidate gates and the daily active-corpus
+   * agreement probe. Never set by the live engine. The receipt is emitted
+   * only after the ordinary V31 lookup, sample, and legalization path runs.
+   */
+  onGtoV31Decision?: (receipt: GtoV31DecisionReceipt) => void;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
   /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
@@ -1770,18 +1846,112 @@ function snapFraction(frac: number, familyBias: number = 0.5): number {
 }
 
 /**
- * V10 RAKE — the room's cash schedule is ~10% with a per-stakes dollar cap and
- * no-flop-no-drop. Only the MARGINAL rake matters to a decision: while the pot
- * is BELOW the cap every chip that ends up in it is taxed ~10%, so marginal
- * calls in small pots need a touch more equity than raw pot odds imply. Once
- * the cap is reached the marginal rake is zero and pot odds are honest again.
- * Returns the marginal rake fraction (0.10 or 0). The cap is approximated at
- * 2.5bb (schedule: $5 cap at 1/2, $7.5 at 2/5) — deliberately conservative.
+ * V10 RAKE — only the MARGINAL rake matters to a decision. Live schema-v1
+ * states carry the exact active percentage and player-count cap, including the
+ * heads-up ceiling. Once that cap is reached the marginal rake is zero and pot
+ * odds are honest again. The historical 10% / 2.5bb approximation remains only
+ * for offline fixtures that predate the canonical state contract.
  */
 const RAKE_PCT = 0.1;
-function rakeDrag(pot: number, bigBlind: number): number {
+function rakeDrag(
+  pot: number,
+  bigBlind: number,
+  config?: RakeConfig,
+  playerCount?: number
+): number {
+  if (config) {
+    // Timed collection is not a marginal tax on this pot.
+    if (config.timedRake) return 0;
+    let rate = Math.max(0, config.percent) / 100;
+    if (playerCount !== undefined && playerCount <= 2) {
+      rate = Math.min(rate, HEADS_UP_RAKE_PERCENT / 100);
+    }
+    let cap = Math.max(0, config.cap);
+    if (config.playerCountCaps?.length && playerCount !== undefined) {
+      const tier = [...config.playerCountCaps]
+        .sort((a, b) => b.players - a.players)
+        .find((candidate) => playerCount >= candidate.players);
+      if (tier) cap = Math.max(0, tier.cap);
+    }
+    return pot > 0 && rate > 0 && cap > 0 && pot * rate < cap ? rate : 0;
+  }
   const capChips = Math.max((bigBlind > 0 ? bigBlind : 2) * 2.5, 3);
   return pot > 0 && pot * RAKE_PCT < capChips ? RAKE_PCT : 0;
+}
+
+/**
+ * Last-mile Phase 5 legality. Strategy may express intent, but the immutable
+ * HandController menu is the authority for reopening rights, structure caps
+ * and table commitment caps. When intent cannot be represented legally, this
+ * degrades without committing extra chips: check first, otherwise fold.
+ */
+function enforceAuthoritativeDecision(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2
+): HorseDecision {
+  if (gs.stateSchemaVersion !== 1 || !Array.isArray(gs.legalActions)) return decision;
+
+  const legal = new Set(gs.legalActions);
+  const stack = Number.isFinite(player.stack) ? Math.max(0, player.stack) : 0;
+  const toCall = Number.isFinite(gs.toCall)
+    ? Math.max(0, gs.toCall as number)
+    : Math.max(0, gs.currentBet - player.bet);
+  const cents = (value: number): number => Math.round(value * 100) / 100;
+  const safe = (): HorseDecision => {
+    if (toCall <= 0.005 && legal.has('check')) return { action: 'check', thinkTime: 0 };
+    if (legal.has('fold')) return { action: 'fold', thinkTime: 0 };
+    if (legal.has('check')) return { action: 'check', thinkTime: 0 };
+    // A malformed menu should already have been rejected at the worker
+    // boundary. These final branches keep direct/offline callers total.
+    if (legal.has('call')) {
+      return { action: 'call', amount: cents(Math.min(toCall, stack)), thinkTime: 0 };
+    }
+    return { action: 'fold', thinkTime: 0 };
+  };
+  const call = (): HorseDecision => {
+    if (!legal.has('call')) return safe();
+    if (toCall >= stack - 0.005 && legal.has('all_in')) {
+      return { action: 'all_in', thinkTime: 0 };
+    }
+    return { action: 'call', amount: cents(Math.min(toCall, stack)), thinkTime: 0 };
+  };
+
+  if (decision.action === 'call') return call();
+  if (decision.action === 'check') return legal.has('check') ? decision : safe();
+  if (decision.action === 'fold') {
+    return toCall <= 0.005 && legal.has('check') ? { action: 'check', thinkTime: 0 } : safe();
+  }
+  if (decision.action === 'all_in' && legal.has('all_in')) return decision;
+
+  let wagerAction: 'bet' | 'raise' | null = null;
+  if (decision.action === 'bet' || decision.action === 'raise' || decision.action === 'all_in') {
+    const contextual = gs.currentBet > 0 ? 'raise' : 'bet';
+    if (legal.has(contextual)) wagerAction = contextual;
+  }
+  if (!wagerAction) {
+    return decision.action === 'raise' || decision.action === 'all_in' ? call() : safe();
+  }
+
+  const minTo = gs.minRaiseTo;
+  const maxTo = gs.maxRaiseTo;
+  if (
+    typeof minTo !== 'number' ||
+    !Number.isFinite(minTo) ||
+    typeof maxTo !== 'number' ||
+    !Number.isFinite(maxTo) ||
+    maxTo < minTo - 0.005
+  ) {
+    return wagerAction === 'raise' ? call() : safe();
+  }
+  const requested =
+    decision.action === 'all_in'
+      ? maxTo
+      : Number.isFinite(decision.amount)
+        ? decision.amount!
+        : minTo;
+  const amount = cents(Math.max(minTo, Math.min(maxTo, requested)));
+  return { action: wagerAction, amount, thinkTime: 0 };
 }
 
 export class HorseLogic {
@@ -2342,7 +2512,14 @@ export class HorseLogic {
           );
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
-            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs) ? rakeDrag(pot38, bb) : 0;
+            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
+              ? rakeDrag(
+                  pot38,
+                  bb,
+                  gs.rakeConfig,
+                  gs.players.filter((candidate) => !candidate.is_sitting_out).length
+                )
+              : 0;
           // Omaha's range read narrows by score percentile, which cannot see
           // domination (four napkins keep 44% against the sampled "3-bet
           // range" in PLO6; against the real one it is nearer 35%). The price
@@ -3793,7 +3970,15 @@ export class HorseLogic {
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     // V34: computed here, above the solver consult, so V32 prices the same
     // raked pot the heuristic call line does.
-    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
+    const rakeMarg =
+      useRake10 && !isTournamentMode(gs)
+        ? rakeDrag(
+            pot,
+            gs.bigBlind,
+            gs.rakeConfig,
+            gs.players.filter((candidate) => !candidate.is_sitting_out).length
+          )
+        : 0;
 
     // V31 CERTIFIED DIRECT POLICY. Node role, response semantics, both seats,
     // objective, stack depth, board texture and holding are all part of the
@@ -3865,6 +4050,8 @@ export class HorseLogic {
               tournament: gs.tournament,
             })
           : null;
+      const potType31 = gtoV31PotType(gs.actionHistory);
+      const hand31 = gtoHandClass(player.cards[0], player.cards[1]);
 
       const opponentRootStack31 = gtoV31FlopRootStack({
         street,
@@ -3904,12 +4091,12 @@ export class HorseLogic {
               objective: objective31,
               utilityContext: utility31,
               tableSize: heroSeat31.tableSize,
-              potType: gtoV31PotType(gs.actionHistory),
+              potType: potType31,
               heroPosition: heroSeat31.position,
               opponentPosition: opponentSeat31.position,
               stackBB: stackBB31,
               board: gs.communityCards,
-              hand: gtoHandClass(player.cards[0], player.cards[1]),
+              hand: hand31,
               holeCards: player.cards,
               nodeRole: context31.nodeRole,
               facingKind: context31.facingKind,
@@ -3966,17 +4153,60 @@ export class HorseLogic {
               finalAmount: finalAmount31,
               bigBlind: gs.bigBlind,
             });
-            if (opts.gtoV31DatasetChecksum && opts.onGtoV31Decision) {
+            if (
+              opts.onGtoV31Decision &&
+              hand31 &&
+              context31 &&
+              family31 &&
+              objective31 &&
+              utility31 &&
+              heroSeat31 &&
+              opponentSeat31
+            ) {
               opts.onGtoV31Decision({
+                datasetId: direct31.sourceSeal.dataset_id,
                 datasetChecksum: direct31.sourceSeal.dataset_checksum,
+                decisionState: {
+                  schemaVersion: 1,
+                  street,
+                  gameVariant: 'nlh',
+                  gameFamily: family31,
+                  objective: objective31,
+                  utilityContext: utility31,
+                  format: gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash'),
+                  tableSize: heroSeat31.tableSize,
+                  potType: potType31,
+                  heroPosition: heroSeat31.position,
+                  opponentPosition: opponentSeat31.position,
+                  stackBb: stackBB31,
+                  depthBucket: direct31.depthBucket,
+                  textureClass: direct31.textureClass,
+                  nodeRole: direct31.nodeRole,
+                  facingKind: context31.facingKind,
+                  facingSizeBucket: context31.facingSizeBucket,
+                  hand: hand31,
+                  handKey: direct31.handKey,
+                  cell: direct31.cell,
+                  board: structuredClone(gs.communityCards),
+                  holeCards: structuredClone(player.cards),
+                  pot,
+                  currentBet,
+                  toCall,
+                  bigBlind: gs.bigBlind,
+                },
                 nodeRole: direct31.nodeRole,
                 cell: direct31.cell,
+                handKey: direct31.handKey,
                 actionId: actionId31,
                 sampledActionFamily: action31.family,
                 sampledAmount: sampledAmount31,
                 finalAction: final31.action,
                 finalAmount: finalAmount31,
                 executedAsIntended: executedAsIntended31,
+                referenceDistribution: structuredClone(direct31.mix),
+                policyEvBb: direct31.policyEvBb,
+                actionEvsBb: structuredClone(direct31.actionEvsBb),
+                sourceSeal: structuredClone(direct31.sourceSeal),
               });
             }
             if (tele15) {
@@ -4575,7 +4805,15 @@ export class HorseLogic {
             inPosition: ip,
             drawy: drawy38,
           }),
-          rakeMarg: useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0,
+          rakeMarg:
+            useRake10 && !isTournamentMode(gs)
+              ? rakeDrag(
+                  pot,
+                  gs.bigBlind,
+                  gs.rakeConfig,
+                  gs.players.filter((candidate) => !candidate.is_sitting_out).length
+                )
+              : 0,
           riskPremium: risk,
           minBet: Math.max(gs.minRaise || 0, 0.01),
           maxBet: vi.isPotLimit ? pot : stack,
@@ -5727,7 +5965,13 @@ export class HorseLogic {
     gs: HorseGameStateV2,
     vi: VariantInfo
   ): HorseDecision {
-    return this.capPotLimitJam(this.legalizeInner(d, player, gs, vi), player, gs, vi);
+    const structurallyLegal = this.capPotLimitJam(
+      this.legalizeInner(d, player, gs, vi),
+      player,
+      gs,
+      vi
+    );
+    return enforceAuthoritativeDecision(structurallyLegal, player, gs);
   }
 
   /**
@@ -6215,6 +6459,8 @@ export class HorseLogic {
     snapFraction,
     // V10 strategy internals
     rakeDrag,
+    // Phase 5 canonical state / legality boundary
+    enforceAuthoritativeDecision,
     // V12 tournament internals
     icmRisk,
     // V15 Omaha nut discipline internals

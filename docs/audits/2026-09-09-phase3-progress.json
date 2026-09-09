@@ -80,7 +80,8 @@
       "id": "K01",
       "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "Break Clock Recovery Correction in the companion report"
     },
     {
       "id": "K02",
@@ -182,13 +183,15 @@
       "id": "S06",
       "requirement": "Persist one Spin draw, probability table version and entrants before reveal. Replay and failover cannot reroll.",
       "priority": "P0",
-      "status": "partial_behavioral_correction"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "S07",
       "requirement": "Fund the selected Spin payout with net entries plus reserve transfer. Fees cannot be counted as prize funding twice.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "S08",
@@ -200,7 +203,8 @@
       "id": "S09",
       "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "S10",
@@ -308,7 +312,8 @@
       "id": "AX09",
       "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_pending_publication",
+      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
       "id": "AX10",
@@ -651,5 +656,242 @@
       "name": "fn_settle_tournament_obligation_before_atomic_batch_gate",
       "definition_md5": "0fbfd867868fe2485dc9c66f565be15e"
     }
-  ]
+  ],
+  "continuation_base_commit": "7419a67c158d9bf0116165657acaaa48c05418aa",
+  "last_published_correction": {
+    "pr": 3971,
+    "merge_commit": "5dd902e978006d736b90df5261e949a7e07657cd",
+    "ci_run": 34382881384,
+    "server_tests_passed": 8105,
+    "client_tests_passed": 17547,
+    "engine_adoption": {
+      "build": "5dd902e9",
+      "deployment_run": 34383629239,
+      "heartbeat_at": "2026-09-09T18:37:53.655563Z",
+      "observed_at": "2026-09-09T18:38:00.950052Z"
+    }
+  },
+  "atomic_spin_correction": {
+    "status": "merged_frontend_and_engine_adoption_verified",
+    "migration": "20260909174722_spin_draw_books_one_funded_rule_receipt.sql",
+    "postgres_checks_passed": 36,
+    "server_scope_tests_passed": 1394,
+    "server_scope_test_files": 131,
+    "client_spec_tests_passed": 61,
+    "server_types": "passed",
+    "server_build": "passed",
+    "historical_probability_snapshot": "explicitly_unavailable_for_legacy_adoption",
+    "production_financial_probe": false,
+    "scope_limits": [
+      "Generic Spin refund planner fee-versus-embedded-rake mismatch remains open",
+      "All 58 controls and deployed behavior still require closure"
+    ],
+    "migration_sha256": "1c14cea8740b48326c02af496c9f3ca72b7cdc42c56b2209c93c3d1788156295",
+    "installed_bodies_match": true,
+    "receipt_roles_verified": true,
+    "schema_manifests_regenerated": true,
+    "club_foreign_key_gate": "passed",
+    "ownership_client_tests": {
+      "tests_passed": 31,
+      "files_passed": 2,
+      "includes": "Spin reserve ownership and engine wiring"
+    },
+    "acl_followup": {
+      "migration": "20260909190430_spin_settlement_keeps_engine_only_execution.sql",
+      "applied_version": "20260909190630",
+      "sha256": "5902cfe55b14f054aa1923ae08186f1885e5bd71fa05ea4e175cadf4d9759b98",
+      "browser_execute": false,
+      "service_execute": true,
+      "settlement_body_md5": "a0f5a4d8edb0c0e403d3c00a9aadaa95",
+      "reason": "Explicitly restate preserved service-only ACL for the branch permission gate; original applied migration remains unchanged"
+    },
+    "ci": {
+      "pr": 4000,
+      "initial_run": 34393636533,
+      "initial_failure": "One lease-generation source pin expected two calls before the third atomic Spin call was added",
+      "head": "3bfe6abe4a3fef9036aefe59033f22fd703058cd",
+      "full_server_after_pin_fix": {
+        "passed": 8291,
+        "skipped": 145,
+        "files_passed": 617,
+        "files_skipped": 1
+      },
+      "client_shards": "all four passed",
+      "status": "passed",
+      "passing_run": 34394618457,
+      "merged_pr": 4000,
+      "merge_commit": "61796f8f4c0c5f10ffbc0ec253575ff8a970af49"
+    },
+    "frontend": {
+      "both_urls_verified": true,
+      "sha": "0ed94e26141be46f0d4aa7bf9b0ade9ac025a526",
+      "publisher_run": 34395543987,
+      "contains_atomic_merge": true
+    },
+    "last_engine_read": {
+      "adoption": "verified",
+      "observed_at": "2026-09-09T20:58:22.979902Z",
+      "version": "561eaa52",
+      "heartbeat_at": "2026-09-09T20:58:13.458337Z",
+      "contains_merge": "61796f8f4c0c5f10ffbc0ec253575ff8a970af49",
+      "ancestry_command_passed": true
+    },
+    "staged_engine": {
+      "run": 34398550383,
+      "attempt": 291,
+      "target": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
+      "shipped": false,
+      "reason": "Image staged; next announced break outside run budget"
+    }
+  },
+  "expiry_correction": {
+    "status": "database_applied_verified_source_merged",
+    "controls": ["S11", "AX10"],
+    "migration": "20260909192921_spin_expiry_rechecks_the_locked_board.sql",
+    "applied_version": "20260909193534",
+    "sha256": "e4de5f0ca9c907c5e8631d36ad3ac7ad8c6a83d35bf7c608334430f84a687855",
+    "body_md5": "27da3d41bca0fe9e2df8f92d7b647aa7",
+    "definition_md5": "2b9e53e7603ccebd7af10be31ab67a96",
+    "production_roles": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    "postgres_checks_passed": 21,
+    "client_guard_tests_passed": 68,
+    "source_matches_installed_baseline": true,
+    "canonical_cancel_body_changed": false,
+    "financial_fixture_limit": "No paid entries or ledger triggers; verifies expiry/cancellation control flow, not financial refunds",
+    "schema_generator": "passed; no changed expiry schema shape; unrelated generated metadata additions discarded",
+    "club_foreign_key_gate": "passed",
+    "engine_caller": "GameServer.ts ten-minute fn_spin_expire_unfilled call",
+    "pr": 4007,
+    "merge_commit": "926b6cbfba7c37fb473ddf1a19ea845760d00735",
+    "passing_ci_run": 34397322173,
+    "superseded_pr": 4005
+  },
+  "cancellation_review_clarifications": {
+    "generic_refund_planner": "No installed database callers found; the fee mismatch is not by itself proof of active cancellation failure",
+    "engine_refund_helper": "refundAndCloseCancelledTournament is exported and imported but no application invocation was found",
+    "satellite_unregistration": "Current public unregister RPC delegates to fn_ca_unregister_tournament_player_exact, which returns a ticket for satellite-funded entries; this conflicts with the cash-refund rule still present on origin/main docs/LAWS.md. No policy reversal or historical ticket repair performed."
+  },
+  "break_clock_correction": {
+    "status": "merged_engine_adoption_verified",
+    "controls": ["K01", "K06", "K12", "BX08"],
+    "baseline": "Ten-minute level at 12:50, break at 12:55, restart at 12:57 restored 180000ms instead of 300000ms",
+    "behavioral_tests_passed": 8,
+    "affected_suite_tests_passed": 41,
+    "affected_suite_files_passed": 6,
+    "server_types": "passed",
+    "base_commit": "6debd44ecb75318aea3f50f1b939649a10ed201a",
+    "full_controls_closed": false,
+    "publication": {
+      "pr": 4016,
+      "initial_head": "8048df67c4fd9d5e4fd77939a043390edac04ae0",
+      "initial_ci": 34400837926,
+      "initial_ci_server": {
+        "passed": 8442,
+        "failed": 1,
+        "skipped": 145
+      },
+      "failure": "An existing SDK deadline test selected the old 100ms wrapper after reloading a 2000ms wrapper",
+      "gate_fix": "Clear only the stale test capture before the 2000ms import; runtime code unchanged",
+      "head": "52cb0b837c3b4e071ae1a13b38a064fdf7a471f9",
+      "merge_commit": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+      "passing_ci": 34402482634,
+      "server_tests_passed": 8446,
+      "server_tests_skipped": 145,
+      "server_files_passed": 631,
+      "engine_workflow": 34404673124,
+      "first_attempt_shipped": false,
+      "first_attempt": 300,
+      "staged_image": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+      "staged_job_redispatched": 102644685381,
+      "force": false,
+      "engine_adoption": {
+        "version": "b53ad9b2",
+        "commit": "b53ad9b212cf586ffdc6fed888ad6b738c348191",
+        "observed_at": "2026-09-09T22:04:12.787700Z",
+        "heartbeat_at": "2026-09-09T22:04:11.237018Z",
+        "contains_clock_merge": true,
+        "ancestry_command_passed": true
+      }
+    }
+  },
+  "execution_scope": {
+    "confirmed_defects_only": true,
+    "unchanged_evidence_reused": true,
+    "optional_duplicate_testing": false,
+    "phase_4_started": false,
+    "dispatch_staged_hetzner_immediately": true,
+    "passive_wait_for_engine_window": false,
+    "engine_force_restart": false,
+    "continue_audit_during_deployment": true
+  },
+  "satellite_cash_correction": {
+    "status": "source_ready_production_database_approval_blocked",
+    "controls": ["T06", "B08"],
+    "policy_source": "docs/LAWS.md and preserved Club Arena audit decision: eligible satellite unregisters use approved cash treatment",
+    "baseline_observed": {
+      "funded_entry": 200,
+      "wallet_before": 100,
+      "wallet_after": 100,
+      "cash_refund": 0,
+      "new_ticket": 200,
+      "remaining_escrow": 0
+    },
+    "corrected_isolated_observed": {
+      "wallet_after": 300,
+      "cash_refund": 200,
+      "new_ticket": 0,
+      "remaining_escrow": 0
+    },
+    "isolated_checks": [
+      "wrong source wallet refused",
+      "wrong component rails refused",
+      "foreign transfer owner refused",
+      "short escrow rolls back wallet, journal, authorization and obligation",
+      "exact request replay preserves receipt",
+      "consumed entitlement cannot be paid twice",
+      "fee reversal names original fee club",
+      "historical ticket receipt survives function update",
+      "already-issued ticket value cannot fund another cash refund",
+      "ordinary wallet-funded entry remains correct",
+      "redeemed-ticket funding returns cash once",
+      "late receipt failure rolls back all financial writes",
+      "observed simultaneous requests commit one refund and one replay",
+      "updated unapplied start migration plus repeated cash migration retains cash behavior"
+    ],
+    "fixture_limit": "23 captured table definitions and 19 real payment/escrow/ledger functions with selected actual money triggers; excludes production financial data, unrelated membership triggers and foreign keys. Not full database certification.",
+    "production_database_changed": false,
+    "publish_order": [
+      "client accepts verified satellite cash receipt",
+      "database correction after frontend adoption"
+    ],
+    "full_controls_closed": false,
+    "client_checks": {
+      "passed": 120,
+      "files": 4,
+      "typescript_build_mode": "passed"
+    },
+    "migration": "20260909214216_satellite_unregister_returns_its_funded_cash.sql",
+    "migration_sha256": "c0f87a2dc4e0392da09bba09ecc408a5f9b692045820113f84441d6f6da50ed6",
+    "postgres17_scenario_groups_passed": 8,
+    "source_guard_tests_passed": 8,
+    "reproducible_probe": "scripts/dev/probe-satellite-refund-pg17.py",
+    "reserved_actual_start_migration": "20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
+    "reserved_actual_start_migration_applied": false,
+    "reserved_source_cash_compatibility_verified": true,
+    "security_advisors_target_function_findings": 0,
+    "production_application_blocker": "Automatic approval review rejected apply_migration: repository publishing/deployment authorization did not explicitly authorize this production financial database mutation. No retry or indirect mutation performed.",
+    "frontend": {
+      "pr": 4029,
+      "merge_commit": "6a2724ea096f6f69da8b17e2a789885bc30f896f",
+      "passing_ci": 34407311377,
+      "both_urls_verified": true,
+      "sha": "65931a248c4f35b15e6dbd50aedd3b2f8d08a576",
+      "publisher_run": 34408248982,
+      "contains_client_merge": true
+    }
+  }
 }

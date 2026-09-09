@@ -291,6 +291,8 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
+  /** Database-generated seating identity, required at every cashout boundary. */
+  occupancy_id?: string;
   /** Server-only, authoritative membership used by disconnect protection. */
   reconnect_membership?: {
     is_vip?: boolean | null;
@@ -728,6 +730,38 @@ export interface BettingState {
   wagersCapped?: boolean;
   /** Which structure produced these bounds. Drives the rejection messages. */
   structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+}
+
+/**
+ * Phase 5 Round 1: the HandController's authoritative answer for one live
+ * decision. Consumers must not reconstruct these bounds from a partial table
+ * snapshot: reopening rights, fixed-limit caps and short all-ins all depend on
+ * the controller's complete action history.
+ */
+export interface AuthoritativeActionState {
+  schemaVersion: 1;
+  heroSeat: number;
+  currentPlayerSeat: number;
+  canAct: boolean;
+  legalActions: ActionType[];
+  toCall: number;
+  /** Absolute street wager ("raise to"), or null when no sized wager is legal. */
+  minRaiseTo: number | null;
+  /** Absolute street wager ("raise to"), or null when no sized wager is legal. */
+  maxRaiseTo: number | null;
+  structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed-limit street bet, distinct from a short-wager completion size. */
+  fixedBetSize: number | null;
+  wagersCapped: boolean;
+}
+
+/** Public variant facts compiled into every live horse decision snapshot. */
+export interface HorseVariantRules {
+  holeCardsDealt: number;
+  holeCardsUse: 'any' | 'exactly_two' | 'discard_to_two';
+  boardCardsUse: 'any' | 'exactly_three';
+  deckSize: number;
+  splitLow8OrBetter: boolean;
 }
 
 export interface RakeConfig {

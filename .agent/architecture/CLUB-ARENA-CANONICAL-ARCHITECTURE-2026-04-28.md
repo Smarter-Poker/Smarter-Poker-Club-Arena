@@ -1,5 +1,16 @@
 # Club Arena — Canonical Architecture (2026-04-28)
 
+> **Amended September 9, 2026: Built-In Execution For Significant Work.**
+> The user directed that significant Club Arena work have built-in execution
+> anchors rather than depend on cron. The owning engine, operations API, or
+> always-running service must carry the primary path, with durable obligations,
+> idempotency, and restart recovery. Cron may provide secondary reconciliation
+> or housekeeping. The cron routes listed below describe existing deployment
+> locations, not a requirement that business correctness wait for a scheduler.
+> Existing tier ownership remains in force. Replace and verify each primary path
+> before retiring its existing schedule. Read the full standard in
+> `docs/standards/EVENT-DRIVEN-EXECUTION.md`.
+
 > **AMENDED 2026-09-03 — Tier 2 no longer publishes through the World Hub.**
 > Club Arena's bundle is published by `publish-club-arena.yml` to its own
 > static origin (`ca-static.smarter.poker`, Caddy on `estate-ci-1`), and the

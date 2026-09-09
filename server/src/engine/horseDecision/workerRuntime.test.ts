@@ -16,6 +16,7 @@ import {
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
   fence: 'table:hand:turn',
+  decisionKey: 'phase5:table:hand:turn',
   decisionTimeMs: 3_599_999,
   player: {
     seat: 2,
@@ -30,14 +31,50 @@ const snapshot: LiveHorseDecisionSnapshot = {
     is_sitting_out: false,
   },
   gameState: {
-    players: [],
+    stateSchemaVersion: 1,
+    heroSeat: 2,
+    currentPlayerSeat: 2,
+    legalActions: ['fold', 'call', 'raise', 'all_in'],
+    toCall: 2,
+    minRaiseTo: 8,
+    maxRaiseTo: 11,
+    bettingStructure: 'pot_limit',
+    fixedBetSize: null,
+    wagersCapped: false,
+    commitmentCapRemaining: null,
+    players: [
+      {
+        seat: 2,
+        user_id: 'horse-2',
+        username: 'Horse Two',
+        stack: 88,
+        bet: 2,
+        totalInvested: 2,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      },
+    ],
     communityCards: [],
+    communityCards2: [],
+    communityCards3: [],
     pot: 5,
     currentBet: 4,
     minRaise: 4,
     stage: 'preflop',
     gameVariant: 'plo4',
     bigBlind: 2,
+    actionHistory: [],
+    pots: [{ amount: 5, eligiblePlayers: ['horse-2'] }],
+    rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
+    variantRules: {
+      holeCardsDealt: 4,
+      holeCardsUse: 'exactly_two',
+      boardCardsUse: 'exactly_three',
+      deckSize: 52,
+      splitLow8OrBetter: false,
+    },
   },
 };
 
@@ -52,6 +89,11 @@ const governor = () => ({
   timerLateMs: 40,
 });
 
+const V31_DATASET = {
+  id: '11111111-1111-4111-8111-111111111111',
+  checksum: 'a'.repeat(64),
+};
+
 function harness() {
   const messages: HorseDecisionWorkerResponse[] = [];
   const restored: number[] = [];
@@ -61,6 +103,7 @@ function harness() {
   const latency: Array<{ scope: string; ms: number }> = [];
   const observations: string[] = [];
   const appliedEffects: HorseMindDecisionEffect[][] = [];
+  const frozenSnapshots: boolean[] = [];
   let capturedEffects: HorseMindDecisionEffect[] = [];
   let rng = 101;
   let started = 0;
@@ -71,7 +114,12 @@ function harness() {
     async startServices() {
       started++;
       return {
-        solverStores: { charts: 7, postflop: 8, postflopV31: 9 },
+        solverStores: {
+          charts: 7,
+          postflop: 8,
+          postflopV31: 9,
+          postflopV31Dataset: V31_DATASET,
+        },
         solverPolicyArtifact: {
           totalPolicies: 12,
         } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -84,6 +132,12 @@ function harness() {
     decide(_player, _gameState, _style, _mods, opts) {
       decisionOpts.push(opts ?? {});
       decisionsAtRng.push(rng);
+      frozenSnapshots.push(
+        Object.isFrozen(_player) &&
+          Object.isFrozen(_player.cards) &&
+          Object.isFrozen(_gameState) &&
+          Object.isFrozen(_gameState.players)
+      );
       rng = 202;
       if (throwDecision) throw new Error('synthetic decision failure');
       return { action: 'call', amount: 4, thinkTime: 2500 };
@@ -106,7 +160,12 @@ function harness() {
     },
     governorScale: () => 0.2,
     workerReadiness: () => ({
-      solverStores: { charts: 17, postflop: 18, postflopV31: 19 },
+      solverStores: {
+        charts: 17,
+        postflop: 18,
+        postflopV31: 19,
+        postflopV31Dataset: V31_DATASET,
+      },
       solverPolicyArtifact: {
         totalPolicies: 22,
       } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -138,6 +197,7 @@ function harness() {
     latency,
     observations,
     appliedEffects,
+    frozenSnapshots,
     started: () => started,
     stopped: () => stopped,
     rng: () => rng,
@@ -168,7 +228,12 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.started()).toBe(1);
     expect(h.messages[0]).toEqual({
       type: 'READY',
-      solverStores: { charts: 7, postflop: 8, postflopV31: 9 },
+      solverStores: {
+        charts: 7,
+        postflop: 8,
+        postflopV31: 9,
+        postflopV31Dataset: V31_DATASET,
+      },
       solverPolicyArtifact: { totalPolicies: 12 },
       governor: governor(),
     });
@@ -190,6 +255,32 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
     expect(h.rng()).toBe(101);
     expect(h.latency).toEqual([{ scope: 'plo4', ms: 6 }]);
+    expect(h.features).toEqual(['phase5_canonical_state']);
+    expect(h.frozenSnapshots).toEqual([true]);
+  });
+
+  it('rejects any private seat card before HorseLogic can read it', async () => {
+    const h = harness();
+    h.runtime.receive({
+      ...fastRequest(),
+      gameState: {
+        ...snapshot.gameState,
+        players: [
+          {
+            ...snapshot.gameState.players[0],
+            cards: [{ rank: 'A', suit: 'spades' }],
+          },
+        ],
+      },
+    });
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      requestId: 1,
+      message: 'horse state contains private seat cards',
+    });
   });
 
   it('rejects offline candidate selectors at the live worker boundary', async () => {
@@ -328,7 +419,12 @@ describe('HorseDecisionWorkerRuntime', () => {
 
     expect(h.messages.at(-1)).toMatchObject({
       type: 'STATUS_RESULT',
-      solverStores: { charts: 17, postflop: 18, postflopV31: 19 },
+      solverStores: {
+        charts: 17,
+        postflop: 18,
+        postflopV31: 19,
+        postflopV31Dataset: V31_DATASET,
+      },
       solverPolicyArtifact: { totalPolicies: 22 },
       governor: { scale: 0.08, sampledAt: 199 },
     });
@@ -360,7 +456,7 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.rng()).toBe(101);
   });
 
-  it('derives each fast RNG stream from its immutable fence, not prior speculative work', async () => {
+  it('derives each fast RNG stream from its canonical key, not prior speculative work', async () => {
     const afterOtherWork = harness();
     afterOtherWork.runtime.receive({ ...fastRequest(1), fence: 'other-table:stale-turn' });
     afterOtherWork.runtime.receive({ ...fastRequest(2), fence: 'target-table:owned-turn' });
@@ -373,6 +469,20 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(afterOtherWork.decisionsAtRng[1]).toBe(direct.decisionsAtRng[0]);
     expect(afterOtherWork.rng()).toBe(101);
     expect(direct.rng()).toBe(101);
+  });
+
+  it('replays the same canonical decision key across worker restarts', async () => {
+    const first = harness();
+    first.setRng(17);
+    first.runtime.receive(fastRequest());
+    await first.runtime.drain();
+
+    const restarted = harness();
+    restarted.setRng(4_000_000_001);
+    restarted.runtime.receive(fastRequest());
+    await restarted.runtime.drain();
+
+    expect(first.decisionsAtRng[0]).toBe(restarted.decisionsAtRng[0]);
   });
 
   it('restores canonical RNG when a fast decision throws', async () => {

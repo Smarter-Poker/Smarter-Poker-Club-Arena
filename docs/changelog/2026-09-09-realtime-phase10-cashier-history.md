@@ -49,11 +49,40 @@ coalesce; confirmed notifications request a trailing refresh when needed.
 - Rendered navigation verifies that old club rows disappear, a late old response
   is ignored, and the new club's pending read retains loading ownership.
 - Client TypeScript: no diagnostics.
-- Normal push gates, production build and publication evidence are recorded below
-  when complete. No hooks have been bypassed.
+- The older balance-cache regression initially selected the new history listener
+  by event name alone. It now identifies the balance loader explicitly and still
+  executes the real store. All 11 balance compatibility tests pass.
+- Normal pre-push: 40 direct, 201 related, and 190 source-reading tests passed.
+  Client typecheck passed. Production build completed in 15.88 seconds.
+  No hooks were bypassed.
 
 ## Acceptance Boundary
 
 Authenticated physical iPad/PWA acceptance remains unverified. Controlled tests and
 published JavaScript establish code behavior and release adoption; they do not
 establish a physical-device result. No player balances or seats were changed as probes.
+
+## Publication Evidence
+
+PR3977 merged at 2026-09-09 17:59:35 UTC as
+`3df8a74b5b882c17aaa5c2b1c1f99aa5efb2ca6a`. CI run 34384535280 passed TypeScript,
+production build, all four client unit shards, and the browser component gates.
+The live-production E2E job was skipped and is not physical-device acceptance.
+
+Fresh verification at 2026-09-09 18:08:53 UTC found both public and origin
+build-info serving `9c0b622d1762f2045965d8186b98204c6c200fa6`, which contains
+that merge. Publisher 34386582802 actually published at 18:07:19-18:07:21 UTC;
+its origin-verification step succeeded. Superseded runs are not counted as releases.
+
+The public HTML referenced `index-Coee5icg-v6.js`, which referenced
+`CashierPage-CLgeZl4X-v6.js`. Whole-function AST comparisons for both the Cashier
+page and the history ownership hook match the tested local build with consistent
+identifier renaming. Both released runtime source files also match the tested
+source exactly. Asset SHA256 values, timestamps, CI results and publisher step
+proof are in `docs/audits/2026-09-09-realtime-phase10-publication.json`.
+
+The companion `docs/audits/2026-09-09-realtime-phase10-publication.mjs` reproduces
+the public stamp, import-graph, function, and runtime-source checks. Run it from a
+checkout with dependencies and a production dist built from the tested runtime
+files. It deliberately refuses changed runtime source or a mismatched bundle;
+`--local` validates its function selectors without fetching production.

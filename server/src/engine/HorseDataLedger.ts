@@ -688,8 +688,25 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
   state(
     'players',
-    'every seat: stack, bet, cards (hero), folded/all-in/sitting-out, totalInvested'
+    'every public seat: stack, bet, folded/all-in/sitting-out, totalInvested; private cards are always empty here and hero cards travel separately'
   ),
+  state('stateSchemaVersion', 'canonical live decision schema; production requires version 1'),
+  state('heroSeat', 'seat whose private cards and action are being decided'),
+  state('currentPlayerSeat', 'authoritative HandController turn owner'),
+  state('legalActions', 'authoritative action menu including reopen and structure rules'),
+  state('toCall', 'authoritative amount owed by hero'),
+  state('minRaiseTo', 'minimum absolute legal wager or raise-to'),
+  state('maxRaiseTo', 'maximum absolute legal wager after structure and table caps'),
+  state('bettingStructure', 'no-limit, pot-limit or fixed-limit rule selected by the live hand'),
+  state('fixedBetSize', 'fixed-limit street bet; null in other structures'),
+  state('wagersCapped', 'fixed-limit wager cap reached on this street'),
+  state(
+    'commitmentCapRemaining',
+    'table per-hand commitment ceiling remaining; null when disabled'
+  ),
+  state('pots', 'live side-pot layers and exact eligible player ids'),
+  state('rakeConfig', 'exact active per-hand rake percent and player-count cap schedule'),
+  state('variantRules', 'explicit hole-card, board-use, deck and hi-lo rules'),
   state('communityCards', 'board 1'),
   state('communityCards2', 'board 2 (bomb pots)'),
   state('communityCards3', 'board 3 (bomb pots)'),
@@ -827,7 +844,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_solver_agreement',
     'nightly',
     'fn_audit_solver_agreement (the daily audit); written by HorseLeague after the matchups via fn_horse_solver_agreement_add',
-    'V47: the absolute score - mean solver frequency of the action the horse chose, hold em push/fold spots only',
+    'reference-specific absolute scores: V47 hold em push/fold chart agreement and Phase 4 certified V31 postflop execution agreement; neither is exploitability',
     'V47',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -836,6 +853,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'nightly',
     'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions',
     'reconciled per-decision evidence behind the nightly chart-agreement summary, including the final action, reference mix, regret availability, and source seal',
+    'Phase4',
+    { dayColumn: 'run_date', freshnessDays: 2 }
+  ),
+  table(
+    'horse_solver_agreement_v31_decisions',
+    'nightly',
+    'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions; ca_horse_solver_agreement_v31_decisions',
+    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal',
     'Phase4',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -1445,6 +1470,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V41)',
     'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
     'V41'
+  ),
+  receipt(
+    'phase5_canonical_state',
+    'HorseDecisionWorkerRuntime.executeFast',
+    'a schema-v1 state passed the worker privacy, legality, side-pot, rake and variant-rule boundary',
+    'Phase5',
+    'decide',
+    0.99
   ),
   receipt(
     'v44_second_look',

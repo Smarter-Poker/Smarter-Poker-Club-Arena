@@ -1,13 +1,35 @@
 /**
  * The wheel announces the booked draw before table-building work.
  *
- * Dan's animation should start as soon as possible after the third paid seat.
- * Phase 3 S06 requires the announced result to be durable first. The old
- * pre-settlement source pin admitted a 2x announcement followed by a booked
- * 10x prize, or an announcement whose settlement failed entirely.
- * SpinRevealSettlementBoundary.test.ts reproduces both with production code.
- * The reserve receipt is therefore a reveal precondition; the row projection,
- * roster updates and table build still run underneath the existing hold.
+ * Dan, 2026-08-30: "AS SOON AS THE 3RD SEAT IS PAID FOR THE ANIMATION SHOULD
+ * START AS SOON AS POSSIBLE."
+ *
+ * Measured after round 16, 229 spins, third paid seat to `started_at`:
+ *
+ *     min 1.57s   p25 2.72s   p50 3.02s   p90 4.70s
+ *
+ * (Round 15 was p50 5.4s, so the one-second lane took ~2.4s out of it.) What
+ * remained was the START WORK, and the broadcast sat at the END of it —
+ * behind settlement, the spin row write, a roster read plus a
+ * per-player update per seat, the stack credit and the table build.
+ *
+ * NONE of that is a precondition for showing three players a spinning wheel.
+ * The immutable funded receipt is. Every number the packet carries —
+ * multiplier, buy-in, prize pool and locked tiers — is proven when that one
+ * transaction returns. The remaining projection is a precondition for
+ * DEALING, and dealing is already held by the reveal hold.
+ *
+ * So the reveal goes out on the draw, and the bookkeeping runs underneath it
+ * inside a hold that was always there.
+ *
+ * THE TWO THINGS THAT MAKE THAT SAFE, both pinned below:
+ *
+ *   1. Once the moment is public it does not move. Three wheels are turning
+ *      on those numbers; `resolveSpinReveal` is frozen by `spinRevealEmitted`
+ *      so the later pass cannot re-anchor them.
+ *   2. The HOLD may still be extended, because a client is allowed to finish
+ *      early and wait ("faster than the budget is allowed"), but never to be
+ *      dealt over. `effectiveHold` is one-sided for exactly that reason.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -20,16 +42,22 @@ const BASE = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
 /** Executable code only — a pin must never pass on the prose above it. */
 const CODE = BASE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-describe('the reveal is emitted on the booked draw', () => {
-  it('emits after settlement has confirmed the booked draw', () => {
+describe('the reveal is emitted from the immutable funded draw receipt', () => {
+  it('waits for the funded receipt, then emits before presentation writes', () => {
     const emit = CODE.indexOf('spin_reveal_early_emit');
-    const settle = CODE.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const settle = CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    const presentation = CODE.indexOf(
+      ".from('tournaments')",
+      CODE.indexOf('const spinPresentationPatch')
+    );
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
-    expect(settle, 'the settle call moved - re-check this pin').toBeGreaterThan(-1);
-    expect(emit, 'the wheel must name the confirmed settlement result').toBeGreaterThan(settle);
-    const settledGate = CODE.indexOf('if (!settled)', settle);
-    expect(settledGate).toBeGreaterThan(settle);
-    expect(emit).toBeGreaterThan(settledGate);
+    expect(settle, 'the atomic settlement call moved - re-check this pin').toBeGreaterThan(-1);
+    const settledGate = CODE.indexOf('if (!fundedSpin)', settle);
+    expect(settledGate, 'the parsed settlement receipt gate is missing').toBeGreaterThan(settle);
+    expect(settle, 'uncommitted money may never be revealed').toBeLessThan(emit);
+    expect(emit, 'the wheel must name a proven settlement receipt').toBeGreaterThan(settledGate);
+    expect(presentation, 'the presentation update moved').toBeGreaterThan(-1);
+    expect(emit, 'the wheel must not wait on presentation decoration').toBeLessThan(presentation);
   });
 
   it('emits before the table build, which is the slowest step it used to wait on', () => {

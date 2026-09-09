@@ -20,6 +20,7 @@ DECLARE
     'r:0:c:c:2h:c:c:3s','r:0','r:0:c:c:2h:c:c:3s','r:0',
     'r:0:c:c:2h:c:c:3s'];
   coverage jsonb:='[]'::jsonb; cov jsonb; dataset uuid; bundle uuid; bundle_checksum text;
+  dataset_declaration jsonb;
   i integer; role text; facing text; bucket text; board text; holdout_board text;
   holdout_node_id text; specs jsonb; context jsonb;
   preflop_aggressor integer; hero_solver_player integer; line_proof jsonb; derived_line jsonb;
@@ -35,7 +36,16 @@ DECLARE
   eval_scenarios text[]; eval_roles text[]:=ARRAY['all_in','barrel','bet_raise','cbet',
     'check_raise','delayed_cbet','facing_bet','facing_raise','open','probe'];
   components jsonb; bad_components jsonb; scenario_hands integer; component_stderr numeric;
-  hand_key text; action_key text;
+  hand_key text; bad_hand_key text; action_key text; zero_action_key text;
+  agreement_cell record; agreement_dataset public.gto_v31_datasets%ROWTYPE;
+  agreement_board text; agreement_card text; agreement_hand_key text; agreement_hole text[];
+  agreement_board_json jsonb; agreement_hole_json jsonb; agreement_mix jsonb;
+  agreement_action_id text; agreement_action_family text; agreement_format text;
+  agreement_probability numeric; agreement_selected_ev numeric; agreement_regret numeric;
+  agreement_sampled_amount numeric; agreement_final_amount numeric;
+  agreement_state jsonb; agreement_seal jsonb; agreement_decision jsonb;
+  agreement_row jsonb; agreement_audit jsonb; agreement_written integer;
+  agreement_combo integer;
 BEGIN
   CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $auth$ SELECT 'authenticated'::text $auth$;
   bundle:=public.ca_gto_v31_approve_input_bundle(jsonb_build_object(
@@ -69,7 +79,7 @@ BEGIN
     coverage:=coverage||jsonb_build_array(cov);
   END LOOP;
 
-  dataset:=public.fn_gto_v31_register_dataset(jsonb_build_object(
+  dataset_declaration:=jsonb_build_object(
     'dataset_key','phase4.behavior.probe','solver_version','PioSOLVER-edge',
     'solver_binary_checksum',repeat('a',64),'pipeline_commit',repeat('b',40),
     'pipeline_bundle_checksum',repeat('8',64),
@@ -79,7 +89,46 @@ BEGIN
     'input_bundle_checksum',bundle_checksum,'machine_ids',jsonb_build_array('M1','M2'),
     'declared_coverage',coverage,'quality_gates',jsonb_build_object(
       'max_frequency_mae',0.10,'max_sizing_mae',0.10,'max_policy_ev_mae_bb',0.20,
-      'max_action_regret_bb',0.10,'min_regret_coverage',0.80)));
+      'max_action_regret_bb',0.10,'min_regret_coverage',0.80));
+
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_register_dataset(
+      jsonb_set(dataset_declaration,'{solver_version}','31'::jsonb)
+    );
+  EXCEPTION WHEN OTHERS THEN failed:=true;
+  END;
+  IF NOT failed THEN RAISE EXCEPTION 'numeric solver identity was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_register_dataset(
+      jsonb_set(dataset_declaration,'{quality_gates,max_frequency_mae}','"0.10"'::jsonb)
+    );
+  EXCEPTION WHEN OTHERS THEN failed:=true;
+  END;
+  IF NOT failed THEN RAISE EXCEPTION 'string-coercible quality gate was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_register_dataset(
+      jsonb_set(dataset_declaration,'{declared_coverage,0,table_size}','2.4'::jsonb)
+    );
+  EXCEPTION WHEN OTHERS THEN failed:=true;
+  END;
+  IF NOT failed THEN RAISE EXCEPTION 'fractional coverage table size was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_register_dataset(
+      jsonb_set(
+        dataset_declaration,
+        '{declared_coverage}',
+        jsonb_build_array(coverage->0,coverage->0)
+      )
+    );
+  EXCEPTION WHEN OTHERS THEN failed:=true;
+  END;
+  IF NOT failed THEN RAISE EXCEPTION 'duplicate declared coverage was accepted'; END IF;
+
+  dataset:=public.fn_gto_v31_register_dataset(dataset_declaration);
 
   failed:=false;
   BEGIN
@@ -138,35 +187,74 @@ BEGIN
         ELSE (derived_line->>'facing_actor_total_chips')::numeric END);
     IF facing='none' THEN
       specs:=jsonb_build_object(
-        'check',jsonb_build_object('family','check','size_unit','none','size_value',NULL,'all_in',false),
-        'bet75',jsonb_build_object('family','bet','size_unit','pot_fraction','size_value',0.75,'all_in',false));
+        'c',jsonb_build_object('family','check','size_unit','none','size_value',NULL,'all_in',false),
+        'b75',jsonb_build_object('family','bet','size_unit','pot_fraction','size_value',0.75,'all_in',false));
+      IF i=1 THEN
+        IF public.fn_gto_v31_action_specs_valid(
+          (specs-'b75')||jsonb_build_object('bet75',specs->'b75')) THEN
+          RAISE EXCEPTION 'a non-Pio action identity was accepted';
+        END IF;
+        IF public.fn_gto_v31_action_specs_valid(
+          jsonb_set(jsonb_set(specs,'{c}',specs->'b75'),'{b75}',specs->'c')) THEN
+          RAISE EXCEPTION 'Pio action identities were accepted with swapped families';
+        END IF;
+      END IF;
       node_raw:=jsonb_build_object('schema','smarter-poker.pio-policy.v3','node',nodes[i],
         'node_context',context,'line_proof',line_proof,'action_specs',specs,
-        'frequencies',jsonb_build_object('check',zeros,'bet75',live),'policy_evs_bb',nulls,
-        'action_evs_bb',jsonb_build_object('check',nulls,'bet75',nulls),'matchups',live,
+        'frequencies',jsonb_build_object('c',zeros,'b75',live),'policy_evs_bb',nulls,
+        'action_evs_bb',jsonb_build_object('c',nulls,'b75',nulls),'matchups',live,
         'source_combo_order_checksum',repeat('d',64),'range_bundle_checksum',repeat('e',64));
     ELSIF role='all_in' THEN
       specs:=jsonb_build_object(
-        'fold',jsonb_build_object('family','fold','size_unit','none','size_value',NULL,'all_in',false),
-        'call',jsonb_build_object('family','call','size_unit','none','size_value',NULL,'all_in',false));
+        'f',jsonb_build_object('family','fold','size_unit','none','size_value',NULL,'all_in',false),
+        'c',jsonb_build_object('family','call','size_unit','none','size_value',NULL,'all_in',false));
       node_raw:=jsonb_build_object('schema','smarter-poker.pio-policy.v3','node',nodes[i],
         'node_context',context,'line_proof',line_proof,'action_specs',specs,
-        'frequencies',jsonb_build_object('fold',zeros,'call',live),'policy_evs_bb',nulls,
-        'action_evs_bb',jsonb_build_object('fold',nulls,'call',nulls),'matchups',live,
+        'frequencies',jsonb_build_object('f',zeros,'c',live),'policy_evs_bb',nulls,
+        'action_evs_bb',jsonb_build_object('f',nulls,'c',nulls),'matchups',live,
         'source_combo_order_checksum',repeat('d',64),'range_bundle_checksum',repeat('e',64));
     ELSE
       specs:=jsonb_build_object(
-        'fold',jsonb_build_object('family','fold','size_unit','none','size_value',NULL,'all_in',false),
-        'call',jsonb_build_object('family','call','size_unit','none','size_value',NULL,'all_in',false),
-        'raise75',jsonb_build_object('family','raise','size_unit','pot_after_call_fraction','size_value',0.75,'all_in',false));
+        'f',jsonb_build_object('family','fold','size_unit','none','size_value',NULL,'all_in',false),
+        'c',jsonb_build_object('family','call','size_unit','none','size_value',NULL,'all_in',false),
+        'b75',jsonb_build_object('family','raise','size_unit','pot_after_call_fraction','size_value',0.75,'all_in',false));
       node_raw:=jsonb_build_object('schema','smarter-poker.pio-policy.v3','node',nodes[i],
         'node_context',context,'line_proof',line_proof,'action_specs',specs,
-        'frequencies',jsonb_build_object('fold',zeros,'call',live,'raise75',zeros),'policy_evs_bb',nulls,
-        'action_evs_bb',jsonb_build_object('fold',nulls,'call',nulls,'raise75',nulls),'matchups',live,
+        'frequencies',jsonb_build_object('f',zeros,'c',live,'b75',zeros),'policy_evs_bb',nulls,
+        'action_evs_bb',jsonb_build_object('f',nulls,'c',nulls,'b75',nulls),'matchups',live,
         'source_combo_order_checksum',repeat('d',64),'range_bundle_checksum',repeat('e',64));
     END IF;
     node:=node_raw||jsonb_build_object('node_checksum',public.fn_gto_v31_node_checksum(node_raw));
     IF NOT public.fn_gto_v31_source_node_valid(node) THEN RAISE EXCEPTION 'source node % rejected',i; END IF;
+    IF i=1 THEN
+      forged:=jsonb_set(node-'node_checksum','{node}','"r:1"'::jsonb);
+      forged:=forged||jsonb_build_object(
+        'node_checksum',public.fn_gto_v31_node_checksum(forged));
+      IF public.fn_gto_v31_source_node_scalar_types_valid(forged)
+         OR public.fn_gto_v31_source_node_valid(forged) THEN
+        RAISE EXCEPTION 'a noncanonical Pio root was accepted';
+      END IF;
+      forged:=jsonb_set(node-'node_checksum','{node}',
+        to_jsonb('r:0:b'||repeat('1',80)));
+      forged:=forged||jsonb_build_object(
+        'node_checksum',public.fn_gto_v31_node_checksum(forged));
+      IF public.fn_gto_v31_source_node_scalar_types_valid(forged)
+         OR public.fn_gto_v31_source_node_valid(forged) THEN
+        RAISE EXCEPTION 'an oversized Pio action identity was accepted';
+      END IF;
+    END IF;
+    forged:=jsonb_set(node-'node_checksum','{node_context,table_size}','2.4'::jsonb);
+    forged:=forged||jsonb_build_object('node_checksum',public.fn_gto_v31_node_checksum(forged));
+    IF public.fn_gto_v31_source_node_scalar_types_valid(forged)
+       OR public.fn_gto_v31_source_node_valid(forged) THEN
+      RAISE EXCEPTION 'fractional source table size was accepted';
+    END IF;
+    forged:=jsonb_set(node-'node_checksum','{line_proof,hero_solver_player}','0.4'::jsonb);
+    forged:=forged||jsonb_build_object('node_checksum',public.fn_gto_v31_node_checksum(forged));
+    IF public.fn_gto_v31_source_node_scalar_types_valid(forged)
+       OR public.fn_gto_v31_source_node_valid(forged) THEN
+      RAISE EXCEPTION 'fractional solver-player identity was accepted';
+    END IF;
     IF role='cbet' THEN
       forged:=jsonb_set(node_raw,'{node_context,node_role}','"open"'::jsonb);
       forged:=forged||jsonb_build_object('node_checksum',public.fn_gto_v31_node_checksum(forged));
@@ -215,8 +303,7 @@ BEGIN
            jsonb_agg(CASE WHEN eligible THEN to_jsonb(1.0::numeric)
              ELSE 'null'::jsonb END ORDER BY n)
       INTO holdout_live,holdout_zeros,holdout_nulls FROM holdout_combos;
-    selected_action:=CASE WHEN facing='none' THEN 'bet75'
-      WHEN role='all_in' THEN 'call' ELSE 'call' END;
+    selected_action:=CASE WHEN facing='none' THEN 'b75' ELSE 'c' END;
     SELECT jsonb_object_agg(key,CASE WHEN key=selected_action THEN holdout_live ELSE holdout_zeros END),
            jsonb_object_agg(key,holdout_nulls)
       INTO holdout_frequencies,holdout_action_evs FROM jsonb_object_keys(specs) key;
@@ -248,8 +335,38 @@ BEGIN
     IF i=1 THEN
       failed:=false;
       BEGIN
+        PERFORM public.fn_gto_v31_ingest_source_artifact(
+          dataset,'M1',jsonb_set(train_art,'{scenario_hash}','7'::jsonb));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'numeric source scenario hash was accepted'; END IF;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_ingest_source_artifact(
+          dataset,'M1',jsonb_set(train_art,'{stack_depth}','80.5'::jsonb));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'fractional source stack depth was accepted'; END IF;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_ingest_source_artifact(
+          dataset,'M1',jsonb_set(train_art,'{solved_at}','7'::jsonb));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'numeric source solved_at was accepted'; END IF;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_ingest_source_artifact(
+          dataset,'M1',jsonb_set(train_art,'{id}',to_jsonb(upper(train_id::text))));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'noncanonical source UUID was accepted'; END IF;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_ingest_source_artifact(
+          dataset,'M1',train_art||'{"unexpected":true}'::jsonb);
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN RAISE EXCEPTION 'source artifact extra key was accepted'; END IF;
+      failed:=false;
+      BEGIN
         PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M1',
-          jsonb_set(train_art,'{strategy_matrix_v2,nodes,0,frequencies,bet75,0}','0.5'::jsonb));
+          jsonb_set(train_art,'{strategy_matrix_v2,nodes,0,frequencies,b75,0}','0.5'::jsonb));
       EXCEPTION WHEN OTHERS THEN failed:=true; END;
       IF NOT failed THEN RAISE EXCEPTION 'unnormalized source was accepted'; END IF;
       forged:=jsonb_set(node_raw,'{matchups,0}','4'::jsonb);
@@ -258,8 +375,43 @@ BEGIN
       IF NOT public.fn_gto_v31_source_node_valid(forged) THEN
         RAISE EXCEPTION 'valid calc_ev matchup mass above one was rejected';
       END IF;
+      forged:=jsonb_set(node_raw,'{action_specs,b75,size_value}','"0.75"'::jsonb);
+      forged:=forged||jsonb_build_object(
+        'node_checksum',public.fn_gto_v31_node_checksum(forged));
+      IF public.fn_gto_v31_source_node_valid(forged) THEN
+        RAISE EXCEPTION 'a string-coercible source action size was accepted';
+      END IF;
+      forged:=jsonb_set(node_raw,'{action_specs,b75,all_in}','"false"'::jsonb);
+      forged:=forged||jsonb_build_object(
+        'node_checksum',public.fn_gto_v31_node_checksum(forged));
+      IF public.fn_gto_v31_source_node_valid(forged) THEN
+        RAISE EXCEPTION 'a string-coercible source all-in flag was accepted';
+      END IF;
+      forged:=jsonb_set(node_raw,'{node_context,table_size}','"2"'::jsonb);
+      forged:=forged||jsonb_build_object(
+        'node_checksum',public.fn_gto_v31_node_checksum(forged));
+      IF public.fn_gto_v31_source_node_valid(forged) THEN
+        RAISE EXCEPTION 'a string-coercible source table size was accepted';
+      END IF;
     END IF;
     PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M1',train_art);
+    IF i=1 THEN
+      -- The immutable source row owns solved_at too. Remove only the dataset
+      -- receipt so this specifically exercises the source-row conflict path;
+      -- a changed timestamp must not be attached to the existing row.
+      DELETE FROM public.gto_v31_source_artifacts
+       WHERE dataset_id=dataset AND source_row_id=train_id;
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M1',
+          jsonb_set(train_art,'{solved_at}',
+            to_jsonb((train_art->>'solved_at')::timestamptz+interval '1 second')));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN
+        RAISE EXCEPTION 'source artifact id accepted a changed solved_at';
+      END IF;
+      PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M1',train_art);
+    END IF;
     IF i=1 AND NOT EXISTS (
       SELECT 1 FROM public.solved_spots_gold s
        WHERE s.id=train_id
@@ -291,7 +443,8 @@ BEGIN
   END LOOP;
 
   SELECT to_jsonb(c) INTO forged
-    FROM public.gto_v31_runtime_cells c WHERE c.dataset_id=dataset LIMIT 1;
+    FROM public.gto_v31_runtime_cells c
+   WHERE c.dataset_id=dataset AND c.action_specs?'b75' LIMIT 1;
   SELECT key INTO hand_key FROM jsonb_object_keys(forged->'hand_matrix') key LIMIT 1;
   SELECT key INTO action_key FROM jsonb_object_keys(forged->'action_specs') key LIMIT 1;
   node_raw:=jsonb_set(forged,'{policy_ev_matrix}',(forged->'policy_ev_matrix')-hand_key);
@@ -306,6 +459,41 @@ BEGIN
     to_jsonb(public.fn_gto_v31_cell_payload_checksum(node_raw)));
   IF public.fn_gto_v31_cell_payload_valid(node_raw) THEN
     RAISE EXCEPTION 'a compact cell missing one action EV was accepted';
+  END IF;
+  bad_hand_key:=CASE forged->>'street'
+    WHEN 'flop' THEN 'AKo:31'
+    WHEN 'turn' THEN 'AKo:41'
+    ELSE 'AKo:55'
+  END;
+  node_raw:=jsonb_set(forged,'{hand_matrix}',
+    jsonb_build_object(bad_hand_key,(forged->'hand_matrix')->hand_key));
+  node_raw:=jsonb_set(node_raw,'{policy_ev_matrix}',
+    jsonb_build_object(bad_hand_key,(forged->'policy_ev_matrix')->hand_key));
+  node_raw:=jsonb_set(node_raw,'{action_ev_matrix}',
+    jsonb_build_object(bad_hand_key,(forged->'action_ev_matrix')->hand_key));
+  node_raw:=jsonb_set(node_raw,'{cell_payload_checksum}',
+    to_jsonb(public.fn_gto_v31_cell_payload_checksum(node_raw)));
+  IF public.fn_gto_v31_cell_payload_valid(node_raw) THEN
+    RAISE EXCEPTION 'a compact cell with an impossible street-bound hand key was accepted';
+  END IF;
+  node_raw:=jsonb_set(forged,'{action_specs,b75,size_value}','"0.75"'::jsonb);
+  node_raw:=jsonb_set(node_raw,'{cell_payload_checksum}',
+    to_jsonb(public.fn_gto_v31_cell_payload_checksum(node_raw)));
+  IF public.fn_gto_v31_cell_payload_valid(node_raw) THEN
+    RAISE EXCEPTION 'a compact cell with a string-coercible action size was accepted';
+  END IF;
+  SELECT key INTO zero_action_key
+    FROM jsonb_each((forged->'hand_matrix')->hand_key)
+   WHERE value='0'::jsonb LIMIT 1;
+  IF zero_action_key IS NULL THEN
+    RAISE EXCEPTION 'compact sparse-policy probe found no explicit zero action';
+  END IF;
+  node_raw:=jsonb_set(forged,ARRAY['hand_matrix',hand_key],
+    ((forged->'hand_matrix')->hand_key)-zero_action_key);
+  node_raw:=jsonb_set(node_raw,'{cell_payload_checksum}',
+    to_jsonb(public.fn_gto_v31_cell_payload_checksum(node_raw)));
+  IF public.fn_gto_v31_cell_payload_valid(node_raw) THEN
+    RAISE EXCEPTION 'a compact cell with a sparse action policy was accepted';
   END IF;
 
   -- Prove the release gate rejects a corpus whose sizing score is merely the
@@ -507,6 +695,218 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.fn_gto_v31_active_cells(0,500)
       WHERE input_bundle_checksum IS NULL OR icm_model_checksum IS NULL OR policy_ev_matrix='{}'::jsonb)
   THEN RAISE EXCEPTION 'active RPC omitted provenance or EV'; END IF;
+
+  -- The chart receipt cannot prove the postflop corpus fired. Build one
+  -- truthful V31 decision from the promoted runtime cell and prove that the
+  -- database derives agreement/regret from that immutable source instead of
+  -- accepting caller arithmetic or a forged seal.
+  SELECT * INTO agreement_dataset FROM public.gto_v31_datasets d
+   WHERE d.dataset_id=dataset;
+  SELECT c.* INTO agreement_cell FROM public.gto_v31_runtime_cells c
+   WHERE c.dataset_id=dataset AND c.node_role='open'
+   ORDER BY c.street,c.game_family,c.utility_context,c.table_size LIMIT 1;
+  SELECT n.value#>>'{node_context,board}' INTO agreement_board
+    FROM public.gto_v31_cell_source_receipts r
+    JOIN public.solved_spots_gold s ON s.id=r.source_row_id
+    CROSS JOIN LATERAL jsonb_array_elements(s.strategy_matrix_v2->'nodes') n(value)
+   WHERE r.cell_id=agreement_cell.cell_id AND r.split='train'
+     AND n.value->>'node'=r.source_node
+   ORDER BY r.source_row_id LIMIT 1;
+  SELECT key INTO agreement_hand_key
+    FROM jsonb_object_keys(agreement_cell.hand_matrix) key ORDER BY key LIMIT 1;
+  SELECT n INTO agreement_combo FROM generate_series(0,1325) n
+   WHERE public.fn_gto_v31_hand_key(n,agreement_board)=agreement_hand_key
+     AND NOT EXISTS (
+       SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(n)) c(card)
+        WHERE position(c.card IN agreement_board)>0)
+   ORDER BY n LIMIT 1;
+  agreement_hole:=public.fn_gto_v31_combo_cards(agreement_combo);
+  agreement_board_json:='[]'::jsonb;
+  FOR i IN 0..length(agreement_board)/2-1 LOOP
+    agreement_card:=substr(agreement_board,i*2+1,2);
+    agreement_board_json:=agreement_board_json||jsonb_build_array(jsonb_build_object(
+      'rank',left(agreement_card,1),'suit',CASE right(agreement_card,1)
+        WHEN 'c' THEN 'clubs' WHEN 'd' THEN 'diamonds'
+        WHEN 'h' THEN 'hearts' ELSE 'spades' END));
+  END LOOP;
+  agreement_hole_json:='[]'::jsonb;
+  FOR i IN 1..2 LOOP
+    agreement_card:=agreement_hole[i];
+    agreement_hole_json:=agreement_hole_json||jsonb_build_array(jsonb_build_object(
+      'rank',left(agreement_card,1),'suit',CASE right(agreement_card,1)
+        WHEN 'c' THEN 'clubs' WHEN 'd' THEN 'diamonds'
+        WHEN 'h' THEN 'hearts' ELSE 'spades' END));
+  END LOOP;
+  agreement_mix:=agreement_cell.hand_matrix->agreement_hand_key;
+  SELECT key,(value#>>'{}')::numeric
+    INTO agreement_action_id,agreement_probability
+    FROM jsonb_each(agreement_mix) ORDER BY (value#>>'{}')::numeric DESC,key LIMIT 1;
+  agreement_action_family:=agreement_cell.action_specs#>>ARRAY[agreement_action_id,'family'];
+  agreement_sampled_amount:=CASE agreement_action_family
+    WHEN 'call' THEN 20
+    WHEN 'bet' THEN 100*(agreement_cell.action_specs#>>ARRAY[agreement_action_id,'size_value'])::numeric
+    WHEN 'raise' THEN 20+120*(agreement_cell.action_specs#>>ARRAY[agreement_action_id,'size_value'])::numeric
+    ELSE NULL END;
+  agreement_final_amount:=CASE WHEN agreement_action_family IN ('call','bet','raise')
+    THEN agreement_sampled_amount ELSE NULL END;
+  agreement_selected_ev:=(agreement_cell.action_ev_matrix#>>ARRAY[agreement_hand_key,agreement_action_id])::numeric;
+  SELECT greatest(0,max((value#>>'{}')::numeric)-agreement_selected_ev)
+    INTO agreement_regret FROM jsonb_each(agreement_cell.action_ev_matrix->agreement_hand_key);
+  agreement_format:=CASE agreement_cell.game_family
+    WHEN 'cash' THEN 'cash' WHEN 'spin' THEN 'spin' ELSE 'mtt' END;
+  agreement_seal:=jsonb_build_object(
+    'dataset_id',agreement_dataset.dataset_id,'dataset_key',agreement_dataset.dataset_key,
+    'dataset_checksum',agreement_dataset.dataset_checksum,
+    'solver_version',agreement_dataset.solver_version,
+    'solver_binary_checksum',agreement_dataset.solver_binary_checksum,
+    'pipeline_commit',agreement_dataset.pipeline_commit,
+    'pipeline_bundle_checksum',agreement_dataset.pipeline_bundle_checksum,
+    'manifest_version',agreement_dataset.manifest_version,
+    'manifest_checksum',agreement_dataset.manifest_checksum,
+    'source_artifact_checksum',agreement_dataset.source_artifact_checksum,
+    'source_combo_order_checksum',agreement_dataset.source_combo_order_checksum,
+    'range_bundle_checksum',agreement_dataset.range_bundle_checksum,
+    'icm_model_checksum',agreement_dataset.icm_model_checksum,
+    'input_bundle_checksum',agreement_dataset.input_bundle_checksum,
+    'cell_key_checksum',agreement_cell.cell_key_checksum,
+    'cell_payload_checksum',agreement_cell.cell_payload_checksum,
+    'lineage_checksum',agreement_cell.lineage_checksum,
+    'quality_status','validated','dataset_state','active',
+    'dataset_cells',(agreement_dataset.coverage->>'cells')::bigint,
+    'source_rows',agreement_dataset.source_rows,
+    'train_source_rows',agreement_dataset.train_source_rows,
+    'holdout_source_rows',agreement_dataset.holdout_source_rows,
+    'invalid_rows',agreement_dataset.invalid_rows,
+    'audited_at',agreement_dataset.audited_at);
+  agreement_state:=jsonb_build_object(
+    'schema_version',1,'street',agreement_cell.street,'game_variant','nlh',
+    'game_family',agreement_cell.game_family,'objective',agreement_cell.objective,
+    'utility_context',agreement_cell.utility_context,'format',agreement_format,
+    'table_size',agreement_cell.table_size,'pot_type',agreement_cell.pot_type,
+    'hero_position',agreement_cell.hero_position,
+    'opponent_position',agreement_cell.opponent_position,
+    'stack_bb',agreement_cell.depth_bucket,'depth_bucket',agreement_cell.depth_bucket,
+    'texture_class',agreement_cell.texture_class,'node_role',agreement_cell.node_role,
+    'facing_kind',agreement_cell.facing_kind,
+    'facing_size_bucket',agreement_cell.facing_size_bucket,
+    'hand',split_part(agreement_hand_key,':',1),'hand_key',agreement_hand_key,
+    'cell',concat_ws('|',agreement_cell.street,agreement_cell.game_family,
+      agreement_cell.objective,agreement_cell.utility_context,agreement_cell.table_size,
+      agreement_cell.pot_type,agreement_cell.hero_position,agreement_cell.opponent_position,
+      agreement_cell.depth_bucket,agreement_cell.texture_class,agreement_cell.node_role,
+      agreement_cell.facing_kind,agreement_cell.facing_size_bucket),
+    'board',agreement_board_json,'hole_cards',agreement_hole_json,'pot',100,
+    'current_bet',CASE WHEN agreement_action_family='raise' THEN 20 ELSE 0 END,
+    'to_call',CASE WHEN agreement_action_family IN ('call','raise') THEN 20 ELSE 0 END,
+    'big_blind',2,'probe_scenario',agreement_cell.utility_context,'probe_ordinal',1,
+    'sampled_action_id',agreement_action_id,
+    'sampled_action_family',agreement_action_family,
+    'sampled_amount',agreement_sampled_amount,'final_action',agreement_action_family,
+    'final_amount',agreement_final_amount,'executed_as_intended',true);
+  agreement_decision:=jsonb_build_object(
+    'state_key',concat_ws('|','v31',agreement_state->>'cell',agreement_hand_key,
+      agreement_cell.utility_context,'1'),
+    'decision_state',agreement_state,'stage',agreement_cell.street,
+    'game_family',agreement_cell.game_family,'objective',agreement_cell.objective,
+    'utility_context',agreement_cell.utility_context,'table_size',agreement_cell.table_size,
+    'pot_type',agreement_cell.pot_type,'hero_position',agreement_cell.hero_position,
+    'opponent_position',agreement_cell.opponent_position,
+    'depth_bucket',agreement_cell.depth_bucket,'texture_class',agreement_cell.texture_class,
+    'node_role',agreement_cell.node_role,'facing_kind',agreement_cell.facing_kind,
+    'facing_size_bucket',agreement_cell.facing_size_bucket,'cell',agreement_state->>'cell',
+    'hand_key',agreement_hand_key,'sampled_action_id',agreement_action_id,
+    'sampled_action_family',agreement_action_family,'final_action',agreement_action_family,
+    'executed_as_intended',true,'reference_distribution',agreement_mix,
+    'chosen_probability',agreement_probability,'action_regret_bb',agreement_regret,
+    'regret_eligible',true,'pure_miss',false,'source_seal',agreement_seal);
+  agreement_row:=jsonb_build_object(
+    'run_date',current_date,'reference','gto_v31_certified','spots',1,
+    'agreement',agreement_probability,'pure_misses',0,'eligible_spots',1,
+    'reconciled_spots',1,'action_regret_bb',agreement_regret,
+    'regret_eligible_spots',1,'decision_checksum',repeat('f',64),
+    'decisions',jsonb_build_array(agreement_decision));
+  IF position('smarter-poker:gto-v31-release-gate' IN pg_get_functiondef(
+       'public.fn_horse_solver_agreement_add(jsonb)'::regprocedure))=0
+  THEN RAISE EXCEPTION 'V31 agreement writer is not serialized with promotion'; END IF;
+  agreement_written:=public.fn_horse_solver_agreement_add(jsonb_build_array(agreement_row));
+  IF agreement_written<>1 OR NOT EXISTS (
+    SELECT 1 FROM public.horse_solver_agreement_v31_decisions d
+     WHERE d.run_date=current_date AND d.reference='gto_v31_certified'
+       AND d.source_seal->>'cell_key_checksum'=agreement_cell.cell_key_checksum
+       AND d.chosen_probability=agreement_probability
+  ) THEN RAISE EXCEPTION 'certified V31 agreement receipt was not persisted'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ca_horse_solver_agreement_v31_decisions(current_date,10) evidence
+     WHERE evidence.hand_key=agreement_hand_key AND evidence.executed_as_intended
+  ) THEN RAISE EXCEPTION 'V31 agreement operator read omitted the receipt'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.ca_horse_solver_agreement_decisions(
+      current_date,'gto_v31_certified',10) evidence
+     WHERE evidence.hand=split_part(agreement_hand_key,':',1)
+       AND evidence.kind=agreement_cell.node_role
+  ) THEN RAISE EXCEPTION 'shared agreement drill-down did not route the V31 reference'; END IF;
+  agreement_audit:=public.fn_audit_solver_agreement(current_date);
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(agreement_audit) finding
+              WHERE finding->>'code' IN ('solver_agreement_v31_missing','solver_agreement_unreconciled'))
+     OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(agreement_audit) finding
+                     WHERE finding->>'code'='solver_agreement_v31_thin')
+     OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(agreement_audit) finding
+                     WHERE finding->>'code'='solver_agreement_v31_missing_scenarios')
+  THEN RAISE EXCEPTION 'V31 agreement audit did not reconcile: %',agreement_audit; END IF;
+
+  UPDATE public.horse_solver_agreement_v31_decisions
+     SET source_seal=jsonb_set(source_seal,'{dataset_id}',
+       to_jsonb('99999999-9999-4999-8999-999999999999'::text))
+   WHERE run_date=current_date AND reference='gto_v31_certified';
+  agreement_audit:=public.fn_audit_solver_agreement(current_date);
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(agreement_audit) finding
+                  WHERE finding->>'code'='solver_agreement_v31_stale_dataset')
+  THEN RAISE EXCEPTION 'stale V31 agreement dataset was not detected: %',agreement_audit; END IF;
+  UPDATE public.horse_solver_agreement_v31_decisions SET source_seal=agreement_seal
+   WHERE run_date=current_date AND reference='gto_v31_certified';
+
+  UPDATE public.gto_v31_datasets SET state='retired'
+   WHERE dataset_id=agreement_dataset.dataset_id;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(jsonb_build_array(agreement_row));
+  EXCEPTION WHEN OTHERS THEN failed:=true; END;
+  IF NOT failed THEN RAISE EXCEPTION 'retired V31 corpus was accepted as current agreement'; END IF;
+  UPDATE public.gto_v31_datasets SET state='active'
+   WHERE dataset_id=agreement_dataset.dataset_id;
+
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(jsonb_build_array(jsonb_set(
+      agreement_row,ARRAY['decisions','0','source_seal','cell_payload_checksum'],
+      to_jsonb(repeat('9',64)))));
+  EXCEPTION WHEN OTHERS THEN failed:=true; END;
+  IF NOT failed THEN RAISE EXCEPTION 'forged V31 cell seal was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(jsonb_build_array(jsonb_set(
+      agreement_row,ARRAY['decisions','0','action_regret_bb'],
+      to_jsonb(agreement_regret+1))));
+  EXCEPTION WHEN OTHERS THEN failed:=true; END;
+  IF NOT failed THEN RAISE EXCEPTION 'forged V31 regret was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(jsonb_build_array(jsonb_set(
+      agreement_row,ARRAY['decisions','0','executed_as_intended'],'"true"'::jsonb)));
+  EXCEPTION WHEN OTHERS THEN failed:=true; END;
+  IF NOT failed THEN RAISE EXCEPTION 'string V31 execution flag was accepted'; END IF;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_horse_solver_agreement_add(jsonb_build_array(jsonb_set(
+      agreement_row,ARRAY['decisions','0','decision_state','board','0','rank'],
+      agreement_hole_json->0)));
+  EXCEPTION WHEN OTHERS THEN failed:=true; END;
+  IF NOT failed THEN RAISE EXCEPTION 'forged V31 board was accepted'; END IF;
+  IF (SELECT count(*) FROM public.horse_solver_agreement_v31_decisions
+       WHERE run_date=current_date)<>1 THEN
+    RAISE EXCEPTION 'failed V31 replacements damaged the last good receipt';
+  END IF;
+
   status:=public.ca_gto_v31_certification_status(dataset);
   IF status->>'contract'<>'smarter-poker.gto-v31-certification-status.v1'
      OR status#>>'{active_dataset,dataset_checksum}'<>result_checksum

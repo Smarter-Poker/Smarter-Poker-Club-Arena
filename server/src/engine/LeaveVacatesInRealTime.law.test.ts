@@ -26,141 +26,139 @@
  *      one. The tournament sit-out branch was silent too.
  *
  *   3. THE ONE THAT ANSWERS DAN'S "ALL THE OTHER SEATS". The busted-seat vacate
- *      - the block whose own comment says "BUSTED PLAYERS DO NOT LINGER" - sat
- *      INSIDE `if (t && (t.is_rebuy || t.is_reentry))`. spinSpec and headsUpSpec
- *      declare neither, and a freezeout MTT declares neither by definition, so
- *      that block had never once executed for Spins, Heads-Up or freezeout
- *      tournaments. Those seats waited up to five seconds for the elimination
- *      sweep instead.
+ *      first sat inside the rebuy-only branch, so Spins, Heads-Up, and freezeout
+ *      tournaments never reached it. Moving the write in TypeScript still left
+ *      a crash window between the seat and standings updates. The hand-stack
+ *      database authority now mirrors standings and releases every named zero
+ *      seat in the same transaction for every tournament format.
  *
- * The existing law (tests/unit/allInShowsAndBustsClear.law.test.ts) slices that
- * block by string and asserts its CONTENTS, which is exactly how a block that
- * was never reached kept passing. This file asserts REACHABILITY: it walks the
- * braces and proves the vacate is not nested inside the rebuy gate.
+ * This file now asserts OWNERSHIP as well as reachability: the runtime may
+ * publish the durable result, but it cannot write either half, while the
+ * inspected SQL authority must mirror the stack before it releases the seat.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { blankNonCode, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => readFileSync(join(process.cwd(), 'src', 'engine', p), 'utf8');
 const SEATING = read('ServerTableEngineSeating.ts');
 const DEALING = read('ServerTableEngineDealing.ts');
+const HAND_STACK_HARDENER = readFileSync(
+  join(
+    process.cwd(),
+    '..',
+    'supabase',
+    'migrations',
+    '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+  ),
+  'utf8'
+);
 
-/** First line at which brace depth returns to 0, ignoring strings and comments. */
-function closesBefore(lines: string[], from: number, to: number): number {
-  let depth = 0;
-  for (let i = from; i < to; i++) {
-    const line = lines[i]
-      .replace(/\/\*.*?\*\//g, '')
-      .replace(/\/\/.*$/, '')
-      .replace(/'[^']*'/g, "''")
-      .replace(/"[^"]*"/g, '""')
-      .replace(/`[^`]*`/g, '``');
-    for (const c of line) {
-      if (c === '{') depth++;
-      else if (c === '}') depth--;
-    }
-    if (depth === 0 && i > from) return i;
-  }
-  return -1;
-}
+const DEPARTURE_SQL = readFileSync(
+  join(
+    process.cwd(),
+    '..',
+    'supabase',
+    'migrations',
+    '20260908220604_bind_cashout_requests_to_seat_occupancy.sql'
+  ),
+  'utf8'
+);
+const CASH_LEAVE = sliceEnclosingBlock(
+  SEATING,
+  'A deferred acknowledgement requires a durable request'
+);
+const TOURNAMENT_LEAVE = sliceEnclosingBlock(
+  SEATING,
+  'In tournaments, leaving the table NEVER cashes out'
+);
 
-describe('a departing seat is visible to everything that reads a seat', () => {
-  it('the deferred mid-hand leave writes is_sitting_out, not status alone', () => {
-    expect(SEATING).toMatch(
-      /\.update\(\{ leave_pending: true, status: 'sitting_out', is_sitting_out: true \}\)/
+describe('a departing seat is durably visible through the occupancy transaction', () => {
+  it.each([
+    ['cash', CASH_LEAVE],
+    ['tournament', TOURNAMENT_LEAVE],
+  ])('%s departure awaits the original occupancy request', (_name, branch) => {
+    expect(branch).not.toBe('');
+    expect(branch).toMatch(/await requestSeatDeparture\(/);
+    expect(branch).toContain('player.occupancy_id');
+  });
+  it('the transaction writes both sit-out columns and cash-only pending state', () => {
+    expect(DEPARTURE_SQL).toMatch(/SET status='sitting_out',is_sitting_out=true/);
+    expect(DEPARTURE_SQL).toMatch(
+      /leave_pending=CASE WHEN v_tournament IS NULL THEN true ELSE leave_pending END/
     );
-  });
-
-  it('the tournament sit-out writes it too', () => {
-    expect(SEATING).toMatch(/\.update\(\{ status: 'sitting_out', is_sitting_out: true \}\)/);
-  });
-
-  it('no leave path writes status without the boolean anything reads', () => {
-    /* The whole defect in one assertion: a `status: 'sitting_out'` update with
-       no `is_sitting_out` beside it is invisible to the trigger, the restart
-       restore and the client poll. */
-    const writes = SEATING.match(/\.update\(\{[^}]*status: 'sitting_out'[^}]*\}\)/g) || [];
-    expect(writes.length, 'both sit-out writes must be present').toBeGreaterThanOrEqual(2);
-    for (const write of writes) {
-      expect(write, `this write is invisible to the sit-out trigger: ${write}`).toContain(
-        'is_sitting_out: true'
-      );
-    }
   });
 });
 
-describe('every device is told when a seat changes hands', () => {
-  /* Both windows are bounded by the BRANCH that encloses the write, never by a
-     byte count: a fixed window drifts off the code it guards as comments are
-     added, and it can drift while staying green
-     (tests/unit/noFixedSizeSourceWindows.test.ts). */
-  it('the deferred mid-hand leave re-broadcasts state', () => {
-    const branch = sliceEnclosingBlock(
-      SEATING,
-      "update({ leave_pending: true, status: 'sitting_out', is_sitting_out: true })"
+describe('every device is told after durable departure', () => {
+  it.each([
+    ['cash', CASH_LEAVE],
+    ['tournament', TOURNAMENT_LEAVE],
+  ])('%s departure re-broadcasts state after confirmation', (_name, branch) => {
+    expect(branch).toContain('this.broadcastCurrentState();');
+    expect(branch.indexOf('await requestSeatDeparture(')).toBeGreaterThan(-1);
+    expect(branch.indexOf('this.broadcastCurrentState();')).toBeGreaterThan(
+      branch.indexOf('await requestSeatDeparture(')
     );
-    expect(branch, 'the deferred leave branch has moved or gone').not.toBe('');
-    expect(branch, 'a seat_left with no state broadcast leaves every other client stale').toMatch(
-      /this\.broadcastCurrentState\(\);/
-    );
-  });
-
-  it('the tournament sit-out re-broadcasts state', () => {
-    /* Anchored on the tournament branch's own write - `disconnectEngine.sitOut`
-       appears in several places, and the first is the sitOut() method, not this
-       branch. */
-    const branch = sliceEnclosingBlock(
-      SEATING,
-      "update({ status: 'sitting_out', is_sitting_out: true })"
-    );
-    expect(branch, 'the tournament sit-out branch has moved or gone').not.toBe('');
-    expect(
-      branch,
-      'a tournament sit-out that broadcasts nothing leaves every other device stale'
-    ).toMatch(/this\.broadcastCurrentState\(\);/);
   });
 });
 
 describe('a busted seat is vacated at EVERY tournament format', () => {
-  const lines = DEALING.split('\n');
-  const gate = lines.findIndex((l) => l.includes('if (t && (t.is_rebuy'));
-  const vacate = lines.findIndex(
-    (l, i) => i > gate && l.includes('update({ left_at: new Date().toISOString() })')
+  const bustedFlow = sliceEnclosingBlock(DEALING, 'if (justBustedPlayers.length > 0) {');
+  const hardenerStart = HAND_STACK_HARDENER.indexOf(
+    'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute('
   );
+  const hardenerEnd = HAND_STACK_HARDENER.indexOf('$function$;', hardenerStart);
+  const atomicWrite = HAND_STACK_HARDENER.slice(hardenerStart, hardenerEnd);
+  const zeroStackVacateStart = atomicWrite.indexOf(
+    '-- A named zero-stack tournament seat is finished on the felt'
+  );
+  const zeroStackVacateEnd = atomicWrite.indexOf(
+    'SELECT count(*) INTO v_table_live_seat_count',
+    zeroStackVacateStart
+  );
+  const zeroStackVacate = atomicWrite.slice(zeroStackVacateStart, zeroStackVacateEnd);
 
-  it('still has both landmarks', () => {
-    expect(gate, 'the rebuy-window gate has moved or gone').toBeGreaterThan(-1);
-    expect(vacate, 'the busted-seat vacate has moved or gone').toBeGreaterThan(gate);
+  it('keeps only the rebuy-window decision inside the rebuy gate', () => {
+    expect(bustedFlow).toContain('if (t && (t.is_rebuy ||');
+    expect(bustedFlow).toMatch(/rebuy_levels|windowOpen/);
+    expect(bustedFlow).toContain("reason: 'busted_awaiting_rebuy_decision'");
   });
 
-  it('does NOT nest the vacate inside the rebuy/re-entry gate', () => {
-    /* THE REGRESSION THIS EXISTS FOR. Nested, this block is dead code for every
-       Spin, every Heads-Up match and every freezeout MTT - which is most of the
-       tournament product. A contents-only assertion cannot see that; brace depth
-       can. */
-    const closes = closesBefore(lines, gate, vacate);
-    expect(
-      closes,
-      'the rebuy gate never closes before the vacate - the vacate is unreachable ' +
-        'for Spins, Heads-Up and freezeout MTTs'
-    ).toBeGreaterThan(-1);
-    expect(closes).toBeLessThan(vacate);
+  it('has no second process-side standings or seat writer after a bust', () => {
+    const code = blankNonCode(bustedFlow);
+    expect(code).not.toContain(".from('table_seats')");
+    expect(code).not.toContain(".from('tournament_players')");
+    expect(code).not.toContain('update({ left_at:');
+    expect(code).not.toContain('update({ chips: 0 })');
   });
 
-  it('keeps the rebuy arithmetic gated, because that part really is rebuy-only', () => {
-    const closes = closesBefore(lines, gate, vacate);
-    expect(lines.slice(gate, closes).join('\n')).toMatch(/rebuy_levels|windowOpen/);
+  it('the hand-stack authority mirrors standings before releasing zero-stack seats', () => {
+    expect(hardenerStart).toBeGreaterThan(-1);
+    expect(hardenerEnd).toBeGreaterThan(hardenerStart);
+    const mirror = atomicWrite.indexOf('UPDATE public.tournament_players tp');
+    const vacate = atomicWrite.indexOf('UPDATE public.table_seats ts', mirror + 1);
+    expect(mirror).toBeGreaterThan(-1);
+    expect(vacate).toBeGreaterThan(mirror);
+    expect(atomicWrite.slice(mirror, vacate)).toMatch(/SET chips = target\.stack/);
+    expect(atomicWrite.slice(vacate)).toMatch(
+      /SET left_at = v_zero_stack_vacated_at,[\s\S]*status = 'left'/
+    );
+    expect(HAND_STACK_HARDENER).toContain("'tournament_players_synced'");
+    expect(HAND_STACK_HARDENER).toContain("'tournament_zero_stack_seats_vacated'");
   });
 
-  it('still zeroes tournament_players.chips in the same breath as the vacate', () => {
-    /* Vacating first without this froze `chips` at the last pre-bust value and
-       the elimination sweep never eliminated anyone - ten RUNNING MTTs hung in
-       production on 2026-08-30. The pair must stay together. */
-    /* Bounded by the try block the vacate lives in, not by a line count. */
-    const block = sliceEnclosingBlock(DEALING, 'update({ left_at: new Date().toISOString() })');
-    expect(block, 'the busted-seat vacate block has moved or gone').not.toBe('');
-    expect(block).toMatch(/from\('tournament_players'\)[\s\S]*?update\(\{ chips: 0 \}\)/);
+  it('installs a complete source-controlled atomic body, never a catalog patch', () => {
+    expect(HAND_STACK_HARDENER).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_settle_hand_stacks_absolute('
+    );
+    expect(HAND_STACK_HARDENER).not.toContain('v_hardened := replace(');
+    expect(HAND_STACK_HARDENER).not.toContain('EXECUTE v_hardened;');
+    expect(zeroStackVacateStart).toBeGreaterThan(-1);
+    expect(zeroStackVacateEnd).toBeGreaterThan(zeroStackVacateStart);
+    expect(blankNonCode(zeroStackVacate)).not.toMatch(
+      /is_rebuy|is_reentry|tournament_type|variant/
+    );
   });
 });

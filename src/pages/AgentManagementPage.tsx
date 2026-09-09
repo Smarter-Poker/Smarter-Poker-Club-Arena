@@ -656,9 +656,7 @@ export default function AgentManagementPage() {
           'Excluded from the club by an administrator'
         );
         toast.info(
-          removal.removed > 0
-            ? `Removed Them From ${fmt(removal.removed)} Live ${removal.removed === 1 ? 'Table' : 'Tables'}.`
-            : removal.firstError || 'They Are Still Seated. Remove Them From The Table Manually.'
+          `Removed From ${fmt(removal.removed)} Tables; ${fmt(removal.pending)} Pending; ${fmt(removal.failed)} Failed. ${removal.firstError || ''}`.trim()
         );
       }
       if (Number(outcome.chips_held) > 0 || Number(outcome.credit_used) > 0) {

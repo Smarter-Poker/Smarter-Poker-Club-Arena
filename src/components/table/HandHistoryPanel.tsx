@@ -42,6 +42,7 @@ import { handFlagService, type HandFlag } from '../../services/HandFlagService';
 import { filterBySubjects, handSearchSubject } from '../../lib/handSearch';
 import { formatTableChips } from '../../utils/format';
 import './HandHistoryPanel.css';
+import { downloadBlob } from '../../utils/downloadCsv';
 
 export interface HandHistoryAction {
   playerName: string;
@@ -532,18 +533,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
 
   const exportAll = useCallback(() => {
     const text = hands.map((h) => handToText(h)).join('\n\n' + '='.repeat(60) + '\n\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `club-arena-hands-${Date.now()}.txt`;
-    /* Attached, clicked, then detached; the URL is revoked on the next tick.
-       Revoking synchronously after click() cancels the download on Firefox
-       and some WebKit builds. */
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    downloadBlob(`club-arena-hands-${Date.now()}.txt`, new Blob([text], { type: 'text/plain' }));
   }, [hands]);
 
   /**

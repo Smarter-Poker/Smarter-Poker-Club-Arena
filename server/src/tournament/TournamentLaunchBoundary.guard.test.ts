@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
@@ -11,24 +11,29 @@ const begin = sliceMethod(source, 'private async beginTournamentLaunch(');
 const complete = sliceMethod(source, 'private async completeTournamentLaunch(');
 const prove = sliceMethod(source, 'private async proveTournamentLaunchSetup(');
 const tableBuild = sliceMethod(source, 'createTablesAndSeatPlayers(tournament: any)');
+const seatAssignment = readFileSync(join(here, 'tournamentSeatAssignmentRpc.ts'), 'utf8');
 
 describe('a tournament launch crosses maintenance exactly once', () => {
   it('claims after field/payment preconditions and before every launch mutation', () => {
-    const paidEvidence = start.indexOf(".eq('category', 'tournament_buyin')");
+    const paidEvidence = start.indexOf(".eq('charge_category', 'tournament_buyin')");
     const claim = start.indexOf('await this.beginTournamentLaunch(');
 
     expect(paidEvidence).toBeGreaterThan(-1);
     expect(claim).toBeGreaterThan(paidEvidence);
     for (const mutation of [
-      "supabase.rpc('fn_spin_settle_game'",
-      ".update({ status: 'playing'",
-      'await this.creditSeatStacks(tournament)',
+      "supabase.rpc('fn_spin_draw_and_settle_atomic'",
       'await this.createTablesAndSeatPlayers(tournament)',
     ]) {
       const mutationAt = start.indexOf(mutation);
       expect(mutationAt, `${mutation} moved or disappeared`).toBeGreaterThan(-1);
       expect(claim, `launch claim must precede ${mutation}`).toBeLessThan(mutationAt);
     }
+    expect(start).not.toMatch(/\.update\(\{\s*status:\s*'playing'/);
+  });
+
+  it('launch never patches a seat stack after the paid-seat transaction', () => {
+    expect(start).not.toContain('creditSeatStacks');
+    expect(start).not.toMatch(/from\('table_seats'\)[\s\S]{0,300}?update\(\{\s*stack:/);
   });
 
   it('mints one request id and reuses it for every ambiguous claim retry', () => {
@@ -76,7 +81,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(begin).toContain('return null;');
 
     const refusal = start.indexOf('if (!launchClaim || launchClaim.completed)');
-    const firstMutation = start.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const firstMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     expect(refusal).toBeGreaterThan(-1);
     expect(refusal).toBeLessThan(firstMutation);
     expect(start.slice(refusal, firstMutation)).toMatch(
@@ -88,7 +93,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(begin).toContain("result.completed === true && result.status === 'RUNNING'");
 
     const completedReceipt = start.indexOf('if (!launchClaim || launchClaim.completed)');
-    const firstSetupMutation = start.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const firstSetupMutation = start.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     const firstDealerAdmission = start.indexOf('this.admitManagedTableEngine(');
 
     expect(completedReceipt).toBeGreaterThan(-1);
@@ -118,7 +123,14 @@ describe('a tournament launch crosses maintenance exactly once', () => {
 
   it('proves roster migration, stack funding, seating, linkage and table counts', () => {
     expect(start).toContain('if (regRowsErr)');
-    expect(start).toContain('const migrationFailure = migrationResults.find');
+    expect(start).toContain('expectedLaunchPlayerIds = (regRows ?? []).map');
+    expect(tableBuild).toContain('assignTournamentPlayerSeatAtomically({');
+    expect(tableBuild).toContain('taken.add(receipt.seatNumber)');
+    expect(tableBuild).toContain('receipt.currentPlayers');
+    expect(seatAssignment).toContain("supabase.rpc('fn_assign_tournament_player_seat_atomic'");
+    expect(seatAssignment).toContain('seatNumber !== expected.seatNumber');
+    expect(seatAssignment).toContain('exactPositiveStack(receipt.stack)');
+    expect(seatAssignment).toContain('exactCount(receipt.current_players)');
     expect(prove).toContain("tournamentProof.status !== 'REGISTERING'");
     expect(prove).toContain("row.status !== 'playing'");
     expect(prove).toContain('the active roster changed after launch migration began');
@@ -130,12 +142,21 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     // stronger: the roster and the felt must each hold what the seats were bought
     // for. See TheSweepReachesTheTable.test.ts.
     expect(prove).toContain('Number(row.chips) < 0');
-    expect(prove).toContain('const expectedFloor = roster.length * startingChips;');
+    expect(prove).toContain('const expectedFloor = fundingFieldSize * startingChips;');
+    expect(prove).toContain('launchStacksMeetFundingFloor(');
+    expect(prove).toContain('Number(row.chips) !== startingChips');
+    expect(prove).toContain(
+      "return refuse('an ordinary seat-first roster does not hold its exact starting stacks')"
+    );
     expect(prove).toContain('the playing roster holds no chips at all');
     expect(prove).toContain('durableTables.length !== this.tableEngines.size');
     expect(prove).toContain('ownedSeats.length !== 1');
     expect(prove).toContain('seat.table_id !== player.table_id');
+    expect(prove).toContain('Number(seat.stack) !== Number(player.chips)');
     expect(prove).toContain('Number(seat.stack) < 0');
+    expect(prove).toMatch(
+      /seatFirstLaunch\s*&&\s*playedSpinRecovery === null\s*&&\s*Number\(seat\.stack\) !== startingChips/
+    );
     expect(prove).toContain('const seatChips = seats.reduce(');
     expect(prove).toContain('occupiedCoordinates.has(coordinate)');
     expect(prove).toContain('Number(durableTable.current_players) !== liveCount');
@@ -151,8 +172,10 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('uses the incomplete receipt retry path instead of delayed repair work', () => {
-    expect(start).toMatch(/if \(!settled\) \{\s*this\.running = false;\s*return;/);
-    expect(start).toMatch(/if \(!spinRowWritten\) \{\s*this\.running = false;\s*return;/);
+    const refusedDraw = sliceEnclosingBlock(start, 'if (!fundedSpin)');
+    expect(refusedDraw).toContain('this.running = false;');
+    expect(refusedDraw).toContain('return;');
+    expect(start).toMatch(/if \(!spinPresentationWritten\) \{\s*this\.running = false;\s*return;/);
     expect(source).not.toContain('scheduleSpinRowRepair');
     expect(source).not.toContain('spin_row_repair_exhausted');
   });
@@ -169,10 +192,13 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(tableBuild).toMatch(
       /throw new Error\(\s*`Tournament table \$\{i \+ 1\} was not created:/
     );
-    expect(tableBuild).toMatch(/throw new Error\(\s*`Tournament seat insert failed:/);
-    expect(tableBuild).toMatch(/throw new Error\(\s*`Tournament roster seat linkage failed:/);
-    expect(tableBuild).toContain('if (countErr || count == null)');
-    expect(tableBuild).toContain('if (countWriteErr)');
+    expect(tableBuild).toContain("'Tournament.atomic_launch_seat_refused_or_unknown'");
+    expect(tableBuild).toMatch(/throw new Error\(\s*`Tournament atomic seat assignment failed/);
+    expect(tableBuild).not.toMatch(/from\('table_seats'\)\.insert/);
+    expect(tableBuild).not.toMatch(
+      /from\('tournament_players'\)[\s\S]{0,300}?\.update\(\{\s*table_id:/
+    );
+    expect(tableBuild).not.toMatch(/\.update\(\{\s*current_players:/);
   });
 
   it('has no client-side RUNNING mutation left in start', () => {

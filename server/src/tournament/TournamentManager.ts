@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import { randomUUID } from 'node:crypto';
 import { supabase } from '../services/supabase.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
@@ -16,14 +17,22 @@ import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
-import { mayTakeSeat } from './seatClaim.js';
+import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
+import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
+import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
 import {
+  moveTournamentPlayerAtomically,
+  TournamentSeatMoveOutcomeUnknownError,
+  type TournamentSeatMoveInput,
+  type TournamentSeatMoveSourceMode,
+  type VerifiedTournamentSeatMoveReceipt,
+} from './tournamentSeatMoveRpc.js';
+import {
+  CLOSED_ORPHAN_RESEAT_REASON,
   planOrphanReseats,
-  planSeatlessReseats,
   describeUnmovableOrphans,
   type OrphanTableRow,
   type OrphanSeatRow,
-  type SeatlessRosterRow,
 } from './orphanedSeatRepair.js';
 
 interface LateRegistrationCapacityResult {
@@ -48,7 +57,36 @@ interface TournamentTableCloseResult {
   current_players?: number;
 }
 
+interface ClaimedTournamentMoveBoundary {
+  sourceMode: TournamentSeatMoveSourceMode;
+  engine: ServerTableEngine | null;
+}
+
+interface PendingTournamentSeatMoveOutcome {
+  move: MoveInstruction;
+  input: TournamentSeatMoveInput;
+}
+
 export class TournamentManager extends TournamentManagerEliminations {
+  private static readonly MOVE_BOUNDARY_PROBE_MS = 1_000;
+  /** Exact manager generation that owns every live-source move fence it arms. */
+  private readonly tournamentMoveBoundaryOwner = randomUUID();
+  /** Ambiguous replies retain the exact UUID and source fence until replay resolves. */
+  private readonly pendingTournamentSeatMoveOutcomes = new Map<
+    string,
+    PendingTournamentSeatMoveOutcome
+  >();
+  /** One manager generation has exactly one seat-move authority at a time. */
+  private tournamentSeatMoveSerialTail: Promise<void> = Promise.resolve();
+
+  private runWithTournamentSeatMoveAuthority<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.tournamentSeatMoveSerialTail.then(operation);
+    this.tournamentSeatMoveSerialTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
   /**
    * Read a complete balancer picture in bounded ID-list chunks. The former
    * implementation issued two sequential requests per table, twice per pass;
@@ -222,8 +260,243 @@ export class TournamentManager extends TournamentManagerEliminations {
     return true;
   }
 
+  /**
+   * Own the exact source-table generation before a seat can be vacated.
+   * Closed-orphan recovery is the sole no-engine mode; its database function
+   * independently proves that the source table is closed or deleted.
+   */
+  private async claimTournamentMoveBoundary(
+    move: MoveInstruction,
+    sourceMode: TournamentSeatMoveSourceMode
+  ): Promise<ClaimedTournamentMoveBoundary | null> {
+    const managerEngine = this.tableEngines.get(move.fromTableId);
+    const serverEngine = this.gameServer.getTableEngine(move.fromTableId);
+
+    if (sourceMode === 'closed_orphan') {
+      if (managerEngine || serverEngine) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] closed-orphan move ${move.playerId.slice(0, 8)} found a live source engine generation`
+          ),
+          'Tournament.closed_orphan_move_has_live_engine',
+          { sourceTableId: move.fromTableId }
+        );
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return null;
+      }
+      return { sourceMode, engine: null };
+    }
+
+    if (
+      !managerEngine ||
+      serverEngine !== managerEngine ||
+      !this.gameServer.ownsTournamentTableEngine(move.fromTableId, managerEngine)
+    ) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] live-source move ${move.playerId.slice(0, 8)} does not own one identical source engine generation`
+        ),
+        'Tournament.atomic_move_source_generation_unproven',
+        { sourceTableId: move.fromTableId }
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+
+    const parked = await managerEngine.parkForTournamentMove(
+      this.tournamentMoveBoundaryOwner,
+      TournamentManager.MOVE_BOUNDARY_PROBE_MS
+    );
+    if (!this.eliminationMutationAllowed()) {
+      managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      return null;
+    }
+    if (!parked) {
+      // The pause owner remains armed. A long current hand lands normally;
+      // the next causal sweep claims the physical gate without polling it.
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+    if (
+      this.tableEngines.get(move.fromTableId) !== managerEngine ||
+      !this.gameServer.ownsTournamentTableEngine(move.fromTableId, managerEngine)
+    ) {
+      managerEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+    return { sourceMode, engine: managerEngine };
+  }
+
+  /** Invoke the RPC only while the exact source generation remains fenced. */
+  private requestTournamentSeatMoveAtBoundary(
+    input: TournamentSeatMoveInput,
+    boundary: ClaimedTournamentMoveBoundary,
+    outcomeWasAlreadyUnknown = false
+  ): Promise<VerifiedTournamentSeatMoveReceipt> {
+    if (!boundary.engine) {
+      if (
+        input.sourceMode !== 'closed_orphan' ||
+        this.tableEngines.has(input.sourceTableId) ||
+        this.gameServer.getTableEngine(input.sourceTableId)
+      ) {
+        return Promise.reject(new Error('closed-orphan source boundary is no longer exact'));
+      }
+      return moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown });
+    }
+    if (
+      input.sourceMode !== 'live_source' ||
+      this.tableEngines.get(input.sourceTableId) !== boundary.engine ||
+      !this.gameServer.ownsTournamentTableEngine(input.sourceTableId, boundary.engine)
+    ) {
+      return Promise.reject(new Error('live-source engine generation changed before move RPC'));
+    }
+    return boundary.engine.executeTournamentMoveAtBoundary(this.tournamentMoveBoundaryOwner, () =>
+      moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })
+    );
+  }
+
+  /**
+   * Complete an ambiguous operation by replaying its immutable UUID. Nothing
+   * else in this tournament may be planned from possibly stale seats first.
+   */
+  protected redrivePendingTournamentSeatMoveOutcomes(): Promise<boolean> {
+    return this.runWithTournamentSeatMoveAuthority(() =>
+      this.redrivePendingTournamentSeatMoveOutcomesOwned()
+    );
+  }
+
+  private async redrivePendingTournamentSeatMoveOutcomesOwned(): Promise<boolean> {
+    for (const [requestId, pending] of this.pendingTournamentSeatMoveOutcomes) {
+      if (!this.eliminationMutationAllowed()) return false;
+      const boundary = await this.claimTournamentMoveBoundary(
+        pending.move,
+        pending.input.sourceMode
+      );
+      if (!boundary) return false;
+
+      let releaseBoundary = true;
+      try {
+        const receipt = await this.requestTournamentSeatMoveAtBoundary(
+          pending.input,
+          boundary,
+          true
+        );
+        this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} replay certified for ${pending.move.playerId.slice(0, 8)}`
+        );
+      } catch (moveErr) {
+        releaseBoundary = false;
+        if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
+          reportError(moveErr, 'Tournament.atomic_move_outcome_still_unknown', {
+            tournamentId: this.tournamentId,
+            requestId,
+            sourceTableId: pending.move.fromTableId,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          return false;
+        }
+        // A refusal on a later invocation cannot prove that the earlier request
+        // did not commit: authentication and other preconditions run before the
+        // receipt lookup. Only the verified receipt path above may delete an
+        // already-ambiguous UUID. Local boundary failures follow the same rule.
+        reportError(moveErr, 'Tournament.atomic_move_replay_boundary_unavailable', {
+          tournamentId: this.tournamentId,
+          requestId,
+          sourceTableId: pending.move.fromTableId,
+        });
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return false;
+      } finally {
+        if (releaseBoundary && boundary.engine) {
+          boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        }
+      }
+    }
+    return this.pendingTournamentSeatMoveOutcomes.size === 0;
+  }
+
+  /**
+   * Resolve retained UUIDs after the exact source engine has stopped and joined
+   * every writer. Runtime recovery passes one source; manager shutdown passes
+   * null to certify the complete pending set before releasing either registry.
+   */
+  protected resolveTournamentSeatMoveQuarantine(
+    tableId: string | null,
+    engine: ServerTableEngine | null
+  ): Promise<boolean> {
+    return this.runWithTournamentSeatMoveAuthority(async () => {
+      const pending = [...this.pendingTournamentSeatMoveOutcomes.entries()].filter(
+        ([, item]) => tableId === null || item.input.sourceTableId === tableId
+      );
+
+      for (const [requestId, item] of pending) {
+        let boundary: ClaimedTournamentMoveBoundary;
+        if (item.input.sourceMode === 'closed_orphan') {
+          if (
+            this.tableEngines.has(item.input.sourceTableId) ||
+            this.gameServer.getTableEngine(item.input.sourceTableId)
+          ) {
+            return false;
+          }
+          boundary = { sourceMode: 'closed_orphan', engine: null };
+        } else {
+          const sourceEngine = engine ?? this.tableEngines.get(item.input.sourceTableId) ?? null;
+          if (
+            !sourceEngine ||
+            (tableId !== null && item.input.sourceTableId !== tableId) ||
+            this.tableEngines.get(item.input.sourceTableId) !== sourceEngine ||
+            !this.gameServer.ownsTournamentTableEngine(item.input.sourceTableId, sourceEngine) ||
+            !sourceEngine.hasReleasedProcessOwnership() ||
+            !(await sourceEngine.parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0))
+          ) {
+            return false;
+          }
+          boundary = { sourceMode: 'live_source', engine: sourceEngine };
+        }
+
+        try {
+          const receipt = await this.requestTournamentSeatMoveAtBoundary(
+            item.input,
+            boundary,
+            true
+          );
+          this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Quarantined move ${receipt.requestId.slice(0, 8)} replay certified before engine release`
+          );
+        } catch (error) {
+          reportError(error, 'Tournament.atomic_move_quarantine_unresolved', {
+            tournamentId: this.tournamentId,
+            requestId,
+            sourceTableId: item.input.sourceTableId,
+          });
+          return false;
+        }
+      }
+
+      if (tableId !== null && engine) {
+        const stillPending = [...this.pendingTournamentSeatMoveOutcomes.values()].some(
+          (item) => item.input.sourceTableId === tableId
+        );
+        if (stillPending) return false;
+        engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        return !engine.hasClaimedTournamentMoveBoundary();
+      }
+
+      if (this.pendingTournamentSeatMoveOutcomes.size > 0) return false;
+      for (const sourceEngine of this.tableEngines.values()) {
+        sourceEngine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        if (sourceEngine.hasClaimedTournamentMoveBoundary()) return false;
+      }
+      return true;
+    });
+  }
+
   protected async checkTableBalance(): Promise<void> {
     if (!this.eliminationMutationAllowed()) return;
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
     // Check for final table (table_size or fewer players remaining, 2026-08-22
     // parity: was hardcoded 9) — only announce once
     if (!this.isFinalTable) {
@@ -365,7 +638,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           );
 
           // AUDIT FIX 2026-07-19: wait for the source table's current hand to
-          // finish (so syncStacks has persisted final stacks) BEFORE moving
+          // finish (so the accepted-hand transaction has persisted final stacks) BEFORE moving
           // players. Previously executePlayerMoves ran first and read the
           // pre-hand stack, so a player who won/lost the in-flight hand arrived
           // at the new table with the wrong stack (chips created/destroyed).
@@ -526,105 +799,16 @@ export class TournamentManager extends TournamentManagerEliminations {
    * waits for an action nobody can take.
    *
    * This reads the tournament's own tables and live seats, asks the pure
-   * planner what to do, and hands the answer to `executePlayerMoves`. Since
-   * 2026-09-09 that method is a single call to `fn_ca_move_tournament_seat`,
-   * so every protection the move has earned - the source stack read under
-   * lock, the refusal to guess between two live seats, seat reuse, the
-   * destination checks - now lives in one database transaction and applies to
-   * this repair unchanged, because this adds no second way to move a player.
+   * planner what to do, and hands the answer to `executePlayerMoves`. Every
+   * protection that path has earned now lives in the one atomic move RPC:
+   * source/destination identity, exact stack, seat reuse and an immutable
+   * receipt commit together. This adds no second way to move a player.
    *
    * Both reads fail CLOSED. An unreadable board is UNKNOWN, never "nobody is
    * stranded" and never "everybody is".
    */
-  /**
-   * ═══════════════════════════════════════════════════════════════════════
-   *  A PLAYER WITH CHIPS AND NO CHAIR IS BROUGHT BACK TO THE FELT
-   * ═══════════════════════════════════════════════════════════════════════
-   *
-   * The sibling of `absorbOrphanedSeats`, and the half nothing answered. That
-   * one repairs a live seat on a table that cannot deal; this one repairs a
-   * player who holds no live seat AT ALL while the roster still has them
-   * playing. Their chips stand on the chair they left, outside every reader
-   * that counts open seats, and they cannot be dealt a hand.
-   *
-   * Measured 2026-09-09: eight players across four running events holding
-   * 673,500 chips, one of them out of their chair since 04:48 the day before.
-   *
-   * Every read fails CLOSED - an unreadable board is UNKNOWN, never "nobody is
-   * stranded" - and the move goes through `executePlayerMoves`, so the
-   * duplicate-seat claim, the mid-hand deferral, the update-first seat reuse
-   * and the false-negative destination check all apply unchanged.
-   */
-  public async absorbSeatlessPlayers(): Promise<number> {
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, status, is_deleted, max_players')
-      .eq('tournament_id', this.tournamentId);
-    if (tableErr || !tableRows || tableRows.length === 0) return 0;
-
-    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
-
-    const { data: liveSeats, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('table_id, user_id, seat_number, stack')
-      .in('table_id', tableIds)
-      .is('left_at', null);
-    if (seatErr || !liveSeats) return 0;
-
-    const { data: roster, error: rosterErr } = await supabase
-      .from('tournament_players')
-      .select('user_id, status')
-      .eq('tournament_id', this.tournamentId)
-      .neq('status', 'eliminated');
-    if (rosterErr || !roster) return 0;
-
-    const seated = new Set(liveSeats.map((s) => String((s as { user_id: string }).user_id)));
-    const seatlessIds = roster
-      .map((r) => String((r as { user_id: string }).user_id))
-      .filter((id) => !seated.has(id));
-    if (seatlessIds.length === 0) return 0;
-
-    // Where does each of them stand? The most recent chair they left.
-    const { data: leftSeats, error: leftErr } = await supabase
-      .from('table_seats')
-      .select('table_id, user_id, seat_number, stack, left_at')
-      .in('table_id', tableIds)
-      .in('user_id', seatlessIds)
-      .not('left_at', 'is', null)
-      .order('left_at', { ascending: false });
-    if (leftErr || !leftSeats) return 0;
-
-    const latest = new Map<string, SeatlessRosterRow>();
-    for (const row of leftSeats as Array<{
-      table_id: string;
-      user_id: string;
-      seat_number: number | null;
-      stack: number | string | null;
-    }>) {
-      const id = String(row.user_id);
-      if (latest.has(id)) continue; // ordered newest first
-      latest.set(id, {
-        user_id: id,
-        last_table_id: String(row.table_id),
-        last_seat_number: row.seat_number,
-        last_stack: row.stack,
-      });
-    }
-
-    const moves = planSeatlessReseats(
-      tableRows as OrphanTableRow[],
-      liveSeats as OrphanSeatRow[],
-      Array.from(latest.values())
-    );
-    if (moves.length === 0) return 0;
-
-    console.warn(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) are on the roster holding chips with no chair anywhere - seating them so they can be dealt in again`
-    );
-    return this.executePlayerMoves(moves);
-  }
-
   public async absorbOrphanedSeats(): Promise<number> {
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return 0;
     const { data: tableRows, error: tableErr } = await supabase
       .from('tables')
       .select('id, status, is_deleted, max_players')
@@ -662,169 +846,110 @@ export class TournamentManager extends TournamentManagerEliminations {
       );
     }
 
-    /* BOTH STRANDS OF ONE FAILURE, ONE SWEEP (2026-09-09). A player left on a
-       closed table and a player left with no chair at all are the same event -
-       a move that did not finish - and they are repaired on the same cadence
-       so neither waits on the other's discovery. */
-    const seatless = await this.absorbSeatlessPlayers();
-
-    if (moves.length === 0) return seatless;
+    if (moves.length === 0) return 0;
 
     console.warn(
       `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) stranded on a closed table - moving them to open felt so the tournament can deal again`
     );
-    return (await this.executePlayerMoves(moves)) + seatless;
+    return this.executePlayerMoves(moves);
   }
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════
-   *  A SEAT MOVES IN ONE TRANSACTION, OR IT DOES NOT MOVE
-   * ═══════════════════════════════════════════════════════════════════════
-   *
-   * This used to be four round trips: read the source stack, stamp `left_at`
-   * on the source seat, write the destination seat, and - when that failed -
-   * a fifth to put `left_at` back. Every protection it grew over a year was
-   * real, and none of them could close the hole, because the hole is between
-   * trip two and trip three: for as long as that gap is open the player holds
-   * no seat anywhere and their chips are off the felt.
-   *
-   * MEASURED IN PRODUCTION, 2026-09-09. The gap held 1,673,900 tournament
-   * chips belonging to 24 players across 12 running events. Three separate
-   * refusals fed it:
-   *
-   *   - the destination write was refused by the four-table limit, because a
-   *     player mid-move holds no seat in the event they are playing, so their
-   *     other bookings filled the quota (fixed in the database by
-   *     ca_the_cap_is_at_the_door_not_at_the_chair);
-   *   - the compensating restore was refused by
-   *     ab_refuse_live_seat_on_closed_tournament_table, because a broken
-   *     table is closed by the time the restore runs;
-   *   - a maintenance freeze at :55 refuses either write on its own.
-   *
-   * And neither the vacate nor the restore checked its result, so the engine
-   * logged "source seat restored" for a rollback the database had refused.
-   *
-   * A COMPENSATING WRITE IS NOT A ROLLBACK. It is a second write that can
-   * fail on its own, and when it does there is nothing left to compensate
-   * with. So this no longer tries to be careful inside the gap - it hands the
-   * whole move to `fn_ca_move_tournament_seat`, which vacates the source,
-   * writes the destination, carries the stack, asserts that the chips that
-   * arrived are the chips that left, and repoints the roster INSIDE ONE
-   * TRANSACTION. A refusal at any step unwinds all of it and the player is
-   * still sitting where they were. There is no window, so nothing can arrive
-   * in it, and a process that dies mid-move leaves nothing half-done.
-   *
-   * Every check this method used to make by hand now lives in that function,
-   * where it is enforced for every caller rather than for this one:
-   * the source stack is read under lock, a player holding two live seats is
-   * refused as a money decision, the destination is verified to belong to
-   * this event and to be open, an occupied chair is refused rather than
-   * overwritten, and a player already sitting at the destination is a replay
-   * rather than a second move.
-   *
-   * THE RESULT IS CHECKED. That is the other half of the bug.
-   */
-  protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
+  protected executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
+    return this.runWithTournamentSeatMoveAuthority(() => this.executePlayerMovesOwned(moves));
+  }
+
+  private async executePlayerMovesOwned(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
     const batch = moves.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (moves.length > batch.length) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
     }
+    if (batch.length === 0) return moved;
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomesOwned())) return moved;
+
+    const sourcePlans = new Map<
+      string,
+      { move: MoveInstruction; sourceMode: TournamentSeatMoveSourceMode }
+    >();
     for (const move of batch) {
-      if (!this.eliminationMutationAllowed()) return moved;
-      try {
-        /**
-         * NEVER MOVE A PLAYER MID-HAND - RE-CHECKED HERE, NOT ONLY AT PLAN TIME
-         * (2026-09-09).
-         *
-         * Both callers already probe `waitForHandComplete` before handing a
-         * batch to this loop, and the intent has been written down since
-         * 2026-07-24: "never move players mid-hand". But that probe is taken
-         * ONCE PER BATCH, and the loop then spends an awaited round trip per
-         * move. The engine keeps dealing throughout, so by the time move N
-         * runs, the boundary that was checked before move 1 is long gone.
-         *
-         * Measured 2026-09-08/09: 32 fully dealt tournament hands were thrown
-         * away. `fn_ca_settle_hand_stacks_absolute` finds the seat gone at
-         * commit time and raises `seat missing or left for <uuid> - hand write
-         * rejected whole`, which aborts the whole atomic commit; the engine
-         * files a critical alert and calls `killForRestart`. EVERY player at
-         * that table loses the hand they just played, not only the mover. The
-         * leave/join pairs sit 0.17-0.37s apart - inside the hand.
-         *
-         * ONE TRANSACTION DOES NOT MAKE THIS UNNECESSARY. Atomicity protects
-         * the MOVER: the move either happens whole or not at all. It says
-         * nothing about the hand the other eight players are in the middle of,
-         * which lives in the engine and not in the database. So the probe
-         * stays, and it sits immediately before the only destructive call -
-         * which is now the move RPC itself.
-         */
-        if (!(await this.waitForHandComplete(move.fromTableId))) {
-          console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring move for ${move.playerId.slice(0, 8)} - table ${move.fromTableId.slice(0, 8)} began a hand after this batch was planned. The player stays put and the next rebalance retries; moving now would discard the hand for everyone at that table.`
-          );
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-          continue;
-        }
-        if (!this.eliminationMutationAllowed()) return moved;
-
-        const { data, error } = await supabase.rpc('fn_ca_move_tournament_seat', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: move.playerId,
-          p_to_table_id: move.toTableId,
-          p_to_seat: move.toSeat,
-          p_reason: move.reason ?? 'balance',
-        });
-
-        if (error) {
-          /**
-           * A REFUSAL IS SAFE AND IS NOT SILENT. The transaction unwound, so
-           * the player is still at their source table with their stack; the
-           * next balance cycle will retry. It is still reported, because a
-           * refusal that repeats is a condition somebody has to see - that is
-           * exactly how the four-table refusal ran unseen for as long as it
-           * did.
-           */
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Move refused for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} -> table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}: ${error.message}. Nothing moved; the player keeps their seat and the next cycle retries.`
-            ),
-            'Tournament.Move_refused'
-          );
-          continue;
-        }
-
-        const result = (data ?? {}) as {
-          moved?: boolean;
-          replayed?: boolean;
-          stack?: number | string | null;
-          reason?: string;
-        };
-
-        if (result.replayed) {
-          // Somebody already made this exact move. Not an error, not a second
-          // move, and not a failure to count - the player is where we wanted
-          // them.
-          moved++;
-          continue;
-        }
-
-        if (!result.moved) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Move for ${move.playerId.slice(0, 8)} returned no result and raised nothing - treating it as not moved: ${JSON.stringify(data)}`
-            ),
-            'Tournament.Move_returned_nothing'
-          );
-          continue;
-        }
-
-        moved++;
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Moved ${move.playerId.slice(0, 8)} with ${result.stack ?? '?'}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} -> table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}`
+      const sourceMode: TournamentSeatMoveSourceMode =
+        move.reason === CLOSED_ORPHAN_RESEAT_REASON ? 'closed_orphan' : 'live_source';
+      const prior = sourcePlans.get(move.fromTableId);
+      if (prior && prior.sourceMode !== sourceMode) {
+        reportError(
+          new Error('one source table was assigned contradictory move authority modes'),
+          'Tournament.atomic_move_source_mode_conflict',
+          { sourceTableId: move.fromTableId }
         );
-      } catch (moveErr) {
-        reportError(moveErr, 'Tournament.Move_threw');
+        continue;
+      }
+      sourcePlans.set(move.fromTableId, { move, sourceMode });
+    }
+
+    // Arm every source together. A slow current hand costs this scheduler one
+    // short probe, not one serial minute per table; its owner stays armed and
+    // the next causal sweep claims the physical park.
+    const boundaryResults = await Promise.all(
+      [...sourcePlans.entries()].map(
+        async ([sourceTableId, plan]) =>
+          [
+            sourceTableId,
+            await this.claimTournamentMoveBoundary(plan.move, plan.sourceMode),
+          ] as const
+      )
+    );
+    const boundaries = new Map(boundaryResults);
+    const retainedUnknownSources = new Set<string>();
+    const refusedSources = new Set<string>();
+
+    try {
+      for (const move of batch) {
+        if (!this.eliminationMutationAllowed()) break;
+        if (refusedSources.has(move.fromTableId)) continue;
+        const boundary = boundaries.get(move.fromTableId);
+        if (!boundary) continue;
+        const requestId = randomUUID();
+        const input: TournamentSeatMoveInput = {
+          requestId,
+          tournamentId: this.tournamentId,
+          userId: move.playerId,
+          sourceTableId: move.fromTableId,
+          destinationTableId: move.toTableId,
+          destinationSeatNumber: move.toSeat,
+          sourceMode: boundary.sourceMode,
+        };
+        try {
+          const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
+          moved++;
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
+          );
+        } catch (moveErr) {
+          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
+            this.pendingTournamentSeatMoveOutcomes.set(requestId, { move, input });
+            retainedUnknownSources.add(move.fromTableId);
+          } else {
+            refusedSources.add(move.fromTableId);
+          }
+          reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
+            tournamentId: this.tournamentId,
+            requestId,
+            playerId: move.playerId,
+            sourceTableId: move.fromTableId,
+            destinationTableId: move.toTableId,
+            destinationSeat: move.toSeat,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          // An unknown source shape invalidates every remaining destination
+          // chosen from the same snapshot. Resolve that UUID before planning.
+          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) break;
+        }
+      }
+    } finally {
+      for (const [sourceTableId, boundary] of boundaries) {
+        if (boundary?.engine && !retainedUnknownSources.has(sourceTableId)) {
+          boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+        }
       }
     }
     return moved;
@@ -845,7 +970,12 @@ export class TournamentManager extends TournamentManagerEliminations {
    */
   protected async waitForHandComplete(tableId: string): Promise<boolean> {
     const engine = this.tableEngines.get(tableId);
-    return Boolean(engine && engine.isBetweenHands() && !engine.hasSettlementInFlight());
+    return Boolean(
+      engine &&
+      this.gameServer.ownsTournamentTableEngine(tableId, engine) &&
+      engine.isBetweenHands() &&
+      !engine.hasSettlementInFlight()
+    );
   }
 
   /**
@@ -854,62 +984,26 @@ export class TournamentManager extends TournamentManagerEliminations {
    * Every 5s cycle:
    *   1. Find tournament_players rows (registered/playing) with NO active seat
    *      at any of this tournament's tables.
-   *   2. Seat each at the table with the most open seats (stack = their chips,
-   *      or starting_chips for fresh 'registered' rows, which are promoted to
-   *      'playing').
-   *   3. If no table has an open seat, promote them to 'playing' anyway so
-   *      checkDynamicTableExpansion (next call in the same cycle) counts them,
-   *      spawns a new table, and the TableBalancer redraws seats.
-   * Idempotent per cycle; the unique (table_id, user_id) WHERE left_at IS NULL
-   * index makes double-seating impossible even under races.
+   *   2. Ask one database transaction to derive the stack, create/revive the
+   *      chair, promote the roster row, persist both coordinates and count.
+   *   3. If no table has an open chair, keep the registration durable; the
+   *      capacity RPC counts registered + playing entrants and creates room.
+   * Exact receipt replay makes the assignment idempotent across lost replies.
    */
-  /** TOURNEY-AUDIT 2026-07-24 (sweep 6): satellite seat distribution. */
   /**
-   * Settle a satellite's entire frozen entitlement plan in one database
-   * transaction. The RPC is the sole authority for seat delivery, cash
-   * fallback, prize stamps, its immutable batch receipt, and COMPLETED.
-   * A refusal is causal retry work; this caller never guesses through it.
+   * Ask the one database authority to settle and certify the complete
+   * satellite result. TypeScript neither derives an award nor infers success
+   * from tournament status; only the exact immutable receipt is accepted.
    */
-  protected async processSatelliteAwards(_tournament: any): Promise<boolean> {
-    type AtomicSatelliteFinishResult = {
-      ok?: boolean;
-      settled?: boolean;
-      already_settled?: boolean;
-      rows_updated?: number;
-      award_depth?: number;
-      amount_settled?: number;
-      reason?: string;
-      sqlstate?: string;
-      detail?: string;
-      retryable?: boolean;
-    };
-
-    try {
-      const { data, error } = await supabase.rpc('fn_settle_satellite_finish_atomic', {
-        p_tournament_id: this.tournamentId,
-        p_source: 'engine.finishTournament',
-      });
-      const result = data as AtomicSatelliteFinishResult | null;
-      if (error || result?.ok !== true || result?.settled !== true) {
-        const reason = error?.message ?? result?.reason ?? 'satellite_settlement_refused';
-        const detail = result?.detail ? `: ${result.detail}` : '';
-        reportError(
-          new Error(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement refused (${reason}${detail}); event remains COMPLETING and re-drivable`
-          ),
-          'Tournament.atomic_satellite_finish_failed'
-        );
-        return false;
-      }
-
-      console.log(
-        `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement ${result.already_settled ? 'replayed' : 'committed'}: ${Number(result.award_depth ?? 0)} award place(s), ${Number(result.amount_settled ?? 0)} total value`
-      );
-      return true;
-    } catch (error) {
-      reportError(error, 'Tournament.atomic_satellite_finish_threw');
-      return false;
-    }
+  protected async processSatelliteAwards(
+    _tournament: any,
+    winnerId: string
+  ): Promise<VerifiedSatelliteSettlementReceipt> {
+    const verified = await requestSatelliteSettlementReceipt(this.tournamentId, winnerId);
+    console.log(
+      `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement certified: ${verified.ticketAwardCount} full award(s), ${verified.seatCount} target seat(s), ${verified.entryTicketCount} noncash tournament ticket(s), ${verified.cashTicketCount} cash substitute(s), winner value ${verified.winnerAmount}`
+    );
+    return verified;
   }
 
   protected async ensureLateRegSeated(): Promise<void> {
@@ -993,8 +1087,6 @@ export class TournamentManager extends TournamentManagerEliminations {
       // and must not claim. One clean tail pass observes zero and stops.
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
 
-      const startingChips = Number(this.tournamentCache?.starting_chips || 0);
-
       // Build per-table occupancy
       const occupancy = new Map<string, { max: number; taken: Set<number> }>();
       for (const t of tourneyTables) {
@@ -1015,10 +1107,6 @@ export class TournamentManager extends TournamentManagerEliminations {
           }
         }
 
-        // EARLY BIRD (2026-08-22 parity): a 'registered' row's chips column is
-        // the pre-credited early-bird bonus (fn_register_for_tournament writes
-        // it at registration). Seating ADDS the starting stack to it — never
-        // overwrites it.
         /**
          * A ZERO-CHIP 'playing' ENTRANT IS NOT SEATABLE (2026-08-30).
          *
@@ -1034,27 +1122,13 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (player.status !== 'registered' && Number(player.chips || 0) <= 0) {
           continue;
         }
-        const playerChips =
-          player.status === 'registered'
-            ? startingChips + Math.max(0, Math.floor(Number(player.chips) || 0))
-            : Number(player.chips);
 
         if (!best) {
-          // All tables full — promote to 'playing' so expansion counts them;
-          // a new table spawns this same cycle and we seat next cycle. Once
-          // promoted, the service-role recovery RPC no longer sees this row
-          // (it correctly owns only `registered` entrants), so explicitly
-          // re-drive it through the scheduler's one global timer. This also
-          // retries expansion promptly if the create call fails.
-          if (player.status === 'registered') {
-            await supabase
-              .from('tournament_players')
-              .update({ status: 'playing', chips: playerChips })
-              .eq('tournament_id', this.tournamentId)
-              .eq('user_id', player.user_id)
-              .eq('status', 'registered');
-            if (!this.eliminationMutationAllowed()) return;
-          }
+          // `fn_ensure_late_registration_capacity` counts both registered and
+          // playing entrants. Keep the roster untouched until one database
+          // transaction can create/revive the seat, promote the entrant and
+          // persist both coordinates. A new table spawns later in this same
+          // sweep and this durable entrant is retried on the next pass.
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
           continue;
         }
@@ -1065,135 +1139,34 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (seatNumber > occ.max) continue;
 
         /**
-         * THE SNAPSHOT IS NOT THE CHECK (2026-08-25).
+         * THE SNAPSHOT IS NOT AUTHORITY (2026-09-08).
          *
-         * `seatedUsers` is read once at the top of this pass. The pass then
-         * walks the whole field one player at a time, and the start-seating
-         * loop in createTablesAndSeatPlayers is doing the same thing beside
-         * it — five minutes of writes on a 497-entrant freeroll. Anyone seated
-         * by the other writer inside that window is still on this pass's
-         * `unseated` list, and the per-TABLE unique index does not stop a
-         * second seat at a DIFFERENT table.
-         *
-         * Re-read immediately before the write. Refusing costs this player one
-         * scheduler retry; seating them twice double-counts their stack for
-         * the rest of the tournament.
+         * One service-only RPC now owns the duplicate check, vacated-row reuse,
+         * roster promotion/link, stack derivation and exact table count under
+         * terminal -> mission -> launch -> tournament -> roster -> table ->
+         * seat locks. There is no raw fallback and no compensating write.
          */
-        const claim = await mayTakeSeat(supabase, this.tournamentId, player.user_id);
-        if (!this.eliminationMutationAllowed()) return;
-        if (!claim.allowed) {
-          if (claim.unknown) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${player.user_id.slice(0, 8)} - ${claim.reason}. The coalesced manager retry will re-read the claim.`
-              ),
-              'Tournament.late_reg_seat_claim_unreadable'
-            );
-          }
-          continue;
-        }
-
-        // LIVE E2E FIX 2026-08-15: same one-row-per-seat rule as
-        // executePlayerMoves — `occ.taken` only tracks ACTIVE seats, so the
-        // chosen seat number often has a LEFT row and a blind INSERT hits
-        // 23505 every cycle, making this self-heal skip the player forever.
-        // Reuse the left seat row first; insert only if it never existed.
-        const { data: reusedRows, error: reuseErr } = await supabase
-          .from('table_seats')
-          .update({
-            user_id: player.user_id,
-            stack: playerChips,
-            left_at: null,
-            joined_at: new Date().toISOString(),
-            // Seat turnover: never inherit the previous occupant's sit-out
-            // flag (trg_clear_sitout_on_turnover backstops every writer).
-            is_sitting_out: false,
-          })
-          .eq('table_id', best.tableId)
-          .eq('seat_number', seatNumber)
-          .not('left_at', 'is', null)
-          .select('id');
-        /**
-         * A PAID PLAYER WHO NEVER GETS A SEAT MUST NOT BE SILENT (2026-08-25).
-         *
-         * Both of these branches were a bare `continue`. This method is the
-         * self-heal that guarantees Dan's rule that an MTT entrant is NEVER
-         * waiting, and it runs every five seconds — so an error here does not
-         * retry into success, it retries into the SAME failure, forever, with
-         * nothing written anywhere. A player who paid a buy-in and holds no
-         * seat is the failure shape this estate keeps hitting, and it was
-         * reaching production with no report attached to it at all.
-         *
-         * A genuine unique-index race — the player was seated by another pass
-         * in the same instant — is the one expected outcome and stays quiet;
-         * the resolved state is correct, so a report would be pure noise.
-         * Everything else is now reported and the sweep moves to the next
-         * player rather than abandoning the pass.
-         */
-        const quietRace = (msg?: string) => /duplicate|unique|23505|already/i.test(msg || '');
-        if (reuseErr) {
-          if (!quietRace(reuseErr.message)) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Could not reuse seat ${seatNumber} at table ${best.tableId.slice(0, 8)} for ${player.user_id.slice(0, 8)}: ${reuseErr.message}. Player is UNSEATED; the coalesced manager retry remains armed.`
-              ),
-              'Tournament.late_reg_seat_reuse_failed'
-            );
-          }
-          continue;
-        }
-        if (!reusedRows || reusedRows.length === 0) {
-          const { error: seatErr } = await supabase.from('table_seats').insert({
-            table_id: best.tableId,
-            user_id: player.user_id,
-            seat_number: seatNumber,
-            stack: playerChips,
+        try {
+          const receipt = await assignTournamentPlayerSeatAtomically({
+            tournamentId: this.tournamentId,
+            userId: player.user_id,
+            tableId: best.tableId,
+            seatNumber,
           });
-          if (seatErr) {
-            if (!quietRace(seatErr.message)) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Could not seat ${player.user_id.slice(0, 8)} at table ${best.tableId.slice(0, 8)} seat ${seatNumber}: ${seatErr.message}. Player is UNSEATED; the coalesced manager retry remains armed.`
-                ),
-                'Tournament.late_reg_seat_insert_failed'
-              );
-            }
-            continue;
-          }
+          if (!this.eliminationMutationAllowed()) return;
+          occ.taken.add(receipt.seatNumber);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic late-reg seat certified for ${player.user_id.slice(0, 8)} at table ${receipt.tableId.slice(0, 8)} seat ${receipt.seatNumber} (${receipt.stack} chips, table count ${receipt.currentPlayers})`
+          );
+        } catch (seatError) {
+          reportError(seatError, 'Tournament.atomic_late_reg_seat_refused_or_unknown', {
+            tournamentId: this.tournamentId,
+            playerId: player.user_id,
+            tableId: best.tableId,
+            seatNumber,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.LATE_REG_REDRIVE_MS);
         }
-        occ.taken.add(seatNumber);
-
-        if (reusedRows && reusedRows.length > 0) {
-          // The old occupant has been overwritten in `table_seats`, but their `tournament_players`
-          // row still falsely points to this table. This is how 11 players can get assigned to
-          // a 9-max table and crash the Table Engine with `deck_capacity_exceeded`. Clear it.
-          await supabase
-            .from('tournament_players')
-            .update({ table_id: null, seat_number: null })
-            .eq('tournament_id', this.tournamentId)
-            .eq('table_id', best.tableId)
-            .eq('seat_number', seatNumber)
-            .neq('user_id', player.user_id);
-        }
-
-        await supabase
-          .from('tournament_players')
-          .update({
-            status: 'playing',
-            chips: playerChips,
-            table_id: best.tableId,
-            seat_number: seatNumber,
-          })
-          .eq('tournament_id', this.tournamentId)
-          .eq('user_id', player.user_id);
-        await supabase
-          .from('tables')
-          .update({ current_players: occ.taken.size })
-          .eq('id', best.tableId);
-
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Late-reg seated ${player.user_id.slice(0, 8)} at table ${best.tableId.slice(0, 8)} seat ${seatNumber} (${playerChips} chips)`
-        );
       }
     } catch (err) {
       reportError(err, 'Tournament.ensureLateRegSeated');

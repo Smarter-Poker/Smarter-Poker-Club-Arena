@@ -19,6 +19,7 @@ import type {
   PineappleDiscardSnapshot,
   HorseDecisionWorkerStatusResult,
 } from './protocol.js';
+import { horseDecisionSolverStoresAreValid } from './protocol.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
 
 export interface WorkerLike {
@@ -221,7 +222,7 @@ export class LiveHorseDecisionWorkerClient {
       lastComputeMs: this.lastComputeMs,
       completedJobs: this.completedJobs,
       lastError: this.lastError,
-      solverStores: this.solverStores ? { ...this.solverStores } : null,
+      solverStores: this.solverStores ? structuredClone(this.solverStores) : null,
       solverPolicyArtifact: this.solverPolicyArtifact
         ? structuredClone(this.solverPolicyArtifact)
         : null,
@@ -461,9 +462,13 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error(`unexpected READY while worker is ${this.phase}`));
         return;
       }
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker returned invalid solver-store identity'));
+        return;
+      }
       this.readyAt = Date.now();
       clearTimeout(this.readyTimer);
-      this.solverStores = { ...message.solverStores };
+      this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = Date.now();
@@ -574,7 +579,11 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
-      this.solverStores = { ...message.solverStores };
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker status lost solver-store identity'));
+        return;
+      }
+      this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = this.lastCompletedAt;

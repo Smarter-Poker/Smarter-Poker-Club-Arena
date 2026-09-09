@@ -22,7 +22,9 @@
  *   - push: the plugin listeners are attached at boot (src/lib/native/push)
  *     so a tap on a notification that cold-started the app is routed, and the
  *     cached permission state pushClient.ts reads synchronously is primed.
- *   - foreground resumes are wired here in phase 5.
+ *   - foreground: appStateChange -> isActive resumes every AudioContext the
+ *     app created (src/lib/audioContexts). iOS moves them to 'interrupted'
+ *     during a phone call and does not always fire visibilitychange after.
  *
  * CHANGELOG: docs/changelog/2026-09-07-capacitor-shell.md
  */
@@ -45,6 +47,7 @@ export async function initNativeShell(): Promise<void> {
     wireDeepLinks(),
     mirrorSession(),
     wirePush(),
+    wireForeground(),
   ]);
 }
 
@@ -83,6 +86,16 @@ async function wireDeepLinks(): Promise<void> {
   // existed, so ask for the launch URL as well. handleAppUrl de-duplicates.
   const launch = await App.getLaunchUrl();
   if (launch?.url) void handleAppUrl(launch.url);
+}
+
+async function wireForeground(): Promise<void> {
+  const [{ App }, { resumeTrackedAudioContexts }] = await Promise.all([
+    import('@capacitor/app'),
+    import('./audioContexts'),
+  ]);
+  await App.addListener('appStateChange', ({ isActive }) => {
+    if (isActive) resumeTrackedAudioContexts();
+  });
 }
 
 async function wirePush(): Promise<void> {

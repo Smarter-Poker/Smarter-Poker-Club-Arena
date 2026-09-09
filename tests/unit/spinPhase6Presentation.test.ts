@@ -48,13 +48,16 @@ describe('spin phase 6 wiring', () => {
     expect(page).toContain('setSpinHeadsUpNote(false), 1500');
   });
 
-  it('never automatically retries the registration debit', () => {
+  it('replays registration only through the retained operation receipt', () => {
     const service = read('src/services/TournamentService.ts');
     const start = service.indexOf('async registerPlayer(');
     const end = service.indexOf('async unregisterPlayer(', start);
     const method = service.slice(start, end);
-    expect(method).toMatch(/supabase\.rpc\('fn_register_for_tournament'/);
+    expect(method).toMatch(/supabase\.rpc\('fn_register_for_tournament_request'/);
     expect(method).not.toContain('retryAsync(');
+    expect(method).toContain('p_request_id: requestId');
+    expect(method).toContain('withTournamentUnregistrationIntent(');
+    expect(method).toContain(".eq('id', registrationId)");
     expect(method).toContain(".from('tournament_players')");
     expect(method).toContain('registration_result_unconfirmed');
   });

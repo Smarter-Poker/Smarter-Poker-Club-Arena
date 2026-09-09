@@ -178,6 +178,14 @@ function asMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 /**
  * Worker-side FIFO. The promise chain is the sole execution lane: no two
  * HorseLogic calls can interleave while they temporarily install their
@@ -192,13 +200,6 @@ export class HorseDecisionWorkerRuntime {
   private started = false;
   private stopped = false;
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
-  /**
-   * Per-process entropy used to derive an independent stream for each fenced
-   * decision. The canonical module RNG is never advanced by speculative work,
-   * so cancellation timing cannot change a later table's answer.
-   */
-  private rngSalt: number | null = null;
-
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies
@@ -318,6 +319,9 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('decisionTimeMs must be a finite epoch');
     }
+    if (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') {
+      this.assertCanonicalDecisionSnapshot(request);
+    }
     if (
       (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
       request.opts &&
@@ -351,6 +355,82 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  /** Runtime law at the structured-clone boundary; TypeScript cannot enforce it. */
+  private assertCanonicalDecisionSnapshot(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest
+  ): void {
+    const gs = request.gameState;
+    if (typeof request.decisionKey !== 'string' || request.decisionKey.length === 0) {
+      throw new Error('decisionKey must be a non-empty canonical state key');
+    }
+    if (gs.stateSchemaVersion !== 1) throw new Error('horse state schema version 1 is required');
+    if (gs.heroSeat !== request.player.seat || gs.currentPlayerSeat !== request.player.seat) {
+      throw new Error('horse state hero/current seat does not match the decision player');
+    }
+    if (!Array.isArray(gs.players) || !gs.players.some((seat) => seat.seat === gs.heroSeat)) {
+      throw new Error('horse state must include every public seat including hero');
+    }
+    if (gs.players.some((seat) => !Array.isArray(seat.cards) || seat.cards.length !== 0)) {
+      throw new Error('horse state contains private seat cards');
+    }
+    const actions = gs.legalActions;
+    const legalValues = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'discard']);
+    if (
+      !Array.isArray(actions) ||
+      actions.length === 0 ||
+      new Set(actions).size !== actions.length ||
+      actions.some((action) => !legalValues.has(action))
+    ) {
+      throw new Error('horse state legalActions is invalid');
+    }
+    if (!Number.isFinite(gs.toCall) || (gs.toCall as number) < 0) {
+      throw new Error('horse state toCall must be finite and non-negative');
+    }
+    const sized = actions.includes('bet') || actions.includes('raise');
+    const validBound = (value: number | null | undefined): boolean =>
+      value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+    if (
+      !validBound(gs.minRaiseTo) ||
+      !validBound(gs.maxRaiseTo) ||
+      (sized && (gs.minRaiseTo === null || gs.maxRaiseTo === null)) ||
+      (!sized && (gs.minRaiseTo !== null || gs.maxRaiseTo !== null)) ||
+      (typeof gs.minRaiseTo === 'number' &&
+        typeof gs.maxRaiseTo === 'number' &&
+        gs.maxRaiseTo < gs.minRaiseTo - 0.005)
+    ) {
+      throw new Error('horse state wager bounds are inconsistent with legalActions');
+    }
+    if (!['no_limit', 'pot_limit', 'fixed_limit'].includes(gs.bettingStructure ?? '')) {
+      throw new Error('horse state bettingStructure is invalid');
+    }
+    if (!Array.isArray(gs.actionHistory) || !Array.isArray(gs.pots)) {
+      throw new Error('horse state requires action history and live side pots');
+    }
+    if (
+      gs.pots.some(
+        (pot) =>
+          !Number.isFinite(pot.amount) || pot.amount < 0 || !Array.isArray(pot.eligiblePlayers)
+      )
+    ) {
+      throw new Error('horse state side-pot eligibility is invalid');
+    }
+    if (
+      !gs.rakeConfig ||
+      !Number.isFinite(gs.rakeConfig.percent) ||
+      !Number.isFinite(gs.rakeConfig.cap) ||
+      typeof gs.rakeConfig.noFlopNoDrop !== 'boolean'
+    ) {
+      throw new Error('horse state requires the exact rake config');
+    }
+    if (
+      !gs.variantRules ||
+      !Number.isSafeInteger(gs.variantRules.holeCardsDealt) ||
+      !Number.isSafeInteger(gs.variantRules.deckSize)
+    ) {
+      throw new Error('horse state requires explicit variant rules');
+    }
+  }
+
   private executeFast(request: FastHorseDecisionRequest): void {
     const canonicalRng = this.deps.saveRng();
     const rngBefore = this.requestRngSeed(request, 'fast');
@@ -359,8 +439,11 @@ export class HorseDecisionWorkerRuntime {
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     try {
+      const player = deepFreeze(request.player);
+      const gameState = deepFreeze(request.gameState);
+      this.deps.noteFeature('phase5_canonical_state');
       captured = this.deps.captureDecisionEffects(() =>
-        this.deps.decide(request.player, request.gameState, request.style, request.mods, {
+        this.deps.decide(player, gameState, request.style, request.mods, {
           ...request.opts,
           decisionTimeMs: request.decisionTimeMs,
           telemetry: true,
@@ -401,8 +484,10 @@ export class HorseDecisionWorkerRuntime {
     const startedAt = this.deps.now();
     let decision;
     try {
+      const player = deepFreeze(request.player);
+      const gameState = deepFreeze(request.gameState);
       decision = this.deps.captureDecisionEffects(() =>
-        this.deps.decide(request.player, request.gameState, request.style, request.mods, {
+        this.deps.decide(player, gameState, request.style, request.mods, {
           ...request.opts,
           decisionTimeMs: request.decisionTimeMs,
           telemetry: false,
@@ -479,20 +564,22 @@ export class HorseDecisionWorkerRuntime {
     });
   }
 
-  /** Stable xorshift seed for one immutable authority fence. */
+  /** Stable xorshift seed for one immutable canonical decision state. */
   private requestRngSeed(
-    request: Pick<HorseDecisionJobRequest, 'generation' | 'fence'>,
+    request: Pick<HorseDecisionJobRequest, 'generation' | 'fence'> & { decisionKey?: string },
     operation: 'fast' | 'discard'
   ): number {
-    const base = (this.rngSalt ??= this.deps.saveRng()) >>> 0 || 1;
-    let hash = base ^ 0x811c9dc5;
-    const material = `${operation}:${request.generation}:${request.fence}`;
+    let hash = 0x811c9dc5;
+    const material =
+      operation === 'fast' && request.decisionKey
+        ? `fast:${request.decisionKey}`
+        : `${operation}:${request.generation}:${request.fence}`;
     for (let index = 0; index < material.length; index++) {
       hash ^= material.charCodeAt(index);
       hash = Math.imul(hash, 0x01000193);
     }
-    // Final avalanche prevents similar table/hand suffixes from producing
-    // correlated first draws while retaining the worker's boot-time entropy.
+    // Final avalanche prevents similar canonical state suffixes from producing
+    // correlated first draws while remaining identical across worker restarts.
     hash ^= hash >>> 16;
     hash = Math.imul(hash, 0x7feb352d);
     hash ^= hash >>> 15;

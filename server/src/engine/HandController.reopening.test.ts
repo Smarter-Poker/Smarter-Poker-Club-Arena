@@ -103,10 +103,35 @@ describe('REOPENING RULE - sub-full-raise all-in does not reopen betting', () =>
     // raise since → call/fold only.
     expect(h.cur()).toBe(1);
     expect(h.menu(1)).not.toContain('raise');
+    expect(h.hc.getAuthoritativeActionState('u1')).toMatchObject({
+      schemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      canAct: true,
+      legalActions: ['fold', 'call'],
+      toCall: 2,
+      minRaiseTo: null,
+      maxRaiseTo: null,
+      structure: 'no_limit',
+      wagersCapped: false,
+    });
     expect(h.actSeat(1, 'raise', 20)).toBe(false);
     expect(h.menu(1)).not.toContain('all_in');
     expect(h.actSeat(1, 'all_in')).toBe(false); // a shove is still a raise
     expect(h.actSeat(1, 'call', 8)).toBe(true);
+  });
+});
+
+describe('authoritative action bounds', () => {
+  it('represents a stack below the minimum only as all-in, never min greater than max', () => {
+    const h = harness(mkConfig(), mkPlayers([1, 200]), 1);
+    h.st().currentPlayerSeat = 1;
+    h.st().currentBet = 0;
+    h.st().minRaise = 2;
+    const actionState = h.hc.getAuthoritativeActionState('u1');
+    expect(actionState?.legalActions).toEqual(['fold', 'check', 'all_in']);
+    expect(actionState?.minRaiseTo).toBeNull();
+    expect(actionState?.maxRaiseTo).toBeNull();
   });
 });
 

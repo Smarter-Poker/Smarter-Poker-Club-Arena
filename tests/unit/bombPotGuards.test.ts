@@ -50,6 +50,7 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   const BASE = read('server/src/engine/ServerTableEngineBase.ts');
   const ENGINE = read('server/src/engine/ServerTableEngine.ts');
   const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
+  const HAND = read('server/src/engine/HandController.ts');
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
   const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 
@@ -66,12 +67,22 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   });
 
   it('the legal-action pot-limit clamp reads the HAND variant', () => {
-    const window = sliceEnclosingBlock(TURNS, 'const structure = bettingStructureFor(variant)');
-    expect(window).toMatch(/this\.activeHandVariant\(\)/);
+    // Phase 5 removed the parallel action-menu reconstruction from Turns. Both
+    // the client and the horse now consume HandController's rule contract,
+    // whose betting state is built from the variant captured for THIS hand.
+    const clientMenu = sliceMethod(TURNS, 'getPlayerActions(userId: string)');
+    const authority = sliceMethod(HAND, 'public getAuthoritativeActionState');
+    const bettingState = sliceMethod(HAND, 'private buildBettingState');
+    expect(clientMenu).toMatch(/getAuthoritativeActionState\(userId\)/);
+    expect(authority).toMatch(/this\.buildBettingState\(player\)/);
+    expect(bettingState).toMatch(/const variant = this\.config\.gameVariant/);
+    expect(bettingState).toMatch(/isPotLimitVariant\(variant\)/);
   });
 
   it('horses evaluate the HAND variant', () => {
-    expect(TURNS).toMatch(/gameVariant: \(this\.activeHandVariant\(\) \|\| 'nlh'\)/);
+    const schedule = sliceMethod(TURNS, 'protected scheduleHorseAction(');
+    expect(schedule).toMatch(/const activeVariant = this\.activeHandVariant\(\) \|\| 'nlh'/);
+    expect(schedule).toMatch(/gameVariant: activeVariant/);
   });
 
   it('hand history records the variant the hand was DEALT as', () => {
@@ -147,7 +158,8 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   it('horses average per-board equity on multi-board hands', () => {
     expect(HORSE).toMatch(/gs\.communityCards2/);
     expect(HORSE).toMatch(/equity = sum \/ boards\.length/);
-    expect(TURNS).toMatch(/communityCards2: fullState\?\.communityCards2 \?\? \[\]/);
+    const schedule = sliceMethod(TURNS, 'protected scheduleHorseAction(');
+    expect(schedule).toMatch(/communityCards2: \[\.\.\.\(state\.communityCards2 \?\? \[\]\)\]/);
   });
 
   it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {

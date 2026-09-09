@@ -100,6 +100,100 @@ describe('daily bonus ledger law', () => {
     );
   });
 
+  it('the claim names the day the sheet showed, and refuses before it opens or pays anything', () => {
+    const day = migration('the_daily_bonus_claim_names_the_day_it_saw');
+    expect(day).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_ca_daily_bonus_claim(integer, uuid, uuid)'
+    );
+    expect(day).toContain('p_bonus_date date DEFAULT NULL');
+    const refusal = day.indexOf("'day_rolled_over'");
+    const opens = day.indexOf('v_day := public.fn_ca_daily_bonus_open_day(v_uid, v_today)');
+    const pays = day.indexOf('public.award_diamonds_v2(');
+    expect(refusal).toBeGreaterThan(0);
+    expect(refusal).toBeLessThan(opens);
+    expect(refusal).toBeLessThan(pays);
+    expect(day).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_ca_daily_bonus_claim(integer, uuid, uuid, date) TO authenticated, service_role'
+    );
+    // every rule the horse migration pinned survives the rewrite
+    for (const rule of [
+      'IF v_uid IS NULL AND public.fn_caller_is_engine() THEN',
+      'Cannot claim a daily bonus for another player',
+      'requires an authenticated caller',
+      "'already_claimed'",
+      "'vip_only'",
+      'pg_advisory_xact_lock',
+      "'ca_daily_bonus:' || v_uid::text || ':' || v_today::text || ':' || p_slot::text",
+    ]) {
+      expect(day, rule).toContain(rule);
+    }
+    // fn_ca_mint_supply is the register read the assertion block compares
+    // against; it is not the mint.
+    const dayBody = day.replace(/fn_ca_mint_supply/g, '');
+    for (const primitive of CHIP_CREDIT_PRIMITIVES) {
+      expect(dayBody, primitive).not.toContain(primitive);
+    }
+  });
+
+  it('a bonus credit that expires is spent before an allowance that renews, in every consumer', () => {
+    const order = migration('an_expiring_credit_is_spent_before_an_allowance_that_renews');
+    const body = (fn: string) => {
+      const start = order.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`);
+      expect(start, fn).toBeGreaterThan(0);
+      const end = order.indexOf('$function$;', start);
+      return order.slice(start, end);
+    };
+    const throwable = body('fn_use_throwable_v2');
+    expect(throwable.indexOf('IF v_lifetime THEN')).toBeLessThan(
+      throwable.indexOf('expires_at IS NOT NULL')
+    );
+    expect(throwable.indexOf('expires_at IS NOT NULL')).toBeLessThan(
+      throwable.indexOf("'member_monthly'")
+    );
+    expect(throwable).toContain('ORDER BY expires_at ASC, created_at ASC');
+    expect(throwable).toContain('public.deduct_diamonds(');
+
+    const rabbit = body('fn_consume_rabbit_hunt_v2');
+    expect(rabbit.indexOf('IF v_is_lifetime THEN')).toBeLessThan(
+      rabbit.indexOf('expires_at IS NOT NULL')
+    );
+    expect(rabbit.indexOf('expires_at IS NOT NULL')).toBeLessThan(rabbit.indexOf("'vip_monthly'"));
+    expect(rabbit).toContain('is engine-only');
+
+    const bank = body('fn_consume_time_bank');
+    expect(bank.indexOf('IF v_is_lifetime THEN')).toBeLessThan(
+      bank.indexOf('expires_at IS NOT NULL')
+    );
+    expect(bank.indexOf('expires_at IS NOT NULL')).toBeLessThan(bank.indexOf('120 - v_used'));
+    expect(bank).toContain('is engine-only');
+    // no consumer is granted to a browser role it did not already have
+    expect(order).not.toContain('GRANT EXECUTE');
+  });
+
+  it('the popup is one per day on every device: the mark lives on the day row', () => {
+    const once = migration('the_daily_bonus_pops_up_once_a_day_on_every_device');
+    expect(once).toContain('ADD COLUMN IF NOT EXISTS sheet_shown_at timestamptz');
+    expect(once).toContain('CREATE OR REPLACE FUNCTION public.fn_ca_daily_bonus_mark_shown()');
+    expect(once).toContain('SET sheet_shown_at = COALESCE(sheet_shown_at, now())');
+    expect(once).toContain("'shown_today', v_day.sheet_shown_at IS NOT NULL");
+    expect(once).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_ca_daily_bonus_mark_shown() TO authenticated, service_role'
+    );
+    for (const primitive of CHIP_CREDIT_PRIMITIVES) {
+      expect(once.replace(/fn_ca_mint_supply/g, ''), primitive).not.toContain(primitive);
+    }
+    const fragment = join(
+      process.cwd(),
+      'scripts/ci/schema-manifest.d/claude-dailybonus-audit.json'
+    );
+    const json = JSON.parse(readFileSync(fragment, 'utf8')) as {
+      functions: string[];
+      columns: Record<string, string[]>;
+    };
+    expect(json.functions).toContain('fn_ca_daily_bonus_mark_shown');
+    expect(json.columns.ca_daily_bonus_days).toContain('sheet_shown_at');
+  });
+
   it('the schema fragment declares every new object for the phantom gates', () => {
     const fragment = join(process.cwd(), 'scripts/ci/schema-manifest.d/cw-dailybonus.json');
     expect(existsSync(fragment)).toBe(true);

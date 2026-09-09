@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/claude-dailybonus/phase-1-integrity",
+  "tables": ["ca_daily_bonus_refusals"],
+  "functions": [
+    "fn_ca_daily_bonus_claimed_from",
+    "fn_ca_daily_bonus_refuse",
+    "fn_ca_daily_bonus_velocity_check",
+    "fn_ca_daily_bonus_budget_check"
+  ],
+  "columns": { "ca_daily_bonus_claims": ["claimed_from"] }
+}

@@ -194,6 +194,52 @@ describe('daily bonus ledger law', () => {
     expect(json.columns.ca_daily_bonus_days).toContain('sheet_shown_at');
   });
 
+  it('the bonus keeps its own books: every refusal is recorded, every claim says where it came from, two rules file once a day', () => {
+    const books = migration('the_daily_bonus_keeps_its_own_books');
+    expect(books).toContain('CREATE TABLE IF NOT EXISTS public.ca_daily_bonus_refusals');
+    expect(books).toContain('ADD COLUMN IF NOT EXISTS claimed_from jsonb');
+    expect(books).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_ca_daily_bonus_claim(integer, uuid, uuid, date)'
+    );
+    expect(books).toContain('p_client jsonb DEFAULT NULL');
+    // the claim body holds no bare refusal: every one goes through the writer
+    const start = books.indexOf('CREATE FUNCTION public.fn_ca_daily_bonus_claim(');
+    const end = books.indexOf('$$;', books.indexOf('AS $$', start));
+    const body = books.slice(start, end);
+    expect(body).not.toContain("jsonb_build_object('success', false");
+    expect(body.match(/fn_ca_daily_bonus_refuse\(/g)?.length ?? 0).toBeGreaterThanOrEqual(10);
+    expect(body).toContain('PERFORM public.fn_ca_daily_bonus_velocity_check(v_today, v_from)');
+    expect(body).toContain('PERFORM public.fn_ca_daily_bonus_budget_check(v_today)');
+    // never a whole IP address
+    expect(books).toContain("regexp_replace(v_ip, '\\.\\d{1,3}$', '.x')");
+    // the rules file alerts, never refuse
+    expect(books).toContain("'fn_ca_daily_bonus_claim.device_velocity'");
+    expect(books).toContain("'fn_ca_daily_bonus_claim.ip_velocity'");
+    expect(books).toContain("'fn_ca_daily_bonus_claim.budget_anomaly'");
+    expect(books).toContain(
+      'INSERT INTO public.financial_alerts (severity, source, message, context)'
+    );
+    for (const primitive of CHIP_CREDIT_PRIMITIVES) {
+      expect(books.replace(/fn_ca_mint_supply/g, ''), primitive).not.toContain(primitive);
+    }
+    const fragment = join(process.cwd(), 'scripts/ci/schema-manifest.d/claude-dailybonus-p1.json');
+    const json = JSON.parse(readFileSync(fragment, 'utf8')) as {
+      tables: string[];
+      functions: string[];
+      columns: Record<string, string[]>;
+    };
+    expect(json.tables).toContain('ca_daily_bonus_refusals');
+    expect(json.functions).toEqual(
+      expect.arrayContaining([
+        'fn_ca_daily_bonus_refuse',
+        'fn_ca_daily_bonus_velocity_check',
+        'fn_ca_daily_bonus_budget_check',
+        'fn_ca_daily_bonus_claimed_from',
+      ])
+    );
+    expect(json.columns.ca_daily_bonus_claims).toContain('claimed_from');
+  });
+
   it('the schema fragment declares every new object for the phantom gates', () => {
     const fragment = join(process.cwd(), 'scripts/ci/schema-manifest.d/cw-dailybonus.json');
     expect(existsSync(fragment)).toBe(true);

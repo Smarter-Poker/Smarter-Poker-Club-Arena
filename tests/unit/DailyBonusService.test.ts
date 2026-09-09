@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
+vi.mock('../../src/lib/appBase', () => ({ nativePlatform: () => 'web' }));
 
 import {
   claimReasonText,
@@ -64,6 +65,7 @@ describe('DailyBonusService', () => {
     mocks.rpc.mockReset();
     mocks.emit.mockReset();
     sessionStorage.clear();
+    localStorage.clear();
   });
 
   it('reads the sheet from fn_ca_daily_bonus_status with no arguments', async () => {
@@ -93,9 +95,18 @@ describe('DailyBonusService', () => {
     expect(result.success).toBe(true);
     const [name, args] = mocks.rpc.mock.calls[0];
     expect(name).toBe('fn_ca_daily_bonus_claim');
-    expect(Object.keys(args).sort()).toEqual(['p_bonus_date', 'p_request_id', 'p_slot']);
+    expect(Object.keys(args).sort()).toEqual([
+      'p_bonus_date',
+      'p_client',
+      'p_request_id',
+      'p_slot',
+    ]);
     expect(args.p_slot).toBe(1);
     expect(args.p_bonus_date).toBe('2026-09-08');
+    // The install id, never an amount: the server reads the rest from the request.
+    expect(Object.keys(args.p_client).sort()).toEqual(['device_id', 'platform']);
+    expect(args.p_client.platform).toBe('web');
+    expect(localStorage.getItem('smarter-poker-push-device-id')).toBe(args.p_client.device_id);
     expect(args.p_request_id).toMatch(/^[0-9a-f-]{36}$/);
   });
 

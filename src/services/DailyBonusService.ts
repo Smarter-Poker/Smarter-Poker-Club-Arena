@@ -6,7 +6,7 @@
  * Two RPCs, both server-authoritative (docs/DAILY-CLUB-ARENA-BONUS.md):
  *
  *   fn_ca_daily_bonus_status()                 what today offers and what is claimed
- *   fn_ca_daily_bonus_claim(slot, req, day)    pay one tile, exactly once
+ *   fn_ca_daily_bonus_claim(slot, req, day, client)   pay one tile, exactly once
  *   fn_ca_daily_bonus_mark_shown()             today's sheet was shown (one popup per day, any device)
  *
  * The claim names the day the sheet showed (`p_bonus_date`). A tap that lands
@@ -30,6 +30,8 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { installId } from '../lib/installId';
+import { nativePlatform } from '../lib/appBase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
@@ -168,6 +170,12 @@ export function claimReasonText(reason: string | undefined): string {
 
 const REQUEST_KEY_PREFIX = 'ca_daily_bonus_req:';
 
+/** The install id and platform sent with a claim (fn_ca_daily_bonus_velocity_check). */
+export function claimClient(): { device_id?: string; platform: string } {
+  const id = installId();
+  return id ? { device_id: id, platform: nativePlatform() } : { platform: nativePlatform() };
+}
+
 function newUuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -247,6 +255,9 @@ class DailyBonusServiceClass {
       p_slot: slot,
       p_request_id: requestId,
       p_bonus_date: today,
+      // What this browser knows about itself; the server adds what it can
+      // read from the request (user agent, IP class) for the velocity rule.
+      p_client: claimClient(),
     });
     if (error) {
       reportError(error, 'DailyBonusService.claim.fn_ca_daily_bonus_claim', { slot });

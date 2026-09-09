@@ -82,6 +82,7 @@
  *    (Dan, 2026-08-25, on iPhone).
  */
 
+import { installId } from './installId';
 import { readLocalSession } from './authUtils';
 import { isNativePlatform } from './appBase';
 
@@ -258,22 +259,9 @@ function applicationServerKeyMatches(
    throw on localStorage access. A missing device id costs a duplicate banner.
    A thrown one would cost the entire subscription, which is far worse.
    ═══════════════════════════════════════════════════════════════════════ */
-const DEVICE_ID_KEY = 'smarter-poker-push-device-id';
-
 function deviceId(): string | null {
-  try {
-    const existing = window.localStorage.getItem(DEVICE_ID_KEY);
-    if (existing && /^[a-z0-9-]{8,64}$/i.test(existing)) return existing;
-
-    const fresh =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
-    window.localStorage.setItem(DEVICE_ID_KEY, fresh);
-    return fresh;
-  } catch {
-    return null;
-  }
+  // One id per install, shared with the daily bonus claim (src/lib/installId.ts).
+  return installId();
 }
 
 function deviceLabel(): string {

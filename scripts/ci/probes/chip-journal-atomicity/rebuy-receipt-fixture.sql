@@ -1,7 +1,7 @@
 
 ALTER TABLE club_members ADD COLUMN updated_at timestamptz;
 CREATE UNIQUE INDEX member_scope ON club_members(club_id,user_id);
-ALTER TABLE table_seats ADD COLUMN id uuid DEFAULT gen_random_uuid(),ADD COLUMN club_id uuid;
+-- The shared base fixture owns table_seats.id and table_seats.club_id.
 CREATE TABLE transaction_idempotency_keys(key uuid PRIMARY KEY,user_id uuid NOT NULL,action text NOT NULL,amount numeric,created_at timestamptz DEFAULT now());
 CREATE TABLE table_pending_addons(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid,user_id uuid,amount numeric,kind text);
 CREATE TABLE wallet_transactions(user_id uuid,wallet_type text,type text,amount numeric,category text,description text,table_id uuid,balance_after numeric);

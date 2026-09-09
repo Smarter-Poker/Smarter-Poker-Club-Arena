@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "A service-only proof identifies one exact paid 3-max Spin that already dealt, retains three original payment identities and their exact source charge journals, has one zero-stack eliminated and vacated player, two matching live survivors, all three bought stacks, and the immutable reserve draw/journals. The launch completion core rechecks that proof transactionally before lowering only its active field to two; Heads-Up SNG and fresh short fields remain refused.",
+  "functions": ["fn_prove_played_spin_launch_recovery"]
+}

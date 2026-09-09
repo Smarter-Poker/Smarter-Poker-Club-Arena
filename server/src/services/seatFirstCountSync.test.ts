@@ -2,8 +2,9 @@
  * SEAT-FIRST GAMES MUST ADVERTISE THE SEATS THEY HAVE SOLD — Dan 2026-08-23
  *
  * A Spin or heads-up SNG starts on SEATS BOUGHT, so its lobby number has to
- * come from the seat rows. `current_players` is a stored column that a seat
- * row does not touch, so every path that seats a horse has to sync it.
+ * come from the seat rows. Every canonical seat transaction now writes that
+ * exact count before returning its receipt; application-side recounts are a
+ * forbidden second writer.
  *
  * seedOpenSeatTable was the one that did not. Measured live: 16 open Spins
  * advertising "0/3" while holding 32 paid seats between them - two of three
@@ -33,27 +34,10 @@ function seedOpenSeatTableBody(): string {
 }
 
 describe('seat-first lobby counts', () => {
-  it('seedOpenSeatTable syncs the count after seating its opening horses', () => {
+  it('seedOpenSeatTable uses only the atomic seating authority', () => {
     const body = seedOpenSeatTableBody();
     expect(body).toContain('fn_seat_horse_in_seat_first_game');
-    expect(body).toContain('fn_sync_seat_first_player_count');
-  });
-
-  it('the sync comes AFTER the seating, not before it', () => {
-    const body = seedOpenSeatTableBody();
-    const seatAt = body.indexOf('fn_seat_horse_in_seat_first_game');
-    const syncAt = body.indexOf('fn_sync_seat_first_player_count');
-    expect(seatAt).toBeGreaterThan(-1);
-    expect(syncAt).toBeGreaterThan(seatAt);
-  });
-
-  it('a failed sync does not fail table creation — the seats are real either way', () => {
-    const body = seedOpenSeatTableBody();
-    const syncAt = body.indexOf('fn_sync_seat_first_player_count');
-    const after = body.slice(syncAt, syncAt + 600);
-    // Reported, not thrown, and the function still returns the table id.
-    expect(after).toContain('reportError');
-    expect(after).not.toContain('throw ');
+    expect(body).not.toContain('fn_sync_seat_first_player_count');
   });
 
   /**
@@ -65,27 +49,31 @@ describe('seat-first lobby counts', () => {
    * code under it was flattened to the MTT half alone. Prose is not a
    * safeguard, so this is.
    */
-  it('topUpWithHorses derives seat-first counts from seats, not registrations', () => {
+  it('topUpWithHorses seats through the atomic root and keeps the MTT registration read separate', () => {
     const start = src.indexOf('async topUpWithHorses');
     expect(start).toBeGreaterThan(-1);
     const body = src.slice(start, src.indexOf('private async registerHorses'));
 
     // The branch itself.
     expect(body).toMatch(/if\s*\(seatFirst\)\s*\{/);
-    expect(body).toContain('fn_sync_seat_first_player_count');
+    expect(body).toContain('fn_seat_horse_in_seat_first_game');
+    expect(body).not.toContain('fn_sync_seat_first_player_count');
 
     // And the MTT half still reads the registration count, in the else.
-    const syncAt = body.indexOf('fn_sync_seat_first_player_count');
-    const registrationCountAt = body.indexOf("in('status', ['registered', 'playing'])", syncAt);
-    expect(registrationCountAt).toBeGreaterThan(syncAt);
+    const seatFirstAt = body.indexOf('if (seatFirst)');
+    const registrationCountAt = body.indexOf(
+      "in('status', ['registered', 'playing'])",
+      seatFirstAt
+    );
+    expect(registrationCountAt).toBeGreaterThan(seatFirstAt);
   });
 
   it('the service never writes a seat-first count it merely counted up', () => {
     // Registrations and seats disagree constantly for these formats. A counter
     // that counts registrations is what had spins reading 3/3 on two bought
     // seats and 0/3 on three.
-    const syncCalls = src.split('fn_sync_seat_first_player_count').length - 1;
-    expect(syncCalls).toBeGreaterThanOrEqual(2); // seedOpenSeatTable + topUpWithHorses
+    const executable = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(executable).not.toContain('fn_sync_seat_first_player_count');
     expect(src).not.toMatch(/current_players:\s*seated\b/);
   });
 });

@@ -62,43 +62,51 @@ describe('the guard is actually wired into the rescue', () => {
 
   it('recoverStuckCompletingTournaments consults it', () => {
     expect(RECOVERY).toMatch(/import \{ fieldIsStillLive \} from '\.\/recoveryFieldGuard\.js'/);
-    expect(RECOVERY).toMatch(/fieldIsStillLive\(\{\s*livePlayers,\s*paidPlaces\s*\}\)/);
+    expect(RECOVERY).toMatch(
+      /fieldIsStillLive\(\{\s*livePlayers,\s*paidPlaces:\s*structure\?\.length \?\? 0\s*\}\)/
+    );
   });
 
   it('counts live players from the field it just read, and places from the structure', () => {
     expect(RECOVERY).toMatch(
-      /const livePlayers = rows\.filter\(\(r\) => r\.status === 'playing'\)\.length/
+      /const livePlayers = rows\.filter\(\(row\) => row\.status === 'playing'\)\.length/
     );
-    expect(RECOVERY).toMatch(/const paidPlaces = payouts\.length/);
+    expect(RECOVERY).toMatch(
+      /const structure = resolvePayoutStructure\(tournament as never, rows\.length\)/
+    );
   });
 
   it('refuses by CONTINUING - it must not fall through and pay', () => {
     // The whole failure was paying. A guard that reports and then proceeds is
     // the same bug with better logging.
-    const window = sliceEnclosingBlock(RECOVERY, 'fieldIsStillLive({ livePlayers, paidPlaces })');
+    const window = sliceEnclosingBlock(
+      RECOVERY,
+      'fieldIsStillLive({ livePlayers, paidPlaces: structure?.length ?? 0 })'
+    );
     expect(window).toMatch(/recoverStuckCompleting_field_still_live/);
     expect(window).toMatch(/continue;/);
   });
 
   it('decides BEFORE any credit is issued', () => {
-    const guard = RECOVERY.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })');
-    const credit = RECOVERY.indexOf('settleTournamentPlacesAtomically(', guard);
+    const guard = RECOVERY.indexOf(
+      'fieldIsStillLive({ livePlayers, paidPlaces: structure?.length ?? 0 })'
+    );
+    const credit = RECOVERY.indexOf('requestTournamentTerminalReceipt(', guard);
     expect(guard).toBeGreaterThan(-1);
     expect(credit).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(credit);
   });
 
-  it('also refuses every field with two or more survivors before funding or stamping results', () => {
-    expect(RECOVERY).toMatch(/if \(alive\.length > 1\)/);
-    const window = sliceEnclosingBlock(RECOVERY, 'if (alive.length > 1)');
+  it('also refuses every field with two or more survivors before requesting a receipt', () => {
+    expect(RECOVERY).toMatch(/if \(live\.length > 1\)/);
+    const window = sliceEnclosingBlock(RECOVERY, 'if (live.length > 1)', 1);
     expect(window).toMatch(/recoverStuckCompleting_multiple_survivors_unresolved/);
     expect(window).toMatch(/continue;/);
 
-    const guard = RECOVERY.indexOf('if (alive.length > 1)');
-    const funding = RECOVERY.indexOf("'fn_apply_prize_guarantee'");
-    const stamp = RECOVERY.indexOf('const owed = prizeFor(place)');
+    const guard = RECOVERY.indexOf('if (live.length > 1)', RECOVERY.indexOf('const hasDeal'));
+    const receipt = RECOVERY.indexOf('requestTournamentTerminalReceipt(', guard);
     expect(guard).toBeGreaterThan(-1);
-    expect(funding).toBeGreaterThan(guard);
-    expect(stamp).toBeGreaterThan(funding);
+    expect(receipt).toBeGreaterThan(guard);
+    expect(RECOVERY).not.toMatch(/\.update\(|\.insert\(|\.delete\(/);
   });
 });

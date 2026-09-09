@@ -11,7 +11,10 @@ import { readClubContextParam } from '../../utils/clubScopedPath';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { tournamentService } from '../../services/TournamentService';
+import {
+  tournamentService,
+  tournamentUnregisterSuccessText,
+} from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
 import { useToast } from '../../components/common/Toast';
@@ -604,8 +607,8 @@ export default function TournamentLobbyPage() {
   const handleUnregister = async (tournamentId: string) => {
     if (!user?.id) return;
     try {
-      await tournamentService.unregisterPlayer(tournamentId, user.id);
-      toast.success('Unregistered - buy-in refunded to your wallet');
+      const result = await tournamentService.unregisterPlayer(tournamentId, user.id);
+      toast.success(tournamentUnregisterSuccessText(result));
       loadTournaments();
     } catch (error) {
       reportError(error, 'TournamentLobbyPage.Unregistration_failed');

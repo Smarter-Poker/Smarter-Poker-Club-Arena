@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "Exact old-head settlement is part of the sole standard bounty, PKO, and mystery bounty rebuy transaction.",
+  "functions": [
+    "fn_attach_bounty_ledger_obligation",
+    "fn_ca_settle_bounty_rebuy_generation_v1",
+    "process_tournament_rebuy"
+  ]
+}

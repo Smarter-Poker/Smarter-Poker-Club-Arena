@@ -49,10 +49,12 @@ describe('GameServer boot - horses keep their seats across a restart (Dan 2026-0
     expect(cleanup).not.toMatch(/credit_player_wallet/);
   });
 
-  it('the only seat release left on the boot path is the finished-tournament orphan sweep', () => {
-    // That sweep releases the seats of tables whose tournament is already
-    // over - horse and human alike - and is not what this test is about.
-    expect(cleanup).toContain('orphan seat release failed');
+  it('does not reconcile finished-tournament seats on process startup', () => {
+    // Historical terminal orphans are closed exactly once by the database
+    // migration cutover. Process startup is never a seat-exit authority.
+    expect(cleanup).not.toContain('orphan seat release failed');
+    expect(cleanup).not.toMatch(/orphanPageSize|releasedOrphanSeats/);
+    expect(cleanup).not.toMatch(/from\('table_seats'\)/);
     expect(cleanup).not.toMatch(/staleSweep\.seats/);
   });
 

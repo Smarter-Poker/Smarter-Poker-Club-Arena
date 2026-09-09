@@ -55,15 +55,7 @@ export type ThrowPhysics = 'arc' | 'fastball' | 'lob' | 'float' | 'drop' | 'swoo
  * - burst    confetti-pop scatter (cash, champagne, fireworks)
  */
 export type ThrowImpact =
-  | 'splat'
-  | 'splash'
-  | 'bounce'
-  | 'thud'
-  | 'explode'
-  | 'shatter'
-  | 'zap'
-  | 'sparkle'
-  | 'burst';
+  'splat' | 'splash' | 'bounce' | 'thud' | 'explode' | 'shatter' | 'zap' | 'sparkle' | 'burst';
 
 export type ThrowWeight = 'light' | 'medium' | 'heavy';
 

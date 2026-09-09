@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -113,7 +113,14 @@ describe('the engine side of the sweep', () => {
   const BASE = read('server/src/engine/ServerTableEngineBase.ts');
   const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
-  const PENDING = read('server/src/services/supabase/pendingWrites.ts');
+  const PENDING_PATH = resolve(ROOT, 'server/src/services/supabase/pendingWrites.ts');
+  const RUNTIME = [
+    BASE,
+    DEALING,
+    SETTLEMENT,
+    read('server/src/GameServer.ts'),
+    read('server/src/index.ts'),
+  ].join('\n');
 
   it('every busted exit, human or horse, leaves through releaseBustedSeat', () => {
     expect(BASE).toMatch(/protected async releaseBustedSeat\(/);
@@ -140,12 +147,10 @@ describe('the engine side of the sweep', () => {
     expect(evict).toMatch(/if \(isMaintenanceFrozen\(\)\) return;/);
   });
 
-  it('the off-path write queue does not spend its budget on a freeze', () => {
-    expect(PENDING).toMatch(
-      /if \(isMaintenanceFrozen\(\)\) \{\s*for \(const e of pending\.values\(\)\) e\.frozenMs \+= sinceLast;/
-    );
-    expect(PENDING).toMatch(
-      /now\(\) - entry\.enqueuedAt - entry\.frozenMs >= PENDING_WRITE_BUDGET_MS/
+  it('the off-path write queue is retired instead of being retried after a freeze', () => {
+    expect(existsSync(PENDING_PATH)).toBe(false);
+    expect(RUNTIME).not.toMatch(
+      /pendingWrites|enqueuePendingWrite|drainPendingWrites|PENDING_WRITE_BUDGET_MS/
     );
   });
 

@@ -71,14 +71,7 @@ export interface TransactionRecord {
   amount: number;
   type: 'credit' | 'debit';
   category:
-    | 'mint'
-    | 'transfer'
-    | 'buyin'
-    | 'cashout'
-    | 'rake'
-    | 'commission'
-    | 'promo'
-    | 'settlement';
+    'mint' | 'transfer' | 'buyin' | 'cashout' | 'rake' | 'commission' | 'promo' | 'settlement';
   description: string;
   relatedEntityId?: string;
   createdAt: string;

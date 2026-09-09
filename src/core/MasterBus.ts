@@ -905,11 +905,7 @@ export interface BusPayloadMap {
     assetId?: string;
     quantity?: number;
     source:
-      | 'diamond-purchase'
-      | 'club-purchase'
-      | 'club-redemption'
-      | 'vip-purchase'
-      | 'vip-reward';
+      'diamond-purchase' | 'club-purchase' | 'club-redemption' | 'vip-purchase' | 'vip-reward';
   };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };

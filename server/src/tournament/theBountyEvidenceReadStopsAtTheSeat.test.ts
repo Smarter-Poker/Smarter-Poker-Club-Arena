@@ -4,8 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * `loadPersistedBountyEvidence` proves a bust before a bounty elimination is
- * allowed to mutate anything. It searched the whole of a table's settlement
- * history for the newest row that wrote this player to zero:
+ * allowed to mutate anything. The retired implementation searched the whole
+ * of a table's settlement history for the newest row that wrote this player
+ * to zero:
  *
  *     Index Scan using settlement_idempotency_keys_pkey
  *       Index Cond: (table_id = ...)
@@ -24,12 +25,13 @@
  * their seats meant no table could reach two live players, so no hand could be
  * dealt at all.
  *
- * The bound added below is NOT a new rule. Twenty lines further down, a
- * settlement older than `seatJoinedAt` is already refused - a rebuy starts a
- * new seat generation and an older zero must never authorise it - so every row
- * before the seat was read off disk and then thrown away. Pushing that same
- * condition into the query, against the matching partial index, took it to
- * 88.5 ms.
+ * The current authority no longer discovers money evidence from that mutable
+ * history at all. It first selects one immutable knockout candidate by
+ * tournament, player and descending hand identity, then reads the exact
+ * hand_atomic_commits primary identity named by that candidate. The read also
+ * carries the candidate's seat_joined_at lower bound, so a pre-rebuy receipt
+ * cannot authorize a newer chair generation. The historical partial index
+ * remains recorded for older readers during rolling deployment.
  *
  * These pins are on the SHAPE of the read, because the shape is the fix.
  */
@@ -42,9 +44,10 @@ import { sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
 const ELIM = readFileSync(resolve(__dirname, './TournamentManagerEliminations.ts'), 'utf8');
 const EVIDENCE = sliceMethod(
   ELIM,
-  'loadPersistedBountyEvidence(\n    userId: string,\n    tableId: string,\n    seatJoinedAt: string\n  ): Promise<PersistedKnockoutEvidence | null>'
+  'loadPersistedBountyEvidence(\n    userId: string\n  ): Promise<CandidateBackedKnockoutEvidence | null>'
 );
-const READ = sliceStatement(ELIM, 'const { data: settlementRow, error: settlementErr }');
+const CANDIDATE_READ = sliceStatement(ELIM, 'const { data: candidateRow, error: candidateErr }');
+const ATOMIC_READ = sliceStatement(ELIM, 'const { data: atomicRow, error: atomicErr }');
 
 const MIGRATION = readFileSync(
   resolve(
@@ -66,37 +69,39 @@ const MIGRATION_SQL = MIGRATION.split('\n')
 describe('the bounty evidence read stops at the seat', () => {
   it('the windows under test are real', () => {
     expect(EVIDENCE.length).toBeGreaterThan(500);
-    expect(READ).toContain("from('settlement_idempotency_keys')");
+    expect(CANDIDATE_READ).toContain("from('tournament_knockout_candidates')");
+    expect(ATOMIC_READ).toContain("from('hand_atomic_commits')");
   });
 
-  it('bounds the scan at the seat generation it is already required to be inside', () => {
-    // Without this the query reads the table's entire history and the guard
-    // below throws most of it away - which is what timed out.
-    expect(READ, 'the read must not scan before the seat it is proving').toContain(
-      ".gte('completed_at', seatJoinedAt)"
-    );
+  it('lets the immutable candidate choose one exact generation', () => {
+    expect(CANDIDATE_READ).toContain(".eq('tournament_id', this.tournamentId)");
+    expect(CANDIDATE_READ).toContain(".eq('eliminated_user_id', userId)");
+    expect(CANDIDATE_READ).toContain(".order('hand_number', { ascending: false })");
+    expect(CANDIDATE_READ).toContain(".order('id', { ascending: false })");
+    expect(CANDIDATE_READ).toContain('.limit(1)');
   });
 
-  it('still asks for the newest match, and only one', () => {
-    // The bound narrows the range; it must not change which row wins.
-    expect(READ).toContain(".order('completed_at', { ascending: false })");
-    expect(READ).toContain('.limit(1)');
-    expect(READ).toContain(".eq('status', 'succeeded')");
-    expect(READ).toContain("contains('result'");
+  it('reads only the candidate hand and never scans JSON settlement history', () => {
+    expect(ATOMIC_READ).toContain(".eq('table_id', tableId)");
+    expect(ATOMIC_READ).toContain(".eq('hand_number', handNumber)");
+    expect(ATOMIC_READ).toContain(".eq('hand_id', handId)");
+    expect(ATOMIC_READ).toContain(".gte('committed_at', seatJoinedAt)");
+    expect(ATOMIC_READ).toContain('.maybeSingle()');
+    expect(EVIDENCE).not.toContain("from('settlement_idempotency_keys')");
+    expect(EVIDENCE).not.toContain("contains('result'");
   });
 
-  it('keeps the seat-generation guard that the bound mirrors', () => {
-    // If this guard is ever removed the bound above stops being equivalent and
-    // becomes a behaviour change. They live and die together.
-    expect(EVIDENCE).toContain('predates this seat generation');
-    expect(EVIDENCE).toMatch(/settlementAt\s*<\s*joinedAt/);
+  it('keeps the seat-generation guard on the exact atomic receipt', () => {
+    expect(EVIDENCE).toContain("Date.parse(String(atomic?.committed_at ?? ''))");
+    expect(EVIDENCE).toContain('< Date.parse(seatJoinedAt)');
+    expect(EVIDENCE).toContain('a different or funded live seat generation vetoes the candidate');
   });
 
   it('an unreadable answer still defers instead of being read as "no evidence"', () => {
     // The whole defect was an error being retried for ever; the refusal itself
     // is correct and must stay. UNKNOWN is not NONE (CLAUDE.md 10.86 rule 2).
-    expect(EVIDENCE).toContain('accepted zero-stack settlement is unreadable');
-    expect(EVIDENCE).toContain('no exact accepted zero-stack settlement exists yet');
+    expect(EVIDENCE).toContain('latest knockout candidate is unreadable');
+    expect(EVIDENCE).toContain('atomic receipt for hand #${handNumber} is unreadable');
   });
 
   it('the index the plan depends on is recorded in a migration', () => {

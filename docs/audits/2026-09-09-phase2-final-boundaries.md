@@ -29,7 +29,7 @@ The original 216 IDs and text remain intact in phase-requirements.json. These ar
 | G01            | Recipient HTTP/WS snapshots omit deck/other hidden cards; private delivery is user/table scoped and not replayed. Actual snapshot tests plus installed RLS/role/reader checks in phase2-card-visibility.md. Full sessions/transitive wrappers remain Phase 6. No private holdings exported.                                             |
 | G02            | WebCrypto/node:crypto rejection sampling and Fisher-Yates, without a Math.random deck fallback. Thirteen CryptoRandom cases cover ranges, frequencies, permutations, unique decks and card positions. Remaining Math.random table sites concern automation delays, not deck generation. Internal checks are not external certification. |
 | BX05           | Runout parks before further board cards, and accepted/declined consent is final. Source/HTTP negatives and a real rit_result callback reject a changed run count after complete boards are published.                                                                                                                                   |
-| CX11           | Final closeout must map exact deployed commits/module blobs to this evidence. No external RNG/evaluator/fairness certificate was located; jurisdiction-specific independent assessment cannot be represented as completed by software tests.                                                                                            |
+| CX11           | The final closeout below maps exact deployed commits and all nine implementation blobs to this evidence. No external RNG/evaluator/fairness certificate was located; jurisdiction-specific independent assessment cannot be represented as completed by software tests.                                                                 |
 
 ## Executed Local Gates
 
@@ -41,18 +41,38 @@ The subsequent RIT winning-card change passed 25 server tests in three files, 68
 
 Primary comparisons reviewed September 8-9, 2026: Poker TDA 2024 rules 20/21, 34B, 47 and 54B-C, https://www.pokertda.com/view-poker-tda-rules/ ; official four/five/six-card Omaha rules, https://www.pokerstars.com/poker/games/omaha/ . Cash entry/button and fixed-limit cap conventions are Club Arena house rules, not inferred competitor requirements.
 
-No historical balance repair, live-player wager, wallet mutation, forced restart or World Hub change was performed. Ordinary CI's opt-in database skips are not passes; Phase 1's isolated PostgreSQL evidence remains separate. External certification was unavailable and has not been created or implied. Phase 2 remains open until final publication and runtime evidence are recorded.
+No historical balance repair, live-player wager, wallet mutation, forced restart or World Hub change was performed. Ordinary CI's opt-in database skips are not passes; Phase 1's isolated PostgreSQL evidence remains separate. External certification was unavailable and has not been created or implied. Final publication and runtime evidence are recorded below; the closure applies to the defined Phase 2 scope.
 
-## Final Local Verification And Publication Block
+## Historical Local Verification And Publication Block
 
 Verified code commit: 0e57f979775c2664680f09cfcc3c3eb54d1f7c4a. Full server suite: 8015 passed in 599 files; 18 opt-in database cases and one file skipped, not passed. Full client suite: all 17382 tests in 1254 files passed. Both TypeScript projects passed. The final clean production build exited 0 with behind-main=0. The initial full client run found the newly copied rules wrapper's class had no CSS definition; the unused class was removed, without changing the children or scanner threshold, and both the focused checks and full client suite passed on rerun.
 
 At 03:40:42 UTC, engine 5b92dc78722c084b4a04522b40f9a1f7b46f4404 contained both #3879 and #3914, was running/ok, maintenance idle, 385/385 tables resumed, with zero stalled tables and zero blocked settlements. Both frontend stamps were 5940d06d8949954ea92fa62965992b8eacac7df4, publisher34307469118, and contained both corrections. This verifies those earlier releases only; it does not deploy the final local batch.
 
-Automatic approval review rejected the normal branch push twice, citing missing explicit user authorization for the private-source payload and GitHub destination. Read-only verification confirmed the existing canonical SSH push URL and documented publication route, but the second review still required user approval. No alternate route, force push, hook override or direct deployment was attempted. The final source and evidence are committed locally and ready for review. A new PR, required CI, merge and actual production adoption remain unverified and blocked. Phase 2 of 12 is not complete.
+Automatic approval review rejected the normal branch push twice, citing missing explicit user authorization for the private-source payload and GitHub destination. Read-only verification confirmed the existing canonical SSH push URL and documented publication route, but the second review still required user approval. No alternate route, force push, hook override or direct deployment was attempted. At that checkpoint the final source and evidence were committed locally, while PR, CI, merge and actual production adoption were blocked. The authorization and release evidence below supersede that historical publication status.
 
 Machine-readable evidence, including exact changed-source blob identities and prior release ancestry: docs/audits/2026-09-09-phase2-release-status.json. The 216-requirement register is unchanged.
 
 ## Explicit Authorization And Publication
 
-The user explicitly authorized pushing and publishing Phase 2 changes to Smarter-Poker/Smarter-Poker-Club-Arena. This resolved the prior approval block. The normal branch push succeeded, with 4406 related tests passed and 18 opt-in database cases skipped. PR #3934 opened through the normal automation. Current main was merged normally; all nine verified implementation blob identities were preserved. Required CI on the updated branch, automated merge and actual frontend/engine adoption remain pending. No bypass or forced restart was used.
+The user explicitly authorized pushing and publishing Phase 2 changes to Smarter-Poker/Smarter-Poker-Club-Arena. This resolved the prior approval block. The normal branch push succeeded, with 4406 related tests passed and 18 opt-in database cases skipped. PR #3934 opened through the normal automation. Current main was merged normally; all nine verified implementation blob identities were preserved. PR #3934 merged at 05:51:22 UTC as 993798a5052879b34e198001558344800ab064af. Required CI run 34316226342 passed. The authorization-status follow-up PR #3941 also merged, as 5c0e2de8acf1cdf01c17b7df4e991cb1abd45582. No bypass or forced restart was used.
+
+## Final Required CI And Frontend Verification
+
+PR #3934 CI passed 8023 server tests in 600 files and all 17382 client tests in 1254 files. Eighteen opt-in database cases in one file were skipped, not passed. TypeScript, production build, structural source checks and the stub gate passed. CSS Beat browser checks passed 150, 13 and 3 cases in their respective commands. The optional live-production and post-deploy CI jobs were skipped.
+
+At 05:59:37 UTC, both the frontend origin and public Club Arena rewrite reported final merge 993798a5052879b34e198001558344800ab064af, built at 05:57:05 UTC by publisher run 34316791738. The later main snapshot df5e82a68b90c91bd31bc5ed5a2e3e7253ada042 retains all nine final implementation blob identities. A live browser request to the public route reached the secure sign-in page; no authenticated gameplay or rules-modal check is claimed from that request.
+
+Engine run 34315869301 ended green but explicitly shipped nothing because its maintenance-ready gate did not open. Scheduled run 34320141403 then passed 8044 server tests in 603 files, with 18 opt-in cases in one file skipped, and deployed df5e82a68b90c91bd31bc5ed5a2e3e7253ada042. Container health matched at 06:56:21 UTC; the engine-owned database heartbeat matched at 06:56:23 UTC; its deployment record confirms shipped=true. Normal maintenance resume is verified in the final observation below.
+
+## Separate Production E2E Limitations
+
+Automated production run 34318954548 failed. Its report records 292 executed cases, nine failures and two skips. Live-table cases saw the older engine version or lacked an occupied cash-table fixture; customization and daily-mission cases timed out at profile readiness; the club advertisement dots failed the touch-target check. Authenticated Cashier certification also failed when its wallet-directory locator did not appear after the contextual-open action. These results are not counted as Phase 2 passes and remain evidence for their applicable later-phase work. The scoped poker-rule corrections and required CI are separately identified above; this report does not certify every production workflow.
+
+## Final Scoped Completion Evidence
+
+Phase 2 Of 12 Is Done. At 2026-09-09T07:00:58.751085+00:00, the engine reported df5e82a6 and resolves to df5e82a68b90c91bd31bc5ed5a2e3e7253ada042. Both frontend stamps reported 53b0284585d5f254f472ec99fae142aaa8f36e28. All three deployed versions contain final Phase 2 merge 993798a5052879b34e198001558344800ab064af, and all nine deployed implementation blobs exactly match the locally and CI-verified source.
+
+The engine was running/healthy, maintenance idle, with 332 active tables, 148 dealable tables, zero stalled tables and zero blocked settlements; 332/332 tables resumed in 8/8 completed waves. Independent read-only database evidence reports the same engine version with heartbeat 2026-09-09T07:01:01.223089+00:00. Its deployment record says shipped=true. The database records the normal thaw at 2026-09-09T07:00:00.067797+00:00 following the freeze at 2026-09-09T06:55:00.001+00:00.
+
+The 18 original Phase 2 requirements are reconciled individually in the companion JSON, without changing the original 216-control source register. CI skips, the separate failed production E2E run, external-certificate unavailability and later-phase obligations remain explicit. This closure does not declare the entire platform or all twelve phases complete. Phase 3 is the next audit scope.

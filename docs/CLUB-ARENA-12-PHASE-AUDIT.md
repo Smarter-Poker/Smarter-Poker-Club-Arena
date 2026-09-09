@@ -41,11 +41,15 @@ The production engine observed September 9 at 00:37:47 UTC reports version 276fa
 
 This continuation also passed server TypeScript, 80 focused receipt/departure/rebuy tests and 18 isolated PostgreSQL tests on source 078dbd26861f33f0f49492c61c52ac4637aa230b. Later changes in that source are not all claimed deployed by the older engine observation. The closure applies to the named Phase 1 corrections. It does not certify the entire financial system or the 216-requirement programme.
 
-Historical baseline: 16 failures and 28 passing tests before correction; 73 focused tests passed after the first correction. Subsequent follow-up and runtime gates are resolved by the evidence above. Phase 2 is poker rules and fairness for supported variants; its audit remains to be completed under this programme.
+Historical baseline: 16 failures and 28 passing tests before correction; 73 focused tests passed after the first correction. Subsequent follow-up and runtime gates are resolved by the evidence above. Phase 2 is poker rules and fairness for supported variants; its scoped completion evidence is recorded below.
 
-## Phase 2 Continuation Status
+## Phase 2 Verification Status
 
-In progress, recovered September 9. The frozen action-context PR #3879 and short-blind pot-limit PR #3914 are merged with passing CI. Final consent, Omaha selection, cash-button, variant-rule and winning-card corrections have local behavioral evidence. The 18 Phase 2 controls are reconciled in docs/audits/2026-09-09-phase2-final-boundaries.md. Final local verification passed 8015 server tests (18 opt-in database cases skipped), all 17382 client tests, both TypeScript projects and a clean production build. The user explicitly authorized publication, the normal push succeeded and PR #3934 opened. Final CI, merge and runtime adoption remain pending. See docs/audits/2026-09-09-phase2-release-status.json. No external fairness certification is claimed. Phase 2 of 12 is not complete until those gates are recorded.
+Phase 2 Of 12 Is Done for the defined internal poker-rule and fairness scope. The 18 original Phase 2 controls are reconciled in docs/audits/2026-09-09-phase2-final-boundaries.md and docs/audits/2026-09-09-phase2-release-status.json. Final correction PR #3934 merged as 993798a5052879b34e198001558344800ab064af with required CI passing 8023 server tests and 17382 client tests, both TypeScript projects, production build and CSS Beat checks. Eighteen opt-in database cases were skipped, not passed.
+
+Scheduled engine run 34320141403 passed 8044 server tests and shipped df5e82a68b90c91bd31bc5ed5a2e3e7253ada042; health and the engine-written database heartbeat match. At 2026-09-09T07:00:58.751085+00:00, normal maintenance resume was complete, with zero stalled tables and blocked settlements. Both frontend stamps reported 53b0284585d5f254f472ec99fae142aaa8f36e28. All three deployed versions contain the final merge, and all nine audited implementation blobs match the verified source.
+
+External fairness certification was not located and is not claimed. The separate failed production E2E run is documented for later-phase follow-up; no all-platform E2E pass is claimed. The original 216-control register remains unchanged. Phase 3, covering MTT, SNG, Spins and satellites, is the next phase.
 
 ## Required Phase Summary
 

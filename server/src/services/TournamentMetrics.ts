@@ -79,6 +79,15 @@ const EMPTY: TournamentMetricsSnapshot = {
   collectedAt: 0,
 };
 
+/**
+ * How stale the database snapshot may be before `poker_tournament_fleet_unserved`
+ * refuses to answer. The refresh runs every 60s, so 300s is five missed reads:
+ * long enough that a single slow query is not an outage, short enough that the
+ * gauge cannot go on asserting "nothing is served" from a number nobody has
+ * checked since the last engine restart. See the fail-closed note in the header.
+ */
+export const FLEET_SNAPSHOT_MAX_AGE_SECONDS = 300;
+
 /** How long a tournament may sit past its start time before it is overdue. */
 export const OVERDUE_START_MINUTES = 10;
 /** How long COMPLETING is tolerated before it counts as stuck. */
@@ -186,13 +195,74 @@ export class TournamentMetrics {
    * `stale_seconds` is emitted even when nothing has ever been collected — and
    * especially then. A collector that has never succeeded reports a very large
    * staleness, which is a firing alert, rather than a tidy row of zeroes.
+   *
+   * ── THE OTHER HALF OF THE MEASUREMENT (2026-09-09) ─────────────────────────
+   *
+   * The header of this file says the valuable signal is "a tournament that
+   * should be running is not", and that an engine reporting only on what it
+   * OWNS can never see it, "because the failure IS the absence of a manager".
+   * Both halves are true, and until today only one of them was published: the
+   * database said 120 tournaments were RUNNING and nothing said how many this
+   * process was actually running.
+   *
+   * Measured on production 2026-09-09 05:52 UTC, and this is why it matters:
+   *
+   *     /health   activeTables: 102, activeTournaments: 0
+   *     /metrics  poker_tournaments_running 120
+   *               poker_tournament_elimination_scheduler_registered 0
+   *
+   * A full cash fleet and not one of a hundred and twenty tournaments - with
+   * `liveness: ok`, because every liveness branch was satisfied: the cash
+   * tables were progressing, the discovery loop was ticking, and
+   * `barrenLeaderDead` needs `tables.length === 0`, which a busy cash fleet can
+   * never be. Thirteen events had dealt no hand for over an hour, the oldest
+   * for fifteen, with 183 players sitting in them, and nothing anywhere said so.
+   *
+   * That is `EngineLivenessVerdict`'s own documented failure mode one level up:
+   * a signal that reads healthy because it was measuring the wrong denominator.
+   * The engine is the only thing that knows both numbers, so it computes the
+   * comparison here rather than leaving a rule to guess it from series that do
+   * not carry leadership or boot state:
+   *
+   *   - a STANDBY instance owns nothing by design, so it never reports unserved;
+   *   - a BOOTING instance has not finished adopting, so neither does it;
+   *   - a STALE snapshot means `running` is a number nobody has re-read, so the
+   *     gauge refuses rather than asserting from it (10.86 rule 1: "I could not
+   *     tell" is its own outcome).
+   *
+   * It is deliberately NOT wired into the liveness verdict. Killing a process
+   * that holds a hundred live cash tables to fix an unserved tournament fleet
+   * would void every hand in flight, which is the exact regression the three
+   * notes in `EngineLivenessVerdict.ts` were each written about.
    */
-  toPrometheus(): string[] {
+  toPrometheus(
+    fleet: { owned: number; isLeader: boolean; stillBooting: boolean } = {
+      owned: 0,
+      isLeader: false,
+      stillBooting: true,
+    }
+  ): string[] {
     const s = this.snapshot;
     const staleSeconds =
       s.collectedAt === 0 ? 86_400 : Math.max(0, Math.round((Date.now() - s.collectedAt) / 1000));
 
+    const owned = Math.max(0, Math.floor(fleet.owned));
+    const unserved =
+      fleet.isLeader &&
+      !fleet.stillBooting &&
+      staleSeconds <= FLEET_SNAPSHOT_MAX_AGE_SECONDS &&
+      s.running > 0 &&
+      owned === 0
+        ? 1
+        : 0;
+
     return [
+      '# HELP poker_tournaments_owned Tournament managers THIS engine holds. The database half of this comparison is poker_tournaments_running.',
+      '# TYPE poker_tournaments_owned gauge',
+      `poker_tournaments_owned ${owned}`,
+      '# HELP poker_tournament_fleet_unserved 1 when this leader, past boot and on a fresh snapshot, owns NO manager while the database says tournaments are RUNNING. Never set on a standby, a booting instance, or a stale read.',
+      '# TYPE poker_tournament_fleet_unserved gauge',
+      `poker_tournament_fleet_unserved ${unserved}`,
       '# HELP poker_tournaments_running Tournaments the database says are RUNNING',
       '# TYPE poker_tournaments_running gauge',
       `poker_tournaments_running ${s.running}`,

@@ -192,7 +192,15 @@ describe('the seed is quoted net of what is already in the wallet', () => {
     expect(panel).toMatch(
       /const stillNeeded = Math\.max\(required - Number\(state\?\.seeded_amount \?\? 0\), 0\)/
     );
-    expect(panel).toMatch(/spinActivationApi\.activate\(clubId, stillNeeded, maxStake, wallet\)/);
+    /* The call now also carries the caller's idempotency key (2026-09-09):
+       activation seeds a pool out of a real wallet and the transport used to
+       mint a fresh key inline on every request, so a committed activation
+       whose response was lost seeded it again. Arguments, in order, with the
+       key allowed to follow. */
+    expect(panel).toMatch(
+      /spinActivationApi\.activate\(\s*clubId,\s*stillNeeded,\s*maxStake,\s*wallet[,)]/
+    );
+    expect(panel).toMatch(/activateKeyRef\.current\.key/);
   });
 
   it('quotes that number on the button, not the gross', () => {

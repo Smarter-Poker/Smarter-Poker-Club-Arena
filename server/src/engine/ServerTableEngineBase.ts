@@ -4478,11 +4478,19 @@ export abstract class ServerTableEngineBase {
    * If no hand is in progress, chips are applied immediately (no cap concern
    * because no pot can change the player's stack before next hand).
    */
-  /** Table max buy-in (DB value or 200×BB fallback). */
+  /** Table max buy-in (DB value or 200×BB fallback), TO THE CENT.
+   *
+   *  This number is the ceiling every add-on is sized against and is passed
+   *  to `resolve_pending_addon` as `p_max_buy_in`, whose receipt must satisfy
+   *  `applied + refunded = amount` exactly or the post-commit obligation
+   *  refuses and the table stops dealing. `bb * 200` is a float product
+   *  (0.07 * 200 = 14.000000000000002), and a `tables.max_buy_in` carrying a
+   *  half-cent would be worse. */
   protected getMaxBuyIn(): number {
-    return this.tableInfo?.max_buy_in
+    const raw = this.tableInfo?.max_buy_in
       ? Number(this.tableInfo.max_buy_in)
       : (this.tableInfo?.big_blind || 2) * 200;
+    return Number.isFinite(raw) ? Math.round(raw * 100) / 100 : 0;
   }
   protected pineappleDiscardTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -4675,7 +4683,7 @@ export abstract class ServerTableEngineBase {
        * heads-up rule in one of them" the other cannot silently keep billing
        * the wrong seat. Same argument, one layer up.
        */
-      if (sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
+      if (roster.length === 2 && sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
         const headsUp = headsUpButtonSeat(sortedSeats, this.lastBigBlindSeat);
         if (headsUp !== null && headsUp > 0) return headsUp;
       }

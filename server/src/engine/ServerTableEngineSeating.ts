@@ -174,7 +174,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // is unaffected and still delivers every debited chip — this map is only
       // the cap cache). Re-read the live value and accumulate onto that.
       const livePending = this.pendingAddOns.get(userId) || 0;
-      this.pendingAddOns.set(userId, livePending + applied);
+      this.pendingAddOns.set(userId, Math.round((livePending + applied) * 100) / 100);
       // A2: a durable ledger row now exists (written by the RPC in the same
       // transaction as the debit). Make sure the next sweep looks for it.
       this.requestPendingAddOnSweep();
@@ -186,7 +186,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
 
     // Between hands — wallet debited AND table_seats bumped by the RPC.
-    player.stack += applied;
+    // Snap to cents (#3358): the queued branch above already rounds its
+    // accumulation, and the resume path at the bottom of the file rounds the
+    // same sum; this was the one add-on branch that did not, so a repeated
+    // top-up drifted the in-memory stack away from the row the RPC wrote.
+    player.stack = Math.round((player.stack + applied) * 100) / 100;
     // CHIP CONTINUITY (I3): the database raised the baseline with the chips;
     // refresh the mirror so the countdown and the leave lock agree with it.
     void this.chipContinuity

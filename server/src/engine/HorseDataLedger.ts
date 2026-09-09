@@ -711,6 +711,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('communityCards2', 'board 2 (bomb pots)'),
   state('communityCards3', 'board 3 (bomb pots)'),
   state('pot', 'pot including the bet faced'),
+  state(
+    'contestablePot',
+    "pot hero can actually win after the effective call, excluding hero's uncommitted call"
+  ),
   state('currentBet', 'the street bet to match'),
   state('minRaise', 'legal raise increment'),
   state('lastRaise', 'last raise size (legalize)'),

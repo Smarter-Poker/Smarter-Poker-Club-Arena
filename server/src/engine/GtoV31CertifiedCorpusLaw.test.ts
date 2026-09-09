@@ -47,8 +47,31 @@ const INPUT_BOOTSTRAP = read(
 const INPUT_CANONICAL_TYPES = read(
   'supabase/migrations/20260909071759_v31_input_identity_requires_json_strings.sql'
 );
+const TWO_HOLE_SUIT_KEY = read(
+  'supabase/migrations/20260909165541_v31_hand_keys_bind_both_hole_card_suits.sql'
+);
+const POSSIBLE_DECK_KEY = read(
+  'supabase/migrations/20260909170039_v31_hand_keys_reject_impossible_decks.sql'
+);
+const STREET_BOUND_KEY = read(
+  'supabase/migrations/20260909170749_v31_hand_key_counts_match_street.sql'
+);
+const CANONICAL_POLICY_JSON = read(
+  'supabase/migrations/20260909171644_v31_policy_json_is_canonical.sql'
+);
+const CANONICAL_DATASET_DECLARATION = read(
+  'supabase/migrations/20260909172537_v31_dataset_and_source_integers_are_canonical.sql'
+);
+const CONTROL_RECEIPT_TYPES = read(
+  'supabase/migrations/20260909175000_v31_control_receipts_use_exact_json_types.sql'
+);
+const V31_AGREEMENT = read(
+  'supabase/migrations/20260909180000_v31_agreement_receipts_bind_the_runtime_cell.sql'
+);
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
 const LOGIC = read('server/src/engine/HorseLogic.ts');
+const AGREEMENT_SCORER = read('server/src/benchmark/HorseSolverAgreementV31.ts');
+const LEAGUE = read('server/src/benchmark/HorseLeague.ts');
 const LOADER = read('server/src/services/GtoPostflopV31Loader.ts');
 const EVALUATOR = read('server/src/scripts/gtoV31Evaluate.ts');
 const AUDIT = read('server/src/engine/HorseDataLedger.ts');
@@ -202,6 +225,61 @@ describe('the certified V31 release boundary', () => {
     expect(RANK_HOLDOUT).toContain("fn_gto_v31_board_rank_signature('AhQc6d')");
   });
 
+  it('binds every compact holding to both rank-specific hole-card suits', () => {
+    expect(TWO_HOLE_SUIT_KEY).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_hand_key_valid(p_key text)'
+    );
+    expect(TWO_HOLE_SUIT_KEY).toContain(
+      "public.fn_gto_v31_hand_key(1321,'Qs7s2c') IS DISTINCT FROM 'AKo:20'"
+    );
+    expect(TWO_HOLE_SUIT_KEY).toContain(
+      "public.fn_gto_v31_hand_key(1272,'Qs7s2c') IS DISTINCT FROM 'AKo:02'"
+    );
+    expect(TWO_HOLE_SUIT_KEY).toContain(
+      "public.fn_gto_v31_hand_key(1172,'Qs7s2c3c') IS DISTINCT FROM 'AKs:22'"
+    );
+    expect(TWO_HOLE_SUIT_KEY).toContain(
+      'cannot change the V31 hand-key contract while certified datasets exist'
+    );
+    expect(TWO_HOLE_SUIT_KEY).toContain('IF NOT public.fn_gto_v31_hand_key_valid(v_hand.key)');
+    expect(STORE).toContain('/^([AKQJT98765432])([AKQJT98765432])([so]?):([0-5])([0-5])$/');
+    expect(STORE).not.toContain('export function boardFlushSuit');
+    expect(POSSIBLE_DECK_KEY).toContain("public.fn_gto_v31_hand_key(1321,'QsQs2c') IS NOT NULL");
+    expect(POSSIBLE_DECK_KEY).toContain("public.fn_gto_v31_hand_key(1321,'As7d2c') IS NOT NULL");
+    expect(STREET_BOUND_KEY).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_hand_key_valid(p_key text,p_street text)'
+    );
+    expect(STREET_BOUND_KEY).toContain('gto_v31_runtime_cells_hand_keys_match_street_chk');
+    expect(STREET_BOUND_KEY).toContain(
+      "IF NOT public.fn_gto_v31_hand_key_valid(v_hand.key,p_cell->>'street')"
+    );
+    expect(STREET_BOUND_KEY).toContain("public.fn_gto_v31_hand_key_valid('AKo:31','flop')");
+    expect(STORE).toContain('canonicalHandKey(handKey, row.street)');
+    expect(CANONICAL_POLICY_JSON).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_action_specs_valid(p_specs jsonb)'
+    );
+    expect(CANONICAL_POLICY_JSON).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_compact_matrices_valid('
+    );
+    expect(CANONICAL_POLICY_JSON).toContain('gto_v31_runtime_cells_compact_matrices_valid_chk');
+    expect(CANONICAL_POLICY_JSON).toContain(
+      'OR NOT public.fn_gto_v31_source_node_scalar_types_valid(p_node)'
+    );
+    expect(STORE).toContain('spec.size_value <= 20');
+    expect(STORE).toContain('row.source_rows === row.train_source_rows + row.holdout_source_rows');
+    expect(CANONICAL_DATASET_DECLARATION).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_json_safe_integer('
+    );
+    expect(CANONICAL_DATASET_DECLARATION).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_declared_coverage_valid(p_coverage jsonb)'
+    );
+    expect(CANONICAL_DATASET_DECLARATION).toContain('gto_v31_datasets_declared_coverage_valid_chk');
+    expect(CANONICAL_DATASET_DECLARATION).toContain('gto_v31_datasets_quality_gates_valid_chk');
+    expect(CANONICAL_DATASET_DECLARATION).toContain(
+      "jsonb_typeof(p_dataset->v_key) IS DISTINCT FROM 'string'"
+    );
+  });
+
   it('keeps solver and manifest identities byte-stable across attestation and provenance', () => {
     expect(CANONICAL_IDENTITY).toContain('gto_v31_datasets_solver_version_canonical_chk');
     expect(CANONICAL_IDENTITY).toContain('gto_v31_datasets_manifest_version_canonical_chk');
@@ -286,7 +364,7 @@ describe('candidate and active policy stay physically separate', () => {
     expect(LOADER).toContain("supabase.rpc('fn_gto_v31_evaluation_cells'");
     expect(LOADER).toContain('replaceGtoPostflopV31Evaluation(rows);');
     expect(LOADER).toContain(
-      'const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;'
+      'const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;'
     );
   });
 });
@@ -310,6 +388,27 @@ describe('agreement and liveness are daily evidence', () => {
     expect(AGREEMENT).toContain(
       'CREATE OR REPLACE FUNCTION public.ca_horse_solver_agreement_decisions('
     );
+    expect(V31_AGREEMENT).toContain(
+      'CREATE TABLE IF NOT EXISTS public.horse_solver_agreement_v31_decisions'
+    );
+    expect(V31_AGREEMENT).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_horse_solver_agreement_v31_decision('
+    );
+    expect(V31_AGREEMENT).toContain('v_distribution<>v_cell.hand_matrix->');
+    expect(V31_AGREEMENT).toContain(
+      "v_seal->>'cell_payload_checksum'<>v_cell.cell_payload_checksum"
+    );
+    expect(V31_AGREEMENT).toContain('smarter-poker:gto-v31-release-gate');
+    expect(V31_AGREEMENT).toContain('solver_agreement_v31_stale_dataset');
+    expect(V31_AGREEMENT).toContain('solver_agreement_v31_missing_scenarios');
+    expect(V31_AGREEMENT).toContain(
+      'Agreement is execution/reference evidence, not exploitability'
+    );
+    expect(AGREEMENT_SCORER).toContain('buildGtoV31EvaluationScenarios');
+    expect(AGREEMENT_SCORER).toContain('executedAsIntended ? selectedProbability : 0');
+    expect(AGREEMENT_SCORER).toContain('scenarioSpots !== targetForScenario');
+    expect(AGREEMENT_SCORER).toContain('decisions.length !== maxSpots');
+    expect(LEAGUE).toContain("reportError(err, 'HorseLeague.agreement.v31')");
   });
 
   it('requires independent M1, M2 and compactor receipts and splices every audit', () => {
@@ -324,8 +423,21 @@ describe('agreement and liveness are daily evidence', () => {
     expect(LIVENESS).toContain('fn_audit_solver_agreement(p_day)');
     expect(LIVENESS).toContain('fn_audit_gto_v31_certified(p_day)');
     expect(LIVENESS).toContain('fn_audit_solver_pipeline_liveness(p_day)');
+    expect(CONTROL_RECEIPT_TYPES).toContain(
+      '(SELECT count(*) FROM jsonb_object_keys(p_heartbeat)) <> 21'
+    );
+    expect(CONTROL_RECEIPT_TYPES).toContain(
+      '(SELECT count(*) FROM jsonb_object_keys(p_heartbeat)) <> 18'
+    );
+    expect(CONTROL_RECEIPT_TYPES).toContain("jsonb_typeof(p_artifact->'stack_depth')<>'number'");
+    expect(CONTROL_RECEIPT_TYPES).toContain("NOT (p_specs ? 'c')");
+    expect(CONTROL_RECEIPT_TYPES).toContain("v_action.key !~ '^(c|f|b[1-9][0-9]{0,78})$'");
+    expect(CONTROL_RECEIPT_TYPES).toContain("'^r:0(:c|:f|:b[1-9][0-9]{0,78}|:[2-9TJQKA][cdhs])*$'");
+    expect(CONTROL_RECEIPT_TYPES).toContain('s.solved_v2_at=v_solved_at');
+    expect(CONTROL_RECEIPT_TYPES).toContain('v_rows_written + v_invalid <> v_rows_done');
     expect(AUDIT).toContain("'gto_v31_runtime_cells'");
     expect(AUDIT).toContain("'horse_solver_agreement_decisions'");
+    expect(AUDIT).toContain("'horse_solver_agreement_v31_decisions'");
   });
 
   it('keeps a committed PostgreSQL 17 adversarial harness for the full release sequence', () => {
@@ -333,10 +445,15 @@ describe('agreement and liveness are daily evidence', () => {
     const certified = read('scripts/ci/probes/horse-phase4-certified-solver/certified-v31.sql');
     const decisions = read('scripts/ci/probes/horse-phase4-certified-solver/solver-agreement.sql');
     const pulses = read('scripts/ci/probes/horse-phase4-certified-solver/pipeline-liveness.sql');
+    const ci = read('.github/workflows/ci.yml');
     const bootstrap = read(
       'scripts/ci/probes/horse-phase4-certified-solver/input-bundle-bootstrap.sql'
     );
-    expect(runner).toContain('PostgreSQL 17 is required');
+    expect(runner).toContain('PostgreSQL 17 or Docker is required');
+    expect(ci).toContain('Certified V31 PostgreSQL 17 behavior gate');
+    expect(ci).toContain('needs.changes.outputs.phase4');
+    expect(V31_AGREEMENT).toContain('AND run_date=p_day');
+    expect(V31_AGREEMENT).toContain('solver_agreement_v31_imbalanced_scenarios');
     expect(certified).toContain('database did not seal the checksum-less worker node');
     expect(certified).toContain('false all-in source node was accepted');
     expect(certified).toContain('semantic open-role forgery was accepted');
@@ -344,6 +461,9 @@ describe('agreement and liveness are daily evidence', () => {
     expect(certified).toContain('a legacy evaluation receipt passed the candidate gate');
     expect(certified).toContain('a changed release receipt passed the promotion gate');
     expect(certified).toContain('a certified evaluation source remained mutable');
+    expect(certified).toContain('forged V31 cell seal was accepted');
+    expect(certified).toContain('forged V31 regret was accepted');
+    expect(certified).toContain('shared agreement drill-down did not route the V31 reference');
     expect(certified).toContain('certification status did not reconcile');
     expect(decisions).toContain('SOLVER_AGREEMENT_BEHAVIOR_OK');
     expect(pulses).toContain('LIVENESS_BEHAVIOR_OK');

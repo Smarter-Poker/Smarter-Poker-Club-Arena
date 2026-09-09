@@ -15,7 +15,10 @@ beforeEach(() => {
       select: () => q,
       eq: () => q,
       or: () => q,
-      single: async () => ({ data: { id: recipient, username: 'VerifiedFriend' }, error: null }),
+      maybeSingle: async () => ({
+        data: { id: recipient, username: 'VerifiedFriend' },
+        error: null,
+      }),
       limit: async () => ({ data: table === 'friendships' ? [{ id: 'friend' }] : [], error: null }),
     };
     return q;

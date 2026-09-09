@@ -57,7 +57,7 @@ export default function DiamondWalletTransfer({
         .from('profiles')
         .select('id, alias, username')
         .eq('id', id)
-        .single();
+        .maybeSingle();
       if (!alive.current) return;
       if (error || !data) throw error || new Error('Player Not Found');
       const { data: friendship, error: friendshipError } = await supabase

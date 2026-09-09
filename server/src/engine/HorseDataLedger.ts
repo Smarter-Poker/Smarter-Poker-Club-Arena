@@ -817,7 +817,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_solver_agreement',
     'nightly',
     'fn_audit_solver_agreement (the daily audit); written by HorseLeague after the matchups via fn_horse_solver_agreement_add',
-    'V47: the absolute score - mean solver frequency of the action the horse chose, hold em push/fold spots only',
+    'reference-specific absolute scores: V47 hold em push/fold chart agreement and Phase 4 certified V31 postflop execution agreement; neither is exploitability',
     'V47',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -826,6 +826,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'nightly',
     'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions',
     'reconciled per-decision evidence behind the nightly chart-agreement summary, including the final action, reference mix, regret availability, and source seal',
+    'Phase4',
+    { dayColumn: 'run_date', freshnessDays: 2 }
+  ),
+  table(
+    'horse_solver_agreement_v31_decisions',
+    'nightly',
+    'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions; ca_horse_solver_agreement_v31_decisions',
+    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal',
     'Phase4',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),

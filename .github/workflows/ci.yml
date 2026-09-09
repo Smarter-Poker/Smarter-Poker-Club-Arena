@@ -107,6 +107,7 @@ jobs:
       src: ${{ steps.f.outputs.src }}
       server: ${{ steps.f.outputs.server }}
       tests: ${{ steps.f.outputs.tests }}
+      phase4: ${{ steps.f.outputs.phase4 }}
     steps:
       - id: f
         env:
@@ -148,6 +149,7 @@ jobs:
             echo "src=true"    >> "$GITHUB_OUTPUT"
             echo "server=true" >> "$GITHUB_OUTPUT"
             echo "tests=true"  >> "$GITHUB_OUTPUT"
+            echo "phase4=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "$FILES" | sed 's/^/  /'
@@ -166,10 +168,12 @@ jobs:
           # suite was skipped, the ruleset counted the skip as green, and main
           # was red for every pull request after it (five pins, three files).
           WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/)')
+          PHASE4=$(has '^(\.github/workflows/ci\.yml|scripts/ci/probes/horse-phase4-certified-solver/|supabase/migrations/20260909(165541|170039|170749|171644|172537|175000|180000)_|server/src/(benchmark/(HorseLeague|HorseSolverAgreementV31)|engine/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision/)|services/GtoPostflopV31Loader))')
           if [ "$WIDE" = "true" ]; then
             echo "src=true"    >> "$GITHUB_OUTPUT"
             echo "server=true" >> "$GITHUB_OUTPUT"
             echo "tests=true"  >> "$GITHUB_OUTPUT"
+            echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
             echo "::notice::build/config change - running everything"
             exit 0
           fi
@@ -191,6 +195,7 @@ jobs:
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
           echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/)')" >> "$GITHUB_OUTPUT"
           echo "tests=$(has '^(tests/|supabase/migrations/|server/|scripts/dev/)')"   >> "$GITHUB_OUTPUT"
+          echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -1110,6 +1115,15 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+
+      - name: Certified V31 PostgreSQL 17 behavior gate
+        if: >-
+          github.event_name == 'schedule' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.phase4 == 'true'
+        env:
+          PG17_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
   server:
     # COST 2026-08-23: this already ran, and passed, on the pull request -

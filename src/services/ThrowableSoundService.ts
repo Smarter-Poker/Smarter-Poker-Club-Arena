@@ -31,6 +31,7 @@
 
 import { soundService, haptic } from './SoundService';
 import type { ThrowWeight } from './ThrowableService';
+import { trackAudioContext } from '../lib/audioContexts';
 
 type Wave = OscillatorType;
 
@@ -75,6 +76,7 @@ class ThrowableSoundServiceClass {
         const AC = window.AudioContext || (window as any).webkitAudioContext;
         if (!AC) return false;
         this.ctx = new AC();
+        trackAudioContext(this.ctx);
         // Master chain: bus → compressor → speakers. The compressor is a
         // safety limiter: three bombs landing together squash gracefully
         // instead of hard-clipping the DAC.

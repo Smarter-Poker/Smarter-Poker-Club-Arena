@@ -191,6 +191,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+import { useCashierHistory } from '../hooks/useCashierHistory';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
@@ -365,8 +366,6 @@ export default function CashierPage() {
     );
   }, [recipients, recipientSearch, user?.id]);
 
-  // Transaction history state
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   // Buy Chips entry point (audit s21/s34: the server-priced purchase flow
   // worked end-to-end but nothing in the UI could reach it).
 
@@ -415,7 +414,6 @@ export default function CashierPage() {
     },
     { debounce: 500 }
   );
-  const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
   const [txPage, setTxPage] = useState(1);
   const TX_PAGE_SIZE = 25;
@@ -924,166 +922,126 @@ export default function CashierPage() {
   // LOAD TRANSACTIONS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const txLoadingRef = useRef(false); // Prevent duplicate loadTransactions calls
+  const readTransactions = useCallback(async (): Promise<Transaction[]> => {
+    if (!user?.id || !clubId) return [];
+    const historyClubId = (await resolveClubUUID(clubId)) || clubId;
+    // Query BOTH wallet_transactions AND chip_ledger for complete history
+    const [wtResult, clResult] = await Promise.all([
+      retryFetch(
+        () =>
+          supabase
+            .from('wallet_transactions')
+            .select(
+              'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
+            )
+            .eq('user_id', user.id)
+            // wallet_transactions has no club column; the cashier passes the
+            // club as related_entity_id. Rows with no entity (mints, global
+            // adjustments) are kept rather than hidden — the alternative is
+            // silently dropping records the user is entitled to see.
+            .or(`related_entity_id.eq.${historyClubId},related_entity_id.is.null`)
+            .order('created_at', { ascending: false })
+            .limit(50)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      ),
+      retryFetch(
+        () =>
+          supabase
+            .from('chip_ledger')
+            .select(
+              'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at, club_id'
+            )
+            // from_entity_id was missing here while the RLS policy allows it
+            // (performed_by OR from_entity_id OR to_entity_id), so chips moved
+            // OUT of this user by an admin or the system were readable but
+            // never requested — they simply vanished from their history.
+            .or(
+              `performed_by.eq.${user.id},to_entity_id.eq.${user.id},from_entity_id.eq.${user.id}`
+            )
+            // Scope to THIS club. Chips are per club, but this query had no
+            // club filter at all, so every club's cashier showed the same
+            // global history — and the CSV export inherited it.
+            .eq('club_id', historyClubId)
+            .order('created_at', { ascending: false })
+            .limit(50)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      ),
+    ]);
 
-  const loadTransactions = useCallback(async () => {
-    if (!user?.id) return;
-    if (!clubId) return;
-    if (txLoadingRef.current) return; // Deduplication — skip if already loading
-    txLoadingRef.current = true;
-    setLoadingTx(true);
-    try {
-      const historyClubId = (await resolveClubUUID(clubId)) || clubId;
-      // Query BOTH wallet_transactions AND chip_ledger for complete history
-      const [wtResult, clResult] = await Promise.all([
-        retryFetch(
-          () =>
-            supabase
-              .from('wallet_transactions')
-              .select(
-                'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
-              )
-              .eq('user_id', user.id)
-              // wallet_transactions has no club column; the cashier passes the
-              // club as related_entity_id. Rows with no entity (mints, global
-              // adjustments) are kept rather than hidden — the alternative is
-              // silently dropping records the user is entitled to see.
-              .or(`related_entity_id.eq.${historyClubId},related_entity_id.is.null`)
-              .order('created_at', { ascending: false })
-              .limit(50)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        ),
-        retryFetch(
-          () =>
-            supabase
-              .from('chip_ledger')
-              .select(
-                'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at, club_id'
-              )
-              // from_entity_id was missing here while the RLS policy allows it
-              // (performed_by OR from_entity_id OR to_entity_id), so chips moved
-              // OUT of this user by an admin or the system were readable but
-              // never requested — they simply vanished from their history.
-              .or(
-                `performed_by.eq.${user.id},to_entity_id.eq.${user.id},from_entity_id.eq.${user.id}`
-              )
-              // Scope to THIS club. Chips are per club, but this query had no
-              // club filter at all, so every club's cashier showed the same
-              // global history — and the CSV export inherited it.
-              .eq('club_id', historyClubId)
-              .order('created_at', { ascending: false })
-              .limit(50)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        ),
-      ]);
-
-      // Merge and deduplicate — chip_ledger entries get converted to transaction format
-      const wtData = (wtResult?.data || []) as any[];
-      const clData = (clResult?.data || []).map((entry: any) => ({
-        id: entry.id,
-        user_id: user.id,
-        wallet_type: 'PLAYER',
-        amount: entry.amount,
-        // Direction is who the chips moved BETWEEN, not who clicked the button.
-        // Keying off performed_by rendered every self-initiated credit (a mint
-        // to yourself, a refill you triggered) as a debit with a leading minus
-        // — money coming in displayed as money going out.
-        type:
-          entry.to_entity_id === user.id
-            ? 'credit'
-            : entry.from_entity_id === user.id
-              ? 'debit'
-              : entry.performed_by === user.id
-                ? 'debit'
-                : 'credit',
-        category: entry.category,
-        description: entry.description || `${entry.from_label} → ${entry.to_label}`,
-        related_entity_id: entry.to_entity_id,
-        created_at: entry.created_at,
-        _source: 'chip_ledger',
-        _from: entry.from_label,
-        _to: entry.to_label,
-      }));
-
-      // ── Cross-source dedupe ────────────────────────────────────────────
-      // The two tables record the SAME economic events with independent id
-      // spaces, so deduplicating by `id` (as this did) never removed anything:
-      // measured in production, 626 of 1,326 chip_ledger rows have a
-      // same-second, same-amount wallet_transactions twin for the same user.
-      // Every one of those was listed twice, and the CSV export double-counted
-      // with it. wallet_transactions is the authoritative ledger (the mint and
-      // transfer RPCs write it), so a chip_ledger row is dropped when a
-      // wallet_transactions row already describes the same movement.
-      const econKey = (amount: unknown, createdAt: string) =>
-        `${Math.abs(Number(amount) || 0)}@${new Date(createdAt).toISOString().slice(0, 19)}`;
-      const authoritative = new Set(wtData.map((tx) => econKey(tx.amount, tx.created_at)));
-
-      const seen = new Set<string>();
-      const merged = [...wtData, ...clData]
-        .filter((tx) => {
-          if (
-            tx._source === 'chip_ledger' &&
-            authoritative.has(econKey(tx.amount, tx.created_at))
-          ) {
-            return false;
-          }
-          if (seen.has(tx.id)) return false;
-          seen.add(tx.id);
-          return true;
-        })
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 100);
-
-      if (isMounted.current) {
-        setTransactions(merged);
-        try {
-          sessionStorage.setItem(
-            `cashier_tx_cache_${user.id}`,
-            JSON.stringify({
-              data: merged.slice(0, 30),
-              cachedAt: Date.now(),
-            })
-          );
-        } catch (e) {
-          reportError(e, 'CashierPage.sort');
-          /* storage full */
-        }
-      }
-    } catch (e) {
-      reportError(e, 'CashierPage.sort');
-      /* silent */
-    } finally {
-      txLoadingRef.current = false;
-      if (isMounted.current) setLoadingTx(false);
+    if (wtResult?.error) throw wtResult.error;
+    if (clResult?.error) throw clResult.error;
+    if (!Array.isArray(wtResult?.data) || !Array.isArray(clResult?.data)) {
+      throw new Error('Transaction history response is incomplete');
     }
-    // clubId added: history is now scoped to the club being viewed, so
-    // switching clubs must re-query rather than show the previous club's rows.
+
+    // Merge and deduplicate — chip_ledger entries get converted to transaction format
+    const wtData = (wtResult?.data || []) as any[];
+    const clData = (clResult?.data || []).map((entry: any) => ({
+      id: entry.id,
+      user_id: user.id,
+      wallet_type: 'PLAYER',
+      amount: entry.amount,
+      // Direction is who the chips moved BETWEEN, not who clicked the button.
+      // Keying off performed_by rendered every self-initiated credit (a mint
+      // to yourself, a refill you triggered) as a debit with a leading minus
+      // — money coming in displayed as money going out.
+      type:
+        entry.to_entity_id === user.id
+          ? 'credit'
+          : entry.from_entity_id === user.id
+            ? 'debit'
+            : entry.performed_by === user.id
+              ? 'debit'
+              : 'credit',
+      category: entry.category,
+      description: entry.description || `${entry.from_label} → ${entry.to_label}`,
+      related_entity_id: entry.to_entity_id,
+      created_at: entry.created_at,
+      _source: 'chip_ledger',
+      _from: entry.from_label,
+      _to: entry.to_label,
+    }));
+
+    // ── Cross-source dedupe ────────────────────────────────────────────
+    // The two tables record the SAME economic events with independent id
+    // spaces, so deduplicating by `id` (as this did) never removed anything:
+    // measured in production, 626 of 1,326 chip_ledger rows have a
+    // same-second, same-amount wallet_transactions twin for the same user.
+    // Every one of those was listed twice, and the CSV export double-counted
+    // with it. wallet_transactions is the authoritative ledger (the mint and
+    // transfer RPCs write it), so a chip_ledger row is dropped when a
+    // wallet_transactions row already describes the same movement.
+    const econKey = (amount: unknown, createdAt: string) =>
+      `${Math.abs(Number(amount) || 0)}@${new Date(createdAt).toISOString().slice(0, 19)}`;
+    const authoritative = new Set(wtData.map((tx) => econKey(tx.amount, tx.created_at)));
+
+    const seen = new Set<string>();
+    const merged = [...wtData, ...clData]
+      .filter((tx) => {
+        if (tx._source === 'chip_ledger' && authoritative.has(econKey(tx.amount, tx.created_at))) {
+          return false;
+        }
+        if (seen.has(tx.id)) return false;
+        seen.add(tx.id);
+        return true;
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 100);
+
+    return merged;
   }, [user?.id, clubId]);
 
+  const {
+    transactions,
+    loading: loadingTx,
+    error: txError,
+    load: loadTransactions,
+  } = useCashierHistory({ userId: user?.id, clubId, read: readTransactions });
+
   useEffect(() => {
-    if (action === 'history') {
-      // SWR: show cached transactions instantly while fresh data loads
-      // TTL: skip caches older than 5 minutes
-      const SWR_TTL_MS = 5 * 60 * 1000;
-      if (user?.id) {
-        try {
-          const cached = sessionStorage.getItem(`cashier_tx_cache_${user.id}`);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-            if (Array.isArray(parsed.data) && parsed.data.length > 0 && age < SWR_TTL_MS) {
-              setTransactions(parsed.data);
-            }
-          }
-        } catch (e) {
-          reportError(e, 'CashierPage.useEffect');
-          /* */
-        }
-      }
-      loadTransactions();
-    }
+    if (action === 'history') loadTransactions();
   }, [action, loadTransactions]);
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1169,11 +1127,22 @@ export default function CashierPage() {
     { debounce: 500 }
   );
 
-  // Live transaction updates — refresh history when new ledger entries arrive
+  // Refresh history after ledger changes or financial snapshot invalidations.
   useMasterBusSubscriptions(
-    ['TRANSACTION_LOGGED'],
+    [
+      'TRANSACTION_LOGGED',
+      'BALANCE_UPDATED',
+      'CHIPS_ADDED',
+      'CASHIER_BALANCE_CHANGED',
+      'RAKEBACK_CLAIMED',
+      'DAILY_REWARD_CLAIMED',
+      'WALLET_REFRESHED',
+      'CHIPS_DISTRIBUTED',
+      'CASHOUT_CANCELLED',
+      'CASHOUT_APPROVED',
+    ],
     () => {
-      loadTransactions();
+      loadTransactions({ force: true });
     },
     { debounce: 1000 }
   );
@@ -1205,7 +1174,7 @@ export default function CashierPage() {
     () => {
       if (user?.id) {
         loadBalances(user.id);
-        loadTransactions();
+        loadTransactions({ force: true });
       }
     },
     { debounce: 1000 }
@@ -1216,7 +1185,7 @@ export default function CashierPage() {
     () => {
       if (user?.id) {
         loadBalances(user.id);
-        loadTransactions();
+        loadTransactions({ force: true });
       }
     },
     { debounce: 500 }
@@ -1240,7 +1209,7 @@ export default function CashierPage() {
     const key = `cashier-chip-txns-${user.id}`;
     const onRowChange = () => {
       loadBalances(user.id);
-      loadTransactions();
+      loadTransactions({ force: true });
     };
     const subscribeChannel = () =>
       masterBus
@@ -2739,7 +2708,19 @@ export default function CashierPage() {
               </button>
             </div>
 
-            {loadingTx ? (
+            {txError && (
+              <div role="alert" className={`${styles.message} ${styles.messageError}`}>
+                <span>{txError}</span>
+                <button
+                  type="button"
+                  className={styles.txExportBtn}
+                  onClick={() => loadTransactions({ force: true })}
+                >
+                  Retry History
+                </button>
+              </div>
+            )}
+            {loadingTx && transactions.length === 0 ? (
               <div className={styles.txLoading} aria-busy="true">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div
@@ -2768,7 +2749,7 @@ export default function CashierPage() {
                   </div>
                 ))}
               </div>
-            ) : filteredTransactions.length === 0 ? (
+            ) : txError && transactions.length === 0 ? null : filteredTransactions.length === 0 ? (
               <div className={styles.txEmpty}>
                 <span className={styles.txEmptyIcon}>▦</span>
                 <span className={styles.txEmptyTitle}>No Transactions Recorded Yet</span>

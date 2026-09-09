@@ -32,10 +32,14 @@ const MIGRATION = (() => {
 })();
 
 describe('the engine cashes out through the locked RPC', () => {
-  it('both cash-out paths call atomic_seat_cashout_locked', () => {
-    const calls = SEATS.match(/atomic_seat_cashout_locked/g) ?? [];
-    // once in each of atomicCashout and markSeatAsLeft
-    expect(calls.length).toBeGreaterThanOrEqual(2);
+  it('both cash-out paths converge on the occupancy-bound locked transaction', () => {
+    expect(SEATS).toMatch(/rpc\(\s*'fn_cashout_seat_occupancy'/);
+    const delegated = SEATS.slice(
+      SEATS.indexOf('export async function markSeatAsLeft('),
+      SEATS.indexOf('export async function atomicCashout(')
+    );
+    expect(delegated).toMatch(/await atomicCashout\(/);
+    expect(delegated).toContain('occupancyId');
   });
 
   it('neither path credits the wallet directly any more', () => {

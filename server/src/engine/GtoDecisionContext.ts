@@ -385,7 +385,12 @@ export function classifyGtoDecisionContext(args: {
   const toCall = Math.max(0, currentBet - heroBet);
   const lastAggressive = [...actions].reverse().find(isAggressive);
 
-  if (toCall > 0 && lastAggressive && lastAggressive.seat !== args.hero.seat) {
+  // A response cell is certified from the public wager line, not merely from
+  // currentBet. Missing or self-owned aggression while chips are owed is an
+  // incomplete state; it must never fall through and consume an open policy.
+  if (toCall > 0 && (!lastAggressive || lastAggressive.seat === args.hero.seat)) return null;
+
+  if (toCall > 0 && lastAggressive) {
     const opponent = args.opponents.find((player) => player.seat === lastAggressive.seat);
     if (!opponent) return null;
     const wager = Number(lastAggressive.amount);
@@ -474,6 +479,11 @@ export function classifyGtoDecisionContext(args: {
       facingSizeBucket: gtoV31SizeBucket(fraction, allIn),
     };
   }
+
+  // Conversely, a proven current-street wager with no chips left to call is
+  // not an unopened decision. Hero may already have matched it or the state
+  // may be stale; either way the exact certified node is unknowable.
+  if (lastAggressive) return null;
 
   const previous = previousStreet(args.street);
   const priorAggressor = previous ? lastAggressor(args.actionHistory, previous) : null;

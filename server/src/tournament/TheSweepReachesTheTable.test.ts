@@ -142,14 +142,14 @@ describe('the launch proof tells a bust from an uncredited stack', () => {
     expect(BASE).toMatch(/the felt holds \$\{seatChips\} chips, short of the/);
   });
 
-  it('leaves the deferred-stack window alone: conservation is only asserted once credit is claimed done', () => {
-    for (const marker of [
-      'const rosterChips = roster.reduce(',
-      'const seatChips = seats.reduce(',
-    ]) {
-      const before = BASE.slice(BASE.indexOf(marker) - 400, BASE.indexOf(marker));
-      expect(before, marker).toMatch(/if \(!stacksMayBeDeferred\)/);
-    }
+  it('has no deferred-stack window: atomic launch credit is proven before both conservation checks', () => {
+    expect(BASE).not.toMatch(/deferStacksForSpinReveal|stacksMayBeDeferred|seats_credited/);
+    expect(BASE).toMatch(
+      /const rosterChips = roster\.reduce\([\s\S]*?const expectedFloor = roster\.length \* startingChips;\s*if \(startingChips > 0 && rosterChips < expectedFloor\)/
+    );
+    expect(BASE).toMatch(
+      /const seatChips = seats\.reduce\([\s\S]*?if \(startingChips > 0 && seatChips < expectedFloor\)/
+    );
   });
 });
 

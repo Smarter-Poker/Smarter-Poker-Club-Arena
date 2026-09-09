@@ -136,6 +136,10 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
         </div>
       </section>
     </div>
+    <!-- Where a fixed element at bottom: 0 lands IS the bottom edge. innerHeight
+         is not: WebKit's mobile emulation reports it 12px taller than the layout
+         viewport fixed elements attach to; Chromium reports them equal. -->
+    <div class="fx-edge" style="position: fixed; bottom: 0; left: 0; width: 1px; height: 1px; pointer-events: none"></div>
     <nav class="bottomNav" aria-label="Poker Arena" data-footer-hidden="false">
       <div class="viewport"><div class="artwork">
         <img class="artworkImage" alt="" width="1916" height="256" />
@@ -218,14 +222,16 @@ async function measureChrome(page: Page) {
     const sortbar = document.querySelector('.lobby-sortbar')!;
     const s = sortbar.getBoundingClientRect();
     const hit = document.elementFromPoint(s.left + s.width / 2, s.top + s.height / 2);
+    const edgeBottom = r('.fx-edge').bottom;
     return {
       sortbarPosition: getComputedStyle(sortbar).position,
       sortbarTop: s.top,
-      sortbarOnScreen: s.bottom > 0 && s.top < innerHeight,
+      sortbarOnScreen: s.bottom > 0 && s.top < edgeBottom,
       sortbarIsTopmost: sortbar === hit || sortbar.contains(hit),
+      deckTop: r('.club-lobby-command-top__controls').top,
       deckBottom: r('.club-lobby-command-top__controls').bottom,
       frameBottom: r('.bottomNav .artwork').bottom,
-      viewportBottom: innerHeight,
+      viewportBottom: edgeBottom,
     };
   });
 }
@@ -269,7 +275,11 @@ test.describe('mobile lobby chrome', () => {
     const m = await measureChrome(page);
     expect(m.sortbarPosition).toBe('sticky');
     expect(m.sortbarOnScreen).toBe(true);
-    expect(m.sortbarTop).toBeGreaterThanOrEqual(HEADER_HEIGHT_PX - 1);
+    // With no deck height to add, the row parks at the header, exactly where
+    // the deck parks: under it, never off the page.
+    expect(Math.abs(m.sortbarTop - m.deckTop), 'row should park where the deck parks').toBeLessThan(
+      1
+    );
   });
 
   test('the Variant menu opens under the stuck row and above the cards', async ({ page }) => {

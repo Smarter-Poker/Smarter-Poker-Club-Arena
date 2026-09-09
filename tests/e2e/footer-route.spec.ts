@@ -15,18 +15,31 @@ async function expectFrameOnTheBottomEdge(page: Page, nav: Locator) {
   const viewport = page.viewportSize();
   expect(viewport).not.toBeNull();
 
+  /* Where a fixed element at bottom: 0 lands is the bottom edge. The viewport
+     height is not: WebKit's mobile emulation reports it 12px taller than the
+     layout viewport fixed elements attach to, while Chromium reports them
+     equal, so a comparison against the number fails on the one engine an iPad
+     actually runs. */
+  const edgeBottom = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;bottom:0;left:0;width:1px;height:1px;pointer-events:none';
+    document.body.appendChild(probe);
+    const edge = probe.getBoundingClientRect().bottom;
+    probe.remove();
+    return edge;
+  });
   const artwork = nav.locator('img').locator('..');
   const frame = await artwork.boundingBox();
   expect(frame).not.toBeNull();
   expect(
-    Math.abs(frame!.y + frame!.height - viewport!.height),
+    Math.abs(frame!.y + frame!.height - edgeBottom),
     'strip between the painted frame and the bottom edge'
   ).toBeLessThan(1);
 
   // The box is still fixed to the edge as well; it just is not the evidence.
   const navBox = await nav.boundingBox();
   expect(navBox).not.toBeNull();
-  expect(Math.abs(navBox!.y + navBox!.height - viewport!.height)).toBeLessThan(4);
+  expect(Math.abs(navBox!.y + navBox!.height - edgeBottom)).toBeLessThan(4);
 }
 
 test.describe('Club Arena footer route contract', () => {

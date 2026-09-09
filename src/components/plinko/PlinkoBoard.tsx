@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
+import { soundService } from '../../services/SoundService';
 import styles from './PlinkoBoard.module.css';
 
 export const PLINKO_ROWS = 16;
@@ -280,6 +281,11 @@ export default function PlinkoBoard({
       animatingRef.current = true;
       const t = setTimeout(() => {
         animatingRef.current = false;
+        /* Under reduced motion the fall collapses; the meaning does not. */
+        const landedCents = mults[landingSlot] ?? 0;
+        if (landedCents >= 1000) soundService.playSpinMultiplierResult(landedCents / 100);
+        else if (landedCents > 0) soundService.playWin();
+        else soundService.playSpinResult();
         landedRef.current?.();
       }, 200);
       return () => clearTimeout(t);
@@ -290,9 +296,18 @@ export default function PlinkoBoard({
     const start = performance.now();
     let done = false;
     animatingRef.current = true;
+    /* A PEG IS A SOUND. The ball crosses sixteen rows; each crossing ticks
+       once, on the frame the segment index advances, so the rhythm IS the
+       fall rather than a loop guessing at it. Same tick the spin ladder
+       uses; SoundService throttles and mixes it. */
+    let tickedSeg = -1;
     const frame = (now: number) => {
       const t = Math.min(total, now - start);
       const segIndex = Math.min(points.length - 2, Math.floor(t / segMs));
+      if (segIndex > tickedSeg) {
+        tickedSeg = segIndex;
+        if (segIndex > 0) soundService.playSpinTick();
+      }
       const u = Math.min(1, (t - segIndex * segMs) / segMs);
       const a = points[segIndex];
       const b = points[segIndex + 1];
@@ -306,6 +321,10 @@ export default function PlinkoBoard({
       } else if (!done) {
         done = true;
         animatingRef.current = false;
+        const landedCents = mults[landingSlot] ?? 0;
+        if (landedCents >= 1000) soundService.playSpinMultiplierResult(landedCents / 100);
+        else if (landedCents > 0) soundService.playWin();
+        else soundService.playSpinResult();
         landedRef.current?.();
       }
     };

@@ -357,16 +357,21 @@ export default function PromotionsPage() {
         />
       </ClubButtonsSurface>
 
-      {/* THE DIAMOND WHEEL (Dan 2026-09-07): the player's door to the wheel.
-          The page itself says whether this host has opened it. */}
-      <div
-        className="diamond-wheel-banner"
-        onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}
-      >
-        <span className="bonus-icon">◆</span>
-        <span className="bonus-text">Diamond Games: Wheel, Plinko And Crash!</span>
-        <span className="bonus-arrow">›</span>
-      </div>
+      {/* THE DIAMOND GAMES (Dan 2026-09-07, rebuilt 2026-09-09): the player's
+          door to the wheel, the board and the curve. This used to be a flat
+          div with a border on it, which is a button drawn in CSS - the one
+          thing #ClubArenaConsole forbids. It is now the painted action shell,
+          the same one the Daily Bonus above it stands on. The page itself
+          still says whether this host has opened each game. */}
+      <ClubButtonsSurface className="promotions-diamond-games">
+        <ArenaActionButton
+          icon="diamond"
+          label="Diamond Games"
+          sublabel="Wheel, Plinko And Crash"
+          size="large"
+          onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}
+        />
+      </ClubButtonsSurface>
 
       {/* Referral Banner */}
       <div className="referral-banner" onClick={() => setShowReferral(true)}>

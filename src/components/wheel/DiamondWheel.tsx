@@ -25,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { soundService } from '../../services/SoundService';
 import styles from './DiamondWheel.module.css';
 
 export interface DiamondWheelProps {
@@ -132,10 +133,19 @@ export default function DiamondWheel({
     rotationRef.current = target;
     landedRef.current = false;
     setRotation(target);
+    /* THE SOUND IS THE SAME KIT THE SPIN LADDER USES (components/tournament/
+       SpinWheel): a start, a tick that decelerates over exactly the duration
+       this wheel is turning for, and the result on the stop. Nothing new was
+       designed and nothing is loaded: SoundService synthesises it, respects
+       the player's own sound settings, and refuses politely when the tab has
+       no audio. */
+    soundService.playSpinStart();
+    soundService.playSpinTicking(dur * 1000);
     fallbackRef.current = setTimeout(
       () => {
         if (!landedRef.current) {
           landedRef.current = true;
+          soundService.playSpinResult();
           onLanded();
         }
       },
@@ -152,6 +162,7 @@ export default function DiamondWheel({
     if (!spinning || landedRef.current) return;
     landedRef.current = true;
     if (fallbackRef.current) clearTimeout(fallbackRef.current);
+    soundService.playSpinResult();
     onLanded();
   };
 

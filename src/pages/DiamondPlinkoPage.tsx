@@ -49,6 +49,7 @@ import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
@@ -224,6 +225,9 @@ export default function DiamondPlinkoPage() {
     busyRef.current = true;
     setVerdict(null);
     setLastResult(null);
+    /* The bet leaving. The board takes it from here: sixteen pegs, then the
+       slot's own voice on the landing. */
+    soundService.playChips();
     triggerHaptic('medium');
     try {
       const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();

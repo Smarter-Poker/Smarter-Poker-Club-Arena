@@ -48,6 +48,7 @@ import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import styles from './diamondGames.module.css';
 
 function odds(probability: number): string {
@@ -219,6 +220,11 @@ export default function DiamondWheelPage() {
     setLastResult(result);
     if (result.outcome.kind === 'nothing') triggerHaptic('light');
     else {
+      /* The prize decides the voice: a big win is a big win, the rest of the
+         paying segments get the ordinary one. The wheel itself has already
+         ticked and stopped; this is the prize speaking, not the wheel. */
+      if (result.outcome.value_chips >= 5) soundService.playBigWin();
+      else soundService.playWin();
       triggerHaptic('success');
       toast.success(outcomeHeadline(result));
     }

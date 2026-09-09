@@ -53,6 +53,7 @@ import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
@@ -148,6 +149,10 @@ export default function DiamondCrashPage() {
       const cashed = settled.status === 'cashed';
       setPhase(cashed ? 'cashed' : 'crashed');
       if (cashed) {
+        /* The cash-out sings at the multiplier it got, the same voice the
+           spin ladder uses for a multiplier result. A crash says nothing:
+           silence after a climb is the loudest thing this game has. */
+        soundService.playSpinMultiplierResult((settled.outcome?.cashout_cents ?? 100) / 100);
         triggerHaptic('success');
         toast.success(
           `Cashed Out At ${multiplierLabel(settled.outcome?.cashout_cents ?? 100)} For ${chipsLabel(settled.outcome?.payout_chips ?? 0)} Chips`
@@ -291,6 +296,7 @@ export default function DiamondCrashPage() {
     busyRef.current = true;
     setStarting(true);
     setVerdict(null);
+    soundService.playSpinStart();
     triggerHaptic('medium');
     try {
       const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();

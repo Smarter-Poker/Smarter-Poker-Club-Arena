@@ -111,7 +111,11 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdCard from '../components/ads/HouseAdCard';
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
-import { ClubIdentityCard } from '../components/club-buttons';
+import {
+  ArenaActionButton,
+  ClubButtonsSurface,
+  ClubIdentityCard,
+} from '../components/club-buttons';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
@@ -5039,6 +5043,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             navigate(path);
           }}
         />
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          THE DIAMOND GAMES, WHERE A PLAYER ACTUALLY IS (Dan 2026-09-09).
+          The wheel, the board and the curve had exactly one door: a banner on
+          the Promotions page. Three finished games behind a link most players
+          never open. This is the second door, in the lobby, on the painted
+          action shell rather than drawn in CSS. The games page itself still
+          decides what is open here; this only gets the player to it.
+      ═══════════════════════════════════════════════════════════════════ */}
+        <ClubButtonsSurface className="lobby-diamond-games">
+          <ArenaActionButton
+            icon="diamond"
+            label="Diamond Games"
+            sublabel="Turn Diamonds Into Chips"
+            size="large"
+            onClick={() => {
+              haptic.selection();
+              navigate(`/clubs/${clubId}/diamond-games`);
+            }}
+          />
+        </ClubButtonsSurface>
 
         {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always

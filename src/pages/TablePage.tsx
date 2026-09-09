@@ -731,6 +731,8 @@ interface TableState {
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
+  /** Opaque identity of the server decision currently displayed. */
+  actionContext?: string;
   actionTimerPlayerId?: string;
   isTimeBankActive?: boolean;
   // Phase 8: Session stats
@@ -755,6 +757,7 @@ interface TableState {
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   fixedBetSize?: number;
   fixedRaiseSize?: number;
+  potLimitPot?: number;
   wagersCapped?: boolean;
 
   currentBet?: number;
@@ -946,6 +949,7 @@ interface TablePageProps {
      *  With the deadline it gives the tab bar a true depleting timer bar —
      *  fraction remaining = (deadline - now) / (deadline - start). */
     turnStartMs?: number;
+    actionContext?: string;
     pot?: number;
     /**
      * PokerBros parity (Dan 2026-08-20, from live multi-table footage): each
@@ -2613,6 +2617,7 @@ export default function TablePage({
         // GAME_START value) and the hand-change effect that drives per-hand
         // stats + the deal animation never re-fired. Carry it through.
         handNumber: mapped.handNumber > 0 ? mapped.handNumber : prev.handNumber,
+        actionContext: mapped.actionContext,
         players: nextPlayers,
         positions: mapped.positions as PositionBadge[],
         lastActions: mapped.lastActions as LastAction[],
@@ -2625,6 +2630,7 @@ export default function TablePage({
         bettingStructure: mapped.bettingStructure,
         fixedBetSize: mapped.fixedBetSize,
         fixedRaiseSize: mapped.fixedRaiseSize,
+        potLimitPot: mapped.potLimitPot,
         wagersCapped: mapped.wagersCapped,
 
         sidePots: mapped.sidePots.map((sp, i) => ({
@@ -5874,7 +5880,11 @@ export default function TablePage({
       tableState.bettingStructure ?? bettingStructureFor(tableState.gameType?.toLowerCase() || '');
     const isPotLimit = structure === 'pot_limit';
     const isFixedLimit = structure === 'fixed_limit';
-    const potLimitRaiseTo = potSizedRaiseTo(serverCurrentBet, tableState.pot, callAmount);
+    const potLimitRaiseTo = potSizedRaiseTo(
+      serverCurrentBet,
+      tableState.potLimitPot ?? tableState.pot,
+      callAmount
+    );
     const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
     const flWagerTo = Math.min(
       allInTo,
@@ -5901,6 +5911,7 @@ export default function TablePage({
     tableState.bettingStructure,
     tableState.gameType,
     tableState.pot,
+    tableState.potLimitPot,
     tableState.fixedBetSize,
     tableState.fixedRaiseSize,
     tableState.boardStage,
@@ -6146,6 +6157,7 @@ export default function TablePage({
           : undefined,
       stakes: tableState.blinds && tableState.blinds !== '?/?' ? tableState.blinds : undefined,
       isMyTurn: isHeroTurn,
+      actionContext: tableState.actionContext,
       // MULTI-TABLE FIX (2026-08-15): report the server-authoritative absolute
       // deadline. The previous hardcoded `timeRemaining: 15` froze the tab
       // countdown and made the container's urgent auto-switch (< 5s) dead code.
@@ -6178,6 +6190,7 @@ export default function TablePage({
     heroPromptedToAct,
     tableState.actionTimerDeadline,
     tableState.actionTimerStartTime,
+    tableState.actionContext,
     heroTabToCall,
     heroTabRaiseBounds,
     heroTabStack,
@@ -15973,9 +15986,8 @@ export default function TablePage({
         // the snapshot to arrive. The snapshot still self-corrects later.
         const newSeat = (evt.data as any).seat as number;
         if (typeof newSeat === 'number' && newSeat > 0) {
-          setTableState((prev) =>
-            prev.currentPlayerSeat === newSeat ? prev : { ...prev, currentPlayerSeat: newSeat }
-          );
+          const actionContext = (evt.data as { action_context?: string }).action_context;
+          setTableState((prev) => ({ ...prev, currentPlayerSeat: newSeat, actionContext }));
           // Bible V8 §5.4: medium haptic when it's hero's turn
           const heroSeat = tableStateRef.current.heroSeat;
           if (newSeat === heroSeat) {
@@ -20210,7 +20222,7 @@ export default function TablePage({
       callsite?: string
     ): Promise<boolean> => {
       try {
-        const res = await submitAction(tid, uid, action, amount);
+        const res = await submitAction(tid, uid, action, amount, tableState.actionContext);
         if (!res.success) {
           showActionError({
             error: safeErrorMessage(res.error, 'Action rejected'),
@@ -20227,7 +20239,7 @@ export default function TablePage({
         return false;
       }
     },
-    []
+    [tableState.actionContext, showActionError]
   );
 
   /**
@@ -20305,12 +20317,16 @@ export default function TablePage({
       // Capturing exactly once keeps the pre-action snapshot whatever React
       // does with the updater afterwards.
       let captured = false;
+      let priorDecision: string | undefined;
+      let priorHand: number | undefined;
 
       setTableState((prev) => {
         const players = [...prev.players];
         const hero = players[idx];
         if (!captured) {
           captured = true;
+          priorDecision = prev.actionContext;
+          priorHand = prev.handNumber;
           prevLastAction = prev.lastActions[idx] ?? null;
           prevLastBet = prev.lastBetAmounts[idx] ?? 0;
           prevStatus = hero?.status ?? null;
@@ -20355,8 +20371,15 @@ export default function TablePage({
            ACTION BAR, unable to do anything until the next snapshot happened
            to arrive. Dropping the fence here too means the very next snapshot
            is free to hand the turn straight back. */
+        // A late rejection belongs to the old decision, never the new hand.
+        if (
+          tableStateRef.current.actionContext !== priorDecision ||
+          tableStateRef.current.handNumber !== priorHand
+        )
+          return;
         heroActedFenceRef.current = null;
         setTableState((prev) => {
+          if (prev.actionContext !== priorDecision || prev.handNumber !== priorHand) return prev;
           const newActions = [...prev.lastActions];
           newActions[idx] = prevLastAction;
           const newBets = [...prev.lastBetAmounts];
@@ -24636,7 +24659,7 @@ export default function TablePage({
                   // engine FIX 142 (never over-offer past the server's clamp).
                   const potLimitRaiseTo = potSizedRaiseTo(
                     serverCurrentBet,
-                    tableState.pot,
+                    tableState.potLimitPot ?? tableState.pot,
                     callAmount
                   );
 

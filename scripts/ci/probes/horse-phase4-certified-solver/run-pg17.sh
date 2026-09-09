@@ -46,6 +46,9 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql"
 # A deployment retry must preserve the same functions and validated constraint.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909070217_v31_input_identity_requires_json_strings.sql"
+# Canonical-type hardening must also be replay-safe.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909070217_v31_input_identity_requires_json_strings.sql"
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"

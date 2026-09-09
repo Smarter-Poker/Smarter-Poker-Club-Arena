@@ -44,6 +44,9 @@ const RELEASE_SERIALIZATION = read(
 const INPUT_BOOTSTRAP = read(
   'supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql'
 );
+const INPUT_CANONICAL_TYPES = read(
+  'supabase/migrations/20260909070217_v31_input_identity_requires_json_strings.sql'
+);
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
 const LOGIC = read('server/src/engine/HorseLogic.ts');
 const LOADER = read('server/src/services/GtoPostflopV31Loader.ts');
@@ -87,6 +90,15 @@ describe('the certified V31 release boundary', () => {
     expect(INPUT_BOOTSTRAP).not.toContain(
       'v_checksum := public.fn_gto_v31_json_checksum(p_bundle)'
     );
+    expect(INPUT_CANONICAL_TYPES).toContain(
+      "jsonb_typeof(p_bundle->'bundle_version') IS DISTINCT FROM 'string'"
+    );
+    expect(INPUT_CANONICAL_TYPES).toContain(
+      "jsonb_typeof(v_file->'checksum') IS DISTINCT FROM 'string'"
+    );
+    expect(INPUT_CANONICAL_TYPES).toContain("LIKE '%//%'");
+    expect(INPUT_CANONICAL_TYPES).toContain("LIKE '%/./%'");
+    expect(INPUT_CANONICAL_TYPES).toContain('CALLED ON NULL INPUT');
   });
 
   it('requires every Phase 4 family, street, utility and genuine node role', () => {

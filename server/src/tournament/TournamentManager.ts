@@ -21,7 +21,6 @@ import {
   planOrphanReseats,
   planSeatlessReseats,
   describeUnmovableOrphans,
-  SEATLESS_RESEAT_REASON,
   type OrphanTableRow,
   type OrphanSeatRow,
   type SeatlessRosterRow,
@@ -527,22 +526,16 @@ export class TournamentManager extends TournamentManagerEliminations {
    * waits for an action nobody can take.
    *
    * This reads the tournament's own tables and live seats, asks the pure
-   * planner what to do, and hands the answer to `executePlayerMoves`. Every
-   * protection that path has earned - source stack read first, the
-   * `mayTakeSeat` duplicate check, update-first seat reuse, the committed-but-
-   * errored destination check - applies unchanged, because this adds no second
-   * way to move a player.
+   * planner what to do, and hands the answer to `executePlayerMoves`. Since
+   * 2026-09-09 that method is a single call to `fn_ca_move_tournament_seat`,
+   * so every protection the move has earned - the source stack read under
+   * lock, the refusal to guess between two live seats, seat reuse, the
+   * destination checks - now lives in one database transaction and applies to
+   * this repair unchanged, because this adds no second way to move a player.
    *
    * Both reads fail CLOSED. An unreadable board is UNKNOWN, never "nobody is
    * stranded" and never "everybody is".
    */
-  /**
-   * The tournament's own table ids, set by `absorbSeatlessPlayers` before it
-   * hands a batch to `executePlayerMoves`, so the "are they seated after all"
-   * re-check in that loop is scoped to this event and never reads another.
-   */
-  private seatlessSweepTableIds: string[] = [];
-
   /**
    * ═══════════════════════════════════════════════════════════════════════
    *  A PLAYER WITH CHIPS AND NO CHAIR IS BROUGHT BACK TO THE FELT
@@ -570,7 +563,6 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (tableErr || !tableRows || tableRows.length === 0) return 0;
 
     const tableIds = tableRows.map((r) => String((r as { id: string }).id));
-    this.seatlessSweepTableIds = tableIds;
 
     const { data: liveSeats, error: seatErr } = await supabase
       .from('table_seats')
@@ -684,6 +676,54 @@ export class TournamentManager extends TournamentManagerEliminations {
     return (await this.executePlayerMoves(moves)) + seatless;
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A SEAT MOVES IN ONE TRANSACTION, OR IT DOES NOT MOVE
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This used to be four round trips: read the source stack, stamp `left_at`
+   * on the source seat, write the destination seat, and - when that failed -
+   * a fifth to put `left_at` back. Every protection it grew over a year was
+   * real, and none of them could close the hole, because the hole is between
+   * trip two and trip three: for as long as that gap is open the player holds
+   * no seat anywhere and their chips are off the felt.
+   *
+   * MEASURED IN PRODUCTION, 2026-09-09. The gap held 1,673,900 tournament
+   * chips belonging to 24 players across 12 running events. Three separate
+   * refusals fed it:
+   *
+   *   - the destination write was refused by the four-table limit, because a
+   *     player mid-move holds no seat in the event they are playing, so their
+   *     other bookings filled the quota (fixed in the database by
+   *     ca_the_cap_is_at_the_door_not_at_the_chair);
+   *   - the compensating restore was refused by
+   *     ab_refuse_live_seat_on_closed_tournament_table, because a broken
+   *     table is closed by the time the restore runs;
+   *   - a maintenance freeze at :55 refuses either write on its own.
+   *
+   * And neither the vacate nor the restore checked its result, so the engine
+   * logged "source seat restored" for a rollback the database had refused.
+   *
+   * A COMPENSATING WRITE IS NOT A ROLLBACK. It is a second write that can
+   * fail on its own, and when it does there is nothing left to compensate
+   * with. So this no longer tries to be careful inside the gap - it hands the
+   * whole move to `fn_ca_move_tournament_seat`, which vacates the source,
+   * writes the destination, carries the stack, asserts that the chips that
+   * arrived are the chips that left, and repoints the roster INSIDE ONE
+   * TRANSACTION. A refusal at any step unwinds all of it and the player is
+   * still sitting where they were. There is no window, so nothing can arrive
+   * in it, and a process that dies mid-move leaves nothing half-done.
+   *
+   * Every check this method used to make by hand now lives in that function,
+   * where it is enforced for every caller rather than for this one:
+   * the source stack is read under lock, a player holding two live seats is
+   * refused as a money decision, the destination is verified to belong to
+   * this event and to be open, an occupied chair is refused rather than
+   * overwritten, and a player already sitting at the destination is a replay
+   * rather than a second move.
+   *
+   * THE RESULT IS CHECKED. That is the other half of the bug.
+   */
   protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
     const batch = moves.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
@@ -693,117 +733,6 @@ export class TournamentManager extends TournamentManagerEliminations {
     for (const move of batch) {
       if (!this.eliminationMutationAllowed()) return moved;
       try {
-        // SWEEP #4 P1-4 FIX (2026-07-23): read the source stack BEFORE marking the
-        // old seat left. The old order marked left first, then read the (now-left)
-        // seat with .order('left_at' desc).maybeSingle(); on a transient read error
-        // or empty result oldSeat was null → the player was re-seated with `stack: 0`
-        // → eliminated on the next checker pass. MoveInstruction carries no stack, so
-        // if we cannot read a real source stack we ABORT this move (leave the player
-        // at the source table) and let the next rebalance pass retry — never seat at 0.
-        let { data: oldSeat, error: readErr } = await supabase
-          .from('table_seats')
-          .select('stack')
-          .eq('table_id', move.fromTableId)
-          .eq('user_id', move.playerId)
-          .is('left_at', null)
-          .maybeSingle();
-
-        /**
-         * THE CHAIR THEY LEFT IS WHERE THEIR CHIPS ARE (2026-09-09).
-         *
-         * Every other caller moves a player who is sitting down, so the read
-         * above is right to demand a live seat and right to abort without one -
-         * seating at a guessed stack is how a player gets eliminated at zero.
-         *
-         * A seatless player has no live seat by definition: that IS the fault
-         * being repaired. Their stack stands on the chair they left, which is
-         * where `executePlayerMoves` puts it (it reads the source before it
-         * vacates) and where `fn_ca_settle_hand_stacks_absolute` carries a hand
-         * result for a player who holds no chair. So for this one reason, and
-         * only after confirming they really hold nothing anywhere, the stack is
-         * read from the most recent chair they left. If that read is empty too,
-         * the abort below still applies and nothing is seated.
-         */
-        if (
-          move.reason === SEATLESS_RESEAT_REASON &&
-          !readErr &&
-          (oldSeat == null || oldSeat.stack == null)
-        ) {
-          const { data: stillSeated } = await supabase
-            .from('table_seats')
-            .select('id')
-            .eq('user_id', move.playerId)
-            .is('left_at', null)
-            .in('table_id', this.seatlessSweepTableIds)
-            .limit(1);
-          if (stillSeated && stillSeated.length > 0) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting seatless re-seat for ${move.playerId.slice(0, 8)} - they hold a live seat after all. The roster read and the seat read are not simultaneous; the next sweep re-decides.`
-              ),
-              'Tournament.Seatless_reseat_aborted_player_is_seated'
-            );
-            continue;
-          }
-          const { data: leftSeat, error: leftErr } = await supabase
-            .from('table_seats')
-            .select('stack')
-            .eq('table_id', move.fromTableId)
-            .eq('user_id', move.playerId)
-            .not('left_at', 'is', null)
-            .order('left_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (!leftErr && leftSeat && leftSeat.stack != null) {
-            oldSeat = leftSeat;
-          }
-        }
-
-        if (!this.eliminationMutationAllowed()) return moved;
-
-        if (readErr || oldSeat == null || oldSeat.stack == null) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} - could not read source stack (readErr=${readErr?.message ?? 'none'}, seat=${oldSeat ? 'found' : 'null'}). Leaving player at source table to avoid 0-stack elimination; will retry next rebalance.`
-            ),
-            'Tournament.Move_aborted_no_source_stack'
-          );
-          continue;
-        }
-
-        /**
-         * A MOVE MUST NOT COMPOUND A DUPLICATE (2026-08-25).
-         *
-         * Vacating the source seat, below, only guarantees ONE live seat if
-         * the source is the only one the player holds. On `bae46dbf` 72
-         * players were holding two live seats each before any move was
-         * attempted; moving one of them writes a THIRD live row and carries
-         * the source stack to it, while the other seat keeps being dealt.
-         *
-         * Checked BEFORE anything is stamped, so a refusal leaves the player
-         * exactly where they were and touches nothing. Which of two diverged
-         * stacks is the real one is a money decision — it is not this
-         * balancer's to make, so it reports and stands down.
-         */
-        const moveClaim = await mayTakeSeat(
-          supabase,
-          this.tournamentId,
-          move.playerId,
-          move.fromTableId
-        );
-        if (!this.eliminationMutationAllowed()) return moved;
-        if (!moveClaim.allowed) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} - ${moveClaim.reason}. The player stays at table ${move.fromTableId.slice(0, 8)}; moving them would leave a third live seat.`
-            ),
-            moveClaim.unknown
-              ? 'Tournament.Move_aborted_seat_claim_unreadable'
-              : 'Tournament.Move_aborted_player_already_seated_twice'
-          );
-          continue;
-        }
-
         /**
          * NEVER MOVE A PLAYER MID-HAND - RE-CHECKED HERE, NOT ONLY AT PLAN TIME
          * (2026-09-09).
@@ -811,11 +740,9 @@ export class TournamentManager extends TournamentManagerEliminations {
          * Both callers already probe `waitForHandComplete` before handing a
          * batch to this loop, and the intent has been written down since
          * 2026-07-24: "never move players mid-hand". But that probe is taken
-         * ONCE PER BATCH, and this loop then spends several awaited round
-         * trips per move (`mayTakeSeat`, the source-stack read, the seat
-         * writes). The engine keeps dealing throughout, so by the time move N
-         * vacates its seat, the boundary that was checked before move 1 is
-         * long gone.
+         * ONCE PER BATCH, and the loop then spends an awaited round trip per
+         * move. The engine keeps dealing throughout, so by the time move N
+         * runs, the boundary that was checked before move 1 is long gone.
          *
          * Measured 2026-09-08/09: 32 fully dealt tournament hands were thrown
          * away. `fn_ca_settle_hand_stacks_absolute` finds the seat gone at
@@ -825,11 +752,12 @@ export class TournamentManager extends TournamentManagerEliminations {
          * that table loses the hand they just played, not only the mover. The
          * leave/join pairs sit 0.17-0.37s apart - inside the hand.
          *
-         * So re-probe immediately before the only destructive write. Nothing
-         * has been stamped yet at this point in the iteration (the seat read
-         * and the duplicate-seat claim are both reads), so a refusal leaves
-         * the player exactly where they were - the same shape as the two
-         * guards above it.
+         * ONE TRANSACTION DOES NOT MAKE THIS UNNECESSARY. Atomicity protects
+         * the MOVER: the move either happens whole or not at all. It says
+         * nothing about the hand the other eight players are in the middle of,
+         * which lives in the engine and not in the database. So the probe
+         * stays, and it sits immediately before the only destructive call -
+         * which is now the move RPC itself.
          */
         if (!(await this.waitForHandComplete(move.fromTableId))) {
           console.warn(
@@ -840,141 +768,63 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
         if (!this.eliminationMutationAllowed()) return moved;
 
-        // From this write until destination-or-source restoration finishes we
-        // complete one logical move even if stop is requested; abandoning the
-        // source after vacating it would be more destructive than allowing
-        // this one bounded operation to drain. No next move begins after abort.
-        await supabase
-          .from('table_seats')
-          .update({ left_at: new Date().toISOString() })
-          .eq('table_id', move.fromTableId)
-          .eq('user_id', move.playerId)
-          .is('left_at', null);
+        const { data, error } = await supabase.rpc('fn_ca_move_tournament_seat', {
+          p_tournament_id: this.tournamentId,
+          p_user_id: move.playerId,
+          p_to_table_id: move.toTableId,
+          p_to_seat: move.toSeat,
+          p_reason: move.reason ?? 'balance',
+        });
 
-        // LIVE E2E FIX 2026-08-15: table_seats keeps ONE ROW PER (table_id,
-        // seat_number) — seats are reused by UPDATE, never re-INSERT. The old
-        // blind INSERT here died on unique-violation 23505 whenever the
-        // destination seat number had EVER been occupied before (i.e. on
-        // almost every table with history), was never error-checked, and the
-        // player was left seatless with the old seat already marked left.
-        // Update-first (reusing the left row), insert only if the seat row
-        // has never existed, and on ANY failure restore the source seat so
-        // the player is never seatless.
-        const nowIso = new Date().toISOString();
-        const { data: reusedRows, error: reuseErr } = await supabase
-          .from('table_seats')
-          .update({
-            user_id: move.playerId,
-            stack: oldSeat.stack,
-            left_at: null,
-            joined_at: nowIso,
-            // Seat turnover: never inherit the previous occupant's sit-out
-            // flag (trg_clear_sitout_on_turnover backstops every writer).
-            is_sitting_out: false,
-          })
-          .eq('table_id', move.toTableId)
-          .eq('seat_number', move.toSeat)
-          .not('left_at', 'is', null)
-          .select('id');
-
-        let seatWriteErr: { message?: string } | null = reuseErr;
-
-        if (!seatWriteErr && reusedRows && reusedRows.length > 0) {
-          // Un-assign the old occupant whose seat we just reused, avoiding the ghost seat bug
-          // (which can crash the engine with deck_capacity_exceeded if 11 players point to a 9-max table).
-          await supabase
-            .from('tournament_players')
-            .update({ table_id: null, seat_number: null })
-            .eq('tournament_id', this.tournamentId)
-            .eq('table_id', move.toTableId)
-            .eq('seat_number', move.toSeat)
-            .neq('user_id', move.playerId);
-        }
-
-        if (!seatWriteErr && (!reusedRows || reusedRows.length === 0)) {
-          const { error: insErr } = await supabase.from('table_seats').insert({
-            table_id: move.toTableId,
-            user_id: move.playerId,
-            seat_number: move.toSeat,
-            stack: oldSeat.stack,
-            joined_at: nowIso,
-          });
-          seatWriteErr = insErr;
-        }
-
-        if (seatWriteErr) {
-          // DUPLICATE-SEAT FIX 2026-08-20: do NOT restore the source seat
-          // without first checking whether the destination write actually
-          // landed.
-          //
-          // A write that fails CLIENT-side may well have COMMITTED
-          // server-side -- a statement timeout or a dropped connection
-          // returns an error for a transaction the database already
-          // applied. Restoring the source seat on top of a destination
-          // seat that exists leaves the player holding TWO live seats.
-          //
-          // Five players in production are in exactly that state, and the
-          // signature is unmistakable: both rows carry the SAME stack
-          // (Late Night Grind 1113/1113, 796/796, 1950/1950), i.e. the
-          // destination copy succeeded and the source was revived anyway.
-          //
-          // Two live seats is not cosmetic. The chip sync and the rebuy /
-          // add-on RPC both had to pick one, and picking the stale one
-          // either erases a purchase or reports the wrong stack outright --
-          // in Union Grand Championship the stale seat held 15,000 against
-          // a real stack of 2,728,737.
-          const { data: destSeat } = await supabase
-            .from('table_seats')
-            .select('id')
-            .eq('table_id', move.toTableId)
-            .eq('seat_number', move.toSeat)
-            .eq('user_id', move.playerId)
-            .is('left_at', null)
-            .maybeSingle();
-
-          if (destSeat) {
-            // The write did land. The move is complete; leave the source
-            // seat closed and carry on rather than manufacturing a duplicate.
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Destination seat write for ${move.playerId.slice(0, 8)} reported an error (${seatWriteErr.message ?? 'unknown'}) but COMMITTED. Treating the move as successful and leaving the source seat closed, so the player is not left holding two live seats.`
-              ),
-              'Tournament.Move_dest_seat_write_false_negative'
-            );
-            continue;
-          }
-
-          // Genuinely not written. Re-activate the source seat so the player
-          // stays seated at the (not yet closed) source table and the next
-          // cycle retries.
-          await supabase
-            .from('table_seats')
-            .update({ left_at: null })
-            .eq('table_id', move.fromTableId)
-            .eq('user_id', move.playerId)
-            .eq('seat_number', move.fromSeat);
+        if (error) {
+          /**
+           * A REFUSAL IS SAFE AND IS NOT SILENT. The transaction unwound, so
+           * the player is still at their source table with their stack; the
+           * next balance cycle will retry. It is still reported, because a
+           * refusal that repeats is a condition somebody has to see - that is
+           * exactly how the four-table refusal ran unseen for as long as it
+           * did.
+           */
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Destination seat write failed for ${move.playerId.slice(0, 8)} → table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}: ${seatWriteErr.message ?? 'unknown'}. Source seat restored; will retry next cycle.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Move refused for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} -> table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}: ${error.message}. Nothing moved; the player keeps their seat and the next cycle retries.`
             ),
-            'Tournament.Move_dest_seat_write_failed'
+            'Tournament.Move_refused'
           );
           continue;
         }
 
-        // Update tournament_players table_id
-        await supabase
-          .from('tournament_players')
-          .update({ table_id: move.toTableId })
-          .eq('tournament_id', this.tournamentId)
-          .eq('user_id', move.playerId);
+        const result = (data ?? {}) as {
+          moved?: boolean;
+          replayed?: boolean;
+          stack?: number | string | null;
+          reason?: string;
+        };
+
+        if (result.replayed) {
+          // Somebody already made this exact move. Not an error, not a second
+          // move, and not a failure to count - the player is where we wanted
+          // them.
+          moved++;
+          continue;
+        }
+
+        if (!result.moved) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Move for ${move.playerId.slice(0, 8)} returned no result and raised nothing - treating it as not moved: ${JSON.stringify(data)}`
+            ),
+            'Tournament.Move_returned_nothing'
+          );
+          continue;
+        }
 
         moved++;
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Moved ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} → table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Moved ${move.playerId.slice(0, 8)} with ${result.stack ?? '?'}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} -> table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}`
         );
       } catch (moveErr) {
-        reportError(moveErr, 'TournamentthistournamentIdslic.Move_failed_for_moveplayerIdsl');
+        reportError(moveErr, 'Tournament.Move_threw');
       }
     }
     return moved;

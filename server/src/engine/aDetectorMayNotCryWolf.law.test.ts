@@ -110,14 +110,23 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
    * hand write rejected whole`, which aborts the whole commit and kills the
    * engine generation - every player at the table loses the hand.
    */
+  /**
+   * THE DESTRUCTIVE CALL MOVED, THE LAW DID NOT (2026-09-09). The seat is no
+   * longer vacated by an UPDATE in this method - the whole move is one
+   * database transaction, `fn_ca_move_tournament_seat`. Atomicity protects the
+   * MOVER, so a refused move now leaves them exactly where they were. It says
+   * nothing about the hand the other eight players are in the middle of, which
+   * lives in the engine and not in the database, so this probe is still the
+   * only thing standing between a rebalance and 32 discarded hands.
+   */
   function vacateSite(): { guard: string } {
-    const vacate = MOVES.indexOf('.update({ left_at: new Date().toISOString() })');
-    expect(vacate, 'the source-seat vacate has moved').toBeGreaterThan(-1);
+    const vacate = MOVES.indexOf("supabase.rpc('fn_ca_move_tournament_seat'");
+    expect(vacate, 'the move call has moved').toBeGreaterThan(-1);
     // look back over the immediately preceding block only
     return { guard: MOVES.slice(Math.max(0, vacate - 2600), vacate) };
   }
 
-  it('re-probes the hand boundary immediately before vacating the seat', () => {
+  it('re-probes the hand boundary immediately before moving the seat', () => {
     expect(vacateSite().guard).toMatch(
       /if \(!\(await this\.waitForHandComplete\(move\.fromTableId\)\)\) \{/
     );
@@ -131,14 +140,12 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
     expect(g).toMatch(/continue;/);
   });
 
-  it('checks before anything is stamped, so a refusal writes nothing', () => {
-    // The guard must sit AFTER the reads (source stack, duplicate-seat claim)
-    // and BEFORE the first write. If it ever lands after the vacate, a refusal
-    // would leave the player seatless.
+  it('checks before anything is written, so a refusal writes nothing', () => {
+    // The guard must sit BEFORE the move call. If it ever lands after it, a
+    // hand in flight would already have been thrown away by the time we look.
     const guardAt = MOVES.indexOf('if (!(await this.waitForHandComplete(move.fromTableId)))');
-    const vacateAt = MOVES.indexOf('.update({ left_at: new Date().toISOString() })');
-    const claimAt = MOVES.indexOf('const moveClaim = await mayTakeSeat(');
-    expect(guardAt).toBeGreaterThan(claimAt);
-    expect(guardAt).toBeLessThan(vacateAt);
+    const moveAt = MOVES.indexOf("supabase.rpc('fn_ca_move_tournament_seat'");
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(moveAt);
   });
 });

@@ -352,26 +352,55 @@ describe('a table move must never leave a player holding two live seats', () => 
    * and picking the stale row erases purchases or reports the wrong stack
    * (15,000 against a true 2,728,737 in Union Grand Championship).
    */
-  it('checks the destination seat actually failed before restoring the source', () => {
+  /**
+   * SUPERSEDED BY ATOMICITY, 2026-09-09. The two laws that stood here pinned
+   * the compensating restore in `executePlayerMoves`: that it read the
+   * destination before putting `left_at` back, and that a committed-but-
+   * errored write counted as a completed move. Both were right about the code
+   * that existed, and both were guarding the wrong thing.
+   *
+   * A COMPENSATING WRITE IS NOT A ROLLBACK. Measured in production on
+   * 2026-09-09: the restore was itself refused by
+   * ab_refuse_live_seat_on_closed_tournament_table, because a broken table is
+   * closed by the time it runs. Its result was never checked, so the engine
+   * logged a rollback the database had rejected, and 1,673,900 tournament
+   * chips belonging to 24 players ended up in vacated chairs across 12 running
+   * events.
+   *
+   * The move is now one database transaction. There is no gap to protect, no
+   * restore to get right, and nothing for a false negative to corrupt - so the
+   * law is now that the compensating write DOES NOT EXIST.
+   */
+  it('moves a seat in one transaction and never compensates by hand', () => {
     const src = code(MANAGER);
-    const idx = src.indexOf('if (seatWriteErr)');
-    expect(idx).toBeGreaterThan(-1);
-    const restore = src.indexOf('update({ left_at: null })', idx);
-    expect(restore).toBeGreaterThan(-1);
-    // Structural, not name-based: between entering the error branch and
-    // restoring the source seat there must be a READ of the DESTINATION seat
-    // and an early exit for the case where it turns out to be present.
-    // (Keying this on a variable name made it pass when the name alone was
-    // changed -- caught by mutation testing.)
-    const window = src.slice(idx, restore);
-    expect(window).toContain('move.toTableId');
-    expect(window).toContain('move.toSeat');
-    expect(window).toMatch(/is\('left_at',\s*null\)/);
-    expect(window).toMatch(/\bcontinue;/);
+    const fn = src.slice(src.indexOf('executePlayerMoves(moves: MoveInstruction[])'));
+    const end = fn.indexOf('\n  }\n');
+    const body = fn.slice(0, end === -1 ? undefined : end);
+
+    // The whole move goes through the one database primitive.
+    expect(body).toMatch(/supabase\.rpc\(\s*'fn_ca_move_tournament_seat'/);
+
+    // It writes no seat rows itself: no vacate, no destination write, and
+    // above all no `left_at: null` restore to be refused in silence.
+    expect(body).not.toMatch(/from\('table_seats'\)/);
+    expect(body).not.toMatch(/left_at:\s*null/);
+    expect(body).not.toMatch(/left_at:\s*new Date\(\)/);
   });
 
-  it('treats a committed-but-errored destination write as a completed move', () => {
-    expect(code(MANAGER)).toMatch(/Move_dest_seat_write_false_negative/);
+  it('does not count a refused move as a move', () => {
+    const src = code(MANAGER);
+    const fn = src.slice(src.indexOf('executePlayerMoves(moves: MoveInstruction[])'));
+    const end = fn.indexOf('\n  }\n');
+    const body = fn.slice(0, end === -1 ? undefined : end);
+
+    // The result is READ. Not checking it is the other half of the 2026-09-09
+    // bug: two refusals in a row, both discarded, reported as a success.
+    const err = body.indexOf('if (error)');
+    expect(err).toBeGreaterThan(-1);
+    // and the refusal leaves the counter alone and is reported.
+    const branch = body.slice(err, body.indexOf('continue;', err));
+    expect(branch).toMatch(/reportError\(/);
+    expect(branch).not.toMatch(/moved\+\+/);
   });
 });
 
@@ -453,16 +482,21 @@ describe('no seating path may write a second live seat in the same tournament', 
   });
 
   it('a move stands down rather than adding a third live seat', () => {
+    /**
+     * The rule has not changed; the place it is enforced has. `mayTakeSeat`
+     * used to run here, in the engine, before the source seat was stamped.
+     * `fn_ca_move_tournament_seat` now refuses the same case as
+     * CA_MOVE_AMBIGUOUS_SOURCE, inside the transaction that would otherwise
+     * do the writing - so it holds for every caller of that function rather
+     * than for this one method, and a refusal cannot leave a half-move behind.
+     */
     const src = code(MANAGER);
     const fn = src.slice(src.indexOf('executePlayerMoves(moves: MoveInstruction[])'));
-    const claim = fn.indexOf('mayTakeSeat(');
-    const vacate = fn.indexOf('update({ left_at: new Date().toISOString() })');
-    expect(claim).toBeGreaterThan(-1);
-    // Checked BEFORE the source seat is stamped, so a refusal touches nothing.
-    expect(claim).toBeLessThan(vacate);
-    // The source table is the one seat that does not count against the move.
-    expect(sliceCall(fn, 'mayTakeSeat(')).toContain('move.fromTableId');
-    expect(fn).toMatch(/Move_aborted_player_already_seated_twice/);
+    const end = fn.indexOf('\n  }\n');
+    const body = fn.slice(0, end === -1 ? undefined : end);
+    // The engine no longer decides this, so it must not write a seat at all.
+    expect(body).not.toMatch(/from\('table_seats'\)/);
+    expect(body).toMatch(/supabase\.rpc\(\s*'fn_ca_move_tournament_seat'/);
   });
 });
 

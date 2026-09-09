@@ -30,9 +30,11 @@ DECLARE
   train_id uuid; holdout_id uuid; duplicate_id uuid;
   train_art jsonb; holdout_art jsonb; duplicate_art jsonb; result_checksum text;
   failed boolean; kind text; family text; result_id bigint; eval_id uuid; status jsonb;
+  target_eval uuid; target_source bigint; saved_metrics jsonb; tampered_metrics jsonb;
+  saved_eval_checksum text;
   eval_scenarios text[]; eval_roles text[]:=ARRAY['all_in','barrel','bet_raise','cbet',
     'check_raise','delayed_cbet','facing_bet','facing_raise','open','probe'];
-  components jsonb; scenario_hands integer; component_stderr numeric;
+  components jsonb; bad_components jsonb; scenario_hands integer; component_stderr numeric;
   hand_key text; action_key text;
 BEGIN
   CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $auth$ SELECT 'authenticated'::text $auth$;
@@ -354,46 +356,150 @@ BEGIN
         components:=components||jsonb_build_array(jsonb_build_object(
           'scenario',eval_scenarios[i],'hands',scenario_hands,'bb100',0,
           'stderr',1,'duration_ms',1,'illegal_actions',0,'truncated_streets',0,
-          'candidate_policy_hits',2,'candidate_node_roles',to_jsonb(eval_roles)));
+          'candidate_policy_hits',2,'candidate_execution_mismatches',0,
+          'candidate_node_roles',to_jsonb(eval_roles)));
       END LOOP;
       IF kind='paired_replay' AND family='cash' THEN
         INSERT INTO public.horse_league_results(
           run_date,matchup,hands,bb100,stderr,config_a,config_b,duration_ms,
-          illegal_actions,truncated_streets,candidate_policy_hits,candidate_node_roles,
+          illegal_actions,truncated_streets,candidate_policy_hits,candidate_execution_mismatches,
+          candidate_node_roles,
           candidate_benchmark_components)
-        VALUES(current_date,'gto_v31_'||kind||'_'||family||'_'||left(result_checksum,12),
+        VALUES(current_date,'gto_v31_'||kind||'_'||family||'_'||result_checksum,
           10000,0,component_stderr,
-          jsonb_build_object('evaluation_contract','gto_v31_candidate.v1','evaluation_kind',kind,
+          jsonb_build_object('evaluation_contract','gto_v31_candidate.v2','evaluation_kind',kind,
             'game_family',family,'dataset_checksum',result_checksum,'candidate','v31_certified',
-            'evaluation_profile','policy_only_duplicate_deals','scenarios',to_jsonb(eval_scenarios)),
+            'evaluation_profile','policy_only_duplicate_deals','scenarios',to_jsonb(eval_scenarios),
+            'evaluation_engine_commit',repeat('c',40)),
           jsonb_build_object('incumbent_dataset_checksum','legacy_v30','candidate','incumbent'),
-          2,0,0,2,eval_roles,components)
+          2,0,0,2,0,eval_roles,components)
         RETURNING id INTO result_id;
         failed:=false;
         BEGIN PERFORM public.fn_gto_v31_record_evaluation(dataset,kind,family,result_id);
         EXCEPTION WHEN OTHERS THEN failed:=true; END;
         IF NOT failed THEN RAISE EXCEPTION 'unreconciled component duration was accepted'; END IF;
         DELETE FROM public.horse_league_results WHERE id=result_id;
+
+        bad_components:=jsonb_set(components,'{0,candidate_execution_mismatches}','1'::jsonb);
+        INSERT INTO public.horse_league_results(
+          run_date,matchup,hands,bb100,stderr,config_a,config_b,duration_ms,
+          illegal_actions,truncated_streets,candidate_policy_hits,candidate_execution_mismatches,
+          candidate_node_roles,candidate_benchmark_components)
+        VALUES(current_date,'gto_v31_'||kind||'_'||family||'_'||result_checksum,
+          10000,0,component_stderr,
+          jsonb_build_object('evaluation_contract','gto_v31_candidate.v2','evaluation_kind',kind,
+            'game_family',family,'dataset_checksum',result_checksum,'candidate','v31_certified',
+            'evaluation_profile','policy_only_duplicate_deals','scenarios',to_jsonb(eval_scenarios),
+            'evaluation_engine_commit',repeat('c',40)),
+          jsonb_build_object('incumbent_dataset_checksum','legacy_v30','candidate','incumbent'),
+          1,0,0,2,0,eval_roles,bad_components)
+        RETURNING id INTO result_id;
+        failed:=false;
+        BEGIN PERFORM public.fn_gto_v31_record_evaluation(dataset,kind,family,result_id);
+        EXCEPTION WHEN OTHERS THEN failed:=true; END;
+        IF NOT failed THEN RAISE EXCEPTION 'post-legalization execution mismatch was accepted'; END IF;
+        DELETE FROM public.horse_league_results WHERE id=result_id;
       END IF;
       INSERT INTO public.horse_league_results(
         run_date,matchup,hands,bb100,stderr,config_a,config_b,duration_ms,
-        illegal_actions,truncated_streets,candidate_policy_hits,candidate_node_roles,
+        illegal_actions,truncated_streets,candidate_policy_hits,candidate_execution_mismatches,
+        candidate_node_roles,
         candidate_benchmark_components)
-      VALUES(current_date,'gto_v31_'||kind||'_'||family||'_'||left(result_checksum,12),
+      VALUES(current_date,'gto_v31_'||kind||'_'||family||'_'||result_checksum,
         10000,0,component_stderr,
-        jsonb_build_object('evaluation_contract','gto_v31_candidate.v1','evaluation_kind',kind,
+        jsonb_build_object('evaluation_contract','gto_v31_candidate.v2','evaluation_kind',kind,
           'game_family',family,'dataset_checksum',result_checksum,'candidate','v31_certified',
           'evaluation_profile',CASE kind WHEN 'paired_replay' THEN
             'policy_only_duplicate_deals' ELSE 'full_brain_duplicate_deal_league' END,
-          'scenarios',to_jsonb(eval_scenarios)),
+          'scenarios',to_jsonb(eval_scenarios),'evaluation_engine_commit',repeat('c',40)),
         jsonb_build_object('incumbent_dataset_checksum','legacy_v30','candidate','incumbent'),
-        array_length(eval_scenarios,1),0,0,2*array_length(eval_scenarios,1),eval_roles,components)
+        array_length(eval_scenarios,1),0,0,2*array_length(eval_scenarios,1),0,
+        eval_roles,components)
       RETURNING id INTO result_id;
       eval_id:=public.fn_gto_v31_record_evaluation(dataset,kind,family,result_id);
       IF eval_id IS NULL THEN RAISE EXCEPTION 'evaluation receipt missing'; END IF;
     END LOOP;
   END LOOP;
+
+  IF has_function_privilege('service_role',
+       'public.fn_gto_v31_candidate_evaluations_valid(uuid,text)','EXECUTE') THEN
+    RAISE EXCEPTION 'the private candidate evidence validator is directly callable';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+     WHERE p.oid='public.fn_gto_v31_candidate_evaluations_valid(uuid,text)'::regprocedure
+       AND p.provolatile='v'
+       AND position('pg_advisory_xact_lock' in p.prosrc)>0
+       AND position('smarter-poker:gto-v31-release-gate' in p.prosrc)>0
+  ) THEN
+    RAISE EXCEPTION 'the candidate and promotion release boundary is not serialized';
+  END IF;
+  IF NOT public.fn_gto_v31_candidate_evaluations_valid(dataset,result_checksum) THEN
+    RAISE EXCEPTION 'valid V2 evaluation receipts did not reconcile';
+  END IF;
+
+  SELECT e.evaluation_id,e.source_result_id,e.metrics,e.result_checksum
+    INTO target_eval,target_source,saved_metrics,saved_eval_checksum
+    FROM public.gto_v31_release_evaluations e
+   WHERE e.dataset_id=dataset AND e.evaluation_kind='paired_replay'
+     AND e.game_family='cash';
+  failed:=false;
+  BEGIN
+    UPDATE public.horse_league_results
+       SET duration_ms=duration_ms+1
+     WHERE id=target_source;
+  EXCEPTION WHEN OTHERS THEN
+    failed:=true;
+  END;
+  IF NOT failed THEN
+    RAISE EXCEPTION 'a certified evaluation source remained mutable';
+  END IF;
+
+  tampered_metrics:=jsonb_set(saved_metrics,
+    '{candidate_config,evaluation_contract}','"gto_v31_candidate.v1"'::jsonb);
+  UPDATE public.gto_v31_release_evaluations
+     SET metrics=tampered_metrics,
+         result_checksum=public.fn_gto_v31_json_checksum(jsonb_build_object(
+           'dataset_checksum',dataset_checksum,'kind',evaluation_kind,
+           'family',game_family,'verdict',verdict,'metrics',tampered_metrics))
+   WHERE evaluation_id=target_eval;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_mark_candidate(dataset);
+  EXCEPTION WHEN OTHERS THEN
+    failed:=true;
+  END;
+  IF NOT failed THEN
+    RAISE EXCEPTION 'a legacy evaluation receipt passed the candidate gate';
+  END IF;
+  UPDATE public.gto_v31_release_evaluations
+     SET metrics=saved_metrics,result_checksum=saved_eval_checksum
+   WHERE evaluation_id=target_eval;
+
   IF public.fn_gto_v31_mark_candidate(dataset)<>result_checksum THEN RAISE EXCEPTION 'candidate checksum changed'; END IF;
+
+  tampered_metrics:=jsonb_set(saved_metrics,
+    '{candidate_config,evaluation_engine_commit}',to_jsonb(repeat('d',40)));
+  UPDATE public.gto_v31_release_evaluations
+     SET metrics=tampered_metrics,
+         result_checksum=public.fn_gto_v31_json_checksum(jsonb_build_object(
+           'dataset_checksum',dataset_checksum,'kind',evaluation_kind,
+           'family',game_family,'verdict',verdict,'metrics',tampered_metrics))
+   WHERE evaluation_id=target_eval;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_promote_dataset(dataset);
+  EXCEPTION WHEN OTHERS THEN
+    failed:=true;
+  END;
+  IF NOT failed THEN
+    RAISE EXCEPTION 'a changed release receipt passed the promotion gate';
+  END IF;
+  UPDATE public.gto_v31_release_evaluations
+     SET metrics=saved_metrics,result_checksum=saved_eval_checksum
+   WHERE evaluation_id=target_eval;
+
   IF public.fn_gto_v31_promote_dataset(dataset)<>result_checksum THEN RAISE EXCEPTION 'promotion checksum changed'; END IF;
   IF (SELECT count(*) FROM public.fn_gto_v31_active_cells(0,500))<>array_length(roles,1) THEN
     RAISE EXCEPTION 'active RPC incomplete';

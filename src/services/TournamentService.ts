@@ -1226,13 +1226,22 @@ class TournamentService {
       throw new Error('Could not unregister - please try again');
     }
 
-    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
+    const res = data as { ok?: unknown; reason?: string; refunded_chips?: unknown } | null;
 
-    if (!res?.ok) {
+    if (res?.ok !== true) {
       throw new Error(unregisterReasonText(res?.reason));
     }
+    // The exact unregistration RPC returns refunded_chips. Missing or malformed
+    // amounts cannot confirm a refund, including a ticket-only zero-chip refund.
+    if (
+      typeof res.refunded_chips !== 'number' ||
+      !Number.isFinite(res.refunded_chips) ||
+      res.refunded_chips < 0
+    ) {
+      throw new Error('The Tournament Refund Could Not Be Confirmed.');
+    }
 
-    if ((res.refunded ?? 0) > 0) {
+    if (res.refunded_chips > 0) {
       masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
     }
   }

@@ -264,7 +264,7 @@ describe('TournamentService', () => {
       // unregister themselves, and the way to guarantee that is to never accept
       // a target. No amount is the anti-mint rule: the refund is read from the
       // tournaments row server-side.
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 110 }, error: null });
 
       await tournamentService.unregisterPlayer('t-1', 'u-1');
 
@@ -276,16 +276,30 @@ describe('TournamentService', () => {
     });
 
     it('emits a balance update only when something was actually refunded', async () => {
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 0 }, error: null });
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 0 }, error: null });
       await tournamentService.unregisterPlayer('t-1', 'u-1');
       expect(mockEmit).not.toHaveBeenCalled();
 
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 110 }, error: null });
       await tournamentService.unregisterPlayer('t-1', 'u-1');
       expect(mockEmit).toHaveBeenCalledWith('BALANCE_UPDATED', {
         source: 'tournament_unregister_refund',
         userId: 'u-1',
       });
+    });
+
+    it.each([
+      { ok: 'true', refunded_chips: 110 },
+      { ok: 1, refunded_chips: 110 },
+      { ok: true },
+      { ok: true, refunded_chips: '110' },
+      { ok: true, refunded_chips: -1 },
+      { ok: true, refunded_chips: NaN },
+      { ok: true, refunded_chips: Infinity },
+    ])('rejects an unconfirmed refund receipt without success events: %j', async (data) => {
+      mockRpc.mockResolvedValue({ data, error: null });
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow();
+      expect(mockEmit).not.toHaveBeenCalled();
     });
 
     it('surfaces the server refusal reason rather than a generic failure', async () => {
@@ -327,7 +341,7 @@ describe('TournamentService', () => {
         'atomic_tournament_unregister',
       ];
 
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 110 }, error: null });
       await tournamentService.unregisterPlayer('t-1', 'u-1');
 
       for (const [name] of mockRpc.mock.calls) {

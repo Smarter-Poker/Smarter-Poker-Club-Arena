@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "status": "in_progress_not_deployed",
+  "recorded_at": "2026-09-08T23:01:07.929570+00:00",
+  "ordinary_server_tests": {
+    "passed": 7759,
+    "files_passed": 579,
+    "opt_in_tests_skipped": 41
+  },
+  "postgres_tests": {
+    "passed": 41,
+    "database": "disposable socket-only PostgreSQL 17.11",
+    "production_test": false
+  },
+  "server_types": "passed",
+  "migration_applied_to_production": false,
+  "publication_complete": false,
+  "source_sha256": {
+    "docs/changelog/2026-09-08-phase-two-cash-conservation.md": "5c7118850847cdde124be0319c6c366a31bcaeb466dad3fd0bef2070f147dc94",
+    "scripts/dev/fixtures/departure-postgres.sql": "de1dbf26119d7730dc020873350e954d74b12a289f2af2d19f1875b600cc1eec",
+    "scripts/dev/probe-departure-postgres.sh": "1f62f999b0fe97cd9d1129285a9c0896e86b947f7d1d3ac752e9ffd10e0e8ac8",
+    "server/src/engine/CashoutDepartureIntegration.test.ts": "ca5ac23805f5da1fae40c23bc69fb5d983410ce3cf8a61102f7bc1337ba73161",
+    "server/src/engine/CashoutDeparturePostgres.test.ts": "34c879202b3d84e39d0a5d9862c3e850f1f32ebb5d57153e91d89da1cdc0b0d5",
+    "server/src/engine/CashoutEvictionOutcome.test.ts": "fc635927fb6fcab8802f9b8982c2ad465330375568d9dd297516c120d5620f48",
+    "server/src/engine/ChipContinuity.law.test.ts": "99c22254916ceb500b762710e6ec17be490afeca158e1b96ca0c56b4460ebe07",
+    "server/src/engine/ChipContinuityLeave.behaviour.test.ts": "7bdaced2559058b418e2e4c445faa881adfaa2859bc3443985bfaa810aa931fe",
+    "server/src/engine/PendingAddOnIdleSweep.test.ts": "85dc04b37b0f73be8f8424881bd6fe3bda392e06e3dd1af81a32bc9c09c9097c",
+    "server/src/engine/RebuyRowCannotBeErased.test.ts": "4fc0b9b4a918c106a3a867a1fe91a10ed52d5cebc2f7c711f80594fc52a812f9",
+    "server/src/engine/ServerTableEngineBase.ts": "0fb9f8828aa417aaa7d4ff1138cc8f1419dd3827d35b9166e63e1e5df8dc2567",
+    "server/src/engine/ServerTableEngineDealing.ts": "8e96f872e616fae3648639b6154f58f900be1b1e25b74a4e1f05628acd3b1ce4",
+    "server/src/engine/ServerTableEngineSeating.ts": "87feb16d03a234e34852b7a48222f45cc65068753d62ddf1584cdb79bdb670c4",
+    "server/src/engine/ServerTableEngineSettlement.ts": "b06f649458870c533f3fd7b801d6ce3fe23841dbfb1bdf19311fd429d7ca28ea",
+    "server/src/engine/TournamentGhostSeat.test.ts": "1f35cf8c7c47aafedc7475d091d3886d7cb3db5ddb0396c68ee7aff72338e927",
+    "server/src/services/HorseLifecycleManager.ts": "c1c07f48c7ee0caf129281dc7c6662fe70d5e3c2a3f1c129d2a96b5db6ad4936",
+    "server/src/services/supabase/CashoutReceipt.test.ts": "c5e641f16e47f7901e9f6532ea31319c41df2b23d7fe635aacfdfd8c7672b3db",
+    "server/src/services/supabase/cashSessions.ts": "7c1053042cc5697855b1a7fd3de89d9867e0ae08b1d70b659232241addf9ebd7",
+    "server/src/services/supabase/seats.guard.test.ts": "cee192bade7f56d2616172642b59127fb94f3112f0253b1e70d8c745c8eaa215",
+    "server/src/services/supabase/seats.ts": "eed0fadc2742f461755cfb04fd2a50cb4c3448959501d277329ec5bc14eab96f",
+    "server/src/services/supabase/tables.ts": "0f7e6e561c8fa2028c74406cedf29f55bf633c3d139e801c22ef4f7e578d4f86",
+    "server/src/types.ts": "2ec02d793326cedb21426c27b927f17d8ef58e063291e3e48bc5e22e0bbfec8b",
+    "supabase/migrations/20260908220604_bind_cashout_requests_to_seat_occupancy.sql": "d3434616f2d0dc73eb7a86cb878765af5c0cefa17a53a4e0247b97e357045128",
+    "scripts/ci/schema-manifest.d/phase-two-occupancy-contract.json": "04df5964ea5c6d9e8b229d399b5da560262ef9dc179e9f1bbe81735cff3f5c09"
+  },
+  "formatted_tree_full_suite": "7759 passed; 41 opt-in PostgreSQL cases passed separately"
+}

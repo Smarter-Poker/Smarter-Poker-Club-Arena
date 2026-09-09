@@ -50,6 +50,7 @@ import styles from './ClubDashboard.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import { playerDisplayName } from '../../utils/playerDisplayName';
+import { downloadCsv } from '../../utils/downloadCsv';
 
 interface ClubInfo {
   id: string;
@@ -906,16 +907,13 @@ export default function ClubDashboard() {
     setAttribution(played > 0 ? { played, attributed } : null);
   }, [rankedPlayers]);
 
-  const downloadCsv = (csv: string, suffix: string) => {
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(club?.name || 'club').replace(/[^\w-]+/g, '-')}-${suffix}-${dateRange}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  /* The shared helper, not a local copy of the same name: it carries the
+     app's share-sheet branch, without which this downloaded nothing there. */
+  const downloadClubCsv = (csv: string, suffix: string) => {
+    downloadCsv(
+      `${(club?.name || 'club').replace(/[^\w-]+/g, '-')}-${suffix}-${dateRange}.csv`,
+      csv
+    );
   };
 
   /** Exports the page currently on screen — labelled as such, not as the roster. */
@@ -947,12 +945,15 @@ export default function ClubDashboard() {
         m.profit,
       ].join(',')
     );
-    downloadCsv([header.join(','), ...rows].join('\n'), `members-page${memberPage + 1}`);
+    downloadClubCsv([header.join(','), ...rows].join('\n'), `members-page${memberPage + 1}`);
   };
 
   // The file says what it holds: a horse-filtered export is named as one.
   const exportLeaderboardCsv = () =>
-    downloadCsv(leaderboardToCsv(rankedPlayers), hideHorses ? 'leaderboard-people' : 'leaderboard');
+    downloadClubCsv(
+      leaderboardToCsv(rankedPlayers),
+      hideHorses ? 'leaderboard-people' : 'leaderboard'
+    );
 
   // The toggle is only offered when it can do something. The server masks
   // is_horse for everyone below owner / co_owner / admin, so for them every

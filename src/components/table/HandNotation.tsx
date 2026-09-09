@@ -12,6 +12,7 @@
 import React, { useMemo, useEffect, useCallback, useState, useRef } from 'react';
 import './HandNotation.css';
 import { reportError } from '../../utils/errorReporter';
+import { downloadBlob } from '../../utils/downloadCsv';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -222,15 +223,7 @@ export function HandNotation({ hand, onClose, currency = '' }: HandNotationProps
 
   // Download as text file
   const handleDownload = useCallback(() => {
-    const blob = new Blob([notation], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `hand_${hand.handId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(`hand_${hand.handId}.txt`, new Blob([notation], { type: 'text/plain' }));
   }, [notation, hand.handId]);
 
   return (

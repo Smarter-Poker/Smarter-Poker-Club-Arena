@@ -90,9 +90,19 @@ const snapshot = (fence: string): LiveHorseDecisionSnapshot => ({
   },
 });
 
+const V31_DATASET = {
+  id: '11111111-1111-4111-8111-111111111111',
+  checksum: 'a'.repeat(64),
+};
+
 const ready = {
   type: 'READY' as const,
-  solverStores: { charts: 1, postflop: 2, postflopV31: 3 },
+  solverStores: {
+    charts: 1,
+    postflop: 2,
+    postflopV31: 3,
+    postflopV31Dataset: V31_DATASET,
+  },
   solverPolicyArtifact: {
     totalPolicies: 4,
   } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -203,6 +213,28 @@ describe('LiveHorseDecisionWorkerClient', () => {
     });
 
     await expect(client.ready()).rejects.toThrow('READY timed out');
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(client.status()).toMatchObject({ phase: 'failed' });
+    expect(worker.terminateCalls).toBe(1);
+    expect(onFatal).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a positive V31 store that omits its promoted dataset identity', async () => {
+    const worker = new FakeWorker();
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+
+    worker.emitMessage({
+      ...ready,
+      solverStores: {
+        charts: 1,
+        postflop: 2,
+        postflopV31: 3,
+        postflopV31Dataset: null,
+      },
+    });
+
+    await expect(client.ready()).rejects.toThrow(/invalid solver-store identity/);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(client.status()).toMatchObject({ phase: 'failed' });
     expect(worker.terminateCalls).toBe(1);
@@ -338,7 +370,12 @@ describe('LiveHorseDecisionWorkerClient', () => {
         requestId: 1,
         generation: 0,
         fence: 'worker:status',
-        solverStores: { charts: 11, postflop: 12, postflopV31: 13 },
+        solverStores: {
+          charts: 11,
+          postflop: 12,
+          postflopV31: 13,
+          postflopV31Dataset: V31_DATASET,
+        },
         solverPolicyArtifact: {
           totalPolicies: 14,
         } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -346,11 +383,49 @@ describe('LiveHorseDecisionWorkerClient', () => {
       });
 
       expect(client.status()).toMatchObject({
-        solverStores: { charts: 11, postflop: 12, postflopV31: 13 },
+        solverStores: {
+          charts: 11,
+          postflop: 12,
+          postflopV31: 13,
+          postflopV31Dataset: V31_DATASET,
+        },
         solverPolicyArtifact: { totalPolicies: 14 },
         governor: { scale: 0.08, sampledAt: 456 },
         queueDepth: 0,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('terminal-fails if a status refresh loses the V31 dataset identity', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+      worker.emitMessage(ready);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const status = worker.sent.at(-1) as { requestId: number };
+
+      worker.emitMessage({
+        type: 'STATUS_RESULT',
+        requestId: status.requestId,
+        generation: 0,
+        fence: 'worker:status',
+        solverStores: {
+          charts: 1,
+          postflop: 2,
+          postflopV31: 3,
+          postflopV31Dataset: null,
+        },
+        solverPolicyArtifact: ready.solverPolicyArtifact,
+        governor: ready.governor,
+      });
+
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({ phase: 'failed' });
+      expect(onFatal).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

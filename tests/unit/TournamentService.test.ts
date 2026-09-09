@@ -513,3 +513,97 @@ describe('TournamentService', () => {
     });
   });
 });
+
+describe('Tournament Purchase Confirmation', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('navigator', { locks: { request: (_key: string, fn: () => unknown) => fn() } });
+
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    vi.spyOn(tournamentService, 'canRebuy').mockResolvedValue({ allowed: true });
+    vi.spyOn(tournamentService, 'canAddOn').mockResolvedValue({ allowed: true });
+    vi.spyOn(tournamentService, 'getCurrentLevelState').mockReturnValue({ levelIndex: 3 } as never);
+  });
+
+  const kinds = ['rebuy', 'reentry', 'addon'] as const;
+  function purchase(kind: (typeof kinds)[number]) {
+    vi.spyOn(tournamentService, 'getTournament').mockResolvedValue({
+      id: 'event',
+      starting_chips: 1000,
+      rebuy_chips: 1000,
+      addon_chips: 2000,
+      buy_in_amount: 10,
+      rebuy_cost: 10,
+      addon_cost: 10,
+      is_reentry: kind === 'reentry',
+      is_rebuy: kind !== 'reentry',
+    } as never);
+    return kind === 'addon'
+      ? tournamentService.processAddOn('event', 'player')
+      : tournamentService.processRebuy('event', 'player', 'original-prompt');
+  }
+
+  for (const kind of kinds) {
+    it.each([
+      null,
+      {},
+      [],
+      { success: false, new_stack: 1000, rebuy_type: kind },
+      { success: 'true', new_stack: 1000, rebuy_type: kind },
+      { success: true, rebuy_type: kind },
+      { success: true, new_stack: '1000', rebuy_type: kind },
+      { success: true, new_stack: NaN, rebuy_type: kind },
+      { success: true, new_stack: Infinity, rebuy_type: kind },
+      { success: true, new_stack: -1, rebuy_type: kind },
+      { success: true, new_stack: 1000, rebuy_type: 'wrong-purchase' },
+    ])('rejects an unconfirmed ' + kind + ' response %#', async (data) => {
+      mockRpc.mockResolvedValue({ data, error: null });
+      await expect(purchase(kind)).rejects.toThrow(/confirm/i);
+      expect(mockEmit).not.toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([0, 2500])('returns the exact confirmed ' + kind + ' stack %s', async (stack) => {
+      mockRpc.mockResolvedValue({
+        data: { success: true, new_stack: stack, rebuy_type: kind, idempotent: true },
+        error: null,
+      });
+      await expect(purchase(kind)).resolves.toEqual({ success: true, newStack: stack });
+      expect(mockEmit).toHaveBeenCalledExactlyOnceWith('BALANCE_UPDATED', {
+        source: kind === 'addon' ? 'tournament_addon' : 'tournament_rebuy',
+        userId: 'player',
+      });
+    });
+
+    it('replays the exact ' + kind + ' purchase after eligibility and level change', async () => {
+      mockRpc.mockResolvedValueOnce({ data: null, error: new Error('Lost Response') });
+      await expect(purchase(kind)).rejects.toThrow('Lost Response');
+      const original = mockRpc.mock.calls[0][1];
+      vi.mocked(tournamentService.canRebuy).mockRejectedValue(new Error('Window Closed'));
+      vi.mocked(tournamentService.canAddOn).mockRejectedValue(new Error('Window Closed'));
+      vi.mocked(tournamentService.getCurrentLevelState).mockReturnValue({
+        levelIndex: 99,
+      } as never);
+      mockRpc.mockResolvedValueOnce({
+        data: { success: true, new_stack: 0, rebuy_type: kind, idempotent: true },
+        error: null,
+      });
+      const result =
+        kind === 'addon'
+          ? await tournamentService.processAddOn('event', 'player')
+          : await tournamentService.processRebuy('event', 'player');
+      expect(result).toEqual({ success: true, newStack: 0 });
+      expect(mockRpc.mock.calls[1][1]).toEqual(original);
+      expect(mockEmit).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves an unknown transport outcome for ' + kind, async () => {
+      const error = new Error('Response Lost');
+      mockRpc.mockResolvedValue({ data: null, error });
+      await expect(purchase(kind)).rejects.toBe(error);
+      expect(mockEmit).not.toHaveBeenCalled();
+    });
+  }
+});

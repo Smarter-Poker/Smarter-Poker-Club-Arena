@@ -205,7 +205,7 @@ describe('the migration that ships beside this one', () => {
   const MIGRATION = readFileSync(
     resolve(
       __dirname,
-      '../../../supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+      '../../../supabase/migrations/20260909215641_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
     ),
     'utf8'
   );

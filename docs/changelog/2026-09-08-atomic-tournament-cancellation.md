@@ -11,7 +11,7 @@ or replay the original closeout.
 
 ## Root Repair
 
-Migration `20260909014444_tournament_cancellation_commits_one_stored_receipt`
+Migration `20260909215539_tournament_cancellation_commits_one_stored_receipt`
 turns the existing `atomic_cancel_tournament(tournament_id, actor_id)` door
 into the sole transaction boundary for cancellation:
 

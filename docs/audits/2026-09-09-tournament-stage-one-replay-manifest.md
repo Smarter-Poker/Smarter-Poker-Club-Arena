@@ -25,11 +25,11 @@ The logical IDs embedded inside these files are immutable. After each production
 5. Freeze A: `20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql`
 6. Thawed: `20260909053000_complete_known_spin_journal_adoption_after_freeze.sql`
 7. Thawed: `20260909052000_complete_known_satellite_adoptions_after_freeze.sql`
-8. Freeze B: `20260909014444_tournament_cancellation_commits_one_stored_receipt.sql`
-9. Freeze B: `20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql`
-10. Freeze B: `20260909014510_every_tournament_payout_names_its_source.sql`
+8. Freeze B: `20260909215539_tournament_cancellation_commits_one_stored_receipt.sql`
+9. Freeze B: `20260909215633_four_full_pool_events_retire_only_their_stale_obligation_meta.sql`
+10. Freeze B: `20260909215636_every_tournament_payout_names_its_source.sql`
 11. Freeze B: `20260909041438_retire_legacy_tournament_hold_refund_door.sql`
-12. Freeze B: `20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql`
+12. Freeze B: `20260909215641_non_satellite_terminal_settlement_commits_one_stored_receipt.sql`
 13. Freeze B: `20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql`
 14. Freeze B: `20260909043000_tournament_terminal_roots_are_db_first_hardened.sql`
 

@@ -76,7 +76,16 @@ describe('tournament seat exits have one hard authority', () => {
     expect(sql).toContain(
       "SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))"
     );
-    expect(sql).toContain('LOCK TABLE cron.job IN SHARE ROW EXCLUSIVE MODE');
+    expect(sql).not.toContain('LOCK TABLE cron.job');
+    const reconcilerLock = sql.indexOf(
+      "SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))"
+    );
+    const reconcilerUnschedule = sql.indexOf('PERFORM cron.unschedule(j.jobid)');
+    const reconcilerAbsenceProof = sql.indexOf(
+      "RAISE EXCEPTION 'tournament denormal reconciler cron survived unschedule'"
+    );
+    expect(reconcilerUnschedule).toBeGreaterThan(reconcilerLock);
+    expect(reconcilerAbsenceProof).toBeGreaterThan(reconcilerUnschedule);
     expect(terminalOrphanCutover).toContain('public.fn_ca_has_committed_tournament_receipt(t.id)');
     expect(terminalOrphanCutover).toContain('s.left_at IS NULL');
     expect(terminalOrphanCutover).toContain(
@@ -121,6 +130,10 @@ describe('tournament seat exits have one hard authority', () => {
       sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_windows'),
       sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
     );
+    const ordinals = sql.slice(
+      sql.indexOf('CREATE TEMP TABLE ca_cutover_rebuy_entitlement_ordinals'),
+      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
+    );
     const payments = sql.slice(
       sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments'),
       sql.indexOf('CREATE TEMP TABLE ca_cutover_paid_candidates')
@@ -132,7 +145,10 @@ describe('tournament seat exits have one hard authority', () => {
     // remains part of each physical-hand join, never a chronology substitute.
     expect(windows).toContain('ORDER BY c.hand_number,c.id');
     expect(windows).toContain('h.table_id=c.table_id AND h.hand_number=c.hand_number');
-    expect(windows).toContain("WHERE c.state='pending' AND c.stack_after=0");
+    expect(windows).toContain('WHERE c.stack_after=0');
+    expect(windows).toContain("c.state='pending' OR (");
+    expect(windows).toContain("c.state='rebought' AND c.next_candidate_id IS NULL");
+    expect(windows).toContain('c.resolved_at IS NOT NULL');
     expect(windows).toContain('public.hand_atomic_commits');
     expect(windows).toContain('public.settlement_idempotency_keys');
     expect(windows).toContain('k.result IS NOT DISTINCT FROM h.stack_result');
@@ -145,28 +161,35 @@ describe('tournament seat exits have one hard authority', () => {
     expect(payments).toContain("kind.purchase_type||':'||w.user_id::text||':%'");
     expect(payments).toContain("tx.description LIKE 'Tournament '||idem.purchase_type||':%'");
     expect(payments).toContain("e.evidence_kind='cutover_wallet_charge'");
-    expect(payments).toContain('w.next_candidate_id IS NOT NULL');
     expect(payments).toContain("idem.purchase_type='rebuy'");
     expect(payments).toContain('idem.purchase_amount=0');
-    expect(payments).toContain('e.gross=1');
-    expect(payments).toContain("w.user_id::text||':#0'");
+    expect(ordinals).toContain('row_number() OVER (');
+    expect(ordinals).toContain('ORDER BY l.chain_seq,e.id');
+    expect(ordinals).toContain("e.entitlement_kind='wallet_charge'");
+    expect(payments).toContain("w.user_id::text||':#'||ordinal.purchase_ordinal::text");
     expect(payments).toContain(') IS TRUE');
     expect(payments).not.toMatch(/idem\.purchase_amount\s*=\s*0[\s\S]*?e\.gross\s*>\s*0/);
     expect(terminalOrphanCutover).toContain('JOIN ca_cutover_candidate_windows w');
     expect(terminalOrphanCutover).toContain('WHERE w.next_candidate_id IS NOT NULL');
     expect(terminalOrphanCutover).toContain('AND NOT p.exact_rebuy');
+    expect(terminalOrphanCutover).toContain(
+      "OR (p.next_candidate_id IS NULL AND tp.status<>'playing')"
+    );
     expect(seatExitProbe).toContain("e.evidence_kind='cutover_wallet_charge'");
-    expect(seatExitProbe).toContain("r.repair_action='candidate_closed'");
-    expect(seatExitProbe).toContain('(later.hand_number,later.id)>');
     expect(seatExitProbe).toContain("evidence.purchase_type='rebuy'");
     expect(seatExitProbe).toContain('i.amount=0');
-    expect(seatExitProbe).toContain('e.gross=1');
-    expect(seatExitProbe).toContain("r.user_id::text||':#0'");
+    expect(seatExitProbe).toContain('evidence.purchase_ordinal IS DISTINCT FROM (');
+    expect(seatExitProbe).toContain('(earlier_ledger.chain_seq,earlier.id)<');
+    expect(seatExitProbe).toContain("r.user_id::text||':#'||");
+    expect(seatExitProbe).toContain('evidence.purchase_ordinal::text');
     expect(seatExitProbe).toContain(') IS NOT TRUE');
     expect(terminalOrphanCutover).toContain(
       "SET state='rebought',resolved_at=v_item.first_paid_at"
     );
     expect(terminalOrphanCutover).toContain('later.hand_number>p.zero_hand_number');
+    expect(sql).toContain('CREATE TEMP TABLE ca_cutover_paid_hand_continuations');
+    expect(terminalOrphanCutover).toContain("v_item.candidate_state_before='rebought'");
+    expect(terminalOrphanCutover).toContain('v_item.candidate_resolved_at_before');
     expect(terminalOrphanCutover).not.toContain('later.committed_at>p.first_paid_at');
   });
 
@@ -175,6 +198,8 @@ describe('tournament seat exits have one hard authority', () => {
     expect(terminalOrphanCutover).toContain('SET chips=v_expected_stack::integer');
     expect(terminalOrphanCutover).toContain("v_action:='stranded_stack_seated'");
     expect(terminalOrphanCutover).toContain("v_action:='live_generation_rotated'");
+    expect(terminalOrphanCutover).toContain("v_action:='candidate_closed'");
+    expect(terminalOrphanCutover).toContain('FROM ca_cutover_paid_hand_continuations continuation');
     expect(terminalOrphanCutover).toContain('SET joined_at=v_item.first_paid_at');
     expect(terminalOrphanCutover).toContain(
       'INSERT INTO public.tournament_paid_candidate_cutover_receipts'
@@ -188,6 +213,7 @@ describe('tournament seat exits have one hard authority', () => {
       'source_ledger_row_hashes',
       'wallet_transaction_ids',
       'purchase_idempotency_keys',
+      'purchase_ordinals',
       'purchase_types',
     ]) {
       expect(sql).toContain(evidence);
@@ -234,34 +260,50 @@ describe('tournament seat exits have one hard authority', () => {
     }
   });
 
-  it('revives a positive generic-clear orphan only from one exact departed generation', () => {
-    expect(terminalOrphanCutover).toContain('WITH positive_seatless AS MATERIALIZED');
-    expect(terminalOrphanCutover).toContain(
-      'AND NOT EXISTS (\n           SELECT 1 FROM public.tournament_knockout_candidates c'
+  it('reseats both accepted-hand survivor classes through one database-chosen chair', () => {
+    const positiveRepair = terminalOrphanCutover.slice(
+      terminalOrphanCutover.indexOf('-- Every remaining positive seatless roster'),
+      terminalOrphanCutover.indexOf(
+        'SELECT COALESCE(array_agg(r.source_seat_id ORDER BY r.source_seat_id)'
+      )
     );
-    expect(terminalOrphanCutover).toContain('SELECT count(*) FROM public.table_seats history');
-    expect(terminalOrphanCutover).toContain("s.status='active'");
-    expect(terminalOrphanCutover).toContain('h.committed_at>=s.joined_at');
-    expect(terminalOrphanCutover).toContain(
-      'ORDER BY committed.hand_number DESC,committed.table_id'
+    expect(positiveRepair).toContain('WITH positive_seatless AS MATERIALIZED');
+    expect(positiveRepair).toContain('LEFT JOIN ca_cutover_paid_hand_continuations continuation');
+    expect(positiveRepair).toContain("THEN 'accepted_hand_no_ko'");
+    expect(positiveRepair).toContain("ELSE 'accepted_hand_after_paid_rebuy'");
+    expect(positiveRepair).toContain('continuation.candidate_id IS NOT NULL OR NOT EXISTS');
+    expect(positiveRepair).not.toContain('SELECT count(*) FROM public.table_seats history');
+    expect(positiveRepair).not.toContain(
+      "lower(COALESCE(tb.status,'')) IN ('running','waiting','active')"
     );
-    expect(terminalOrphanCutover).toContain('later_global.hand_number>h.hand_number');
-    expect(terminalOrphanCutover).toContain('k.result IS NOT DISTINCT FROM h.stack_result');
-    expect(terminalOrphanCutover).toContain('s.left_at>GREATEST(');
-    expect(terminalOrphanCutover).toContain(
-      "'positive generic-clear orphan did not revive exactly: %'"
-    );
-    expect(terminalOrphanCutover).toContain(
+    expect(positiveRepair).toContain("s.status='active'");
+    expect(positiveRepair).toContain('h.committed_at>=s.joined_at');
+    expect(positiveRepair).toContain('ORDER BY committed.hand_number DESC,committed.table_id');
+    expect(positiveRepair).toContain('later_global.hand_number>h.hand_number');
+    expect(positiveRepair).toContain('k.result IS NOT DISTINCT FROM h.stack_result');
+    expect(positiveRepair).toContain('s.left_at>GREATEST(');
+    expect(positiveRepair).toContain('public.fn_ca_choose_tournament_seat_locked(');
+    expect(positiveRepair).toContain('v_target_table_id,v_target_seat_number);');
+    expect(positiveRepair).toContain("'positive accepted-hand survivor did not reseat exactly: %'");
+    expect(positiveRepair).toContain(
       'INSERT INTO public.tournament_positive_orphan_cutover_receipts'
     );
-    expect(terminalOrphanCutover).toContain(
-      "'positive orphan revival did not preserve its own seat state exactly'"
+    expect(positiveRepair).toContain(
+      "'positive accepted-hand reseat did not preserve its own state exactly'"
     );
     expect(sql).toContain('source_time_bank_remaining');
     expect(sql).toContain('revived_time_bank_remaining');
+    expect(sql).toContain('revived_table_id');
+    expect(sql).toContain('revived_seat_number');
+    expect(sql).toContain('evidence_class');
+    expect(sql).toContain('paid_candidate_id');
+    expect(sql).toContain('destination_seat_id_before');
     expect(sql).toContain('revived_left_at');
     expect(sql).toContain('revived_status');
     expect(sql).toContain('revived_leave_pending');
+    expect(terminalOrphanCutover).toContain(
+      "'live tournament chip cutover found an ambiguous or missing positive seat'"
+    );
   });
 
   it('keeps both detailed cutover receipts owner-only and append-only', () => {

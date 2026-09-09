@@ -16,7 +16,7 @@ import time
 repo = Path(__file__).resolve().parents[2]
 fixture = repo / 'scripts/dev/fixtures/spin-funding'
 migration = repo / 'supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql'
-played_replay_migration = repo / 'supabase/migrations/20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql'
+played_replay_migration = repo / 'supabase/migrations/20260909212412_a_booked_played_spin_replays_its_original_funded_draw.sql'
 configured = os.environ.get('POKER_AUDIT_PG_BIN')
 pg = Path(configured) if configured else Path(subprocess.check_output(
     ['brew', '--prefix', 'postgresql@17'], text=True).strip()) / 'bin'

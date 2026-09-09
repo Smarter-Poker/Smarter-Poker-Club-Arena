@@ -367,6 +367,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (await this.resumeCommittedTerminalCleanup()) return;
       if (sweepStopped()) return;
 
+      seatingStage: {
+        if (this.eliminationSweepCursor.nextStage > 0) break seatingStage;
+        // A positive playing roster row without a live chair is a gameplay
+        // invariant failure, so repair it before any ordinary nonterminal
+        // read or recovery can fail closed. The atomic database assignment
+        // chooses the legal chair; this stage only supplies a preference.
+        await this.ensureLateRegSeated();
+        if (sweepStopped()) return;
+        if (completedStage(1)) return;
+      }
+
       // A close commits its durable receipt and a `late_registration` wake in
       // one database transaction. Registration uses the same reason while the
       // window is open; asking the authoritative RPC then is a cheap no-op.
@@ -382,7 +393,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       recoveryStage: {
-        if (this.eliminationSweepCursor.nextStage > 0) break recoveryStage;
+        if (this.eliminationSweepCursor.nextStage > 1) break recoveryStage;
         // CHIP-CAP INPUTS (2026-08-31): entrants + rebuys/add-ons granted, so
         // capLevelToTournamentChips knows how many chips the event has issued.
         // Throttled to once a minute — the cap only needs to be roughly right,
@@ -406,11 +417,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           return;
         }
 
-        if (completedStage(1)) return;
+        if (completedStage(2)) return;
       }
 
       bustStage: {
-        if (this.eliminationSweepCursor.nextStage > 1) break bustStage;
+        if (this.eliminationSweepCursor.nextStage > 2) break bustStage;
         // Find ALL busted players (0 chips) in a single query
         // eslint-disable-next-line prefer-const
         let { data: busted, error: bustedErr } = await supabase
@@ -949,11 +960,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           return;
         }
 
-        if (completedStage(2)) return;
+        if (completedStage(3)) return;
       }
 
       finishStage: {
-        if (this.eliminationSweepCursor.nextStage > 2) break finishStage;
+        if (this.eliminationSweepCursor.nextStage > 3) break finishStage;
         // Check remaining players AFTER all eliminations processed
         const { count: remainingCount, error: remainingErr } = await supabase
           .from('tournament_players')
@@ -1065,17 +1076,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
         }
 
-        if (completedStage(3)) return;
-      }
-
-      seatingStage: {
-        if (this.eliminationSweepCursor.nextStage > 3) break seatingStage;
-        // TOURNEY-AUDIT 2026-07-24 (sweep 6): server-authoritative seating —
-        // late registrants / re-entries are seated within one cycle; if every
-        // table is full they're marked 'playing' so checkDynamicTableExpansion
-        // spawns a table and the balancer redraws. No player ever waits.
-        await this.ensureLateRegSeated();
-        if (sweepStopped()) return;
         if (completedStage(4)) return;
       }
 

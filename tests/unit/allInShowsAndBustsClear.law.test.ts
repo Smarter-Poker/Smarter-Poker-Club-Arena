@@ -32,7 +32,7 @@ const MANAGER = fs.readFileSync(
 const TERMINAL_MIGRATION = fs.readFileSync(
   path.join(
     ROOT,
-    'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+    'supabase/migrations/20260909215641_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );

@@ -14,7 +14,7 @@ type Cutover = {
 
 const cutovers: Cutover[] = [
   {
-    file: '20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
+    file: '20260909215633_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
     gateTag: 'require_live_obligation_retirement_freeze',
     expiryTag: 'verify_live_obligation_retirement_freeze_still_held',
     firstBarrier: 'CREATE TABLE IF NOT EXISTS public.tournament_obligation_retirements',
@@ -129,5 +129,29 @@ describe('stage-one tournament cutovers require the live maintenance entry freez
     expect(holdRetirement.indexOf('DO $require_live_legacy_hold_retirement_freeze$')).toBeLessThan(
       holdRetirement.indexOf('LOCK TABLE public.chip_escrow_holds')
     );
+  });
+
+  it('converges a historical obligation from either its original debt or its already-paid shape', () => {
+    const sql = sqlFor(cutovers[0].file);
+    const acceptedShape = sql.slice(
+      sql.indexOf('IF v_obligation.tournament_id IS DISTINCT FROM'),
+      sql.indexOf('INSERT INTO public.tournament_obligation_retirements')
+    );
+    const convergenceUpdate = sql.slice(
+      sql.indexOf('UPDATE public.tournament_obligations o'),
+      sql.indexOf(
+        'SELECT count(*) INTO v_rows',
+        sql.indexOf('UPDATE public.tournament_obligations o')
+      )
+    );
+
+    expect(acceptedShape).toMatch(
+      /v_obligation\.amount_owed NOT IN \(\s*v_expected\.amount_owed, v_expected\.amount_paid\)/
+    );
+    expect(convergenceUpdate).toMatch(
+      /o\.amount_owed IN \(\s*v_expected\.amount_owed, v_expected\.amount_paid\)/
+    );
+    expect(convergenceUpdate).toContain('SET amount_owed = v_expected.amount_paid');
+    expect(convergenceUpdate).toContain('AND o.amount_paid = v_expected.amount_paid');
   });
 });

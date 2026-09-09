@@ -5272,9 +5272,12 @@ export abstract class TournamentManagerBase {
           tableId,
           seatNumber,
         });
-        const taken = occupiedSeats.get(tableId) ?? new Set<number>();
+        // The proposed chair can become stale between this snapshot and the
+        // locked RPC. Track only the database-certified chair so the next
+        // launch assignment never treats the wrong table as occupied.
+        const taken = occupiedSeats.get(receipt.tableId) ?? new Set<number>();
         taken.add(receipt.seatNumber);
-        occupiedSeats.set(tableId, taken);
+        occupiedSeats.set(receipt.tableId, taken);
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic launch seat certified for ${receipt.userId.slice(0, 8)} at table ${receipt.tableId.slice(0, 8)} seat ${receipt.seatNumber} (${receipt.stack} chips, table count ${receipt.currentPlayers})`
         );

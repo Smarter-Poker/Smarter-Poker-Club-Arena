@@ -1154,7 +1154,11 @@ export class TournamentManager extends TournamentManagerEliminations {
             seatNumber,
           });
           if (!this.eliminationMutationAllowed()) return;
-          occ.taken.add(receipt.seatNumber);
+          // The snapshot supplies only a placement preference. Concurrent
+          // claims can make that chair stale, so the database may select a
+          // different legal chair and its receipt is the only coordinate we
+          // are allowed to reserve in this pass's occupancy view.
+          occupancy.get(receipt.tableId)?.taken.add(receipt.seatNumber);
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic late-reg seat certified for ${player.user_id.slice(0, 8)} at table ${receipt.tableId.slice(0, 8)} seat ${receipt.seatNumber} (${receipt.stack} chips, table count ${receipt.currentPlayers})`
           );

@@ -128,7 +128,11 @@ BEGIN
         OR c.tournament_id IS DISTINCT FROM r.tournament_id
         OR c.eliminated_user_id IS DISTINCT FROM r.user_id
         OR c.state IS DISTINCT FROM 'rebought'
-        OR c.resolved_at IS DISTINCT FROM r.first_paid_at
+        OR (r.candidate_state_before='pending'
+             AND c.resolved_at IS DISTINCT FROM r.first_paid_at)
+        OR (r.candidate_state_before='rebought'
+             AND c.resolved_at IS DISTINCT FROM
+                   r.candidate_resolved_at_before)
         OR h.table_id IS NULL OR k.table_id IS NULL
         OR h.stack_result->>'success' IS DISTINCT FROM 'true'
         OR k.completed_at IS NULL
@@ -190,9 +194,10 @@ BEGIN
       CROSS JOIN LATERAL unnest(
         r.entitlement_ids,r.source_ledger_ids,r.source_ledger_chain_seqs,
         r.source_ledger_row_hashes,r.wallet_transaction_ids,
-        r.purchase_idempotency_keys,r.purchase_types)
+        r.purchase_idempotency_keys,r.purchase_ordinals,r.purchase_types)
         AS evidence(entitlement_id,ledger_id,chain_seq,row_hash,
-                    wallet_transaction_id,purchase_key,purchase_type)
+                    wallet_transaction_id,purchase_key,purchase_ordinal,
+                    purchase_type)
       LEFT JOIN public.tournament_refund_entitlements e
         ON e.id=evidence.entitlement_id
       LEFT JOIN public.chip_ledger l ON l.id=evidence.ledger_id
@@ -209,6 +214,17 @@ BEGIN
         OR e.evidence_kind NOT IN (
              'atomic_wallet_charge','cutover_wallet_charge')
         OR e.created_at IS DISTINCT FROM l.created_at
+        OR evidence.purchase_ordinal IS DISTINCT FROM (
+             SELECT count(*)::integer
+               FROM public.tournament_refund_entitlements earlier
+               JOIN public.chip_ledger earlier_ledger
+                 ON earlier_ledger.id=earlier.source_ledger_id
+              WHERE earlier.tournament_id=r.tournament_id
+                AND earlier.user_id=r.user_id
+                AND earlier.entitlement_kind='wallet_charge'
+                AND earlier.charge_category='rebuy'
+                AND (earlier_ledger.chain_seq,earlier.id)<
+                    (l.chain_seq,e.id))
         OR l.chain_seq IS DISTINCT FROM evidence.chain_seq
         OR l.row_hash IS DISTINCT FROM evidence.row_hash
         OR l.from_type IS DISTINCT FROM 'player_wallet'
@@ -234,20 +250,11 @@ BEGIN
           i.amount IS NOT DISTINCT FROM e.gross
           OR (
             e.evidence_kind='cutover_wallet_charge'
-            AND r.repair_action='candidate_closed'
-            AND EXISTS (
-              SELECT 1
-                FROM public.tournament_knockout_candidates later
-               WHERE later.tournament_id=r.tournament_id
-                 AND later.eliminated_user_id=r.user_id
-                 AND (later.hand_number,later.id)>
-                     (r.zero_hand_number,r.candidate_id)
-            )
             AND evidence.purchase_type='rebuy'
             AND i.amount=0
-            AND e.gross=1
             AND i.key='tourney:'||r.tournament_id::text||':rebuy:'||
-                      r.user_id::text||':#0'
+                      r.user_id::text||':#'||
+                      evidence.purchase_ordinal::text
           )
         ) IS NOT TRUE
         OR i.created_at IS DISTINCT FROM l.created_at
@@ -266,10 +273,15 @@ BEGIN
       LEFT JOIN public.settlement_idempotency_keys k
         ON k.table_id=r.table_id AND k.hand_id=r.last_settlement_hand_id
       LEFT JOIN public.tournament_players tp ON tp.id=r.roster_id
-     WHERE r.source_seat_id IS DISTINCT FROM r.revived_seat_id
-        OR tp.id IS NULL
+      LEFT JOIN public.table_seats revived ON revived.id=r.revived_seat_id
+      LEFT JOIN public.tournament_paid_candidate_cutover_receipts paid
+        ON paid.candidate_id=r.paid_candidate_id
+     WHERE tp.id IS NULL OR revived.id IS NULL
         OR tp.tournament_id IS DISTINCT FROM r.tournament_id
         OR tp.user_id IS DISTINCT FROM r.user_id
+        OR tp.chips IS DISTINCT FROM r.stack
+        OR tp.table_id IS DISTINCT FROM r.revived_table_id
+        OR tp.seat_number IS DISTINCT FROM r.revived_seat_number
         OR r.source_status IS DISTINCT FROM 'active'
         OR r.source_player_id IS NOT NULL
         OR r.source_member_id IS NOT NULL
@@ -292,6 +304,67 @@ BEGIN
              r.source_time_bank_uses_remaining
         OR r.revived_entry_hold IS NOT NULL
         OR r.revived_entry_post_agreed IS DISTINCT FROM false
+        OR revived.user_id IS DISTINCT FROM r.user_id
+        OR revived.table_id IS DISTINCT FROM r.revived_table_id
+        OR revived.seat_number IS DISTINCT FROM r.revived_seat_number
+        OR revived.stack IS DISTINCT FROM r.stack
+        OR revived.joined_at IS DISTINCT FROM r.revived_joined_at
+        OR revived.left_at IS NOT NULL
+        OR revived.player_id IS DISTINCT FROM r.revived_player_id
+        OR revived.member_id IS DISTINCT FROM r.revived_member_id
+        OR revived.horse_id IS DISTINCT FROM r.revived_horse_id
+        OR revived.club_id IS DISTINCT FROM r.revived_club_id
+        OR revived.is_sitting_out IS DISTINCT FROM r.revived_is_sitting_out
+        OR revived.is_away IS DISTINCT FROM r.revived_is_away
+        OR revived.sit_out_at IS DISTINCT FROM r.revived_sit_out_at
+        OR revived.scheduled_leave_hands IS DISTINCT FROM
+             r.revived_scheduled_leave_hands
+        OR revived.status IS DISTINCT FROM r.revived_status
+        OR revived.leave_pending IS DISTINCT FROM r.revived_leave_pending
+        OR revived.auto_rebuy IS DISTINCT FROM r.revived_auto_rebuy
+        OR revived.time_bank_remaining IS DISTINCT FROM
+             r.revived_time_bank_remaining
+        OR revived.time_bank_uses_remaining IS DISTINCT FROM
+             r.revived_time_bank_uses_remaining
+        OR revived.entry_hold IS DISTINCT FROM r.revived_entry_hold
+        OR revived.entry_post_agreed IS DISTINCT FROM
+             r.revived_entry_post_agreed
+        OR (r.seat_row_reused AND (
+             r.destination_seat_id_before IS DISTINCT FROM r.revived_seat_id
+             OR r.destination_left_at_before IS NULL))
+        OR (NOT r.seat_row_reused AND (
+             r.destination_seat_id_before IS NOT NULL
+             OR r.destination_user_id_before IS NOT NULL
+             OR r.destination_player_id_before IS NOT NULL
+             OR r.destination_member_id_before IS NOT NULL
+             OR r.destination_stack_before IS NOT NULL
+             OR r.destination_is_sitting_out_before IS NOT NULL
+             OR r.destination_is_away_before IS NOT NULL
+             OR r.destination_joined_at_before IS NOT NULL
+             OR r.destination_horse_id_before IS NOT NULL
+             OR r.destination_scheduled_leave_hands_before IS NOT NULL
+             OR r.destination_left_at_before IS NOT NULL
+             OR r.destination_status_before IS NOT NULL
+             OR r.destination_leave_pending_before IS NOT NULL
+             OR r.destination_auto_rebuy_before IS NOT NULL
+             OR r.destination_time_bank_remaining_before IS NOT NULL
+             OR r.destination_time_bank_uses_remaining_before IS NOT NULL
+             OR r.destination_club_id_before IS NOT NULL
+             OR r.destination_sit_out_at_before IS NOT NULL
+             OR r.destination_entry_hold_before IS NOT NULL
+             OR r.destination_entry_post_agreed_before IS NOT NULL))
+        OR (r.evidence_class='accepted_hand_no_ko' AND (
+             r.paid_candidate_id IS NOT NULL OR EXISTS (
+               SELECT 1 FROM public.tournament_knockout_candidates c
+                WHERE c.tournament_id=r.tournament_id
+                  AND c.eliminated_user_id=r.user_id)))
+        OR (r.evidence_class='accepted_hand_after_paid_rebuy' AND (
+             paid.candidate_id IS NULL
+             OR paid.tournament_id IS DISTINCT FROM r.tournament_id
+             OR paid.user_id IS DISTINCT FROM r.user_id
+             OR paid.repair_action IS DISTINCT FROM 'candidate_closed'
+             OR r.last_hand_number<=paid.zero_hand_number
+             OR h.committed_at<=paid.last_paid_at))
         OR h.table_id IS NULL OR k.table_id IS NULL
         OR h.committed_at<r.source_joined_at
         OR r.source_left_at<=GREATEST(

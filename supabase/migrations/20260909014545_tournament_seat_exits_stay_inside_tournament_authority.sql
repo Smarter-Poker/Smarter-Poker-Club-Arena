@@ -58,7 +58,7 @@ BEGIN
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
      WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'
+       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
        AND p.proowner = v_relation_owner
        AND p.prokind = 'f' AND p.provolatile = 'v'
        AND NOT p.prosecdef AND NOT p.proretset
@@ -141,8 +141,12 @@ $require_live_seat_exit_cutover_freeze$;
 
 -- The historical minute reconciler used this exact session advisory lock.
 -- Acquire it before any relation lock so a running job can finish before the
--- cutover and no new job can enter behind our table write barrier. Keep the
--- cron catalog write-frozen until the function and its schedule are gone.
+-- cutover and no new job can enter: every scheduled invocation uses
+-- pg_try_advisory_lock on this same key and therefore skips while this
+-- transaction owns it. Managed Supabase deliberately grants postgres SELECT
+-- only on cron.job, so relation locking is neither available nor necessary;
+-- cron.unschedule removes the postgres-owned row below and the same
+-- transaction proves it absent before retiring the callable function.
 SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'));
 
 -- Seat assignment enters Daily Missions before tournament rows. Pre-acquire
@@ -173,8 +177,6 @@ BEGIN
   END LOOP;
 END;
 $cutover_player_lock_prefix$;
-
-LOCK TABLE cron.job IN SHARE ROW EXCLUSIVE MODE;
 
 -- Seat exits are part of tournament settlement. They are not a generic table
 -- cleanup operation and they are not a wallet cash-out. Drain concurrent seat
@@ -261,6 +263,9 @@ CREATE TABLE public.tournament_paid_candidate_cutover_receipts (
   user_id uuid NOT NULL,
   roster_id uuid NOT NULL
     REFERENCES public.tournament_players(id) ON DELETE RESTRICT,
+  candidate_state_before text NOT NULL
+    CHECK (candidate_state_before IN ('pending','rebought')),
+  candidate_resolved_at_before timestamptz,
   zero_table_id uuid NOT NULL REFERENCES public.tables(id) ON DELETE RESTRICT,
   zero_seat_id uuid NOT NULL REFERENCES public.table_seats(id) ON DELETE RESTRICT,
   zero_seat_joined_at timestamptz NOT NULL,
@@ -273,6 +278,7 @@ CREATE TABLE public.tournament_paid_candidate_cutover_receipts (
   source_ledger_row_hashes text[] NOT NULL,
   wallet_transaction_ids uuid[] NOT NULL,
   purchase_idempotency_keys text[] NOT NULL,
+  purchase_ordinals integer[] NOT NULL,
   purchase_types text[] NOT NULL,
   payment_count integer NOT NULL CHECK (payment_count>0),
   first_paid_at timestamptz NOT NULL,
@@ -333,6 +339,7 @@ CREATE TABLE public.tournament_paid_candidate_cutover_receipts (
   CHECK (payment_count=cardinality(source_ledger_row_hashes)),
   CHECK (payment_count=cardinality(wallet_transaction_ids)),
   CHECK (payment_count=cardinality(purchase_idempotency_keys)),
+  CHECK (payment_count=cardinality(purchase_ordinals)),
   CHECK (payment_count=cardinality(purchase_types)),
   CHECK (array_position(entitlement_ids,NULL) IS NULL),
   CHECK (array_position(source_ledger_ids,NULL) IS NULL),
@@ -340,7 +347,12 @@ CREATE TABLE public.tournament_paid_candidate_cutover_receipts (
   CHECK (array_position(source_ledger_row_hashes,NULL) IS NULL),
   CHECK (array_position(wallet_transaction_ids,NULL) IS NULL),
   CHECK (array_position(purchase_idempotency_keys,NULL) IS NULL),
+  CHECK (array_position(purchase_ordinals,NULL) IS NULL),
   CHECK (array_position(purchase_types,NULL) IS NULL),
+  CHECK ((candidate_state_before='pending'
+           AND candidate_resolved_at_before IS NULL)
+      OR (candidate_state_before='rebought'
+           AND candidate_resolved_at_before IS NOT NULL)),
   CHECK (purchase_types<@ARRAY['rebuy','reentry']::text[]),
   CHECK ((seat_id IS NULL AND table_id IS NULL AND seat_number IS NULL
           AND seat_joined_at_after IS NULL)
@@ -417,9 +429,39 @@ CREATE TABLE public.tournament_positive_orphan_cutover_receipts (
   last_hand_number bigint NOT NULL CHECK (last_hand_number>0),
   last_hac_hand_id uuid NOT NULL,
   last_settlement_hand_id uuid NOT NULL,
+  evidence_class text NOT NULL CHECK (evidence_class IN (
+    'accepted_hand_no_ko','accepted_hand_after_paid_rebuy')),
+  paid_candidate_id uuid
+    REFERENCES public.tournament_paid_candidate_cutover_receipts(candidate_id)
+    ON DELETE RESTRICT,
   revived_seat_id uuid NOT NULL
     REFERENCES public.table_seats(id) ON DELETE RESTRICT,
+  revived_table_id uuid NOT NULL
+    REFERENCES public.tables(id) ON DELETE RESTRICT,
+  revived_seat_number integer NOT NULL CHECK (revived_seat_number BETWEEN 1 AND 10),
   revived_joined_at timestamptz NOT NULL,
+  seat_row_reused boolean NOT NULL,
+  destination_seat_id_before uuid
+    REFERENCES public.table_seats(id) ON DELETE RESTRICT,
+  destination_user_id_before uuid,
+  destination_player_id_before integer,
+  destination_member_id_before uuid,
+  destination_stack_before numeric(15,2),
+  destination_is_sitting_out_before boolean,
+  destination_is_away_before boolean,
+  destination_joined_at_before timestamptz,
+  destination_horse_id_before uuid,
+  destination_scheduled_leave_hands_before integer,
+  destination_left_at_before timestamptz,
+  destination_status_before text,
+  destination_leave_pending_before boolean,
+  destination_auto_rebuy_before boolean,
+  destination_time_bank_remaining_before integer,
+  destination_time_bank_uses_remaining_before integer,
+  destination_club_id_before uuid,
+  destination_sit_out_at_before timestamptz,
+  destination_entry_hold_before text,
+  destination_entry_post_agreed_before boolean,
   revived_player_id integer,
   revived_member_id uuid,
   revived_horse_id uuid,
@@ -439,7 +481,33 @@ CREATE TABLE public.tournament_positive_orphan_cutover_receipts (
   repaired_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   CHECK (source_joined_at<source_left_at),
   CHECK (source_left_at<revived_joined_at),
-  CHECK (source_seat_id=revived_seat_id),
+  CHECK ((evidence_class='accepted_hand_no_ko' AND paid_candidate_id IS NULL)
+      OR (evidence_class='accepted_hand_after_paid_rebuy'
+           AND paid_candidate_id IS NOT NULL)),
+  CHECK (seat_row_reused IS DISTINCT FROM true OR (
+    destination_seat_id_before=revived_seat_id
+    AND destination_left_at_before IS NOT NULL)),
+  CHECK (seat_row_reused IS DISTINCT FROM false OR (
+    destination_seat_id_before IS NULL
+    AND destination_user_id_before IS NULL
+    AND destination_player_id_before IS NULL
+    AND destination_member_id_before IS NULL
+    AND destination_stack_before IS NULL
+    AND destination_is_sitting_out_before IS NULL
+    AND destination_is_away_before IS NULL
+    AND destination_joined_at_before IS NULL
+    AND destination_horse_id_before IS NULL
+    AND destination_scheduled_leave_hands_before IS NULL
+    AND destination_left_at_before IS NULL
+    AND destination_status_before IS NULL
+    AND destination_leave_pending_before IS NULL
+    AND destination_auto_rebuy_before IS NULL
+    AND destination_time_bank_remaining_before IS NULL
+    AND destination_time_bank_uses_remaining_before IS NULL
+    AND destination_club_id_before IS NULL
+    AND destination_sit_out_at_before IS NULL
+    AND destination_entry_hold_before IS NULL
+    AND destination_entry_post_agreed_before IS NULL)),
   CHECK (revived_player_id IS NULL AND revived_member_id IS NULL),
   CHECK (revived_horse_id IS NOT DISTINCT FROM source_horse_id),
   CHECK (revived_club_id IS NOT NULL),
@@ -468,10 +536,10 @@ REVOKE ALL ON TABLE public.tournament_paid_candidate_cutover_receipts,
   FROM PUBLIC,anon,authenticated,service_role;
 
 -- Freeze one evidence-derived candidate ledger for the cutover transaction.
--- `lead` is calculated across every state, then only pending generations are
--- considered for repair: a settled row between two pending rows is still a
--- real generation boundary. Nothing here treats "a newer candidate exists"
--- as proof of payment.
+-- `lead` is calculated across every state, then pending generations plus the
+-- one latest already-rebought-but-still-seatless generation are considered:
+-- a settled row between two pending rows is still a real generation boundary.
+-- Nothing here treats "a newer candidate exists" as proof of payment.
 CREATE TEMP TABLE ca_cutover_candidate_windows ON COMMIT DROP AS
 WITH ordered AS MATERIALIZED (
   SELECT c.*,
@@ -488,6 +556,8 @@ SELECT c.id AS candidate_id,c.tournament_id,
        c.eliminated_user_id AS user_id,c.table_id AS zero_table_id,
        c.seat_id AS zero_seat_id,c.seat_joined_at AS zero_seat_joined_at,
        c.hand_id AS zero_hac_hand_id,c.hand_number AS zero_hand_number,
+       c.state AS candidate_state_before,
+       c.resolved_at AS candidate_resolved_at_before,
        k.hand_id AS zero_settlement_hand_id,
        CASE WHEN h.table_id IS NOT NULL AND k.table_id IS NOT NULL
              AND h.stack_result->>'table_id'=c.table_id::text
@@ -514,7 +584,42 @@ SELECT c.id AS candidate_id,c.tournament_id,
    AND k.hand_id::text=h.stack_result->>'hand_id'
    AND COALESCE(k.result->>'hand_number','')~'^[0-9]+$'
    AND (k.result->>'hand_number')::bigint=c.hand_number
- WHERE c.state='pending' AND c.stack_after=0;
+ WHERE c.stack_after=0
+   AND (c.state='pending' OR (
+     c.state='rebought' AND c.next_candidate_id IS NULL
+     AND c.resolved_at IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+         FROM public.tournament_players tp
+        WHERE tp.tournament_id=c.tournament_id
+          AND tp.user_id=c.eliminated_user_id
+          AND tp.status='playing' AND tp.chips>0
+          AND NOT EXISTS (
+            SELECT 1 FROM public.table_seats live
+            JOIN public.tables live_table ON live_table.id=live.table_id
+             WHERE live_table.tournament_id=tp.tournament_id
+               AND live.user_id=tp.user_id AND live.left_at IS NULL))));
+
+-- The retired writer's idempotency amount is not a funded amount: it wrote
+-- zero while the same transaction wrote the exact positive wallet debit,
+-- refund entitlement and immutable ledger leg. Bind that legacy metadata to
+-- its canonical per-player purchase ordinal instead of guessing that every
+-- valid row is `:#0`. The ordinal is global across this entrant's immutable
+-- rebuy inventory, so a second paid generation must prove `:#1`, and so on.
+CREATE TEMP TABLE ca_cutover_rebuy_entitlement_ordinals ON COMMIT DROP AS
+WITH scoped_players AS MATERIALIZED (
+  SELECT DISTINCT w.tournament_id,w.user_id
+    FROM ca_cutover_candidate_windows w
+)
+SELECT e.id AS entitlement_id,e.tournament_id,e.user_id,
+       (row_number() OVER (
+          PARTITION BY e.tournament_id,e.user_id
+          ORDER BY l.chain_seq,e.id)-1)::integer AS purchase_ordinal
+  FROM scoped_players scope
+  JOIN public.tournament_refund_entitlements e
+    ON e.tournament_id=scope.tournament_id AND e.user_id=scope.user_id
+   AND e.entitlement_kind='wallet_charge' AND e.charge_category='rebuy'
+  JOIN public.chip_ledger l ON l.id=e.source_ledger_id;
 
 -- Keep every refund entitlement in its one non-overlapping knockout interval,
 -- including a row whose corroborating journals are malformed. The preflight
@@ -525,7 +630,7 @@ SELECT w.candidate_id,w.tournament_id,w.user_id,e.id AS entitlement_id,
        e.source_ledger_id,l.chain_seq AS source_ledger_chain_seq,
        l.row_hash AS source_ledger_row_hash,l.created_at AS paid_at,
        wallet.wallet_transaction_id,idem.purchase_idempotency_key,
-       idem.purchase_type,
+       ordinal.purchase_ordinal,idem.purchase_type,
        (w.zero_committed_at IS NOT NULL
         AND e.evidence_kind IN (
           'atomic_wallet_charge','cutover_wallet_charge')
@@ -538,24 +643,21 @@ SELECT w.candidate_id,w.tournament_id,w.user_id,e.id AS entitlement_id,
         AND l.created_at IS NOT DISTINCT FROM e.created_at
         AND l.amount>0 AND l.amount=round(l.amount,2)
         AND l.chain_seq IS NOT NULL AND l.row_hash IS NOT NULL
-        -- The retired rebuy writer stored 0 in wallet_credit_idempotency for
-        -- its first `:#0` attempt even though the same transaction wrote one
-        -- exact 1-chip wallet debit and one exact 1-chip immutable ledger leg.
-        -- That zero is metadata, never the funded amount. Admit only that
-        -- pinned legacy shape from the cutover backfill; every atomic receipt,
-        -- every re-entry, every nonzero mismatch and every differently named
-        -- key must still carry the exact gross amount.
+        -- The retired rebuy writer stored 0 in wallet_credit_idempotency even
+        -- though the same transaction wrote an exact positive wallet debit
+        -- and immutable ledger leg. That zero is correlation metadata, never
+        -- the funded amount. Admit only its globally ordered canonical key;
+        -- every atomic receipt and every differently named key must still
+        -- carry the exact gross amount.
         AND (
           idem.purchase_amount IS NOT DISTINCT FROM e.gross
           OR (
             e.evidence_kind='cutover_wallet_charge'
-            AND w.next_candidate_id IS NOT NULL
             AND idem.purchase_type='rebuy'
             AND idem.purchase_amount=0
-            AND e.gross=1
             AND idem.purchase_idempotency_key=
               'tourney:'||w.tournament_id::text||':rebuy:'||
-              w.user_id::text||':#0'
+              w.user_id::text||':#'||ordinal.purchase_ordinal::text
           )
         ) IS TRUE
         AND wallet.match_count=1 AND idem.match_count=1) AS exact_rebuy
@@ -566,6 +668,10 @@ SELECT w.candidate_id,w.tournament_id,w.user_id,e.id AS entitlement_id,
    AND e.created_at>w.zero_committed_at
    AND (w.next_candidate_at IS NULL OR e.created_at<w.next_candidate_at)
   JOIN public.chip_ledger l ON l.id=e.source_ledger_id
+  JOIN ca_cutover_rebuy_entitlement_ordinals ordinal
+    ON ordinal.entitlement_id=e.id
+   AND ordinal.tournament_id=w.tournament_id
+   AND ordinal.user_id=w.user_id
   LEFT JOIN LATERAL (
     SELECT count(*)::integer AS match_count,
            (array_agg(i.key ORDER BY i.key))[1] AS purchase_idempotency_key,
@@ -592,31 +698,107 @@ SELECT w.candidate_id,w.tournament_id,w.user_id,e.id AS entitlement_id,
 CREATE TEMP TABLE ca_cutover_paid_candidates ON COMMIT DROP AS
 SELECT w.candidate_id,w.tournament_id,w.user_id,w.zero_table_id,
        w.zero_seat_id,w.zero_seat_joined_at,w.zero_hand_number,
+       w.candidate_state_before,w.candidate_resolved_at_before,
        w.zero_hac_hand_id,w.zero_settlement_hand_id,
        w.zero_committed_at,w.next_candidate_id,w.next_candidate_at,
        count(*)::integer AS payment_count,
        min(p.paid_at) AS first_paid_at,max(p.paid_at) AS last_paid_at,
-       array_agg(p.entitlement_id ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.entitlement_id
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS entitlement_ids,
-       array_agg(p.source_ledger_id ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.source_ledger_id
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS source_ledger_ids,
-       array_agg(p.source_ledger_chain_seq ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.source_ledger_chain_seq
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS source_ledger_chain_seqs,
-       array_agg(p.source_ledger_row_hash ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.source_ledger_row_hash
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS source_ledger_row_hashes,
-       array_agg(p.wallet_transaction_id ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.wallet_transaction_id
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS wallet_transaction_ids,
-       array_agg(p.purchase_idempotency_key ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.purchase_idempotency_key
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS purchase_idempotency_keys,
-       array_agg(p.purchase_type ORDER BY p.source_ledger_chain_seq)
+       array_agg(p.purchase_ordinal
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
+         AS purchase_ordinals,
+       array_agg(p.purchase_type
+                 ORDER BY p.source_ledger_chain_seq,p.entitlement_id)
          AS purchase_types
   FROM ca_cutover_candidate_windows w
   JOIN ca_cutover_candidate_rebuy_payments p
     ON p.candidate_id=w.candidate_id AND p.exact_rebuy
  GROUP BY w.candidate_id,w.tournament_id,w.user_id,w.zero_table_id,
           w.zero_seat_id,w.zero_seat_joined_at,w.zero_hand_number,
+          w.candidate_state_before,w.candidate_resolved_at_before,
           w.zero_hac_hand_id,w.zero_settlement_hand_id,
           w.zero_committed_at,w.next_candidate_id,w.next_candidate_at;
+
+-- A paid generation that subsequently completed another accepted hand is a
+-- survivor whose current stack comes only from that hand, never from adding
+-- its rebuy grant again. Freeze the exact twelve-row production shape as a
+-- separate class: payment follows the zero settlement, the globally later
+-- hand follows payment, both hand journals agree, and the departed roster
+-- chair carries that same positive stack.
+CREATE TEMP TABLE ca_cutover_paid_hand_continuations ON COMMIT DROP AS
+SELECT p.candidate_id,p.tournament_id,p.user_id,
+       h.hand_number AS last_hand_number,h.hand_id AS last_hac_hand_id,
+       k.hand_id AS last_settlement_hand_id
+  FROM ca_cutover_paid_candidates p
+  JOIN public.tournament_players tp
+    ON tp.tournament_id=p.tournament_id AND tp.user_id=p.user_id
+   AND tp.status='playing' AND tp.chips>0 AND tp.chips=trunc(tp.chips)
+  JOIN LATERAL (
+    SELECT committed.*
+      FROM public.hand_atomic_commits committed
+      JOIN public.tables hand_table ON hand_table.id=committed.table_id
+     WHERE hand_table.tournament_id=p.tournament_id
+       AND committed.stack_result->'written' ? p.user_id::text
+     ORDER BY committed.hand_number DESC,committed.table_id,
+              committed.hand_id
+     LIMIT 1
+  ) h ON h.hand_number>p.zero_hand_number
+   AND h.committed_at>p.last_paid_at
+   AND h.stack_result->>'table_id'=h.table_id::text
+   AND COALESCE(h.stack_result->>'hand_number','')~'^[0-9]+$'
+   AND (h.stack_result->>'hand_number')::bigint=h.hand_number
+   AND COALESCE(h.stack_result->'written'->>p.user_id::text,'')
+         ~'^-?[0-9]+([.][0-9]+)?$'
+   AND (h.stack_result->'written'->>p.user_id::text)::numeric=tp.chips
+   AND h.stack_result->>'success'='true'
+   AND h.post_commit_completed_at IS NOT NULL
+   AND h.post_commit_result->>'ok'='true'
+  JOIN public.settlement_idempotency_keys k
+    ON k.table_id=h.table_id
+   AND k.hand_id::text=h.stack_result->>'hand_id'
+   AND k.status='succeeded' AND k.completed_at IS NOT NULL
+   AND k.result IS NOT DISTINCT FROM h.stack_result
+  JOIN public.table_seats s
+    ON s.table_id=tp.table_id AND s.seat_number=tp.seat_number
+   AND s.user_id=tp.user_id AND s.stack=tp.chips
+   AND s.joined_at IS NOT NULL AND s.left_at IS NOT NULL
+   AND s.status='active' AND NOT COALESCE(s.leave_pending,false)
+   AND h.table_id=s.table_id AND h.committed_at>=s.joined_at
+   AND s.left_at>GREATEST(
+         h.committed_at,h.post_commit_completed_at,k.completed_at)
+ WHERE p.next_candidate_id IS NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM public.table_seats live
+     JOIN public.tables live_table ON live_table.id=live.table_id
+      WHERE live_table.tournament_id=p.tournament_id
+        AND live.user_id=p.user_id AND live.left_at IS NULL)
+   AND (SELECT count(*) FROM public.settlement_idempotency_keys exact_key
+         WHERE exact_key.table_id=h.table_id
+           AND exact_key.hand_id::text=h.stack_result->>'hand_id'
+           AND exact_key.status='succeeded'
+           AND exact_key.result IS NOT DISTINCT FROM h.stack_result)=1
+   AND NOT EXISTS (
+     SELECT 1 FROM public.table_seats occupied
+      WHERE occupied.table_id=s.table_id
+        AND occupied.seat_number=s.seat_number
+        AND occupied.left_at IS NULL);
 
 -- The old process-start sweep wrote seat and table rows in separate requests.
 -- Close its exact historical backlog once while every writer is drained, then
@@ -735,21 +917,61 @@ BEGIN
       USING ERRCODE='P0404';
   END IF;
 
-  -- A later generation makes its predecessor a mandatory classification: the
-  -- old pending row must close, but only exact payment evidence can close it.
-  -- A malformed payment after the latest zero generation authorizes nothing;
-  -- leave that live generation untouched instead of reconstructing a stack or
-  -- blocking the authority cutover for evidence it does not consume.
+  -- A later generation and every positive seatless latest generation are
+  -- mandatory classifications. A malformed payment can never be skipped just
+  -- because it is the latest row: this cutover will consume that payment to
+  -- restore either its exact paid stack or a later accepted-hand continuation.
   IF EXISTS (
     SELECT 1
       FROM ca_cutover_candidate_rebuy_payments p
       JOIN ca_cutover_candidate_windows w
         ON w.candidate_id=p.candidate_id
-     WHERE w.next_candidate_id IS NOT NULL
+     WHERE (w.next_candidate_id IS NOT NULL OR EXISTS (
+       SELECT 1
+         FROM public.tournament_players tp
+        WHERE tp.tournament_id=w.tournament_id AND tp.user_id=w.user_id
+          AND tp.status='playing' AND tp.chips>0
+          AND NOT EXISTS (
+            SELECT 1 FROM public.table_seats live
+            JOIN public.tables live_table ON live_table.id=live.table_id
+             WHERE live_table.tournament_id=tp.tournament_id
+               AND live.user_id=tp.user_id AND live.left_at IS NULL)))
        AND NOT p.exact_rebuy
   ) THEN
     RAISE EXCEPTION
       'a knockout interval contains a refund entitlement without exact rebuy journals'
+      USING ERRCODE='P0404';
+  END IF;
+
+  -- A positive seatless roster with knockout history can be repaired only
+  -- from the exact latest zero generation and its complete paid journal. A
+  -- missing candidate/payment classification is ambiguous and therefore
+  -- remains a hard cutover failure.
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_players tp
+      JOIN public.tournaments t ON t.id=tp.tournament_id
+      JOIN LATERAL (
+        SELECT c.id
+          FROM public.tournament_knockout_candidates c
+         WHERE c.tournament_id=tp.tournament_id
+           AND c.eliminated_user_id=tp.user_id
+         ORDER BY c.hand_number DESC,c.id DESC
+         LIMIT 1
+      ) latest_candidate ON true
+     WHERE upper(COALESCE(t.status::text,''))='RUNNING'
+       AND tp.status='playing' AND tp.chips>0
+       AND NOT EXISTS (
+         SELECT 1 FROM public.table_seats live
+         JOIN public.tables live_table ON live_table.id=live.table_id
+          WHERE live_table.tournament_id=tp.tournament_id
+            AND live.user_id=tp.user_id AND live.left_at IS NULL)
+       AND NOT EXISTS (
+         SELECT 1 FROM ca_cutover_paid_candidates paid
+          WHERE paid.candidate_id=latest_candidate.id)
+  ) THEN
+    RAISE EXCEPTION
+      'a positive seatless knockout generation has no exact paid journal'
       USING ERRCODE='P0404';
   END IF;
 
@@ -759,7 +981,8 @@ BEGIN
       LEFT JOIN public.tournament_players tp
         ON tp.tournament_id=p.tournament_id AND tp.user_id=p.user_id
       LEFT JOIN public.tournaments t ON t.id=p.tournament_id
-     WHERE tp.id IS NULL OR tp.status<>'playing'
+     WHERE tp.id IS NULL
+        OR (p.next_candidate_id IS NULL AND tp.status<>'playing')
         OR COALESCE(tp.chips,-1)<0 OR COALESCE(tp.chips,-1)<>trunc(tp.chips)
         OR tp.club_id IS NULL
         OR COALESCE(t.rebuy_chips,0)<=0
@@ -776,10 +999,10 @@ BEGIN
       USING ERRCODE='P0404';
   END IF;
 
-  -- A latest paid candidate with no live chair is the exact stranded-rebuy
-  -- class only when no later accepted hand exists. If play followed payment,
-  -- current chips must come from the last accepted hand instead and this
-  -- additive reconstruction is categorically forbidden.
+  -- A latest paid candidate with no live chair is additive only when no later
+  -- accepted hand exists. If play followed payment, require the exact frozen
+  -- continuation class; current chips then come from that hand and never from
+  -- replaying the paid grant.
   IF EXISTS (
     SELECT 1
       FROM ca_cutover_paid_candidates p
@@ -799,9 +1022,12 @@ BEGIN
             -- hand_number comes from the global sequence and is the immutable
             -- cross-table chronology for accepted tournament hands.
             AND later.hand_number>p.zero_hand_number)
+       AND NOT EXISTS (
+         SELECT 1 FROM ca_cutover_paid_hand_continuations continuation
+          WHERE continuation.candidate_id=p.candidate_id)
   ) THEN
     RAISE EXCEPTION
-      'a paid seatless generation played a later hand and is not a stranded rebuy'
+      'a paid seatless generation has later play without exact continuation proof'
       USING ERRCODE='P0404';
   END IF;
 
@@ -851,20 +1077,43 @@ BEGIN
         USING ERRCODE='P0404';
     END IF;
 
-    UPDATE public.tournament_knockout_candidates c
-       SET state='rebought',resolved_at=v_item.first_paid_at
-     WHERE c.id=v_item.candidate_id AND c.state='pending'
-       AND c.tournament_id=v_item.tournament_id
-       AND c.eliminated_user_id=v_item.user_id
-       AND c.table_id=v_item.zero_table_id
-       AND c.seat_id=v_item.zero_seat_id
-       AND c.seat_joined_at=v_item.zero_seat_joined_at
-       AND c.hand_id=v_item.zero_hac_hand_id
-       AND c.hand_number=v_item.zero_hand_number AND c.stack_after=0;
-    GET DIAGNOSTICS v_rows=ROW_COUNT;
-    IF v_rows<>1 THEN
-      RAISE EXCEPTION 'paid knockout candidate changed during cutover'
-        USING ERRCODE='40001';
+    IF v_item.candidate_state_before='pending' THEN
+      UPDATE public.tournament_knockout_candidates c
+         SET state='rebought',resolved_at=v_item.first_paid_at
+       WHERE c.id=v_item.candidate_id AND c.state='pending'
+         AND c.resolved_at IS NULL
+         AND c.tournament_id=v_item.tournament_id
+         AND c.eliminated_user_id=v_item.user_id
+         AND c.table_id=v_item.zero_table_id
+         AND c.seat_id=v_item.zero_seat_id
+         AND c.seat_joined_at=v_item.zero_seat_joined_at
+         AND c.hand_id=v_item.zero_hac_hand_id
+         AND c.hand_number=v_item.zero_hand_number AND c.stack_after=0;
+      GET DIAGNOSTICS v_rows=ROW_COUNT;
+      IF v_rows<>1 THEN
+        RAISE EXCEPTION 'paid knockout candidate changed during cutover'
+          USING ERRCODE='40001';
+      END IF;
+    ELSIF v_item.candidate_state_before='rebought' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.tournament_knockout_candidates c
+         WHERE c.id=v_item.candidate_id AND c.state='rebought'
+           AND c.resolved_at IS NOT DISTINCT FROM
+                 v_item.candidate_resolved_at_before
+           AND c.tournament_id=v_item.tournament_id
+           AND c.eliminated_user_id=v_item.user_id
+           AND c.table_id=v_item.zero_table_id
+           AND c.seat_id=v_item.zero_seat_id
+           AND c.seat_joined_at=v_item.zero_seat_joined_at
+           AND c.hand_id=v_item.zero_hac_hand_id
+           AND c.hand_number=v_item.zero_hand_number AND c.stack_after=0
+      ) THEN
+        RAISE EXCEPTION 'already-rebought candidate changed during cutover'
+          USING ERRCODE='40001';
+      END IF;
+    ELSE
+      RAISE EXCEPTION 'paid candidate entered from an unsupported state'
+        USING ERRCODE='P0404';
     END IF;
 
     IF v_item.next_candidate_id IS NULL AND v_live_count=1 THEN
@@ -921,6 +1170,27 @@ BEGIN
       UPDATE public.tournament_players tp
          SET rebuy_prompt_until=NULL
        WHERE tp.id=v_item.roster_id AND tp.status='playing';
+    ELSIF v_item.next_candidate_id IS NULL AND EXISTS (
+      SELECT 1
+        FROM ca_cutover_paid_hand_continuations continuation
+       WHERE continuation.candidate_id=v_item.candidate_id
+    ) THEN
+      -- This generation already consumed its paid grant and then completed a
+      -- later accepted hand. Its positive roster stack is therefore an
+      -- immutable hand result, not an amount to which the rebuy may be added
+      -- again. Close only the historical prompt/candidate state here; the
+      -- accepted-hand continuation is reseated by the positive-orphan class
+      -- below from that exact non-minted stack.
+      UPDATE public.tournament_players tp
+         SET rebuy_prompt_until=NULL
+       WHERE tp.id=v_item.roster_id AND tp.status='playing'
+         AND tp.chips=v_item.current_chips;
+      GET DIAGNOSTICS v_rows=ROW_COUNT;
+      IF v_rows<>1 THEN
+        RAISE EXCEPTION 'paid accepted-hand continuation changed during closure'
+          USING ERRCODE='40001';
+      END IF;
+      v_action:='candidate_closed';
     ELSIF v_item.next_candidate_id IS NULL THEN
       -- A rebuy adds one stack; a re-entry resets the stack. Replay the exact
       -- immutable purchase order from the global ledger sequence, counting
@@ -1034,10 +1304,12 @@ BEGIN
 
     INSERT INTO public.tournament_paid_candidate_cutover_receipts(
       candidate_id,migration_version,tournament_id,user_id,roster_id,
+      candidate_state_before,candidate_resolved_at_before,
       zero_table_id,zero_seat_id,zero_seat_joined_at,zero_hand_number,
       zero_hac_hand_id,zero_settlement_hand_id,entitlement_ids,
       source_ledger_ids,source_ledger_chain_seqs,source_ledger_row_hashes,
-      wallet_transaction_ids,purchase_idempotency_keys,purchase_types,
+      wallet_transaction_ids,purchase_idempotency_keys,purchase_ordinals,
+      purchase_types,
       payment_count,
       first_paid_at,last_paid_at,rebuy_chips,stack_before,stack_after,
       seat_id,table_id,seat_number,seat_joined_at_before,
@@ -1061,13 +1333,14 @@ BEGIN
       seat_entry_hold,seat_entry_post_agreed,repair_action,repaired_at)
     VALUES(
       v_item.candidate_id,'20260909014545',v_item.tournament_id,
-      v_item.user_id,v_item.roster_id,v_item.zero_table_id,
+      v_item.user_id,v_item.roster_id,v_item.candidate_state_before,
+      v_item.candidate_resolved_at_before,v_item.zero_table_id,
       v_item.zero_seat_id,v_item.zero_seat_joined_at,v_item.zero_hand_number,
       v_item.zero_hac_hand_id,v_item.zero_settlement_hand_id,
       v_item.entitlement_ids,v_item.source_ledger_ids,
       v_item.source_ledger_chain_seqs,v_item.source_ledger_row_hashes,
       v_item.wallet_transaction_ids,v_item.purchase_idempotency_keys,
-      v_item.purchase_types,v_item.payment_count,
+      v_item.purchase_ordinals,v_item.purchase_types,v_item.payment_count,
       v_item.first_paid_at,v_item.last_paid_at,
       v_item.rebuy_chips,v_stack_before,v_stack_after,v_seat_id,
       v_target_table_id,v_target_seat_number,v_joined_before,
@@ -1095,11 +1368,14 @@ BEGIN
     INTO v_paid_candidate_ids
     FROM public.tournament_paid_candidate_cutover_receipts r;
 
-  -- A separate evidence class covers the one positive orphan observed in the
-  -- live field: one departed active chair, no knockout candidate of any kind,
-  -- exact roster/chair coordinates and stack, and the same final positive
-  -- stack in both accepted-hand journals before a later generic clear. Reuse
-  -- that exact physical chair through the private atomic assignment core.
+  -- Every remaining positive seatless roster is an accepted-hand survivor,
+  -- never a stack to synthesize. Two non-overlapping immutable evidence
+  -- classes are allowed: no knockout generation exists, or the latest zero
+  -- generation has the exact paid-rebuy receipt above and its next accepted
+  -- hand wrote the current stack. The source chair may belong to a table that
+  -- the retired clear already closed, so select a fresh legal destination
+  -- through the database chooser instead of assuming that historical chair
+  -- remains assignable.
   FOR v_item IN
     WITH positive_seatless AS MATERIALIZED (
       SELECT tp.id AS roster_id,tp.tournament_id,tp.user_id,tp.table_id,
@@ -1115,10 +1391,6 @@ BEGIN
            JOIN public.tables live_table ON live_table.id=live.table_id
             WHERE live_table.tournament_id=tp.tournament_id
               AND live.user_id=tp.user_id AND live.left_at IS NULL)
-         AND NOT EXISTS (
-           SELECT 1 FROM public.tournament_knockout_candidates c
-            WHERE c.tournament_id=tp.tournament_id
-              AND c.eliminated_user_id=tp.user_id)
     )
     SELECT p.*,s.id AS source_seat_id,s.stack AS source_stack,
            s.joined_at AS source_joined_at,s.left_at AS source_left_at,
@@ -1134,11 +1406,15 @@ BEGIN
            s.entry_hold AS source_entry_hold,
            s.entry_post_agreed AS source_entry_post_agreed,
            h.hand_number AS last_hand_number,
-           h.hand_id AS last_hac_hand_id,k.hand_id AS last_settlement_hand_id
+           h.hand_id AS last_hac_hand_id,k.hand_id AS last_settlement_hand_id,
+           CASE WHEN continuation.candidate_id IS NULL
+                  THEN 'accepted_hand_no_ko'
+                ELSE 'accepted_hand_after_paid_rebuy'
+             END AS evidence_class,
+           continuation.candidate_id AS paid_candidate_id
       FROM positive_seatless p
       JOIN public.tables tb ON tb.id=p.table_id
        AND tb.tournament_id=p.tournament_id
-       AND lower(COALESCE(tb.status,'')) IN ('running','waiting','active')
        AND NOT COALESCE(tb.is_deleted,false)
       JOIN public.table_seats s ON s.table_id=p.table_id
        AND s.seat_number=p.seat_number AND s.user_id=p.user_id
@@ -1170,6 +1446,12 @@ BEGIN
         ON k.table_id=h.table_id
        AND k.hand_id::text=h.stack_result->>'hand_id'
        AND k.status='succeeded' AND k.result IS NOT DISTINCT FROM h.stack_result
+      LEFT JOIN ca_cutover_paid_hand_continuations continuation
+        ON continuation.tournament_id=p.tournament_id
+       AND continuation.user_id=p.user_id
+       AND continuation.last_hand_number=h.hand_number
+       AND continuation.last_hac_hand_id=h.hand_id
+       AND continuation.last_settlement_hand_id=k.hand_id
      WHERE p.table_id IS NOT NULL AND p.seat_number BETWEEN 1 AND 10
        AND p.roster_club_id IS NOT NULL
        AND s.player_id IS NULL AND s.member_id IS NULL
@@ -1177,10 +1459,10 @@ BEGIN
              CASE WHEN COALESCE(profile.is_horse,false)
                     THEN profile.id ELSE NULL END
        AND s.club_id IS NOT NULL
-       AND (SELECT count(*) FROM public.table_seats history
-            JOIN public.tables history_table ON history_table.id=history.table_id
-            WHERE history_table.tournament_id=p.tournament_id
-              AND history.user_id=p.user_id)=1
+       AND (continuation.candidate_id IS NOT NULL OR NOT EXISTS (
+         SELECT 1 FROM public.tournament_knockout_candidates c
+          WHERE c.tournament_id=p.tournament_id
+            AND c.eliminated_user_id=p.user_id))
        AND (SELECT count(*) FROM public.settlement_idempotency_keys exact_key
             WHERE exact_key.table_id=h.table_id
               AND exact_key.hand_id::text=h.stack_result->>'hand_id'
@@ -1195,11 +1477,6 @@ BEGIN
           WHERE later_global_table.tournament_id=p.tournament_id
             AND later_global.stack_result->'written' ? p.user_id::text
             AND later_global.hand_number>h.hand_number)
-       AND NOT EXISTS (
-         SELECT 1 FROM public.table_seats occupied
-          WHERE occupied.table_id=s.table_id
-            AND occupied.seat_number=s.seat_number
-            AND occupied.left_at IS NULL)
      ORDER BY p.tournament_id,p.user_id
   LOOP
     PERFORM launch.tournament_id
@@ -1212,32 +1489,66 @@ BEGIN
       RAISE EXCEPTION 'positive orphan tournament vanished during cutover'
         USING ERRCODE='40001';
     END IF;
+    v_destination:=NULL;
     v_seat_after:=NULL;
     v_expected_horse_id:=v_item.source_horse_id;
-    v_expected_club_id:=COALESCE(
-      public.fn_seat_club_for_user(
-        v_item.user_id,v_item.table_id,v_item.roster_club_id),
-      v_item.roster_club_id);
-    v_assignment:=public.fn_ca_assign_tournament_player_seat_locked(
+    v_choice:=public.fn_ca_choose_tournament_seat_locked(
       v_item.tournament_id,v_item.user_id,
       v_item.table_id,v_item.seat_number);
+    IF COALESCE((v_choice->>'ok')::boolean,false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'positive accepted-hand survivor has no atomic seat: %',
+        v_choice USING ERRCODE='P0404';
+    END IF;
+    v_target_table_id:=(v_choice->>'table_id')::uuid;
+    v_target_seat_number:=(v_choice->>'seat_number')::integer;
+    v_expected_club_id:=public.fn_seat_club_for_user(
+      v_item.user_id,v_target_table_id,v_item.roster_club_id);
+    IF v_expected_club_id IS NULL THEN
+      RAISE EXCEPTION 'positive accepted-hand target has no canonical seat club'
+        USING ERRCODE='P0404';
+    END IF;
+
+    SELECT s.* INTO v_destination
+      FROM public.table_seats s
+     WHERE s.table_id=v_target_table_id
+       AND s.seat_number=v_target_seat_number
+     FOR UPDATE;
+    IF FOUND THEN
+      IF v_destination.left_at IS NULL THEN
+        RAISE EXCEPTION 'positive accepted-hand destination changed before assignment'
+          USING ERRCODE='40001';
+      END IF;
+      v_seat_row_reused:=true;
+    ELSE
+      v_seat_row_reused:=false;
+    END IF;
+
+    v_assignment:=public.fn_ca_assign_tournament_player_seat_locked(
+      v_item.tournament_id,v_item.user_id,
+      v_target_table_id,v_target_seat_number);
     IF COALESCE((v_assignment->>'ok')::boolean,false) IS NOT TRUE
        OR COALESCE((v_assignment->>'replayed')::boolean,true)
-       OR (v_assignment->>'seat_id')::uuid<>v_item.source_seat_id
-       OR (v_assignment->>'stack')::numeric<>v_item.chips THEN
-      RAISE EXCEPTION 'positive generic-clear orphan did not revive exactly: %',
+       OR (v_assignment->>'stack')::numeric<>v_item.chips
+       OR (v_assignment->>'table_id')::uuid<>v_target_table_id
+       OR (v_assignment->>'seat_number')::integer<>v_target_seat_number THEN
+      RAISE EXCEPTION 'positive accepted-hand survivor did not reseat exactly: %',
         v_assignment USING ERRCODE='P0404';
     END IF;
-    -- This is a revival of the same accepted-hand continuation, not a paid
-    -- new entry generation. The common assignment core correctly starts a
-    -- new occupant at 30/4; restore only this same user's cached time bank so
-    -- the historical generic clear cannot mint extra decision time.
+    v_seat_id:=(v_assignment->>'seat_id')::uuid;
+    v_joined_after:=(v_assignment->>'assigned_at')::timestamptz;
+
+    -- This is a reseat of the same accepted-hand continuation, not a paid new
+    -- entry generation. The common assignment core correctly starts a new
+    -- occupant at 30/4; restore only this same user's cached time bank so the
+    -- historical generic clear cannot mint extra decision time.
     UPDATE public.table_seats s
        SET time_bank_remaining=v_item.source_time_bank_remaining,
            time_bank_uses_remaining=v_item.source_time_bank_uses_remaining
-     WHERE s.id=v_item.source_seat_id AND s.left_at IS NULL
+     WHERE s.id=v_seat_id AND s.left_at IS NULL
        AND s.user_id=v_item.user_id
-       AND s.joined_at=(v_assignment->>'assigned_at')::timestamptz;
+       AND s.table_id=v_target_table_id
+       AND s.seat_number=v_target_seat_number
+       AND s.joined_at=v_joined_after;
     GET DIAGNOSTICS v_rows=ROW_COUNT;
     IF v_rows<>1 THEN
       RAISE EXCEPTION 'positive orphan time bank changed during revival'
@@ -1245,9 +1556,9 @@ BEGIN
     END IF;
     SELECT s.* INTO STRICT v_seat_after
       FROM public.table_seats s
-     WHERE s.id=v_item.source_seat_id AND s.left_at IS NULL
-       AND s.user_id=v_item.user_id AND s.table_id=v_item.table_id
-       AND s.seat_number=v_item.seat_number AND s.stack=v_item.chips;
+     WHERE s.id=v_seat_id AND s.left_at IS NULL
+       AND s.user_id=v_item.user_id AND s.table_id=v_target_table_id
+       AND s.seat_number=v_target_seat_number AND s.stack=v_item.chips;
     IF v_seat_after.joined_at IS DISTINCT FROM
          (v_assignment->>'assigned_at')::timestamptz
        OR v_seat_after.player_id IS NOT NULL
@@ -1267,9 +1578,9 @@ BEGIN
        OR v_seat_after.time_bank_uses_remaining IS DISTINCT FROM
             v_item.source_time_bank_uses_remaining
        OR v_seat_after.entry_hold IS NOT NULL
-       OR v_seat_after.entry_post_agreed IS DISTINCT FROM false THEN
+      OR v_seat_after.entry_post_agreed IS DISTINCT FROM false THEN
       RAISE EXCEPTION
-        'positive orphan revival did not preserve its own seat state exactly'
+        'positive accepted-hand reseat did not preserve its own state exactly'
         USING ERRCODE='P0404';
     END IF;
     INSERT INTO public.tournament_positive_orphan_cutover_receipts(
@@ -1281,7 +1592,21 @@ BEGIN
       source_time_bank_remaining,source_time_bank_uses_remaining,
       source_entry_hold,source_entry_post_agreed,
       last_hand_number,last_hac_hand_id,last_settlement_hand_id,
-      revived_seat_id,revived_joined_at,revived_player_id,
+      evidence_class,paid_candidate_id,
+      revived_seat_id,revived_table_id,revived_seat_number,
+      revived_joined_at,seat_row_reused,
+      destination_seat_id_before,destination_user_id_before,
+      destination_player_id_before,destination_member_id_before,
+      destination_stack_before,destination_is_sitting_out_before,
+      destination_is_away_before,destination_joined_at_before,
+      destination_horse_id_before,destination_scheduled_leave_hands_before,
+      destination_left_at_before,destination_status_before,
+      destination_leave_pending_before,destination_auto_rebuy_before,
+      destination_time_bank_remaining_before,
+      destination_time_bank_uses_remaining_before,
+      destination_club_id_before,destination_sit_out_at_before,
+      destination_entry_hold_before,destination_entry_post_agreed_before,
+      revived_player_id,
       revived_member_id,revived_horse_id,revived_club_id,
       revived_is_sitting_out,revived_is_away,revived_sit_out_at,
       revived_scheduled_leave_hands,revived_left_at,revived_status,
@@ -1300,8 +1625,18 @@ BEGIN
       v_item.source_time_bank_uses_remaining,v_item.source_entry_hold,
       v_item.source_entry_post_agreed,v_item.last_hand_number,
       v_item.last_hac_hand_id,v_item.last_settlement_hand_id,
-      (v_assignment->>'seat_id')::uuid,
-      (v_assignment->>'assigned_at')::timestamptz,
+      v_item.evidence_class,v_item.paid_candidate_id,
+      v_seat_id,v_target_table_id,v_target_seat_number,v_joined_after,
+      v_seat_row_reused,v_destination.id,v_destination.user_id,
+      v_destination.player_id,v_destination.member_id,v_destination.stack,
+      v_destination.is_sitting_out,v_destination.is_away,
+      v_destination.joined_at,v_destination.horse_id,
+      v_destination.scheduled_leave_hands,v_destination.left_at,
+      v_destination.status,v_destination.leave_pending,
+      v_destination.auto_rebuy,v_destination.time_bank_remaining,
+      v_destination.time_bank_uses_remaining,v_destination.club_id,
+      v_destination.sit_out_at,v_destination.entry_hold,
+      v_destination.entry_post_agreed,
       v_seat_after.player_id,v_seat_after.member_id,v_seat_after.horse_id,
       v_seat_after.club_id,v_seat_after.is_sitting_out,v_seat_after.is_away,
       v_seat_after.sit_out_at,v_seat_after.scheduled_leave_hands,
@@ -1521,9 +1856,17 @@ BEGIN
        LEFT JOIN public.tournament_knockout_candidates c
          ON c.id=p.candidate_id
         WHERE r.candidate_id IS NULL OR c.id IS NULL OR c.state<>'rebought'
-           OR c.resolved_at IS DISTINCT FROM p.first_paid_at
+           OR (p.candidate_state_before='pending'
+                AND c.resolved_at IS DISTINCT FROM p.first_paid_at)
+           OR (p.candidate_state_before='rebought'
+                AND c.resolved_at IS DISTINCT FROM
+                      p.candidate_resolved_at_before)
            OR r.tournament_id IS DISTINCT FROM p.tournament_id
            OR r.user_id IS DISTINCT FROM p.user_id
+           OR r.candidate_state_before IS DISTINCT FROM
+                p.candidate_state_before
+           OR r.candidate_resolved_at_before IS DISTINCT FROM
+                p.candidate_resolved_at_before
            OR r.zero_table_id IS DISTINCT FROM p.zero_table_id
            OR r.zero_seat_id IS DISTINCT FROM p.zero_seat_id
            OR r.zero_seat_joined_at IS DISTINCT FROM p.zero_seat_joined_at
@@ -1541,6 +1884,7 @@ BEGIN
                 p.wallet_transaction_ids
            OR r.purchase_idempotency_keys IS DISTINCT FROM
                 p.purchase_idempotency_keys
+           OR r.purchase_ordinals IS DISTINCT FROM p.purchase_ordinals
            OR r.purchase_types IS DISTINCT FROM p.purchase_types
            OR r.payment_count IS DISTINCT FROM p.payment_count
            OR r.first_paid_at IS DISTINCT FROM p.first_paid_at
@@ -1596,17 +1940,23 @@ BEGIN
       CROSS JOIN LATERAL unnest(
         r.entitlement_ids,r.source_ledger_ids,r.source_ledger_chain_seqs,
         r.source_ledger_row_hashes,r.wallet_transaction_ids,
-        r.purchase_idempotency_keys,r.purchase_types)
+        r.purchase_idempotency_keys,r.purchase_ordinals,r.purchase_types)
         AS evidence(entitlement_id,ledger_id,chain_seq,row_hash,
-                    wallet_transaction_id,purchase_key,purchase_type)
+                    wallet_transaction_id,purchase_key,purchase_ordinal,
+                    purchase_type)
       LEFT JOIN public.tournament_refund_entitlements e
         ON e.id=evidence.entitlement_id
+      LEFT JOIN ca_cutover_rebuy_entitlement_ordinals ordinal
+        ON ordinal.entitlement_id=evidence.entitlement_id
+       AND ordinal.tournament_id=r.tournament_id
+       AND ordinal.user_id=r.user_id
       LEFT JOIN public.chip_ledger l ON l.id=evidence.ledger_id
       LEFT JOIN public.wallet_transactions w
         ON w.id=evidence.wallet_transaction_id
       LEFT JOIN public.wallet_credit_idempotency i
         ON i.key=evidence.purchase_key
-     WHERE e.id IS NULL OR l.id IS NULL OR w.id IS NULL OR i.key IS NULL
+     WHERE e.id IS NULL OR ordinal.entitlement_id IS NULL
+        OR l.id IS NULL OR w.id IS NULL OR i.key IS NULL
         OR e.source_ledger_id IS DISTINCT FROM l.id
         OR e.tournament_id IS DISTINCT FROM r.tournament_id
         OR e.user_id IS DISTINCT FROM r.user_id
@@ -1615,6 +1965,8 @@ BEGIN
         OR e.evidence_kind NOT IN (
              'atomic_wallet_charge','cutover_wallet_charge')
         OR e.created_at IS DISTINCT FROM l.created_at
+        OR ordinal.purchase_ordinal IS DISTINCT FROM
+             evidence.purchase_ordinal
         OR l.chain_seq IS DISTINCT FROM evidence.chain_seq
         OR l.row_hash IS DISTINCT FROM evidence.row_hash
         OR l.from_type IS DISTINCT FROM 'player_wallet'
@@ -1641,20 +1993,11 @@ BEGIN
           i.amount IS NOT DISTINCT FROM e.gross
           OR (
             e.evidence_kind='cutover_wallet_charge'
-            AND r.repair_action='candidate_closed'
-            AND EXISTS (
-              SELECT 1
-                FROM public.tournament_knockout_candidates later
-               WHERE later.tournament_id=r.tournament_id
-                 AND later.eliminated_user_id=r.user_id
-                 AND (later.hand_number,later.id)>
-                     (r.zero_hand_number,r.candidate_id)
-            )
             AND evidence.purchase_type='rebuy'
             AND i.amount=0
-            AND e.gross=1
             AND i.key='tourney:'||r.tournament_id::text||':rebuy:'||
-                      r.user_id::text||':#0'
+                      r.user_id::text||':#'||
+                      evidence.purchase_ordinal::text
           )
         ) IS NOT TRUE
         OR i.created_at IS DISTINCT FROM l.created_at
@@ -1722,14 +2065,13 @@ BEGIN
       LEFT JOIN public.tournament_players tp ON tp.id=r.roster_id
       LEFT JOIN public.table_seats s ON s.id=r.revived_seat_id
      WHERE s.id IS NULL OR tp.id IS NULL
-        OR r.revived_seat_id IS DISTINCT FROM r.source_seat_id
         OR s.left_at IS NOT NULL OR s.user_id IS DISTINCT FROM r.user_id
-        OR s.table_id IS DISTINCT FROM r.table_id
-        OR s.seat_number IS DISTINCT FROM r.seat_number
+        OR s.table_id IS DISTINCT FROM r.revived_table_id
+        OR s.seat_number IS DISTINCT FROM r.revived_seat_number
         OR s.stack IS DISTINCT FROM r.stack
         OR tp.chips IS DISTINCT FROM r.stack
-        OR tp.table_id IS DISTINCT FROM r.table_id
-        OR tp.seat_number IS DISTINCT FROM r.seat_number
+        OR tp.table_id IS DISTINCT FROM r.revived_table_id
+        OR tp.seat_number IS DISTINCT FROM r.revived_seat_number
         OR s.joined_at IS DISTINCT FROM r.revived_joined_at
         OR s.player_id IS DISTINCT FROM r.revived_player_id
         OR s.member_id IS DISTINCT FROM r.revived_member_id
@@ -1751,6 +2093,30 @@ BEGIN
         OR s.entry_hold IS DISTINCT FROM r.revived_entry_hold
         OR s.entry_post_agreed IS DISTINCT FROM
              r.revived_entry_post_agreed
+        OR (r.seat_row_reused AND (
+             r.destination_seat_id_before IS DISTINCT FROM r.revived_seat_id
+             OR r.destination_left_at_before IS NULL))
+        OR (NOT r.seat_row_reused AND (
+             r.destination_seat_id_before IS NOT NULL
+             OR r.destination_user_id_before IS NOT NULL
+             OR r.destination_player_id_before IS NOT NULL
+             OR r.destination_member_id_before IS NOT NULL
+             OR r.destination_stack_before IS NOT NULL
+             OR r.destination_is_sitting_out_before IS NOT NULL
+             OR r.destination_is_away_before IS NOT NULL
+             OR r.destination_joined_at_before IS NOT NULL
+             OR r.destination_horse_id_before IS NOT NULL
+             OR r.destination_scheduled_leave_hands_before IS NOT NULL
+             OR r.destination_left_at_before IS NOT NULL
+             OR r.destination_status_before IS NOT NULL
+             OR r.destination_leave_pending_before IS NOT NULL
+             OR r.destination_auto_rebuy_before IS NOT NULL
+             OR r.destination_time_bank_remaining_before IS NOT NULL
+             OR r.destination_time_bank_uses_remaining_before IS NOT NULL
+             OR r.destination_club_id_before IS NOT NULL
+             OR r.destination_sit_out_at_before IS NOT NULL
+             OR r.destination_entry_hold_before IS NOT NULL
+             OR r.destination_entry_post_agreed_before IS NOT NULL))
   ) THEN
     RAISE EXCEPTION 'seat-exit cutover detail receipt does not match live state'
       USING ERRCODE='P0404';
@@ -1766,6 +2132,8 @@ BEGIN
         ON k.table_id=r.table_id AND k.hand_id=r.last_settlement_hand_id
       LEFT JOIN public.tournament_players tp ON tp.id=r.roster_id
       LEFT JOIN public.profiles profile ON profile.id=r.user_id
+      LEFT JOIN public.tournament_paid_candidate_cutover_receipts paid
+        ON paid.candidate_id=r.paid_candidate_id
      WHERE h.table_id IS NULL OR k.table_id IS NULL OR tp.id IS NULL
         OR profile.id IS NULL
         OR tp.tournament_id IS DISTINCT FROM r.tournament_id
@@ -1781,6 +2149,18 @@ BEGIN
              r.source_time_bank_remaining
         OR r.revived_time_bank_uses_remaining IS DISTINCT FROM
              r.source_time_bank_uses_remaining
+        OR (r.evidence_class='accepted_hand_no_ko' AND (
+             r.paid_candidate_id IS NOT NULL OR EXISTS (
+               SELECT 1 FROM public.tournament_knockout_candidates c
+                WHERE c.tournament_id=r.tournament_id
+                  AND c.eliminated_user_id=r.user_id)))
+        OR (r.evidence_class='accepted_hand_after_paid_rebuy' AND (
+             paid.candidate_id IS NULL
+             OR paid.tournament_id IS DISTINCT FROM r.tournament_id
+             OR paid.user_id IS DISTINCT FROM r.user_id
+             OR paid.repair_action IS DISTINCT FROM 'candidate_closed'
+             OR r.last_hand_number<=paid.zero_hand_number
+             OR h.committed_at<=paid.last_paid_at))
         OR h.committed_at<r.source_joined_at
         OR r.source_left_at<=GREATEST(
              h.committed_at,h.post_commit_completed_at,k.completed_at)

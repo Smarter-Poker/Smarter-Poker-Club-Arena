@@ -97,13 +97,10 @@ describe('the recount call sites carry the guard', () => {
     expect(src).toContain('tableCountChangedFilter({ current_players: playerCount, status })');
   });
 
-  it('processLeavePending refuses to write a count it could not read', () => {
-    // The pre-2026-09-06 version did `count || 0` on an undestructured error,
-    // so ONE failed read wrote current_players = 0 on a live table - the same
-    // bug settlement step 15 was fixed for on 2026-08-28.
+  it('processLeavePending cannot overwrite the atomic cashout count with an unlocked recount', () => {
     const src = readSrc('seats.ts');
-    expect(src).toContain('error: countErr');
-    expect(src).toContain('current_players left unchanged');
-    expect(src).not.toContain('current_players: count || 0');
+    const pending = src.slice(src.indexOf('export async function processLeavePending('));
+    expect(pending).toContain('await atomicCashout(');
+    expect(pending).not.toMatch(/\.from\('tables'\)|current_players:\s*count/);
   });
 });

@@ -347,6 +347,17 @@ export class MaintenanceBreak {
   private unparkedAtCountdown = 0;
   private peakUnparked = 0;
   private readyForRestartAtMs: number | null = null;
+  /**
+   * True only when the exact in-memory phase/timestamps/token have either
+   * committed or been recovered by a byte-for-byte read-back.  Kept separate
+   * from `readyForRestart`: parking every table is necessary, but it is not
+   * proof that a replacement process can recover the same break.
+   *
+   * This additive field is the rolling-upgrade bridge for the stricter deploy
+   * gate.  Older deploy code ignores it; newer deploy code refuses to replace
+   * this process unless it is exactly true.
+   */
+  private durableConfirmed = false;
   /** Bumped each break; a scheduled resume wave from a superseded break is dropped. */
   private resumeToken = 0;
   /**
@@ -881,6 +892,10 @@ export class MaintenanceBreak {
 
     this.reason = saved.reason;
     this.announcedAt = saved.announcedAt;
+    // A stored countdown plus the exact token-rotation receipt is already a
+    // durable certificate. A stored last-hand row is about to be transformed
+    // locally and remains unconfirmed until that transformed row commits.
+    this.durableConfirmed = saved.phase === 'counting_down' && saved.breakEndsAt !== null;
     this.phase = 'counting_down';
     // The previous engine's start instant, so the thaw measures the WHOLE
     // freeze, not just the slice this process lived through.
@@ -1042,6 +1057,7 @@ export class MaintenanceBreak {
     if (!this.lifecycleIsCurrent(generation) || !this.deps.isRunning()) return;
     if (this.isActive()) return; // already in one
 
+    this.durableConfirmed = false;
     this.phase = 'last_hand';
     this.announcedAt = this.now();
     this.breakEndsAt = 0;
@@ -1145,6 +1161,9 @@ export class MaintenanceBreak {
        frame's resume_expected_at. */
     const scheduledStartAt = this.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
     const invokedAt = this.now();
+    // The last-hand row is durable, but the countdown identity is not yet.
+    // Close the deploy gate before changing any of its semantic fields.
+    this.durableConfirmed = false;
     this.phase = 'counting_down';
     /* beginCountdown is also the explicit/manual entry point. An intentional
        early call starts its five minutes immediately; an on-time or late
@@ -1278,6 +1297,7 @@ export class MaintenanceBreak {
      * are woken. The outcome was captured above, so the record stays honest.
      */
     this.phase = 'idle';
+    this.durableConfirmed = false;
     this.breakStartedAt = 0;
     this.breakEndsAt = 0;
     this.announcedAt = 0;
@@ -1685,6 +1705,7 @@ export class MaintenanceBreak {
   private async persist(state = this.persistedState()): Promise<void> {
     try {
       await this.deps.store.save(state);
+      this.durableConfirmed = true;
       return;
     } catch (saveError) {
       /* A timed-out HTTP response can hide a committed upsert. Read the row
@@ -1697,6 +1718,7 @@ export class MaintenanceBreak {
           console.warn(
             '[MaintenanceBreak] persistence response was lost, but exact durable state was verified'
           );
+          this.durableConfirmed = true;
           return;
         }
       } catch (readError) {
@@ -1720,6 +1742,7 @@ export class MaintenanceBreak {
     this.resumeWaveTimers.clear();
 
     this.phase = 'idle';
+    this.durableConfirmed = false;
     this.announcedAt = 0;
     this.breakStartedAt = 0;
     this.breakEndsAt = 0;
@@ -1765,6 +1788,7 @@ export class MaintenanceBreak {
    */
   readyForRestart(): boolean {
     if (this.phase !== 'counting_down') return false;
+    if (!this.durableConfirmed) return false;
     if (this.unparkedTables().length > 0) return false;
     const ready = this.remainingMs() >= MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS;
     if (ready && this.readyForRestartAtMs === null) this.readyForRestartAtMs = this.now();
@@ -1777,6 +1801,7 @@ export class MaintenanceBreak {
     return {
       active: this.isActive(),
       phase: this.phase,
+      durableConfirmed: this.isActive() && this.durableConfirmed,
       breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
       remainingMs: this.remainingMs(),
       unparkedTables: unparked.length,

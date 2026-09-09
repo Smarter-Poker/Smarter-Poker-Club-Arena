@@ -1724,6 +1724,9 @@ export abstract class TournamentManagerBase {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
     }
+    // Tables may all have parked during the break. Recheck after any deferred
+    // add-on has acquired its own hold; no new table completion edge is due.
+    this.advanceHandForHandBarrier();
   }
 
   /**
@@ -2244,7 +2247,8 @@ export abstract class TournamentManagerBase {
    * deadline exist, so the synchronous resume below cannot be lost.
    */
   private advanceHandForHandBarrier(): void {
-    if (!this.handForHandActive || !this.running) return;
+    // The tournament break owns this shared pause until its own end edge.
+    if (!this.handForHandActive || !this.running || this.isOnBreak()) return;
     const expectedIds = [...this.handForHandTableIds];
     if (expectedIds.length === 0) return;
     const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
@@ -2266,7 +2270,8 @@ export abstract class TournamentManagerBase {
     this.handForHandRePauseTimer = this.setLifecycleTimeout(() => {
       this.handForHandRePauseTimer = null;
       // Bubble burst and manager stop are terminal for this exact re-pause.
-      if (!this.running || !this.handForHandActive) return;
+      // A break starting during this delay retains its longer pause budget.
+      if (!this.running || !this.handForHandActive || this.isOnBreak()) return;
       for (const engine of this.tableEngines.values()) engine.pauseAfterHand();
     }, 500);
   }
@@ -3419,39 +3424,94 @@ export abstract class TournamentManagerBase {
         const seats = SPEC_SPIN_SEATS;
         let prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  THE WHEEL FIRES HERE, NOT FOUR ROUND TRIPS LATER (round 18)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * Dan: "AS SOON AS THE 3RD SEAT IS PAID FOR THE ANIMATION SHOULD
-         * START AS SOON AS POSSIBLE."
-         *
-         * The draw has just resolved, and the draw is the ONLY thing the
-         * wheel is waiting on — every number the packet carries is already
-         * known on this line: the multiplier, the buy-in, and `prizePool`,
-         * computed immediately above from the two of them.
-         *
-         * Everything that used to sit between here and the broadcast is
-         * bookkeeping the player cannot see: `fn_spin_settle_game`, the spin
-         * row write, a roster read plus a per-player update for each seat,
-         * the stack credit, and the table build. Measured post-round-16 over
-         * 229 spins, third paid seat to `started_at` was p50 3.02s with a
-         * floor of 1.57s — and the old broadcast sat behind all of it.
-         *
-         * None of that work is a precondition for showing three players a
-         * spinning wheel. It is a precondition for DEALING, and dealing is
-         * already held for `spinRevealToDealMs` by the hold below, which is
-         * far longer than the work takes. So the reveal goes out now and the
-         * bookkeeping continues underneath it, inside a hold that was always
-         * there.
-         *
-         * The later block still runs: it applies `holdDealingUntil` to each
-         * engine once they exist, and re-emits for any table this early pass
-         * could not name. `resolveSpinReveal` is frozen the moment this fires
-         * (`spinRevealEmitted`), so the second emit carries the SAME instant
-         * and cannot move a wheel that is already turning.
-         */
+        // Book it. This is the row that did not exist before the cutover.
+        //
+        // RETRIED. Settlement is idempotent (it returns already_settled on a
+        // second call), so retrying is free, and a single attempt proved
+        // insufficient in production: three spins ran unbooked within twenty
+        // minutes of the cutover because one transient failure was enough to
+        // lose the row permanently. Lock contention on a busy club's pool is
+        // the expected cause; a couple of short retries covers it.
+        let settled = false;
+        for (let attempt = 1; attempt <= 3 && !settled; attempt++) {
+          try {
+            const { data: settle, error: settleErr } = await supabase.rpc('fn_spin_settle_game', {
+              p_tournament_id: this.tournamentId,
+              p_club_id: tournament.club_id,
+              p_buy_in: buyIn,
+              p_seats: seats,
+              p_multiplier: spinMultiplier,
+              p_rake_rate: spinRakeRate(buyIn),
+            });
+            this.assertLifecycleCurrent(lifecycle);
+            if (settleErr || !settle?.ok) {
+              throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
+            }
+            /* THE LEDGER OUTRANKS A FRESH DRAW (2026-08-30). already_settled
+               now carries the multiplier the original settlement booked. If it
+               disagrees with the one this process holds, the booked one is the
+               money truth - adopt it before the row write and the payouts
+               below, and say so loudly. The pre-draw ledger check makes this
+               near-unreachable; this is the backstop for a race between two
+               processes settling the same spin. */
+            if (settle.reason === 'already_settled') {
+              const booked = Number(settle.multiplier);
+              if (!Number.isFinite(booked) || booked <= 0) {
+                throw new Error('Already-settled Spin receipt has no usable booked multiplier');
+              }
+              if (booked !== spinMultiplier) {
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] Settle was ALREADY BOOKED at ${booked}x but this process drew ${spinMultiplier}x - adopting the booked ${booked}x`
+                  ),
+                  'Tournament.spin_settle_multiplier_mismatch'
+                );
+                spinMultiplier = booked;
+                prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
+              }
+            }
+            settled = true;
+            if (Number(settle.operator_shortfall) > 0) {
+              // The pool was too thin to cover the prize. Players are paid in
+              // full regardless; this says the club needs seeding.
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x - club ${tournament.club_id} needs a larger reserve seed`
+                ),
+                'Tournament.spin_pool_shortfall'
+              );
+            }
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x - pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
+            );
+          } catch (settleErr: any) {
+            if (settleErr instanceof TournamentLifecycleAbortedError) throw settleErr;
+            if (attempt === 3) {
+              // Settlement is part of launch, not optional accounting. The
+              // incomplete launch receipt keeps the tournament REGISTERING so
+              // the next start pass can replay this idempotent RPC exactly.
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) - standing down before RUNNING; the incomplete launch receipt will retry the same settlement`
+                ),
+                'Tournament.spin_settle_failed'
+              );
+            } else {
+              await new Promise((r) => setTimeout(r, 250 * attempt));
+              this.assertLifecycleCurrent(lifecycle);
+            }
+          }
+        }
+        this.assertLifecycleCurrent(lifecycle);
+        if (!settled) {
+          this.running = false;
+          return;
+        }
+
+        // The reserve receipt is the durable result. A response loss, failed
+        // settlement or already-booked multiplier must be resolved before the
+        // wheel names a prize. Emit now, ahead of row projection and table work,
+        // while retaining the existing reveal hold and reconnect replay window.
         if (this.seatFirstTableIds.length > 0 && spinMultiplier > 0) {
           const { revealAt, holdUntil } = this.resolveSpinReveal();
           this.spinRevealEmitted = true;
@@ -3491,89 +3551,8 @@ export abstract class TournamentManagerBase {
             }
           }
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY - ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, settle and table build still to come inside the hold`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY - ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, reserve settlement confirmed; row patch and table build follow inside the hold`
           );
-        }
-
-        // Book it. This is the row that did not exist before the cutover.
-        //
-        // RETRIED. Settlement is idempotent (it returns already_settled on a
-        // second call), so retrying is free, and a single attempt proved
-        // insufficient in production: three spins ran unbooked within twenty
-        // minutes of the cutover because one transient failure was enough to
-        // lose the row permanently. Lock contention on a busy club's pool is
-        // the expected cause; a couple of short retries covers it.
-        let settled = false;
-        for (let attempt = 1; attempt <= 3 && !settled; attempt++) {
-          try {
-            const { data: settle, error: settleErr } = await supabase.rpc('fn_spin_settle_game', {
-              p_tournament_id: this.tournamentId,
-              p_club_id: tournament.club_id,
-              p_buy_in: buyIn,
-              p_seats: seats,
-              p_multiplier: spinMultiplier,
-              p_rake_rate: spinRakeRate(buyIn),
-            });
-            this.assertLifecycleCurrent(lifecycle);
-            if (settleErr || !settle?.ok) {
-              throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
-            }
-            settled = true;
-            /* THE LEDGER OUTRANKS A FRESH DRAW (2026-08-30). already_settled
-               now carries the multiplier the original settlement booked. If it
-               disagrees with the one this process holds, the booked one is the
-               money truth - adopt it before the row write and the payouts
-               below, and say so loudly. The pre-draw ledger check makes this
-               near-unreachable; this is the backstop for a race between two
-               processes settling the same spin. */
-            if (settle.reason === 'already_settled') {
-              const booked = Number(settle.multiplier);
-              if (Number.isFinite(booked) && booked > 0 && booked !== spinMultiplier) {
-                reportError(
-                  new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] Settle was ALREADY BOOKED at ${booked}x but this process drew ${spinMultiplier}x - adopting the booked ${booked}x`
-                  ),
-                  'Tournament.spin_settle_multiplier_mismatch'
-                );
-                spinMultiplier = booked;
-                prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
-              }
-            }
-            if (Number(settle.operator_shortfall) > 0) {
-              // The pool was too thin to cover the prize. Players are paid in
-              // full regardless; this says the club needs seeding.
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x - club ${tournament.club_id} needs a larger reserve seed`
-                ),
-                'Tournament.spin_pool_shortfall'
-              );
-            }
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x - pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
-            );
-          } catch (settleErr: any) {
-            if (settleErr instanceof TournamentLifecycleAbortedError) throw settleErr;
-            if (attempt === 3) {
-              // Settlement is part of launch, not optional accounting. The
-              // incomplete launch receipt keeps the tournament REGISTERING so
-              // the next start pass can replay this idempotent RPC exactly.
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) - standing down before RUNNING; the incomplete launch receipt will retry the same settlement`
-                ),
-                'Tournament.spin_settle_failed'
-              );
-            } else {
-              await new Promise((r) => setTimeout(r, 250 * attempt));
-              this.assertLifecycleCurrent(lifecycle);
-            }
-          }
-        }
-        this.assertLifecycleCurrent(lifecycle);
-        if (!settled) {
-          this.running = false;
-          return;
         }
 
         // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
@@ -6458,7 +6437,6 @@ export abstract class TournamentManagerBase {
       return;
     }
 
-    const ownsPause = this.addOnBreakOwnsPause;
     const ownsLevelClock = this.addOnBreakOwnsLevelClock;
     this.addOnBreakActive = false;
     this.addOnBreakEndsAtMs = 0;
@@ -6470,7 +6448,10 @@ export abstract class TournamentManagerBase {
     }
     if (!this.running) return;
 
-    if (ownsPause && !this.onBreak && !this.handForHandActive) {
+    // Hand-for-hand may have ended while the add-on owned this shared gate.
+    // With neither tournament pause remaining, release it even when the
+    // add-on originally inherited the parked table from hand-for-hand.
+    if (!this.onBreak && !this.handForHandActive) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -6486,6 +6467,7 @@ export abstract class TournamentManagerBase {
       this.savedBlindTimerRemaining = 0;
       this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
     }
+    this.advanceHandForHandBarrier();
   }
 
   /**

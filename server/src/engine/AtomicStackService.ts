@@ -1,5 +1,8 @@
 import { reportError } from '../services/errorReporter.js';
 
+/** A chip is two decimal places, everywhere it is stored (#3358). */
+const round2 = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) / 100 : 0);
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ATOMIC STACK SERVICE — In-Process Stack Versioning
@@ -152,7 +155,11 @@ export class AtomicStackService {
       return { success: false, error: 'Debit amount must be positive' };
     }
 
-    sv.stack -= amount;
+    // A chip is two decimal places (#3358). This Map is the baseline the next
+    // hand's delta is measured against AND the value `amount > sv.stack`
+    // compares an exact all-in against, so a 1e-13 drift here refuses a debit
+    // that is exactly the stack.
+    sv.stack = round2(sv.stack - amount);
     sv.version++;
     return { success: true, newStack: sv.stack, newVersion: sv.version };
   }
@@ -175,7 +182,7 @@ export class AtomicStackService {
       return { success: false, error: 'Credit amount must be positive' };
     }
 
-    sv.stack += amount;
+    sv.stack = round2(sv.stack + amount);
     sv.version++;
     return { success: true, newStack: sv.stack, newVersion: sv.version };
   }
@@ -219,7 +226,7 @@ export class AtomicStackService {
         this.versions.set(key, sv);
       }
 
-      sv.stack += s.delta;
+      sv.stack = round2(sv.stack + s.delta);
       sv.version++;
       settled.set(s.userId, sv.stack);
     }

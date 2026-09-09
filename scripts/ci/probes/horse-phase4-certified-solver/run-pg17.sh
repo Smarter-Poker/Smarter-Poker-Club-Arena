@@ -43,6 +43,10 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909022146_certified_solver_evaluation_executes_sampled_action.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909024950_candidate_promotion_rechecks_execution_provenance.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909025949_solver_release_gate_is_serialized.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql"
+# A deployment retry must preserve the same functions and validated constraint.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql"
+"${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"
 "${PSQL[@]}" -f "$HERE/pipeline-liveness.sql"

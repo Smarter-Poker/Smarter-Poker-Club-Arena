@@ -1213,8 +1213,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (isSatellite) {
               // A satellite does not pay the generic percentage ladder stored
               // for display. Its bubble is the immutable award plan created
-              // from the final funded pool: seat-or-cash entitlements plus a
-              // distinct remainder recipient when one exists. Before entry
+              // from the final funded pool: seat, noncash ticket, or cash
+              // entitlements plus a distinct remainder recipient when one exists. Before entry
               // closes that plan quite correctly does not exist yet; the exact
               // DB-relative entry-close timer/wake owns the next admission, so
               // do not turn the whole open window into a polling loop.

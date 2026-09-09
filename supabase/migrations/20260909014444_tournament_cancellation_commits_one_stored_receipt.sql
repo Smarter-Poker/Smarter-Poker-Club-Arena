@@ -42,6 +42,42 @@ BEGIN;
 SET LOCAL lock_timeout = '8s';
 SET LOCAL statement_timeout = '120s';
 
+-- This replaces the tournament parent trigger and every supported cancellation
+-- owner. Join the global terminal lane before the shared maintenance boundary,
+-- then prove the live entry freeze before queuing the parent relation barrier.
+-- A source-controlled pristine replay has no maintenance owner; only the exact
+-- empty account/club/game/journal/ticket state may use that deterministic path.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+DO $require_live_cancellation_cutover_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'atomic cancellation requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'atomic cancellation live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_cancellation_cutover_freeze$;
+
 -- Drain every preexisting status writer before replacing the old AFTER
 -- trigger. Cancellation owns its money movement explicitly below; no reactive
 -- status hook may race it or return a reserve draw a second time.
@@ -2395,5 +2431,26 @@ BEGIN
   END IF;
 END;
 $settle_source_proof$;
+
+DO $verify_live_cancellation_freeze_still_held$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'atomic cancellation maintenance entry freeze expired before commit'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$verify_live_cancellation_freeze_still_held$;
 
 COMMIT;

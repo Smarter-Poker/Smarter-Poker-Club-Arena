@@ -231,7 +231,7 @@ export async function recoverStuckCompletingTournaments(
           try {
             const receipt = await requestSatelliteSettlementReceipt(tournament.id, winnerId);
             console.log(
-              `[GameServer] Recovered satellite ${tournament.id.slice(0, 8)} through immutable receipt: ${receipt.ticketAwardCount} full ticket(s), ${receipt.remainder?.amount ?? 0} bubble remainder`
+              `[GameServer] Recovered satellite ${tournament.id.slice(0, 8)} through immutable receipt: ${receipt.ticketAwardCount} full award(s), ${receipt.entryTicketCount} noncash tournament ticket(s), ${receipt.remainder?.amount ?? 0} bubble remainder`
             );
           } catch (error) {
             if (error instanceof SatelliteSettlementRefusedError) {

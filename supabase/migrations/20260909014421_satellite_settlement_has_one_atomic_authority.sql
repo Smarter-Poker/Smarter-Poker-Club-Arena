@@ -2,7 +2,8 @@
 --
 -- A satellite has one payer and one immutable allocation. The finalized
 -- satellite prize pool buys every complete target ticket it can. Each ticket
--- is delivered as a target seat when admission is provably available, or as
+-- is delivered as a target seat when admission is provably available, as a
+-- target-scoped noncash ticket when the four-table cap blocks that seat, or as
 -- the same full value in cash when the target is definitively unavailable or
 -- the finisher already owns an independently funded target seat. Exactly one
 -- next finisher receives every cent left below one full ticket. Admission,
@@ -396,6 +397,7 @@ CREATE TABLE public.tournament_satellite_settlements (
   ticket_award_count     integer NOT NULL CHECK (ticket_award_count >= 0),
   seat_count             integer NOT NULL CHECK (seat_count >= 0),
   cash_ticket_count      integer NOT NULL CHECK (cash_ticket_count >= 0),
+  entry_ticket_count     integer NOT NULL CHECK (entry_ticket_count >= 0),
   remainder              numeric(15,2) NOT NULL
                               CHECK (remainder >= 0 AND remainder = round(remainder, 2)),
   bubble_user_id         uuid,
@@ -414,7 +416,7 @@ CREATE TABLE public.tournament_satellite_settlements (
   receipt_version        integer NOT NULL DEFAULT 2 CHECK (receipt_version = 2),
   CHECK (target_id <> tournament_id),
   CHECK (ticket_cost = target_buy_in + target_fee),
-  CHECK (ticket_award_count = seat_count + cash_ticket_count),
+  CHECK (ticket_award_count = seat_count + cash_ticket_count + entry_ticket_count),
   CHECK (ticket_award_count <= field_size),
   CHECK (pool = ticket_award_count * ticket_cost + remainder),
   CHECK (pool >= advertised_seats * ticket_cost),
@@ -444,7 +446,7 @@ CREATE TABLE public.tournament_satellite_awards (
                          ON DELETE RESTRICT,
   place             integer NOT NULL CHECK (place > 0),
   user_id           uuid NOT NULL,
-  delivery_kind     text NOT NULL CHECK (delivery_kind IN ('seat','cash')),
+  delivery_kind     text NOT NULL CHECK (delivery_kind IN ('seat','cash','ticket')),
   amount            numeric(15,2) NOT NULL
                          CHECK (amount > 0 AND amount = round(amount, 2)),
   payout_id         uuid NOT NULL
@@ -455,6 +457,8 @@ CREATE TABLE public.tournament_satellite_awards (
   -- A qualifier may unregister before the target starts, but the funded seat
   -- returns only as a tournament-entry ticket. It can never become wallet chips.
   registration_id   uuid,
+  ticket_id         uuid REFERENCES public.tournament_tickets(id)
+                           ON DELETE RESTRICT,
   obligation_id     uuid REFERENCES public.tournament_obligations(id) ON DELETE RESTRICT,
   obligation_kind   text,
   created_at        timestamptz NOT NULL DEFAULT now(),
@@ -463,18 +467,28 @@ CREATE TABLE public.tournament_satellite_awards (
   UNIQUE (payout_id),
   UNIQUE (idempotency_key),
   UNIQUE (registration_id),
+  UNIQUE (ticket_id),
   CHECK ((
     (delivery_kind = 'seat'
       AND registration_id IS NOT NULL
+      AND ticket_id IS NULL
       AND obligation_id IS NULL
       AND obligation_kind IS NULL
       AND payout_source = 'satellite_seat')
     OR
     (delivery_kind = 'cash'
       AND registration_id IS NULL
+      AND ticket_id IS NULL
       AND obligation_id IS NOT NULL
       AND obligation_kind IN ('seat','place')
       AND payout_source <> 'satellite_seat')
+    OR
+    (delivery_kind = 'ticket'
+      AND registration_id IS NULL
+      AND ticket_id IS NOT NULL
+      AND obligation_id IS NULL
+      AND obligation_kind IS NULL
+      AND payout_source = 'satellite_ticket')
   ) IS TRUE)
 );
 
@@ -1529,6 +1543,7 @@ ALTER TABLE public.tournament_tickets
     REFERENCES public.tournaments(id) ON DELETE RESTRICT,
   ADD COLUMN source_refund_entitlement_id uuid
     REFERENCES public.tournament_refund_entitlements(id) ON DELETE RESTRICT,
+  ADD COLUMN source_satellite_award_place integer,
   ADD COLUMN entry_prize numeric(15,2),
   ADD COLUMN entry_bounty numeric(15,2),
   ADD COLUMN entry_fee numeric(15,2);
@@ -1542,13 +1557,18 @@ ALTER TABLE public.tournament_tickets
        AND source_tournament_id IS NULL
        AND source_satellite_id IS NULL
        AND source_refund_entitlement_id IS NULL
+       AND source_satellite_award_place IS NULL
        AND entry_prize IS NULL AND entry_bounty IS NULL AND entry_fee IS NULL)
       OR
       (redemption_mode='tournament_entry_only'
        AND issued_by='2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid
        AND source_tournament_id IS NOT NULL
        AND source_satellite_id IS NOT NULL
-       AND source_refund_entitlement_id IS NOT NULL
+       AND ((source_refund_entitlement_id IS NOT NULL
+             AND source_satellite_award_place IS NULL)
+         OR (source_refund_entitlement_id IS NULL
+             AND source_satellite_award_place > 0
+             AND source_tournament_id<>source_satellite_id))
        AND entry_prize IS NOT NULL AND entry_prize >= 0
        AND entry_prize=round(entry_prize,2)
        AND entry_bounty IS NOT NULL AND entry_bounty >= 0
@@ -1558,9 +1578,22 @@ ALTER TABLE public.tournament_tickets
        AND value=round(entry_prize+entry_bounty+entry_fee,2))
     ) IS TRUE);
 
+ALTER TABLE public.tournament_tickets
+  ADD CONSTRAINT tournament_tickets_direct_satellite_award_fkey
+  FOREIGN KEY(source_satellite_id,source_satellite_award_place)
+  REFERENCES public.tournament_satellite_awards(tournament_id,place)
+  ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
 CREATE UNIQUE INDEX tournament_ticket_one_satellite_entitlement
   ON public.tournament_tickets(source_refund_entitlement_id)
   WHERE source_refund_entitlement_id IS NOT NULL;
+
+CREATE UNIQUE INDEX tournament_ticket_one_direct_satellite_award
+  ON public.tournament_tickets(source_satellite_id,source_satellite_award_place)
+  WHERE source_satellite_award_place IS NOT NULL;
+
+COMMENT ON COLUMN public.tournament_tickets.source_satellite_award_place IS
+  'Immutable source-satellite finish place for a direct noncash target-entry ticket; null for wallet tickets and entitlement-return tickets.';
 
 -- A session setting alone is not an authorization boundary because an
 -- authenticated SQL caller can set arbitrary custom GUC values. Admission
@@ -1850,12 +1883,14 @@ BEGIN
     IF ROW(NEW.id,NEW.club_id,NEW.issued_by,NEW.holder_id,NEW.value,NEW.note,
            NEW.redemption_mode,NEW.source_tournament_id,
            NEW.source_satellite_id,NEW.source_refund_entitlement_id,
+           NEW.source_satellite_award_place,
            NEW.entry_prize,NEW.entry_bounty,NEW.entry_fee,NEW.created_at,
            NEW.cancelled_at)
        IS DISTINCT FROM
        ROW(OLD.id,OLD.club_id,OLD.issued_by,OLD.holder_id,OLD.value,OLD.note,
            OLD.redemption_mode,OLD.source_tournament_id,
            OLD.source_satellite_id,OLD.source_refund_entitlement_id,
+           OLD.source_satellite_award_place,
            OLD.entry_prize,OLD.entry_bounty,OLD.entry_fee,OLD.created_at,
            OLD.cancelled_at) THEN
       RAISE EXCEPTION 'tournament-entry ticket identity and rails are immutable'
@@ -2451,8 +2486,8 @@ CREATE TRIGGER tournament_refund_entitlement_locks_parent_contract
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_ca_lock_tournament_contract_from_entitlement();
 
--- A target's entry contract becomes durable the instant a real satellite seat
--- is delivered. Install this guard in the satellite migration itself, rather
+-- A target's entry contract becomes durable the instant a satellite seat or
+-- target-scoped entry ticket is delivered. Install this guard here, rather
 -- than waiting for the later terminal-hardening migration, so there is no
 -- rolling-deploy window in which the header and target can diverge.
 CREATE OR REPLACE FUNCTION public.fn_satellite_target_contract_is_immutable()
@@ -2496,7 +2531,7 @@ BEGIN
       FROM public.tournament_satellite_settlements h
       JOIN public.tournament_satellite_awards a
         ON a.tournament_id = h.tournament_id
-       AND a.delivery_kind = 'seat'
+       AND a.delivery_kind IN ('seat','ticket')
      WHERE h.target_id = OLD.id
   ) THEN
     RAISE EXCEPTION
@@ -2522,7 +2557,7 @@ CREATE TRIGGER satellite_target_contract_is_immutable
 COMMENT ON TABLE public.tournament_satellite_settlements IS
   'Immutable whole-pool satellite settlement header. Final pool = full ticket awards plus at most one next-finisher residual; exact source tables and seats close in the same transaction.';
 COMMENT ON TABLE public.tournament_satellite_awards IS
-  'Immutable per-place full-ticket delivery evidence. Each line is exactly one actual target seat or one exact cash substitution.';
+  'Immutable per-place full-ticket delivery evidence. Each line is exactly one actual target seat, one target-scoped noncash ticket, or one exact cash substitution.';
 COMMENT ON TABLE public.tournament_satellite_remainders IS
   'Immutable evidence for the one next-finisher residual. Atomic rows bind the canonical place key; the single named legacy row preserves its original append-only financial evidence.';
 COMMENT ON TABLE public.tournament_refund_entitlements IS
@@ -2536,7 +2571,7 @@ COMMENT ON TABLE public.tournament_unregistration_receipts IS
 COMMENT ON TABLE public.tournament_ticket_admission_authorizations IS
   'Owner-only one-use capabilities consumed by the ticket row guard during atomic tournament admission. Session settings alone never authorize redemption.';
 COMMENT ON COLUMN public.tournament_tickets.redemption_mode IS
-  'wallet_chips for cashier-issued value; tournament_entry_only for returned satellite value that can never be redeemed or cancelled into chips.';
+  'wallet_chips for cashier-issued value; tournament_entry_only for a direct or returned satellite award that can never be redeemed or cancelled into chips.';
 
 -- Exact refunds never infer their rails from event-wide ratios. The caller
 -- opens and locks escrow first; this primitive moves the three named banks and
@@ -2690,37 +2725,99 @@ BEGIN
     RETURN jsonb_build_object('ok',false,'reason','ticket_is_wallet_only');
   END IF;
 
-  SELECT count(*) INTO v_rows
-    FROM public.tournament_refund_entitlements source_e
-    JOIN public.chip_ledger issue_l
-      ON issue_l.idempotency_key='tourney:'
-           ||source_e.tournament_id::text
-           ||':satellite-ticket-return:'||source_e.id::text
-     AND issue_l.from_type='prize_liability'
-     AND issue_l.from_entity_id=source_e.tournament_id
-     AND issue_l.to_type='escrow' AND issue_l.to_entity_id=v_ticket.id
-     AND issue_l.club_id=v_ticket.club_id AND issue_l.amount=v_ticket.value
-     AND issue_l.category='ticket_issue'
-   WHERE source_e.id=v_ticket.source_refund_entitlement_id
-     AND source_e.user_id=v_uid
-     AND source_e.entitlement_kind IN ('satellite_seat','tournament_ticket')
-     AND source_e.gross=v_ticket.value
-     AND source_e.refund_prize=v_ticket.entry_prize
-     AND source_e.refund_bounty=v_ticket.entry_bounty
-     AND source_e.refund_fee=v_ticket.entry_fee
-     AND source_e.source_satellite_id=v_ticket.source_satellite_id
-     AND source_e.tournament_id=v_ticket.source_tournament_id
-     AND NOT EXISTS(
-       SELECT 1 FROM public.tournament_refund_tranches tr
-        WHERE tr.entitlement_id=source_e.id)
-     AND (SELECT count(*) FROM public.chip_transactions issue_tx
-           WHERE issue_tx.transaction_type='tournament_ticket_issue'
-             AND issue_tx.club_id=v_ticket.club_id
-             AND issue_tx.from_user_id IS NULL AND issue_tx.to_user_id=v_uid
-             AND issue_tx.amount=v_ticket.value
-             AND issue_tx.metadata->>'ticket_id'=v_ticket.id::text
-             AND issue_tx.metadata->>'entitlement_id'=source_e.id::text
-             AND issue_tx.metadata->>'ledger_id'=issue_l.id::text)=1;
+  IF v_ticket.source_refund_entitlement_id IS NOT NULL THEN
+    SELECT count(*) INTO v_rows
+      FROM public.tournament_refund_entitlements source_e
+      JOIN public.chip_ledger issue_l
+        ON issue_l.idempotency_key='tourney:'
+             ||source_e.tournament_id::text
+             ||':satellite-ticket-return:'||source_e.id::text
+       AND issue_l.from_type='prize_liability'
+       AND issue_l.from_entity_id=source_e.tournament_id
+       AND issue_l.to_type='escrow' AND issue_l.to_entity_id=v_ticket.id
+       AND issue_l.club_id=v_ticket.club_id AND issue_l.amount=v_ticket.value
+       AND issue_l.category='ticket_issue'
+     WHERE source_e.id=v_ticket.source_refund_entitlement_id
+       AND v_ticket.source_satellite_award_place IS NULL
+       AND source_e.user_id=v_uid
+       AND source_e.entitlement_kind IN ('satellite_seat','tournament_ticket')
+       AND source_e.gross=v_ticket.value
+       AND source_e.refund_prize=v_ticket.entry_prize
+       AND source_e.refund_bounty=v_ticket.entry_bounty
+       AND source_e.refund_fee=v_ticket.entry_fee
+       AND source_e.source_satellite_id=v_ticket.source_satellite_id
+       AND source_e.tournament_id=v_ticket.source_tournament_id
+       AND NOT EXISTS(
+         SELECT 1 FROM public.tournament_refund_tranches tr
+          WHERE tr.entitlement_id=source_e.id)
+       AND (SELECT count(*) FROM public.chip_transactions issue_tx
+             WHERE issue_tx.transaction_type='tournament_ticket_issue'
+               AND issue_tx.club_id=v_ticket.club_id
+               AND issue_tx.from_user_id IS NULL AND issue_tx.to_user_id=v_uid
+               AND issue_tx.amount=v_ticket.value
+               AND issue_tx.metadata->>'ticket_id'=v_ticket.id::text
+               AND issue_tx.metadata->>'entitlement_id'=source_e.id::text
+               AND issue_tx.metadata->>'ledger_id'=issue_l.id::text)=1;
+  ELSE
+    -- A cap-blocked satellite winner never held a target registration, so its
+    -- noncash ticket is sourced directly by the immutable satellite award.
+    SELECT count(*) INTO v_rows
+      FROM public.tournament_satellite_awards source_a
+      JOIN public.tournament_satellite_settlements source_h
+        ON source_h.tournament_id=source_a.tournament_id
+      JOIN public.tournament_payouts source_p ON source_p.id=source_a.payout_id
+      JOIN public.chip_ledger issue_l
+        ON issue_l.idempotency_key=source_a.idempotency_key||':ticket_escrow'
+       AND issue_l.from_type='prize_liability'
+       AND issue_l.from_entity_id=source_a.tournament_id
+       AND issue_l.to_type='escrow' AND issue_l.to_entity_id=v_ticket.id
+       AND issue_l.club_id=v_ticket.club_id AND issue_l.amount=v_ticket.value
+       AND issue_l.category='ticket_issue'
+       AND issue_l.tournament_id=source_a.tournament_id
+       AND issue_l.metadata->>'kind'='direct_satellite_entry_ticket'
+       AND issue_l.metadata->>'ticket_id'=v_ticket.id::text
+       AND issue_l.metadata->>'payout_id'=source_a.payout_id::text
+       AND issue_l.metadata->>'satellite_target_id'=
+             v_ticket.source_tournament_id::text
+       AND issue_l.metadata->>'user_id'=source_a.user_id::text
+       AND issue_l.metadata->>'position'=source_a.place::text
+     WHERE source_a.tournament_id=v_ticket.source_satellite_id
+       AND source_a.place=v_ticket.source_satellite_award_place
+       AND source_a.user_id=v_uid
+       AND source_a.delivery_kind='ticket'
+       AND source_a.ticket_id=v_ticket.id
+       AND source_a.amount=v_ticket.value
+       AND source_a.payout_source='satellite_ticket'
+       AND source_p.tournament_id=source_a.tournament_id
+       AND source_p.user_id=source_a.user_id
+       AND source_p."position"=source_a.place
+       AND source_p.amount=source_a.amount
+       AND source_p.source=source_a.payout_source
+       AND source_p.idempotency_key=source_a.idempotency_key
+       AND source_h.target_id=v_ticket.source_tournament_id
+       AND source_h.ticket_cost=v_ticket.value
+       AND source_h.target_buy_in=v_ticket.entry_prize
+       AND source_h.target_fee=v_ticket.entry_fee
+       AND p_tournament_id=v_ticket.source_tournament_id
+       AND v_ticket.entry_bounty=0
+       AND NOT EXISTS(
+         SELECT 1 FROM public.wallet_credit_idempotency wallet_key
+          WHERE wallet_key.key=source_a.idempotency_key)
+       AND (SELECT count(*) FROM public.chip_transactions issue_tx
+             WHERE issue_tx.transaction_type='tournament_ticket_issue'
+               AND issue_tx.club_id=v_ticket.club_id
+               AND issue_tx.from_user_id IS NULL AND issue_tx.to_user_id=v_uid
+               AND issue_tx.amount=v_ticket.value
+               AND issue_tx.metadata->>'ticket_id'=v_ticket.id::text
+               AND issue_tx.metadata->>'source_tournament_id'=
+                     p_tournament_id::text
+               AND issue_tx.metadata->>'source_satellite_id'=source_a.tournament_id::text
+               AND issue_tx.metadata->>'source_award_place'=source_a.place::text
+               AND issue_tx.metadata->>'payout_id'=source_a.payout_id::text
+               AND issue_tx.metadata->>'ledger_id'=issue_l.id::text
+               AND issue_tx.metadata->>'idempotency_key'=
+                     source_a.idempotency_key)=1;
+  END IF;
   IF v_rows<>1 THEN
     RAISE EXCEPTION 'tournament-entry ticket has no exact noncash issue evidence'
       USING ERRCODE='P0404';
@@ -3142,6 +3239,8 @@ BEGIN
      AND tk.entry_prize=v_split.prize
      AND tk.entry_bounty=v_split.bounty
      AND tk.entry_fee=v_split.rake
+     AND (tk.source_refund_entitlement_id IS NOT NULL
+          OR tk.source_tournament_id=p_tournament_id)
      AND EXISTS(
        SELECT 1 FROM public.club_members m
         WHERE m.club_id=tk.club_id AND m.user_id=v_uid
@@ -3155,17 +3254,6 @@ BEGIN
 
   SELECT tk.* INTO v_ticket
     FROM public.tournament_tickets tk
-    JOIN public.tournament_refund_entitlements source_e
-      ON source_e.id=tk.source_refund_entitlement_id
-    JOIN public.chip_ledger issue_l
-      ON issue_l.idempotency_key='tourney:'
-           ||source_e.tournament_id::text
-           ||':satellite-ticket-return:'||source_e.id::text
-     AND issue_l.from_type='prize_liability'
-     AND issue_l.from_entity_id=source_e.tournament_id
-     AND issue_l.to_type='escrow' AND issue_l.to_entity_id=tk.id
-     AND issue_l.club_id=tk.club_id AND issue_l.amount=tk.value
-     AND issue_l.category='ticket_issue'
    WHERE tk.holder_id=v_uid
      AND tk.status='issued'
      AND tk.redemption_mode='tournament_entry_only'
@@ -3173,17 +3261,6 @@ BEGIN
      AND tk.entry_prize=v_split.prize
      AND tk.entry_bounty=v_split.bounty
      AND tk.entry_fee=v_split.rake
-     AND source_e.user_id=v_uid
-     AND source_e.entitlement_kind IN ('satellite_seat','tournament_ticket')
-     AND source_e.gross=tk.value
-     AND source_e.refund_prize=tk.entry_prize
-     AND source_e.refund_bounty=tk.entry_bounty
-     AND source_e.refund_fee=tk.entry_fee
-     AND source_e.source_satellite_id=tk.source_satellite_id
-     AND source_e.tournament_id=tk.source_tournament_id
-     AND NOT EXISTS(
-       SELECT 1 FROM public.tournament_refund_tranches tr
-        WHERE tr.entitlement_id=source_e.id)
      AND EXISTS(
        SELECT 1 FROM public.club_members m
         WHERE m.club_id=tk.club_id AND m.user_id=v_uid
@@ -3194,15 +3271,111 @@ BEGIN
         WHERE uc.union_id=v_t.union_id AND uc.club_id=tk.club_id))
      AND public.fn_tournament_club_for_user(
            v_uid,p_tournament_id,tk.club_id) IS NOT DISTINCT FROM tk.club_id
-     AND (SELECT count(*) FROM public.chip_transactions issue_tx
-           WHERE issue_tx.transaction_type='tournament_ticket_issue'
-             AND issue_tx.club_id=tk.club_id
-             AND issue_tx.from_user_id IS NULL
-             AND issue_tx.to_user_id=v_uid
-             AND issue_tx.amount=tk.value
-             AND issue_tx.metadata->>'ticket_id'=tk.id::text
-             AND issue_tx.metadata->>'entitlement_id'=source_e.id::text
-             AND issue_tx.metadata->>'ledger_id'=issue_l.id::text)=1
+     AND (
+       (tk.source_refund_entitlement_id IS NOT NULL
+        AND tk.source_satellite_award_place IS NULL
+        AND EXISTS(
+          SELECT 1
+            FROM public.tournament_refund_entitlements source_e
+            JOIN public.chip_ledger issue_l
+              ON issue_l.idempotency_key='tourney:'
+                   ||source_e.tournament_id::text
+                   ||':satellite-ticket-return:'||source_e.id::text
+             AND issue_l.from_type='prize_liability'
+             AND issue_l.from_entity_id=source_e.tournament_id
+             AND issue_l.to_type='escrow' AND issue_l.to_entity_id=tk.id
+             AND issue_l.club_id=tk.club_id AND issue_l.amount=tk.value
+             AND issue_l.category='ticket_issue'
+           WHERE source_e.id=tk.source_refund_entitlement_id
+             AND source_e.user_id=v_uid
+             AND source_e.entitlement_kind IN
+                   ('satellite_seat','tournament_ticket')
+             AND source_e.gross=tk.value
+             AND source_e.refund_prize=tk.entry_prize
+             AND source_e.refund_bounty=tk.entry_bounty
+             AND source_e.refund_fee=tk.entry_fee
+             AND source_e.source_satellite_id=tk.source_satellite_id
+             AND source_e.tournament_id=tk.source_tournament_id
+             AND NOT EXISTS(
+               SELECT 1 FROM public.tournament_refund_tranches tr
+                WHERE tr.entitlement_id=source_e.id)
+             AND (SELECT count(*)
+                    FROM public.chip_transactions issue_tx
+                   WHERE issue_tx.transaction_type='tournament_ticket_issue'
+                     AND issue_tx.club_id=tk.club_id
+                     AND issue_tx.from_user_id IS NULL
+                     AND issue_tx.to_user_id=v_uid
+                     AND issue_tx.amount=tk.value
+                     AND issue_tx.metadata->>'ticket_id'=tk.id::text
+                     AND issue_tx.metadata->>'entitlement_id'=source_e.id::text
+                     AND issue_tx.metadata->>'ledger_id'=issue_l.id::text)=1))
+       OR
+       (tk.source_refund_entitlement_id IS NULL
+        AND tk.source_satellite_award_place IS NOT NULL
+        AND tk.source_tournament_id=p_tournament_id
+        AND EXISTS(
+          SELECT 1
+            FROM public.tournament_satellite_awards source_a
+            JOIN public.tournament_satellite_settlements source_h
+              ON source_h.tournament_id=source_a.tournament_id
+             AND source_h.target_id=p_tournament_id
+            JOIN public.tournament_payouts source_p
+              ON source_p.id=source_a.payout_id
+             AND source_p.tournament_id=source_a.tournament_id
+             AND source_p.user_id=source_a.user_id
+             AND source_p."position"=source_a.place
+             AND source_p.amount=source_a.amount
+             AND source_p.source=source_a.payout_source
+             AND source_p.idempotency_key=source_a.idempotency_key
+            JOIN public.chip_ledger issue_l
+              ON issue_l.idempotency_key=source_a.idempotency_key
+                                            ||':ticket_escrow'
+             AND issue_l.from_type='prize_liability'
+             AND issue_l.from_entity_id=source_a.tournament_id
+             AND issue_l.to_type='escrow' AND issue_l.to_entity_id=tk.id
+             AND issue_l.club_id=tk.club_id AND issue_l.amount=tk.value
+             AND issue_l.category='ticket_issue'
+             AND issue_l.tournament_id=source_a.tournament_id
+             AND issue_l.metadata->>'kind'='direct_satellite_entry_ticket'
+             AND issue_l.metadata->>'ticket_id'=tk.id::text
+             AND issue_l.metadata->>'payout_id'=source_a.payout_id::text
+             AND issue_l.metadata->>'satellite_target_id'=
+                   p_tournament_id::text
+             AND issue_l.metadata->>'user_id'=source_a.user_id::text
+             AND issue_l.metadata->>'position'=source_a.place::text
+           WHERE source_a.tournament_id=tk.source_satellite_id
+             AND source_a.place=tk.source_satellite_award_place
+             AND source_a.user_id=v_uid
+             AND source_a.delivery_kind='ticket'
+             AND source_a.ticket_id=tk.id
+             AND source_a.amount=tk.value
+             AND source_a.payout_source='satellite_ticket'
+             AND source_h.ticket_cost=tk.value
+             AND source_h.target_buy_in=tk.entry_prize
+             AND source_h.target_fee=tk.entry_fee
+             AND tk.entry_bounty=0
+             AND NOT EXISTS(
+               SELECT 1 FROM public.wallet_credit_idempotency wallet_key
+                WHERE wallet_key.key=source_a.idempotency_key)
+             AND (SELECT count(*)
+                    FROM public.chip_transactions issue_tx
+                   WHERE issue_tx.transaction_type='tournament_ticket_issue'
+                     AND issue_tx.club_id=tk.club_id
+                     AND issue_tx.from_user_id IS NULL
+                     AND issue_tx.to_user_id=v_uid
+                     AND issue_tx.amount=tk.value
+                     AND issue_tx.metadata->>'ticket_id'=tk.id::text
+                     AND issue_tx.metadata->>'source_tournament_id'=
+                           p_tournament_id::text
+                     AND issue_tx.metadata->>'source_satellite_id'=
+                           source_a.tournament_id::text
+                     AND issue_tx.metadata->>'source_award_place'=
+                           source_a.place::text
+                     AND issue_tx.metadata->>'payout_id'=source_a.payout_id::text
+                     AND issue_tx.metadata->>'ledger_id'=issue_l.id::text
+                     AND issue_tx.metadata->>'idempotency_key'=
+                           source_a.idempotency_key)=1))
+     )
    ORDER BY tk.created_at,tk.id
    LIMIT 1;
 
@@ -3319,6 +3492,8 @@ BEGIN
          AND tk.entry_prize=v_split.prize
          AND tk.entry_bounty=v_split.bounty
          AND tk.entry_fee=v_split.rake
+         AND (tk.source_refund_entitlement_id IS NOT NULL
+              OR tk.source_tournament_id=p_tournament_id)
          AND EXISTS(
            SELECT 1 FROM public.club_members m
             WHERE m.club_id=tk.club_id AND m.user_id=tk.holder_id
@@ -4268,9 +4443,15 @@ WITH t AS (
     FROM public.tournament_guarantee_overlays
    WHERE tournament_id=p_tournament_id
 ), sat AS (
-  SELECT COALESCE(sum(amount),0) AS seats_out
-    FROM public.tournament_payouts
-   WHERE tournament_id=p_tournament_id AND source='satellite_seat'
+  SELECT COALESCE(sum(p.amount),0) AS funded_awards_out
+    FROM public.tournament_payouts p
+    LEFT JOIN public.tournament_satellite_awards a
+      ON a.payout_id=p.id
+     AND a.tournament_id=p.tournament_id
+     AND a.delivery_kind='ticket'
+   WHERE p.tournament_id=p_tournament_id
+     AND (p.source='satellite_seat'
+       OR (p.source='satellite_ticket' AND a.payout_id IS NOT NULL))
 ), fo AS (
   SELECT COALESCE(sum(amount),0) AS fee_out
     FROM public.tournament_rake_settlements
@@ -4292,7 +4473,7 @@ WITH t AS (
       ELSE tgo.tgo_amount END,2) AS overlay_in,
     round(stl.moved-stl.split_moved-rr.fee_sat+rr.fee_sat_split,2)
       AS satellite_in,
-    round(w.prize_out+sat.seats_out,2) AS prize_out,
+    round(w.prize_out+sat.funded_awards_out,2) AS prize_out,
     round(w.bounty_out,2) AS bounty_out,
     round(fo.fee_out,2) AS fee_out,
     round(w.refund_out,2) AS refund_out,
@@ -5507,7 +5688,7 @@ BEGIN
   IF v_target.id IS NULL
      OR v_h.target_was_missing IS DISTINCT FROM false
      OR v_h.target_contract_version IS NOT NULL
-     OR (v_h.seat_count > 0 AND (
+     OR ((v_h.seat_count > 0 OR v_h.entry_ticket_count > 0) AND (
           v_target.buy_in_amount IS DISTINCT FROM v_h.target_buy_in
        OR COALESCE(v_target.buy_in_fee,0) IS DISTINCT FROM v_h.target_fee
        OR COALESCE(v_target.bounty_amount,0) <> 0
@@ -5630,6 +5811,9 @@ BEGIN
      OR (SELECT count(*) FROM public.tournament_satellite_awards a
           WHERE a.tournament_id = p_tournament_id AND a.delivery_kind = 'cash')
           <> v_h.cash_ticket_count
+     OR (SELECT count(*) FROM public.tournament_satellite_awards a
+          WHERE a.tournament_id = p_tournament_id AND a.delivery_kind = 'ticket')
+          <> v_h.entry_ticket_count
      OR EXISTS (
        SELECT 1
          FROM public.tournament_satellite_awards a
@@ -5692,6 +5876,110 @@ BEGIN
          OR k.amount IS DISTINCT FROM a.amount)
   ) THEN
     RAISE EXCEPTION 'satellite % cash ticket has no exact wallet/debt evidence',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+
+  -- A cap-blocked full award remains the source pool's money but is held in a
+  -- noncash, target-scoped ticket escrow. Prove the immutable award identity,
+  -- exact issue journal and absence of a wallet credit on every replay.
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_satellite_awards a
+      LEFT JOIN public.tournament_payouts p ON p.id=a.payout_id
+      LEFT JOIN public.tournament_tickets tk ON tk.id=a.ticket_id
+      LEFT JOIN public.chip_ledger l
+        ON l.idempotency_key=a.idempotency_key||':ticket_escrow'
+       AND l.to_type='escrow' AND l.to_entity_id=a.ticket_id
+     WHERE a.tournament_id=p_tournament_id
+       AND a.delivery_kind='ticket'
+       AND (tk.id IS NULL
+         OR tk.issued_by IS DISTINCT FROM
+              '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid
+         OR tk.holder_id IS DISTINCT FROM a.user_id
+         OR tk.value IS DISTINCT FROM a.amount
+         OR tk.status NOT IN ('issued','redeemed')
+         OR tk.redemption_mode IS DISTINCT FROM 'tournament_entry_only'
+         OR tk.source_tournament_id IS DISTINCT FROM v_h.target_id
+         OR tk.source_satellite_id IS DISTINCT FROM p_tournament_id
+         OR tk.source_refund_entitlement_id IS NOT NULL
+         OR tk.source_satellite_award_place IS DISTINCT FROM a.place
+         OR tk.entry_prize IS DISTINCT FROM v_h.target_buy_in
+         OR tk.entry_bounty IS DISTINCT FROM 0::numeric
+         OR tk.entry_fee IS DISTINCT FROM v_h.target_fee
+         OR p.metadata->>'delivery_kind' IS DISTINCT FROM 'ticket'
+         OR p.metadata->>'ticket_id' IS DISTINCT FROM tk.id::text
+         OR p.metadata->>'satellite_target_id' IS DISTINCT FROM v_h.target_id::text
+         OR p.metadata->>'wallet_chips_credited' IS DISTINCT FROM '0'
+         OR l.id IS NULL
+         OR l.status IS DISTINCT FROM 'posted'
+         OR l.from_type IS DISTINCT FROM 'prize_liability'
+         OR l.from_entity_id IS DISTINCT FROM p_tournament_id
+         OR l.to_type IS DISTINCT FROM 'escrow'
+         OR l.to_entity_id IS DISTINCT FROM tk.id
+         OR l.amount IS DISTINCT FROM a.amount
+         OR l.category IS DISTINCT FROM 'ticket_issue'
+         OR l.club_id IS DISTINCT FROM tk.club_id
+         OR l.tournament_id IS DISTINCT FROM p_tournament_id
+         OR l.settlement_id IS DISTINCT FROM
+              'satellite-ticket:'||tk.id::text
+         OR l.actor_service IS DISTINCT FROM 'fn_settle_satellite_tournament'
+         OR l.pre_from_balance IS DISTINCT FROM
+              round(v_h.pool-(a.place-1)*v_h.ticket_cost,2)
+         OR l.post_from_balance IS DISTINCT FROM
+              round(v_h.pool-a.place*v_h.ticket_cost,2)
+         OR l.pre_to_balance IS DISTINCT FROM 0::numeric
+         OR l.post_to_balance IS DISTINCT FROM a.amount
+         OR l.metadata->>'kind' IS DISTINCT FROM
+              'direct_satellite_entry_ticket'
+         OR l.metadata->>'delivery_kind' IS DISTINCT FROM 'ticket'
+         OR l.metadata->>'ticket_id' IS DISTINCT FROM tk.id::text
+         OR l.metadata->>'payout_id' IS DISTINCT FROM a.payout_id::text
+         OR l.metadata->>'satellite_id' IS DISTINCT FROM p_tournament_id::text
+         OR l.metadata->>'satellite_target_id' IS DISTINCT FROM v_h.target_id::text
+         OR l.metadata->>'user_id' IS DISTINCT FROM a.user_id::text
+         OR l.metadata->>'position' IS DISTINCT FROM a.place::text
+         OR (l.metadata->>'entry_prize')::numeric IS DISTINCT FROM
+              v_h.target_buy_in
+         OR (l.metadata->>'entry_bounty')::numeric IS DISTINCT FROM 0::numeric
+         OR (l.metadata->>'entry_fee')::numeric IS DISTINCT FROM v_h.target_fee
+         OR l.metadata->>'wallet_chips_credited' IS DISTINCT FROM '0'
+         OR EXISTS (
+           SELECT 1 FROM public.wallet_credit_idempotency wallet_key
+            WHERE wallet_key.key=a.idempotency_key)
+         OR (SELECT count(*)
+               FROM public.chip_transactions issue_tx
+              WHERE issue_tx.transaction_type='tournament_ticket_issue'
+                AND issue_tx.club_id=tk.club_id
+                AND issue_tx.from_user_id IS NULL
+                AND issue_tx.to_user_id=a.user_id
+                AND issue_tx.amount=a.amount
+                AND issue_tx.metadata->>'ticket_id'=tk.id::text
+                AND issue_tx.metadata->>'escrow_entity_id'=tk.id::text
+                AND issue_tx.metadata->>'holder_id'=a.user_id::text
+                AND (issue_tx.metadata->>'value')::numeric=a.amount
+                AND issue_tx.metadata->>'redemption_mode'=
+                      'tournament_entry_only'
+                AND issue_tx.metadata->>'source_tournament_id'=
+                      v_h.target_id::text
+                AND issue_tx.metadata->>'source_satellite_id'=
+                      p_tournament_id::text
+                AND issue_tx.metadata->>'source_award_place'=a.place::text
+                AND issue_tx.metadata->>'payout_id'=a.payout_id::text
+                AND issue_tx.metadata->>'ledger_id'=l.id::text
+                AND issue_tx.metadata->>'idempotency_key'=a.idempotency_key
+                AND issue_tx.metadata->>'wallet_chips_credited'='0') <> 1)
+  ) OR (SELECT count(*) FROM public.tournament_tickets tk
+         WHERE tk.source_satellite_id=p_tournament_id
+           AND tk.source_satellite_award_place IS NOT NULL)
+       <> v_h.entry_ticket_count
+    OR (SELECT count(*) FROM public.chip_ledger l
+         WHERE l.from_type='prize_liability'
+           AND l.from_entity_id=p_tournament_id
+           AND l.category='ticket_issue'
+           AND l.metadata->>'kind'='direct_satellite_entry_ticket')
+       <> v_h.entry_ticket_count THEN
+    RAISE EXCEPTION
+      'satellite % direct ticket has no exact noncash escrow evidence',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
 
@@ -5951,7 +6239,8 @@ BEGIN
            'amount', a.amount,
            'delivery_kind', a.delivery_kind,
            'payout_id', a.payout_id,
-           'registration_id', a.registration_id)
+           'registration_id', a.registration_id,
+           'ticket_id', a.ticket_id)
          ORDER BY a.place), '[]'::jsonb)
     INTO v_awards
     FROM public.tournament_satellite_awards a
@@ -5982,6 +6271,7 @@ BEGIN
     'ticket_award_count', v_h.ticket_award_count,
     'seat_count', v_h.seat_count,
     'cash_ticket_count', v_h.cash_ticket_count,
+    'entry_ticket_count', v_h.entry_ticket_count,
     'awards', v_awards,
     'seats', v_seats,
     'remainder', v_remainder,
@@ -6043,6 +6333,7 @@ DECLARE
   v_ticket_award_count integer;
   v_seat_count integer := 0;
   v_cash_ticket_count integer := 0;
+  v_entry_ticket_count integer := 0;
   v_remainder numeric;
   v_bubble_position integer;
   v_bubble_user_id uuid;
@@ -6059,8 +6350,14 @@ DECLARE
   v_sequenced_count integer;
   v_distinct_sequence_count integer;
   v_place integer;
+  v_cap_user_id uuid;
+  v_cap_load integer;
   v_rows integer;
   v_registration_id uuid;
+  v_ticket_id uuid;
+  v_ticket_club_id uuid;
+  v_ticket_ledger_id uuid;
+  v_ticket_transaction_id uuid;
   v_payout_id uuid;
   v_pool_before numeric;
   v_rake_result jsonb;
@@ -6573,6 +6870,21 @@ BEGIN
     END;
   END IF;
 
+  -- The booking and live-seat triggers serialize every four-table decision on
+  -- this same user key. Take all winner keys in UUID order before classifying
+  -- anyone, so a concurrent seat cannot race a direct-ticket disposition and
+  -- two multi-award satellites cannot deadlock by taking the keys oppositely.
+  FOR v_cap_user_id IN
+    SELECT tp.user_id
+      FROM public.tournament_players tp
+     WHERE tp.tournament_id=p_tournament_id
+       AND tp.position BETWEEN 1 AND v_ticket_award_count
+     ORDER BY tp.user_id
+  LOOP
+    PERFORM pg_advisory_xact_lock(
+      hashtextextended('table_cap:'||v_cap_user_id::text,0));
+  END LOOP;
+
   IF v_ticket_award_count > 0 THEN
     FOR v_place IN 1..v_ticket_award_count LOOP
       SELECT * INTO v_finisher FROM public.tournament_players tp
@@ -6601,11 +6913,21 @@ BEGIN
           v_delivery_kind := 'cash';
         END IF;
       ELSIF v_target_open AND v_seat_count < v_target_slots THEN
-        v_delivery_kind := 'seat';
+        v_cap_load:=public.fn_concurrent_game_load(
+          v_finisher.user_id,NULL,NULL,v_target_id);
+        IF v_cap_load>=4 THEN
+          -- The cap remains absolute. The winner receives the funded entry as
+          -- a noncash tournament ticket instead of a fifth game or wallet chips.
+          v_delivery_kind := 'ticket';
+        ELSE
+          v_delivery_kind := 'seat';
+        END IF;
       END IF;
 
       IF v_delivery_kind = 'seat' THEN
         v_seat_count := v_seat_count + 1;
+      ELSIF v_delivery_kind = 'ticket' THEN
+        v_entry_ticket_count := v_entry_ticket_count + 1;
       ELSE
         v_cash_ticket_count := v_cash_ticket_count + 1;
       END IF;
@@ -6615,7 +6937,8 @@ BEGIN
         'delivery_kind', v_delivery_kind));
     END LOOP;
   END IF;
-  IF v_seat_count + v_cash_ticket_count <> v_ticket_award_count THEN
+  IF v_seat_count + v_cash_ticket_count + v_entry_ticket_count
+       <> v_ticket_award_count THEN
     RAISE EXCEPTION 'satellite % did not classify every funded ticket',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
@@ -6690,7 +7013,8 @@ BEGIN
     (tournament_id, target_id, target_was_missing, target_contract_version,
      winner_id, field_size, advertised_seats, pool,
      target_buy_in, target_fee, ticket_cost, ticket_award_count,
-     seat_count, cash_ticket_count, remainder, bubble_user_id, bubble_position,
+     seat_count, cash_ticket_count, entry_ticket_count,
+     remainder, bubble_user_id, bubble_position,
      source_table_count, source_table_ids, source_seat_count, source_seat_ids,
      released_seat_count, released_seat_ids, source_closed_at,
      source_escrow_closed_at, source_escrow_close_note, settled_at)
@@ -6698,7 +7022,7 @@ BEGIN
     (p_tournament_id, v_target_id, false, NULL,
      p_observed_winner_id, v_field_size, v_advertised_seats, v_pool,
      v_target_buy_in, v_target_fee, v_ticket_cost, v_ticket_award_count,
-     v_seat_count, v_cash_ticket_count, v_remainder,
+     v_seat_count, v_cash_ticket_count, v_entry_ticket_count, v_remainder,
      v_bubble_user_id, v_bubble_position,
      v_source_table_count, v_source_table_ids, v_source_seat_count,
      v_source_seat_ids, v_released_seat_count, v_released_seat_ids,
@@ -6815,6 +7139,126 @@ BEGIN
       VALUES
         (p_tournament_id, v_place, v_finisher.user_id, 'seat', v_ticket_cost,
          v_payout_id, 'satellite_seat', v_payout_key, v_registration_id);
+    ELSIF v_delivery_kind = 'ticket' THEN
+      -- A four-table cap is not an economic failure and cannot turn a funded
+      -- satellite award into wallet chips. Resolve the exact target club and
+      -- escrow the funded award in a target-scoped, noncash ticket instead.
+      v_ticket_club_id := public.fn_tournament_club_for_user(
+        v_finisher.user_id, v_target_id,
+        COALESCE(v_target.club_id, v_source.club_id));
+      IF v_ticket_club_id IS NULL
+         OR (v_target.club_id IS NOT NULL
+             AND v_ticket_club_id IS DISTINCT FROM v_target.club_id) THEN
+        RAISE EXCEPTION
+          'satellite % ticket place % has no exact target club',
+          p_tournament_id, v_place USING ERRCODE = 'P0404';
+      END IF;
+
+      v_ticket_id := gen_random_uuid();
+      v_payout_key := 'tourney:' || p_tournament_id::text
+                      || ':satellite_ticket:place:' || v_place::text;
+      INSERT INTO public.tournament_payouts
+        (tournament_id, user_id, "position", amount, source, idempotency_key,
+         paid_at, tournament_type, field_size, prize_pool, payout_structure,
+         recorded_by, metadata)
+      VALUES
+        (p_tournament_id, v_finisher.user_id, v_place, v_ticket_cost,
+         'satellite_ticket', v_payout_key, now(), v_source.tournament_type,
+         v_field_size, v_pool, NULL, 'fn_settle_satellite_tournament',
+         jsonb_build_object(
+           'delivery_kind', 'ticket',
+           'ticket_id', v_ticket_id,
+           'satellite_target_id', v_target_id,
+           'target_name', v_target.name,
+           'target_buy_in', v_target_buy_in,
+           'target_fee', v_target_fee,
+           'wallet_chips_credited', 0,
+           'unbacked', 0))
+      RETURNING id INTO v_payout_id;
+
+      INSERT INTO public.tournament_tickets
+        (id, club_id, issued_by, holder_id, value, status, note,
+         redemption_mode, source_tournament_id, source_satellite_id,
+         source_refund_entitlement_id, source_satellite_award_place,
+         entry_prize, entry_bounty, entry_fee, created_at)
+      VALUES
+        (v_ticket_id, v_ticket_club_id,
+         '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid,
+         v_finisher.user_id, v_ticket_cost, 'issued',
+         'Four-Table Cap Satellite Award: Tournament Entry Only',
+         'tournament_entry_only', v_target_id, p_tournament_id,
+         NULL, v_place, v_target_buy_in, 0, v_target_fee,
+         transaction_timestamp());
+
+      v_pool_before := round(v_pool - (v_place - 1) * v_ticket_cost, 2);
+      INSERT INTO public.chip_ledger
+        (performed_by, from_type, from_entity_id, from_label,
+         to_type, to_entity_id, to_label,
+         amount, category, club_id, tournament_id, idempotency_key,
+         settlement_id, actor_service, description, metadata,
+         pre_from_balance, post_from_balance,
+         pre_to_balance, post_to_balance)
+      VALUES
+        (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),
+         'prize_liability', p_tournament_id, 'tournaments.prize_pool',
+         'escrow', v_ticket_id, 'satellite tournament entry ticket',
+         v_ticket_cost, 'ticket_issue', v_ticket_club_id, p_tournament_id,
+         v_payout_key || ':ticket_escrow',
+         'satellite-ticket:' || v_ticket_id::text,
+         'fn_settle_satellite_tournament',
+         format('Satellite ticket place %s held as noncash target entry (%s)',
+                v_place, v_ticket_cost),
+         jsonb_build_object(
+           'kind', 'direct_satellite_entry_ticket',
+           'delivery_kind', 'ticket',
+           'ticket_id', v_ticket_id,
+           'payout_id', v_payout_id,
+           'satellite_id', p_tournament_id,
+           'satellite_target_id', v_target_id,
+           'user_id', v_finisher.user_id,
+           'position', v_place,
+           'entry_prize', v_target_buy_in,
+           'entry_bounty', 0,
+           'entry_fee', v_target_fee,
+           'wallet_chips_credited', 0,
+           'unbacked', 0),
+         v_pool_before, round(v_pool_before - v_ticket_cost, 2),
+         0, v_ticket_cost)
+      RETURNING id INTO v_ticket_ledger_id;
+
+      INSERT INTO public.chip_transactions
+        (club_id, from_user_id, to_user_id, amount, transaction_type,
+         notes, balance_after, metadata)
+      VALUES
+        (v_ticket_club_id, NULL, v_finisher.user_id, v_ticket_cost,
+         'tournament_ticket_issue',
+         'Satellite Award Held As Tournament-Entry Ticket', NULL,
+         jsonb_build_object(
+           'ticket_id', v_ticket_id,
+           'escrow_entity_id', v_ticket_id,
+           'holder_id', v_finisher.user_id,
+           'value', v_ticket_cost,
+           'redemption_mode', 'tournament_entry_only',
+           'source_tournament_id', v_target_id,
+           'source_satellite_id', p_tournament_id,
+           'source_award_place', v_place,
+           'payout_id', v_payout_id,
+           'ledger_id', v_ticket_ledger_id,
+           'idempotency_key', v_payout_key,
+           'wallet_chips_credited', 0))
+      RETURNING id INTO v_ticket_transaction_id;
+
+      PERFORM public.fn_ca_escrow_apply(
+        p_tournament_id, 'direct satellite entry ticket out',
+        p_prize_out => v_ticket_cost);
+
+      INSERT INTO public.tournament_satellite_awards
+        (tournament_id, place, user_id, delivery_kind, amount,
+         payout_id, payout_source, idempotency_key, ticket_id)
+      VALUES
+        (p_tournament_id, v_place, v_finisher.user_id, 'ticket',
+         v_ticket_cost, v_payout_id, 'satellite_ticket', v_payout_key,
+         v_ticket_id);
     ELSIF v_delivery_kind = 'cash' THEN
       INSERT INTO public.tournament_obligations
         (tournament_id, kind, place, user_id, amount_owed, amount_paid,
@@ -7204,7 +7648,7 @@ GRANT EXECUTE ON FUNCTION public.fn_settle_satellite_tournament(uuid,uuid)
   TO service_role;
 
 COMMENT ON FUNCTION public.fn_settle_satellite_tournament(uuid,uuid) IS
-  'Single atomic satellite finish. The finalized pool funds floor(pool/ticket) full ticket awards (actual seat or exact cash substitution), then one next finisher receives all residual; source seats, source tables and lifecycle close in the same transaction. No settlement-time house funding, split or retained dust.';
+  'Single atomic satellite finish. The finalized pool funds floor(pool/ticket) full awards (actual seat, target-scoped noncash ticket or exact cash substitution), then one next finisher receives all residual; source seats, source tables and lifecycle close in the same transaction. No settlement-time house funding, split or retained dust.';
 
 -- A lost HTTP response cannot tell the engine whether PostgreSQL committed.
 -- Wait behind the same first lock as the whole-event authority, then return
@@ -7904,7 +8348,8 @@ BEGIN
     (tournament_id, target_id, target_was_missing, target_contract_version,
      winner_id, field_size, advertised_seats, pool,
      target_buy_in, target_fee, ticket_cost, ticket_award_count,
-     seat_count, cash_ticket_count, remainder, bubble_user_id, bubble_position,
+     seat_count, cash_ticket_count, entry_ticket_count,
+     remainder, bubble_user_id, bubble_position,
      source_table_count, source_table_ids, source_seat_count, source_seat_ids,
      released_seat_count, released_seat_ids, source_closed_at,
      source_escrow_closed_at, source_escrow_close_note, settled_at)
@@ -7912,7 +8357,7 @@ BEGIN
     (v_tournament_id, v_target_id, false, NULL,
      v_winner.user_id, 2, v_advertised_seats, 285.00,
      round(v_target.buy_in_amount, 2), round(COALESCE(v_target.buy_in_fee, 0), 2),
-     200.00, 1, 0, 1, 85.00, v_bubble.user_id, 2,
+     200.00, 1, 0, 1, 0, 85.00, v_bubble.user_id, 2,
      v_source_table_count, v_source_table_ids, v_source_seat_count,
      v_source_seat_ids, v_released_seat_count, v_released_seat_ids,
      v_source.ended_at, v_source_escrow.closed_at,
@@ -8783,7 +9228,8 @@ BEGIN
     (tournament_id, target_id, target_was_missing, target_contract_version,
      winner_id, field_size, advertised_seats, pool,
      target_buy_in, target_fee, ticket_cost, ticket_award_count,
-     seat_count, cash_ticket_count, remainder, bubble_user_id, bubble_position,
+     seat_count, cash_ticket_count, entry_ticket_count,
+     remainder, bubble_user_id, bubble_position,
      source_table_count, source_table_ids, source_seat_count, source_seat_ids,
      released_seat_count, released_seat_ids, source_closed_at,
      source_escrow_closed_at, source_escrow_close_note, settled_at)
@@ -8791,7 +9237,7 @@ BEGIN
     (v_tournament_id, v_target_id, false, NULL,
      v_winner_id, 2, 1, 285.00,
      180.00, 20.00, 200.00, 1,
-     1, 0, 85.00, v_bubble_id, 2,
+     1, 0, 0, 85.00, v_bubble_id, 2,
      1, ARRAY[v_table_id], 2, ARRAY[v_seat_one_id,v_seat_two_id],
      0, ARRAY[]::uuid[], v_source.ended_at, v_escrow.closed_at,
      v_escrow.close_note, v_closeout_at);
@@ -8851,7 +9297,7 @@ INSERT INTO public.ca_money_rpc_registry (proname, status, notes) VALUES
   ('fn_leave_seat_and_refund', 'approved',
    'Authenticated table-seat unregister wrapper with the same request-keyed, pre-start-only financial contract.'),
   ('fn_ca_satellite_settlement_receipt', 'approved',
-   'Owner-only proof of immutable satellite header, seat|cash award lines, one residual, escrow, rake and exact source-felt closeout. Moves no money.'),
+   'Owner-only proof of immutable satellite header, seat|cash|ticket award lines, one residual, escrow, rake and exact source-felt closeout. Moves no money.'),
   ('fn_settle_satellite_tournament', 'approved',
    'Service-only all-or-nothing satellite finish: floor(final pool/ticket) full ticket awards plus one next-finisher residual and source-felt closeout.'),
   ('fn_resolve_satellite_settlement_outcome', 'approved',
@@ -8887,6 +9333,7 @@ DECLARE
   v_wallet_registration_source text;
   v_horse_wallet_registration_source text;
   v_registration_lifecycle_source text;
+  v_target_contract_source text;
 BEGIN
   SELECT prosrc INTO v_source FROM pg_proc
    WHERE proname = 'fn_settle_satellite_tournament'
@@ -8960,6 +9407,9 @@ BEGIN
   SELECT prosrc INTO v_registration_lifecycle_source FROM pg_proc
    WHERE oid =
      'public.fn_register_for_tournament_before_maintenance_announcement_gate(uuid,boolean)'::regprocedure;
+  SELECT prosrc INTO v_target_contract_source FROM pg_proc
+   WHERE oid =
+     'public.fn_satellite_target_contract_is_immutable()'::regprocedure;
   IF v_source IS NULL
      OR v_source NOT LIKE '%floor(v_pool / v_ticket_cost)%'
      OR v_source NOT LIKE '%pg_advisory_xact_lock(%ca:tournament-terminal-settlement:v1%'
@@ -8968,6 +9418,13 @@ BEGIN
           '%public.fn_tournament_late_registration_open(v_target_id)%'
      OR v_source LIKE '%NULLIF(v_target.late_reg_levels, 0)%'
      OR v_source NOT LIKE '%delivery_kind%'
+     OR v_source NOT LIKE '%FOR v_cap_user_id IN%'
+     OR v_source NOT LIKE '%ORDER BY tp.user_id%'
+     OR v_source NOT LIKE '%table_cap:%'
+     OR v_source NOT LIKE '%fn_concurrent_game_load(%'
+     OR v_source NOT LIKE '%v_delivery_kind := ''ticket''%'
+     OR v_source NOT LIKE '%direct_satellite_entry_ticket%'
+     OR v_source NOT LIKE '%p_prize_out => v_ticket_cost%'
      OR v_source NOT LIKE '%INSERT INTO public.tournament_satellite_remainders%'
      OR v_source NOT LIKE '%v_pool < v_advertised_seats * v_ticket_cost%'
      OR v_source NOT LIKE '%UPDATE public.table_seats%'
@@ -9037,6 +9494,8 @@ BEGIN
           IN v_escrow_reader_source)=0
      OR v_escrow_reader_source ~
           'round\([[:space:]]*t\.bounty_amount[[:space:]]*\)'
+     OR position('a.delivery_kind=''ticket''' IN v_escrow_reader_source)=0
+     OR position('sat.funded_awards_out' IN v_escrow_reader_source)=0
      OR NOT EXISTS (
        SELECT 1
          FROM pg_proc p
@@ -9076,6 +9535,11 @@ BEGIN
      OR v_receipt_source NOT LIKE '%v_durable_released_ids IS DISTINCT FROM v_h.released_seat_ids%'
      OR v_receipt_source NOT LIKE '%v_durable_released_count IS DISTINCT FROM v_h.released_seat_count%'
      OR v_receipt_source NOT LIKE '%public.tournament_satellite_remainders%'
+     OR v_receipt_source NOT LIKE '%a.delivery_kind=''ticket''%'
+     OR v_receipt_source NOT LIKE '%tk.source_tournament_id IS DISTINCT FROM v_h.target_id%'
+     OR v_receipt_source NOT LIKE '%wallet_key.key=a.idempotency_key%'
+     OR v_receipt_source NOT LIKE '%''entry_ticket_count'', v_h.entry_ticket_count%'
+     OR v_receipt_source NOT LIKE '%''ticket_id'', a.ticket_id%'
      OR v_receipt_source NOT LIKE '%ts.left_at IS NULL%'
      OR v_receipt_source NOT LIKE '%ts.status IS DISTINCT FROM ''left''%'
      OR v_receipt_source NOT LIKE '%ts.leave_pending IS DISTINCT FROM false%'
@@ -9092,6 +9556,13 @@ BEGIN
      OR v_receipt_source NOT LIKE
           '%''closed_at'', v_h.source_closed_at%' THEN
     RAISE EXCEPTION 'atomic satellite receipt lost its exact source-felt closeout proof';
+  END IF;
+  IF v_target_contract_source IS NULL
+     OR position(
+          'a.delivery_kind IN (''seat'',''ticket'')'
+          IN v_target_contract_source)=0 THEN
+    RAISE EXCEPTION
+      'satellite target contract can change after a noncash ticket award';
   END IF;
   IF v_outcome_source IS NULL
      OR position('ca:tournament-terminal-settlement:v1' IN v_outcome_source) = 0
@@ -9220,6 +9691,10 @@ BEGIN
           IN v_ticket_admission_source)=0
      OR position('''atomic_tournament_ticket''' IN v_ticket_admission_source)=0
      OR position('''wallet_chips_credited'',0' IN v_ticket_admission_source)=0
+     OR position('source_h.target_id=v_ticket.source_tournament_id'
+          IN v_ticket_admission_source)=0
+     OR position('p_tournament_id=v_ticket.source_tournament_id'
+          IN v_ticket_admission_source)=0
      OR position('INSERT INTO public.wallet_transactions'
           IN v_ticket_admission_source)<>0
      OR position('credit_player_wallet' IN v_ticket_admission_source)<>0 THEN
@@ -9248,6 +9723,10 @@ BEGIN
      OR position('''matching_tournament_ticket_unavailable'''
           IN v_ticket_selector_source)=0
      OR position('issue_tx.transaction_type=''tournament_ticket_issue'''
+          IN v_ticket_selector_source)=0
+     OR position('tk.source_tournament_id=p_tournament_id'
+          IN v_ticket_selector_source)=0
+     OR position('source_a.delivery_kind=''ticket'''
           IN v_ticket_selector_source)=0
      OR position('INSERT INTO ' IN upper(v_ticket_selector_source))<>0
      OR position('UPDATE ' IN upper(v_ticket_selector_source))<>0
@@ -9385,11 +9864,30 @@ BEGIN
         WHERE c.conrelid='public.tournament_tickets'::regclass
           AND c.conname='tournament_tickets_satellite_entry_contract_check'
           AND c.contype='c' AND c.convalidated)
+     OR (SELECT count(*) FROM information_schema.columns c
+          WHERE c.table_schema='public'
+            AND (c.table_name,c.column_name) IN (
+              ('tournament_satellite_settlements','entry_ticket_count'),
+              ('tournament_satellite_awards','ticket_id'),
+              ('tournament_tickets','source_satellite_award_place')))<>3
+     OR NOT EXISTS(
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid='public.tournament_tickets'::regclass
+          AND c.confrelid='public.tournament_satellite_awards'::regclass
+          AND c.conname='tournament_tickets_direct_satellite_award_fkey'
+          AND c.contype='f' AND c.condeferrable AND c.condeferred
+          AND c.confdeltype='r')
      OR NOT EXISTS(
        SELECT 1 FROM pg_index i
        JOIN pg_class idx ON idx.oid=i.indexrelid
         WHERE i.indrelid='public.tournament_tickets'::regclass
           AND idx.relname='tournament_ticket_one_satellite_entitlement'
+          AND i.indisunique AND i.indisvalid)
+     OR NOT EXISTS(
+       SELECT 1 FROM pg_index i
+       JOIN pg_class idx ON idx.oid=i.indexrelid
+        WHERE i.indrelid='public.tournament_tickets'::regclass
+          AND idx.relname='tournament_ticket_one_direct_satellite_award'
           AND i.indisunique AND i.indisvalid)
      OR NOT EXISTS(
        SELECT 1 FROM pg_index i
@@ -9618,6 +10116,7 @@ BEGIN
         WHERE s.tournament_id = 'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'::uuid
           AND s.pool = 285.00 AND s.ticket_award_count = 1
           AND s.cash_ticket_count = 1 AND s.seat_count = 0
+          AND s.entry_ticket_count = 0
           AND s.remainder = 85.00 AND s.bubble_position = 2
           AND s.source_closed_at =
                 '2026-09-07 07:10:38.412+00'::timestamptz
@@ -9646,6 +10145,7 @@ BEGIN
         WHERE s.tournament_id = '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid
           AND s.pool = 285.00 AND s.ticket_award_count = 1
           AND s.seat_count = 1 AND s.cash_ticket_count = 0
+          AND s.entry_ticket_count = 0
           AND s.remainder = 85.00 AND s.bubble_position = 2
           AND s.source_closed_at =
                 '2026-09-08 11:23:11.485+00'::timestamptz

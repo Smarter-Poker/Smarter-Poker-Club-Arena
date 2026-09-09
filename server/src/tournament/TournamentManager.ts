@@ -658,7 +658,7 @@ export class TournamentManager extends TournamentManagerEliminations {
   ): Promise<VerifiedSatelliteSettlementReceipt> {
     const verified = await requestSatelliteSettlementReceipt(this.tournamentId, winnerId);
     console.log(
-      `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement certified: ${verified.ticketAwardCount} full ticket(s), ${verified.cashTicketCount} cash substitute(s), winner value ${verified.winnerAmount}`
+      `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement certified: ${verified.ticketAwardCount} full award(s), ${verified.seatCount} target seat(s), ${verified.entryTicketCount} noncash tournament ticket(s), ${verified.cashTicketCount} cash substitute(s), winner value ${verified.winnerAmount}`
     );
     return verified;
   }

@@ -77,6 +77,13 @@ BEGIN
     INTO v_ticket_admission;
   IF v_settle !~ 'v_ticket_award_count := floor\(v_pool / v_ticket_cost\)::integer'
      OR v_settle !~ 'v_bubble_position := v_ticket_award_count \+ 1'
+     OR v_settle !~ 'FOR v_cap_user_id IN'
+     OR v_settle !~ 'ORDER BY tp.user_id'
+     OR v_settle !~ 'table_cap:'
+     OR v_settle !~ 'fn_concurrent_game_load'
+     OR v_settle !~ 'v_delivery_kind := ''ticket'''
+     OR v_settle !~ 'direct_satellite_entry_ticket'
+     OR v_settle !~ 'p_prize_out => v_ticket_cost'
      OR v_settle !~ 'public\.fn_tournament_late_registration_open\(v_target_id\)'
      OR v_settle ~ 'NULLIF\(v_target\.late_reg_levels, 0\)'
      OR v_settle ~ 'v_target\.late_reg_levels IS NULL'
@@ -142,6 +149,10 @@ BEGIN
      OR v_ticket_admission !~ 'v_t\.max_players>0'
      OR v_receipt !~ 'v_amount IS DISTINCT FROM v_h.pool'
      OR v_receipt !~ 'v_h.receipt_version IS DISTINCT FROM 2'
+     OR v_receipt !~ 'a.delivery_kind=''ticket'''
+     OR v_receipt !~ 'tk.source_tournament_id IS DISTINCT FROM v_h.target_id'
+     OR v_receipt !~ '''entry_ticket_count'', v_h.entry_ticket_count'
+     OR v_receipt !~ '''ticket_id'', a.ticket_id'
      OR v_receipt !~ 'v_source_table_ids IS DISTINCT FROM v_h.source_table_ids'
      OR v_receipt !~ 'v_source_seat_ids IS DISTINCT FROM v_h.source_seat_ids'
      OR v_receipt !~ 'v_durable_released_ids IS DISTINCT FROM v_h.released_seat_ids'
@@ -161,6 +172,8 @@ BEGIN
           position('WHERE id = p_satellite_id' IN v_legacy_award)
      OR v_escrow_reader !~ 'SECURITY DEFINER'
      OR v_escrow_reader !~ 'SET search_path TO ''public'''
+     OR v_escrow_reader !~ 'a\.delivery_kind=''ticket'''
+     OR v_escrow_reader !~ 'sat\.funded_awards_out'
      OR NOT EXISTS (
        SELECT 1
          FROM pg_proc p
@@ -330,6 +343,7 @@ BEGIN
        OR (v_result->>'ticket_award_count')::integer IS DISTINCT FROM 1
        OR (v_result->>'seat_count')::integer IS DISTINCT FROM 0
        OR (v_result->>'cash_ticket_count')::integer IS DISTINCT FROM 1
+       OR (v_result->>'entry_ticket_count')::integer IS DISTINCT FROM 0
        OR (v_result->'remainder'->>'position')::integer IS DISTINCT FROM 2
        OR (v_result->'remainder'->>'amount')::numeric IS DISTINCT FROM 85.00::numeric
        OR (v_result->>'source_table_count')::integer IS DISTINCT FROM 1
@@ -384,6 +398,7 @@ BEGIN
        OR (v_result->>'ticket_award_count')::integer IS DISTINCT FROM 1
        OR (v_result->>'seat_count')::integer IS DISTINCT FROM 1
        OR (v_result->>'cash_ticket_count')::integer IS DISTINCT FROM 0
+       OR (v_result->>'entry_ticket_count')::integer IS DISTINCT FROM 0
        OR v_result->'awards'->0->>'user_id' IS DISTINCT FROM
             '22af2652-f8ae-4b84-8f3d-d2894f435d79'
        OR v_result->'awards'->0->>'registration_id' IS DISTINCT FROM

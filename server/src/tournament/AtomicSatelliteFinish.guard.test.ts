@@ -64,6 +64,7 @@ function taggedBody(tag: string): string {
 
 const SETTLE = taggedBody('settle_satellite');
 const RECEIPT = taggedBody('satellite_receipt');
+const ESCROW_READER = taggedBody('exact_refund_read_model');
 const ADOPTION = taggedBody('adopt_b066');
 const ADOPTION_682 = taggedBody('adopt_exact_682_completion');
 const ADOPTION_CLOSEOUT_SQL = latestMigrationContaining(
@@ -104,7 +105,8 @@ describe('the finalized source pool is the complete allocation authority', () =>
       'floor(v_h.pool / v_h.ticket_cost)::integer IS DISTINCT FROM v_h.ticket_award_count'
     );
     expect(SQL).toContain('bubble_position <= field_size)\n  ) IS TRUE)');
-    expect(SQL).toContain("payout_source <> 'satellite_seat')\n  ) IS TRUE)");
+    expect(SQL).toContain("delivery_kind = 'ticket'");
+    expect(SQL).toContain("payout_source = 'satellite_ticket'");
     expect(SETTLE).toContain('tp.status IS NULL');
     expect(RECEIPT).toContain("tp.status::text IS DISTINCT FROM 'eliminated'");
     expect(SETTLE).toContain('v_source_escrow.reserve_out IS DISTINCT FROM 0');
@@ -135,11 +137,62 @@ describe('the finalized source pool is the complete allocation authority', () =>
 });
 
 describe('every full ticket has one immutable delivery line', () => {
-  it('classifies every top finisher as exactly one seat or exact-price cash substitute', () => {
-    expect(SQL).toContain("delivery_kind IN ('seat','cash')");
-    expect(SQL).toContain('CHECK (ticket_award_count = seat_count + cash_ticket_count)');
-    expect(SETTLE).toContain('IF v_seat_count + v_cash_ticket_count <> v_ticket_award_count');
+  it('classifies every top finisher as one seat, cash substitute, or noncash ticket', () => {
+    expect(SQL).toContain("delivery_kind IN ('seat','cash','ticket')");
+    expect(SQL).toContain(
+      'CHECK (ticket_award_count = seat_count + cash_ticket_count + entry_ticket_count)'
+    );
+    expect(SETTLE).toContain('IF v_seat_count + v_cash_ticket_count + v_entry_ticket_count');
     expect(RECEIPT).toContain('a.amount IS DISTINCT FROM v_h.ticket_cost');
+  });
+
+  it('serializes the four-table decision and holds a blocked award as a target ticket', () => {
+    const capLocks = SETTLE.indexOf('FOR v_cap_user_id IN');
+    const classification = SETTLE.indexOf('FOR v_place IN 1..v_ticket_award_count');
+    expect(capLocks).toBeGreaterThan(-1);
+    expect(classification).toBeGreaterThan(capLocks);
+    expect(SETTLE.slice(capLocks, classification)).toContain('ORDER BY tp.user_id');
+    expect(SETTLE.slice(capLocks, classification)).toContain(
+      "hashtextextended('table_cap:'||v_cap_user_id::text,0)"
+    );
+    expect(SETTLE).toContain(
+      'v_cap_load:=public.fn_concurrent_game_load(\n          v_finisher.user_id,NULL,NULL,v_target_id)'
+    );
+    expect(SETTLE).toContain('IF v_cap_load>=4 THEN');
+    expect(SETTLE).toContain("v_delivery_kind := 'ticket'");
+    expect(SETTLE).not.toContain('winner_at_concurrent_game_cap');
+  });
+
+  it('moves a cap-blocked award from source pool to immutable ticket escrow without a wallet', () => {
+    const ticket = SETTLE.slice(
+      SETTLE.indexOf("ELSIF v_delivery_kind = 'ticket' THEN"),
+      SETTLE.indexOf("ELSIF v_delivery_kind = 'cash' THEN")
+    );
+    expect(ticket).toContain('INSERT INTO public.tournament_tickets');
+    expect(ticket).toContain("'tournament_entry_only', v_target_id, p_tournament_id");
+    expect(ticket).toContain('source_satellite_award_place');
+    expect(ticket).toContain("'direct_satellite_entry_ticket'");
+    expect(ticket).toContain("'prize_liability', p_tournament_id");
+    expect(ticket).toContain("'escrow', v_ticket_id");
+    expect(ticket).toContain('p_prize_out => v_ticket_cost');
+    expect(ticket).toContain("'wallet_chips_credited', 0");
+    expect(ticket).not.toContain('fn_credit_and_log');
+    expect(ticket).not.toContain('wallet_transactions');
+    expect(RECEIPT).toContain('tk.source_tournament_id IS DISTINCT FROM v_h.target_id');
+    expect(RECEIPT).toContain('tk.source_satellite_award_place IS DISTINCT FROM a.place');
+    expect(RECEIPT).toContain('wallet_key.key=a.idempotency_key');
+    expect(RECEIPT).toContain("a.delivery_kind='ticket'");
+    expect(SQL).toContain("a.delivery_kind IN ('seat','ticket')");
+    expect(RECEIPT).toContain('(v_h.seat_count > 0 OR v_h.entry_ticket_count > 0)');
+    expect(ESCROW_READER).toContain("a.delivery_kind='ticket'");
+    expect(ESCROW_READER).toContain('sat.funded_awards_out');
+    expect(ESCROW_READER).not.toContain("p.source IN ('satellite_seat','satellite_ticket')");
+    expect(ROLLBACK_PROBE).toContain("VALUES('92500000-0000-4000-8000-000000000201',4)");
+    expect(ROLLBACK_PROBE).toContain(
+      'four-table cap did not commit one exact noncash ticket receipt'
+    );
+    expect(ROLLBACK_PROBE).toContain('v_cap_replay::text IS DISTINCT FROM v_receipt::text');
+    expect(ROLLBACK_PROBE).toContain('rollback successful four-table-cap ticket case');
   });
 
   it('seats only through a target registration, pool-transfer leg, fee row and payout row', () => {
@@ -271,6 +324,9 @@ describe('every full ticket has one immutable delivery line', () => {
     expect(replay).toContain('RETURN public.fn_ca_satellite_settlement_receipt');
     expect(RECEIPT).toContain('Target lifecycle state is intentionally absent from replay');
     expect(RECEIPT).toContain('v_h.receipt_version IS DISTINCT FROM 2');
+    expect(RECEIPT).toContain("a.delivery_kind = 'ticket'");
+    expect(RECEIPT).toContain("'entry_ticket_count', v_h.entry_ticket_count");
+    expect(RECEIPT).toContain("'ticket_id', a.ticket_id");
   });
 });
 
@@ -526,8 +582,12 @@ describe('the server treats the atomic receipt as the only success signal', () =
     expect(SETTLEMENT_RPC).toContain('p_observed_winner_id: observedWinnerId');
     expect(SETTLEMENT_RPC).toContain('verifySatelliteSettlementReceipt(');
     expect(MANAGER).toContain('verified.ticketAwardCount');
+    expect(MANAGER).toContain('verified.entryTicketCount');
     expect(MANAGER).toContain('verified.cashTicketCount');
     expect(RECEIPT_VERIFIER).toContain('receipt.receipt_version !== 2');
+    expect(RECEIPT_VERIFIER).toContain(
+      'ticketAwardCount !== seatCount + cashTicketCount + entryTicketCount'
+    );
   });
 
   it('replays identical requests and serializes an ambiguous outcome before classifying it', () => {

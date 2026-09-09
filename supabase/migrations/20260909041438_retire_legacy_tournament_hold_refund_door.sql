@@ -9,6 +9,45 @@ BEGIN;
 SET LOCAL lock_timeout = '8s';
 SET LOCAL statement_timeout = '120s';
 
+-- This migration moves no money, but it proves the legacy hold population is
+-- empty while retiring a formerly executable refund door. Serialize that
+-- catalog and evidence transition with terminal settlement and live entry
+-- purchases before taking the hold relation lock.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+-- Clean schema replay has no engine to publish a maintenance row. Permit only
+-- the exact source-controlled pristine shape; any account, club, tournament,
+-- table, journal leg or ticket makes this a live-shaped database that must be
+-- inside the serialized entry freeze before the retirement can continue.
+DO $require_live_legacy_hold_retirement_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'legacy tournament hold retirement requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'legacy tournament hold retirement live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_legacy_hold_retirement_freeze$;
+
 LOCK TABLE public.chip_escrow_holds IN SHARE ROW EXCLUSIVE MODE;
 
 DO $legacy_hold_guard$
@@ -60,5 +99,22 @@ BEGIN
   END IF;
 END;
 $legacy_hold_absence$;
+
+DO $verify_live_legacy_hold_retirement_freeze_still_held$
+BEGIN
+  IF (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'legacy tournament hold retirement live cutover freeze expired before commit'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$verify_live_legacy_hold_retirement_freeze_still_held$;
 
 COMMIT;

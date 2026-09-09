@@ -38,6 +38,42 @@ BEGIN;
 SET LOCAL lock_timeout = '8s';
 SET LOCAL statement_timeout = '120s';
 
+-- This closes the payout vocabulary and corrects a proven historical cohort.
+-- Serialize behind the terminal-global lane first, then hold the shared
+-- maintenance boundary while proving that a live-shaped database has frozen
+-- every entry purchase before the payout relation barrier is queued. Only an
+-- exact pristine source-controlled replay may proceed without a freeze owner.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+DO $require_live_payout_source_cutover_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'tournament payout source hardening requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'tournament payout source hardening live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_payout_source_cutover_freeze$;
+
 -- Strongest lock first. No payout writer can arrive between the exact cohort
 -- proof, its receipts, the correction and the closed constraint.
 LOCK TABLE public.tournament_payouts IN ACCESS EXCLUSIVE MODE;
@@ -491,5 +527,26 @@ BEGIN
   END IF;
 END;
 $final_proof$;
+
+DO $verify_live_payout_source_freeze_still_held$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'tournament payout source hardening maintenance entry freeze expired before commit'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$verify_live_payout_source_freeze_still_held$;
 
 COMMIT;

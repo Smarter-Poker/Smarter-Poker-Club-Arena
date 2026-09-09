@@ -1,6 +1,6 @@
 {
   "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
-  "_comment": "One immutable whole-pool satellite settlement, exact source-bound refunds, and noncash tournament-entry tickets. Every funded full ticket is one seat-or-cash award line, all sub-ticket residual goes to exactly one next finisher, and a satellite or ticket-funded unregistration can return only another tournament-entry ticket.",
+  "_comment": "One immutable whole-pool satellite settlement, exact source-bound refunds, and noncash tournament-entry tickets. Every funded full award is one seat, target-scoped tournament ticket, or exact cash line; all sub-ticket residual goes to exactly one next finisher; and a satellite or ticket-funded unregistration can return only another tournament-entry ticket.",
   "tables": [
     "tournament_refund_authorizations",
     "tournament_refund_entitlements",
@@ -53,6 +53,7 @@
       "entry_prize",
       "redemption_mode",
       "source_refund_entitlement_id",
+      "source_satellite_award_place",
       "source_satellite_id",
       "source_tournament_id"
     ],

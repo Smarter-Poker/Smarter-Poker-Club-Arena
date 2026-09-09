@@ -59,6 +59,7 @@ vi.mock('./satelliteSettlementRpc.js', () => ({
   SatelliteSettlementRefusedError: class SatelliteSettlementRefusedError extends Error {},
   requestSatelliteSettlementReceipt: vi.fn(async () => ({
     ticketAwardCount: 1,
+    entryTicketCount: 0,
     remainder: { amount: 0 },
   })),
 }));

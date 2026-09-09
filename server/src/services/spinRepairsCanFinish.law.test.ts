@@ -130,8 +130,24 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
     expect(gameServer).toContain('this.spinMetrics.start()');
     expect(gameServer).toContain('...this.spinMetrics.toPrometheus()');
     expect(executableGameServer).toContain("supabase.rpc('fn_spin_expire_unfilled'");
+    expect(executableGameServer).toContain('`${exp.chips_refunded} chips returned');
+    expect(executableGameServer).not.toContain('chips_refunded_estimate');
     expect(stageOne).not.toMatch(/DROP FUNCTION IF EXISTS public\.fn_spin_expire_unfilled/);
     expect(stageOne).not.toMatch(/DROP FUNCTION IF EXISTS public\.fn_ca_spin_cancel_returns_draw/);
+  });
+
+  it('reports a refused or partial expiry batch before any clean-success log', () => {
+    const callAt = executableGameServer.indexOf("supabase.rpc('fn_spin_expire_unfilled'");
+    const response = executableGameServer.slice(callAt, callAt + 1_800);
+    const refusalAt = response.indexOf('exp?.ok === false || Number(exp?.failed) > 0');
+    const failureReportAt = response.indexOf("'GameServer.spin_expire_unfilled_failed'", refusalAt);
+    const successLogAt = response.indexOf('`[GameServer] Unfilled-spin expiry:', refusalAt);
+
+    expect(callAt).toBeGreaterThan(-1);
+    expect(refusalAt).toBeGreaterThan(-1);
+    expect(failureReportAt).toBeGreaterThan(refusalAt);
+    expect(successLogAt).toBeGreaterThan(failureReportAt);
+    expect(response.slice(refusalAt, successLogAt)).toContain('else if');
   });
 });
 

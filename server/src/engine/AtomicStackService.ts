@@ -105,9 +105,12 @@ export class AtomicStackService {
 
   /**
    * Initialize a player's stack (e.g., on sit-down).
-   * Always succeeds and resets the version.
+   * Resets the version only after the stack has passed the money boundary.
    */
   initializeStack(tableId: string, userId: string, stack: number): void {
+    if (!Number.isFinite(stack)) {
+      throw new Error(`Stack must be finite for ${userId} at table ${tableId}`);
+    }
     const key = `${tableId}:${userId}`;
     this.versions.set(key, { stack, version: 1 });
   }
@@ -122,6 +125,10 @@ export class AtomicStackService {
     amount: number,
     expectedVersion: number
   ): AtomicResult {
+    if (!Number.isFinite(amount)) {
+      return { success: false, error: 'Debit amount must be finite' };
+    }
+
     const key = `${tableId}:${userId}`;
     const sv = this.versions.get(key);
 
@@ -144,6 +151,10 @@ export class AtomicStackService {
       };
     }
 
+    if (!Number.isFinite(sv.stack)) {
+      return { success: false, error: `Stored stack is not finite for ${userId}` };
+    }
+
     if (amount > sv.stack) {
       return { success: false, error: `Insufficient stack: ${sv.stack} < ${amount}` };
     }
@@ -163,6 +174,10 @@ export class AtomicStackService {
    * No version check needed since credits never conflict.
    */
   atomicCredit(tableId: string, userId: string, amount: number): AtomicResult {
+    if (!Number.isFinite(amount)) {
+      return { success: false, error: 'Credit amount must be finite' };
+    }
+
     const key = `${tableId}:${userId}`;
     let sv = this.versions.get(key);
 
@@ -175,7 +190,16 @@ export class AtomicStackService {
       return { success: false, error: 'Credit amount must be positive' };
     }
 
-    sv.stack += amount;
+    if (!Number.isFinite(sv.stack)) {
+      return { success: false, error: `Stored stack is not finite for ${userId}` };
+    }
+
+    const nextStack = sv.stack + amount;
+    if (!Number.isFinite(nextStack)) {
+      return { success: false, error: `Credit would make ${userId}'s stack non-finite` };
+    }
+
+    sv.stack = nextStack;
     sv.version++;
     return { success: true, newStack: sv.stack, newVersion: sv.version };
   }
@@ -188,22 +212,41 @@ export class AtomicStackService {
   atomicSettle(tableId: string, settlements: StackSettlement[]): BatchSettlementResult {
     const errors: string[] = [];
     const settled = new Map<string, number>();
+    const projectedStacks = new Map<string, number>();
 
-    // 1. Validate all debits first (dry run)
+    // 1. Validate the whole batch first (dry run). A single non-finite input,
+    // stored stack, overflow, or overdraw refuses every settlement before any
+    // version or stack is mutated.
     for (const s of settlements) {
-      if (s.delta < 0) {
-        const key = `${tableId}:${s.userId}`;
-        const sv = this.versions.get(key);
-        if (!sv) {
-          errors.push(`No stack record for ${s.userId}`);
-          continue;
-        }
-        if (sv.stack + s.delta < 0) {
-          errors.push(
-            `${s.userId} would go negative: ${sv.stack} + ${s.delta} = ${sv.stack + s.delta}`
-          );
-        }
+      if (!Number.isFinite(s.delta)) {
+        errors.push(`Settlement delta must be finite for ${s.userId}`);
+        continue;
       }
+
+      const key = `${tableId}:${s.userId}`;
+      const sv = this.versions.get(key);
+      if (!sv && s.delta < 0) {
+        errors.push(`No stack record for ${s.userId}`);
+        continue;
+      }
+
+      const currentStack = projectedStacks.get(key) ?? sv?.stack ?? 0;
+      if (!Number.isFinite(currentStack)) {
+        errors.push(`Stored stack is not finite for ${s.userId}`);
+        continue;
+      }
+
+      const nextStack = currentStack + s.delta;
+      if (!Number.isFinite(nextStack)) {
+        errors.push(`Settlement would make ${s.userId}'s stack non-finite`);
+        continue;
+      }
+      if (nextStack < 0) {
+        errors.push(`${s.userId} would go negative: ${currentStack} + ${s.delta} = ${nextStack}`);
+        continue;
+      }
+
+      projectedStacks.set(key, nextStack);
     }
 
     if (errors.length > 0) {

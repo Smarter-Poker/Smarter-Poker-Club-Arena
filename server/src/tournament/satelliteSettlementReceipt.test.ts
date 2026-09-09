@@ -9,6 +9,7 @@ const BUBBLE = '00000000-0000-4000-8000-000000000005';
 const PAYOUT_ONE = '00000000-0000-4000-8000-000000000006';
 const PAYOUT_TWO = '00000000-0000-4000-8000-000000000007';
 const SEAT_ONE = '00000000-0000-4000-8000-000000000008';
+const ENTRY_TICKET_TWO = '00000000-0000-4000-8000-00000000000c';
 const SOURCE_TABLE = '00000000-0000-4000-8000-000000000009';
 const SOURCE_SEAT_ONE = '00000000-0000-4000-8000-00000000000a';
 const SOURCE_SEAT_TWO = '00000000-0000-4000-8000-00000000000b';
@@ -28,6 +29,7 @@ function receipt() {
     ticket_award_count: 2,
     seat_count: 1,
     cash_ticket_count: 1,
+    entry_ticket_count: 0,
     awards: [
       {
         user_id: WINNER,
@@ -36,6 +38,7 @@ function receipt() {
         delivery_kind: 'seat',
         payout_id: PAYOUT_ONE,
         registration_id: SEAT_ONE,
+        ticket_id: null,
       },
       {
         user_id: SECOND,
@@ -44,6 +47,7 @@ function receipt() {
         delivery_kind: 'cash',
         payout_id: PAYOUT_TWO,
         registration_id: null,
+        ticket_id: null,
       },
     ],
     seats: [{ user_id: WINNER, position: 1, amount: 200, registration_id: SEAT_ONE }],
@@ -73,6 +77,7 @@ describe('atomic satellite settlement receipt', () => {
       ticketAwardCount: 2,
       seatCount: 1,
       cashTicketCount: 1,
+      entryTicketCount: 0,
       pool: 485,
       ticketCost: 200,
       awards: [
@@ -103,6 +108,7 @@ describe('atomic satellite settlement receipt', () => {
         ticket_award_count: '2',
         seat_count: '1',
         cash_ticket_count: '1',
+        entry_ticket_count: '0',
         awards: transported.awards.map((award) => ({
           ...award,
           position: String(award.position),
@@ -158,6 +164,7 @@ describe('atomic satellite settlement receipt', () => {
         ticket_award_count: 0,
         seat_count: 0,
         cash_ticket_count: 0,
+        entry_ticket_count: 0,
         awards: [],
         seats: [],
         remainder:
@@ -275,6 +282,7 @@ describe('atomic satellite settlement receipt', () => {
       ...receipt(),
       seat_count: 0,
       cash_ticket_count: 2,
+      entry_ticket_count: 0,
       awards: receipt().awards.map((award) => ({
         ...award,
         delivery_kind: 'cash',
@@ -285,6 +293,31 @@ describe('atomic satellite settlement receipt', () => {
     const result = verifySatelliteSettlementReceipt(allCash, TOURNAMENT, WINNER);
     expect(result?.cashTicketCount).toBe(2);
     expect(result?.seats).toEqual([]);
+  });
+
+  it('accepts an exact target-scoped noncash ticket delivery', () => {
+    const directTicket = {
+      ...receipt(),
+      cash_ticket_count: 0,
+      entry_ticket_count: 1,
+      awards: [
+        receipt().awards[0],
+        {
+          ...receipt().awards[1],
+          delivery_kind: 'ticket',
+          ticket_id: ENTRY_TICKET_TWO,
+        },
+      ],
+    };
+
+    const result = verifySatelliteSettlementReceipt(directTicket, TOURNAMENT, WINNER);
+    expect(result?.entryTicketCount).toBe(1);
+    expect(result?.awards[1]).toMatchObject({
+      position: 2,
+      deliveryKind: 'ticket',
+      registrationId: null,
+      ticketId: ENTRY_TICKET_TWO,
+    });
   });
 
   it.each([
@@ -324,6 +357,7 @@ describe('atomic satellite settlement receipt', () => {
         ticket_award_count: 0,
         seat_count: 0,
         cash_ticket_count: 0,
+        entry_ticket_count: 0,
         awards: [],
         seats: [],
         remainder: { user_id: WINNER, position: 1, amount: 85 },
@@ -353,6 +387,7 @@ describe('atomic satellite settlement receipt', () => {
     ],
     ['invented ticket award', { ticket_award_count: 3 }],
     ['delivery counts disagree', { seat_count: 2 }],
+    ['ticket count disagrees', { entry_ticket_count: 1 }],
     [
       'ticket underfunded',
       {
@@ -366,6 +401,23 @@ describe('atomic satellite settlement receipt', () => {
           receipt().awards[0],
           { ...receipt().awards[1], registration_id: 'not-a-cash-receipt' },
         ],
+      },
+    ],
+    [
+      'ticket delivery omits its immutable ticket id',
+      {
+        cash_ticket_count: 0,
+        entry_ticket_count: 1,
+        awards: [
+          receipt().awards[0],
+          { ...receipt().awards[1], delivery_kind: 'ticket', ticket_id: null },
+        ],
+      },
+    ],
+    [
+      'cash delivery claims a ticket id',
+      {
+        awards: [receipt().awards[0], { ...receipt().awards[1], ticket_id: ENTRY_TICKET_TWO }],
       },
     ],
     ['nonterminal result', { status: 'COMPLETING' }],

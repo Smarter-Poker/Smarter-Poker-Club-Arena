@@ -21,6 +21,7 @@ describe('only an exact atomic satellite receipt confirms settlement', () => {
 
     expect(adapter).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
     expect(adapter).toContain('verified.ticketAwardCount');
+    expect(adapter).toContain('verified.entryTicketCount');
     expect(adapter).toContain('verified.cashTicketCount');
     expect(adapter).toContain('return verified');
     expect(adapter).not.toMatch(/supabase|\.from\(|\.rpc\(|Math\.|prize_pool|satellite_seats/);

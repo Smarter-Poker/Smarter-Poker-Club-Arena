@@ -34,6 +34,37 @@ SELECT pg_advisory_xact_lock(
   hashtextextended('ca:tournament-terminal-settlement:v1',0));
 SELECT pg_advisory_xact_lock_shared(530090,1);
 
+-- A clean source-controlled replay has no engine that can publish a freeze.
+-- Exempt only the exact pristine database. Any account, club, tournament,
+-- table, journal leg or ticket is live shape and requires the time-bounded
+-- maintenance entry predicate before the historical reconciler can be joined.
+DO $require_live_seat_exit_cutover_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'tournament seat-exit cutover requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'tournament seat-exit live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_seat_exit_cutover_freeze$;
+
 -- The historical minute reconciler used this exact session advisory lock.
 -- Acquire it before any relation lock so a running job can finish before the
 -- cutover and no new job can enter behind our table write barrier. Keep the
@@ -4534,5 +4565,24 @@ BEGIN
   END IF;
 END;
 $seat_exit_cutover_proof$;
+
+-- The maintenance root prevents a freeze-row transition, but the maintenance
+-- interval can expire by wall clock during this broad historical cutover.
+DO $verify_live_seat_exit_cutover_freeze_still_held$
+BEGIN
+  IF (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'tournament seat-exit live cutover freeze expired before commit'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$verify_live_seat_exit_cutover_freeze_still_held$;
 
 COMMIT;

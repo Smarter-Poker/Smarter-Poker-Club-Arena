@@ -113,6 +113,46 @@ describe('satellite-funded tournament unregistration is ticket-only', () => {
     expect(ADMISSION).not.toContain('credit_player_wallet');
   });
 
+  it('accepts a cap-blocked direct award only for its immutable target tournament', () => {
+    const refundBranchStart = SELECTOR.indexOf('(tk.source_refund_entitlement_id IS NOT NULL');
+    const directBranchStart = SELECTOR.indexOf(
+      '(tk.source_refund_entitlement_id IS NULL',
+      refundBranchStart
+    );
+    const refundBranch = SELECTOR.slice(refundBranchStart, directBranchStart);
+    const directBranch = SELECTOR.slice(directBranchStart);
+
+    expect(refundBranchStart).toBeGreaterThan(-1);
+    expect(directBranchStart).toBeGreaterThan(refundBranchStart);
+    expect(refundBranch).not.toContain('source_a.');
+    expect(SQL).toContain('source_satellite_award_place integer');
+    expect(SQL).toContain('tournament_tickets_direct_satellite_award_fkey');
+    expect(SQL).toContain('tournament_ticket_one_direct_satellite_award');
+    expect(ADMISSION).toContain('FROM public.tournament_satellite_awards source_a');
+    expect(ADMISSION).toContain('source_h.target_id=v_ticket.source_tournament_id');
+    expect(ADMISSION).toContain('p_tournament_id=v_ticket.source_tournament_id');
+    expect(ADMISSION).toContain("source_a.delivery_kind='ticket'");
+    expect(ADMISSION).toContain('wallet_key.key=source_a.idempotency_key');
+    expect(SELECTOR).toContain('tk.source_tournament_id=p_tournament_id');
+    expect(directBranch).toContain("source_a.delivery_kind='ticket'");
+    expect(directBranch).toContain("issue_l.metadata->>'kind'='direct_satellite_entry_ticket'");
+  });
+
+  it('chains a spent direct ticket through the same unregister-to-ticket rail', () => {
+    expect(ADMISSION).toContain("'tournament_ticket','tournament_ticket'");
+    expect(ADMISSION).toContain('v_ticket.source_satellite_id,NULL,v_ticket.id');
+    expect(RETURN_TICKET).toContain(
+      "v_e.entitlement_kind NOT IN ('satellite_seat','tournament_ticket')"
+    );
+    expect(RETURN_TICKET).toContain('v_e.source_satellite_id,v_e.id');
+    expect(RETURN_TICKET).toContain("'tournament_entry_only'");
+    expect(PROBE).toContain('direct_wrong_target_refused');
+    expect(PROBE).toContain('direct_full_refusal');
+    expect(PROBE).toContain('direct_ticket_entry_replay');
+    expect(PROBE).toContain('direct_ticket_return_replay');
+    expect(PROBE).toContain('direct cap ticket -> exact target -> ticket-only return');
+  });
+
   it('lets a valid free tournament continue without inventing a ticket', () => {
     expect(SELECTOR).toContain('OR v_split.charge<0');
     expect(SELECTOR).toContain('IF v_split.charge=0 THEN');
@@ -179,5 +219,6 @@ describe('satellite-funded tournament unregistration is ticket-only', () => {
     expect(MANIFEST.functions).toContain('fn_ca_unregister_tournament_player_exact');
     expect(MANIFEST.functions).toContain('fn_ca_tournament_unregistration_receipt');
     expect(MANIFEST.columns.tournament_tickets).toContain('redemption_mode');
+    expect(MANIFEST.columns.tournament_tickets).toContain('source_satellite_award_place');
   });
 });

@@ -70,6 +70,20 @@ const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
   /**
+   * Stack and payout values are money authority. JavaScript's NaN/Infinity
+   * arithmetic is contagious, while `value || 0` silently turns NaN into a
+   * different balance. Quarantine this engine generation before either can
+   * enter the next hand or overwrite a durable seat.
+   */
+  private requireFiniteStackMoney(value: number, operation: string, userId: string): number {
+    if (Number.isFinite(value)) return value;
+    this.killForRestart('non_finite_stack_money');
+    throw new Error(
+      `Non-finite stack money refused during ${operation} for ${userId} at table ${this.tableId}`
+    );
+  }
+
+  /**
    * RABBIT HUNT — the paid reveal. Dan 2026-08-25.
    *
    * "The rabbit hunt should pop up when the action is completed, no matter if
@@ -584,7 +598,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       const settlements: StackSettlement[] = [];
       for (const p of finalState.players) {
         const initial = this.atomicStackService.getStackWithVersion(this.tableId, p.user_id);
-        const delta = p.stack - initial.stack;
+        const finalStack = this.requireFiniteStackMoney(
+          p.stack,
+          'hand_settlement_final_stack',
+          p.user_id
+        );
+        const initialStack = this.requireFiniteStackMoney(
+          initial.stack,
+          'hand_settlement_initial_stack',
+          p.user_id
+        );
+        const delta = this.requireFiniteStackMoney(
+          finalStack - initialStack,
+          'hand_settlement_delta',
+          p.user_id
+        );
         if (delta !== 0) {
           settlements.push({ userId: p.user_id, delta });
         }
@@ -592,10 +620,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (settlements.length > 0) {
         const settleResult = this.atomicStackService.atomicSettle(this.tableId, settlements);
         if (!settleResult.success) {
-          reportError(
-            settleResult.errors.join('; '),
-            `ServerTableEngine.${this.tableId}.atomic_settle_failed`
-          );
+          const refusal = new Error(settleResult.errors.join('; '));
+          reportError(refusal, `ServerTableEngine.${this.tableId}.atomic_settle_failed`);
+          this.killForRestart('atomic_stack_settlement_refused');
+          throw refusal;
         }
       }
     }
@@ -2581,9 +2609,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          would overwrite a real credit with a stale stack. Same pattern the
          main payout uses. */
       const bump = (userId: string | undefined, amount: number): void => {
-        if (!userId || amount <= 0) return;
+        if (!userId) return;
+        const credit = this.requireFiniteStackMoney(amount, 'mini_bbj_credit', userId);
+        if (credit <= 0) return;
         const seat = players.find((pl) => pl.user_id === userId);
-        if (seat) seat.stack = Number(seat.stack || 0) + amount;
+        if (seat) {
+          const stack = this.requireFiniteStackMoney(seat.stack, 'mini_bbj_existing_stack', userId);
+          seat.stack = this.requireFiniteStackMoney(
+            stack + credit,
+            'mini_bbj_resulting_stack',
+            userId
+          );
+        }
       };
       bump(mini.loserUserId, outcome.loser);
       bump(mini.winnerUserId, outcome.winner);

@@ -15,6 +15,42 @@ SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
 SET LOCAL transaction_timeout = '180s';
 
+-- This broad terminal cutover rewrites every cash, bounty, mystery, rake and
+-- lifecycle owner. Enter the canonical terminal-global lane before the shared
+-- maintenance boundary, and prove the live entry freeze before preflight or
+-- any broad relation lock. A source-controlled database has no freeze owner;
+-- only the exact empty account/club/game/journal/ticket state is pristine.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+DO $require_live_terminal_cutover_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'terminal settlement requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'terminal settlement live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_terminal_cutover_freeze$;
+
 DO $terminal_prerequisites$
 BEGIN
   IF to_regprocedure('public.fn_settle_tournament_places(uuid,uuid)') IS NULL
@@ -7392,22 +7428,14 @@ BEGIN
       v_source_ids := array_append(v_source_ids,v_source_id);
     END IF;
   END IF;
-  IF TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL THEN
-    -- The rolling satellite authority owns target before source. Take both
-    -- roots in that same order so a direct provenance insert cannot invert
-    -- the pair across its specialized and generic guards.
-    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
-      FROM public.tournaments t
-     WHERE t.id = NEW.tournament_id FOR SHARE;
-    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
-      RAISE EXCEPTION 'terminal target tournament cannot gain satellite provenance'
-        USING ERRCODE = '55000';
-    END IF;
-    -- A satellite winner may use a returned tournament-entry ticket only
-    -- after its source satellite has completed. That is a legitimate NEW
-    -- provenance row, but only inside the canonical registration root that
-    -- acquired the terminal-global lock before touching any child row. A raw
-    -- insert has no such lock and remains refused.
+  -- Ticket admission and an exact pre-start ticket return are the only
+  -- lifecycle edges that may respectively add or remove provenance after the
+  -- source satellite has closed. Both enclosing authorities acquire the same
+  -- terminal-global transaction lock before touching the target registration.
+  -- The unregistration wrapper additionally exposes its exact operation while
+  -- the owner-only core is active; a raw DELETE therefore cannot masquerade as
+  -- a ticket return merely by reaching this trigger.
+  IF TG_OP IN ('INSERT','DELETE') THEN
     SELECT EXISTS(
       SELECT 1 FROM pg_catalog.pg_locks l
        WHERE l.pid=pg_backend_pid()
@@ -7421,6 +7449,18 @@ BEGIN
          AND l.mode='ExclusiveLock'
          AND l.granted)
       INTO v_owns_acquisition_root;
+  END IF;
+  IF TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL THEN
+    -- The rolling satellite authority owns target before source. Take both
+    -- roots in that same order so a direct provenance insert cannot invert
+    -- the pair across its specialized and generic guards.
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = NEW.tournament_id FOR SHARE;
+    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal target tournament cannot gain satellite provenance'
+        USING ERRCODE = '55000';
+    END IF;
   END IF;
   IF TG_OP = 'INSERT' THEN
     FOREACH v_source_id IN ARRAY v_source_ids LOOP
@@ -7436,7 +7476,13 @@ BEGIN
       END IF;
     END LOOP;
   END IF;
-  IF NOT (TG_OP='INSERT' AND COALESCE(v_owns_acquisition_root,false))
+  IF NOT (
+       (TG_OP='INSERT' AND COALESCE(v_owns_acquisition_root,false))
+       OR (TG_OP='DELETE'
+           AND COALESCE(v_owns_acquisition_root,false)
+           AND COALESCE(current_setting(
+                 'app.tournament_seat_exit_operation',true),'')='unregister')
+     )
      AND EXISTS (
     SELECT 1 FROM unnest(v_source_ids) source(id)
      WHERE public.fn_ca_has_committed_tournament_receipt(source.id)
@@ -10349,5 +10395,26 @@ BEGIN
   END IF;
 END;
 $verify_terminal_authority$;
+
+DO $verify_live_terminal_settlement_freeze_still_held$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'terminal settlement maintenance entry freeze expired before commit'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$verify_live_terminal_settlement_freeze_still_held$;
 
 COMMIT;

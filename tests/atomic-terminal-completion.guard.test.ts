@@ -406,8 +406,15 @@ describe('the stored terminal receipt is immutable and exact', () => {
     expect(satelliteTargetProvenanceGuard).toContain('FROM pg_catalog.pg_locks l');
     expect(satelliteTargetProvenanceGuard).toContain('l.pid=pg_backend_pid()');
     expect(satelliteTargetProvenanceGuard).toContain("l.mode='ExclusiveLock'");
+    expect(satelliteTargetProvenanceGuard).toContain("IF TG_OP IN ('INSERT','DELETE') THEN");
     expect(satelliteTargetProvenanceGuard).toContain(
-      "IF NOT (TG_OP='INSERT' AND COALESCE(v_owns_acquisition_root,false))"
+      "(TG_OP='INSERT' AND COALESCE(v_owns_acquisition_root,false))"
+    );
+    expect(satelliteTargetProvenanceGuard).toContain(
+      "OR (TG_OP='DELETE'\n           AND COALESCE(v_owns_acquisition_root,false)"
+    );
+    expect(satelliteTargetProvenanceGuard).toContain(
+      "'app.tournament_seat_exit_operation',true),'')='unregister'"
     );
     expect(satelliteTargetProvenanceGuard).toContain(
       "IF TG_OP <> 'INSERT' AND OLD.source_satellite_id IS NOT NULL"

@@ -1,4 +1,4 @@
-export type SatelliteTicketDeliveryKind = 'seat' | 'cash';
+export type SatelliteTicketDeliveryKind = 'seat' | 'cash' | 'ticket';
 
 export interface SatelliteSettlementAward {
   user_id?: unknown;
@@ -7,6 +7,7 @@ export interface SatelliteSettlementAward {
   delivery_kind?: unknown;
   payout_id?: unknown;
   registration_id?: unknown;
+  ticket_id?: unknown;
 }
 
 export interface SatelliteSettlementSeat {
@@ -47,6 +48,7 @@ export interface SatelliteSettlementReceipt {
   ticket_award_count?: unknown;
   seat_count?: unknown;
   cash_ticket_count?: unknown;
+  entry_ticket_count?: unknown;
   awards?: unknown;
   seats?: unknown;
   remainder?: unknown;
@@ -69,14 +71,19 @@ export interface VerifiedSatelliteSettlementReceipt {
   ticketAwardCount: number;
   seatCount: number;
   cashTicketCount: number;
-  awards: Array<{
-    userId: string;
-    position: number;
-    amount: number;
-    deliveryKind: SatelliteTicketDeliveryKind;
-    payoutId: string;
-    registrationId: string | null;
-  }>;
+  entryTicketCount: number;
+  awards: Array<
+    {
+      userId: string;
+      position: number;
+      amount: number;
+      payoutId: string;
+    } & (
+      | { deliveryKind: 'seat'; registrationId: string; ticketId: null }
+      | { deliveryKind: 'cash'; registrationId: null; ticketId: null }
+      | { deliveryKind: 'ticket'; registrationId: null; ticketId: string }
+    )
+  >;
   seats: Array<{
     userId: string;
     position: number;
@@ -180,8 +187,8 @@ function uniqueUuidArray(value: unknown): string[] | null {
  * TypeScript never decides admission or satellite arithmetic. It proves the
  * database returned one internally consistent, terminal receipt before the
  * engine stops its in-memory tables or tells players they were paid. Every
- * full ticket is explicit as either an actual target seat or an exact cash
- * substitution.
+ * full ticket is explicit as an actual target seat, an exact cash
+ * substitution, or a target-scoped noncash tournament ticket.
  */
 export function verifySatelliteSettlementReceipt(
   raw: unknown,
@@ -196,6 +203,7 @@ export function verifySatelliteSettlementReceipt(
   const ticketAwardCount = nonNegativeInteger(receipt.ticket_award_count);
   const seatCount = nonNegativeInteger(receipt.seat_count);
   const cashTicketCount = nonNegativeInteger(receipt.cash_ticket_count);
+  const entryTicketCount = nonNegativeInteger(receipt.entry_ticket_count);
   const poolCents = exactCents(receipt.pool);
   const ticketCents = exactCents(receipt.ticket_cost);
   const winnerCents = exactCents(receipt.winner_amount);
@@ -227,7 +235,8 @@ export function verifySatelliteSettlementReceipt(
     ticketAwardCount === null ||
     seatCount === null ||
     cashTicketCount === null ||
-    ticketAwardCount !== seatCount + cashTicketCount ||
+    entryTicketCount === null ||
+    ticketAwardCount !== seatCount + cashTicketCount + entryTicketCount ||
     ticketAwardCount > fieldSize ||
     poolCents === null ||
     ticketCents === null ||
@@ -262,8 +271,10 @@ export function verifySatelliteSettlementReceipt(
   const positions = new Set<number>();
   const payoutIds = new Set<string>();
   const registrationIds = new Set<string>();
+  const ticketIds = new Set<string>();
   let observedSeats = 0;
   let observedCash = 0;
+  let observedTickets = 0;
 
   for (const candidate of receipt.awards as SatelliteSettlementAward[]) {
     const userId = uuid(candidate?.user_id);
@@ -272,44 +283,53 @@ export function verifySatelliteSettlementReceipt(
     const deliveryKind = candidate?.delivery_kind;
     const payoutId = uuid(candidate?.payout_id);
     const registrationId = uuid(candidate?.registration_id);
+    const ticketId = uuid(candidate?.ticket_id);
     if (
       !userId ||
       position === null ||
       position > ticketAwardCount ||
       amountCents !== ticketCents ||
-      (deliveryKind !== 'seat' && deliveryKind !== 'cash') ||
+      (deliveryKind !== 'seat' && deliveryKind !== 'cash' && deliveryKind !== 'ticket') ||
       !payoutId ||
       awardUsers.has(userId) ||
       positions.has(position) ||
       payoutIds.has(payoutId) ||
-      (deliveryKind === 'seat' && !registrationId) ||
-      (deliveryKind === 'cash' && candidate?.registration_id != null)
+      (deliveryKind === 'seat' && (!registrationId || candidate?.ticket_id !== null)) ||
+      (deliveryKind === 'cash' &&
+        (candidate?.registration_id !== null || candidate?.ticket_id !== null)) ||
+      (deliveryKind === 'ticket' && (candidate?.registration_id !== null || !ticketId))
     ) {
       return null;
     }
     if (registrationId && registrationIds.has(registrationId)) return null;
+    if (ticketId && ticketIds.has(ticketId)) return null;
 
     awardUsers.add(userId);
     positions.add(position);
     payoutIds.add(payoutId);
     if (registrationId) registrationIds.add(registrationId);
+    if (ticketId) ticketIds.add(ticketId);
     if (deliveryKind === 'seat') observedSeats += 1;
-    else observedCash += 1;
+    else if (deliveryKind === 'cash') observedCash += 1;
+    else observedTickets += 1;
 
-    awards.push({
-      userId,
-      position,
-      amount: amountCents / 100,
-      deliveryKind,
-      payoutId,
-      registrationId,
-    });
+    const base = { userId, position, amount: amountCents / 100, payoutId };
+    if (deliveryKind === 'seat' && registrationId) {
+      awards.push({ ...base, deliveryKind, registrationId, ticketId: null });
+    } else if (deliveryKind === 'cash') {
+      awards.push({ ...base, deliveryKind, registrationId: null, ticketId: null });
+    } else if (deliveryKind === 'ticket' && ticketId) {
+      awards.push({ ...base, deliveryKind, registrationId: null, ticketId });
+    } else {
+      return null;
+    }
   }
   awards.sort((a, b) => a.position - b.position);
   if (
     awards.some((award, index) => award.position !== index + 1) ||
     observedSeats !== seatCount ||
     observedCash !== cashTicketCount ||
+    observedTickets !== entryTicketCount ||
     (ticketAwardCount > 0 && awards[0]?.userId !== winnerId)
   ) {
     return null;
@@ -383,6 +403,7 @@ export function verifySatelliteSettlementReceipt(
     ticketAwardCount,
     seatCount,
     cashTicketCount,
+    entryTicketCount,
     awards,
     seats,
     remainder,

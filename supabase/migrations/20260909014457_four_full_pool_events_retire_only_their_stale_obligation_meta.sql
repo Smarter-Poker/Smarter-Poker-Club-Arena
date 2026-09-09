@@ -1,21 +1,59 @@
--- 20260909014457_six_full_pool_events_retire_only_their_stale_obligation_meta.sql
--- Six completed tournaments already distributed every chip in their locked
--- prize pools. Legacy repair arithmetic nevertheless left six place
+-- 20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql
+-- Four completed tournaments already distributed every chip in their locked
+-- prize pools. Legacy repair arithmetic nevertheless left four place
 -- obligations above the amount each finisher actually received: three
--- historical rounding tails, one final-table deal that superseded the normal
--- ladder, and two Bubble Protection buy-ins that the old path added to first
--- place after the whole pool had already been allocated.
+-- historical rounding tails and one final-table deal that superseded the
+-- normal ladder.
 --
 -- Paying any of these rows would mint a second prize or debit a house bank.
 -- This migration proves the immutable payout and wallet evidence first,
 -- records exactly what metadata was retired, and then closes only alerts that
--- name one of these six obligation ids. It never writes a wallet, payout,
+-- name one of these four obligation ids. It never writes a wallet, payout,
 -- escrow, chip-ledger, rake, or bank row.
 
 BEGIN;
 
 SET LOCAL lock_timeout = '8s';
 SET LOCAL statement_timeout = '120s';
+
+-- Retirement is metadata-only, but its proof reads and locks live tournament
+-- money evidence before changing the named obligation and incident rows. Join
+-- the same terminal and entry-maintenance roots as every stage-one settlement
+-- cutover before creating the receipt relation or reading historical state.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+-- A source-controlled empty database has no engine that can publish a freeze.
+-- Exempt only that exact pristine shape. A database with any account, club,
+-- tournament, table, journal leg or ticket is live-shaped and must fail closed
+-- unless entry purchases are inside the serialized maintenance freeze.
+DO $require_live_obligation_retirement_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'obligation retirement requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'obligation retirement live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_obligation_retirement_freeze$;
 
 CREATE TABLE IF NOT EXISTS public.tournament_obligation_retirements (
   obligation_id              uuid PRIMARY KEY
@@ -37,7 +75,7 @@ CREATE TABLE IF NOT EXISTS public.tournament_obligation_retirements (
   user_payout_total_before   numeric(15,2) NOT NULL,
   reason                     text NOT NULL CHECK (length(btrim(reason)) > 0),
   migration                  text NOT NULL DEFAULT
-                                  'six_full_pool_events_retire_only_their_stale_obligation_metadata',
+                                  'four_full_pool_events_retire_only_their_stale_obligation_metadata',
   retired_at                 timestamptz NOT NULL DEFAULT now(),
   CHECK (original_amount_owed > original_amount_paid),
   CHECK (retired_unfunded_amount = original_amount_owed - original_amount_paid),
@@ -74,7 +112,7 @@ CREATE TRIGGER tournament_obligation_retirements_append_only
 COMMENT ON TABLE public.tournament_obligation_retirements IS
   'Append-only proof that a named historical obligation tail was metadata, not unpaid money. Every row requires payout total = wallet prize credits = locked pool before retirement.';
 
-DO $retire_six_stale_obligations$
+DO $retire_four_stale_obligations$
 DECLARE
   v_expected record;
   v_obligation public.tournament_obligations%ROWTYPE;
@@ -111,20 +149,7 @@ BEGIN
          '3e281f5c-2479-42dc-bf6e-afb007d9988f'::uuid,
          '2e26ae7c-0d4a-42da-b8ee-90a498eb25dd'::uuid,
          'place'::text, 1, 71.25::numeric, 0.00::numeric,
-         71.25::numeric, 47.50::numeric),
-        -- These winners received the remaining pool after the Bubble finisher
-        -- received exactly one buy-in from that same pool. The old obligation
-        -- incorrectly added the Bubble amount to first place a second time.
-        ('540c9c5b-6b51-43c0-a83c-e7f53a645625'::uuid,
-         'a449e853-4ee1-4e36-bd38-8fe904664d7c'::uuid,
-         '05835920-da9b-4739-8fa2-2901b844d11d'::uuid,
-         'place'::text, 1, 8282.69::numeric, 8102.69::numeric,
-         28640.00::numeric, 8102.69::numeric),
-        ('b00c5bb2-b81f-4cda-bd69-f9685ec54fca'::uuid,
-         'f7412940-5644-4194-8d57-4a97c182bf04'::uuid,
-         'a2bd256e-014c-4504-97c7-6bc43242fef1'::uuid,
-         'place'::text, 1, 13441.68::numeric, 13261.68::numeric,
-         52920.00::numeric, 13261.68::numeric)
+         71.25::numeric, 47.50::numeric)
       ) AS expected(
         obligation_id, tournament_id, user_id, kind, place,
         amount_owed, amount_paid, locked_pool, user_payout_total)
@@ -291,7 +316,7 @@ BEGIN
            root_cause =
              'A legacy calculator left an obligation tail after the complete locked pool had already been distributed.',
            correction_ref =
-             'migration 20260909014457_six_full_pool_events_retire_only_their_stale_obligation_metadata; obligation '
+             'migration 20260909014457_four_full_pool_events_retire_only_their_stale_obligation_metadata; obligation '
              || v_expected.obligation_id::text,
            resolution =
              'Exact payout and wallet totals equal the locked pool. The stale obligation metadata was retired; no chips moved and no house bank was charged.'
@@ -318,7 +343,7 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$retire_six_stale_obligations$;
+$retire_four_stale_obligations$;
 
 -- The PLO final-table incident already names the duplicate evidence rows that
 -- were removed and the two canonical payout rows that remain. Its resolution
@@ -358,7 +383,7 @@ BEGIN
          auto_repair_status = 'not_applicable',
          correction_ref = COALESCE(
            i.correction_ref,
-           'migration 20260909014457_six_full_pool_events_retire_only_their_stale_obligation_metadata; canonical final-table payout evidence'),
+           'migration 20260909014457_four_full_pool_events_retire_only_their_stale_obligation_metadata; canonical final-table payout evidence'),
          root_cause = COALESCE(
            i.root_cause,
            'A historical repair inserted duplicate payout evidence after the platform credit path had already written the canonical rows.')
@@ -403,5 +428,25 @@ BEGIN
   END IF;
 END;
 $verify_obligation_retirements$;
+
+-- The shared advisory root pins the freeze row, not wall clock. Refuse to
+-- publish a live retirement if its self-expiring maintenance interval ended
+-- while the historical evidence was being proved.
+DO $verify_live_obligation_retirement_freeze_still_held$
+BEGIN
+  IF (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'obligation retirement live cutover freeze expired before commit'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$verify_live_obligation_retirement_freeze_still_held$;
 
 COMMIT;

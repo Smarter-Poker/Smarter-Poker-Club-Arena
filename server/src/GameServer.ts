@@ -5357,10 +5357,18 @@ export class GameServer {
                 new Error(`[GameServer] unfilled-spin expiry failed: ${expErr.message}`),
                 'GameServer.spin_expire_unfilled_failed'
               );
+            } else if (exp?.ok === false || Number(exp?.failed) > 0) {
+              reportError(
+                new Error(
+                  `[GameServer] unfilled-spin expiry batch failed: ${Number(exp?.failed) || 0} ` +
+                    `failure(s), ${Number(exp?.expired) || 0} expired`
+                ),
+                'GameServer.spin_expire_unfilled_failed'
+              );
             } else if (Number(exp?.expired) > 0) {
               console.log(
                 `[GameServer] Unfilled-spin expiry: ${exp.expired} game(s) cancelled and refunded, ` +
-                  `~${exp.chips_refunded_estimate} chips returned (timeout ${exp.timeout_minutes}m)`
+                  `${exp.chips_refunded} chips returned (timeout ${exp.timeout_minutes}m)`
               );
             }
           } catch (expEx) {

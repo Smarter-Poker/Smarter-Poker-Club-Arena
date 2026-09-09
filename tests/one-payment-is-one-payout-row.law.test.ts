@@ -83,11 +83,11 @@ function withoutCreditPrimitive(sql: string): string {
 }
 
 /**
- * A whole-event satellite has two mutually exclusive delivery branches. Cash
- * uses fn_credit_and_log (which owns its payout row); an actual target seat
- * moves no wallet money, so that branch must write its own satellite_seat
- * payout evidence. Remove that authority from the generic mixed-writer scan
- * only when the separation and final whole-pool proof are all visible.
+ * A whole-event satellite has three mutually exclusive delivery branches.
+ * Cash uses fn_credit_and_log (which owns its payout row); an actual target
+ * seat and a noncash tournament ticket move no wallet money, so those branches
+ * write their own payout evidence. Remove that authority from the generic
+ * mixed-writer scan only when the separation and whole-pool proof are visible.
  */
 function withoutSeparatedSatelliteDelivery(sql: string): string {
   const signature =
@@ -102,22 +102,29 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
     const end = result.indexOf(`${tag};`, bodyStart + tag.length);
     if (end < 0) break;
     const definition = result.slice(start, end + tag.length + 1);
-    const seatStart = definition.indexOf("IF v_delivery_kind = 'seat' THEN");
-    const cashStart = definition.indexOf("ELSIF v_delivery_kind = 'cash' THEN", seatStart);
+    const seatStart = definition.lastIndexOf("IF v_delivery_kind = 'seat' THEN");
+    const ticketStart = definition.indexOf("ELSIF v_delivery_kind = 'ticket' THEN", seatStart);
+    const cashStart = definition.indexOf("ELSIF v_delivery_kind = 'cash' THEN", ticketStart);
     const cashEnd = definition.indexOf('\n    ELSE', cashStart);
-    const seat = definition.slice(seatStart, cashStart);
+    const seat = definition.slice(seatStart, ticketStart);
+    const ticket = definition.slice(ticketStart, cashStart);
     const cash = definition.slice(cashStart, cashEnd);
     const directPayoutWrites = definition.match(new RegExp(HAND_WRITES.source, 'gi')) ?? [];
     const separated =
       seatStart >= 0 &&
-      cashStart > seatStart &&
+      ticketStart > seatStart &&
+      cashStart > ticketStart &&
       cashEnd > cashStart &&
-      directPayoutWrites.length === 1 &&
+      directPayoutWrites.length === 2 &&
       HAND_WRITES.test(seat) &&
       !CREDIT_PATHS.test(seat) &&
+      HAND_WRITES.test(ticket) &&
+      !CREDIT_PATHS.test(ticket) &&
       CREDIT_PATHS.test(cash) &&
       !HAND_WRITES.test(cash) &&
       seat.includes("'satellite_seat'") &&
+      ticket.includes("'satellite_ticket'") &&
+      ticket.includes("'tournament_entry_only'") &&
       cash.includes("p_payout_source => 'satellite_ticket'") &&
       definition.includes('v_paid IS DISTINCT FROM v_pool');
     if (separated) {

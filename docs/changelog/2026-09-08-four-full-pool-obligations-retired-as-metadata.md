@@ -1,13 +1,11 @@
-# Six Full-Pool Obligations Retired As Metadata
+# Four Full-Pool Obligations Retired As Metadata
 
 ## What Was Wrong
 
-Six completed tournaments had already distributed every chip in their locked
-prize pools, but six legacy place obligations still claimed more was owed than
-each finisher received. Three were cent-level rounding tails, one was a normal
-ladder row superseded by a chip-proportional final-table deal, and two added a
-Bubble Protection buy-in to first place after that buy-in and the rest of the
-pool had already been allocated.
+Four completed tournaments had already distributed every chip in their locked
+prize pools, but four legacy place obligations still claimed more was owed than
+each finisher received. Three were cent-level rounding tails and one was a
+normal ladder row superseded by a chip-proportional final-table deal.
 
 Paying those rows would create a second prize or debit a house bank for money
 that the tournament prize pool had already exhausted.
@@ -15,9 +13,9 @@ that the tournament prize pool had already exhausted.
 ## Evidence-Gated Retirement
 
 Migration
-`20260909014457_six_full_pool_events_retire_only_their_stale_obligation_metadata`
+`20260909014457_four_full_pool_events_retire_only_their_stale_obligation_metadata`
 creates an append-only `tournament_obligation_retirements` receipt and handles
-only the six named obligation UUIDs.
+only the four named obligation UUIDs.
 
 For each event that exists, the migration locks the completed tournament and
 requires its exact prize pool, payout total, wallet prize-credit total,
@@ -36,6 +34,6 @@ event alerts stay visible.
 
 This migration never writes a wallet, tournament payout, escrow, chip ledger,
 rake row, or bank balance. It verifies that the complete payout and wallet
-totals remain unchanged after all six metadata retirements. A missing event is
+totals remain unchanged after all four metadata retirements. A missing event is
 safe on a clean database, but a partial historical shape or changed evidence
 raises and rolls back the complete migration.

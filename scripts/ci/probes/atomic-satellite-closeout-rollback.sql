@@ -65,6 +65,14 @@ CREATE TEMP TABLE tournament_satellite_awards AS
   SELECT * FROM public.tournament_satellite_awards WITH NO DATA;
 CREATE TEMP TABLE tournament_satellite_remainders AS
   SELECT * FROM public.tournament_satellite_remainders WITH NO DATA;
+CREATE TEMP TABLE tournament_tickets AS
+  SELECT * FROM public.tournament_tickets WITH NO DATA;
+CREATE TEMP TABLE chip_transactions AS
+  SELECT * FROM public.chip_transactions WITH NO DATA;
+CREATE TEMP TABLE probe_concurrent_game_load (
+  user_id uuid PRIMARY KEY,
+  game_load integer NOT NULL CHECK (game_load >= 0)
+);
 CREATE TEMP TABLE tables AS
   SELECT * FROM public.tables WITH NO DATA;
 CREATE TEMP TABLE table_seats AS
@@ -80,6 +88,8 @@ ALTER TABLE pg_temp.tournament_players ALTER COLUMN id SET DEFAULT gen_random_uu
 ALTER TABLE pg_temp.tournament_obligations ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE pg_temp.tournament_payouts ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE pg_temp.chip_ledger ALTER COLUMN id SET DEFAULT gen_random_uuid();
+ALTER TABLE pg_temp.chip_ledger ALTER COLUMN status SET DEFAULT 'posted';
+ALTER TABLE pg_temp.chip_transactions ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE pg_temp.rake_records ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE pg_temp.tournament_satellite_settlements
   ALTER COLUMN receipt_version SET DEFAULT 2;
@@ -87,6 +97,27 @@ ALTER TABLE pg_temp.tournament_satellite_awards
   ALTER COLUMN created_at SET DEFAULT transaction_timestamp();
 ALTER TABLE pg_temp.tournament_satellite_remainders
   ALTER COLUMN created_at SET DEFAULT transaction_timestamp();
+
+CREATE OR REPLACE FUNCTION pg_temp.fn_concurrent_game_load(
+  p_user_id uuid,
+  p_exclude_seat_id uuid DEFAULT NULL,
+  p_exclude_table_id uuid DEFAULT NULL,
+  p_exclude_tournament_id uuid DEFAULT NULL
+)
+RETURNS integer LANGUAGE sql STABLE AS $probe_helper$
+  SELECT COALESCE((SELECT c.game_load
+                     FROM pg_temp.probe_concurrent_game_load c
+                    WHERE c.user_id=p_user_id),0)::integer;
+$probe_helper$;
+
+CREATE OR REPLACE FUNCTION pg_temp.fn_tournament_club_for_user(
+  p_user_id uuid,
+  p_tournament_id uuid,
+  p_preferred_club_id uuid DEFAULT NULL
+)
+RETURNS uuid LANGUAGE sql STABLE AS $probe_helper$
+  SELECT p_preferred_club_id;
+$probe_helper$;
 
 CREATE OR REPLACE FUNCTION pg_temp.fn_ca_escrow_apply(
   p_tournament_id uuid,
@@ -478,6 +509,8 @@ BEGIN
      OR EXISTS (SELECT 1 FROM pg_temp.tournament_obligations)
      OR EXISTS (SELECT 1 FROM pg_temp.wallet_credit_idempotency)
      OR EXISTS (SELECT 1 FROM pg_temp.chip_ledger)
+     OR EXISTS (SELECT 1 FROM pg_temp.tournament_tickets)
+     OR EXISTS (SELECT 1 FROM pg_temp.chip_transactions)
      OR EXISTS (SELECT 1 FROM pg_temp.tournament_rake_settlements)
      OR (SELECT count(*) FROM pg_temp.rake_records) <> 1
      OR EXISTS (SELECT 1 FROM pg_temp.rake_records
@@ -661,10 +694,13 @@ DO $successful_matrix$
 DECLARE
   v_receipt jsonb;
   v_repriced_receipt jsonb;
+  v_cap_replay jsonb;
   v_zero_fee_rolled_back boolean := false;
+  v_cap_ticket_rolled_back boolean := false;
   v_multi_seat_rolled_back boolean := false;
   v_duplicate_target_fee_refused boolean := false;
   v_reprice_refused boolean := false;
+  v_cap_reprice_refused boolean := false;
 BEGIN
   -- A zero-fee target keeps the full ticket on its prize rail. The authority
   -- must not create a synthetic zero-value target rake row.
@@ -729,6 +765,7 @@ BEGIN
        OR (v_receipt->>'ticket_cost')::numeric IS DISTINCT FROM 100
        OR (v_receipt->>'seat_count')::integer IS DISTINCT FROM 1
        OR (v_receipt->>'cash_ticket_count')::integer IS DISTINCT FROM 0
+       OR (v_receipt->>'entry_ticket_count')::integer IS DISTINCT FROM 0
        OR v_receipt->'remainder' IS DISTINCT FROM 'null'::jsonb
        OR EXISTS (
          SELECT 1 FROM pg_temp.rake_records r
@@ -797,6 +834,162 @@ BEGIN
                  WHERE id IN ('92000000-0000-4000-8000-000000000001',
                               '92000000-0000-4000-8000-000000000002')) THEN
     RAISE EXCEPTION 'FAIL zero-fee matrix case did not roll back its fixture';
+  END IF;
+
+  -- A winner already committed to four games receives the complete funded
+  -- award as one target-scoped entry ticket. The settlement, source-pool
+  -- debit, ticket escrow, payout identity and issue journal all commit once;
+  -- replay returns the identical immutable receipt and never credits a wallet.
+  BEGIN
+    INSERT INTO pg_temp.tournaments(
+      id,name,club_id,status,variant,tournament_type,satellite_target_id,
+      satellite_target,satellite_seats,prize_pool,prize_pool_finalized,is_bounty,
+      is_pko,is_mystery_bounty,is_premium_spin,buy_in_amount,buy_in_fee,
+      max_players,current_players,current_level,late_reg_levels,rebuy_levels,
+      total_rake,ended_at,on_break,break_ends_at,updated_at)
+    VALUES
+      ('92500000-0000-4000-8000-000000000001','Cap ticket satellite',
+       '92500000-0000-4000-8000-000000000010','RUNNING','satellite','SATELLITE',
+       '92500000-0000-4000-8000-000000000002',NULL,1,100,true,false,false,
+       false,false,10,0,1,1,0,0,0,0,NULL,false,NULL,transaction_timestamp()),
+      ('92500000-0000-4000-8000-000000000002','Cap ticket target',
+       '92500000-0000-4000-8000-000000000010','REGISTERING','holdem','MTT',
+       NULL,NULL,0,0,false,false,false,false,false,80,20,100,0,0,10,10,0,
+       NULL,false,NULL,transaction_timestamp());
+    INSERT INTO pg_temp.tournament_escrow(
+      tournament_id,enforced,gross_in,fee_entries_in,satellite_fee_in,bounty_in,
+      overlay_in,satellite_in,prize_out,bounty_out,fee_out,refund_prize,
+      refund_bounty,refund_fee,prize_balance,bounty_balance,fee_balance,reserve_out,
+      reserve_in)
+    VALUES
+      ('92500000-0000-4000-8000-000000000001',true,0,0,0,0,0,0,0,0,0,0,0,0,
+       100,0,0,0,0),
+      ('92500000-0000-4000-8000-000000000002',true,0,0,0,0,0,0,0,0,0,0,0,0,
+       0,0,0,0,0);
+    INSERT INTO pg_temp.tournament_players(
+      id,tournament_id,user_id,username,chips,status,position,prize,
+      is_satellite_qualifier,source_satellite_id,eliminated_at,
+      elimination_sequence)
+    VALUES
+      ('92500000-0000-4000-8000-000000000101',
+       '92500000-0000-4000-8000-000000000001',
+       '92500000-0000-4000-8000-000000000201','Cap Ticket Winner',0,
+       'eliminated',NULL,0,NULL,NULL,transaction_timestamp(),1);
+    INSERT INTO pg_temp.tables(
+      id,club_id,tournament_id,status,lifecycle,current_players,updated_at)
+    VALUES
+      ('92500000-0000-4000-8000-000000000301',
+       '92500000-0000-4000-8000-000000000010',
+       '92500000-0000-4000-8000-000000000001','running','live',1,
+       transaction_timestamp());
+    INSERT INTO pg_temp.table_seats(
+      id,table_id,user_id,left_at,status,leave_pending,is_sitting_out,is_away,
+      sit_out_at,scheduled_leave_hands)
+    VALUES
+      ('92500000-0000-4000-8000-000000000401',
+       '92500000-0000-4000-8000-000000000301',
+       '92500000-0000-4000-8000-000000000201',NULL,'playing',false,false,false,
+       NULL,NULL);
+    INSERT INTO pg_temp.probe_concurrent_game_load(user_id,game_load)
+    VALUES('92500000-0000-4000-8000-000000000201',4);
+
+    SELECT pg_temp.fn_settle_satellite_tournament(
+             '92500000-0000-4000-8000-000000000001',
+             '92500000-0000-4000-8000-000000000201')
+      INTO v_receipt;
+    SELECT pg_temp.fn_settle_satellite_tournament(
+             '92500000-0000-4000-8000-000000000001',
+             '92500000-0000-4000-8000-000000000201')
+      INTO v_cap_replay;
+    IF v_receipt->>'fully_settled' IS DISTINCT FROM 'true'
+       OR (v_receipt->>'ticket_award_count')::integer IS DISTINCT FROM 1
+       OR (v_receipt->>'seat_count')::integer IS DISTINCT FROM 0
+       OR (v_receipt->>'cash_ticket_count')::integer IS DISTINCT FROM 0
+       OR (v_receipt->>'entry_ticket_count')::integer IS DISTINCT FROM 1
+       OR v_receipt->'awards'->0->>'delivery_kind' IS DISTINCT FROM 'ticket'
+       OR v_receipt->'awards'->0->>'ticket_id' IS NULL
+       OR v_cap_replay::text IS DISTINCT FROM v_receipt::text
+       OR (SELECT count(*) FROM pg_temp.tournament_tickets tk
+            WHERE tk.holder_id='92500000-0000-4000-8000-000000000201'
+              AND tk.status='issued'
+              AND tk.redemption_mode='tournament_entry_only'
+              AND tk.source_tournament_id=
+                    '92500000-0000-4000-8000-000000000002'
+              AND tk.source_satellite_id=
+                    '92500000-0000-4000-8000-000000000001'
+              AND tk.source_satellite_award_place=1
+              AND tk.value=100 AND tk.entry_prize=80
+              AND tk.entry_bounty=0 AND tk.entry_fee=20) <> 1
+       OR (SELECT count(*)
+             FROM pg_temp.tournament_satellite_awards a
+             JOIN pg_temp.tournament_tickets tk ON tk.id=a.ticket_id
+             JOIN pg_temp.tournament_payouts p ON p.id=a.payout_id
+            WHERE a.tournament_id='92500000-0000-4000-8000-000000000001'
+              AND a.place=1 AND a.delivery_kind='ticket'
+              AND a.amount=100 AND a.payout_source='satellite_ticket'
+              AND p.user_id=a.user_id AND p."position"=a.place
+              AND p.amount=a.amount AND p.source=a.payout_source
+              AND p.idempotency_key=a.idempotency_key) <> 1
+       OR (SELECT count(*)
+             FROM pg_temp.tournament_satellite_awards a
+             JOIN pg_temp.chip_ledger l
+               ON l.idempotency_key=a.idempotency_key||':ticket_escrow'
+              AND l.from_type='prize_liability'
+              AND l.from_entity_id=a.tournament_id
+              AND l.to_type='escrow' AND l.to_entity_id=a.ticket_id
+              AND l.amount=a.amount AND l.category='ticket_issue'
+              AND l.pre_from_balance=100 AND l.post_from_balance=0
+              AND l.pre_to_balance=0 AND l.post_to_balance=100
+             JOIN pg_temp.chip_transactions tx
+               ON tx.transaction_type='tournament_ticket_issue'
+              AND tx.from_user_id IS NULL AND tx.to_user_id=a.user_id
+              AND tx.amount=a.amount
+              AND tx.metadata->>'ticket_id'=a.ticket_id::text
+              AND tx.metadata->>'ledger_id'=l.id::text
+              AND tx.metadata->>'wallet_chips_credited'='0'
+            WHERE a.tournament_id='92500000-0000-4000-8000-000000000001') <> 1
+       OR EXISTS (SELECT 1 FROM pg_temp.wallet_credit_idempotency k
+                   WHERE k.user_id='92500000-0000-4000-8000-000000000201')
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_temp.tournament_escrow e
+          WHERE e.tournament_id='92500000-0000-4000-8000-000000000001'
+            AND e.prize_out=100 AND e.prize_balance=0
+            AND e.closed_at IS NOT NULL)
+       OR NOT EXISTS (
+         SELECT 1 FROM pg_temp.tournaments t
+          WHERE t.id='92500000-0000-4000-8000-000000000002'
+            AND t.current_players=0 AND t.prize_pool=0 AND t.total_rake=0)
+       OR EXISTS (
+         SELECT 1 FROM pg_temp.tournament_players tp
+          WHERE tp.tournament_id='92500000-0000-4000-8000-000000000002') THEN
+      RAISE EXCEPTION
+        'FAIL four-table cap did not commit one exact noncash ticket receipt: %',
+        v_receipt;
+    END IF;
+    BEGIN
+      UPDATE pg_temp.tournaments
+         SET buy_in_amount=90,buy_in_fee=10
+       WHERE id='92500000-0000-4000-8000-000000000002';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+      v_cap_reprice_refused:=true;
+    END;
+    IF NOT v_cap_reprice_refused THEN
+      RAISE EXCEPTION
+        'FAIL target contract changed after direct satellite ticket issuance';
+    END IF;
+    RAISE EXCEPTION 'rollback successful four-table-cap ticket case'
+      USING ERRCODE = 'ZX003';
+  EXCEPTION WHEN SQLSTATE 'ZX003' THEN
+    v_cap_ticket_rolled_back := true;
+  END;
+  IF NOT v_cap_ticket_rolled_back
+     OR EXISTS (SELECT 1 FROM pg_temp.tournaments
+                 WHERE id IN ('92500000-0000-4000-8000-000000000001',
+                              '92500000-0000-4000-8000-000000000002'))
+     OR EXISTS (SELECT 1 FROM pg_temp.probe_concurrent_game_load
+                 WHERE user_id='92500000-0000-4000-8000-000000000201') THEN
+    RAISE EXCEPTION
+      'FAIL four-table-cap ticket case did not roll back its fixture';
   END IF;
 
   -- Two funded tickets become two registrations. The positive target fee is
@@ -870,6 +1063,7 @@ BEGIN
        OR (v_receipt->>'ticket_award_count')::integer IS DISTINCT FROM 2
        OR (v_receipt->>'seat_count')::integer IS DISTINCT FROM 2
        OR (v_receipt->>'cash_ticket_count')::integer IS DISTINCT FROM 0
+       OR (v_receipt->>'entry_ticket_count')::integer IS DISTINCT FROM 0
        OR (v_receipt->'remainder'->>'amount')::numeric IS DISTINCT FROM 50
        OR v_receipt->'remainder'->>'user_id'
             IS DISTINCT FROM '93000000-0000-4000-8000-000000000203'
@@ -1069,6 +1263,7 @@ BEGIN
               IS DISTINCT FROM v_case.expected_seats
          OR (v_receipt->>'cash_ticket_count')::integer
               IS DISTINCT FROM 1-v_case.expected_seats
+         OR (v_receipt->>'entry_ticket_count')::integer IS DISTINCT FROM 0
          OR v_receipt->'awards'->0->>'delivery_kind' IS DISTINCT FROM
               (CASE WHEN v_case.expected_seats=1 THEN 'seat' ELSE 'cash' END)
          OR (SELECT count(*) FROM pg_temp.tournament_players tp
@@ -1510,6 +1705,6 @@ BEGIN
   END IF;
 
   RAISE EXCEPTION
-    'AUDIT_TEST_PASS: canonical minutes-open, minutes-closed and NULL-current level-fallback fixtures accepted valid NULL bounds and selected seat, cash and seat respectively; pre-closed escrow and a stale status-aware target entrant counter, prize and fee aggregates were rejected with zero artifacts; zero-fee and two-seat target deliveries conserved their exact whole pools and escrow rails; missing, bounty and malformed-escrow targets, a missing target fee rail and an injected source-table close refusal were rejected with full rollback; a RUNNING late-registration target preserved its total entrant counter despite a historical eliminated row; NULL and mismatched terminal markers invalidated replay; removing the faults produced one exact closeout and byte-identical receipt';
+    'AUDIT_TEST_PASS: canonical minutes-open, minutes-closed and NULL-current level-fallback fixtures accepted valid NULL bounds and selected seat, cash and seat respectively; a four-game winner received one target-scoped noncash ticket with exact source-pool, escrow, payout and issue evidence and byte-identical replay; pre-closed escrow and a stale status-aware target entrant counter, prize and fee aggregates were rejected with zero artifacts; zero-fee and two-seat target deliveries conserved their exact whole pools and escrow rails; missing, bounty and malformed-escrow targets, a missing target fee rail and an injected source-table close refusal were rejected with full rollback; a RUNNING late-registration target preserved its total entrant counter despite a historical eliminated row; NULL and mismatched terminal markers invalidated replay; removing the faults produced one exact closeout and byte-identical receipt';
 END;
 $probe$;

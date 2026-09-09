@@ -86,3 +86,34 @@ describe('the near miss reaches a table, not just a console', () => {
     }
   });
 });
+
+describe('a refused MINI is written down too (2026-09-09)', () => {
+  // Measured two days after launch: 12 of the first 14 minis drained one
+  // club's reserve at 3,642 chips a day against a 5,000 floor. At the floor
+  // every mini at those tables is refused by design, and a refusal that only
+  // reaches console.warn is the absence-of-hits trap all over again.
+  const miniStep = settlement.slice(
+    settlement.indexOf('await processMiniBBJPayout('),
+    settlement.indexOf('mini jackpot paid ${outcome.total}')
+  );
+
+  it('a skipped mini reaches bbj_near_misses with the refusal reason', () => {
+    expect(miniStep).toMatch(/if \(outcome\.status === 'skipped'\) \{/);
+    expect(miniStep).toMatch(/void recordBBJNearMiss\(\{/);
+    expect(miniStep).toMatch(/reason: `mini_refused:\$\{outcome\.reason \|\| 'unspecified'\}`/);
+  });
+
+  it('a queued mini is NOT recorded as refused - the write-ahead row resolves it', () => {
+    const skippedBranch = miniStep.slice(miniStep.indexOf("outcome.status === 'skipped'"));
+    expect(skippedBranch).not.toMatch(/status === 'queued'/);
+    // and the recorder sits inside the not-paid branch, after the warn
+    expect(miniStep.indexOf('mini jackpot not paid for hand')).toBeLessThan(
+      miniStep.indexOf("outcome.status === 'skipped'")
+    );
+  });
+
+  it('cannot break settlement', () => {
+    const skippedBranch = miniStep.slice(miniStep.indexOf("outcome.status === 'skipped'"));
+    expect(skippedBranch).toMatch(/\}\)\.catch\(\(\) => undefined\);/);
+  });
+});

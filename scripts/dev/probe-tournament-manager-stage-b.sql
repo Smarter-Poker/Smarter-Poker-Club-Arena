@@ -34,6 +34,29 @@ BEGIN
 END;
 $authenticated_hook_execution$;
 
+/* Both are intentionally authenticated player RPCs as well as manager RPCs.
+   Test the actual hook under the request role before any routine body runs. */
+SELECT set_config('request.method', 'POST', true);
+SELECT set_config('request.path', '/rpc/process_tournament_rebuy', true);
+SET LOCAL ROLE authenticated;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+SELECT set_config('request.path', '/rest/v1/rpc/fn_decline_tournament_rebuy', true);
+SET LOCAL ROLE authenticated;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+DO $player_purchase_scope$
+BEGIN
+  IF current_setting('app.smarter_data_actor', true) <> 'browser'
+     OR COALESCE(current_setting('app.smarter_manager_request_fenced', true), '') <> '' THEN
+    RAISE EXCEPTION 'player purchase received manager authority';
+  END IF;
+END;
+$player_purchase_scope$;
+SELECT set_config('request.method', 'GET', true);
+SELECT set_config('request.path', '/tournaments', true);
+
+
 SELECT set_config(
   'request.headers',
   '{"x-smarter-data-actor":"service","x-smarter-data-protocol":"1"}',

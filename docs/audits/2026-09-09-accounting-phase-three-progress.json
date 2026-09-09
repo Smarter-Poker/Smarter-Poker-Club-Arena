@@ -4,7 +4,7 @@
   "status": "in_progress",
   "programme": "109-item comprehensive Club Arena accounting audit",
   "source_register": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
-  "phase_two": "Publication verification continues independently per user authorization. No completion is inferred.",
+  "phase_two": "Complete: all 13 acceptance controls verified, retirement applied and published, final acceptance PR 4031 on main. Its completed publication task is disabled.",
   "controls": [
     {
       "id": "CA-03-01",
@@ -249,5 +249,12 @@
       "Legacy registration alias retirement requires compatible frontend publication."
     ],
     "registry_applied_version": "20260909212058"
+  },
+  "registration_retirement": {
+    "status": "applied_and_privileges_verified",
+    "live_version": "20260909221729",
+    "receipt_client_release": "24a22ade8ac865b6f3ae4d3e0bc047e4bddff88d",
+    "evidence": "docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md",
+    "full_phase_acceptance": false
   }
 }

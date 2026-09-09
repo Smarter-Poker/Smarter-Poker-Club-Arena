@@ -191,15 +191,17 @@ Runtime adoption verified September 9 at 21:05 UTC: healthy engine 561eaa52 cont
 
 ### Phase 4 Of 12: Wallet And Player-To-Player Transfers
 
-- [ ] Inspect current platform transfer route, UI and database status; reconcile earlier retirement.
-- [ ] Reuse current wallet components/services where compatible; restore one atomic transfer path if absent.
-- [ ] Verify recipient identity, confirmation, server-side eligibility and existing policy.
-- [ ] Show available and in-play diamonds separately, with no chip conversion action.
-- [ ] Make transfer UI accessible while seated and while browsing.
-- [ ] Verify both-party ledger/balance updates and retry behavior.
-- [ ] Test transfer versus buy-in, store spend and other outgoing transfer races.
+- [x] Inspect current platform transfer route, UI and database status; reconcile earlier retirement.
+- [x] Reuse current wallet components/services where compatible; restore one atomic transfer path if absent.
+- [x] Verify recipient identity, confirmation, server-side eligibility and existing policy.
+- [x] Show available and in-play diamonds separately, with no chip conversion action.
+- [x] Make transfer UI accessible while seated and while browsing.
+- [x] Verify both-party ledger/balance updates and retry behavior.
+- [x] Test transfer versus buy-in, store spend and other outgoing transfer races.
 
 Exit: authorized test users can transfer available diamonds once; reserved game funds remain untouched.
+
+Release and acceptance verified September 9, 2026: Club Arena 70fd31cf, World Hub f278b167 plus evidence 27235a03, and applied migration 20260909200327. See docs/changelog/2026-09-09-wallet-transfers-commit-together.md for exact source, CI, SQL, publication and authenticated review evidence. Production acceptance did not submit a real-player transfer.
 
 ### Phase 5 Of 12: Poker Arena Shell And Diamond Skin
 
@@ -324,4 +326,4 @@ The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTI
 
 ## Immediate Next Batch
 
-Phase 2: expand current access and currency call chains, implement the player-only Diamond entitlement/policy boundary, and keep private chip-club membership enforcement intact. The inherited member-wallet funding functions are inspection/retirement targets. No new Diamond table opens until the proper diamond-only money path has been implemented and verified.
+Phase 5: implement the approved Poker Arena shell and Diamond selection using the shared Club Arena application and original approved artwork. Preserve active tables and private chip-club membership rules. Phase 4 wallet/transfer acceptance is verified; public funded Diamond games remain subject to later gameplay and accounting release gates.

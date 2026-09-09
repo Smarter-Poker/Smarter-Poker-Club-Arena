@@ -103,9 +103,13 @@ try {
   for (const role of ['anon','authenticated']) {
     await q(`SET ROLE ${role}`);
     await assert.rejects(q('SELECT prepare_tournament_reminders()'), e=>e.code==='42501'); checks++;
+    await assert.rejects(q('SELECT * FROM get_tournament_reminder_delivery(ARRAY[]::uuid[])'), e=>e.code==='42501'); checks++;
     await assert.rejects(q('SELECT * FROM tournament_reminder_receipts'), e=>e.code==='42501'); checks++;
     await q('RESET ROLE');
   }
+  await q('SET ROLE service_role');
+  check((await q('SELECT * FROM get_tournament_reminder_delivery(ARRAY[]::uuid[])')).length === 0, 'Service-only authority check reads no recipients');
+  await q('RESET ROLE');
   check((await q("SELECT relrowsecurity FROM pg_class WHERE oid='tournament_reminder_receipts'::regclass"))[0].relrowsecurity, 'RLS is enabled');
   check(Number((await q("SELECT count(*) n FROM pg_constraint WHERE conrelid='tournament_reminder_receipts'::regclass AND contype='f'"))[0].n) === 0, 'Receipts have no hot-table foreign keys');
   await assert.rejects(prepare(0), e=>e.code==='22023'); checks++;

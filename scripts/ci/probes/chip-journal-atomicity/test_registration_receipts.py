@@ -13,6 +13,10 @@ END $roles$;
 """)
     run(migration.read_text())
     run(migration.read_text())
+    retirement = root / "supabase/migrations/20260909220951_retire_unbound_initial_tournament_registration.sql"
+    # Keep the actual guards and DDL, twice, inside the fixture rollback.
+    retirement_sql = retirement.read_text().replace("\nBEGIN;\n", "\n", 1)
+    retirement_sql = retirement_sql.rsplit("\nCOMMIT;", 1)[0]
     run("""
 BEGIN;
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS
@@ -33,6 +37,15 @@ BEGIN
  RETURN jsonb_build_object('ok',true,
   'registration_id','30000000-0000-4000-8000-000000000001','cost',110);
 END $f$;
+REVOKE ALL ON FUNCTION public.fn_register_for_tournament(uuid,boolean)
+ FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_register_for_tournament(uuid,boolean) TO service_role;
+CREATE OR REPLACE FUNCTION public.fn_register_for_tournament(p_tournament_id uuid)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $alias$
+ SELECT public.fn_register_for_tournament(p_tournament_id,false)
+$alias$;
+GRANT EXECUTE ON FUNCTION public.fn_register_for_tournament(uuid)
+ TO anon, authenticated, service_role;
 SELECT set_config('test.registration_uid','10000000-0000-4000-8000-000000000001',true);
 SELECT set_config('test.registration_session','live',true);
 SELECT set_config('test.registration_mode','normal',true);
@@ -105,6 +118,52 @@ BEGIN
   RAISE EXCEPTION 'registration request permissions differ from authenticated-only contract';
  END IF;
 END $verify$;
+""" + retirement_sql + retirement_sql + """
+SET LOCAL ROLE anon;
+DO $denied$ BEGIN
+ BEGIN
+  PERFORM public.fn_register_for_tournament('20000000-0000-4000-8000-000000000001');
+  RAISE EXCEPTION 'anon executed unbound registration';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $denied$;
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+DO $denied$ BEGIN
+ BEGIN
+  PERFORM public.fn_register_for_tournament('20000000-0000-4000-8000-000000000001');
+  RAISE EXCEPTION 'service_role executed unbound registration';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $denied$;
+RESET ROLE;
+
+SET LOCAL ROLE authenticated;
+DO $denied$ BEGIN
+ BEGIN
+  PERFORM public.fn_register_for_tournament('20000000-0000-4000-8000-000000000001');
+  RAISE EXCEPTION 'authenticated executed unbound registration';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $denied$;
+RESET ROLE;
+
+SET LOCAL ROLE authenticated;
+DO $allowed$
+DECLARE r jsonb; replay jsonb;
+BEGIN
+ r:=public.fn_register_for_tournament_request(
+  '20000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000003');
+ replay:=public.fn_register_for_tournament_request(
+  '20000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000003');
+ IF r->'ok' IS DISTINCT FROM 'true'::jsonb OR replay IS DISTINCT FROM r THEN
+  RAISE EXCEPTION 'retirement blocked authenticated receipt or changed replay';
+ END IF;
+END $allowed$;
+RESET ROLE;
+DO $one_debit$ BEGIN
+ IF (SELECT count(*) FROM registration_wrapper_calls)<>3 THEN
+  RAISE EXCEPTION 'receipt replay repeated the core after retirement';
+ END IF;
+END $one_debit$;
 ROLLBACK;
 """)
-    print("registration receipt wrapper: 10 PostgreSQL assertions passed; underlying funding core is a test double", flush=True)
+    print("registration receipt wrapper: 15 PostgreSQL assertions passed including retired-role denial and authenticated replay; funding core is a test double", flush=True)

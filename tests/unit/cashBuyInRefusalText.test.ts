@@ -113,7 +113,7 @@ describe('booted for low VPIP is barred for two hours (Dan 2026-09-05)', () => {
       resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
       'utf8'
     );
-    expect(base).toMatch(/nitEvict \? \{ leaveMode: 'vpip_evicted' \} : undefined/);
+    expect(base).toMatch(/nitEvict \? \{ leaveMode: 'vpip_evicted' as const \} : \{\}/);
     const mig = readFileSync(
       resolve(
         __dirname,

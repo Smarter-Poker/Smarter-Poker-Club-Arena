@@ -45,6 +45,7 @@ export default function BlacklistManagerPage() {
     tables: SeatedTable[];
   } | null>(null);
   const [removingFromPlay, setRemovingFromPlay] = useState(false);
+  const [removalStatus, setRemovalStatus] = useState<string | null>(null);
   const [clearingExpired, setClearingExpired] = useState(false);
   const [newUserId, setNewUserId] = useState('');
   const [newReason, setNewReason] = useState('');
@@ -190,6 +191,7 @@ export default function BlacklistManagerPage() {
   const removeFromPlay = async () => {
     if (!seatedAfterExclusion) return;
     setRemovingFromPlay(true);
+    setRemovalStatus(null);
     setError(null);
     try {
       const outcome = await adminRemovePlayerFromClubTables(
@@ -197,10 +199,14 @@ export default function BlacklistManagerPage() {
         seatedAfterExclusion.member.user_id,
         'Excluded from the club by an operator'
       );
-      if (outcome.removed === 0) {
+      if (outcome.removed === 0 && !outcome.pending) {
         throw new Error(outcome.firstError || 'The engine did not remove this player.');
       }
-      setSeatedAfterExclusion(null);
+      if (outcome.pending > 0 || outcome.failed > 0) {
+        setRemovalStatus(
+          `Removed From ${outcome.removed} Tables; ${outcome.pending} Pending Until Their Hands Finish; ${outcome.failed} Failed. ${outcome.firstError || ''}`.trim()
+        );
+      } else setSeatedAfterExclusion(null);
     } catch (removeError) {
       setError(safeErrorMessage(removeError, 'The player could not be removed from play.'));
     } finally {
@@ -477,6 +483,7 @@ export default function BlacklistManagerPage() {
                 Club Wallet.
               </p>
             </div>
+            {removalStatus && <p role="status">{removalStatus}</p>}
             <div className={styles.confirmActions}>
               <button
                 className={styles.dangerButton}

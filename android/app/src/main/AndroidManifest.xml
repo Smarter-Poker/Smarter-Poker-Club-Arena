@@ -57,4 +57,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Voice chat at the table (src/services/VoiceSignalService.ts, getUserMedia).
+         Requested at runtime by the webview the first time the player turns
+         voice on; without the declaration the request is refused silently. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Android 13+: notifications are opt-in. @capacitor/push-notifications
+         declares this too; declared here so it survives a plugin change. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

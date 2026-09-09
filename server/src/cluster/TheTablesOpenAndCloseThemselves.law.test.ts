@@ -279,16 +279,21 @@ describe('the engine executes at the hand boundary and announces at the start', 
       DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');"),
       DEALING.indexOf('SPIN REVEAL HOLD')
     );
-    expect(idle).toMatch(
-      /'idle_seat_moves',\s*ServerTableEngineBase\.DEAL_STEP_BUDGET_MS,\s*this\.executePendingSeatMoves\(\)/
+    expect(idle).toContain('await this.executeIdleSeatMoves();');
+    const owner = BASE.slice(
+      BASE.indexOf('protected async executeIdleSeatMoves('),
+      BASE.indexOf('protected async executePendingSeatMoves(')
     );
+    expect(owner).toContain('await this.acquireSeatBoundary()');
+    expect(owner).toContain('const raw = this.executePendingSeatMoves()');
+    expect(owner).toContain('await Promise.allSettled([raw, budgeted])');
     // The pre-deal sweeps must not execute: a move announced for THIS hand
     // would land before it.
     const preDeal = DEALING.slice(
       DEALING.indexOf("'load_seats',"),
       DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');")
     );
-    expect(preDeal).not.toMatch(/executePendingSeatMoves\(/);
+    expect(preDeal).not.toMatch(/execute(?:Pending|Idle)SeatMoves\(/);
   });
 
   it('the wait-for-players loop executes them too (a lone feeder player is not stranded)', () => {
@@ -296,7 +301,7 @@ describe('the engine executes at the hand boundary and announces at the start', 
       BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
       BASE.indexOf("this.tableFSM.transition('seating');")
     );
-    expect(wait).toMatch(/await this\.executePendingSeatMoves\(\)\.catch\(/);
+    expect(wait).toMatch(/await this\.executeIdleSeatMoves\(\)\.catch\(/);
     expect(wait).toMatch(/await this\.stopIfClusterTableClosed\(\)\.catch\(/);
   });
 

@@ -90,12 +90,16 @@ export default function ClubAdvertisePage() {
     try {
       const resolved = await resolveClubUUID(routeClubId);
       setClubId(resolved);
-      const [{ data: club }, staffRes, rateCard] = await Promise.all([
+      const [clubRes, staffRes, rateCard] = await Promise.all([
         supabase.from('clubs').select('name').eq('id', resolved).maybeSingle(),
         supabase.rpc('fn_club_is_staff', { p_club_id: resolved, p_user_id: user?.id ?? null }),
         AdCampaignService.rateCard(),
       ]);
-      setClubName(club?.name ?? '');
+      /* An unreadable name is not an empty name. The heading falls back to
+         "Your Club" either way, but the read that failed is reported rather
+         than left to look like a club with no name. */
+      if (clubRes.error) reportError(clubRes.error, 'ClubAdvertisePage.clubName');
+      setClubName(clubRes.data?.name ?? '');
       /* Fail closed: an unreadable role is not evidence of staff. */
       setIsStaff(staffRes.error ? false : Boolean(staffRes.data));
       setRates(rateCard);
@@ -105,12 +109,18 @@ export default function ClubAdvertisePage() {
         setCampaigns(await AdCampaignService.list(resolved));
       }
       if (user?.id) {
-        const { data: prof } = await supabase
+        /* This page spends diamonds, so a balance that could not be read is
+           reported and shown as a dash - never as a zero, and never quietly
+           as "you can afford this". `canAfford` treats null as "we do not
+           know", which lets the buyer try; the debit itself is the
+           authority and answers Not Enough Diamonds if it is short. */
+        const { data: prof, error: profErr } = await supabase
           .from('profiles')
           .select('diamonds')
           .eq('id', user.id)
           .maybeSingle();
-        setBalance(prof?.diamonds == null ? null : Number(prof.diamonds));
+        if (profErr) reportError(profErr, 'ClubAdvertisePage.balance');
+        setBalance(profErr || prof?.diamonds == null ? null : Number(prof.diamonds));
       }
     } catch (e) {
       reportError(e, 'ClubAdvertisePage.load');

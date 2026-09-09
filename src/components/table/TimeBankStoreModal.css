@@ -1,270 +1,127 @@
-/**
- * TIME BANK STORE — Dan 2026-08-21, item 3 + item 6 house schema.
- *
- * Same brushed-nickel-on-blue treatment as FoldProtectionDialog: 6px milled
- * metal exterior frame, 2px interior frame, silver accents, no gold, no purple.
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TIME BANK STORE - on the buy-in deck (2026-09-09, #ClubArenaConsole)
+
+   The same master a player sits down through: the console's head, a stage on
+   the repeated rails, and the deck with its four bays and two painted plates.
+   This sheet only places it, switches off the global popup chassis, and types
+   the stage. Sizes are cqw; no :hover; nothing drawn.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .tbs-overlay {
-  --sp-nickel: linear-gradient(
-    145deg,
-    #6f767e 0%,
-    #cdd3d9 14%,
-    #8d949c 30%,
-    #eef1f4 46%,
-    #9aa1a9 62%,
-    #d6dbe0 80%,
-    #70777f 100%
-  );
-  --sp-nickel-inner: linear-gradient(
-    145deg,
-    #8f969e 0%,
-    #e6eaee 25%,
-    #99a0a8 52%,
-    #dfe4e9 76%,
-    #838a92 100%
-  );
-  --sp-dialog-blue: linear-gradient(160deg, #17325c 0%, #12233f 55%, #0d1a2f 100%);
-  --sp-silver: linear-gradient(180deg, #f4f7fa 0%, #cdd4dc 48%, #a9b2bc 100%);
-
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.58);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  z-index: 10001;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2200;
-  animation: tbsFade 0.18s ease-out;
-  padding: 16px;
+  padding: 12px;
+  background: rgb(0 0 0 / 90%);
+  animation: tbsIn 0.2s ease-out;
 }
 
-@keyframes tbsFade {
+@keyframes tbsIn {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
 }
 
-.tbs-modal {
+.tbs-modal.ac-popup {
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: visible auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tbs-master {
   position: relative;
-  width: min(94vw, 380px);
-  padding: 26px 24px 22px;
-  border-radius: 20px;
-  border: 6px solid transparent;
-  background-image: var(--sp-dialog-blue), var(--sp-nickel);
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-  box-shadow:
-    0 22px 64px rgba(0, 0, 0, 0.62),
-    0 0 0 1px rgba(0, 0, 0, 0.55);
-  color: #eaf2ff;
-  animation: tbsPop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
-.tbs-modal::before {
-  content: '';
-  position: absolute;
-  inset: 6px;
-  border-radius: 13px;
-  border: 2px solid transparent;
-  background-image: linear-gradient(rgba(0, 0, 0, 0) 0 0), var(--sp-nickel-inner);
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-@keyframes tbsPop {
-  from {
-    transform: translateY(8px) scale(0.96);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
-}
-
-.tbs-close {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: rgba(234, 242, 255, 0.7);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-  z-index: 1;
-}
-
-.tbs-title,
-.tbs-body,
-.tbs-price-row,
-.tbs-presets,
-.tbs-total,
-.tbs-shortfall,
-.tbs-actions {
+.tbs-head {
   position: relative;
+  width: 100%;
+  aspect-ratio: 1000 / 348;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
+    center / 100% auto no-repeat;
 }
 
-.tbs-title {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 800;
-  text-align: center;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+.tbs-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2cqw;
+  padding: 1cqw 11% 2cqw;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
+    center / 100% auto repeat-y;
+}
+
+.tbs-deck {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1000 / 627;
+  background: url('/hub/club-arena/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100%
+    auto no-repeat;
 }
 
 .tbs-body {
-  margin: 0 0 16px;
-  font-size: 13.5px;
-  line-height: 1.5;
-  text-align: center;
-  color: rgba(226, 236, 250, 0.78);
+  font-size: 3.4cqw;
 }
 
-.tbs-price-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(196, 210, 228, 0.18);
-  font-size: 13px;
-}
-
-.tbs-price-label {
-  color: rgba(226, 236, 250, 0.65);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.tbs-price-value,
-.tbs-total-value {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Diamond glyph drawn in CSS so the sheet carries no image dependency. */
-.tbs-diamond {
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  background: linear-gradient(180deg, #9fd8ff 0%, #4aa3e8 55%, #2f7fc4 100%);
-  transform: rotate(45deg);
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
-}
-
+/* The presets are lit numerals on the glass, divided by an engraved rule,
+   not five drawn pills. */
 .tbs-presets {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-  margin: 12px 0;
+  display: flex;
+  justify-content: center;
+  gap: 6cqw;
+  width: 100%;
+  padding-top: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .tbs-preset {
-  padding: 11px 2px;
-  border-radius: 10px;
-  border: 2px solid rgba(196, 210, 228, 0.28);
-  background: rgba(255, 255, 255, 0.04);
-  color: #eaf2ff;
-  font-size: 13px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
+  appearance: none;
+  margin: 0;
+  padding: 0.5cqw 1cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 4.6cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.1s ease;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .tbs-preset:active {
-  transform: scale(0.95);
+  filter: brightness(1.3);
 }
 
-.tbs-preset--on {
-  background: var(--sp-silver);
-  border-color: #8e979f;
-  color: #16202e;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-.tbs-total {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 11px 12px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.34);
-  border: 1px solid rgba(196, 210, 228, 0.22);
-  font-size: 14px;
-  font-weight: 700;
+.tbs-preset:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
 }
 
 .tbs-shortfall {
-  margin: 10px 0 0;
-  font-size: 12.5px;
-  text-align: center;
-  color: #ff9aa6;
+  font-size: 3.2cqw;
 }
 
-.tbs-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.tbs-btn {
-  flex: 1;
-  padding: 12px 14px;
-  font-size: 15px;
-  font-weight: 700;
-  border-radius: 12px;
-  cursor: pointer;
-  transition:
-    transform 0.12s ease,
-    background 0.18s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.tbs-btn:active {
-  transform: scale(0.97);
-}
-
-.tbs-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.tbs-btn--ghost {
-  background: rgba(255, 255, 255, 0.04);
-  color: #eaf2ff;
-  border: 2px solid rgba(196, 210, 228, 0.4);
-}
-
-.tbs-btn--buy {
-  background: var(--sp-silver);
-  color: #16202e;
-  border: 2px solid #8e979f;
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+@media (prefers-reduced-motion: reduce) {
+  .tbs-overlay {
+    animation: none;
+  }
 }

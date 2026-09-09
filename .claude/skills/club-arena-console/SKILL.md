@@ -255,7 +255,13 @@ A surface is "still generic" when its CSS has rounded cards, its own gradients
 and **zero** references to `club-buttons`. Prefer surfaces a player actually
 meets: buy-in, rebuy, wait list, confirm, rules, announcements, waitlists.
 
-### Step 2 — Shoot the "before" (§6). Always. It is half the review.
+### Step 2 — Prove it is alive, then shoot the "before"
+
+`git cat-file -e origin/main:<path>` and grep for importers before you spend a
+round on a surface. A stale clone keeps components main has already deleted -
+`FoldProtectionDialog` was rebuilt on the console before anyone noticed nothing
+had imported it for weeks. The scanner prints an importer count and marks
+`DEAD?`. Then shoot the before (§6): always, it is half the review.
 
 ### Step 3 — Read the logic before you touch the paint
 
@@ -293,7 +299,11 @@ rejected rounds.
   engraved rule between rows (`border-top: 1px solid #000` +
   `box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%)`) instead of a drawn divider.
 - Foot: `PlateButton` per action — secondary on the steel plate, primary on the
-  blue glass, red ink when destructive.
+  blue glass, red ink when destructive. **Two actions or none**: the foot paints
+  BOTH plates, so a surface with one action leaves the other painted and empty,
+  which reads as broken rather than spare. One way out uses `foot="foot"` (the
+  flat cap) and prints that action as a lit word on the glass — the control
+  Club Rules uses for Copy and Retry.
 - Money: `compactChips()`. Countdowns: gold, red at ≤ 10 s.
 - Anything the art does not paint (a slider) is the only thing you may draw, and
   it goes **up and down**, never side to side.
@@ -331,8 +341,22 @@ You will need art the master does not contain: a plate with the baked-in word
 removed, a head with no emblem, a foot with no chip. Derive it **from the master
 itself**, never by drawing.
 
-Work in Python (Pillow + numpy) on the PNG at full resolution, always writing to
-a new file, always re-derivable from `source/approved-reference.png`.
+**The library ships with this skill**: `scripts/master_surgery.py` implements
+every technique below (`median_bridge`, `synth_fill`, `synth_fill_matched`,
+`axis_of_symmetry`, `mirror_close`, `flat_cap`, `splice`), plus `column_runs`
+and `is_straight` for measuring the art before you cut it, and `preview` for
+looking at the result. Import it rather than retyping it:
+
+```python
+import sys; sys.path.insert(0, '.claude/skills/club-arena-console/scripts')
+from master_surgery import load, save, is_straight, median_bridge, flat_cap
+
+a = load('public/assets/club-buttons/console/spade-console-v1/bottom-foot.png')
+assert is_straight(a, 409, 423)            # prove it before you tile it
+```
+
+Work on the PNG at full resolution, always writing to a new file, always
+re-derivable from `source/approved-reference.png`.
 
 ### 5.1 Pick the technique by what you are rebuilding
 
@@ -440,98 +464,83 @@ Image.alpha_composite(bg, im).convert('RGB').resize((w*3, h*3), Image.NEAREST).s
 
 ## 6. The render harness
 
-Renders the real component with the real fonts and the real CSS, headless, at
-393 px — the only honest way to judge and the only way to produce before/after.
-
-**Provision once per sandbox** (`/tmp` is wiped between sessions):
-
-```bash
-export PLAYWRIGHT_BROWSERS_PATH=/tmp/pw; npx playwright install chromium
-mkdir -p /tmp/debs /tmp/lib && cd /tmp/debs
-apt-get download libxdamage1 libxcomposite1 libxrandr2 libgbm1 libxkbcommon0 \
-  libpango-1.0-0 libcairo2 libasound2 libatk1.0-0 libatk-bridge2.0-0 libnss3 \
-  libcups2 libdrm2 libxfixes3 libatspi2.0-0 libxext6 libx11-xcb1 libxcb1 \
-  libnspr4 libwayland-client0 libxshmfence1
-for d in *.deb; do dpkg-deb -x $d /tmp/lib; done
-# fonts live in ~/.fonts: Roboto Condensed, Inter, Rajdhani
-```
-
-**Three throwaway files at the repo root** (delete them before you commit):
-
-`.env.local` — Vite refuses to boot without it:
-
-```
-VITE_SUPABASE_URL=https://dummy.supabase.co
-VITE_SUPABASE_ANON_KEY=dummy
-```
-
-`card-harness.html` — `<div id="root">` + `<script type="module" src="/card-harness.tsx">`.
-
-`card-harness.tsx` — stub Supabase and the bus, seed a user, and switch on
-`?surface=`:
-
-```tsx
-function chain(table: string): any {
-  const p: any = new Proxy(function () {}, {
-    get(_t, prop) {
-      if (prop === 'then') return (res: any) => res({ data: canned[table] ?? null, error: null });
-      if (prop === 'maybeSingle')
-        return () => Promise.resolve({ data: canned[table] ?? null, error: null });
-      return () => p;
-    },
-    apply() {
-      return p;
-    },
-  });
-  return p;
-}
-(supabase as any).from = (t: string) => chain(t);
-(supabase as any).channel = () => ({
-  on() {
-    return this;
-  },
-  subscribe() {
-    return this;
-  },
-  unsubscribe() {},
-});
-(masterBus as any).getOrCreateChannel = () => ({
-  on() {
-    return this;
-  },
-  subscribe() {
-    return this;
-  },
-});
-(masterBus as any).removeRegisteredChannel = () => {};
-```
-
-Wrap the surface in `<MemoryRouter><ToastProvider><div data-card={key} style={{width:393, background:'#000'}}>`
-and import the page's own global stylesheets (`club-engine.css`, `animations.css`,
-`metallic-popups.css`, `reducedMotion.css`) — **especially `metallic-popups.css`,
-or a dialog will look right in the harness and wrong in the app.**
-
-A `?click=Label` parameter that clicks a button by its text 900 ms after mount
-gets you the secondary states (a composer open, a confirm step) without a second
-harness.
-
-`.shot.mjs` + `run-shots.sh`:
+Renders the real component with the real fonts and the real global CSS,
+headless at 393 px. It is the only honest way to judge a redesign and the only
+way to produce the before/after Dan reviews. **The templates ship with this
+skill** - do not rebuild them from memory:
 
 ```bash
-npx vite --port 5199 --strictPort &
-node .shot.mjs "http://localhost:5199/hub/club-arena/card-harness.html?surface=$S" "$OUT"
+cp .claude/skills/club-arena-console/harness/card-harness.html .
+cp .claude/skills/club-arena-console/harness/card-harness.tsx .
+cp .claude/skills/club-arena-console/harness/shot.mjs .shot.mjs
+printf 'VITE_SUPABASE_URL=https://dummy.supabase.co\nVITE_SUPABASE_ANON_KEY=dummy\n' > .env.local
+
+# add your surface to the switch in card-harness.tsx, then:
+bash .claude/skills/club-arena-console/harness/run-shots.sh /tmp/before "?surface=<key>"
+#   ...redesign...
+bash .claude/skills/club-arena-console/harness/run-shots.sh /tmp/after  "?surface=<key>"
+python3 .claude/skills/club-arena-console/harness/sheet.py /tmp/sheet.jpg 760 \
+  "Rebuy Popup:/tmp/before/rebuy.png:/tmp/after/rebuy.png"
+
+rm -f card-harness.html card-harness.tsx .shot.mjs .env.local   # never commit these
 ```
 
-with the shot script screenshotting every `[data-card]` at
-`viewport 393x852, deviceScaleFactor 2`, after `document.fonts.ready` and a
-1.5 s settle.
+`harness/README.md` carries the one-time sandbox provisioning (chromium plus the
+shared libraries `apt` does not install by default) and the font requirement -
+**without Roboto Condensed and Inter installed, every fitted label measures
+wrong and the render lies to you.**
 
-Build the comparison sheet with Pillow: trim each shot to its content, scale to a
-common height, label `BEFORE` / `AFTER`, paste on black.
+`?click=Label` clicks a button by its text 900 ms after mount, which gets you
+the secondary states (a composer open, a confirm step) without a second harness.
 
-**Delete `card-harness.*`, `.shot.mjs` and `.env.local` before committing.**
+**Shoot every state, not just the happy one**: empty, loading, error,
+insufficient funds, the confirm step, the longest string a real user can
+produce. Most review rounds are lost in a state nobody rendered.
 
----
+## 6.5 Finding the work, and splitting it
+
+```bash
+node .claude/skills/club-arena-console/scripts/find-generic-surfaces.mjs
+```
+
+Scores every page, modal, sheet, panel and card in `src/` by how far it is from
+the standard - CSS corner radii and gradients count against it, references to
+`club-buttons/` or the console kit zero it out, a `:hover` rule is weighted five
+times because it is forbidden outright. A surface already on a master scores 0.
+`--json` gives the machine-readable list.
+
+Work the list in **traffic order, not score order**. What a seated player meets
+every hand beats an admin page nobody opens twice a week:
+
+1. the felt (action panel, the modals that open over a live table),
+2. money (buy-in, cashier, wallets, settlement),
+3. the club pages a player browses (stats, leaderboard, achievements, friends),
+4. tournament and lobby,
+5. operator and admin.
+
+**Batch six to ten surfaces per pull request**, one theme per batch. Smaller and
+the review is all overhead; larger and Dan cannot hold it in his head, the
+render sheet stops being legible, and one rejected surface blocks nine good
+ones.
+
+### Delegating to subagents
+
+A sweep is parallel work, and this skill is what makes an agent interchangeable
+on it. When you hand a batch to a subagent:
+
+- give it **this entire document** (its description says so, and it is not
+  optional - an agent that skims re-learns every trap at your expense);
+- give it **one batch and one theme**, plus the exact surface list;
+- tell it the master art it may use, and that inventing art is out of scope -
+  if a surface needs a shape the master does not contain, it reports back
+  rather than drawing;
+- require it to return **rendered before/after PNGs**, the gate output, and a
+  list of every handler and test-pinned literal it preserved;
+- **it does not push.** Batches land as one pull request, from you, after Dan
+  has seen the sheet.
+
+Two subagents must never touch the same file. Split by surface, and keep shared
+files (`SpadeConsole.*`, `metallic-popups.css`, `utils/format.ts`) for yourself.
 
 ## 7. Traps that have each cost hours
 

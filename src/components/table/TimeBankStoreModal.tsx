@@ -15,11 +15,25 @@
  * One RPC per purchase, not one per bank: buying 500 as 500 calls could fail
  * halfway and leave the player part-charged.
  *
- * Styling follows the house schema set in FoldProtectionDialog.css — blue body,
- * brushed-nickel exterior + interior frames, silver (never gold) accents.
+ * ON THE MASTER (2026-09-09, #ClubArenaConsole). This was a rounded sheet with
+ * CSS preset pills and two drawn buttons. It is the buy-in deck now - the same
+ * master a player sits down through - because it is the same act: choose a
+ * quantity, read the price, pay. The four bays print PRICE / BANKS / EACH /
+ * TOTAL, the presets are lit numerals on the glass, and NOT NOW / BUY sit on
+ * the painted plates.
  */
 
 import React, { useState } from 'react';
+import { compactChips } from '../../utils/format';
+import { BayLabel, BayValue, BUY_IN_DECK_H, BUY_IN_ZONES } from './BuyInModal';
+import {
+  PlateButton,
+  SPADE_CONSOLE_TOP_H,
+  SPADE_CONSOLE_W,
+  SPADE_CONSOLE_ZONES,
+  ZoneText,
+  zonePct,
+} from '../console/SpadeConsole';
 import './TimeBankStoreModal.css';
 
 const QUANTITY_PRESETS = [1, 10, 25, 100, 500] as const;
@@ -79,71 +93,93 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
       aria-labelledby="tbs-title"
       onClick={onClose}
     >
-      <div className="tbs-modal" onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="tbs-close" aria-label="Close" onClick={onClose}>
-          ×
-        </button>
+      <div className="tbs-modal ac-popup" onClick={(e) => e.stopPropagation()}>
+        <div className="tbs-master">
+          <div className="tbs-head">
+            <ZoneText
+              text="Shot Clock"
+              className="sc__eyebrow sc-ink--blue"
+              style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
+            <ZoneText
+              as="h3"
+              id="tbs-title"
+              text={banksRemaining > 0 ? 'Time Banks' : 'Out Of Banks'}
+              className="sc__title sc-ink--silver"
+              style={zonePct(SPADE_CONSOLE_ZONES.title, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
+            <ZoneText
+              text={`${bankSeconds}s Each`}
+              className="sc__pill sc-ink--blue"
+              style={zonePct(SPADE_CONSOLE_ZONES.pill, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
+          </div>
 
-        <h3 id="tbs-title" className="tbs-title">
-          {banksRemaining > 0 ? 'Add Time Banks' : 'Out Of Time Banks'}
-        </h3>
-        <p className="tbs-body">
-          {banksRemaining > 0
-            ? `You Have ${banksRemaining} Bank${banksRemaining === 1 ? '' : 's'} Left. Each One Adds ${bankSeconds} Seconds To Your Clock.`
-            : `You Have No Time Banks Left. Each One Adds ${bankSeconds} Seconds To Your Clock When The Shot Clock Runs Out.`}
-        </p>
+          <div className="tbs-stage">
+            <p className="sc-copy sc-copy--center tbs-body">
+              {banksRemaining > 0
+                ? `You Have ${banksRemaining} Bank${banksRemaining === 1 ? '' : 's'} Left. Each One Adds ${bankSeconds} Seconds To Your Clock.`
+                : `You Have No Time Banks Left. Each One Adds ${bankSeconds} Seconds To Your Clock When The Shot Clock Runs Out.`}
+            </p>
+            <div className="tbs-presets" role="group" aria-label="Quantity">
+              {QUANTITY_PRESETS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`tbs-preset${quantity === n ? ' tbs-preset--on' : ''} ${
+                    quantity === n ? 'sc-ink--white' : 'sc-ink--muted'
+                  }`}
+                  aria-pressed={quantity === n}
+                  onClick={() => setQuantity(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            {shortfall > 0 && (
+              <p role="alert" className="sc-copy sc-copy--center sc-ink--red tbs-shortfall">
+                You Need {compactChips(shortfall)} More Diamond{shortfall === 1 ? '' : 's'} For
+                This.
+              </p>
+            )}
+          </div>
 
-        <div className="tbs-price-row">
-          <span className="tbs-price-label">Price</span>
-          <span className="tbs-price-value">
-            <span className="tbs-diamond" aria-hidden="true" />
-            {diamondCost} Per Bank
-          </span>
-        </div>
-
-        <div className="tbs-presets" role="group" aria-label="Quantity">
-          {QUANTITY_PRESETS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              className={`tbs-preset${quantity === n ? ' tbs-preset--on' : ''}`}
-              aria-pressed={quantity === n}
-              onClick={() => setQuantity(n)}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-
-        <div className="tbs-total">
-          <span>
-            {quantity} Bank{quantity === 1 ? '' : 's'}
-          </span>
-          <span className="tbs-total-value">
-            <span className="tbs-diamond" aria-hidden="true" />
-            {total.toLocaleString()}
-          </span>
-        </div>
-
-        {shortfall > 0 && (
-          <p className="tbs-shortfall">
-            You Need {shortfall.toLocaleString()} More Diamond
-            {shortfall === 1 ? '' : 's'} For This.
-          </p>
-        )}
-
-        <div className="tbs-actions">
-          <button type="button" className="tbs-btn tbs-btn--ghost" onClick={onClose}>
-            Not Now
-          </button>
-          <button
-            type="button"
-            className="tbs-btn tbs-btn--buy"
-            onClick={buy}
-            disabled={busy || shortfall > 0}
-          >
-            {busy ? 'Buying…' : 'Buy'}
-          </button>
+          <div className="tbs-deck">
+            <BayLabel zone={BUY_IN_ZONES.bays[0].label} text="Price" />
+            <BayLabel zone={BUY_IN_ZONES.bays[1].label} text="Banks" />
+            <BayLabel zone={BUY_IN_ZONES.bays[2].label} text="Held" />
+            <BayLabel zone={BUY_IN_ZONES.bays[3].label} text="Total" />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[0].value}
+              text={compactChips(diamondCost)}
+              ink="silver"
+            />
+            <BayValue zone={BUY_IN_ZONES.bays[1].value} text={compactChips(quantity)} ink="white" />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[2].value}
+              text={compactChips(banksRemaining)}
+              ink="silver"
+            />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[3].value}
+              text={compactChips(total)}
+              ink={shortfall > 0 ? 'red' : 'blue'}
+            />
+            <PlateButton
+              zone={BUY_IN_ZONES.secondaryAction}
+              canvasH={BUY_IN_DECK_H}
+              label="Not Now"
+              onClick={onClose}
+            />
+            <PlateButton
+              zone={BUY_IN_ZONES.primaryAction}
+              canvasH={BUY_IN_DECK_H}
+              label={busy ? 'Buying' : `Buy ${quantity}`}
+              ink={busy || shortfall > 0 ? 'muted' : 'white'}
+              onClick={buy}
+              disabled={busy || shortfall > 0}
+            />
+          </div>
         </div>
       </div>
     </div>

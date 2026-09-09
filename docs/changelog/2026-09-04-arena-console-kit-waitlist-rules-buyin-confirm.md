@@ -195,3 +195,50 @@ re-based on those canvases.
 
 A long title beside a pill now stops with air before the pill's slot;
 ANNOUNCEMENTS was running up against its rim.
+
+## Round seven (2026-09-09): the standard becomes a kit, and the sweep starts
+
+Dan: "UPGRADE AND ENHANCE IT AS BEST AS YOU CAN SO ANY AND ALL AGENTS CAN DO
+WHAT YOU ARE DOING HERE", then "UPGRADE EVERY REMAINING PAGE, SUB PAGE, POP UP,
+BUTTON, FRAME AND ANYTHING ELSE INSIDE EVERY CLUB ARENA PAGE".
+
+### The kit
+
+`.claude/skills/club-arena-console/` is no longer only prose:
+
+- `scripts/master_surgery.py` - every technique for deriving art from an
+  approved master (`median_bridge`, `synth_fill`, `synth_fill_matched`,
+  `axis_of_symmetry`, `mirror_close`, `flat_cap`, `splice`), plus `column_runs`
+  and `is_straight` for measuring the art before cutting it.
+- `scripts/find-generic-surfaces.mjs` - scores all 245 surfaces in `src/` by
+  distance from the standard and prints an importer count: 80 are already on a
+  master, 165 are not, and 31 of those have no importer at all.
+- `harness/` - the render harness and the before/after sheet builder, so a
+  review picture is four commands rather than an afternoon.
+- `tests/the-console-standard-stays.law.test.ts` pins the skill, its kit and
+  its pointer in CLAUDE.md, because a standard that can be deleted quietly is
+  a standard that will be.
+
+### Two rules the sweep paid for immediately
+
+- **Two actions or none.** The foot paints BOTH plates, so a surface with one
+  action leaves the other painted and empty - which reads as broken, not spare.
+  One way out uses the flat cap and a lit word on the glass.
+- **Prove the surface is alive first.** `FoldProtectionDialog` was rebuilt on
+  the console before anyone checked: it is not on `origin/main` and nothing has
+  imported it for weeks. The scanner now prints importers and marks `DEAD?`.
+
+### Batch one: the felt
+
+| Surface            | Was                                               | Now                                                                                                                 |
+| ------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| All-In Insurance   | rounded sheet, drawn pills, horizontal fee slider | the spade master's three slices, countdown in the painted pill slot, fee slider vertical, NO / INSURE on the plates |
+| Game Rules         | navy card, tab pills, `×`                         | the console; tabs as lit words, CLOSE / HAND RANKING on the plates                                                  |
+| Time Bank Store    | rounded sheet, five CSS preset pills              | the buy-in deck: PRICE / BANKS / HELD / TOTAL in the bays, presets as lit numerals, NOT NOW / BUY on the plates     |
+| Table Load Failure | 90 lines of inline style, 14px radius             | the console; one way out uses the flat cap and a lit word                                                           |
+
+Insurance keeps every figure exact to the cent except the headline pot: those
+are the terms of the contract being bought, and a rounded display once charged
+76.66 for a dialog that said 75.62. Every handler, focus trap, countdown,
+single-flight guard and pinned literal survived; `classNamesResolve` fell from
+41 unresolved names to 36 on the way.

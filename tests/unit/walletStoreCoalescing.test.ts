@@ -17,6 +17,8 @@
  * a wallet broken for the rest of the session after one flaky request.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 
 const getBalance = vi.fn();
 const getBalances = vi.fn();
@@ -50,6 +52,9 @@ const deferred = <T>() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getBalance.mockReset();
+  getBalances.mockReset();
+  getTransactionHistory.mockReset();
   // Clear the freshness stamps so each test starts from a cold store; without
   // this the SECOND test would be served by the cache and prove nothing.
   useWalletStore.setState({
@@ -117,4 +122,150 @@ describe('the wallet store does not stampede', () => {
     expect(getBalance).toHaveBeenCalledTimes(2);
     expect(useWalletStore.getState().diamonds).toBe(7);
   });
+});
+
+describe('balance invalidations survive an in-flight snapshot', () => {
+  const rows = (balance: number) => [
+    { walletType: 'PLAYER', availableBalance: balance, lockedBalance: 0, balance },
+  ];
+
+  it('serves a fresh mount from cache but a confirmed change bypasses it', async () => {
+    getBalances.mockResolvedValueOnce(rows(40)).mockResolvedValueOnce(rows(60));
+    await useWalletStore.getState().loadBalances(USER);
+    await useWalletStore.getState().loadBalances(USER);
+    expect(getBalances).toHaveBeenCalledOnce();
+    await useWalletStore.getState().loadBalances(USER, { force: true });
+    expect(getBalances).toHaveBeenCalledTimes(2);
+    expect(useWalletStore.getState().balances.PLAYER.total).toBe(60);
+  });
+
+  it('collapses invalidations into one trailing read and does not publish the superseded snapshot', async () => {
+    const old = deferred<unknown[]>();
+    const fresh = deferred<unknown[]>();
+    getBalances.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+    const first = useWalletStore.getState().loadBalances(USER);
+    const baseline = useWalletStore.getState().balances;
+    const invalidations = Array.from({ length: 5 }, () =>
+      useWalletStore.getState().loadBalances(USER, { force: true })
+    );
+    expect(getBalances).toHaveBeenCalledOnce();
+    old.resolve(rows(10));
+    await vi.waitFor(() => expect(getBalances).toHaveBeenCalledTimes(2));
+    expect(useWalletStore.getState().balances).toBe(baseline);
+    fresh.resolve(rows(80));
+    await Promise.all([first, ...invalidations]);
+    expect(getBalances).toHaveBeenCalledTimes(2);
+    expect(useWalletStore.getState().balances.PLAYER.total).toBe(80);
+    expect(useWalletStore.getState().isLoadingWallet).toBe(false);
+  });
+
+  it('still catches a change arriving during the trailing read', async () => {
+    const first = deferred<unknown[]>();
+    const second = deferred<unknown[]>();
+    getBalances
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+      .mockResolvedValueOnce(rows(90));
+    const loading = useWalletStore.getState().loadBalances(USER);
+    const change = useWalletStore.getState().loadBalances(USER, { force: true });
+    first.resolve(rows(10));
+    await vi.waitFor(() => expect(getBalances).toHaveBeenCalledTimes(2));
+    const nextChange = useWalletStore.getState().loadBalances(USER, { force: true });
+    second.resolve(rows(50));
+    await Promise.all([loading, change, nextChange]);
+    expect(getBalances).toHaveBeenCalledTimes(3);
+    expect(useWalletStore.getState().balances.PLAYER.total).toBe(90);
+  });
+
+  it('retires a read and queued refresh when the store resets', async () => {
+    const old = deferred<unknown[]>();
+    getBalances.mockReturnValueOnce(old.promise);
+    const loading = useWalletStore.getState().loadBalances(USER);
+    const change = useWalletStore.getState().loadBalances(USER, { force: true });
+    useWalletStore.getState().reset();
+    old.resolve(rows(500));
+    await Promise.all([loading, change]);
+    expect(getBalances).toHaveBeenCalledOnce();
+    expect(useWalletStore.getState()._balancesUserId).toBeNull();
+    expect(useWalletStore.getState().balances.PLAYER.total).toBe(0);
+  });
+
+  it('does not publish a previous account read after the next account loads', async () => {
+    const old = deferred<unknown[]>();
+    getBalances.mockReturnValueOnce(old.promise).mockResolvedValueOnce(rows(30));
+    const loading = useWalletStore.getState().loadBalances(USER);
+    await useWalletStore.getState().loadBalances('another-user');
+    old.resolve(rows(500));
+    await loading;
+    expect(useWalletStore.getState()._balancesUserId).toBe('another-user');
+    expect(useWalletStore.getState().balances.PLAYER.total).toBe(30);
+  });
+});
+
+it('Cashier BALANCE_UPDATED bypasses the fresh display cache', async () => {
+  // Execute the actual subscription callback without mounting unrelated cashier
+  // mutation flows. The real store below proves that its options cause a read.
+  const source = ts.createSourceFile(
+    'CashierPage.tsx',
+    readFileSync('src/pages/CashierPage.tsx', 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  let callback: ts.ArrowFunction | undefined;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(source) === 'useMasterBusSubscriptions'
+    ) {
+      const [events, listener] = node.arguments;
+      if (
+        events &&
+        ts.isArrayLiteralExpression(events) &&
+        events.elements.some(
+          (event) => ts.isStringLiteral(event) && event.text === 'BALANCE_UPDATED'
+        ) &&
+        listener &&
+        ts.isArrowFunction(listener)
+      )
+        callback = listener;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  expect(callback).toBeDefined();
+  const row = (balance: number) => [
+    { walletType: 'PLAYER', availableBalance: balance, lockedBalance: 0, balance },
+  ];
+  getBalances.mockResolvedValueOnce(row(40)).mockResolvedValueOnce(row(60));
+  await useWalletStore.getState().loadBalances(USER);
+  const loadBalances = vi.fn(useWalletStore.getState().loadBalances);
+  const listener = new Function('user', 'loadBalances', `return (${callback!.getText(source)})`)(
+    { id: USER },
+    loadBalances
+  );
+  listener();
+  await loadBalances.mock.results[0].value;
+  expect(getBalances).toHaveBeenCalledTimes(2);
+  expect(useWalletStore.getState().balances.PLAYER.total).toBe(60);
+});
+
+it('a failed trailing balance read preserves the display and allows the next retry', async () => {
+  getBalances.mockResolvedValueOnce([
+    { walletType: 'PLAYER', availableBalance: 70, lockedBalance: 0, balance: 70 },
+  ]);
+  await useWalletStore.getState().loadBalances(USER);
+  const old = deferred<unknown[]>();
+  getBalances.mockReturnValueOnce(old.promise).mockRejectedValueOnce(new Error('read failed'));
+  const loading = useWalletStore.getState().loadBalances(USER, { force: true });
+  const change = useWalletStore.getState().loadBalances(USER, { force: true });
+  old.resolve([]);
+  await Promise.all([loading, change]);
+  expect(useWalletStore.getState().balances.PLAYER.total).toBe(70);
+  expect(useWalletStore.getState().isLoadingWallet).toBe(false);
+  getBalances.mockResolvedValueOnce([
+    { walletType: 'PLAYER', availableBalance: 90, lockedBalance: 0, balance: 90 },
+  ]);
+  await useWalletStore.getState().loadBalances(USER, { force: true });
+  expect(useWalletStore.getState().balances.PLAYER.total).toBe(90);
 });

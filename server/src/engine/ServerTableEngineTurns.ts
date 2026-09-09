@@ -15,6 +15,7 @@ import {
   isFixedLimitVariant,
   fixedLimitBetSize,
   fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
   substituteOnCappedStreet,
   type BettingStructure,
@@ -1390,13 +1391,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   handlePlayerAction(
     userId: string,
     action: string,
-    amount?: number
+    amount?: number,
+    actionContext?: string | null
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.lifecycleCanMutate()) {
       return {
         success: false,
         error: 'Table ownership changed - reconnect',
         code: 'TABLE_LEASE_EXPIRED',
+      };
+    }
+    // HTTP always supplies a context (null for an old bundle). Only trusted
+    // in-process callers omit this argument. Check before clocks or chips move.
+    if (
+      actionContext !== undefined &&
+      (typeof actionContext !== 'string' || actionContext !== this.getActionContext())
+    ) {
+      return {
+        success: false,
+        code: actionContext === null ? 'ACTION_CONTEXT_REQUIRED' : 'STALE_ACTION',
+        error:
+          actionContext === null
+            ? 'The table view is out of date. Reload to continue.'
+            : 'The turn has changed. Review the table before acting again.',
       };
     }
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
@@ -1474,7 +1491,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // Previous formula (pot + toCall + toCall) was one toCall too permissive.
       // For a BET (toCall=0): maxBet = pot. For a RAISE: maxRaiseSize = pot + toCall.
       // This matches PokerEngine.calculateBettingState (FIX 121).
-      potLimitMaxBet = state.pot + toCall;
+      potLimitMaxBet = potLimitBettingPot(state) + toCall;
     }
 
     // Fixed limit has exactly one legal wager size per street, so a client that
@@ -1843,7 +1860,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const structure = bettingStructureFor(variant);
     let betSize: number | undefined;
     if (structure === 'pot_limit') {
-      const potLimitMaxBet = state.pot + toCall;
+      const potLimitMaxBet = potLimitBettingPot(state) + toCall;
       const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
       maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
     } else if (structure === 'fixed_limit') {

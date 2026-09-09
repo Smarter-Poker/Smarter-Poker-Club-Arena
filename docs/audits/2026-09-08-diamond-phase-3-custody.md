@@ -25,6 +25,8 @@ The workers `/cron/diamond-custody-recovery` GET/POST route is behind existing I
 - Current-main server: 8,057 tests passed, 18 skipped (603 passing files, one skipped). Skipped tests are not counted as passed. Server TypeScript build passed. The custody adapter has 18 passing contract cases including invalid receipts and response-loss retry.
 - Workers: 324 tests passed across 49 files; TypeScript and bundled production build passed. OpenClaw: two new schedule checks plus three existing critical-job checks passed, including restart-safe alert/recovery behavior.
 
-## Open Release Gate
+## Production Application And Remaining Release Gates
 
-Read-only production preflight found one Arena setting, zero nonzero legacy balances, zero Diamond tables/tournaments, and no existing custody relation or reserved migration version. Automatic approval review rejected applying the exact production migration because it changes financial schema and wallet functions and retires the old RPCs; explicit approval of this cutover is required. No production DDL was applied. Do not bypass this rejection or publish dependent code before the database exists. After approval: apply through Supabase, record the actual migration version, run advisors and live read-only checks, publish through normal hooks/autopilot, verify the scheduled recovery and authenticated live UI, then close the phase gate.
+The user explicitly approved this financial-schema cutover. Supabase applied `poker_diamond_custody` as version `20260909065458` on September 9, 2026. The earlier rejection is resolved. Live read-only verification found zero custody rows, zero obligations and zero reconciliation discrepancies; reserve/release are registered approved, recovery system, and both old Arena RPCs retired. No existing player balance was migrated or modified.
+
+Frontend, worker and schedule publication, actual published ancestry, one scheduled execution, authenticated UI acceptance and final release evidence remain required. This is not yet a phase-completion claim.

@@ -82,8 +82,39 @@ describe('occupancy-bound administrative removal', () => {
       cashout: null,
       occupancyId,
     });
-    expect(leaveTable).toHaveBeenCalledWith(userId, { forced: true, occupancyId, seatNumber: 2 });
+    expect(leaveTable).toHaveBeenCalledWith(userId, {
+      forced: true,
+      occupancyId,
+      seatNumber: 2,
+      admin: { actorId: 'admin', clubId: 'club', reason: 'house decision' },
+    });
+    expect(mocks.insert).not.toHaveBeenCalled();
   });
+  it('takes administrative identity from authorization, never the request body', async () => {
+    vi.mocked(readBody).mockResolvedValue(
+      JSON.stringify({
+        ...input,
+        actorId: userId,
+        clubId: 'forged',
+        admin: { actorId: userId },
+      })
+    );
+    await request();
+    expect(leaveTable).toHaveBeenCalledWith(
+      userId,
+      expect.objectContaining({
+        admin: { actorId: 'admin', clubId: 'club', reason: 'house decision' },
+      })
+    );
+  });
+  it.each([{}, '', ' '.repeat(3), 'x'.repeat(2001)])(
+    'rejects invalid reason %# before an engine mutation',
+    async (reason) => {
+      vi.mocked(readBody).mockResolvedValue(JSON.stringify({ ...input, reason }));
+      expect((await request()).status).toBe(400);
+      expect(leaveTable).not.toHaveBeenCalled();
+    }
+  );
   it('does not report or audit a refused kick as successful', async () => {
     leaveTable.mockResolvedValue({ success: false, immediate: false, error: 'All In' });
     expect((await request()).body).toMatchObject({ success: false });

@@ -177,6 +177,53 @@ describe('durable departure request receipts', () => {
       p_leave_mode: 'forced',
     });
   });
+  const admin = {
+    actorId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    clubId: 'club',
+    reason: 'house decision',
+  };
+  it('uses the admin transaction and verifies retained authority before returning', async () => {
+    mock.rpc.mockResolvedValue({
+      data: {
+        ...accepted,
+        admin_authorization: {
+          occupancy_id: occupancyId,
+          actor_id: admin.actorId,
+          club_id: admin.clubId,
+          reason: admin.reason,
+        },
+      },
+      error: null,
+    });
+    await expect(
+      requestSeatDeparture('player', 'table', 2, occupancyId, 'forced', admin)
+    ).resolves.toBeUndefined();
+    expect(mock.rpc).toHaveBeenCalledWith('fn_request_admin_seat_departure', {
+      p_user_id: 'player',
+      p_table_id: 'table',
+      p_seat_number: 2,
+      p_occupancy_id: occupancyId,
+      p_actor_id: admin.actorId,
+      p_club_id: admin.clubId,
+      p_reason: admin.reason,
+    });
+  });
+  it.each([
+    undefined,
+    {},
+    { occupancy_id: 'other' },
+    {
+      occupancy_id: occupancyId,
+      actor_id: admin.actorId,
+      club_id: 'wrong',
+      reason: admin.reason,
+    },
+  ])('refuses missing or mismatched administrative proof %#', async (admin_authorization) => {
+    mock.rpc.mockResolvedValue({ data: { ...accepted, admin_authorization }, error: null });
+    await expect(
+      requestSeatDeparture('player', 'table', 2, occupancyId, 'forced', admin)
+    ).rejects.toThrow('Admin Departure Authority Was Not Confirmed');
+  });
   it('propagates database failure instead of acknowledging the request', async () => {
     mock.rpc.mockResolvedValue({ data: null, error: { message: 'transaction rejected' } });
     await expect(

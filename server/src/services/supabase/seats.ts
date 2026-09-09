@@ -114,20 +114,37 @@ export async function getSeatCashoutReceipt(
     : confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
 }
 
+export interface AdminDepartureAuthority {
+  actorId: string;
+  clubId: string;
+  reason: string;
+}
+
 export async function requestSeatDeparture(
   userId: string,
   tableId: string,
   seatNumber: number,
   occupancyId: string,
-  leaveMode: 'voluntary' | 'forced'
+  leaveMode: 'voluntary' | 'forced',
+  admin?: AdminDepartureAuthority
 ): Promise<void> {
-  const { data, error } = await supabase.rpc('fn_request_seat_departure', {
-    p_user_id: userId,
-    p_table_id: tableId,
-    p_seat_number: seatNumber,
-    p_occupancy_id: occupancyId,
-    p_leave_mode: leaveMode,
-  });
+  if (admin && leaveMode !== 'forced') throw new Error('Admin Departure Must Be Forced');
+  const { data, error } = await supabase.rpc(
+    admin ? 'fn_request_admin_seat_departure' : 'fn_request_seat_departure',
+    {
+      p_user_id: userId,
+      p_table_id: tableId,
+      p_seat_number: seatNumber,
+      p_occupancy_id: occupancyId,
+      ...(admin
+        ? {
+            p_actor_id: admin.actorId,
+            p_club_id: admin.clubId,
+            p_reason: admin.reason,
+          }
+        : { p_leave_mode: leaveMode }),
+    }
+  );
   if (error) throw new Error(error.message || 'Departure Request Failed');
   if (
     !data ||
@@ -143,6 +160,21 @@ export async function requestSeatDeparture(
     typeof data.tournament_table !== 'boolean'
   ) {
     throw new Error('Departure Request Was Not Confirmed');
+  }
+  if (admin) {
+    const authority = data.admin_authorization;
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (
+      !authority ||
+      authority.occupancy_id !== occupancyId ||
+      typeof authority.actor_id !== 'string' ||
+      !uuid.test(authority.actor_id) ||
+      authority.club_id !== admin.clubId ||
+      typeof authority.reason !== 'string' ||
+      authority.reason.trim().length === 0
+    ) {
+      throw new Error('Admin Departure Authority Was Not Confirmed');
+    }
   }
 }
 

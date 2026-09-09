@@ -1,4 +1,4 @@
-import { getSeatCashoutReceipt } from '../services/supabase/seats.js';
+import { getSeatCashoutReceipt, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * Admin handlers — Bible V8 §6.17: pause / resume table dealing.
  *
@@ -24,7 +24,12 @@ export interface AdminDeps {
           adminResume(): unknown;
           leaveTable(
             userId: string,
-            opts?: { forced?: boolean; occupancyId?: string; seatNumber?: number }
+            opts?: {
+              forced?: boolean;
+              occupancyId?: string;
+              seatNumber?: number;
+              admin?: AdminDepartureAuthority;
+            }
           ):
             | { success: boolean; [k: string]: unknown }
             | Promise<{ success: boolean; [k: string]: unknown }>;
@@ -198,8 +203,8 @@ export async function handleAdminResume(
  * + cashout-pending, between-hand atomic-cashouts, and writes the seat_left
  * event so all clients re-render.
  *
- * Audit: caller, target, table, reason go into anti_cheat_events via the
- * dashboard's existing logging path AFTER this returns success.
+ * Audit: verified authority is persisted with the accepted departure before
+ * cashout; the original occupancy receipt proves the financial outcome.
  */
 export async function handleAdminKick(
   req: IncomingMessage,
@@ -278,10 +283,15 @@ export async function handleAdminKick(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
+    const reasonText = (body as { reason?: unknown }).reason ?? 'admin kick';
+    if (typeof reasonText !== 'string' || !reasonText.trim() || reasonText.length > 2000)
+      return sendJSON(res, 400, { success: false, error: 'Invalid Removal Reason' });
+
     // CHIP CONTINUITY: a kick is a system exit. The stay clock never blocks it;
     // the session still closes and the rejoin floor is still written.
     const result = await engine.leaveTable(targetUserId, {
       forced: true,
+      admin: { actorId: callerUserId, clubId, reason: reasonText },
       ...(occupancyBound ? { occupancyId, seatNumber } : {}),
     });
     if (!result.success)
@@ -297,42 +307,6 @@ export async function handleAdminKick(
         error: 'Cashout Outcome Could Not Be Confirmed',
       });
     }
-
-    // Round 71: write audit ledger row so forensic review sees who kicked
-    // whom, when, why. Fire-and-forget — engine admin actions log to
-    // anti_cheat_events (the moderation-specific stream) and audit_trail
-    // (the universal immutable ledger) when available. Failures don't
-    // block the response — the kick already happened.
-    const reasonText = (body as { reason?: string }).reason ?? 'admin kick';
-    void Promise.resolve(
-      supabase.from('anti_cheat_events').insert({
-        event_type: 'player_kicked',
-        player_id: targetUserId,
-        club_id: clubId,
-        table_id: tableId,
-        details: {
-          reason: reasonText,
-          kicked_by: callerUserId,
-          source: 'engine_admin_kick',
-          immediate: result.immediate ?? false,
-        },
-        triggered_by: callerUserId,
-      })
-    )
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[admin.kick] anti_cheat_events insert failed:', error.message);
-        }
-      })
-      // .then() alone covers only the resolved-with-error case; a transport
-      // failure rejects, and an unhandled rejection here would take down an
-      // otherwise successful kick response.
-      .catch((err: unknown) => {
-        console.warn(
-          '[admin.kick] anti_cheat_events insert threw:',
-          (err as Error)?.message ?? err
-        );
-      });
 
     return sendJSON(res, result.success ? 200 : 400, {
       ...result,

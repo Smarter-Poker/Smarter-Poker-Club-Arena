@@ -58,11 +58,11 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
   const seedOccupancy = (stack = 25) => {
-    sql(`INSERT INTO tables VALUES('${TABLE}',NULL,1);
+    sql(`INSERT INTO profiles VALUES('${USER}'); INSERT INTO tables VALUES('${TABLE}',NULL,1);
       INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
       INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
       ${stack},now(),NULL,false,'${CLUB}')`);
@@ -83,6 +83,90 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         mode +
         "')"
     );
+  const ACTOR = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const requestAdmin = (occupancy: string, actor = ACTOR, reason = 'house decision') =>
+    sql(`SELECT fn_request_admin_seat_departure('${USER}','${TABLE}',2,
+      '${occupancy}','${actor}','${CLUB}','${reason}')`);
+  it('retains original administrative authority and moderation history with the departure', () => {
+    const occupancy = seedOccupancy();
+    expect(requestAdmin(occupancy)).toMatchObject({
+      accepted: true,
+      leave_mode: 'forced',
+      admin_authorization: {
+        occupancy_id: occupancy,
+        actor_id: ACTOR,
+        club_id: CLUB,
+        reason: 'house decision',
+      },
+    });
+    expect(sql('SELECT count(*) FROM seat_admin_departure_authorizations')).toBe(1);
+    expect(sql("SELECT to_json(details->>'state') FROM anti_cheat_events")).toBe(
+      'departure_requested'
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    expect(requestAdmin(occupancy, USER, 'different reason').admin_authorization).toMatchObject({
+      actor_id: ACTOR,
+      reason: 'house decision',
+    });
+    expect(sql('SELECT count(*) FROM anti_cheat_events')).toBe(1);
+    boundCashout(occupancy);
+    expect(
+      sql(`SELECT count(*) FROM seat_admin_departure_authorizations a
+      JOIN seat_cashout_receipts r USING(occupancy_id)
+      WHERE a.actor_id='${ACTOR}' AND (r.receipt->>'stack')::numeric=25`)
+    ).toBe(1);
+    expect(boundCashout(occupancy).stack).toBe(25);
+    expect(sql('SELECT count(*) FROM wallet_transactions')).toBe(1);
+  });
+  it('rolls back departure flags and authority when moderation insertion fails', () => {
+    const occupancy = seedOccupancy();
+    // Actual production FK: the player profile must exist for moderation history.
+    sql('DELETE FROM profiles');
+    expect(() => requestAdmin(occupancy)).toThrow(/foreign key/);
+    expect(sql('SELECT count(*) FROM seat_admin_departure_authorizations')).toBe(0);
+    expect(sql('SELECT count(*) FROM seat_departure_requests')).toBe(0);
+    expect(sql('SELECT to_json(leave_pending) FROM table_seats')).toBe(false);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('retains administrative proof after profile and physical seat deletion', () => {
+    const occupancy = seedOccupancy();
+    requestAdmin(occupancy);
+    boundCashout(occupancy);
+    sql('DELETE FROM profiles; DELETE FROM table_seats');
+    expect(sql('SELECT count(*) FROM anti_cheat_events')).toBe(0);
+    expect(sql('SELECT count(*) FROM seat_admin_departure_authorizations')).toBe(1);
+    expect(boundCashout(occupancy).stack).toBe(25);
+  });
+  it('refuses direct owner manufacture or mutation of administrative authority', () => {
+    const occupancy = seedOccupancy();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL test.is_engine='false';
+      SELECT fn_request_admin_seat_departure('${USER}','${TABLE}',2,'${occupancy}',
+        '${ACTOR}','${CLUB}','house decision'); COMMIT;`)
+    ).toThrow(/Engine authority required/);
+    expect(() =>
+      sql(`BEGIN; SET LOCAL ROLE authenticated;
+      SELECT fn_request_admin_seat_departure('${USER}','${TABLE}',2,'${occupancy}',
+        '${ACTOR}','${CLUB}','house decision'); COMMIT;`)
+    ).toThrow(/permission denied/);
+    requestAdmin(occupancy);
+    expect(() =>
+      sql(
+        "BEGIN; SET LOCAL ROLE service_role; UPDATE seat_admin_departure_authorizations SET reason='changed'; COMMIT;"
+      )
+    ).toThrow(/permission denied/);
+    expect(sql('SELECT to_json(reason) FROM seat_admin_departure_authorizations')).toBe(
+      'house decision'
+    );
+  });
+  it('rejects stale administrative identity without recording a kick', () => {
+    seedOccupancy();
+    expect(() => requestAdmin('ffffffff-ffff-4fff-8fff-ffffffffffff')).toThrow(
+      /CASHOUT_STALE_OCCUPANCY/
+    );
+    expect(sql('SELECT count(*) FROM anti_cheat_events')).toBe(0);
+    expect(sql('SELECT count(*) FROM seat_admin_departure_authorizations')).toBe(0);
+  });
   it('persists forced authority and the pending flag atomically without moving chips', () => {
     const occupancy = seedOccupancy();
     expect(requestDeparture(occupancy, 'forced')).toMatchObject({

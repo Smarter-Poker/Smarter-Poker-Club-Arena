@@ -37,3 +37,12 @@ CREATE TRIGGER test_exit_failure BEFORE UPDATE ON table_seats
  FOR EACH ROW EXECUTE FUNCTION reject_test_exit();
 
 CREATE TABLE ca_money_rpc_registry(proname text PRIMARY KEY,status text,notes text);
+
+-- Read-only production schema inspection: moderation player FK cascades.
+ALTER TABLE tables ADD COLUMN club_id uuid DEFAULT 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+CREATE TABLE profiles(id uuid PRIMARY KEY);
+CREATE TABLE anti_cheat_events(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),event_type text NOT NULL,
+ player_id uuid REFERENCES profiles(id) ON DELETE CASCADE,club_id uuid,table_id uuid,
+ details jsonb DEFAULT '{}'::jsonb,triggered_by text,created_at timestamptz DEFAULT now()
+);

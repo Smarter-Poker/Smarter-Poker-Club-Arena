@@ -1,4 +1,4 @@
-import { requestSeatDeparture } from '../services/supabase/seats.js';
+import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
  *
@@ -849,7 +849,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * this method (POST /leave, the horse rotator) is the player's own choice
      * and is judged by the clock, mirror first, database second.
      */
-    opts: { forced?: boolean; occupancyId?: string; seatNumber?: number } = {}
+    opts: {
+      forced?: boolean;
+      occupancyId?: string;
+      seatNumber?: number;
+      admin?: AdminDepartureAuthority;
+    } = {}
   ): Promise<{
     success: boolean;
     error?: string;
@@ -938,6 +943,32 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         };
       }
 
+      if (opts.admin) {
+        if (!opts.forced || !scoped) return stale();
+        try {
+          await requestSeatDeparture(
+            userId,
+            this.tableId,
+            opts.seatNumber!,
+            opts.occupancyId!,
+            'forced',
+            opts.admin
+          );
+        } catch {
+          return {
+            success: false,
+            immediate: false,
+            error: 'Could Not Confirm The Administrative Request. Please Try Again.',
+          };
+        }
+        if (
+          this.seatedPlayers.some(
+            (p) => p.user_id === userId && p.occupancy_id !== opts.occupancyId
+          )
+        )
+          return stale();
+      }
+
       const player = this.seatedPlayers.find((p) => p.user_id === userId);
       if (!player) {
         if (scoped) {
@@ -1016,13 +1047,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
             error: 'Your Seat Identity Could Not Be Verified.',
           };
         try {
-          await requestSeatDeparture(
-            userId,
-            this.tableId,
-            player.seat_number,
-            player.occupancy_id,
-            opts.forced ? 'forced' : 'voluntary'
-          );
+          if (!opts.admin)
+            await requestSeatDeparture(
+              userId,
+              this.tableId,
+              player.seat_number,
+              player.occupancy_id,
+              opts.forced ? 'forced' : 'voluntary'
+            );
         } catch {
           return {
             success: false,
@@ -1164,13 +1196,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
             error: 'Your Seat Identity Could Not Be Verified.',
           };
         try {
-          await requestSeatDeparture(
-            userId,
-            this.tableId,
-            player.seat_number,
-            player.occupancy_id,
-            opts.forced ? 'forced' : 'voluntary'
-          );
+          if (!opts.admin)
+            await requestSeatDeparture(
+              userId,
+              this.tableId,
+              player.seat_number,
+              player.occupancy_id,
+              opts.forced ? 'forced' : 'voluntary'
+            );
         } catch {
           return {
             success: false,

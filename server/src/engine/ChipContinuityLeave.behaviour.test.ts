@@ -460,6 +460,43 @@ describe('occupancy-bound engine leave', () => {
       }
     }
   );
+  it.each([false, true])(
+    'refuses cashout when the administrative audit transaction fails: reserved=%s',
+    async (reserved) => {
+      const e = makeEngine();
+      if (reserved) e.seatedPlayers = [];
+      departure.mockRejectedValue(new Error('audit write failed'));
+      expect(
+        await e.leaveTable(HUMAN, {
+          forced: true,
+          occupancyId,
+          seatNumber: 1,
+          admin: { actorId: HUMAN, clubId: TABLE, reason: 'house decision' },
+        })
+      ).toMatchObject({ success: false, immediate: false });
+      expect(cashout).not.toHaveBeenCalled();
+      expect(cashoutVoluntary).not.toHaveBeenCalled();
+      expect(e.hub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+  it('commits original admin authority before cashing out a reserved seat', async () => {
+    const e = makeEngine();
+    e.seatedPlayers = [];
+    const order: string[] = [];
+    departure.mockImplementation(async () => {
+      order.push('authority');
+    });
+    cashout.mockImplementation(async () => {
+      order.push('cashout');
+      return 25;
+    });
+    const admin = { actorId: HUMAN, clubId: TABLE, reason: 'house decision' };
+    expect(
+      await e.leaveTable(HUMAN, { forced: true, occupancyId, seatNumber: 1, admin })
+    ).toMatchObject({ success: true, immediate: true });
+    expect(departure).toHaveBeenCalledWith(HUMAN, TABLE, 1, occupancyId, 'forced', admin);
+    expect(order).toEqual(['authority', 'cashout']);
+  });
   it('cashes a reserved seat through the captured identity instead of handing money work to the browser', async () => {
     const e = makeEngine();
     e.seatedPlayers = [];

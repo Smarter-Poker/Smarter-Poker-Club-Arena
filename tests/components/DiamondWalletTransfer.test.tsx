@@ -97,3 +97,14 @@ it('allows editing after a definitive database refusal', async () => {
   await screen.findByRole('button', { name: 'Review Transfer' });
   expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeNull();
 });
+
+it('rejects an amount outside the database integer contract before creating a request', () => {
+  render(<DiamondWalletTransfer userId={sender} onComplete={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Send Diamonds' }));
+  fireEvent.change(screen.getByLabelText('Friend Player ID'), { target: { value: recipient } });
+  fireEvent.change(screen.getByLabelText('Diamond Amount'), { target: { value: '2147483648' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review Transfer' }));
+  expect(mocks.from).not.toHaveBeenCalled();
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  expect(sessionStorage.length).toBe(0);
+});

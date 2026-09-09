@@ -30,6 +30,7 @@ export default function DiamondWalletTransfer({
         typeof saved.name === 'string' &&
         Number.isSafeInteger(saved.amount) &&
         saved.amount > 0 &&
+        saved.amount <= 2147483647 &&
         uuid.test(saved.key)
         ? saved
         : null;
@@ -47,7 +48,13 @@ export default function DiamondWalletTransfer({
   async function verify() {
     const id = recipient.trim().toLowerCase();
     const units = Number(amount);
-    if (!uuid.test(id) || id === userId || !Number.isSafeInteger(units) || units <= 0) {
+    if (
+      !uuid.test(id) ||
+      id === userId ||
+      !Number.isSafeInteger(units) ||
+      units <= 0 ||
+      units > 2147483647
+    ) {
       setMessage('Enter A Different Player ID And A Positive Whole Diamond Amount.');
       return;
     }

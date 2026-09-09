@@ -44,6 +44,9 @@ const BASE = fs.readFileSync(
 /** Strip comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const CODE = code(BASE);
+const RECEIPT_CODE = code(
+  fs.readFileSync(path.join(process.cwd(), 'src/tournament/SpinDrawReceipt.ts'), 'utf8')
+);
 
 describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', () => {
   it('never assigns a multiplier from the tier table as a fallback', () => {
@@ -52,15 +55,16 @@ describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', (
   });
 
   it('reads the RPC error instead of destructuring only `data`', () => {
-    const call = CODE.slice(CODE.indexOf('fn_spin_draw_multiplier') - 400);
-    expect(call).toMatch(/error:\s*drawErr/);
-    expect(CODE).toMatch(/if\s*\(\s*drawErr\s*\)\s*throw/);
+    const call = sliceEnclosingBlock(CODE, 'fn_spin_draw_and_settle_atomic');
+    expect(call).toMatch(/const\s*\{\s*data,\s*error\s*\}/);
+    expect(call).toContain('if (error || !data?.ok)');
+    expect(call).toContain('throw new Error');
   });
 
   it('has no empty catch around the draw', () => {
     // `catch { }` / `catch (e) { }` with nothing in it is what swallowed it.
     const drawBlock = CODE.slice(
-      CODE.indexOf('fn_spin_draw_multiplier'),
+      CODE.indexOf('fn_spin_draw_and_settle_atomic'),
       CODE.indexOf('spin_draw_unavailable')
     );
     expect(drawBlock).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
@@ -76,7 +80,8 @@ describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', (
   });
 
   it('rejects a response it cannot read a positive multiplier out of', () => {
-    expect(CODE).toMatch(/no usable multiplier/);
+    expect(CODE).toContain('readFundedSpinDraw(data,');
+    expect(RECEIPT_CODE).toContain('!positive(r.multiplier)');
   });
 });
 
@@ -190,7 +195,7 @@ describe('the draw reaches memory WHOLE (2026-08-31)', () => {
       CODE.indexOf('let spinRowWritten')
     );
     expect(patch).toMatch(/payout_structure:/);
-    // Derived from the drawn tier, never a literal winner-take-all.
-    expect(patch).toMatch(/tier\?\.payouts/);
+    // Adopt the frozen booked tier, never a local winner-take-all fallback.
+    expect(patch).toContain('payout_structure: fundedSpin.payouts');
   });
 });

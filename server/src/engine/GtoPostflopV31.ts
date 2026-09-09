@@ -93,6 +93,8 @@ export type GtoV31Lookup =
       policyEvBb: number | null;
       actionEvsBb: Record<string, number | null> | null;
       cell: string;
+      handKey: string;
+      textureClass: string;
       sourceSeal: GtoV31SourceSeal;
       nodeRole: GtoV31NodeRole;
       depthBucket: number;
@@ -127,7 +129,7 @@ const activeStore: Store = makeStore();
 const evaluationStores = new Map<string, Store>();
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const POSITIONS = new Set(['UTG', 'UTG1', 'UTG2', 'UTG3', 'MP', 'HJ', 'CO', 'BTN', 'SB', 'BB']);
 const DEPTHS = new Set([10, 20, 40, 80, 150]);
 const POT_TYPES = new Set<GtoV31PotType>(['limped', 'srp', '3bet', '4bet_plus']);
@@ -154,13 +156,21 @@ const RANK_INDEX: Record<string, number> = Object.fromEntries(
   [...'AKQJT98765432'].map((rank, index) => [rank, index])
 );
 
-function canonicalHandKey(value: string): boolean {
+function canonicalHandKey(value: string, street: GtoPostflopV31Row['street']): boolean {
   if (typeof value !== 'string') return false;
-  const match = /^([AKQJT98765432])([AKQJT98765432])([so]?):([0-2])$/.exec(value);
+  const match = /^([AKQJT98765432])([AKQJT98765432])([so]?):([0-5])([0-5])$/.exec(value);
   if (!match) return false;
-  const [, first, second, suitedness] = match;
-  if (first === second) return suitedness === '';
-  return suitedness !== '' && RANK_INDEX[first] < RANK_INDEX[second];
+  const [, first, second, suitedness, firstSuitCount, secondSuitCount] = match;
+  const firstCount = Number(firstSuitCount);
+  const secondCount = Number(secondSuitCount);
+  const boardCards = street === 'flop' ? 3 : street === 'turn' ? 4 : street === 'river' ? 5 : 0;
+  if (boardCards === 0) return false;
+  if (first === second) {
+    return suitedness === '' && firstCount >= secondCount && firstCount + secondCount <= boardCards;
+  }
+  if (RANK_INDEX[first] >= RANK_INDEX[second]) return false;
+  if (suitedness === 's') return firstCount === secondCount && firstCount <= boardCards;
+  return suitedness === 'o' && firstCount + secondCount <= boardCards;
 }
 
 const TABLE_POSITIONS: Record<number, ReadonlySet<string>> = {
@@ -274,14 +284,15 @@ function sealIsValid(
     nonzero64(row.lineage_checksum) &&
     row.quality_status === 'validated' &&
     allowedStates.has(row.dataset_state) &&
-    Number.isInteger(row.dataset_cells) &&
+    Number.isSafeInteger(row.dataset_cells) &&
     row.dataset_cells > 0 &&
-    Number.isInteger(row.source_rows) &&
+    Number.isSafeInteger(row.source_rows) &&
     row.source_rows > 0 &&
-    Number.isInteger(row.train_source_rows) &&
+    Number.isSafeInteger(row.train_source_rows) &&
     row.train_source_rows > 0 &&
-    Number.isInteger(row.holdout_source_rows) &&
+    Number.isSafeInteger(row.holdout_source_rows) &&
     row.holdout_source_rows > 0 &&
+    row.source_rows === row.train_source_rows + row.holdout_source_rows &&
     row.invalid_rows === 0 &&
     typeof row.audited_at === 'string' &&
     Number.isFinite(Date.parse(row.audited_at))
@@ -315,8 +326,21 @@ function datasetSealKey(row: GtoPostflopV31Row): string {
   });
 }
 
-function actionSpecIsValid(spec: GtoV31ActionSpec): boolean {
+function actionSpecIsValid(
+  actionId: string,
+  spec: GtoV31ActionSpec,
+  nodeRole: GtoV31NodeRole
+): boolean {
   if (!spec || !['check', 'fold', 'call', 'bet', 'raise', 'all_in'].includes(spec.family)) {
+    return false;
+  }
+  if (!/^(?:c|f|b[1-9][0-9]{0,78})$/.test(actionId)) return false;
+  const openNode = OPEN_ROLES.has(nodeRole);
+  if (
+    (actionId === 'c' && spec.family !== (openNode ? 'check' : 'call')) ||
+    (actionId === 'f' && spec.family !== 'fold') ||
+    (actionId.startsWith('b') && ![openNode ? 'bet' : 'raise', 'all_in'].includes(spec.family))
+  ) {
     return false;
   }
   if (spec.family === 'all_in') {
@@ -329,7 +353,8 @@ function actionSpecIsValid(spec: GtoV31ActionSpec): boolean {
       spec.size_unit === expected &&
       typeof spec.size_value === 'number' &&
       Number.isFinite(spec.size_value) &&
-      spec.size_value > 0
+      spec.size_value > 0 &&
+      spec.size_value <= 20
     );
   }
   return spec.all_in === false && spec.size_unit === 'none' && spec.size_value === null;
@@ -373,7 +398,7 @@ function rowIsValid(
   const actionIds = Object.keys(row.action_specs);
   if (
     actionIds.length < 2 ||
-    actionIds.some((id) => !id || !actionSpecIsValid(row.action_specs[id]))
+    actionIds.some((id) => !actionSpecIsValid(id, row.action_specs[id], row.node_role))
   ) {
     return false;
   }
@@ -413,7 +438,7 @@ function rowIsValid(
     return false;
   }
   for (const [handKey, mix] of hands) {
-    if (!canonicalHandKey(handKey)) return false;
+    if (!canonicalHandKey(handKey, row.street)) return false;
     if (!mix || typeof mix !== 'object' || Array.isArray(mix)) return false;
     const entries = Object.entries(mix);
     if (
@@ -584,32 +609,61 @@ export function setGtoPostflopV31(rows: GtoPostflopV31Row[]): number {
   return replaceGtoPostflopV31(rows);
 }
 
-export function boardFlushSuit(board: Card[]): number {
-  if (!board || board.length === 0) return -1;
-  const counts = [0, 0, 0, 0];
-  for (const card of board) {
-    const index = SUIT_INDEX[card?.suit as string];
-    if (index !== undefined) counts[index]++;
-  }
-  let best = -1;
-  let bestCount = 1;
-  for (let index = 0; index < counts.length; index++) {
-    if (counts[index] > bestCount) {
-      bestCount = counts[index];
-      best = index;
-    }
-  }
-  return best;
-}
-
+/**
+ * Suit-isomorphic holding key for the certified compact corpus.
+ *
+ * Each digit is the number of board cards in the suit carried by that hole
+ * rank. Tracking both ranks preserves front-door blockers, backdoors, absent
+ * suits, and two simultaneous turn flush draws without binding policy to the
+ * arbitrary names clubs/diamonds/hearts/spades.
+ */
 export function v31HandKey(hand: string, holeCards: Card[], board: Card[]): string | null {
-  if (!hand || !holeCards || holeCards.length !== 2) return null;
-  const flushSuit = boardFlushSuit(board);
-  let count = 0;
-  if (flushSuit >= 0) {
-    for (const card of holeCards) if (SUIT_INDEX[card?.suit as string] === flushSuit) count++;
+  if (!hand || !Array.isArray(holeCards) || holeCards.length !== 2) return null;
+  if (!Array.isArray(board) || board.length < 3 || board.length > 5) return null;
+
+  const [first, second] = holeCards;
+  const firstRank = RANK_INDEX[first?.rank as string];
+  const secondRank = RANK_INDEX[second?.rank as string];
+  const firstSuit = SUIT_INDEX[first?.suit as string];
+  const secondSuit = SUIT_INDEX[second?.suit as string];
+  if (
+    firstRank === undefined ||
+    secondRank === undefined ||
+    firstSuit === undefined ||
+    secondSuit === undefined ||
+    (first.rank === second.rank && first.suit === second.suit)
+  ) {
+    return null;
   }
-  return `${hand}:${count}`;
+
+  const highFirst = firstRank <= secondRank;
+  const high = highFirst ? first : second;
+  const low = highFirst ? second : first;
+  const expectedHand =
+    high.rank === low.rank
+      ? `${high.rank}${low.rank}`
+      : `${high.rank}${low.rank}${high.suit === low.suit ? 's' : 'o'}`;
+  if (hand !== expectedHand) return null;
+
+  const seen = new Set(holeCards.map((card) => `${card.rank}:${card.suit}`));
+  const boardSuitCounts = [0, 0, 0, 0];
+  for (const card of board) {
+    const rank = RANK_INDEX[card?.rank as string];
+    const suit = SUIT_INDEX[card?.suit as string];
+    const cardKey = `${card?.rank}:${card?.suit}`;
+    if (rank === undefined || suit === undefined || seen.has(cardKey)) return null;
+    seen.add(cardKey);
+    boardSuitCounts[suit]++;
+  }
+
+  let highCount = boardSuitCounts[SUIT_INDEX[high.suit]];
+  let lowCount = boardSuitCounts[SUIT_INDEX[low.suit]];
+  // Pair cards have no high/low rank identity. Sorting their two suit counts
+  // makes the abstraction invariant to the arbitrary combo-card order.
+  if (high.rank === low.rank && lowCount > highCount) {
+    [highCount, lowCount] = [lowCount, highCount];
+  }
+  return `${hand}:${highCount}${lowCount}`;
 }
 
 export function gtoStreetAdviceV31(input: {
@@ -631,6 +685,13 @@ export function gtoStreetAdviceV31(input: {
   /** Benchmark-only exact candidate selector. Omit on every live action. */
   datasetChecksum?: string;
 }): GtoV31Lookup {
+  const expectedBoardCards = input.street === 'flop' ? 3 : input.street === 'turn' ? 4 : 5;
+  // The certified key is street-bound. A stale or malformed game state must
+  // not use a turn/river policy against a board from a different street even
+  // when its texture and suit-count abstraction happen to collide.
+  if (!Array.isArray(input.board) || input.board.length !== expectedBoardCards) {
+    return { hit: false, miss: 'no_texture' };
+  }
   const selected = input.datasetChecksum
     ? evaluationStores.get(input.datasetChecksum)?.cells
     : activeStore.cells;
@@ -653,6 +714,8 @@ export function gtoStreetAdviceV31(input: {
       policyEvBb: cell.policyEvs[handKey] ?? null,
       actionEvsBb: cell.actionEvs[handKey] ?? null,
       cell: cellKey,
+      handKey,
+      textureClass: texture,
       sourceSeal: cell.seal,
       nodeRole: cell.role,
       depthBucket: depth,

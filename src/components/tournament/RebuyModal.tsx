@@ -40,9 +40,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
 }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // A ref, not `processing`: setProcessing lands after a render, so a
-  // same-frame double tap otherwise fires two rebuys. The rebuy RPC takes no
-  // idempotency key, so the second one is a real second charge.
+  // Prevent same-frame taps while the service owns durable purchase identity.
   const inFlightRef = useRef(false);
 
   const handleRebuy = useCallback(async () => {
@@ -58,7 +56,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
           tournamentId,
           status: 'rebuy',
         });
-        onSuccess(result.newStack || rebuyChips);
+        onSuccess(result.newStack);
       }
     } catch (err: any) {
       setError(safeErrorMessage(err, 'Rebuy failed'));
@@ -66,7 +64,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
       setProcessing(false);
       inFlightRef.current = false;
     }
-  }, [tournamentId, userId, rebuyChips, onSuccess]);
+  }, [tournamentId, userId, onSuccess]);
 
   const levelsRemaining = Math.max(0, rebuyWindowLevel - currentLevel);
 

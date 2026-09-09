@@ -16,10 +16,38 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // RELEASE SIGNING (2026-09-09). The keystore and its passwords are Dan's
+    // and never enter the repo (Club Arena CLAUDE.md 10.84). They are read
+    // from the environment at build time:
+    //   CA_ANDROID_KEYSTORE        absolute path to the .keystore / .jks
+    //   CA_ANDROID_KEYSTORE_PASSWORD
+    //   CA_ANDROID_KEY_ALIAS       (default: clubarena)
+    //   CA_ANDROID_KEY_PASSWORD    (default: the keystore password)
+    // With none of them set, `assembleRelease` / `bundleRelease` still build
+    // an UNSIGNED artifact, which Play refuses - so scripts/native/android-bundle.sh
+    // checks for them first and says what is missing.
+    def caKeystore = System.getenv("CA_ANDROID_KEYSTORE")
+    def caKeystorePassword = System.getenv("CA_ANDROID_KEYSTORE_PASSWORD")
+    def caKeyAlias = System.getenv("CA_ANDROID_KEY_ALIAS") ?: "clubarena"
+    def caKeyPassword = System.getenv("CA_ANDROID_KEY_PASSWORD") ?: caKeystorePassword
+    def caCanSign = caKeystore != null && caKeystorePassword != null && file(caKeystore).exists()
+    signingConfigs {
+        if (caCanSign) {
+            release {
+                storeFile file(caKeystore)
+                storePassword caKeystorePassword
+                keyAlias caKeyAlias
+                keyPassword caKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (caCanSign) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

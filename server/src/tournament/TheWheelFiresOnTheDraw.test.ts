@@ -23,11 +23,11 @@ const CODE = BASE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 describe('the reveal is emitted on the booked draw', () => {
   it('emits after settlement has confirmed the booked draw', () => {
     const emit = CODE.indexOf('spin_reveal_early_emit');
-    const settle = CODE.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const settle = CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
     expect(settle, 'the settle call moved - re-check this pin').toBeGreaterThan(-1);
     expect(emit, 'the wheel must name the confirmed settlement result').toBeGreaterThan(settle);
-    const settledGate = CODE.indexOf('if (!settled)', settle);
+    const settledGate = CODE.indexOf('if (!fundedSpin)', settle);
     expect(settledGate).toBeGreaterThan(settle);
     expect(emit).toBeGreaterThan(settledGate);
   });

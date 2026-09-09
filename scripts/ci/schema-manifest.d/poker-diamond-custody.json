@@ -4,7 +4,5 @@
     "fn_poker_diamond_custody_balance",
     "fn_poker_diamond_reserve",
     "fn_poker_diamond_release"
-  ],
-  "removedFunctions": ["fn_poker_diamond_recover_releases", "fn_poker_diamond_reconcile"],
-  "removedTables": ["poker_diamond_obligations"]
+  ]
 }

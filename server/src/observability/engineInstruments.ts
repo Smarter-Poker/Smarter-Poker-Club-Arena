@@ -21,6 +21,15 @@
 
 import { createDefaultRegistry, type Counter, type Histogram } from './Metrics.js';
 import { Tracer, InMemorySpanExporter } from './Tracing.js';
+import { MetricsRegistry as AlwaysOnRegistryCtor } from './Metrics.js';
+
+/**
+ * ALWAYS-ON registry: exposed by /metrics unconditionally, and therefore the
+ * only place a counter an alert rule reads may live. Bounded cardinality is
+ * its contract - never a table_id, never a user id. Declared here, at the top,
+ * because instruments above and below it both register on it.
+ */
+export const alwaysOnRegistry = new AlwaysOnRegistryCtor();
 
 /** True only when the operator explicitly opts in. Default OFF. */
 export const ENGINE_METRICS_ENABLED = process.env.ENGINE_METRICS === 'on';
@@ -35,7 +44,18 @@ export const handsTotal: Counter = defaults.handsTotal;
 export const actToBroadcastLatency: Histogram = defaults.actToBroadcastLatency;
 export const handDuration: Histogram = defaults.handDuration;
 export const rpcTotal: Counter = defaults.rpcTotal;
-export const rpcErrorsTotal: Counter = defaults.rpcErrorsTotal;
+/* `poker_rpc_errors_total` IS READ BY AN ALERT (`DatabaseRpcErrorsElevated`,
+   and the `sp:db_error:rate10m` SLO), so it cannot live on the flag-gated
+   registry - see the note above the always-on BBJ counters. `method` is a
+   handful of values, so the cardinality contract holds. The default
+   registry's own instrument of the same name stays unreferenced and is
+   never exposed alongside this one: `handleMetrics` renders the always-on
+   text first and drops any duplicate family from the gated text. */
+export const rpcErrorsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_rpc_errors_total',
+  'Engine RPC calls that failed (label: method)'
+);
+const rpcErrorsTotalAlwaysOn = rpcErrorsTotal;
 export const wsReconnectsTotal: Counter = defaults.wsReconnectsTotal;
 export const eventLoopLag: Histogram = defaults.eventLoopLag;
 
@@ -70,21 +90,65 @@ export const allInEquityDuration: Histogram = metricsRegistry.histogram(
  * of phase 2 exists to make impossible, and it would now be visible as two
  * counters that stopped agreeing.
  */
-export const bbjHitsDetectedTotal: Counter = metricsRegistry.counter(
+/* ═══ THESE ARE ALWAYS ON (2026-09-09) ═══════════════════════════════════
+ *
+ * They were registered on `metricsRegistry`, which `/metrics` appends only
+ * when `ENGINE_METRICS === 'on'` - and that variable is set NOWHERE in this
+ * estate: not in a workflow, not in a deploy script, not in an env file. It
+ * appears exactly once in the whole repo, in a COMMENT. So every counter
+ * below has been incremented on every hand since it shipped and rendered to
+ * nobody, and the alert rules that read them (SLOHandsAreNotBeingDealt,
+ * severity critical, page: sms) evaluate `rate()` over a series with no
+ * samples - an empty vector, which can never cross a threshold. The BBJ
+ * observability shipped 2026-09-06 to answer "did the jackpot pay", and it
+ * could not answer anything.
+ *
+ * They move to `alwaysOnRegistry`, and they lose `table_id` on the way:
+ * that registry's whole contract is bounded cardinality (see its header),
+ * and the fleet question these answer - detected vs paid, showdown vs muck -
+ * is a fleet number. Which table is in the ledger and in `hand_history`.
+ * `alwaysOnRegistry` is declared below; these sit after it. */
+
+export const showdownHandsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_showdown_hands_total',
+  'Hands that reached a contested showdown (fleet total)'
+);
+export const muckedHandsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_mucked_hands_total',
+  'Showdown holdings the engine ruled muckable (fleet total)'
+);
+
+/**
+ * ═══ THE BAD BEAT JACKPOT, COUNTED (BBJ phase 2.4, 2026-09-06) ═════════════
+ *
+ * A jackpot is the rarest event on the platform - one every few weeks - so
+ * "did it work" has never been answerable from a graph, only by reading the
+ * ledger after somebody noticed. These make the whole path observable:
+ * DETECTED is what the engine ruled at showdown, PAID is what actually
+ * landed, QUEUED is what could not be paid this instant (the :55 freeze is
+ * the ordinary cause) and PARKED is a single recipient's share held because
+ * no club wallet would take it.
+ *
+ * The useful reading is the DIFFERENCE. detected == paid is health. A
+ * detected that never becomes paid or queued is the failure mode the whole
+ * of phase 2 exists to make impossible, and it is now visible as two
+ * counters that stopped agreeing.
+ */
+export const bbjHitsDetectedTotal: Counter = alwaysOnRegistry.counter(
   'poker_bbj_hits_detected_total',
-  'Bad Beat Jackpot hits the engine ruled qualifying at showdown (label: table_id)'
+  'Bad Beat Jackpot hits the engine ruled qualifying at showdown (fleet total)'
 );
-export const bbjPayoutsPaidTotal: Counter = metricsRegistry.counter(
+export const bbjPayoutsPaidTotal: Counter = alwaysOnRegistry.counter(
   'poker_bbj_payouts_paid_total',
-  'Bad Beat Jackpot payouts that landed on the first live attempt (label: table_id)'
+  'Bad Beat Jackpot payouts that landed on the first live attempt (fleet total)'
 );
-export const bbjPayoutsQueuedTotal: Counter = metricsRegistry.counter(
+export const bbjPayoutsQueuedTotal: Counter = alwaysOnRegistry.counter(
   'poker_bbj_payouts_queued_total',
-  'Bad Beat Jackpot payouts that could not be paid live and were queued for the reconciler (label: table_id)'
+  'Bad Beat Jackpot payouts queued for the reconciler (fleet total)'
 );
-export const bbjSharesParkedTotal: Counter = metricsRegistry.counter(
+export const bbjSharesParkedTotal: Counter = alwaysOnRegistry.counter(
   'poker_bbj_shares_parked_total',
-  'Bad Beat Jackpot recipient shares parked because no club wallet would take them (label: table_id)'
+  'Bad Beat Jackpot recipient shares parked because no club wallet would take them (fleet total)'
 );
 
 /**
@@ -96,18 +160,9 @@ export const bbjSharesParkedTotal: Counter = metricsRegistry.counter(
  * is how many genuine bad beats the platform has ruled. Without this, the
  * first drill would look exactly like the jackpot finally hitting.
  */
-export const bbjDrillsFiredTotal: Counter = metricsRegistry.counter(
+export const bbjDrillsFiredTotal: Counter = alwaysOnRegistry.counter(
   'poker_bbj_drills_fired_total',
-  'Bad Beat Jackpot DRILLS fired by an armed table - real payouts, synthetic verdict (label: table_id)'
-);
-
-export const showdownHandsTotal: Counter = metricsRegistry.counter(
-  'poker_showdown_hands_total',
-  'Hands that reached a contested showdown (label: table_id)'
-);
-export const muckedHandsTotal: Counter = metricsRegistry.counter(
-  'poker_mucked_hands_total',
-  'Showdown holdings the engine ruled muckable (label: table_id)'
+  'Bad Beat Jackpot DRILLS fired by an armed table - real payouts, synthetic verdict (fleet total)'
 );
 
 /**
@@ -156,8 +211,6 @@ export const engineTracer = new Tracer({
 // every table; the label says who was watching, it does not change what any
 // seat gets.
 import { MetricsRegistry, type Gauge } from './Metrics.js';
-
-export const alwaysOnRegistry = new MetricsRegistry();
 
 /** Settlement timing uses bounded counters, not per-hand samples or IDs.
  * Compare duration/count deltas for mean step wall time; slow/count for the
@@ -402,6 +455,22 @@ export const actionIdempotencyTotal: Counter = alwaysOnRegistry.counter(
 actionIdempotencyTotal.inc(0, { outcome: 'stored' });
 actionIdempotencyTotal.inc(0, { outcome: 'replay' });
 actionIdempotencyTotal.inc(0, { outcome: 'conflict' });
+
+/* SAME REASONING FOR THE COUNTERS THAT MOVED ALWAYS-ON (2026-09-09). A
+   jackpot is weeks apart, so without a zero sample `poker_bbj_hits_detected_
+   total` does not exist between hits, and "no hits" and "no instrument" are
+   the same observation on a graph - which is precisely how these went
+   unnoticed while gated. Registering at zero makes the difference readable
+   from the first scrape, and makes `rate()` over them a real number rather
+   than an empty vector an alert can never cross. */
+bbjHitsDetectedTotal.inc(0);
+bbjPayoutsPaidTotal.inc(0);
+bbjPayoutsQueuedTotal.inc(0);
+bbjSharesParkedTotal.inc(0);
+bbjDrillsFiredTotal.inc(0);
+showdownHandsTotal.inc(0);
+muckedHandsTotal.inc(0);
+rpcErrorsTotalAlwaysOn.inc(0, { method: 'action' });
 
 /** Prometheus lines for the always-on fleet registry. */
 export function alwaysOnPrometheusLines(): string[] {

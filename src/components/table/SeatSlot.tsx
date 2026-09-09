@@ -3404,7 +3404,12 @@ export const SeatSlot = memo(
               ◎
             </span>
             <span className="seat__bounty-val" aria-hidden="true">
-              {bountyValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              {/* Two places when there ARE cents (2026-09-09): a 7.50 bounty
+                  rendered "7.5" beside a 2-dp BBJ credit on the same seat. */}
+              {bountyValue.toLocaleString('en-US', {
+                minimumFractionDigits: Number.isInteger(bountyValue) ? 0 : 2,
+                maximumFractionDigits: 2,
+              })}
             </span>
           </div>
         )}

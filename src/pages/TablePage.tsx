@@ -389,6 +389,7 @@ import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage'
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
 import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
+import { ritAwardHighlights } from '../utils/ritAwardHighlights';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -1789,7 +1790,10 @@ export default function TablePage({
         setChestReveals((prev) => ({
           ...prev,
           [awardId]: {
-            amount: Math.round(res.amount_cents! / 100),
+            // To the cent: 5.3% of bounties carry them (see formatChipAward),
+            // and the chest was the surface that squared them off - a 750-cent
+            // bounty opened as "8" while the ranking card said 7.50.
+            amount: Math.round(res.amount_cents!) / 100,
             tier: res.tier,
             tierLabel: formatBountyTierLabel(res.tier),
             isJackpot: !!res.is_jackpot,
@@ -1801,7 +1805,7 @@ export default function TablePage({
                 ? res.recipients!.map((r) => ({
                     userId: r.user_id,
                     name: r.user_id === userId ? 'You' : 'Player',
-                    amount: Math.round(r.amount_cents / 100),
+                    amount: Math.round(r.amount_cents) / 100,
                   }))
                 : undefined,
           },
@@ -1855,7 +1859,7 @@ export default function TablePage({
             ? a.recipients.map((r: any) => ({
                 userId: String(r?.user_id ?? ''),
                 name: String(r?.username ?? 'Player'),
-                amount: typeof r?.amount_cents === 'number' ? Math.round(r.amount_cents / 100) : 0,
+                amount: typeof r?.amount_cents === 'number' ? Math.round(r.amount_cents) / 100 : 0,
               }))
             : [];
           if (cents !== null) {
@@ -2370,7 +2374,17 @@ export default function TablePage({
   useEffect(() => {
     if (!USE_ENGINE_WS) return;
     if (!engineSnapshot) return;
-    const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
+    /* THE FLOOR IS READ FROM THE REF, NOT THE DEP (2026-09-09). With
+       `tableState.maxPlayers` in this effect's dependency list, any commit
+       that changed it RE-APPLIED THE LAST SNAPSHOT IN FULL - forty fields.
+       The reachable path is a reconnect: an event-sequence gap requests a
+       resync, GAME_START lands and widens maxPlayers 6 -> 9 on a client that
+       booted at the default, and that commit re-ran this effect with the
+       STALE pre-gap snapshot, overwriting GAME_START's handNumber, pot,
+       board, stage, dealer and players. Only heroSeat survived, because the
+       snapshot never writes it. The mapper only wants a floor; a ref gives
+       it one without making this effect fire on its own output. */
+    const mapped = mapEngineSnapshot(engineSnapshot, userId, tableStateRef.current.maxPlayers);
     setTableIsAnonymous(mapped.isAnonymous);
     /* Identity resolution BEFORE the card/status merge below: the engine owns
        the hand, the database owns the face, and a face the database has
@@ -2658,7 +2672,10 @@ export default function TablePage({
         postBBDeferredUserIds: mapped.postBBDeferredUserIds,
       };
     });
-  }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
+    // tableState.maxPlayers is read through tableStateRef above, deliberately:
+    // see the note there. Adding it back re-applies a stale snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineSnapshot, USE_ENGINE_WS, userId]);
 
   /**
    * Crazy Pineapple discard.
@@ -4673,6 +4690,42 @@ export default function TablePage({
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
+  /* THE RING AS IT IS WHEN THE CHIPS ACTUALLY FLY (2026-09-09).
+     `seatPositions` is the ring ROTATED so the hero sits at the bottom, and
+     `rotateSeatsForHero` maps `heroSeat <= 0` to the UNROTATED ring - so on
+     the first hand after a join, before heroSeat lands, the map is wrong and
+     then changes. Two chip flights are deferred by seconds (the bomb ante,
+     3.2s to the blast; the pot ship, through the run-it-twice hold) and both
+     closed over the map as it stood when the EVENT arrived, so the antes flew
+     from visibly wrong seats. `tableScalerRef.current` is already read late
+     in both places for the same reason; the geometry needs the same
+     treatment. Declared here, above every reader (the table route forbids a
+     use-before-declare - see tests/no-tdz-in-table-route.law.test.ts); the
+     value is assigned where `seatPositions` is computed. */
+  const seatPositionsRef = useRef<Array<{ x: number; y: number }>>([]);
+  /**
+   * THE HERO'S SEAT, FROM WHICHEVER SOURCE HAS IT (2026-09-09).
+   *
+   * The snapshot does NOT carry `heroSeat` - the mapper produces none, it
+   * only stamps `isHero` per player - so `tableState.heroSeat` is healed one
+   * commit LATER by the invariant effect. Every discrete event that lands in
+   * that window (mount, reconnect, mid-hand join) read 0, and 0 is not
+   * "unknown" to the code that used it: it made the hero's own action echo
+   * as somebody else's (a doubled sound), it flipped all-in dramatic mode on
+   * over a live hero decision, it dropped the turn bell and the haptic on the
+   * first turn after a reconnect, and `players[0 - 1]` reported a hero stack
+   * of 0 into HAND_COMPLETED - the "Peak Stack of 0" a comment in this file
+   * already claims to have fixed. `heroSeatRef` is assigned synchronously at
+   * every seat transition, so it is right when the state is not; the roster
+   * is the last resort.
+   */
+  const resolveHeroSeat = useCallback((): number => {
+    const st = tableStateRef.current;
+    if (st.heroSeat > 0) return st.heroSeat;
+    if (heroSeatRef.current > 0) return heroSeatRef.current;
+    const idx = (st.players || []).findIndex((p) => p && p.isHero);
+    return idx >= 0 ? idx + 1 : 0;
+  }, []);
   /**
    * Timestamp (ms) at which the hero's seat was first acquired this session.
    * Guards the pagehide away-beacon: iOS Safari fires `pagehide` on every soft
@@ -5619,54 +5672,13 @@ export default function TablePage({
         ? Math.round(awardsHere.reduce((sum, a) => sum + a.amount, 0) * 100) / 100
         : undefined;
 
-      let winnerHandName: string | undefined;
-      let highlightedIndices: number[] = [];
-      // MULTI-BOARD PARITY 2026-08-26: this board winner's OWN hole cards
-      // that participate in its winning five, keyed by ORIGINAL holeCards
-      // position (SeatSlot indexes into the unfiltered row) — a board that
-      // is won with different hole cards than board 1 must light its own.
-      let winnerHoleIndices: Record<string, number[]> = {};
-
-      // Evaluate the winning hand for the winner(s) on this board
-      for (const wid of winnerIds) {
-        const winnerPlayer = tableState.players.find((p) => p?.id === wid);
-        const rawHole = winnerPlayer?.holeCards ?? [];
-        const hole = rawHole.filter((c): c is Card => c != null);
-        if (hole.length > 0) {
-          const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
-          if (evalResult) {
-            winnerHandName = evalResult.name;
-            const playedKeySet = new Set(evalResult.cards.map(cardKey));
-            highlightedIndices = cards
-              .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
-              .filter((idx) => idx >= 0);
-            winnerHoleIndices = {
-              [wid]: rawHole
-                .map((c, hi) => (c && playedKeySet.has(cardKey(c)) ? hi : -1))
-                .filter((hi) => hi >= 0),
-            };
-            break;
-          }
-        }
-      }
-
-      // Fallback: evaluate best hand among any players with visible hole cards
-      if (!winnerHandName) {
-        for (const p of tableState.players) {
-          const hole = (p?.holeCards ?? []).filter((c): c is Card => c != null);
-          if (hole.length > 0) {
-            const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
-            if (evalResult) {
-              winnerHandName = evalResult.name;
-              const playedKeySet = new Set(evalResult.cards.map(cardKey));
-              highlightedIndices = cards
-                .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
-                .filter((idx) => idx >= 0);
-              break;
-            }
-          }
-        }
-      }
+      // The recorded award carries the five that won THIS board and half.
+      // Re-evaluating here substituted high cards for lows and stopped at
+      // the first winner, dropping tied and side-pot winners' highlights.
+      const winnerHandName =
+        awardsHere.find((a) => !a.low)?.handName ?? awardsHere[0]?.handName ?? undefined;
+      const { boardIndices: highlightedIndices, holeIndices: winnerHoleIndices } =
+        ritAwardHighlights(cards, awardsHere, tableState.players);
 
       // POKERBROS PARITY 2026-08-26: the reveal timeline gates presentation.
       // While the boards are still dealing, each run shows only the cards the
@@ -6743,12 +6755,22 @@ export default function TablePage({
     won: boolean;
     potWon: number;
     handRank: string;
-  }>({ dealtIn: false, showdown: false, won: false, potWon: 0, handRank: '' });
+    /** Which hand this outcome describes. A POT_WIN for an older hand can
+     *  land after the next one has started; without this the accumulator had
+     *  no way to refuse it. */
+    handNumber: number;
+  }>({ dealtIn: false, showdown: false, won: false, potWon: 0, handRank: '', handNumber: 0 });
+  /** Pot identities already added to `potWon`, so a split/side-pot hand adds
+   *  each share once and a re-sent frame adds none. Cleared at hand start. */
+  const heroPotsCountedRef = useRef<Set<string>>(new Set());
   const achievementFiredHandRef = useRef<number>(0);
   // P1-3 FIX: true only once hole cards were ACTUALLY applied to the hero
   // player object; gates the recovery-poll teardown so it doesn't stop while
   // heroIdx=-1 mid-reload. Reset when the fetch is re-armed for a new hand.
   const heroCardsRecoveredRef = useRef(false);
+  /** The hand whose deal swish has already played, so a re-push of the same
+   *  hole cards (reconnect, mux join, recovery poll) does not replay it. */
+  const heroDealSoundHandRef = useRef(0);
   /* One horse-yield failure report per table per mount. The yield runs every
      15s on every seated client; without this a broken RPC would file four
      reports a minute per player. See the catch block in the yield interval. */
@@ -9761,25 +9783,15 @@ export default function TablePage({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [tableId, userId, tableState.heroSeat]);
 
-  // Subscribe to table updates using TableService
-  useEffect(() => {
-    if (!tableId) return;
-
-    const unsubscribe = tableService.subscribeToTable(tableId, (updatedTable) => {
-      // Update local state from table updates
-      setTableState((prev) => ({
-        ...prev,
-        tableName: formatGameTitle(updatedTable.name),
-        gameType: updatedTable.game_variant as any,
-        blinds:
-          updatedTable.small_blind != null && updatedTable.big_blind != null
-            ? formatBlindPair(updatedTable.small_blind, updatedTable.big_blind)
-            : prev.blinds,
-      }));
-    });
-
-    return () => unsubscribe();
-  }, [tableId]);
+  /* THE TABLE'S META COMES DOWN THE TABLE'S OWN SOCKET (2026-09-09).
+     This used to be `tableService.subscribeToTable`, which listens for a
+     `TABLE_META_UPDATE` message on the channel client - a message no server
+     code has ever constructed, on a channel that has no table subscription
+     to deliver it. So a blind-level change and a table rename have been
+     invisible to a seated player since the 2026-05-18 migration off
+     `postgres_changes` that introduced it. The engine now emits
+     `table_meta_update` on the socket the felt is already drawn from; see
+     the case in the engine-event switch below. */
 
   // SECURE HOLE CARD PROVISIONING RECEIVER (ANTI-GOD-MODE)
   // Subscribes directly to Postgres RLS-protected table to bypass public WebSocket leak
@@ -9849,8 +9861,24 @@ export default function TablePage({
           heroCardFetchRef.current?.();
           return;
         }
-        // Play deal sound if enabled (#175 gated for multi-table)
-        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDeal();
+        /* THE DEAL SWISH PLAYS FOR A DEAL, NOT FOR A RE-DELIVERY (2026-09-09).
+           The engine re-pushes the hero's hole cards on EVERY connect, mux
+           join and RESYNC (`rePushHoleCards` from `onResync`), and the
+           bounded recovery poll routes through this same handler - so a
+           reconnect mid-hand, or a swipe between multi-table tabs, played a
+           card-slide with no card moving. The cue is owed once per hand
+           (10.6: it must always play - and it does, on the hand it belongs
+           to); `heroDealSoundHandRef` is what tells a delivery from a
+           redelivery. */
+        const dealtHandNumber = Number(row.hand_number) || heroHandRef.current || 0;
+        if (
+          heroDealSoundHandRef.current !== dealtHandNumber &&
+          soundService.isEnabled() &&
+          ambientSoundsAllowed
+        ) {
+          heroDealSoundHandRef.current = dealtHandNumber;
+          soundService.playDeal();
+        }
 
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
@@ -9976,10 +10004,14 @@ export default function TablePage({
           if (tableId) sessionStatsService.recordRebuy(tableId, -refunded);
         }
         if (typeof window !== 'undefined') {
+          /* Name what it actually was. A bust REBUY rides the same ledger
+             (kind 'rebuy') and calling it an "Add-On" contradicted the
+             "Rebought For N" the player was just shown. */
+          const noun = clientDebited ? 'Add-On' : 'Rebuy';
           toast.info(
             applied > 0
-              ? `Add-On Adjusted: ${applied.toFixed(2)} Added, ${refunded.toFixed(2)} Returned To Your Wallet. Your Stack Is At The Table Maximum.`
-              : `Add-On Returned: ${refunded.toFixed(2)} Is Back In Your Wallet. Your Stack Is Already At The Table Maximum.`
+              ? `${noun} Adjusted: ${applied.toFixed(2)} Added, ${refunded.toFixed(2)} Returned To Your Wallet. Your Stack Is At The Table Maximum.`
+              : `${noun} Returned: ${refunded.toFixed(2)} Is Back In Your Wallet. Your Stack Is Already At The Table Maximum.`
           );
         }
       }
@@ -10846,6 +10878,7 @@ export default function TablePage({
                     amount: Number(a.amount) || 0,
                     low: a.low === true,
                     handName: typeof a.hand_name === 'string' ? a.hand_name : null,
+                    cards: Array.isArray(a.cards) ? (normalizeCards(a.cards) as Card[]) : undefined,
                   }))
               : undefined,
             netPot:
@@ -11383,7 +11416,12 @@ export default function TablePage({
         // sat as a live button for a hand it did not belong to. An offer for
         // any hand other than the one that just ended is dead on arrival.
         const offerHand = Number(handState.hand_number ?? 0) || 0;
-        const currentHand = Number(tableStateRef.current.handNumber ?? 0) || 0;
+        /* `heroHandRef` is stamped at HAND_STARTED and survives the window in
+           which `tableState.handNumber` is still 0 (a mid-hand join, a
+           reconnect) - which is exactly when this staleness test used to fail
+           OPEN and offer a button for a hand that had already ended. */
+        const currentHand =
+          Number(tableStateRef.current.handNumber ?? 0) || Number(heroHandRef.current) || 0;
         const offerIsStale = offerHand > 0 && currentHand > 0 && offerHand < currentHand;
         if (available > 0 && heroMayHunt && !offerIsStale) {
           rabbitHandNumberRef.current = Number(handState.hand_number ?? 0) || null;
@@ -14411,8 +14449,18 @@ export default function TablePage({
 
   useMasterBusSubscription('TABLE_BALANCE_EXECUTED', (payload: any) => {
     if (payload.tableId !== tableId) return;
+    /* ONE SURFACE ANNOUNCES THE MOVE (2026-09-09). MultiTablePage watches the
+       hero's own `table_seats` INSERT - the move itself - and toasts "You
+       Were Moved To <table>", which names the destination this one cannot.
+       Inside that container this line would be the second popup for one
+       event; standalone, it is the only one. (It has in fact never fired:
+       the balancer instance wired to the hub is not the one tournaments
+       drive - see the note on chipRaceEngine/tableBalancer in
+       ServerTableEngineBase - so if that is ever corrected, this gate is
+       what stops it arriving as a duplicate.) */
+    if (embeddedTableId) return;
     if (payload.moves?.some((m: any) => m.playerId === userId)) {
-      toast?.info?.('You were moved to balance the tables.');
+      toast?.info?.('You Were Moved To Balance The Tables.');
     }
   });
 
@@ -15483,7 +15531,7 @@ export default function TablePage({
         // sounds (local playRaise cascade, then this echo's playChips clink).
         // The echo is for opponents only; the hero's own feedback is local and
         // immediate.
-        const isHeroEcho = actionSeat > 0 && actionSeat === tableStateRef.current.heroSeat;
+        const isHeroEcho = actionSeat > 0 && actionSeat === resolveHeroSeat();
         if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho) {
           if (action === 'all_in' || action === 'allin') soundService.playAllIn();
           else if (action === 'bet' || action === 'raise' || action === 'call')
@@ -15531,7 +15579,8 @@ export default function TablePage({
         // act) no longer black out the panel for players with real decisions.
         if (action === 'all_in' || action === 'allin') {
           const st = tableStateRef.current;
-          const heroP = st.heroSeat > 0 ? st.players[st.heroSeat - 1] : null;
+          const heroSeatNow = resolveHeroSeat();
+          const heroP = heroSeatNow > 0 ? st.players[heroSeatNow - 1] : null;
           const heroStillHasAction =
             actionSeat !== st.heroSeat &&
             !!heroP &&
@@ -15765,7 +15814,9 @@ export default function TablePage({
           won: false,
           potWon: 0,
           handRank: '',
+          handNumber: Number(startedHandNumber) || tableStateRef.current.handNumber || 0,
         };
+        heroPotsCountedRef.current = new Set();
         // Fresh hand → reset the Share Hand action log and remember the button
         // and the starting stacks BEFORE any chips move, so the shared replay
         // shows what each player sat down with rather than what they finished
@@ -15899,7 +15950,8 @@ export default function TablePage({
                 const events: ChipAnimationEvent[] = [];
                 for (const post of postings) {
                   if (!(post.seat > 0) || !(post.amount > 0)) continue;
-                  const seatPct = seatPositions[post.seat - 1] || { x: 50, y: 50 };
+                  // Read LATE: this runs 3.2s after the event (see seatPositionsRef).
+                  const seatPct = seatPositionsRef.current[post.seat - 1] || { x: 50, y: 50 };
                   const seatPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
                   events.push(...createChipToPotEvent(seatPos, potPos, post.amount));
                 }
@@ -15981,15 +16033,54 @@ export default function TablePage({
         }
         break;
       }
+      case 'TABLE_META_UPDATE': {
+        // See the note where `subscribeToTable` used to be.
+        const d = (evt.data ?? {}) as Record<string, unknown>;
+        setTableState((prev) => ({
+          ...prev,
+          tableName: typeof d.name === 'string' ? formatGameTitle(d.name) : prev.tableName,
+          gameType: (typeof d.game_variant === 'string' ? d.game_variant : prev.gameType) as any,
+          blinds:
+            d.small_blind != null && d.big_blind != null
+              ? formatBlindPair(Number(d.small_blind), Number(d.big_blind))
+              : prev.blinds,
+        }));
+        break;
+      }
       case 'TURN_CHANGE': {
-        // Discrete-event update of currentPlayerSeat — beats waiting for
-        // the snapshot to arrive. The snapshot still self-corrects later.
+        // Discrete-event update of currentPlayerSeat. NOTE THE ORDER: the
+        // engine broadcasts the snapshot FIRST and emits this immediately
+        // after, so this is the frame that lands LAST and nothing behind it
+        // corrects it - hence the fence inside the updater below.
         const newSeat = (evt.data as any).seat as number;
         if (typeof newSeat === 'number' && newSeat > 0) {
           const actionContext = (evt.data as { action_context?: string }).action_context;
-          setTableState((prev) => ({ ...prev, currentPlayerSeat: newSeat, actionContext }));
+          setTableState((prev) => {
+            /* THE SAME FENCE THE SNAPSHOT USES (2026-09-09). `heroActedFence`
+               exists so a frame generated BEFORE the engine saw the hero's
+               action cannot hand the turn back and flash the action bar. It
+               was consulted in exactly one place - the snapshot mapper - and
+               this event is the one that lands LAST (the engine broadcasts
+               the snapshot, THEN emits turn_change), so the snapshot beside
+               it could not correct what this wrote. The two comments above
+               claiming this "beats waiting for the snapshot" and that "the
+               snapshot still self-corrects later" are both inverted, and that
+               is how the fence came to be applied to the frame that did not
+               need it. */
+            const f = heroActedFenceRef.current;
+            if (
+              f &&
+              f.seat === newSeat &&
+              f.hand === prev.handNumber &&
+              Date.now() < f.until &&
+              newSeat === prev.heroSeat
+            ) {
+              return prev;
+            }
+            return { ...prev, currentPlayerSeat: newSeat, actionContext };
+          });
           // Bible V8 §5.4: medium haptic when it's hero's turn
-          const heroSeat = tableStateRef.current.heroSeat;
+          const heroSeat = resolveHeroSeat();
           if (newSeat === heroSeat) {
             // 2026-08-15: hard reset of all-in dramatic mode whenever action
             // reaches hero. isAllInMode was only ever cleared on HAND_STARTED
@@ -16407,9 +16498,7 @@ export default function TablePage({
                 won: outcome.won === true,
                 potWon: Number(outcome.potWon) || 0,
                 heroStack:
-                  Number(
-                    tableStateRef.current.players?.[tableStateRef.current.heroSeat - 1]?.stack
-                  ) || 0,
+                  Number(tableStateRef.current.players?.[resolveHeroSeat() - 1]?.stack) || 0,
               });
             } catch {
               /* bus publish is best-effort -- never block the table reset */
@@ -16714,12 +16803,23 @@ export default function TablePage({
          * a showdown to read, and how many hands are in it, so it can wait
          * exactly as long as the engine does. Reset at HAND_STARTED.
          */
+        /* COUNTED FROM THE EVENT, NOT FROM THE SNAPSHOT THAT FOLLOWS IT
+           (2026-09-09). The engine emits `showdown` and only THEN broadcasts
+           the revealing snapshot - deliberately, so the client can latch the
+           flip stagger - so at this instant no player has `showCards` and the
+           filter returned 0, making `Math.max(2, 0)` permanently 2. (Doubly
+           wrong: `mapEngineSnapshot` sets `showCards` only for NON-hero
+           players, so even correctly timed it was short by one.)
+           `handCompletionHoldMs` is derived from this number while the engine
+           derives its own hold from `currentHandShowdownResults.length`, so on
+           every three-way-plus showdown the client reset the board, the pot
+           and the winner 350-800ms before the engine did - a truncated
+           announcement, which 10.6 forbids. The event carries the count; it
+           is destructured a few lines below for the reveal order. */
+        const sdResultsForCount = ((evt.data as any).results as Array<{ mucked?: boolean }>) || [];
         handShowdownRef.current = {
           wentToShowdown: true,
-          hands: Math.max(
-            2,
-            (tableStateRef.current.players || []).filter((p) => p && p.showCards).length
-          ),
+          hands: Math.max(2, sdResultsForCount.length),
         };
         // SHOWDOWN SYSTEM 2026-08-25: the showdown event now carries the
         // engine-decided reveal sequence and muck ruling per player —
@@ -17043,7 +17143,14 @@ export default function TablePage({
             }
             if (label) {
               const scooper = tableStateRef.current.players.find((p) => p?.id === scoopUserId);
-              const scoopHand = tableStateRef.current.handNumber ?? 0;
+              /* The hand this SCOOP belongs to, from the event first
+                 (2026-09-09). On a mid-hand join `tableState.handNumber` is
+                 0, so `scoopHand` was 0, the `!== scoopHand` guard below was
+                 false against any real hand, and the banner - and its
+                 `playBigWin` - was silently dropped. Same defect as the
+                 POT_WIN fence above; same fix. */
+              const scoopHand =
+                Number((evt.data as any).hand_number) || (tableStateRef.current.handNumber ?? 0);
               if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
               /* AFTER THE LAST RUN, NOT AFTER THE FIRST FLOP (Dan 2026-09-04,
                  hand #6145364). "TRIPLE SCOOP!" landed at 2.2s, while run 1's
@@ -17167,7 +17274,16 @@ export default function TablePage({
              fence sits HERE, above the derived maps below, so a stale display
              is dropped before its hole-card indices and amounts are carried
              forward rather than after. */
-          const liveHandNumber = tableStateRef.current.handNumber ?? 0;
+          /* THE HAND NUMBER THE EVENT CARRIES, not the one the client happens
+             to hold (2026-09-09). The comment above says "a reset cannot
+             fence an out-of-order event; a hand number can" and then used the
+             wrong hand number: on a mid-hand join `tableState.handNumber` is
+             0, so `carried.handNumber > 0` was false and the fence did not
+             fire at all. The engine stamps `hand_number` on this event,
+             captured BEFORE its settle sleep, precisely so a late POT_WIN can
+             be recognised. */
+          const eventHandNumber = Number((evt.data as any).hand_number) || 0;
+          const liveHandNumber = eventHandNumber || (tableStateRef.current.handNumber ?? 0);
           const carried = winnerInfoRef.current;
           const prevWin =
             carried.playerIds.length > 0 &&
@@ -17222,7 +17338,23 @@ export default function TablePage({
             // Accumulate the hero's win for the achievement/challenge fire at
             // HAND_COMPLETE (POT_WIN can fire once per pot on split/side pots).
             heroHandOutcomeRef.current.won = true;
-            heroHandOutcomeRef.current.potWon += amounts[userId] || 0;
+            /* ONE POT, ONE ACCUMULATION (2026-09-09). This sat one line
+               outside the fence above: a POT_WIN belonging to hand N landing
+               after hand N+1 started marked the hero a winner of a hand they
+               lost, and a re-sent frame added the same pot twice. It feeds
+               HAND_COMPLETED and `achievementTriggerService.onHandComplete`,
+               whose progress increment is not idempotent. POT_DISTRIBUTED is
+               on MasterBus.DEDUP_BYPASS, so the 500ms fingerprint dedupe is
+               deliberately unavailable here and the identity has to be
+               explicit: the pot's own key, per hand. */
+            const potKey = `${liveHandNumber}:${(evt.data as any).pot_id ?? potAmount}:${winnerIds.join(',')}`;
+            if (
+              heroHandOutcomeRef.current.handNumber === liveHandNumber &&
+              !heroPotsCountedRef.current.has(potKey)
+            ) {
+              heroPotsCountedRef.current.add(potKey);
+              heroHandOutcomeRef.current.potWon += amounts[userId] || 0;
+            }
             if (winHandName) heroHandOutcomeRef.current.handRank = winHandName;
             const bb = safeBB(tableStateRef.current.blinds, 1);
             const winBB = (amounts[userId] || potAmount) / bb;
@@ -17557,7 +17689,9 @@ export default function TablePage({
               }
               // AUDIT FIX 2026-07-19: physical-seat index — no +1 (see above).
               const seatPct =
-                seatIdx >= 0 ? seatPositions[seatIdx] || { x: 50, y: 50 } : UNSEATED_WINNER_PCT;
+                seatIdx >= 0
+                  ? seatPositionsRef.current[seatIdx] || { x: 50, y: 50 }
+                  : UNSEATED_WINNER_PCT;
               const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
               // The group's own share — exact for THIS pot(-half), not the
               // player's merged total.
@@ -17620,7 +17754,9 @@ export default function TablePage({
             for (const wid of winnerIds) {
               const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
               const seatPct =
-                seatIdx >= 0 ? seatPositions[seatIdx] || { x: 50, y: 50 } : UNSEATED_WINNER_PCT;
+                seatIdx >= 0
+                  ? seatPositionsRef.current[seatIdx] || { x: 50, y: 50 }
+                  : UNSEATED_WINNER_PCT;
               const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
               fallback.events.push(...createPotToWinnerEvent(potPos, winnerPos, fallbackShare));
               fallback.floats.push({
@@ -17977,9 +18113,29 @@ export default function TablePage({
       case 'BBJ_HIT': {
         // ANIMATION/SOUND AUDIT 2026-08-19: was playBigWin — the dedicated
         // jackpot fanfare existed and was never wired to the engine event.
-        if (soundService.isEnabled()) soundService.playBadBeatJackpot();
-        import('../services/HapticService').then(({ haptic }) => haptic.heavy());
-        masterBus.emit('BBJ_HIT', evt.data as any);
+        /* ONCE PER HIT, INCLUDING ACROSS RECONNECTS (2026-09-09). This was
+           the one BBJ arm that skipped the identity gate. `bbj_hit` is
+           RETAINED by the engine (`replay_until`, 60s) so a player who joins
+           or reconnects inside the window still learns about it - and the
+           client's `lastEventSeq` resets on every connect by design, so the
+           retained frame is delivered again and this fanfare + heavy haptic
+           played again, on a jackpot the player had already celebrated. The
+           server comment that says the identity gate "already refuses a
+           replay it has seen" is true of every OTHER arm; it was not true of
+           this one. Same gate, its own `kind`, so the celebration, the
+           pending notice and the paid notice still each get to speak. */
+        const bbjData = (evt.data ?? {}) as Record<string, unknown>;
+        const announceHit = shouldAnnounceBbjHit({
+          tableId: (bbjData.table_id as string) || tableId,
+          handNumber: bbjData.hand_number as number,
+          emittedAt: bbjData.emitted_at as number,
+          kind: 'celebration',
+        });
+        if (announceHit) {
+          if (soundService.isEnabled()) soundService.playBadBeatJackpot();
+          import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+          masterBus.emit('BBJ_HIT', evt.data as any);
+        }
         break;
       }
       case 'BBJ_PAYOUT_COMPLETE': {
@@ -18324,9 +18480,18 @@ export default function TablePage({
           didWin: heroDidWin,
           didFold: heroFoldedInCurrentHandRef.current,
         });
-        // Track hands played + wins for mini stats card
-        handsPlayedRef.current++;
-        if (heroDidWin) handsWonRef.current++;
+        /* THE HAND IS COUNTED ONCE, AND NOT HERE (2026-09-09).
+           `handsPlayedRef` / `handsWonRef` live on useTableSession and are
+           already written by its `HAND_COMPLETED` subscriber, which is
+           dealtIn-gated and fires exactly once per hand. This second,
+           unconditional writer made every session count 2 per dealt-in hand
+           and 1 per sat-out hand: Hands Played and Hands/Hour read double on
+           the Session Complete card, and VPIP read HALF of truth, because
+           `vpipCountRef` is correctly latched once per hand while its
+           denominator was not. The mini stats card and MultiTablePage's P&L
+           chip printed different hand counts for the same session, which is
+           how it was caught. The VPIP pair twenty lines below - one latch,
+           one reader - is the pattern this should have followed. */
 
         // Dan 2026-08-15 — THE Session Stats fix. SessionStatsService had a
         // complete, correct recordHand() that computed hands, VPIP%, PFR%,
@@ -18510,6 +18675,9 @@ export default function TablePage({
   );
 
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
+  // Published for the deferred chip flights; the ref is declared far above
+  // (see seatPositionsRef) so the event handlers can read it.
+  seatPositionsRef.current = seatPositions;
 
   /**
    * REFERENCE PARITY 2026-08-26: consume the insurance-payout flight queued
@@ -21556,7 +21724,7 @@ export default function TablePage({
      Keyed by amount, exactly like the two siblings: a retry for the same
      shortfall is the same purchase and de-duplicates; a genuinely different
      shortfall is a different purchase and gets its own key. */
-  const autoTopUpKeyRef = useRef<{ amount: number; key: string } | null>(null);
+  const autoTopUpKeyRef = useRef<{ hand: number; key: string } | null>(null);
 
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
@@ -21648,11 +21816,24 @@ export default function TablePage({
           currentStack < maxBuyIn &&
           (accountBalance ?? 0) > 0
         ) {
-          const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
+          /* TO THE CENT (2026-09-09): a float subtraction goes to
+             `atomic_table_addon`, which stores it verbatim, and a non-cent
+             row can never be resolved against the post-commit obligation. */
+          const topUpAmount =
+            Math.round(Math.min(maxBuyIn - currentStack, accountBalance ?? 0) * 100) / 100;
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
-            if (!autoTopUpKeyRef.current || autoTopUpKeyRef.current.amount !== topUpAmount) {
-              autoTopUpKeyRef.current = { amount: topUpAmount, key: crypto.randomUUID() };
+            /* THE KEY IS DISCRIMINATED BY THE HAND, NOT BY THE AMOUNT
+               (2026-09-09). The amount is recomputed from `accountBalance`,
+               and committing the debit is WHAT CHANGES `accountBalance` - so
+               a top-up that committed and lost its response recomputed to a
+               different number, minted a fresh key, and debited the wallet a
+               second time. That is the precise case the key exists for. One
+               shortfall in one hand is one purchase; the next hand's is a
+               new one. */
+            const topUpHand = tableState.handNumber ?? 0;
+            if (!autoTopUpKeyRef.current || autoTopUpKeyRef.current.hand !== topUpHand) {
+              autoTopUpKeyRef.current = { hand: topUpHand, key: crypto.randomUUID() };
             }
             handleAddChips(topUpAmount, autoTopUpKeyRef.current.key, { source: 'auto' })
               .then((res) => {
@@ -21667,9 +21848,16 @@ export default function TablePage({
                      Ends" for the same request. */
                   const r = lastAddChipsResultRef.current;
                   const landed = r?.applied ?? topUpAmount;
-                  // A queued one was already announced by handleAddChips
-                  // ("... Lands When This Hand Ends"); one toast per event.
-                  if (!r?.queued) toast?.success?.(`Auto Top Up: Added ${landed.toFixed(2)} Chips`);
+                  /* ONE TOAST PER EVENT (2026-09-09). handleAddChips already
+                     announces a QUEUED add-on ("... Lands When This Hand
+                     Ends") and a CAPPED one ("That Is This Table's Maximum
+                     Top-Up Right Now"); this line is only for the plain case
+                     where neither did. */
+                  const alreadyAnnounced =
+                    r?.queued === true || (r ? r.applied < topUpAmount : false);
+                  if (!alreadyAnnounced) {
+                    toast?.success?.(`Auto Top Up: Added ${landed.toFixed(2)} Chips`);
+                  }
                 }
               })
               .catch((err) => {

@@ -118,6 +118,19 @@ export function normalizeTickerSettings(raw: unknown): ManagedTickerSettings {
   };
 }
 
+/**
+ * The two pairings an operator can actually get wrong.
+ *
+ * THE FLAG IS NOT ON THIS LIST, AND THAT IS THE POINT. Its text used to be
+ * painted with the accent over a background built from the same accent - about
+ * 1.06:1, the worst contrast on the platform - and this validator never looked
+ * at it. It is not validated now because it cannot be wrong: `readableInk` in
+ * tickerTheme.ts derives the chip's ink from the fill's luminance, and the
+ * better of the two inks clears 4.5:1 for EVERY six-digit hex (worst case
+ * 4.58:1, at luminance 0.179). tests/unit/tickerTheme.test.ts sweeps the colour
+ * cube and asserts it. A guarantee by construction beats a check a direct RPC
+ * call can walk around.
+ */
 export function validateTickerContrast(settings: ManagedTickerSettings): string | null {
   if (contrastRatio(settings.textColor, settings.backgroundColor) < 4.5) {
     return 'Ticker text needs at least 4.5:1 contrast against its background.';
@@ -162,14 +175,44 @@ function contentError(
   );
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE LAST ANSWER THE DATABASE ACTUALLY GAVE (audit 2026-09-05)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `get()` used to swallow the error and return DEFAULT_TICKER_SETTINGS, which
+ * carries `enabled: true` and its own set of sources. So a club that had
+ * deliberately switched the rail OFF got it switched back ON - showing a
+ * different mix of announcements than it had chosen - for the duration of any
+ * transient failure, and a player saw a bar their club had turned off.
+ *
+ * Defaults are the right answer for a COLD start and the wrong answer for a
+ * failed refresh. The difference is whether we have ever had a real one, so
+ * the last authoritative snapshot per scope is kept and handed back instead.
+ * Bounded by construction: one entry per club or union a session visits.
+ */
+const lastKnownGood = new Map<string, ManagedTickerSettings>();
+
+function scopeKey(clubId?: string | null, unionId?: string | null): string {
+  return unionId ? `union:${unionId}` : `club:${clubId || 'none'}`;
+}
+
+/** Test seam: forget every cached snapshot. */
+export function resetTickerSettingsCache(): void {
+  lastKnownGood.clear();
+}
+
 export const tickerManagementService = {
   async get(clubId?: string | null, unionId?: string | null): Promise<ManagedTickerSettings> {
+    const key = scopeKey(clubId, unionId);
     const { data, error } = await supabase.rpc('fn_get_game_ticker_settings', {
       p_club_id: clubId || null,
       p_union_id: unionId || null,
     });
-    if (error) return DEFAULT_TICKER_SETTINGS;
-    return normalizeTickerSettings(data);
+    if (error) return lastKnownGood.get(key) ?? DEFAULT_TICKER_SETTINGS;
+    const settings = normalizeTickerSettings(data);
+    lastKnownGood.set(key, settings);
+    return settings;
   },
 
   async getManagement(scope: 'club' | 'union', scopeId: string): Promise<ManagedTickerSnapshot> {

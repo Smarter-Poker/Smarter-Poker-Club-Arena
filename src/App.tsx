@@ -9,7 +9,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
-import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
@@ -19,8 +18,6 @@ import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
-import PushSubscriptionSync from './components/notifications/PushSubscriptionSync';
-import FirstRunPushPrompt from './components/notifications/FirstRunPushPrompt';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
@@ -65,6 +62,25 @@ import TOSGuard from './components/legal/TOSGuard';
 const AgeGate = lazyWithRetry(() => import('./components/legal/AgeGate'));
 const ConsentPrompt = lazyWithRetry(() => import('./components/legal/ConsentPrompt'));
 import { lazyWithRetry } from './utils/lazyWithRetry';
+
+// Push maintenance is intentionally delayed inside these components (four
+// seconds for the silent subscription refresh, twenty seconds for the first
+// prompt). Keep that optional work out of first paint while preserving the
+// application-root mount that lets it operate on every route. The retry-safe
+// loader also gives an atomic publish the same stale-chunk recovery as routes.
+const PushSubscriptionSync = lazyWithRetry(
+  () => import('./components/notifications/PushSubscriptionSync')
+);
+const FirstRunPushPrompt = lazyWithRetry(
+  () => import('./components/notifications/FirstRunPushPrompt')
+);
+// The ticker is another application-root overlay, but it renders only on a
+// live table or club lobby and does not contribute to the first paint. Load it
+// after the shell so its polling, settings, and announcement graph is paid for
+// by the feature instead of every route.
+const TournamentStartingTicker = lazyWithRetry(
+  () => import('./components/tournament/TournamentStartingTicker')
+);
 
 // Pages (lazy loaded for performance)
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
@@ -500,8 +516,10 @@ function FullApp() {
           to be able to appear wherever the player actually is. See
           src/lib/pushClient.ts for why enrolment targets the ROOT service
           worker and not Club Arena's own sw-bus.js. */}
-        <PushSubscriptionSync />
-        <FirstRunPushPrompt />
+        <Suspense fallback={null}>
+          <PushSubscriptionSync />
+          <FirstRunPushPrompt />
+        </Suspense>
         <GlobalBalanceSync />
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
@@ -531,7 +549,9 @@ function FullApp() {
           left, there should be a scrolling announcement across all active
           club/union cash games and tournaments." It has to reach players where
           they already are, so it rides at the app root over every page. */}
-        <TournamentStartingTicker />
+        <Suspense fallback={null}>
+          <TournamentStartingTicker />
+        </Suspense>
         {/* Dan 2026-08-21: when an MTT starts, the player's seat opens itself. */}
         <TournamentAutoSeat />
         <MilestoneToast />

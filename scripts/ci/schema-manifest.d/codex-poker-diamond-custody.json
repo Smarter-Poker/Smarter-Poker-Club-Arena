@@ -1,0 +1,18 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "Poker Diamond custody remains a service-only atomic reserve/release boundary. The zero-use cutover removes the obligation table and both sweep writers before gameplay can be enabled.",
+  "tables": ["poker_diamond_custody", "poker_diamond_lot_reservations", "poker_diamond_movements"],
+  "functions": [
+    "fn_poker_diamond_append_only",
+    "fn_poker_diamond_custody_balance",
+    "fn_poker_diamond_release",
+    "fn_poker_diamond_reserve"
+  ],
+  "removedTables": ["poker_diamond_obligations"],
+  "removedFunctions": ["fn_poker_diamond_reconcile", "fn_poker_diamond_recover_releases"],
+  "columns": {
+    "ca_diamond_snapshots": ["arena_fixture_diamonds"],
+    "ca_supply_snapshots": ["basis_version"],
+    "diamond_purchase_lots": ["arena_reserved"]
+  }
+}

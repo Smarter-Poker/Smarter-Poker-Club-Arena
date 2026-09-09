@@ -7,11 +7,12 @@
  * getTournament null return, and getTournaments empty return.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRpc, mockEmit } = vi.hoisted(() => ({
+const { mockRpc, mockEmit, mockUuid } = vi.hoisted(() => ({
   mockRpc: vi.fn(),
   mockEmit: vi.fn(),
+  mockUuid: vi.fn(() => '00000000-0000-4000-8000-000000000001'),
 }));
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ vi.mock('../../src/lib/supabase', () => {
     return new Proxy({}, handler);
   };
   return {
+    getAuthUser: async () => ({ data: { user: { id: 'u-1' } }, error: null }),
     supabase: {
       from: () => buildChain(),
       rpc: mockRpc,
@@ -49,6 +51,8 @@ vi.mock('../../src/utils/clubIdResolver', () => ({
   resolveClubUUID: vi.fn().mockResolvedValue('resolved-uuid'),
 }));
 
+vi.mock('../../src/utils/uuid', () => ({ uuid: mockUuid }));
+
 vi.mock('../../src/services/WalletService', () => ({
   WalletService: { logTransaction: vi.fn().mockResolvedValue(undefined) },
 }));
@@ -65,7 +69,15 @@ import {
 } from '../../src/services/TournamentService';
 
 describe('TournamentService', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('navigator', {
+      locks: { request: (_key: string, fn: () => Promise<unknown>) => fn() },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
 
   // ─────────────────────────────────────────────────────────────────────────
   // BLIND STRUCTURES
@@ -259,28 +271,62 @@ describe('TournamentService', () => {
       mockEmit.mockReset();
     });
 
-    it('sends only the tournament id — no user, no amount', async () => {
+    it('sends only the tournament and request ids — no target user, no amount', async () => {
       // No user parameter is the authorization model: a player may only
       // unregister themselves, and the way to guarantee that is to never accept
-      // a target. No amount is the anti-mint rule: the refund is read from the
-      // tournaments row server-side.
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      // a target. No amount is the anti-mint rule: the refund is read from
+      // immutable entry entitlements server-side. The request id identifies
+      // one intent so a lost response can replay only that receipt.
+      mockRpc.mockResolvedValue({
+        data: {
+          ok: true,
+          request_id: '00000000-0000-4000-8000-000000000001',
+          registration_id: 'registration-1',
+          refunded_chips: 110,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      });
 
       await tournamentService.unregisterPlayer('t-1', 'u-1');
 
       expect(mockRpc).toHaveBeenCalledTimes(1);
       const [name, args] = mockRpc.mock.calls[0];
       expect(name).toBe('fn_unregister_from_tournament');
-      expect(args).toEqual({ p_tournament_id: 't-1' });
-      expect(Object.keys(args)).toHaveLength(1);
+      expect(args).toEqual({
+        p_tournament_id: 't-1',
+        p_request_id: '00000000-0000-4000-8000-000000000001',
+      });
+      expect(Object.keys(args)).toHaveLength(2);
     });
 
     it('emits a balance update only when something was actually refunded', async () => {
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 0 }, error: null });
+      mockRpc.mockResolvedValue({
+        data: {
+          ok: true,
+          request_id: '00000000-0000-4000-8000-000000000001',
+          registration_id: 'registration-1',
+          refunded_chips: 0,
+          returned_ticket_value: 110,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      });
       await tournamentService.unregisterPlayer('t-1', 'u-1');
       expect(mockEmit).not.toHaveBeenCalled();
 
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      mockRpc.mockResolvedValue({
+        data: {
+          ok: true,
+          request_id: '00000000-0000-4000-8000-000000000001',
+          registration_id: 'registration-2',
+          refunded_chips: 110,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      });
       await tournamentService.unregisterPlayer('t-1', 'u-1');
       expect(mockEmit).toHaveBeenCalledWith('BALANCE_UPDATED', {
         source: 'tournament_unregister_refund',
@@ -288,14 +334,45 @@ describe('TournamentService', () => {
       });
     });
 
+    it('retains the original identity after both transport attempts fail', async () => {
+      mockRpc
+        .mockRejectedValueOnce(new Error('Lost Response'))
+        .mockRejectedValueOnce(new Error('Lost Replay'));
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(/Confirm/);
+      const original = mockRpc.mock.calls[0][1].p_request_id;
+      mockRpc.mockImplementationOnce(async (_name, args) => ({
+        data: {
+          ok: true,
+          request_id: args.p_request_id,
+          registration_id: 'registration-1',
+          refunded_chips: 110,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      }));
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+      expect(mockRpc.mock.calls.map((call) => call[1].p_request_id)).toEqual([
+        original,
+        original,
+        original,
+      ]);
+      expect(mockEmit).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a stale account before submitting', async () => {
+      await expect(tournamentService.unregisterPlayer('t-1', 'another-user')).rejects.toThrow(
+        /Correct Account/
+      );
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
     it('surfaces the server refusal reason rather than a generic failure', async () => {
       mockRpc.mockResolvedValue({
-        data: { ok: false, reason: 'too_close_to_start' },
+        data: { ok: false, reason: 'tournament_started' },
         error: null,
       });
 
       await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(
-        /within a minute of the start time/i
+        /only unregister before it starts/i
       );
     });
 
@@ -306,11 +383,13 @@ describe('TournamentService', () => {
       );
     });
 
-    it('throws when the RPC itself errors', async () => {
+    it('retries one unknown outcome and then fails closed', async () => {
       mockRpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
       await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(
-        /could not unregister/i
+        /could not confirm tournament unregistration/i
       );
+      expect(mockRpc).toHaveBeenCalledTimes(2);
+      expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
     });
   });
 
@@ -327,7 +406,17 @@ describe('TournamentService', () => {
         'atomic_tournament_unregister',
       ];
 
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      mockRpc.mockResolvedValue({
+        data: {
+          ok: true,
+          request_id: '00000000-0000-4000-8000-000000000001',
+          registration_id: 'registration-1',
+          refunded_chips: 110,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      });
       await tournamentService.unregisterPlayer('t-1', 'u-1');
 
       for (const [name] of mockRpc.mock.calls) {
@@ -593,7 +682,7 @@ describe('Tournament Purchase Confirmation', () => {
       const result =
         kind === 'addon'
           ? await tournamentService.processAddOn('event', 'player')
-          : await tournamentService.processRebuy('event', 'player');
+          : await tournamentService.processRebuy('event', 'player', 'original-prompt');
       expect(result).toEqual({ success: true, newStack: 0 });
       expect(mockRpc.mock.calls[1][1]).toEqual(original);
       expect(mockEmit).toHaveBeenCalledTimes(1);

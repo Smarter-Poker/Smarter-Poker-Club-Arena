@@ -5,8 +5,13 @@ import { describe, expect, it } from 'vitest';
 const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
-const NATIVE_CLOSE = '20260909062236_terminal_tables_cannot_commit_live_occupancies.sql';
+const CANCELLATION = '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql';
+const SEAT_EXIT = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
+const COMPOSED_CLOSE =
+  '20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
+const cancellation = readFileSync(resolve(MIGRATIONS, CANCELLATION), 'utf8');
+const seatExit = readFileSync(resolve(MIGRATIONS, SEAT_EXIT), 'utf8');
 const migrationSources = readdirSync(MIGRATIONS)
   .filter((name) => name.endsWith('.sql'))
   .sort()
@@ -60,7 +65,7 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
   it('counts every active seat when the current close helper decides', () => {
     const latest = latestDefinition('fn_close_managed_game(');
 
-    expect(latest.file).toBe(NATIVE_CLOSE);
+    expect(latest.file).toBe(COMPOSED_CLOSE);
     expect(latest.source).toContain('FROM public.table_seats ts');
     expect(latest.source).toContain('AND ts.left_at IS NULL');
     expect(latest.source).not.toContain('ts.user_id IS NOT NULL');
@@ -71,12 +76,12 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     const update = latestDefinition('fn_update_managed_game(');
     const close = latestDefinition('fn_close_managed_game(');
 
-    expect(update.file).toBe(RECERTIFICATION);
-    expect(close.file).toBe(NATIVE_CLOSE);
+    expect(update.file).toBe(SEAT_EXIT);
+    expect(close.file).toBe(COMPOSED_CLOSE);
     for (const definition of [update.source, close.source]) {
       expect(definition).toContain('FROM public.tournament_players tp');
       expect(definition).not.toContain('tp.user_id IS NOT NULL');
-      expect(definition).toContain("'reason', 'players_registered'");
+      expect(definition).toMatch(/'reason'\s*,\s*'players_registered'/);
     }
   });
 
@@ -84,11 +89,17 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     expect(recertification).toContain(
       'REVOKE ALL ON FUNCTION public.fn_update_managed_game(text, uuid, jsonb)\n  FROM PUBLIC, anon, authenticated;'
     );
-    expect(recertification).toContain(
+    expect(cancellation).toContain(
       'REVOKE ALL ON FUNCTION public.fn_close_managed_game(text, uuid)\n  FROM PUBLIC, anon, authenticated;'
     );
-    expect(recertification).not.toContain(
+    expect(cancellation).not.toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_close_managed_game(text, uuid)\n  TO authenticated'
+    );
+    expect(seatExit).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_update_managed_game(text,uuid,jsonb)\n  FROM PUBLIC,anon,authenticated;'
+    );
+    expect(seatExit).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_update_managed_game(text,uuid,jsonb)\n  TO service_role;'
     );
   });
 });

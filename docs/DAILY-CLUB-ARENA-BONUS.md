@@ -38,14 +38,19 @@ in Dan's Claude gallery; rulings and live state below are the source of truth.
   first read (streak + tile snapshot, mystery already rolled) and returns
   tiles with claim state, the week strip, tomorrow's preview, seconds to
   reset, the streak multiplier and the player's cap position.
-- `fn_ca_daily_bonus_claim(p_slot, p_request_id)`: advisory lock per player,
-  request-id replay returns the stored result and pays nothing, refuses a
-  claimed or missing tile and a VIP tile for a non-VIP, then grants:
+- `fn_ca_daily_bonus_claim(p_slot, p_request_id, p_user_id, p_bonus_date)`:
+  advisory lock per player, request-id replay returns the stored result and
+  pays nothing, refuses `day_rolled_over` when `p_bonus_date` (the day the
+  sheet showed) is not the server's today (2026-09-09; nothing opened, nothing
+  paid), refuses a claimed or missing tile and a VIP tile for a non-VIP, then
+  grants:
   diamonds through `award_diamonds_v2('daily_bonus', ref ca_daily_bonus:<user>:<date>:<slot>)`,
   consumables as `feature_purchases` rows at cost 0, `source = 'daily_bonus'`,
-  expiring in 7 days (`throwable`, `rabbit_hunt`, `time_bank_seconds`, which
-  their consumers already spend from). The first claim of the day is what
-  advances the streak; an unclaimed day resets it to 1.
+  expiring in 7 days (`throwable`, `rabbit_hunt`, `time_bank_seconds`). Their
+  consumers spend an expiring credit BEFORE the monthly allowance, soonest to
+  expire first (2026-09-09; before that a bonus credit sat behind the
+  allowance and lapsed). The first claim of the day is what advances the
+  streak; an unclaimed day resets it to 1.
 - The diamond tile scales by `fn_get_streak_multiplier(streak)` (1.2 / 1.5 /
   1.8 / 2.0 at 3 / 7 / 14 / 30 days), clamped to 125.
 - The earn ledger files every diamond under engine `club_arena_daily`
@@ -61,3 +66,19 @@ refused, day-7 pays 75 at 1.5x, day-14 chest and mystery reveal, journal rows
 carry the reference and land on the `club_arena_daily` line, `feature_purchases`
 credit at cost 0 with source, `fn_ca_daily_bonus_caps` reports 110/3300/3750
 for a free player.
+
+## The entry sheet (phase 2, live; re-audited 2026-09-09)
+
+ONE POPUP PER DAY, on every device (Dan, 2026-09-09). `DailyBonusEntry` (hub
+home and the AppLayout shell) asks `fn_ca_daily_bonus_status` once per
+(account, Chicago day) and raises the modal sheet when today still has an
+unclaimed tile AND the sheet has not been shown yet (`shown_today`, from
+`ca_daily_bonus_days.sheet_shown_at`, set by `fn_ca_daily_bonus_mark_shown`
+the moment the sheet is in front of the player, popup or /bonuses page, from
+any device). Showing it spends the day; closing it is not what counts. It
+asks again only for a NEW day: when the tab is looked at, focused or back
+online after the server's midnight, on a timer at that midnight, on an
+account change, and on a bounded retry after a failed read. A "nothing to
+show" answer is kept per tab in sessionStorage until midnight. It never opens on a
+table, on /multi-table, on /bonuses (the inline sheet), or over the welcome
+and profile gates. See `docs/changelog/2026-09-09-the-daily-bonus-audit.md`.

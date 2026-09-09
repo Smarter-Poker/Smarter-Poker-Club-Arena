@@ -25,6 +25,36 @@ const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ 
 const BASE = strip(read('src/tournament/TournamentManagerBase.ts'));
 const MANAGER = strip(read('src/tournament/TournamentManager.ts'));
 const ELIM = strip(read('src/tournament/TournamentManagerEliminations.ts'));
+const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
+
+const stripSqlComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
+
+function newestFunction(name: string): string {
+  let newest = '';
+  for (const filename of fs
+    .readdirSync(MIGRATIONS)
+    .filter((entry) => entry.endsWith('.sql'))
+    .sort()) {
+    const source = stripSqlComments(fs.readFileSync(path.join(MIGRATIONS, filename), 'utf8'));
+    let start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+    while (start >= 0) {
+      const body = source.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/);
+      if (!body || body.index == null) throw new Error(`${filename}: ${name} has no body`);
+      const tag = body[1];
+      const bodyStart = start + body.index + body[0].length;
+      const end = source.indexOf(`${tag};`, bodyStart);
+      if (end < 0) throw new Error(`${filename}: ${name} has an incomplete body`);
+      newest = source.slice(start, end + tag.length + 1);
+      start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, end + tag.length + 1);
+    }
+  }
+  if (!newest) throw new Error(`${name} is missing`);
+  return newest;
+}
+
+const CASH_PLACES = newestFunction('fn_settle_tournament_places');
+const CASH_DEAL = newestFunction('fn_settle_tournament_final_table_deal');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // A1 — blinds must not explode after a restart
@@ -192,26 +222,48 @@ describe('A5: overlays move real chips', () => {
     expect(BASE).not.toMatch(/effectivePrizePool\(/);
   });
 
-  it('all three sites call the funding RPC', () => {
-    expect(BASE).toMatch(/protected async applyPrizeGuarantee\(/);
-    expect(BASE).toMatch(/fn_apply_prize_guarantee/);
-    const paths = BASE + ELIM;
-    expect((paths.match(/this\.applyPrizeGuarantee\(/g) ?? []).length).toBe(2);
-    // The add-on close is one database transaction that funds and freezes the
-    // pool; it no longer calls the funding RPC in a separate application step.
-    expect(BASE).toContain("supabase.rpc('fn_close_tournament_addon_period'");
+  it('live finish asks only for a terminal receipt', () => {
+    const finish = sliceMethod(ELIM, 'finishTournament(winnerId: string): Promise<void>');
+    expect(finish).toMatch(/requestTournamentTerminalReceipt\(/);
+    expect(finish).not.toMatch(/applyPrizeGuarantee|fn_apply_prize_guarantee/);
   });
 
-  it('uses the pool the RPC returns rather than one computed beside it', () => {
-    const fn = BASE.slice(BASE.indexOf('protected async applyPrizeGuarantee('));
-    expect(fn).toMatch(/Number\(res\.prize_pool\)/);
-    expect(fn).not.toMatch(/Math\.max\(/);
+  it.each([CASH_PLACES, CASH_DEAL])(
+    'the cash authority funds before it derives any payout',
+    (authority) => {
+      const fund = authority.indexOf('public.fn_apply_prize_guarantee(');
+      const journal = authority.indexOf("v_guarantee_result->>'overlay_journaled'", fund);
+      const refresh = authority.indexOf('INTO v_t', journal);
+      const floor = authority.indexOf('guaranteed_prize', refresh);
+      const pricing = Math.min(
+        ...[
+          authority.indexOf('fn_ca_tournament_place_amounts', floor),
+          authority.indexOf('v_total_chips', floor),
+        ].filter((index) => index >= 0)
+      );
+
+      expect(fund).toBeGreaterThanOrEqual(0);
+      expect(journal).toBeGreaterThan(fund);
+      expect(refresh).toBeGreaterThan(journal);
+      expect(floor).toBeGreaterThan(refresh);
+      expect(pricing).toBeGreaterThan(floor);
+    }
+  );
+
+  it('uses the refreshed funded pool rather than a number computed beside it', () => {
+    expect(CASH_PLACES).toMatch(
+      /v_guarantee_result->>'prize_pool'[\s\S]*?IS DISTINCT FROM v_t\.prize_pool[\s\S]*?RAISE EXCEPTION/
+    );
+    expect(CASH_PLACES).not.toMatch(/Math\.max\(/);
   });
 
-  it('a failed funding call returns null rather than a locally invented pool', () => {
-    const fn = BASE.slice(BASE.indexOf('protected async applyPrizeGuarantee('));
-    expect(fn).toMatch(/prize_guarantee_unfunded/);
-    expect(fn).toMatch(/return null/);
+  it('a refused or unjournaled overlay aborts the same transaction', () => {
+    for (const authority of [CASH_PLACES, CASH_DEAL]) {
+      expect(authority).toMatch(
+        /v_guarantee_result := public\.fn_apply_prize_guarantee\([\s\S]*?overlay_journaled[\s\S]*?RAISE EXCEPTION/
+      );
+      expect(authority).not.toMatch(/EXCEPTION WHEN OTHERS/);
+    }
   });
 });
 
@@ -236,13 +288,23 @@ describe('A6: a headcount is not a final table', () => {
     expect(window).not.toMatch(/<= finalTableSize\)\s*\{\s*this\.isFinalTable = true/);
   });
 
-  it('the deal poll requires it too, before atomic final-table settlement can run', () => {
-    const fn = ELIM.slice(ELIM.indexOf('protected async checkFinalTableDeal('));
-    const gate = fn.indexOf('countLiveTablesWithPlayers()');
-    const deal = fn.indexOf('settleFinalTableDealAtomically(');
-    expect(gate).toBeGreaterThan(-1);
-    expect(deal).toBeGreaterThan(-1);
-    expect(gate).toBeLessThan(deal);
-    expect(sliceEnclosingBlock(fn, 'liveTables')).toMatch(/liveTables !== 1/);
+  it('the deal poll proves one authoritative occupied engine before settlement', () => {
+    const check = sliceMethod(ELIM, 'protected async checkFinalTableDeal()');
+    const authority = sliceMethod(ELIM, 'private async authoritativeFinalTableDealEngine()');
+    const boundary = sliceMethod(ELIM, 'private async completeFinalTableDealAtBoundary(');
+    const prove = check.indexOf('this.authoritativeFinalTableDealEngine()');
+    const settle = check.indexOf('this.completeFinalTableDealAtBoundary(', prove);
+
+    expect(authority).toMatch(/if \(tablesErr \|\| !tables\) return null/);
+    expect(authority).toMatch(/if \(seatsErr \|\| !seats\) return null/);
+    expect(authority).toMatch(/occupiedTableIds\.length !== 1/);
+    expect(authority).toMatch(
+      /!managerEngine \|\| !serverEngine \|\| managerEngine !== serverEngine/
+    );
+    expect(prove).toBeGreaterThanOrEqual(0);
+    expect(settle).toBeGreaterThan(prove);
+    expect(boundary.indexOf('parkForTerminalCloseout(')).toBeLessThan(
+      boundary.indexOf('requestTournamentTerminalReceipt(')
+    );
   });
 });

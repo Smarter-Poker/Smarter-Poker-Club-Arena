@@ -1,11 +1,10 @@
 /**
- * STARTUP CLEANUP MAY ONLY CLAIM SUCCESS AFTER ITS ORPHAN-TABLE WALK FINISHES.
+ * STARTUP CLEANUP NEVER OWNS TERMINAL TABLE OR SEAT REPAIR.
  *
- * The orphan-table sweep keyset-pages the entire table estate. A failed page
- * read throws because a partial list cannot prove that cleanup is complete.
- * The failure is deliberately caught and reported so housekeeping cannot stop
- * the server boot, but the success log must remain inside the attempted sweep:
- * control that throws on a page read must never reach that claim.
+ * Atomic finish/cancellation closes the felt. The seat-authority cutover moves
+ * the exact historical backlog once and records every id. Leaving the old
+ * process-start writer in place would make every boot retry rows the permanent
+ * guard now correctly refuses.
  *
  * This is a source-order guard because cleanupStaleData is private and every
  * useful runtime path talks to Supabase. The property under test is the actual
@@ -13,12 +12,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { sliceEnclosingBlock, sliceMethod } from './testHelpers/sourceWindow.js';
+import { sliceMethod } from './testHelpers/sourceWindow.js';
 
 const source = readFileSync(new URL('./GameServer.ts', import.meta.url), 'utf8');
 const cleanup = sliceMethod(source, 'private async cleanupStaleData(');
-const orphanAttempt = sliceEnclosingBlock(cleanup, 'const orphanPageSize = 500');
-const successClaim = "console.log('[GameServer] Stale data cleanup complete')";
 
 describe('startup stale-cleanup success reporting', () => {
   it('does not call a failed stale-tournament list a completed sweep', () => {
@@ -27,9 +24,9 @@ describe('startup stale-cleanup success reporting', () => {
     );
   });
 
-  it('keeps later COMPLETING and orphan cleanup reachable after a stale-list failure', () => {
+  it('keeps later COMPLETING recovery reachable after a stale-list failure', () => {
     expect(cleanup).toMatch(
-      /if \(!staleTourneysError\) \{[\s\S]*?Stale-tournament sweep complete[\s\S]*?\}\s*\/\/ 7\.[\s\S]*?recoverStuckCompletingTournaments\('startup-cleanup'\)[\s\S]*?const orphanPageSize = 500/
+      /if \(!staleTourneysError\) \{[\s\S]*?Stale-tournament sweep complete[\s\S]*?\}\s*\/\/ 7\.[\s\S]*?recoverStuckCompletingTournaments\('startup-cleanup'\)/
     );
   });
 
@@ -42,20 +39,12 @@ describe('startup stale-cleanup success reporting', () => {
     expect(staleSweep).not.toContain('recoverStuckCompletingTournaments(');
   });
 
-  it('treats an orphan-table page-list error as a failed sweep', () => {
-    expect(orphanAttempt).toMatch(
-      /if \(openTableError\) \{[\s\S]*?throw new Error\(`orphan table list failed:/
-    );
-  });
-
-  it('can reach the success claim only while the orphan-table attempt remains successful', () => {
-    const pageFailure = orphanAttempt.indexOf('if (openTableError)');
-    const claim = orphanAttempt.indexOf(successClaim);
-
-    expect(pageFailure).toBeGreaterThan(-1);
-    expect(claim, 'the success claim must stay inside the orphan-sweep try block').toBeGreaterThan(
-      pageFailure
-    );
-    expect(cleanup.match(/Stale data cleanup complete/g)).toHaveLength(1);
+  it('contains no applying terminal table or seat sweep', () => {
+    expect(cleanup).not.toContain('orphanPageSize');
+    expect(cleanup).not.toContain('orphanCandidates');
+    expect(cleanup).not.toContain('orphan table list failed');
+    expect(cleanup).not.toContain('GameServer.orphan_table_sweep');
+    expect(cleanup).not.toContain('.update({ left_at: new Date().toISOString() })');
+    expect(cleanup).not.toContain("console.log('[GameServer] Stale data cleanup complete')");
   });
 });

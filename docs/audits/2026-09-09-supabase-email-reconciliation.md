@@ -84,8 +84,10 @@ with the World Hub owner before replacing this cross-repository path.
 ## User-Directed Standard And Next Implementation Boundary
 
 The user explicitly prefers built-in execution for significant Club Arena work.
-The binding standard for this programme is
-`docs/standards/EVENT-DRIVEN-EXECUTION.md`.
+The binding standard is
+`docs/standards/EVENT-DRIVEN-EXECUTION.md`. A September 9 amendment in the
+canonical architecture links it for future Club Arena work while preserving
+the existing tier ownership.
 
 For reminders, the replacement must give durable deadlines to an engine or
 always-running service, explicitly wire creation/registration/reschedule/cancel

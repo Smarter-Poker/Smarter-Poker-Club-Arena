@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Spin Reveals Follow The Booked Result
+
+The engine could announce a locally drawn 2x outcome before an idempotent reserve receipt restored a booked 10x outcome, or announce before settlement failed. The early reveal now follows successful settlement and booked-multiplier validation, retaining the existing hold and reconnect window and preceding table work. Five production-fragment cases cover unresolved, replayed, failed, malformed and matching receipts. The complete tournament/maintenance/pause suite passes 1348 tests in 127 files; server TypeScript and build pass. Re-read: yes. No migration or financial repair. Phase 3 publication is explicitly authorized in the audit chat; refreshed verification and publication are in progress; see docs/audits/2026-09-09-phase3-tournament-lifecycle.md.
+
 ## 2026-09-09: Phase 2 Release And Resume Verified
 
 Final poker consent, evaluator-card selection, cash-button and published-rule corrections merged in #3934. Required CI passed; engine release 34320141403 shipped df5e82a6 after 8044 passing server tests. Matching engine health/database heartbeat, both frontend stamps, all nine source blobs and normal maintenance resume are recorded in docs/audits/2026-09-09-phase2-release-status.json. The 18 Phase 2 controls are internally reconciled. Database skips, unrelated production E2E failures and unavailable external certification remain explicit. Re-read: yes. Documentation-only closeout; no new runtime or financial change.
@@ -17128,3 +17132,7 @@ Migration 20260908160032 appends one proven missing 0.25 main BBJ journal entry 
 ## 2026-09-08: Phase 2 fixed-limit completion
 
 Correct below-half wager completion and counted-wager caps across engine validation, action bounds and snapshot/client wiring. Add fixed-limit and pot-limit regression evidence in docs/audits/2026-09-08-phase2-limit-completion.md. No database migration. Merge and runtime adoption remain separate gates.
+
+## 2026-09-09: Phase 3 Tournament Break Ownership
+
+Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets and resumes from the final break end. Nine behavioral cases and the 1343-test tournament/maintenance/pause suite pass; no database migration. See docs/audits/2026-09-09-phase3-tournament-lifecycle.md. Phase 3 remains in progress.

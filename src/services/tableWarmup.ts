@@ -107,7 +107,10 @@ function dropEntry(tableId: string, entry: WarmEntry, closeFacade: boolean): voi
 
 async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
   if (!isMuxEnabled() || entry.socketPending) return;
-  if (entry.facade && entry.facade.readyState !== 3) return;
+  if (entry.facade && entry.facade.readyState !== 3) {
+    entry.facade.probeWarmState();
+    return;
+  }
   if (engineSocketMux.isSubscribed(tableId)) return; // a live table owns it
   entry.socketPending = true;
   try {
@@ -121,8 +124,22 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
     entry.facade = facade;
     // Retain bounded public state. Historical/private events are not replayed.
     facade.onmessage = null;
-    facade.onclose = () => {
-      if (entry.facade === facade) entry.facade = null;
+    facade.onclose = ({ code, reason }) => {
+      if (entry.facade !== facade) return;
+      entry.facade = null;
+      // A failed state probe should repair the warm-up now, while the player
+      // is still in the lobby. Release, supersession and refusal never retry.
+      if (
+        code === 4001 &&
+        (reason === 'no traffic after foreground state probe' ||
+          reason === 'no table state after foreground probe')
+      ) {
+        queueMicrotask(() => {
+          if (entries.get(tableId) === entry && document.visibilityState !== 'hidden') {
+            void warmSocket(tableId, entry);
+          }
+        });
+      }
     };
   } catch {
     // Preparation is best-effort; a later intent may retry the connection.

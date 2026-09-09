@@ -23,6 +23,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { uuid } from '../utils/uuid';
 import { requiredSeed } from '../config/spinSpec';
 
 /** The Spin board's price points. Mirrors SPIN_BOARD_BUYINS in the engine. */
@@ -93,7 +94,7 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-Idempotency-Key': crypto.randomUUID(),
+      'X-Idempotency-Key': uuid(),
     },
     body: JSON.stringify(body),
   });

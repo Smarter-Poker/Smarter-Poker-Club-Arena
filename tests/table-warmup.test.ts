@@ -38,6 +38,7 @@ const T = 'aaaaaaaa-1111-4111-8111-111111111111';
 function fakeFacade() {
   return {
     retainWarmState: vi.fn(),
+    probeWarmState: vi.fn(),
     readyState: 0,
     onmessage: null as unknown,
     onclose: null as unknown,
@@ -192,7 +193,10 @@ it('restarts an evicted warm connection immediately while reusing fresh seats', 
   await vi.advanceTimersByTimeAsync(1);
   expect(acquire).toHaveBeenCalledTimes(1);
   first.readyState = 3;
-  (first.onclose as () => void)();
+  (first.onclose as (e: { code: number; reason: string }) => void)({
+    code: 1000,
+    reason: 'real table takes priority',
+  });
   warm.warmTable(T);
   await vi.advanceTimersByTimeAsync(1);
   expect(acquire).toHaveBeenCalledTimes(2);
@@ -357,5 +361,61 @@ describe('lobby foreground preparation', () => {
       cleanup();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('an unanswered warm state probe repairs lobby preparation', () => {
+  async function prepare() {
+    const facade = fakeFacade();
+    facade.readyState = 1;
+    acquire.mockReturnValueOnce(facade);
+    getSeatedPlayers.mockResolvedValue(ROWS);
+    warm.warmTable(T);
+    await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(1));
+    return facade;
+  }
+  function expire(
+    facade: ReturnType<typeof fakeFacade>,
+    code = 4001,
+    reason = 'no traffic after foreground state probe'
+  ) {
+    facade.readyState = 3;
+    (facade.onclose as (e: { code: number; reason: string }) => void)({ code, reason });
+  }
+  it('asks an existing warm socket to prove current state on renewed intent', async () => {
+    const facade = await prepare();
+    warm.warmTable(T);
+    expect(facade.probeWarmState).toHaveBeenCalledOnce();
+    expect(acquire).toHaveBeenCalledTimes(1);
+  });
+  it('reacquires promptly after an unanswered probe while preserving fresh seats', async () => {
+    const facade = await prepare();
+    expire(facade);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(acquire).toHaveBeenCalledTimes(2);
+    expect(getSeatedPlayers).toHaveBeenCalledOnce();
+  });
+  it.each([1000, 4901, 4403])(
+    'does not retry release, supersession or refusal %s',
+    async (code) => {
+      const facade = await prepare();
+      expire(facade, code, 'closed');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(acquire).toHaveBeenCalledTimes(1);
+    }
+  );
+  it('does not retry an expired entry after its queued callback', async () => {
+    const facade = await prepare();
+    expire(facade);
+    warm.__resetTableWarmupForTests();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(acquire).toHaveBeenCalledTimes(1);
+  });
+  it('does not reacquire over a real table that takes ownership during recovery', async () => {
+    const facade = await prepare();
+    expire(facade);
+    isSubscribed.mockReturnValue(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(acquire).toHaveBeenCalledTimes(1);
   });
 });

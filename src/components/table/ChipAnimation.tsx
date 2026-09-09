@@ -467,9 +467,14 @@ function getChipCount(amount: number): number {
 // right label for a pot in the first place. formatTableChips keeps the
 // 2026-08-14 rule that mattered: whole chips at >= 1, cents below it.
 function formatAmount(amount: number): string {
-  // Rounded before formatting, not by the formatter. Dan 2026-08-14 live
-  // E2E: a 23 bet rendered as "23.08" mid-flight because engine amounts
-  // carry sub-chip decimals. That is noise on a label that exists for
-  // ~400ms, so it is squared off here — the amount itself is untouched.
-  return formatTableChips(amount >= 1 ? Math.round(amount) : amount);
+  // Dan 2026-08-14 live E2E: a 23 bet rendered as "23.08" mid-flight because
+  // engine amounts carried sub-chip decimals, so this used to square off
+  // anything from 1 up. A chip is two decimal places everywhere it is stored
+  // now (#3358), so that noise no longer exists - and squaring off REAL cents
+  // made a 1.50 ante fly to the pot as "2" while the pot pill it landed in
+  // read "1.50" (Dan 2026-09-04, "TRUE AMOUNTS"). To the cent, and with two
+  // places whenever there are cents, so the label and the pill agree.
+  const cents = Math.round(amount * 100) / 100;
+  if (Number.isInteger(cents)) return formatTableChips(cents);
+  return cents.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

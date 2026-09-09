@@ -10,7 +10,7 @@
  * buttons.md and the live tournament table read on 2026-09-04).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { measureTitleAnchor } from '../../src/components/table/BombPotOverlay';
+import { measureTitleAnchor } from '../../src/lib/bombPotTitleAnchor';
 
 type Box = { top: number; bottom: number; height: number; width: number };
 const box = (top: number, bottom: number, width = 100): Box => ({

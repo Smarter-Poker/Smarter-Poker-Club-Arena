@@ -516,25 +516,25 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   const activePlayers = players.filter((p) => !p.is_folded);
   if (activePlayers.length === 0) return [];
 
-  // Side-pot levels are defined by LIVE invested only. Dead money (antes, a Big
-  // Blind Ante the BB fronts for the table, dead small blinds) belongs in the
-  // pot but must not create a private side pot for whoever posted it — it is
-  // summed and added to the main (first) pot, contested by all eligible players.
-  // 2026-08-20: snapped to cents. Side-pot LEVELS are the distinct values of
-  // this expression, and `totalInvested - deadInvested` is a float subtraction —
-  // snapChips() rounds stack, bet, totalInvested and pot at every mutation
-  // choke point (Bible V8 §2.6) but NOT deadInvested, so two players who are
-  // equal to the cent could differ by ~1e-17 and be split into two levels. That
-  // produced a spurious extra side pot of amount ~0 with a NARROWER eligible
-  // set, handed to determineWinners as if it were a real contest. Found by the
-  // chip-conservation property test's independent side-pot oracle (INV-10):
-  // engine ["0.50|u1,u3", "0|u3"] against the correct ["0.50|u1,u3"].
-  // No chips were misallocated — the amount is a rounding artefact — but the
-  // pot COUNT and its eligibility are what the client renders and what odd-chip
-  // allocation walks, and a level that does not exist should not be in either.
+  // Individual antes are matched contributions for pot eligibility, although
+  // they are dead for the live betting price and uncalled-bet calculation.
+  // Shared BBA and dead small blinds remain pooled table money. In particular,
+  // a short individual ante cannot win the unmatched part of a full ante.
+  // Snap levels to cents so floating-point drift cannot create phantom pots.
   const getInvestment = (p: SeatPlayer) =>
-    Math.max(0, Math.round(((p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0)) * 100) / 100);
-  const deadTotal = Math.round(players.reduce((s, p) => s + (p.deadInvested ?? 0), 0) * 100) / 100;
+    Math.max(
+      0,
+      Math.round(
+        ((p.totalInvested ?? p.bet ?? 0) -
+          (p.deadInvested ?? 0) +
+          (p.individualAnteInvested ?? 0)) *
+          100
+      ) / 100
+    );
+  const deadTotal =
+    Math.round(
+      players.reduce((s, p) => s + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0) * 100
+    ) / 100;
   const allContributors = players.filter((p) => getInvestment(p) > 0);
 
   // No live money at all (e.g. everyone folded to dead antes): the dead money
@@ -663,22 +663,20 @@ export function calculateBettingState(
    * flop, the big bet on turn and river (BettingStructure.fixedLimitBetSize).
    * `capped` is true once the street has taken a bet and three raises.
    *
-   * When present it overrides both bounds: min and max are BOTH `betSize`, so
-   * the only legal wager is exactly that size. That is the whole of fixed
-   * limit — there is no sizing decision to make, which is why this reuses the
-   * pot-limit ceiling machinery rather than adding a parallel one.
+   * Both bounds are the legal increment. Normally this is betSize; a short
+   * wager below half the street bet can instead be completed by raiseSize.
    */
-  fixedLimit?: { betSize: number; capped: boolean }
+  fixedLimit?: { betSize: number; capped: boolean; raiseSize?: number }
 ): BettingState {
   const toCall = currentBet - playerBet;
 
   if (fixedLimit) {
     return {
       currentBet,
-      minRaise: fixedLimit.betSize,
+      minRaise: fixedLimit.raiseSize ?? fixedLimit.betSize,
       pot,
       toCall,
-      maxRaise: fixedLimit.betSize,
+      maxRaise: fixedLimit.raiseSize ?? fixedLimit.betSize,
       wagersCapped: fixedLimit.capped,
       structure: 'fixed_limit',
     };

@@ -14,7 +14,8 @@
       "id": "T02",
       "requirement": "Split total entry into disclosed prize, bounty and fee components. Verify all supported prices and promotional entries.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "entry_fee_disclosure"
     },
     {
       "id": "T03",
@@ -74,7 +75,8 @@
       "id": "T12",
       "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "confirmed_results_projection_gap",
+      "evidence": "result_payment_disclosure_review"
     },
     {
       "id": "K01",
@@ -248,7 +250,8 @@
       "id": "B04",
       "requirement": "Mystery activation follows the approved rebuy/add-on cutoff. A break alone must not enable early awards.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_source_and_catalog_verification",
+      "evidence": "mystery_activation_review"
     },
     {
       "id": "B05",
@@ -314,7 +317,7 @@
       "id": "AX09",
       "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
       "priority": "P0",
-      "status": "partial_behavioral_correction_pending_publication",
+      "status": "partial_behavioral_correction_deployed",
       "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
@@ -641,8 +644,9 @@
   "open_source_findings": [
     {
       "controls": ["S07"],
-      "status": "requires_concurrent_funding_and_authority_proof",
-      "finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending."
+      "status": "confirmed_defect_corrected_deployed_full_control_open",
+      "initial_finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending.",
+      "finding": "The atomic_spin_correction replaced the separate draw/settle and unbacked shortfall path. Database and engine adoption are verified. The full S07 control remains open beyond that bounded correction."
     },
     {
       "controls": ["AX07", "AX10"],
@@ -925,14 +929,16 @@
     },
     "source_followup": {
       "pr": 4039,
-      "head": "660cb1eae2a37b5f73d2eb4ec74d455523d338cd",
-      "passing_ci": 34411543919,
+      "head": "fa2b5acc3aa64b07fc3e5ef1c2ab2d0ac6c13f26",
+      "passing_ci": 34412792078,
       "blocked_check": "Silent Revert Guard",
       "blocked_files": [
         "supabase/migrations/20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
         "tests/seat-first-unregistration-actual-start.guard.test.ts"
       ],
-      "reason": "Intentional restoration of the now-applied historical migration requires revert-approved. Automatic approval review rejected adding that label because publication authorization did not authorize the specific governance override. No bypass or indirect retry performed."
+      "reason": "Intentional restoration of the now-applied historical migration requires revert-approved. Automatic approval review twice rejected the label because the user has not explicitly authorized this exact governance override. Publication and database authorization remain valid. No label or alternate bypass was applied.",
+      "ci_attempt": 2,
+      "ci_retry_reason": "PostgreSQL lost a shared-memory segment during the first run. The single failed job was retried through the normal API; attempt 2 passed without weakening source or assertions."
     }
   },
   "table_move_dependency_review": {
@@ -966,5 +972,86 @@
       "terminal_resolver_body_md5": "4c151073f56b53e4b0363bdd916b78d4",
       "terminal_service_only": true
     }
+  },
+  "entry_fee_disclosure": {
+    "controls": ["T02"],
+    "status": "merged_frontend_adoption_verified",
+    "pr": 4047,
+    "head": "a9a18739f525d75c1e369ae91005a840a3b66933",
+    "source": "src/utils/buyIn.ts: formatBuyIn",
+    "defect": "Fractional entry fees rounded to whole chips in the lobby, signup and details surfaces.",
+    "correction": "Keep whole entry totals and use existing moneyExact for fee and remainder.",
+    "focused_tests_passed": 17,
+    "prepush_related_tests_passed": 596,
+    "prepush_source_pins_passed": 48,
+    "read_only_entry_split": {
+      "observed_at": "2026-09-09T22:52:57.200615Z",
+      "body_md5": "46074e04b60ecb97557b63ef25c5739d",
+      "cases": 161,
+      "failures": 0,
+      "price_points": 22,
+      "includes_zero_entry": true,
+      "formats": ["MTT", "SNG", "HU", "SPIN", "BOUNTY30", "PKO50", "MYSTERY40"]
+    },
+    "limit": "Calculator and published generator price/template matrix only. Does not certify complete admission, bank-funded promotions or every custom configuration.",
+    "full_controls_closed": false,
+    "merge_commit": "4149cfcd53650a05ac0be247f2bdad6cf5c0997d",
+    "passing_ci": 34415082179,
+    "frontend": {
+      "observed_at": "2026-09-09T23:20:10.590209+00:00",
+      "urls": {
+        "https://ca-static.smarter.poker/build-info.json": {
+          "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+          "built_at": "2026-09-09T23:16:14Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34415964089"
+        },
+        "https://smarter.poker/hub/club-arena/build-info.json": {
+          "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+          "built_at": "2026-09-09T23:16:14Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34415964089"
+        }
+      },
+      "fee_source_blob": "66bdd353f0cd5daa3e7320abd98c2a087298be0d",
+      "merge_is_ancestor": true
+    }
+  },
+  "mystery_activation_review": {
+    "controls": ["B04"],
+    "status": "source_and_installed_guards_reviewed_full_control_open",
+    "observed_at": "2026-09-09T23:06:49.316874+00:00",
+    "engine_predicate": "shouldActivateMysteryBounty requires entryClosed plus the chosen field threshold and all tables between hands. A break alone cannot activate.",
+    "database_predicate": "fn_mystery_bounty_seed locks the tournament and refuses prize_pool_finalized=false, including when engine memory suggests otherwise.",
+    "installed_body_md5": {
+      "fn_mystery_bounty_seed": "f78272f535468f7399c78d5c4ec87e35",
+      "fn_receipt_mystery_activation": "96c4626eda4c43c3b355a752199f89bd",
+      "fn_refuse_mystery_activation_with_pending_heads": "0e2dc405aada5f99bfffe5738748d301",
+      "fn_close_tournament_addon_period": "b503380118722ce9a5b8b4467f3c48fd"
+    },
+    "existing_tests_reviewed": [
+      "server/src/tournament/mysteryBountyActivation.test.ts",
+      "server/src/tournament/AddOnFundingFinalization.test.ts"
+    ],
+    "test_limit": "Predicate tests execute pure logic; add-on tests execute the real close method with a mocked database RPC. No new whole-lifecycle PostgreSQL rehearsal or production activation was performed.",
+    "full_controls_closed": false,
+    "addon_close_deadline": "Installed fn_close_tournament_addon_period locks the row, requires a started window and refuses closure before addon_period_ends_at unless already finalized, then delegates to the locked pool finalizer."
+  },
+  "result_payment_disclosure_review": {
+    "controls": ["T12"],
+    "status": "confirmed_results_projection_gap",
+    "source": "src/pages/tournament/TournamentResultsPage.tsx",
+    "finding": "Results read tournament_players prize, bounty_winnings and participation status. They do not read tournament_obligations amount_owed/amount_paid or expose paid, partially paid and owed states.",
+    "database_evidence": "Installed tournament_obligations contains amount_owed, amount_paid, settled_at and terminal_closed_at. No src caller of tournament_obligations was found.",
+    "limit": "Source/schema gap only. No historical player debts were recalculated and no new public obligation access policy was introduced.",
+    "full_controls_closed": false,
+    "database_access": {
+      "rls_enabled": true,
+      "select_policies": 0,
+      "anon_select": false,
+      "authenticated_select": false,
+      "service_select": true
+    },
+    "next_step": "Implement an authorized player-results payment projection from the canonical obligations, then wire actual paid/partial/owed amounts into results and statements. A direct browser query to the protected ledger is not an available path."
   }
 }

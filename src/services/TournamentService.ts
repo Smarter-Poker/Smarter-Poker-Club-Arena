@@ -11,7 +11,7 @@ export {
 } from '../config/blindStructures';
 import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, type BlindLevel } from '../config/blindStructures';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
@@ -32,6 +32,7 @@ import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
 import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
 import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
+import { withTournamentUnregistrationIntent } from './TournamentUnregistrationIntent';
 
 /** A transport success alone does not confirm a tournament chip purchase. */
 function confirmedTournamentPurchaseStack(
@@ -303,7 +304,13 @@ export function tournamentUnregisterSuccessText(result: TournamentUnregisterResu
  * - progressive_bounty: Half bounty to knocker, half added to their head
  */
 export type TournamentType =
-  'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'mystery_bounty' | 'progressive_bounty';
+  | 'sng'
+  | 'mtt'
+  | 'satellite'
+  | 'spin'
+  | 'bounty'
+  | 'mystery_bounty'
+  | 'progressive_bounty';
 
 export interface BountyConfig {
   bountyType: 'fixed' | 'mystery' | 'progressive';
@@ -1495,22 +1502,26 @@ class TournamentService {
     tournamentId: string,
     userId: string
   ): Promise<TournamentUnregisterResult> {
-    const requestId = uuid();
-    const result = await executeTournamentUnregisterRpc(
-      async () =>
-        supabase.rpc('fn_unregister_from_tournament', {
-          p_tournament_id: tournamentId,
-          p_request_id: requestId,
-        }),
-      requestId,
-      'TournamentService.unregisterPlayer_result_unconfirmed',
-      { tournamentId, userId }
-    );
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId)
+      throw new Error('Sign In To The Correct Account Before Requesting A Refund.');
+    return withTournamentUnregistrationIntent(userId, tournamentId, async (requestId) => {
+      const result = await executeTournamentUnregisterRpc(
+        async () =>
+          supabase.rpc('fn_unregister_from_tournament', {
+            p_tournament_id: tournamentId,
+            p_request_id: requestId,
+          }),
+        requestId,
+        'TournamentService.unregisterPlayer_result_unconfirmed',
+        { tournamentId, userId }
+      );
 
-    if (result.refundedChips > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
-    }
-    return result;
+      if (result.refundedChips > 0) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+      }
+      return result;
+    });
   }
 
   /**

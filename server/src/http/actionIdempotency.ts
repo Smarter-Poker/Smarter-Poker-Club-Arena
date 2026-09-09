@@ -177,9 +177,13 @@ function storageKey(userId: string, tableId: string, key: string): string {
  * silently discards the amount is precisely the wrong failure mode for the one
  * field that decides how many chips move.
  */
-export function actionFingerprint(action: string, amount: unknown): string {
+export function actionFingerprint(
+  action: string,
+  amount: unknown,
+  actionContext?: string | null
+): string {
   const amt = amount === undefined || amount === null ? '' : String(amount);
-  return `${String(action).toLowerCase()}|${amt}`;
+  return JSON.stringify([String(action).toLowerCase(), amt, actionContext ?? null]);
 }
 
 function prune(now: number): void {

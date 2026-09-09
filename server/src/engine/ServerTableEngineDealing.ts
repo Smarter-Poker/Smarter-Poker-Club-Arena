@@ -750,11 +750,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // leave_pending sweep above, on EVERY iteration - which executed a
           // move milliseconds after the deal had announced "Moving After
           // This Hand", before the hand.
-          await this.withStepBudget(
-            'idle_seat_moves',
-            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-            this.executePendingSeatMoves()
-          );
+          await this.executeIdleSeatMoves();
           await this.withStepBudget(
             'idle_cluster_closed',
             ServerTableEngineBase.DEAL_STEP_BUDGET_MS,

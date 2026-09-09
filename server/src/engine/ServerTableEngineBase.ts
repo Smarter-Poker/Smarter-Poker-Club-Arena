@@ -2559,7 +2559,7 @@ export abstract class ServerTableEngineBase {
         // for one horse, one a minute, every one expired, while Main 1 sat one
         // short beside it. A table below the minimum is at a hand boundary
         // all the time; every pending move lands now.
-        await this.executePendingSeatMoves().catch((err) =>
+        await this.executeIdleSeatMoves().catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
         );
         if (!this.lifecycleCanMutate()) return;
@@ -3044,6 +3044,27 @@ export abstract class ServerTableEngineBase {
    * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
    * that has none.
    */
+  protected async executeIdleSeatMoves(): Promise<string[]> {
+    const release = await this.acquireSeatBoundary();
+    try {
+      if (!this.lifecycleCanMutate()) return [];
+      const raw = this.executePendingSeatMoves();
+      const budgeted = this.withStepBudget(
+        'idle_seat_moves',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        raw
+      );
+      // A time budget cannot cancel a committed or in-flight transfer.
+      // Keep the boundary until the original operation has actually settled.
+      const [outcome, budget] = await Promise.allSettled([raw, budgeted]);
+      if (outcome.status === 'rejected') throw outcome.reason;
+      if (budget.status === 'rejected') throw budget.reason;
+      return outcome.value;
+    } finally {
+      release();
+    }
+  }
+
   protected async executePendingSeatMoves(
     opts: { announcedOnly: boolean } = { announcedOnly: false },
     prefetched?: readonly PendingSeatMove[]

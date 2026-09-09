@@ -551,16 +551,18 @@ export default function LeaderboardPage() {
         setOwnerToolsError('Owner Prize Tools Could Not Be Loaded.');
       }
       const memberClubs: UserClub[] = memberships
-        .map((m): UserClub => ({
-          id: (m.club?.id || m.club_id) as string,
-          name: m.club?.name || 'Unknown Club',
-          role: String(m.role || 'member'),
-          canManagePrizes: rewardContexts.some(
-            (context) => context.club_id === (m.club?.id || m.club_id)
-          ),
-          slug: m.club?.slug ?? null,
-          club_id: m.club?.club_id ?? null,
-        }))
+        .map(
+          (m): UserClub => ({
+            id: (m.club?.id || m.club_id) as string,
+            name: m.club?.name || 'Unknown Club',
+            role: String(m.role || 'member'),
+            canManagePrizes: rewardContexts.some(
+              (context) => context.club_id === (m.club?.id || m.club_id)
+            ),
+            slug: m.club?.slug ?? null,
+            club_id: m.club?.club_id ?? null,
+          })
+        )
         .filter((c) => Boolean(c.id));
       const clubs: UserClub[] = [...memberClubs];
       for (const context of rewardContexts) {

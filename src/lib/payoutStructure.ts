@@ -1,8 +1,16 @@
 import { parseJsonCached } from '../utils/parseJsonCached';
+import { spinTier } from '../config/spinSpec';
 
 export interface PayoutPlace {
   place: number;
   percentage: number;
+}
+
+export interface PayoutSubject {
+  payout_structure?: unknown;
+  variant?: string | null;
+  tournament_type?: string | null;
+  spin_multiplier?: number | null;
 }
 
 function numericJsonScalar(value: unknown): number {
@@ -53,4 +61,40 @@ export function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
   if (!seen.has(1)) return null;
   places.sort((a, b) => a.place - b.place);
   return places;
+}
+
+/** A Spin's persisted multiplier is its payout contract, not its stored placeholder. */
+export function isSpinTournament(t: PayoutSubject | null | undefined): boolean {
+  if (!t) return false;
+  return (
+    String(t.variant ?? '').toLowerCase() === 'spin' ||
+    String(t.tournament_type ?? '').toUpperCase() === 'SPIN'
+  );
+}
+
+/** Resolve the canonical percentage ladder for a drawn Spin tier. */
+export function spinPayoutStructure(multiplier: number | null | undefined): PayoutPlace[] | null {
+  const tier = spinTier(Number(multiplier));
+  if (!tier || !Array.isArray(tier.payouts) || tier.payouts.length === 0) return null;
+  return tier.payouts.map((percentage, index) => ({
+    place: index + 1,
+    percentage: Math.round(percentage * 10_000) / 100,
+  }));
+}
+
+/**
+ * The exact payout ladder the settlement authority uses.
+ *
+ * Spin rows are created with a winner-take-all placeholder before the draw, so
+ * a known multiplier must outrank that copy. An unknown Spin tier fails closed
+ * instead of advertising the placeholder. Every other format keeps its stored
+ * operator-authored structure.
+ */
+export function resolvePayoutStructure(
+  tournament: PayoutSubject | null | undefined
+): PayoutPlace[] | null {
+  if (isSpinTournament(tournament)) {
+    return spinPayoutStructure(tournament?.spin_multiplier);
+  }
+  return parsePayoutStructure(tournament?.payout_structure);
 }

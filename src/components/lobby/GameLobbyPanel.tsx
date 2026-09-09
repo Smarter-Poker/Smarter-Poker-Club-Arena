@@ -32,8 +32,8 @@ import { useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
 import {
   effectivePlaceLadderPool,
-  parsePayoutStructure,
   placePrize,
+  resolvePayoutStructure,
 } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
@@ -554,8 +554,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
    * ranges to one entry per place, which also gives the rows a real key.
    */
   const panelPayouts = useMemo<PayoutPlace[]>(
-    () => parsePayoutStructure(tournament?.payout_structure) ?? [],
-    [tournament?.payout_structure]
+    () => resolvePayoutStructure(tournament) ?? [],
+    [tournament]
   );
   const panelIsSatellite =
     String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
@@ -573,13 +573,13 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     return effectivePlaceLadderPool(
       tournament.prize_pool,
       tournament.guaranteed_prize,
-      tournament.payout_structure,
+      panelPayouts,
       tournamentFieldSize ?? 0,
       tournament.bubble_protection === true,
       Number(tournament.buy_in_amount) || 0,
       panelIsSatellite
     );
-  }, [panelIsSatellite, tournament, tournamentFieldSize]);
+  }, [panelIsSatellite, panelPayouts, tournament, tournamentFieldSize]);
 
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different

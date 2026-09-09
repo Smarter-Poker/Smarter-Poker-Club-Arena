@@ -13,6 +13,7 @@ BEGIN;
 
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
+SET LOCAL transaction_timeout = '180s';
 
 DO $terminal_prerequisites$
 BEGIN
@@ -31,16 +32,6 @@ BEGIN
      OR to_regprocedure('public.fn_mystery_bounty_pay(uuid)') IS NULL
      OR to_regprocedure(
           'public.fn_mystery_bounty_reserve(uuid,uuid,jsonb,uuid,text,uuid,integer)') IS NULL
-     OR to_regprocedure(
-          'public.fn_collect_bounty_unguarded_20260907(uuid,uuid,uuid,jsonb)') IS NULL
-     OR to_regprocedure(
-          'public.fn_finalize_bounty_pool_unguarded_20260907(uuid,uuid)') IS NULL
-     OR to_regprocedure(
-          'public.fn_mystery_bounty_settle_unguarded_20260907(uuid,uuid)') IS NULL
-     OR to_regprocedure(
-          'public.fn_mystery_bounty_pay_unguarded_20260907(uuid)') IS NULL
-     OR to_regprocedure(
-          'public.fn_mystery_bounty_reserve_unguarded_20260907(uuid,uuid,jsonb,uuid,text,uuid,integer)') IS NULL
      OR to_regprocedure(
           'public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)') IS NULL
      OR to_regprocedure(
@@ -70,6 +61,23 @@ BEGIN
   END IF;
 END;
 $terminal_prerequisites$;
+
+-- Drain every older tournament writer before taking any relation lock on a
+-- tournament child. The live terminal path takes tournaments first and then
+-- knockout, bounty, felt and ledger evidence. Taking this parent barrier before
+-- either index build and every later child ALTER/trigger DDL preserves that
+-- same order and prevents a cutover transaction holding a child relation from
+-- waiting behind a terminal transaction that already holds tournaments.
+--
+-- ACCESS EXCLUSIVE is required on the parent, not merely SHARE ROW EXCLUSIVE.
+-- The live terminal path first enters tournaments with SELECT ... FOR UPDATE
+-- (ROW SHARE) and only later upgrades when it writes the lifecycle row. SHARE
+-- ROW EXCLUSIVE is compatible with that first mode, so admitting such a path
+-- here could leave this migration waiting on a child relation while the live
+-- path waits to upgrade tournaments. This barrier refuses that entrant before
+-- any child lock is taken. It remains held through the later cutover inventory,
+-- so no timestamp inference or second lock upgrade is used.
+LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE;
 
 -- New hands receive one monotonically increasing number from
 -- global_hand_number_seq. Preserve that global identity while every lookup
@@ -160,6 +168,31 @@ DECLARE
   v_prior_context text;
   v_obligation_count integer;
   v_pko_watermark bigint;
+  v_t record;
+  v_elim record;
+  v_head numeric;
+  v_available numeric;
+  v_payable numeric;
+  v_cash numeric;
+  v_to_head numeric;
+  v_cents integer;
+  v_cash_cents integer;
+  v_mode text;
+  v_funded boolean;
+  v_claimants jsonb;
+  v_n integer;
+  v_total_weight numeric;
+  v_paid_total numeric := 0;
+  v_head_total numeric := 0;
+  c record;
+  v_share_cents integer;
+  v_assigned_cents integer := 0;
+  v_i integer := 0;
+  v_prior numeric;
+  v_settle jsonb;
+  v_desc text;
+  v_core_collector_user_id uuid;
+  v_core_claimants jsonb;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1',0));
@@ -245,11 +278,240 @@ BEGIN
   END IF;
 
   -- Ignore caller ordering/weights. The exact pot-derived, roster-validated
-  -- snapshot stored by the atomic claim is the only payout authority.
+  -- snapshot stored by the atomic claim is the only payout authority. The
+  -- audited payer is inlined here so this root survives retirement of the
+  -- temporary rolling-deployment body.
+  v_core_collector_user_id := o.knocker_user_id;
+  v_core_claimants := o.claimants;
   v_prior_context := current_setting('app.bounty_obligation_id',true);
   PERFORM set_config('app.bounty_obligation_id',o.id::text,true);
-  v_result := public.fn_collect_bounty_unguarded_20260907(
-    p_tournament_id,p_eliminated_user_id,o.knocker_user_id,o.claimants);
+
+  <<collect_core>>
+  BEGIN
+    IF v_core_collector_user_id IS NULL OR p_eliminated_user_id IS NULL THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'missing_party');
+      EXIT collect_core;
+    END IF;
+
+    SELECT id, is_bounty, is_pko, is_mystery_bounty, bounty_amount,
+           bounty_pool, bounty_pool_paid, mystery_bounty_stage
+      INTO v_t FROM tournaments WHERE id = p_tournament_id FOR UPDATE;
+    IF NOT FOUND THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
+      EXIT collect_core;
+    END IF;
+    IF NOT (COALESCE(v_t.is_bounty,false) OR COALESCE(v_t.is_pko,false)
+            OR COALESCE(v_t.is_mystery_bounty,false)) THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'not_a_bounty_tournament');
+      EXIT collect_core;
+    END IF;
+
+    IF COALESCE(v_t.is_pko, false) AND COALESCE(v_t.is_mystery_bounty, false) THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'undefined_pko_mystery_hybrid',
+        'detail', 'PKO heads claim against bounty_pool; mystery chests are a sealed '
+               || 'inventory. No split satisfies both. This event should not exist.');
+      EXIT collect_core;
+    END IF;
+
+    IF COALESCE(v_t.is_mystery_bounty, false)
+       AND v_t.mystery_bounty_stage = 'active' THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'mystery_phase_active');
+      EXIT collect_core;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM tournament_bounties b
+       WHERE b.tournament_id = p_tournament_id
+         AND b.eliminated_player_id = p_eliminated_user_id
+         AND (
+           b.bounty_obligation_id = (SELECT pending.id
+             FROM tournament_bounty_obligations pending
+            WHERE pending.tournament_id=p_tournament_id
+              AND pending.eliminated_user_id=p_eliminated_user_id
+              AND pending.mode <> 'mystery_chest' AND pending.state='pending'
+            ORDER BY pending.hand_number, pending.created_at LIMIT 1)
+           OR (b.bounty_obligation_id IS NULL AND NOT EXISTS (
+             SELECT 1 FROM tournament_bounty_obligations pending
+              WHERE pending.tournament_id=p_tournament_id
+                AND pending.eliminated_user_id=p_eliminated_user_id
+                AND pending.mode <> 'mystery_chest' AND pending.state='pending'))
+         )
+    ) THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'already_collected');
+      EXIT collect_core;
+    END IF;
+
+    SELECT current_bounty INTO v_elim
+      FROM tournament_players
+     WHERE tournament_id = p_tournament_id AND user_id = p_eliminated_user_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+      v_result := jsonb_build_object(
+        'ok', false, 'reason', 'eliminated_player_not_in_tournament');
+      EXIT collect_core;
+    END IF;
+
+    v_mode := CASE WHEN COALESCE(v_t.is_pko,false) THEN 'pko'
+                   WHEN COALESCE(v_t.is_mystery_bounty,false) THEN 'mystery_pre'
+                   ELSE 'regular' END;
+
+    v_head := COALESCE(NULLIF(v_elim.current_bounty, 0), v_t.bounty_amount, 0);
+    IF v_head <= 0 THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'no_head_value');
+      EXIT collect_core;
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM tournament_bounty_obligations pending
+       WHERE pending.tournament_id=p_tournament_id
+         AND pending.eliminated_user_id=p_eliminated_user_id
+         AND pending.mode <> 'mystery_chest' AND pending.state='pending'
+         AND pending.head_amount IS DISTINCT FROM round(v_head,2)
+    ) THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'head_snapshot_changed');
+      EXIT collect_core;
+    END IF;
+
+    v_funded := COALESCE(v_t.bounty_pool, 0) > 0;
+    SELECT round(COALESCE(v_t.bounty_pool,0) - COALESCE(SUM(
+             CASE WHEN lower(wt.type) = 'debit' THEN -abs(wt.amount)
+                  ELSE wt.amount END), 0), 2)
+      INTO v_available
+      FROM wallet_transactions wt
+     WHERE wt.related_entity_id = p_tournament_id
+       AND wt.category = 'bounty';
+
+    IF v_funded THEN
+      IF v_available <= 0 THEN
+        v_result := jsonb_build_object('ok', false, 'reason', 'bounty_pool_exhausted',
+                                      'head', v_head, 'available', v_available);
+        EXIT collect_core;
+      END IF;
+      IF v_available < v_head THEN
+        v_result := jsonb_build_object('ok', false, 'reason', 'bounty_pool_underfunded',
+                                      'head', v_head, 'available', v_available);
+        EXIT collect_core;
+      END IF;
+      v_payable := v_head;
+    ELSE
+      v_payable := v_head;
+    END IF;
+
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+             'user_id', x.uid, 'weight', x.w)), '[]'::jsonb)
+      INTO v_claimants
+      FROM (
+        SELECT (e->>'user_id')::uuid AS uid, (e->>'weight')::numeric AS w
+          FROM jsonb_array_elements(COALESCE(v_core_claimants, '[]'::jsonb)) e
+         WHERE (e->>'user_id') IS NOT NULL
+           AND COALESCE((e->>'weight')::numeric, 0) > 0
+           AND EXISTS (
+             SELECT 1 FROM tournament_players tp
+              WHERE tp.tournament_id = p_tournament_id
+                AND tp.user_id = (e->>'user_id')::uuid)
+      ) x;
+    v_n := jsonb_array_length(v_claimants);
+    IF v_n <= 1 THEN
+      v_claimants := jsonb_build_array(jsonb_build_object(
+        'user_id', v_core_collector_user_id, 'weight', 1));
+      v_n := 1;
+    END IF;
+    SELECT sum((e->>'weight')::numeric) INTO v_total_weight
+      FROM jsonb_array_elements(v_claimants) e;
+
+    v_cents := round(v_payable * 100)::integer;
+    v_desc := CASE v_mode
+      WHEN 'pko' THEN 'PKO bounty (cash half) from eliminated player'
+      WHEN 'mystery_pre' THEN 'Bounty collected before the mystery phase opened'
+      ELSE 'Bounty collected from eliminated player' END
+      || CASE WHEN v_n > 1 THEN ' (split pot, ' || v_n || ' winners)' ELSE '' END;
+    v_shares := '[]'::jsonb;
+
+    FOR c IN
+      SELECT (e->>'user_id')::uuid AS uid, (e->>'weight')::numeric AS w
+        FROM jsonb_array_elements(v_claimants) e
+       ORDER BY (e->>'weight')::numeric ASC, (e->>'user_id')
+    LOOP
+      v_i := v_i + 1;
+      IF v_i < v_n THEN
+        v_share_cents := floor(v_cents * c.w / v_total_weight)::integer;
+      ELSE
+        v_share_cents := v_cents - v_assigned_cents;
+      END IF;
+      v_assigned_cents := v_assigned_cents + v_share_cents;
+      CONTINUE WHEN v_share_cents <= 0;
+
+      IF v_mode = 'pko' THEN
+        v_cash_cents := (v_share_cents / 2)::integer;
+        v_cash := v_cash_cents / 100.0;
+        v_to_head := (v_share_cents - v_cash_cents) / 100.0;
+      ELSE
+        v_cash := v_share_cents / 100.0;
+        v_to_head := 0;
+      END IF;
+
+      IF v_cash > 0 THEN
+        v_prior := COALESCE((
+          SELECT debt.amount_paid FROM public.tournament_obligations debt
+           WHERE debt.tournament_id = p_tournament_id
+             AND debt.kind = 'bounty'
+             AND debt.place IS NULL
+             AND debt.user_id = c.uid), 0);
+        v_settle := public.fn_settle_tournament_obligation(
+          p_tournament_id, 'bounty', NULL, c.uid, round(v_prior + v_cash, 2),
+          'fn_collect_bounty', v_desc);
+        IF NOT COALESCE((v_settle->>'ok')::boolean, false) THEN
+          RAISE EXCEPTION
+            'fn_collect_bounty: bounty of % to % in tournament % refused (%); nothing recorded',
+            v_cash, c.uid, p_tournament_id,
+            COALESCE(v_settle->>'refused_reason', 'unknown');
+        END IF;
+        IF round(COALESCE((v_settle->>'paid')::numeric, 0), 2)
+             <> round(v_cash, 2) THEN
+          RAISE EXCEPTION
+            'fn_collect_bounty: obligation paid % but the share is % for % in tournament %; nothing recorded',
+            v_settle->>'paid', v_cash, c.uid, p_tournament_id;
+        END IF;
+      END IF;
+
+      UPDATE tournament_players
+         SET bounties_collected = COALESCE(bounties_collected,0) + 1,
+             bounty_winnings = round(COALESCE(bounty_winnings,0) + v_cash, 2),
+             current_bounty = round(COALESCE(current_bounty,0) + v_to_head, 2)
+       WHERE tournament_id = p_tournament_id AND user_id = c.uid;
+
+      INSERT INTO tournament_bounties
+        (tournament_id, eliminated_player_id, collector_player_id, bounty_amount,
+         added_to_collector_bounty, is_mystery_revealed)
+      VALUES
+        (p_tournament_id, p_eliminated_user_id, c.uid,
+         round(v_share_cents / 100.0, 2),
+         CASE WHEN v_to_head > 0 THEN v_to_head ELSE NULL END, false);
+
+      v_paid_total := v_paid_total + v_cash;
+      v_head_total := v_head_total + v_to_head;
+      v_shares := v_shares || jsonb_build_object(
+        'user_id', c.uid, 'cash', v_cash, 'to_head', v_to_head);
+    END LOOP;
+
+    UPDATE tournament_players SET current_bounty = 0
+     WHERE tournament_id = p_tournament_id AND user_id = p_eliminated_user_id;
+
+    IF v_funded THEN
+      UPDATE tournaments
+         SET bounty_pool_paid = round(COALESCE(bounty_pool_paid,0) + v_paid_total, 2)
+       WHERE id = p_tournament_id;
+    END IF;
+
+    v_result := jsonb_build_object(
+      'ok', true, 'mode', v_mode, 'funded', v_funded,
+      'head', v_head, 'paid_cash', round(v_paid_total, 2),
+      'added_to_head', round(v_head_total, 2),
+      'split', v_n > 1, 'shares', v_shares,
+      'capped', v_funded AND v_payable < v_head,
+      'pool_remaining', CASE WHEN v_funded
+                             THEN round(v_available - v_paid_total, 2) END);
+  END collect_core;
+
   PERFORM set_config('app.bounty_obligation_id',COALESCE(v_prior_context,''),true);
 
   IF NOT COALESCE((v_result->>'ok')::boolean,false) THEN
@@ -304,7 +566,7 @@ GRANT EXECUTE ON FUNCTION public.fn_collect_bounty(uuid,uuid,uuid,jsonb)
 -- from inside a wrapper is transaction-local and immediate. A direct rolling
 -- caller and a wrapped finish therefore cannot interleave their bank or
 -- recipient locks at all.
--- The place and deal definitions are statically locked in 20260909014410;
+-- The place and deal definitions are statically locked in 20260909042455;
 -- restate every remaining rolling component here from its canonical source.
 CREATE OR REPLACE FUNCTION public.fn_finalize_bounty_pool(p_tournament_id uuid, p_winner_user_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp'
@@ -315,6 +577,12 @@ DECLARE
   v_canonical_winner uuid;
   v_winner_count integer;
   v_receipt public.tournament_bounty_completion_receipts%ROWTYPE;
+  v_core_t record;
+  v_residual numeric;
+  v_own numeric;
+  v_paid numeric;
+  v_prior numeric;
+  v_settle jsonb;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1',0));
@@ -361,8 +629,125 @@ BEGIN
                         AND r.mystery_settled_at IS NOT NULL) THEN
     RETURN jsonb_build_object('ok',false,'reason','mystery_bounty_not_settled');
   END IF;
-  v_result := public.fn_finalize_bounty_pool_unguarded_20260907(
-    p_tournament_id,p_winner_user_id);
+  -- Keep the complete audited payer in this public root. The temporary
+  -- rolling-deployment body can therefore be dropped after engine cutover
+  -- without taking tournament completion with it.
+  <<finalize_bounty_core>>
+  BEGIN
+    SELECT id, is_bounty, is_pko, is_mystery_bounty, bounty_pool,
+           bounty_pool_paid
+      INTO v_core_t
+      FROM tournaments
+     WHERE id = p_tournament_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'not_found');
+      EXIT finalize_bounty_core;
+    END IF;
+    IF NOT (COALESCE(v_core_t.is_bounty,false)
+            OR COALESCE(v_core_t.is_pko,false)
+            OR COALESCE(v_core_t.is_mystery_bounty,false)) THEN
+      v_result := jsonb_build_object(
+        'ok', true, 'residual', 0, 'reason', 'not_a_bounty_tournament');
+      EXIT finalize_bounty_core;
+    END IF;
+
+    IF COALESCE(v_core_t.bounty_pool, 0) <= 0 THEN
+      SELECT COALESCE(NULLIF(current_bounty,0),
+                      NULLIF(mystery_bounty_value,0), 0)
+        INTO v_own
+        FROM tournament_players
+       WHERE tournament_id = p_tournament_id
+         AND user_id = p_winner_user_id;
+      IF COALESCE(v_own,0) <= 0 OR p_winner_user_id IS NULL THEN
+        v_result := jsonb_build_object(
+          'ok', true, 'residual', 0, 'funded', false);
+        EXIT finalize_bounty_core;
+      END IF;
+      v_prior := COALESCE((
+        SELECT debt.amount_paid FROM public.tournament_obligations debt
+         WHERE debt.tournament_id = p_tournament_id
+           AND debt.kind = 'bounty_residual'
+           AND debt.place IS NULL
+           AND debt.user_id = p_winner_user_id), 0);
+      v_settle := public.fn_settle_tournament_obligation(
+        p_tournament_id, 'bounty_residual', NULL, p_winner_user_id,
+        round(v_prior + v_own, 2), 'fn_finalize_bounty_pool',
+        'Tournament champion: own bounty head collected');
+      IF NOT COALESCE((v_settle->>'ok')::boolean, false) THEN
+        RAISE EXCEPTION
+          'fn_finalize_bounty_pool: own bounty head of % to % in tournament % refused (%)',
+          v_own, p_winner_user_id, p_tournament_id,
+          COALESCE(v_settle->>'refused_reason', 'unknown');
+      END IF;
+      UPDATE tournament_players
+         SET bounty_winnings = round(COALESCE(bounty_winnings,0) + v_own, 2),
+             current_bounty = 0
+       WHERE tournament_id = p_tournament_id
+         AND user_id = p_winner_user_id;
+      v_result := jsonb_build_object(
+        'ok', true, 'residual', v_own, 'funded', false,
+        'paid_to', p_winner_user_id);
+      EXIT finalize_bounty_core;
+    END IF;
+
+    SELECT round(COALESCE(SUM(
+             CASE WHEN lower(wt.type) = 'debit' THEN -abs(wt.amount)
+                  ELSE wt.amount END), 0), 2)
+      INTO v_paid
+      FROM wallet_transactions wt
+     WHERE wt.related_entity_id = p_tournament_id
+       AND wt.category = 'bounty';
+
+    v_residual := round(
+      COALESCE(v_core_t.bounty_pool,0) - COALESCE(v_paid,0), 2);
+
+    IF COALESCE(v_core_t.bounty_pool_paid,0)
+         IS DISTINCT FROM COALESCE(v_paid,0) THEN
+      UPDATE tournaments
+         SET bounty_pool_paid = COALESCE(v_paid,0)
+       WHERE id = p_tournament_id;
+    END IF;
+
+    IF v_residual <= 0 OR p_winner_user_id IS NULL THEN
+      v_result := jsonb_build_object(
+        'ok', true, 'residual', GREATEST(v_residual,0),
+        'funded', true, 'ledger_paid', v_paid);
+      EXIT finalize_bounty_core;
+    END IF;
+
+    v_prior := COALESCE((
+      SELECT debt.amount_paid FROM public.tournament_obligations debt
+       WHERE debt.tournament_id = p_tournament_id
+         AND debt.kind = 'bounty_residual'
+         AND debt.place IS NULL
+         AND debt.user_id = p_winner_user_id), 0);
+    v_settle := public.fn_settle_tournament_obligation(
+      p_tournament_id, 'bounty_residual', NULL, p_winner_user_id,
+      round(v_prior + v_residual, 2), 'fn_finalize_bounty_pool',
+      'Unclaimed bounty pool awarded to champion');
+    IF NOT COALESCE((v_settle->>'ok')::boolean, false) THEN
+      RAISE EXCEPTION
+        'fn_finalize_bounty_pool: residual of % to % in tournament % refused (%)',
+        v_residual, p_winner_user_id, p_tournament_id,
+        COALESCE(v_settle->>'refused_reason', 'unknown');
+    END IF;
+
+    UPDATE tournaments
+       SET bounty_pool_paid = round(COALESCE(v_paid,0) + v_residual, 2)
+     WHERE id = p_tournament_id;
+    UPDATE tournament_players
+       SET bounty_winnings = round(
+             COALESCE(bounty_winnings,0) + v_residual, 2),
+           current_bounty = 0
+     WHERE tournament_id = p_tournament_id
+       AND user_id = p_winner_user_id;
+
+    v_result := jsonb_build_object(
+      'ok', true, 'residual', v_residual, 'funded', true,
+      'ledger_paid', v_paid, 'paid_to', p_winner_user_id);
+  END finalize_bounty_core;
+
   IF COALESCE((v_result->>'ok')::boolean,false) THEN
     INSERT INTO public.tournament_bounty_completion_receipts
       (tournament_id,winner_user_id,pool_finalized_at,pool_result,updated_at)
@@ -387,6 +772,17 @@ DECLARE
   v_winner_count integer;
   v_receipt public.tournament_bounty_completion_receipts%ROWTYPE;
   v_award record;
+  v_pool bigint;
+  v_paid bigint;
+  v_unclaimed bigint;
+  v_stage text;
+  v_core_award record;
+  v_funded numeric;
+  v_ledger numeric;
+  v_room bigint;
+  v_residual bigint;
+  v_prior numeric;
+  v_settle jsonb;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1',0));
@@ -459,8 +855,137 @@ BEGIN
   IF public.fn_tournament_has_unsettled_bounties(p_tournament_id) THEN
     RETURN jsonb_build_object('ok',false,'reason','pending_bounty_obligations');
   END IF;
-  v_result := public.fn_mystery_bounty_settle_unguarded_20260907(
-    p_tournament_id,p_winner_user_id);
+  -- Inline the complete audited closeout. Stage two removes the temporary
+  -- unguarded body, so the live terminal root must retain no hidden delegate.
+  <<mystery_settle_core>>
+  BEGIN
+    SELECT mystery_bounty_stage,
+           COALESCE(mystery_bounty_pool_cents, 0),
+           COALESCE(bounty_pool, 0)
+      INTO v_stage, v_pool, v_funded
+      FROM public.tournaments
+     WHERE id = p_tournament_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+      v_result := jsonb_build_object(
+        'ok', false, 'reason', 'tournament_not_found');
+      EXIT mystery_settle_core;
+    END IF;
+    IF v_stage = 'pending' THEN
+      v_result := jsonb_build_object(
+        'ok', true, 'reason', 'never_activated', 'unclaimed_cents', 0,
+        'pool_cents', 0, 'settled_cents', 0, 'balanced', true,
+        'variance_cents', 0);
+      EXIT mystery_settle_core;
+    END IF;
+
+    FOR v_core_award IN
+      SELECT id FROM public.tournament_bounty_awards
+       WHERE tournament_id = p_tournament_id
+         AND status = 'revealed'
+       ORDER BY id
+       FOR UPDATE
+    LOOP
+      PERFORM public.fn_mystery_bounty_pay(v_core_award.id);
+    END LOOP;
+
+    SELECT COALESCE(sum(r.amount_cents), 0)
+      INTO v_paid
+      FROM public.tournament_bounty_award_recipients r
+      JOIN public.tournament_bounty_awards a ON a.id = r.award_id
+     WHERE a.tournament_id = p_tournament_id
+       AND r.paid_at IS NOT NULL;
+
+    SELECT COALESCE(sum(amount_cents), 0)
+      INTO v_unclaimed
+      FROM public.tournament_bounty_chests
+     WHERE tournament_id = p_tournament_id
+       AND status IN ('available','reserved','revealed');
+
+    v_residual := v_unclaimed;
+    IF v_residual > 0 AND v_funded > 0 THEN
+      SELECT round(COALESCE(SUM(
+               CASE WHEN lower(wt.type) = 'debit' THEN -abs(wt.amount)
+                    ELSE wt.amount END), 0), 2)
+        INTO v_ledger
+        FROM wallet_transactions wt
+       WHERE wt.related_entity_id = p_tournament_id
+         AND wt.category = 'bounty';
+
+      v_room := GREATEST(
+        0, floor((v_funded - COALESCE(v_ledger, 0)) * 100))::bigint;
+      IF v_residual > v_room THEN
+        INSERT INTO financial_alerts (severity, source, message, context)
+        VALUES (
+          'critical', 'fn_mystery_bounty_settle',
+          'Champion residual clamped: the unclaimed chests are worth more than the bounty pool still holds',
+          jsonb_build_object(
+            'tournament_id', p_tournament_id,
+            'unclaimed_cents', v_unclaimed,
+            'room_cents', v_room,
+            'ledger_paid', v_ledger,
+            'bounty_pool', v_funded,
+            'detail', 'the clamp is not the bug, it is the seatbelt -- find the payer that already spent the pool'));
+        v_residual := v_room;
+      END IF;
+    END IF;
+
+    IF p_winner_user_id IS NOT NULL THEN
+      IF v_residual > 0 THEN
+        v_prior := COALESCE((
+          SELECT debt.amount_paid FROM public.tournament_obligations debt
+           WHERE debt.tournament_id = p_tournament_id
+             AND debt.kind = 'mystery_bounty'
+             AND debt.place IS NULL
+             AND debt.user_id = p_winner_user_id), 0);
+        v_settle := public.fn_settle_tournament_obligation(
+          p_tournament_id, 'mystery_bounty', NULL, p_winner_user_id,
+          round(v_prior + (v_residual / 100.0), 2),
+          'fn_mystery_bounty_settle',
+          'Unclaimed mystery bounty chests awarded to champion');
+        IF NOT COALESCE((v_settle->>'ok')::boolean, false) THEN
+          RAISE EXCEPTION
+            'fn_mystery_bounty_settle: residual of % cents to % in tournament % refused (%)',
+            v_residual, p_winner_user_id, p_tournament_id,
+            COALESCE(v_settle->>'refused_reason', 'unknown');
+        END IF;
+        UPDATE public.tournament_players
+           SET bounty_winnings = round(
+                 COALESCE(bounty_winnings, 0) + (v_residual / 100.0), 2)
+         WHERE tournament_id = p_tournament_id
+           AND user_id = p_winner_user_id;
+        UPDATE public.tournaments
+           SET bounty_pool_paid = round(
+                 COALESCE(bounty_pool_paid, 0) + (v_residual / 100.0), 2)
+         WHERE id = p_tournament_id;
+        v_paid := v_paid + v_residual;
+      END IF;
+
+      UPDATE public.tournament_bounty_awards a
+         SET status = 'void'
+       WHERE a.tournament_id = p_tournament_id
+         AND a.status <> 'completed'
+         AND EXISTS (
+           SELECT 1 FROM public.tournament_bounty_chests c
+            WHERE c.id = a.chest_id
+              AND c.status IN ('available','reserved','revealed'));
+
+      UPDATE public.tournament_bounty_chests
+         SET status = 'void'
+       WHERE tournament_id = p_tournament_id
+         AND status IN ('available','reserved','revealed');
+    END IF;
+
+    UPDATE public.tournaments
+       SET mystery_bounty_stage = 'complete'
+     WHERE id = p_tournament_id;
+
+    v_result := jsonb_build_object(
+      'ok', true, 'pool_cents', v_pool, 'settled_cents', v_paid,
+      'unclaimed_cents', v_unclaimed, 'residual_paid_cents', v_residual,
+      'balanced', v_paid = v_pool, 'variance_cents', v_paid - v_pool);
+  END mystery_settle_core;
+
   IF NOT COALESCE((v_result->>'ok')::boolean,false)
      OR NOT COALESCE((v_result->>'balanced')::boolean,false) THEN
     -- The historical body can already have paid a clamp/residual or voided a
@@ -5342,6 +5867,14 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_
 AS $function$
 DECLARE
   v_tournament_id uuid;
+  v_a record;
+  v_r record;
+  v_paid bigint := 0;
+  v_credited boolean;
+  v_refused integer := 0;
+  v_chest_status text;
+  v_prior numeric;
+  v_settle jsonb;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1',0));
@@ -5369,7 +5902,157 @@ BEGIN
    JOIN public.tournament_bounty_awards a ON a.id = r.award_id
    WHERE a.tournament_id = v_tournament_id
    ORDER BY r.user_id,r.id FOR UPDATE OF r;
-  RETURN public.fn_mystery_bounty_pay_unguarded_20260907(p_award_id);
+  -- The payer itself is static in this root. Stage two can remove the
+  -- temporary unguarded copy without leaving an undefined runtime call.
+  SELECT * INTO v_a
+    FROM public.tournament_bounty_awards
+   WHERE id = p_award_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'award_not_found');
+  END IF;
+
+  IF v_a.status = 'completed' THEN
+    IF v_a.bounty_obligation_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM public.tournament_bounty_obligations o
+       WHERE o.id=v_a.bounty_obligation_id AND o.state='settled'
+         AND public.fn_bounty_obligation_has_complete_marker(o.id)
+    ) THEN
+      RETURN jsonb_build_object(
+        'ok',false,'reason','completed_award_marker_incomplete',
+        'award_id',p_award_id);
+    END IF;
+    RETURN jsonb_build_object(
+      'ok', true, 'already', true, 'award_id', p_award_id,
+      'amount_cents', v_a.amount_cents);
+  END IF;
+  IF v_a.status = 'reserved' THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_yet_revealed');
+  END IF;
+  IF v_a.status = 'void' THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'reason', 'award_voided_by_settlement',
+      'award_id', p_award_id);
+  END IF;
+
+  SELECT status INTO v_chest_status
+    FROM public.tournament_bounty_chests
+   WHERE id = v_a.chest_id;
+  IF v_chest_status = 'void' THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'reason', 'chest_settled_to_champion',
+      'award_id', p_award_id);
+  END IF;
+
+  FOR v_r IN
+    SELECT * FROM public.tournament_bounty_award_recipients
+     WHERE award_id = p_award_id
+       AND paid_at IS NULL
+       AND amount_cents > 0
+     ORDER BY user_id
+     FOR UPDATE
+  LOOP
+    v_prior := COALESCE((
+      SELECT o.amount_paid FROM public.tournament_obligations o
+       WHERE o.tournament_id = v_a.tournament_id
+         AND o.kind = 'mystery_bounty'
+         AND o.place IS NULL
+         AND o.user_id = v_r.user_id), 0);
+    v_settle := public.fn_settle_tournament_obligation(
+      v_a.tournament_id, 'mystery_bounty', NULL, v_r.user_id,
+      round(v_prior + (v_r.amount_cents / 100.0), 2),
+      'fn_mystery_bounty_pay',
+      'Mystery bounty revealed from eliminated player');
+    v_credited := COALESCE((v_settle->>'ok')::boolean, false);
+
+    IF COALESCE(v_credited, false)
+       AND round(COALESCE((v_settle->>'paid')::numeric,0),2)
+             = round((v_r.amount_cents / 100.0)::numeric,2) THEN
+      UPDATE public.tournament_bounty_award_recipients
+         SET paid_at = now()
+       WHERE id = v_r.id;
+
+      v_paid := v_paid + v_r.amount_cents;
+      UPDATE public.tournament_players
+         SET bounties_collected = COALESCE(bounties_collected, 0) + 1,
+             bounty_winnings = round(
+               COALESCE(bounty_winnings, 0)
+                 + (v_r.amount_cents / 100.0), 2)
+       WHERE tournament_id = v_a.tournament_id
+         AND user_id = v_r.user_id;
+
+      INSERT INTO public.tournament_bounties
+        (tournament_id, eliminated_player_id, collector_player_id,
+         bounty_amount, is_mystery_revealed, bounty_obligation_id)
+      VALUES
+        (v_a.tournament_id, v_a.eliminated_user_id, v_r.user_id,
+         (v_r.amount_cents / 100.0)::numeric, true,
+         v_a.bounty_obligation_id)
+      ON CONFLICT DO NOTHING;
+    ELSE
+      RAISE EXCEPTION
+        'fn_mystery_bounty_pay: recipient % refused for award % (%)',
+        v_r.user_id, p_award_id,
+        COALESCE(v_settle->>'refused_reason','unknown')
+        USING ERRCODE='check_violation';
+    END IF;
+  END LOOP;
+
+  IF v_paid > 0 THEN
+    UPDATE public.tournaments
+       SET bounty_pool_paid = round(
+             COALESCE(bounty_pool_paid, 0) + (v_paid / 100.0), 2)
+     WHERE id = v_a.tournament_id;
+  END IF;
+
+  UPDATE public.tournament_bounty_award_recipients
+     SET paid_at=COALESCE(paid_at,now())
+   WHERE award_id=p_award_id AND amount_cents=0;
+
+  IF v_refused = 0 AND NOT EXISTS (
+    SELECT 1 FROM public.tournament_bounty_award_recipients
+     WHERE award_id=p_award_id AND paid_at IS NULL
+  ) THEN
+    UPDATE public.tournament_bounty_awards
+       SET status = 'completed', paid_at = now()
+     WHERE id = p_award_id;
+    UPDATE public.tournament_bounty_chests
+       SET status = 'paid'
+     WHERE id = v_a.chest_id;
+  ELSE
+    INSERT INTO financial_alerts (severity, source, message, context)
+    VALUES (
+      'critical', 'fn_mystery_bounty_pay',
+      'Mystery bounty award left incomplete: a recipient credit was refused',
+      jsonb_build_object(
+        'award_id', p_award_id,
+        'tournament_id', v_a.tournament_id,
+        'refused_recipients', v_refused,
+        'paid_cents', v_paid,
+        'award_cents', v_a.amount_cents,
+        'refused_reason', v_settle->>'refused_reason',
+        'detail', 'the award is NOT marked completed and the chest is NOT marked paid, so it stays retryable'));
+  END IF;
+
+  IF v_a.bounty_obligation_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.tournament_bounty_obligations o
+     WHERE o.id=v_a.bounty_obligation_id AND o.state='settled'
+       AND public.fn_bounty_obligation_has_complete_marker(o.id)
+  ) THEN
+    RAISE EXCEPTION
+      'mystery award % completed without its exact settled marker',p_award_id
+      USING ERRCODE='check_violation';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'already', false, 'award_id', p_award_id,
+    'amount_cents', v_a.amount_cents, 'paid_cents', v_paid,
+    'refused_recipients', v_refused,
+    'recipients', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'user_id', user_id, 'amount_cents', amount_cents))
+        FROM public.tournament_bounty_award_recipients
+       WHERE award_id = p_award_id), '[]'::jsonb));
 END;
 $function$;
 
@@ -5391,6 +6074,14 @@ DECLARE
   v_op_hex text;
   v_op_id uuid;
   v_prior_context text;
+  v_stage text;
+  v_existing record;
+  v_chest record;
+  v_award_id uuid;
+  v_revealer uuid;
+  v_idx integer;
+  v_total integer;
+  v_n integer;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1',0));
@@ -5416,9 +6107,214 @@ BEGIN
     ||'-8'||substr(v_op_hex,18,3)||'-'||substr(v_op_hex,21,12))::uuid;
   v_prior_context := current_setting('app.bounty_obligation_id',true);
   PERFORM set_config('app.bounty_obligation_id',o.id::text,true);
-  v_result := public.fn_mystery_bounty_reserve_unguarded_20260907(
-    o.tournament_id,o.eliminated_user_id,v_recipients,o.table_id,o.hand_id::text,
-    v_op_id,p_reveal_ms);
+
+  -- Inline the CSPRNG inventory reservation and exact-cent split. The
+  -- generation-bound obligation remains the only source of recipient truth,
+  -- while the rolling helper can be retired without breaking this root.
+  <<mystery_reserve_core>>
+  BEGIN
+    IF p_eliminated_user_id IS NULL OR v_op_id IS NULL THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'missing_party');
+      EXIT mystery_reserve_core;
+    END IF;
+
+    SELECT id, status, table_id
+      INTO v_existing
+      FROM public.tournament_bounty_awards
+     WHERE op_id = v_op_id
+        OR (
+          tournament_id = p_tournament_id
+          AND eliminated_user_id = p_eliminated_user_id
+          AND (
+            bounty_obligation_id = (
+              SELECT pending.id
+                FROM tournament_bounty_obligations pending
+               WHERE pending.tournament_id=p_tournament_id
+                 AND pending.eliminated_user_id=p_eliminated_user_id
+                 AND pending.mode='mystery_chest'
+                 AND pending.hand_id::text=p_hand_id
+               ORDER BY pending.created_at DESC
+               LIMIT 1)
+            OR (bounty_obligation_id IS NULL AND NOT EXISTS (
+              SELECT 1 FROM tournament_bounty_obligations pending
+               WHERE pending.tournament_id=p_tournament_id
+                 AND pending.eliminated_user_id=p_eliminated_user_id
+                 AND pending.mode='mystery_chest'
+                 AND pending.hand_id::text=p_hand_id))))
+     LIMIT 1;
+
+    IF FOUND THEN
+      SELECT count(*) INTO v_total
+        FROM public.tournament_bounty_awards a
+       WHERE a.tournament_id = p_tournament_id
+         AND a.table_id IS NOT DISTINCT FROM v_existing.table_id
+         AND a.status IN ('reserved','revealed');
+      SELECT count(*) INTO v_idx
+        FROM public.tournament_bounty_awards a
+       WHERE a.tournament_id = p_tournament_id
+         AND a.table_id IS NOT DISTINCT FROM v_existing.table_id
+         AND a.status IN ('reserved','revealed')
+         AND a.reserved_at <= (
+           SELECT reserved_at FROM public.tournament_bounty_awards
+            WHERE id = v_existing.id);
+      SELECT user_id INTO v_revealer
+        FROM public.tournament_bounty_award_recipients
+       WHERE award_id = v_existing.id
+         AND is_designated_revealer
+       LIMIT 1;
+      v_result := jsonb_build_object(
+        'ok', true, 'already', true, 'award_id', v_existing.id,
+        'status', v_existing.status,
+        'queue_index', GREATEST(v_idx, 1),
+        'queue_total', GREATEST(v_total, 1),
+        'designated_revealer', v_revealer,
+        'recipient_user_ids', COALESCE((
+          SELECT jsonb_agg(user_id)
+            FROM public.tournament_bounty_award_recipients
+           WHERE award_id = v_existing.id), '[]'::jsonb));
+      EXIT mystery_reserve_core;
+    END IF;
+
+    SELECT mystery_bounty_stage INTO v_stage
+      FROM public.tournaments
+     WHERE id = p_tournament_id;
+    IF v_stage IS DISTINCT FROM 'active' THEN
+      v_result := jsonb_build_object(
+        'ok', false, 'reason', 'mystery_phase_not_active', 'stage', v_stage);
+      EXIT mystery_reserve_core;
+    END IF;
+
+    IF v_recipients IS NULL OR jsonb_typeof(v_recipients) <> 'array'
+       OR jsonb_array_length(v_recipients) = 0 THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'no_recipients');
+      EXIT mystery_reserve_core;
+    END IF;
+
+    UPDATE public.tournament_bounty_chests
+       SET status = 'reserved'
+     WHERE id = (
+       SELECT id FROM public.tournament_bounty_chests
+        WHERE tournament_id = p_tournament_id
+          AND status = 'available'
+        ORDER BY seq
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED)
+    RETURNING id, tier, amount_cents INTO v_chest;
+
+    IF NOT FOUND THEN
+      v_result := jsonb_build_object(
+        'ok', false, 'reason', 'inventory_exhausted');
+      EXIT mystery_reserve_core;
+    END IF;
+
+    INSERT INTO public.tournament_bounty_awards
+      (tournament_id, chest_id, table_id, hand_id, eliminated_user_id,
+       amount_cents, tier, status, op_id, reveal_deadline_at)
+    VALUES
+      (p_tournament_id, v_chest.id, p_table_id, p_hand_id,
+       p_eliminated_user_id, v_chest.amount_cents, v_chest.tier,
+       'reserved', v_op_id,
+       now() + make_interval(
+         secs => GREATEST(1, COALESCE(p_reveal_ms, 20000)) / 1000.0))
+    RETURNING id INTO v_award_id;
+
+    UPDATE public.tournament_bounty_chests
+       SET award_id = v_award_id
+     WHERE id = v_chest.id;
+
+    WITH raw AS (
+      SELECT (r->>'user_id')::uuid AS user_id,
+             GREATEST(0, COALESCE((r->>'weight')::numeric, 0)) AS weight,
+             COALESCE(
+               (r->>'is_designated_revealer')::boolean, false) AS flagged
+        FROM jsonb_array_elements(v_recipients) r
+       WHERE (r->>'user_id') IS NOT NULL
+    ),
+    dedup AS (
+      SELECT user_id, sum(weight) AS weight, bool_or(flagged) AS flagged
+        FROM raw
+       GROUP BY user_id
+    ),
+    norm AS (
+      SELECT user_id,
+             CASE WHEN (SELECT sum(weight) FROM dedup) > 0
+                  THEN weight ELSE 1 END AS weight,
+             flagged
+        FROM dedup
+    ),
+    alloc AS (
+      SELECT n.user_id, n.weight,
+             floor(v_chest.amount_cents * n.weight / t.w)::bigint AS fl,
+             (v_chest.amount_cents * n.weight / t.w)
+               - floor(v_chest.amount_cents * n.weight / t.w) AS frac
+        FROM norm n
+        CROSS JOIN (SELECT sum(weight) AS w FROM norm) t
+    ),
+    ranked AS (
+      SELECT a.*,
+             row_number() OVER (
+               ORDER BY a.frac DESC, a.weight DESC, a.user_id) AS rn,
+             (SELECT v_chest.amount_cents - COALESCE(sum(fl), 0)
+                FROM alloc) AS leftover
+        FROM alloc a
+    )
+    INSERT INTO public.tournament_bounty_award_recipients
+      (award_id, user_id, amount_cents, is_designated_revealer)
+    SELECT v_award_id, user_id,
+           fl + CASE WHEN rn <= leftover THEN 1 ELSE 0 END,
+           false
+      FROM ranked
+    ON CONFLICT (award_id, user_id) DO NOTHING;
+
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    IF v_n = 0 THEN
+      v_result := jsonb_build_object('ok', false, 'reason', 'no_recipients');
+      EXIT mystery_reserve_core;
+    END IF;
+
+    SELECT user_id INTO v_revealer
+      FROM (
+        SELECT (r->>'user_id')::uuid AS user_id,
+               GREATEST(0, COALESCE((r->>'weight')::numeric, 0)) AS weight,
+               COALESCE(
+                 (r->>'is_designated_revealer')::boolean, false) AS flagged
+          FROM jsonb_array_elements(v_recipients) r
+         WHERE (r->>'user_id') IS NOT NULL
+      ) q
+     ORDER BY q.flagged DESC, q.weight DESC, q.user_id
+     LIMIT 1;
+
+    UPDATE public.tournament_bounty_award_recipients
+       SET is_designated_revealer = (user_id = v_revealer)
+     WHERE award_id = v_award_id;
+
+    PERFORM 1 FROM public.tournament_bounty_award_recipients
+     WHERE award_id = v_award_id
+    HAVING sum(amount_cents) = v_chest.amount_cents;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION
+        'mystery bounty split lost money on award %', v_award_id;
+    END IF;
+
+    SELECT count(*) INTO v_total
+      FROM public.tournament_bounty_awards a
+     WHERE a.tournament_id = p_tournament_id
+       AND a.table_id IS NOT DISTINCT FROM p_table_id
+       AND a.status IN ('reserved','revealed');
+    v_idx := v_total;
+
+    v_result := jsonb_build_object(
+      'ok', true, 'already', false, 'award_id', v_award_id,
+      'queue_index', GREATEST(v_idx, 1),
+      'queue_total', GREATEST(v_total, 1),
+      'designated_revealer', v_revealer,
+      'reveal_deadline_ms', GREATEST(1, COALESCE(p_reveal_ms, 20000)),
+      'recipient_user_ids', COALESCE((
+        SELECT jsonb_agg(user_id)
+          FROM public.tournament_bounty_award_recipients
+         WHERE award_id = v_award_id), '[]'::jsonb));
+  END mystery_reserve_core;
+
   PERFORM set_config('app.bounty_obligation_id',COALESCE(v_prior_context,''),true);
   IF NOT COALESCE((v_result->>'ok')::boolean,false) THEN RETURN v_result; END IF;
   IF NOT EXISTS (
@@ -5452,11 +6348,10 @@ REVOKE ALL ON FUNCTION public.fn_mystery_bounty_reserve(
 GRANT EXECUTE ON FUNCTION public.fn_mystery_bounty_reserve(
   uuid,uuid,jsonb,uuid,text,uuid,integer) TO service_role;
 
--- Drain every older tournament writer before the cutover inventory is taken.
+-- The parent write barrier acquired before the first tables DDL is still held.
 -- A timestamp cannot classify a transaction that began before this migration
--- and committed while DDL waited. Identity captured behind the write barrier
+-- and committed while DDL waited. Identity captured behind that one barrier
 -- makes every later COMPLETED row receipt-required without clock inference.
-LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE;
 
 CREATE TABLE public.tournament_terminal_settlement_cutover (
   authority                         text PRIMARY KEY
@@ -8843,6 +9738,24 @@ BEGIN
   SELECT prosrc INTO v_terminal_parent_guard_source FROM pg_proc
    WHERE oid =
      'public.fn_receipted_tournament_is_immutable()'::regprocedure;
+  FOREACH v_root_signature IN ARRAY ARRAY[
+    'public.fn_collect_bounty(uuid,uuid,uuid,jsonb)',
+    'public.fn_finalize_bounty_pool(uuid,uuid)',
+    'public.fn_mystery_bounty_settle(uuid,uuid)',
+    'public.fn_mystery_bounty_pay(uuid)',
+    'public.fn_mystery_bounty_reserve(uuid,uuid,jsonb,uuid,text,uuid,integer)'
+  ] LOOP
+    SELECT prosrc INTO v_root_source
+      FROM pg_proc
+     WHERE oid=to_regprocedure(v_root_signature);
+    IF v_root_source IS NULL
+       OR v_root_source ~*
+            '_unguarded_20260907[[:space:]]*[(]' THEN
+      RAISE EXCEPTION
+        'bounty root % is missing or still delegates to a rolling helper',
+        v_root_signature;
+    END IF;
+  END LOOP;
   IF v_collect_bounty_source IS NULL
      OR position('ca:tournament-terminal-settlement:v1'
                    IN v_collect_bounty_source) = 0
@@ -9088,8 +10001,8 @@ BEGIN
      OR position('ORDER BY r.user_id,r.id FOR UPDATE OF r'
           IN v_mystery_pay_source) <
           position('ORDER BY a.id FOR UPDATE' IN v_mystery_pay_source)
-     OR position('fn_mystery_bounty_pay_unguarded_20260907('
-          IN v_mystery_pay_source) <
+     OR position('SELECT * INTO v_a' IN v_mystery_pay_source) = 0
+     OR position('SELECT * INTO v_a' IN v_mystery_pay_source) <
           position('ORDER BY r.user_id,r.id FOR UPDATE OF r'
             IN v_mystery_pay_source)
      OR v_mystery_reserve_source IS NULL

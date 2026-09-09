@@ -8,9 +8,12 @@
 -- A live Spin (781cc0ee-6a1d-4e31-acaf-4e737661bba1) moved its 3.00 draw
 -- out of spin_bonus_pools and wrote the authoritative jackpot_draw row, but
 -- fn_ca_autoledger timed out while inserting the matching chip_ledger leg.
--- The trigger caught that exception and allowed the bank update to commit.
--- The escrow therefore never received reserve_in, the winner could not be
--- paid, and a later back-pay sweep was expected to repair the split state.
+-- Migration 20260908132643 subsequently credited the escrow and paid the
+-- winner from that already-moved draw. The money is now exact, but the draw's
+-- deterministic spin_prize journal receipt is still absent. The paired
+-- post-freeze closeout adopts that one historical fact without replaying its
+-- escrow side effect; this broad schema transaction only records its audited
+-- cutover cohort.
 --
 -- The platform-wide strict auto-ledger migration removes that failure mode at
 -- the root for every balance store. This migration consumes, but never
@@ -31,6 +34,48 @@
 BEGIN;
 
 SET LOCAL lock_timeout = '15s';
+SET LOCAL statement_timeout = '120s';
+SET LOCAL transaction_timeout = '180s';
+
+-- This migration changes trigger bindings on the tournament parent, live-seat
+-- child and Spin reserve receipt. Join the same roots as every terminal and
+-- entry writer before checking the maintenance state or queuing relation DDL.
+-- The parent relation is then drained before either child, so an in-flight
+-- parent-to-seat transaction cannot form a queue cycle with later ALTER TABLE.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+DO $require_live_spin_cutover_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'atomic Spin settlement requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'atomic Spin settlement live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_spin_cutover_freeze$;
+
+LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.table_seats IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.spin_reserve_ledger IN ACCESS EXCLUSIVE MODE;
 
 DO $preflight$
 DECLARE
@@ -39,6 +84,7 @@ BEGIN
   IF to_regclass('public.spin_bonus_pools') IS NULL
      OR to_regclass('public.spin_reserve_ledger') IS NULL
      OR to_regclass('public.chip_ledger') IS NULL
+     OR to_regclass('public.chip_ledger_idem') IS NULL
      OR to_regclass('public.tournament_escrow') IS NULL
      OR to_regclass('public.tournament_obligations') IS NULL
      OR to_regclass('public.tournament_payouts') IS NULL
@@ -53,6 +99,7 @@ BEGIN
      OR to_regclass('public.hand_history') IS NULL
      OR to_regclass('cron.job') IS NULL
      OR to_regprocedure('public.fn_ca_autoledger()') IS NULL
+     OR to_regprocedure('public.fn_ca_escrow_on_reserve_leg()') IS NULL
      OR to_regprocedure('public.fn_ca_guard_seat_creation()') IS NULL
      OR to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL
      OR to_regprocedure('public.fn_lock_daily_mission_user(uuid)') IS NULL
@@ -3450,175 +3497,10 @@ REVOKE ALL ON FUNCTION public.fn_spin_draw_and_settle(uuid,jsonb)
 GRANT EXECUTE ON FUNCTION public.fn_spin_draw_and_settle(uuid,jsonb)
   TO service_role;
 
--- Exact historical correction: this completed 3x Spin debited the reserve and
--- wrote its immutable draw row, but the strict journal leg never landed. Put
--- that already-moved 3.00 into this event's escrow, then pay the already-owed
--- winner only through the owner-only raw cash authority. Every observed fact
--- is asserted first; an unexpected or partially repaired shape aborts.
-DO $repair_781cc0ee$
-DECLARE
-  v_tid constant uuid := '781cc0ee-6a1d-4e31-acaf-4e737661bba1';
-  v_winner constant uuid := 'c402b38e-7ba6-40bf-a2d3-d65376d28ccf';
-  v_entry_id constant uuid := 'f5e018ab-d15d-4d6c-bda0-270e97daf8eb';
-  v_draw_id constant uuid := 'd6eba15c-04b2-47f2-a168-731d4f433696';
-  v_obligation_id constant uuid := 'd367f526-d950-4b4a-af4d-07793000d7c6';
-  v_expected_pool constant uuid := '2d968239-acdd-4a2c-99f2-a369ff37ae31';
-  v_club uuid;
-  v_owner uuid;
-  v_pool_id uuid;
-  v_balance_after numeric;
-  v_journals integer;
-  v_suspense integer;
-  v_paid numeric;
-  v_wallet_before numeric;
-  v_wallet_after numeric;
-  v_result jsonb;
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.tournaments WHERE id = v_tid) THEN
-    RETURN; -- clean replay has no production incident row
-  END IF;
-
-  PERFORM 1 FROM public.tournaments WHERE id = v_tid FOR UPDATE;
-  IF (SELECT count(*) FROM public.tournaments t
-       WHERE t.id = v_tid
-         AND lower(COALESCE(t.variant,'')) = 'spin'
-         AND upper(COALESCE(t.status::text,'')) = 'COMPLETED'
-         AND t.buy_in_amount = 1
-         AND t.max_players = 3
-         AND t.spin_multiplier = 3
-         AND t.prize_pool = 3) <> 1
-     OR (SELECT count(*) FROM public.tournament_players tp
-          WHERE tp.tournament_id = v_tid) <> 3
-     OR (SELECT count(*) FROM public.tournament_players tp
-          WHERE tp.tournament_id = v_tid AND tp.user_id = v_winner
-            AND tp.position = 1 AND tp.prize = 3) <> 1
-     OR (SELECT count(*) FROM public.wallet_transactions w
-          WHERE w.related_entity_id = v_tid AND w.type = 'debit'
-            AND w.category = 'tournament_buyin') <> 3
-     OR (SELECT round(COALESCE(sum(w.amount),0),2)
-           FROM public.wallet_transactions w
-          WHERE w.related_entity_id = v_tid AND w.type = 'debit'
-            AND w.category = 'tournament_buyin') <> 3 THEN
-    RAISE EXCEPTION 'Spin % no longer has the asserted three-seat 3x contract',v_tid;
-  END IF;
-
-  SELECT t.club_id,r.club_id,p.id,r.balance_after
-    INTO v_club,v_owner,v_pool_id,v_balance_after
-    FROM public.tournaments t
-    JOIN public.spin_reserve_ledger r ON r.id = v_draw_id
-    JOIN public.spin_bonus_pools p ON p.club_id = r.club_id
-   WHERE t.id = v_tid
-     AND r.tournament_id = v_tid
-     AND r.kind = 'jackpot_draw'
-     AND r.amount = -3
-     AND r.multiplier = 3
-     AND r.buy_in = 1
-     AND r.seats = 3;
-  IF NOT FOUND OR v_pool_id IS DISTINCT FROM v_expected_pool
-     OR (SELECT count(*) FROM public.spin_reserve_ledger r
-          WHERE r.tournament_id = v_tid AND r.kind = 'jackpot_draw') <> 1
-     OR (SELECT count(*) FROM public.spin_reserve_ledger r
-          WHERE r.id = v_entry_id AND r.tournament_id = v_tid
-            AND r.kind = 'contribution' AND r.club_id = v_owner
-            AND r.amount = 2.76 AND r.buy_in = 1 AND r.seats = 3
-            AND r.house_rake = 0.24) <> 1 THEN
-    RAISE EXCEPTION 'Spin % reserve evidence moved since the incident probe',v_tid;
-  END IF;
-
-  SELECT count(*) INTO v_journals
-    FROM public.chip_ledger l
-   WHERE l.category = 'spin_prize'
-     AND l.from_type = 'spin_reserve' AND l.from_entity_id = v_pool_id
-     AND l.to_type = 'prize_liability' AND l.to_entity_id = v_tid
-     AND l.tournament_id = v_tid AND l.amount = 3;
-  SELECT count(*) INTO v_suspense
-    FROM public.chip_ledger l
-   WHERE l.category = 'adjustment'
-     AND l.from_type = 'spin_reserve' AND l.from_entity_id = v_pool_id
-     AND l.to_type = 'settlement_suspense' AND l.amount = 3
-     AND l.post_from_balance IS NOT DISTINCT FROM v_balance_after;
-  SELECT round(COALESCE(sum(p.amount),0),2) INTO v_paid
-    FROM public.tournament_payouts p WHERE p.tournament_id = v_tid;
-
-  IF v_journals = 0 THEN
-    IF v_suspense <> 0 OR v_paid <> 0
-       OR (SELECT count(*) FROM public.tournament_obligations o
-            WHERE o.id = v_obligation_id AND o.tournament_id = v_tid
-              AND o.kind = 'place' AND o.place = 1 AND o.user_id = v_winner
-              AND o.amount_owed = 3 AND o.amount_paid = 0) <> 1
-       OR (SELECT count(*) FROM public.tournament_escrow e
-            WHERE e.tournament_id = v_tid AND e.reserve_out = 2.76
-              AND e.reserve_in = 0 AND e.prize_out = 0
-              AND e.prize_balance = 0) <> 1 THEN
-      RAISE EXCEPTION 'Spin % is not in the exact unpaid/missing-journal state',v_tid;
-    END IF;
-
-    SELECT cm.chip_balance INTO v_wallet_before
-      FROM public.club_members cm
-     WHERE cm.club_id = v_club AND cm.user_id = v_winner
-     FOR UPDATE;
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'Spin % winner wallet is missing',v_tid;
-    END IF;
-
-    INSERT INTO public.chip_ledger
-      (performed_by,from_type,from_entity_id,from_label,
-       to_type,to_entity_id,to_label,amount,category,club_id,
-       description,pre_from_balance,post_from_balance,tournament_id,
-       idempotency_key,metadata)
-    VALUES
-      ('2d1cd6c3-5700-4af9-a271-d4863fdab20d',
-       'spin_reserve',v_pool_id,'spin_bonus_pools.balance',
-       'prize_liability',v_tid,'tournaments.prize_pool',3,'spin_prize',v_club,
-       'Authoritative missing Spin draw journal for 781cc0ee; reserve row d6eba15c already moved exactly 3.00 and no suspense leg or payout existed.',
-       v_balance_after + 3,v_balance_after,v_tid,
-       'spin:' || v_tid::text || ':draw',
-       jsonb_build_object('migration','20260909014433',
-                          'reserve_draw_id',v_draw_id,
-                          'historical_correction',true));
-
-    IF (SELECT count(*) FROM public.chip_ledger l
-         WHERE l.idempotency_key = 'spin:' || v_tid::text || ':draw'
-           AND l.category = 'spin_prize' AND l.amount = 3
-           AND l.from_entity_id = v_pool_id AND l.to_entity_id = v_tid) <> 1
-       OR (SELECT count(*) FROM public.tournament_escrow e
-            WHERE e.tournament_id = v_tid AND e.reserve_out = 2.76
-              AND e.reserve_in = 3 AND e.prize_out = 0
-              AND e.prize_balance = 3) <> 1 THEN
-      RAISE EXCEPTION 'Spin % journal did not fund its escrow atomically',v_tid;
-    END IF;
-
-    v_result := public.fn_ca_settle_tournament_place_raw(v_tid,1,v_winner,3);
-    IF COALESCE((v_result->>'fully_settled')::boolean,false) IS NOT TRUE THEN
-      RAISE EXCEPTION 'Spin % winner did not settle in full: %',v_tid,v_result;
-    END IF;
-    SELECT cm.chip_balance INTO v_wallet_after
-      FROM public.club_members cm
-     WHERE cm.club_id = v_club AND cm.user_id = v_winner;
-    IF v_wallet_after - v_wallet_before <> 3 THEN
-      RAISE EXCEPTION 'Spin % winner received %, expected 3',
-        v_tid,v_wallet_after-v_wallet_before;
-    END IF;
-  ELSIF v_journals <> 1 OR v_suspense <> 0 OR v_paid <> 3 THEN
-    RAISE EXCEPTION 'Spin % has an unexpected partial/duplicate correction',v_tid;
-  END IF;
-
-  IF (SELECT count(*) FROM public.tournament_payouts p
-       WHERE p.tournament_id = v_tid AND p.user_id = v_winner
-         AND p."position" = 1 AND p.amount = 3) <> 1
-     OR (SELECT count(*) FROM public.tournament_obligations o
-          WHERE o.id = v_obligation_id AND o.tournament_id = v_tid
-            AND o.user_id = v_winner AND o.kind = 'place' AND o.place = 1
-            AND o.amount_owed = 3 AND o.amount_paid = 3
-            AND o.settled_at IS NOT NULL) <> 1
-     OR (SELECT count(*) FROM public.tournament_escrow e
-          WHERE e.tournament_id = v_tid AND e.reserve_out = 2.76
-            AND e.reserve_in = 3 AND e.prize_out = 3
-            AND e.prize_balance = 0) <> 1 THEN
-    RAISE EXCEPTION 'Spin % did not finish with one exact paid receipt',v_tid;
-  END IF;
-END;
-$repair_781cc0ee$;
+-- The exact already-paid 781cc0ee journal adoption writes chip_ledger and
+-- therefore cannot run while the platform freeze guard is armed. Migration
+-- 20260909053000 performs that one-row adoption immediately after thaw, under
+-- the same terminal and maintenance advisory roots, with no broad relation DDL.
 
 -- Exact historical acceptance: this legacy 10x event paid 10.00 in total
 -- against an immutable 10.00 reserve draw while tournaments.prize_pool still
@@ -4493,6 +4375,21 @@ BEGIN
            OR lower(COALESCE(j.command,'')) LIKE '%fn_credit_stalled_seat_first_stacks%'
      ) THEN
     RAISE EXCEPTION 'the retired stack repair remains installed or scheduled';
+  END IF;
+
+  -- The maintenance root prevents a row transition, but the published break
+  -- can still expire by wall clock while this broad migration is running.
+  IF (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'atomic Spin settlement live cutover freeze expired before commit'
+      USING ERRCODE = '55006';
   END IF;
 END;
 $verify_authority$;

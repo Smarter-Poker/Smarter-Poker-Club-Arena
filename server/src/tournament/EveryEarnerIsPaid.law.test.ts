@@ -37,11 +37,21 @@ const migration = readFileSync(
 const atomicCashMigration = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'
+    '../../../supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );
 const gameServer = readFileSync(join(__dirname, '../GameServer.ts'), 'utf8');
+const executableGameServer = gameServer
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
+const stagedCashRetirement = readFileSync(
+  join(
+    __dirname,
+    '../../../supabase/staged-migrations/20260908044246_legacy_cash_repair_fleet_retires_only_after_zero_backlog.sql'
+  ),
+  'utf8'
+);
 
 describe('the check exists and asks all three questions', () => {
   it('declares fn_payout_guarantee_check', () => {
@@ -102,11 +112,14 @@ describe('the repair payer remains untouched during the rolling stage-one instal
   });
 });
 
-describe('the rolling audit detects but never repairs a payout', () => {
-  it('calls the read-only check but never the retired repair payer', () => {
-    expect(gameServer).toContain("'fn_payout_guarantee_check'");
-    expect(gameServer).toContain('lastPayoutGuaranteeCheckAt');
-    expect(gameServer).not.toContain("'fn_pay_backed_payout_shortfalls'");
-    expect(gameServer).not.toContain('lastBackedPayoutAt');
+describe('the atomic terminal authority replaces the rolling payout audit', () => {
+  it('keeps the historical detector for retirement evidence but schedules no payout watcher', () => {
+    expect(executableGameServer).not.toContain('fn_payout_guarantee_check');
+    expect(executableGameServer).not.toContain('lastPayoutGuaranteeCheckAt');
+    expect(executableGameServer).not.toContain('fn_pay_backed_payout_shortfalls');
+    expect(executableGameServer).not.toContain('lastBackedPayoutAt');
+    expect(stagedCashRetirement).toMatch(
+      /DROP FUNCTION IF EXISTS public\.fn_payout_guarantee_check\(integer\) RESTRICT;/
+    );
   });
 });

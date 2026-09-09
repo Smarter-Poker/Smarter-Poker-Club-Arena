@@ -17,6 +17,7 @@
     "fn_tournament_cancellation_receipts_append_only",
     "trg_tournaments_cancel_must_refund"
   ],
+  "removedFunctions": ["fn_release_tournament_holds"],
   "columns": {
     "tournament_cancellation_receipts": [
       "actor_id",

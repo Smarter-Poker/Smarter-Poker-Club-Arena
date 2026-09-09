@@ -60,10 +60,10 @@ BEGIN
      OR has_function_privilege(
        'authenticated',
        'public.fn_complete_tournament_terminal(uuid,uuid,text)', 'EXECUTE')
-     OR NOT has_function_privilege(
+     OR has_function_privilege(
        'service_role',
        'public.fn_settle_tournament_places(uuid,uuid)', 'EXECUTE')
-     OR NOT has_function_privilege(
+     OR has_function_privilege(
        'service_role',
        'public.fn_settle_tournament_final_table_deal(uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL terminal wrapper or component authority ACLs are wrong';

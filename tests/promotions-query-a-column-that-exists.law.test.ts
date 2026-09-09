@@ -89,7 +89,9 @@ describe('the money-path migrations that guard the bounty chests', () => {
      * from retry forever, and fn_mystery_bounty_settle then reported the event
      * "balanced" off that same false flag.
      */
-    const owning = all().filter((m) => m.body.includes('FUNCTION public.fn_mystery_bounty_pay'));
+    const owning = all().filter((m) =>
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_mystery_bounty_pay\s*\(/i.test(m.body)
+    );
     expect(owning.length, 'no migration defines fn_mystery_bounty_pay').toBeGreaterThan(0);
     const latest = owning[owning.length - 1].body;
     const creditedImplementation = owning.find((m) =>

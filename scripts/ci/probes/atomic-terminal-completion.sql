@@ -14,6 +14,8 @@ DECLARE
   v_before jsonb;
   v_after jsonb;
   v_immutable_refused boolean := false;
+  v_signature text;
+  v_component text;
 BEGIN
   IF to_regprocedure(
        'public.fn_complete_tournament_terminal(uuid,uuid,text)') IS NULL
@@ -59,6 +61,26 @@ BEGIN
           <> 's' THEN
     RAISE EXCEPTION 'FAIL terminal replay verifier is not read-only STABLE code';
   END IF;
+
+  FOREACH v_signature IN ARRAY ARRAY[
+    'public.fn_collect_bounty(uuid,uuid,uuid,jsonb)',
+    'public.fn_finalize_bounty_pool(uuid,uuid)',
+    'public.fn_mystery_bounty_settle(uuid,uuid)',
+    'public.fn_mystery_bounty_pay(uuid)',
+    'public.fn_mystery_bounty_reserve(uuid,uuid,jsonb,uuid,text,uuid,integer)'
+  ] LOOP
+    SELECT p.prosrc INTO v_component
+      FROM pg_proc p
+     WHERE p.oid=to_regprocedure(v_signature);
+    IF v_component IS NULL
+       OR v_component ~* '_unguarded_20260907[[:space:]]*[(]'
+       OR position('ca:tournament-terminal-settlement:v1' IN v_component)=0
+       OR position('pg_advisory_xact_lock(' IN v_component)=0 THEN
+      RAISE EXCEPTION
+        'FAIL bounty root is missing, delegated or outside the terminal lock: %',
+        v_signature;
+    END IF;
+  END LOOP;
 
   IF EXISTS (
        SELECT 1
@@ -140,9 +162,9 @@ BEGIN
        'service_role',
        'public.fn_resolve_tournament_terminal_outcome(uuid,uuid,text)',
        'EXECUTE')
-     OR NOT has_function_privilege(
+     OR has_function_privilege(
        'service_role','public.fn_settle_tournament_places(uuid,uuid)','EXECUTE')
-     OR NOT has_function_privilege(
+     OR has_function_privilege(
        'service_role','public.fn_settle_tournament_final_table_deal(uuid)','EXECUTE')
      OR NOT has_function_privilege(
        'service_role','public.fn_finalize_bounty_pool(uuid,uuid)','EXECUTE')

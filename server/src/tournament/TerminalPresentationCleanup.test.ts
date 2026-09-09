@@ -8,6 +8,49 @@ const { supabase } = await import('../services/supabase.js');
 const { reportError } = await import('../services/errorReporter.js');
 
 describe('committed final-table presentation is failure-contained', () => {
+  it.each([
+    ['normal', 'committedFinishReceipt', 'cleanupCommittedTournament'],
+    ['satellite', 'committedSatelliteReceipt', 'cleanupCommittedSatellite'],
+    ['deal', 'committedFinalTableDealReceipt', 'settleFinalTableDeal'],
+  ] as const)(
+    'causally retries a retained %s receipt after cleanup refuses',
+    async (_kind, field, method) => {
+      const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+      const receipt = { receipt: field };
+      manager.running = true;
+      manager.committedFinalTableDealCleanupPending = field === 'committedFinalTableDealReceipt';
+      manager.committedFinishReceipt = null;
+      manager.committedSatelliteReceipt = null;
+      manager.committedFinalTableDealReceipt = null;
+      manager[field] = receipt;
+      manager[method] = vi.fn().mockResolvedValue(false);
+      manager.requestUrgentEliminationSweepAfter = vi.fn();
+
+      await expect(manager.resumeCommittedTerminalCleanup()).resolves.toBe(true);
+
+      expect(manager[method]).toHaveBeenCalledOnce();
+      expect(manager[method]).toHaveBeenCalledWith(receipt);
+      expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('does not schedule another cleanup after the retained receipt tail succeeds', async () => {
+    const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    const receipt = { receipt: 'normal' };
+    manager.running = true;
+    manager.committedFinalTableDealCleanupPending = false;
+    manager.committedFinalTableDealReceipt = null;
+    manager.committedFinishReceipt = receipt;
+    manager.committedSatelliteReceipt = null;
+    manager.cleanupCommittedTournament = vi.fn().mockResolvedValue(true);
+    manager.requestUrgentEliminationSweepAfter = vi.fn();
+
+    await expect(manager.resumeCommittedTerminalCleanup()).resolves.toBe(true);
+
+    expect(manager.cleanupCommittedTournament).toHaveBeenCalledWith(receipt);
+    expect(manager.requestUrgentEliminationSweepAfter).not.toHaveBeenCalled();
+  });
+
   it('still stops the exact engine and manager when presentation rejects', async () => {
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
     const stopEngine = vi.fn().mockResolvedValue(undefined);

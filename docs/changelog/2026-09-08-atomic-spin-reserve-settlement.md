@@ -5,8 +5,9 @@
 A completed live Spin moved a 3.00 draw out of `spin_bonus_pools` and wrote its
 immutable `jackpot_draw` row, but the matching chip-ledger leg timed out. The
 auto-ledger trigger caught the error and allowed the bank update to commit.
-Reserve escrow therefore never received the draw and the winner could not be
-paid without a later repair path.
+Migration `20260908132643` later credited the escrow from that proven draw and
+paid the winner. The money state was complete, but the draw still lacked its
+deterministic journal receipt.
 
 The old engine also split entry booking, tier drawing, and draw settlement
 across lower-level calls. That left a race in which another event could move
@@ -42,6 +43,11 @@ installs one database-owned Spin money boundary:
 - An owner-only cutover record identifies the production incidents that were
   present when the new authority was installed without exposing operational
   evidence to application roles.
+- The broad schema transaction joins the terminal-global and maintenance
+  advisory roots, requires the entry freeze on every live-shaped database,
+  and takes the tournament parent relation before the live-seat and reserve
+  child relations. It rechecks the freeze at commit so trigger DDL cannot
+  publish after the maintenance window expires.
 - The table-seat guard now rejects every non-positive tournament seat before
   caller authorization and rejects a canonical seat-first stack that differs
   from `tournaments.starting_chips`. The strict AFTER-seat hook propagates a
@@ -56,12 +62,35 @@ installs one database-owned Spin money boundary:
 
 ## Historical Corrections
 
-The 3x incident `781cc0ee-6a1d-4e31-acaf-4e737661bba1` is corrected only after
-its exact three paid seats, reserve contribution, draw, missing journal,
-zero-payout state, and expected pool are proven. The migration restores the
-already-moved 3.00 journal and escrow evidence, then pays the proven winner
-through the owner-only raw cash authority. Any changed or partial shape aborts
-the migration.
+The 3x incident `781cc0ee-6a1d-4e31-acaf-4e737661bba1` is adopted only after
+its exact three paid seats, reserve contribution and draw, already-paid
+obligation, payout, wallet receipt, manual-adjustment approval, payout journal,
+escrow totals, and absent suspense leg are proven. The event must also be a
+member of the immutable incident cohort recorded while the stage-one freeze
+was owned. The closeout appends only the missing `spin_prize` journal and its
+idempotency claim; if that exact row and claim already exist after an uncertain
+deployment outcome, it verifies them and converges without inserting again.
+Any partial, mismatched, duplicate, or post-cutover same-UUID evidence is
+refused. It does not pay again or change reserve, escrow, obligation, payout,
+wallet, adjustment, or membership state.
+
+Because that append is a top-level journal write, it is intentionally not part
+of the frozen broad schema transaction. Migration
+`20260909053000_complete_known_spin_journal_adoption_after_freeze` takes the
+terminal-global and shared maintenance roots, refuses while the entry freeze is
+still active or the platform remains frozen, proves the committed
+`20260909014433` cutover, and performs only the exact post-thaw adoption. It is
+published immediately after that thaw and before the later cancellation and
+terminal evidence-immutability cutovers; it fails with an ordering error if
+those future guards are already present rather than weakening them.
+
+That append cannot use the live `zz_ca_escrow_reserve_leg` behavior because the
+escrow already records `reserve_in = 3`; replaying the trigger would double it
+to 6. The migration pins the exact enabled trigger and function hashes, installs
+a transaction-only gate for the one exact row plus a transaction-local nonce,
+appends and verifies the row, then restores and re-hashes the original function
+and ACL before commit. Any exception rolls back the catalog change and append
+together, and no deployed runtime function recognizes the historical nonce.
 
 The 10x incident `6d688095-c3c5-4d40-a5a0-952934667732` already had an exact
 10.00 reserve draw and exactly 10.00 of durable payouts: 9.40 to the winner and

@@ -37,8 +37,8 @@ import { TournamentClock } from '../components/tournament/TournamentClock';
 import RankingTab from '../components/tournament/details/RankingTab';
 import {
   effectivePlaceLadderPool,
-  parsePayoutStructure,
   placePrize,
+  resolvePayoutStructure,
   type NormalisedBlindLevel,
   type TournamentTable,
 } from '../components/tournament/details/types';
@@ -199,6 +199,10 @@ export default function TournamentPage() {
           t.buy_in_fee,
           t.start_time,
           t.current_level,
+          t.variant,
+          t.tournament_type,
+          t.spin_multiplier,
+          JSON.stringify(t.payout_structure),
         ].join(':')
       )
       .join('|');
@@ -730,7 +734,7 @@ export default function TournamentPage() {
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at'
+          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
         )
         .eq('id', id)
         .maybeSingle();
@@ -1052,8 +1056,8 @@ export default function TournamentPage() {
   );
 
   const selectedPayouts = useMemo(
-    () => parsePayoutStructure(selectedTournament?.payout_structure) ?? [],
-    [selectedTournament?.payout_structure]
+    () => resolvePayoutStructure(selectedTournament) ?? [],
+    [selectedTournament]
   );
   const selectedIsSatellite =
     String(selectedTournament?.variant ?? '').toLowerCase() === 'satellite' ||
@@ -1071,13 +1075,19 @@ export default function TournamentPage() {
     return effectivePlaceLadderPool(
       selectedTournament.prize_pool,
       selectedTournament.guaranteed_prize,
-      selectedTournament.payout_structure,
+      selectedPayouts,
       fieldSize,
       selectedTournament.bubble_protection === true,
       Number(selectedTournament.buy_in_amount) || 0,
       selectedIsSatellite
     );
-  }, [durableEntryCount, selectedBubbleNeedsDurableField, selectedIsSatellite, selectedTournament]);
+  }, [
+    durableEntryCount,
+    selectedBubbleNeedsDurableField,
+    selectedIsSatellite,
+    selectedPayouts,
+    selectedTournament,
+  ]);
 
   const rankingTables = useMemo<TournamentTable[]>(
     () =>

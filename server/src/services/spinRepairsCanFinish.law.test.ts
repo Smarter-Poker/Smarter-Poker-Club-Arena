@@ -7,7 +7,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { sliceCall } from '../testHelpers/sourceWindow.js';
 
 const gameServer = readFileSync(join(__dirname, '..', 'GameServer.ts'), 'utf8');
 const executableGameServer = gameServer
@@ -20,14 +19,13 @@ const stageOne = readFileSync(
   ),
   'utf8'
 );
-const callBlock = (rpc: string): string => {
-  const named = gameServer.indexOf(`'${rpc}'`);
-  expect(named, `${rpc} is called from GameServer`).toBeGreaterThan(-1);
-  const opens = gameServer.slice(0, named).lastIndexOf('supabase.rpc(');
-  expect(opens, `${rpc} is passed to supabase.rpc`).toBeGreaterThan(-1);
-  return sliceCall(gameServer.slice(opens), 'supabase.rpc(');
-};
-
+const paidJournalCloseout = readFileSync(
+  join(
+    __dirname,
+    '../../../supabase/migrations/20260909053000_complete_known_spin_journal_adoption_after_freeze.sql'
+  ),
+  'utf8'
+);
 describe('the Spin payout repair fleet has one stage-one replacement', () => {
   it('has no GameServer winner-backpay caller or timer', () => {
     expect(executableGameServer).not.toMatch(/fn_backpay_spin_unpaid_winners/);
@@ -36,10 +34,16 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
 
   it('records the production cohort before either historical correction', () => {
     const marker = stageOne.indexOf('CREATE TABLE public.tournament_spin_settlement_cutover');
-    const repair = stageOne.indexOf('DO $repair_781cc0ee$');
 
     expect(marker).toBeGreaterThan(-1);
-    expect(repair).toBeGreaterThan(marker);
+    expect(stageOne).not.toContain('DO $adopt_paid_781cc0ee_journal$');
+    expect(paidJournalCloseout).toContain('DO $adopt_paid_781cc0ee_journal$');
+    expect(paidJournalCloseout).toContain("c.migration_version = '20260909014433'");
+    expect(paidJournalCloseout).toContain('v_tid = ANY(c.audited_tournament_ids)');
+    expect(paidJournalCloseout).toContain('IF v_journal_id IS NULL THEN');
+    expect(paidJournalCloseout).toContain(
+      'existing draw journal does not exactly match the adopted receipt'
+    );
     expect(stageOne).toContain('transaction_timestamp()');
     expect(stageOne).toContain('production_requires_receipt boolean GENERATED ALWAYS AS');
     expect(stageOne).toContain('781cc0ee-6a1d-4e31-acaf-4e737661bba1');
@@ -131,18 +135,14 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
   });
 });
 
-describe('unrelated recurring rake repairs remain bounded', () => {
-  it('every rake repair the loop drives carries a limit', () => {
-    for (const rpc of [
+describe('terminal rake repair timers retire with the atomic receipt path', () => {
+  it('does not drive either historical rake-attribution repair from GameServer', () => {
+    for (const retired of [
       'fn_repair_tournament_rake_attribution',
       'fn_backpay_tournament_rake_attribution',
+      'lastRakeAttributionRepairAt',
     ]) {
-      expect(callBlock(rpc), `${rpc} passes a limit`).toMatch(/p_limit:\s*\d+/);
+      expect(executableGameServer).not.toContain(retired);
     }
-  });
-
-  it('the attribution back-pay remains wired and observable', () => {
-    expect(gameServer).toContain('fn_backpay_tournament_rake_attribution');
-    expect(gameServer).toContain('GameServer.rake_attribution_backpay_failed');
   });
 });

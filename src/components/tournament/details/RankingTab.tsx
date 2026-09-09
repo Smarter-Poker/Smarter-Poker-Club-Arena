@@ -79,6 +79,7 @@ import {
   isPlayerOut,
   lastPaidPlace,
   ordinal,
+  resolvePayoutStructure,
   type TournamentTabProps,
 } from './types';
 import type { TournamentEntry } from './types';
@@ -795,8 +796,8 @@ export default function RankingTab({
    * been published, rather than claiming the bubble is 0th.
    */
   const deepestPaidPlace = useMemo(
-    () => lastPaidPlace(tournament?.payout_structure),
-    [tournament?.payout_structure]
+    () => lastPaidPlace(resolvePayoutStructure(tournament)),
+    [tournament]
   );
 
   const money = useMemo(() => {

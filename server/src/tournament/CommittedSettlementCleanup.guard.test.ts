@@ -44,6 +44,29 @@ describe('Bubble Protection has no application-layer prepayment path', () => {
 describe('a committed tournament always reaches its non-money terminal cleanup', () => {
   const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
 
+  it('services every retained terminal receipt before ordinary sweep latches or reads', () => {
+    const sweep = sliceMethod(eliminations, 'runEliminationSweep(signal: AbortSignal)');
+    const resume = sweep.indexOf('await this.resumeCommittedTerminalCleanup()');
+    const reprice = sweep.indexOf('this.tournamentEntryRepricePending');
+    const deal = sweep.indexOf('await this.checkFinalTableDeal()');
+    expect(resume).toBeGreaterThanOrEqual(0);
+    expect(reprice).toBeGreaterThan(resume);
+    expect(deal).toBeGreaterThan(resume);
+  });
+
+  it('requeues a failed cleanup-only admission without invoking a settlement RPC', () => {
+    const resume = sliceMethod(eliminations, 'resumeCommittedTerminalCleanup(): Promise<boolean>');
+    expect(resume).toContain('this.committedFinishReceipt');
+    expect(resume).toContain('this.committedSatelliteReceipt');
+    expect(resume).toContain('this.committedFinalTableDealCleanupPending');
+    expect(resume).toMatch(
+      /if \(!cleaned && this\.running\)[\s\S]*?requestUrgentEliminationSweepAfter\(/
+    );
+    expect(resume).not.toMatch(
+      /requestTournamentTerminalReceipt|requestSatelliteSettlementReceipt|\.rpc\(|\.from\(/
+    );
+  });
+
   it('does not announce completion before the atomic receipt exists', () => {
     const settlement = finish.indexOf('requestTournamentTerminalReceipt(');
     const complete = finish.indexOf('COMPLETE - winner', settlement);

@@ -26,10 +26,12 @@ SET LOCAL session_replication_role=replica;
 
 INSERT INTO auth.users(id) VALUES
   ('91111111-1111-4111-8111-111111111111'),
-  ('2d1cd6c3-5700-4af9-a271-d4863fdab20d');
+  ('2d1cd6c3-5700-4af9-a271-d4863fdab20d')
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users(id,username) VALUES
   ('91111111-1111-4111-8111-111111111111','ticket_horse_probe'),
-  ('2d1cd6c3-5700-4af9-a271-d4863fdab20d','smarterpoker');
+  ('2d1cd6c3-5700-4af9-a271-d4863fdab20d','smarterpoker')
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.profiles(id,username,is_horse,horse_status) VALUES
   ('91111111-1111-4111-8111-111111111111',
    'Ticket Horse',true,'available'),

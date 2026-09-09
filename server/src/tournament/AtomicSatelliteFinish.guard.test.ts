@@ -49,7 +49,7 @@ function latestMigrationContaining(needle: string): string {
 
 const SQL = latestMigrationContaining('$settle_satellite$');
 const CASH_SQL = readFileSync(
-  join(MIGRATIONS, '20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'),
+  join(MIGRATIONS, '20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql'),
   'utf8'
 );
 const TERMINAL_SQL = latestMigrationContaining('$complete_terminal$');
@@ -66,6 +66,9 @@ const SETTLE = taggedBody('settle_satellite');
 const RECEIPT = taggedBody('satellite_receipt');
 const ADOPTION = taggedBody('adopt_b066');
 const ADOPTION_682 = taggedBody('adopt_exact_682_completion');
+const ADOPTION_CLOSEOUT_SQL = latestMigrationContaining(
+  'DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder()'
+);
 
 describe('the finalized source pool is the complete allocation authority', () => {
   it('buys floor(pool / ticket) tickets and gives all sub-ticket residual to place N+1', () => {
@@ -401,8 +404,48 @@ describe('all financial effects share one database transaction', () => {
   });
 
   it('records an exact stage-one watermark and every audited production id', () => {
+    expect(SQL).toContain("SET LOCAL transaction_timeout = '180s';");
     expect(SQL).toContain('CREATE TABLE public.tournament_satellite_settlement_cutover');
-    expect(SQL).toContain('LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE');
+    const transactionBudget = SQL.indexOf("SET LOCAL transaction_timeout = '180s';");
+    const terminalBoundary = SQL.indexOf(
+      "hashtextextended('ca:tournament-terminal-settlement:v1',0)",
+      transactionBudget
+    );
+    const maintenanceBoundary = SQL.indexOf(
+      'pg_advisory_xact_lock_shared(530090,1)',
+      terminalBoundary
+    );
+    const liveFreezeGate = SQL.indexOf(
+      'AND NOT public.fn_entry_purchases_frozen() THEN',
+      maintenanceBoundary
+    );
+    const commitFreezeGate = SQL.indexOf(
+      ') AND NOT public.fn_entry_purchases_frozen() THEN',
+      liveFreezeGate + 1
+    );
+    const parentBarrier = SQL.indexOf('LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE');
+    const tablesDdl = SQL.indexOf('ALTER TABLE public.tables\n  ADD COLUMN terminal_closed_at');
+    const finalProof = SQL.indexOf('$verify_satellite_authority$;');
+    const commit = SQL.lastIndexOf('COMMIT;');
+    expect(terminalBoundary).toBeGreaterThan(transactionBudget);
+    expect(maintenanceBoundary).toBeGreaterThan(terminalBoundary);
+    expect(liveFreezeGate).toBeGreaterThan(maintenanceBoundary);
+    expect(parentBarrier).toBeGreaterThan(liveFreezeGate);
+    expect(parentBarrier).toBeGreaterThan(-1);
+    expect(tablesDdl).toBeGreaterThan(parentBarrier);
+    expect(SQL).toContain(
+      'no lock upgrade remains and the relation order is always tournaments then'
+    );
+    expect(SQL).toContain('v_database_is_pristine boolean');
+    expect(SQL).toContain('EXISTS (SELECT 1 FROM auth.users)');
+    expect(SQL).toContain('EXISTS (SELECT 1 FROM public.chip_ledger)');
+    expect(SQL).toContain(
+      'atomic satellite settlement live cutover requires the maintenance entry freeze'
+    );
+    expect(commitFreezeGate).toBeGreaterThan(parentBarrier);
+    expect(finalProof).toBeGreaterThan(commitFreezeGate);
+    expect(commit).toBeGreaterThan(finalProof);
+    expect(SQL).toContain('atomic satellite settlement live cutover freeze expired before commit');
     expect(SQL).toContain('preexisting_completed_ids uuid[] NOT NULL');
     expect(SQL).toContain('clock_timestamp()');
     expect(SQL).toContain('array_position(preexisting_completed_ids, NULL) IS NULL');
@@ -460,11 +503,9 @@ describe('all financial effects share one database transaction', () => {
     expect(SQL).toContain('EXISTS (SELECT 1 FROM pg_policy pol WHERE pol.polrelid = c.oid)');
   });
 
-  it('keeps rolling compatibility explicit without making it canonical schema', () => {
+  it('keeps the internal award leaf present and owner-only without making it canonical schema', () => {
     expect(MANIFEST).toContain('"tournament_satellite_settlement_cutover"');
-    expect(CATALOG_PROBE).toContain(
-      'rolling compatibility door was retired before the engine cutover'
-    );
+    expect(CATALOG_PROBE).toContain('internal satellite award leaf retained application EXECUTE');
     expect(MANIFEST).not.toContain('fn_award_satellite_seat');
     expect(MANIFEST).not.toContain('inert refusal');
   });
@@ -570,8 +611,61 @@ describe('the one audited production miss is adopted exactly once', () => {
     expect(ADOPTION).not.toContain('UPDATE public.tournament_players SET prize = 0');
   });
 
-  it('drops the owner-only adoption function before commit', () => {
-    expect(SQL).toContain('DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder()');
+  it('defers historical writes until after broad DDL and drops both owner-only helpers', () => {
+    expect(SQL).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_adopt_682_satellite_completion()'
+    );
+    expect(SQL).not.toContain('PERFORM public.fn_ca_adopt_b066_satellite_remainder()');
+    expect(SQL).not.toContain('PERFORM public.fn_ca_adopt_682_satellite_completion()');
+    expect(SQL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_adopt_b066_satellite_remainder\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role;/
+    );
+    expect(SQL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_adopt_682_satellite_completion\(\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role;/
+    );
+    const freezeGate = ADOPTION_CLOSEOUT_SQL.indexOf('IF public.fn_entry_purchases_frozen() THEN');
+    const terminalBoundary = ADOPTION_CLOSEOUT_SQL.indexOf(
+      "hashtextextended('ca:tournament-terminal-settlement:v1',0)"
+    );
+    const maintenanceBoundary = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'pg_advisory_xact_lock_shared(530090,1)'
+    );
+    const cutoverPrerequisite = ADOPTION_CLOSEOUT_SQL.indexOf(
+      "c.migration_version = '20260909014421'"
+    );
+    const b066Call = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'v_receipt := public.fn_ca_adopt_b066_satellite_remainder()'
+    );
+    const completion682Call = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'PERFORM public.fn_ca_adopt_682_satellite_completion()'
+    );
+    const b066ReceiptVerification = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'b066 closeout did not produce its exact immutable 285/200/85 receipt'
+    );
+    const completion682ReceiptVerification = ADOPTION_CLOSEOUT_SQL.indexOf(
+      '682 closeout did not produce its exact immutable 285/200/85 receipt'
+    );
+    const firstHelperDrop = ADOPTION_CLOSEOUT_SQL.indexOf(
+      'DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder()'
+    );
+    expect(cutoverPrerequisite).toBeGreaterThan(-1);
+    expect(terminalBoundary).toBeGreaterThan(cutoverPrerequisite);
+    expect(maintenanceBoundary).toBeGreaterThan(terminalBoundary);
+    expect(freezeGate).toBeGreaterThan(-1);
+    expect(freezeGate).toBeGreaterThan(maintenanceBoundary);
+    expect(b066Call).toBeGreaterThan(freezeGate);
+    expect(completion682Call).toBeGreaterThan(freezeGate);
+    expect(b066ReceiptVerification).toBeGreaterThan(b066Call);
+    expect(completion682ReceiptVerification).toBeGreaterThan(completion682Call);
+    expect(firstHelperDrop).toBeGreaterThan(b066ReceiptVerification);
+    expect(firstHelperDrop).toBeGreaterThan(completion682ReceiptVerification);
+    expect(ADOPTION_CLOSEOUT_SQL).not.toMatch(/ALTER TABLE|LOCK TABLE/);
+    expect(ADOPTION_CLOSEOUT_SQL).toContain(
+      'DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder()'
+    );
+    expect(ADOPTION_CLOSEOUT_SQL).toContain(
+      'DROP FUNCTION public.fn_ca_adopt_682_satellite_completion()'
+    );
   });
 });
 

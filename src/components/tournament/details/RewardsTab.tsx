@@ -77,8 +77,8 @@ import {
   isPlayerLive,
   lastPaidPlace,
   ordinal,
-  parsePayoutStructure,
   placePrize,
+  resolvePayoutStructure,
 } from './types';
 import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
@@ -215,6 +215,7 @@ interface RewardColumns {
   guaranteed_prize?: number | null;
   prize_pool_finalized?: boolean | null;
   payout_structure?: unknown;
+  spin_multiplier?: number | null;
   is_bounty?: boolean | null;
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
@@ -337,10 +338,7 @@ export default function RewardsTab({
 
   /* ── THE LADDER OF PLACES ─────────────────────────────────────────────── */
 
-  const parsedPlaces = useMemo(
-    () => parsePayoutStructure(t.payout_structure),
-    [t.payout_structure]
-  );
+  const parsedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
   const bands = useMemo(() => (parsedPlaces ? toBands(parsedPlaces) : []), [parsedPlaces]);
   const paidPlaces = parsedPlaces ? parsedPlaces.length : 0;
 
@@ -374,7 +372,7 @@ export default function RewardsTab({
    * percentage-of-field figure. The final paid place comes from the deepest
    * structure position, and the stone bubble is exactly one place after it.
    */
-  const finalPaidPlace = useMemo(() => lastPaidPlace(t.payout_structure), [t.payout_structure]);
+  const finalPaidPlace = useMemo(() => lastPaidPlace(parsedPlaces), [parsedPlaces]);
   const stoneBubblePlace = finalPaidPlace > 0 ? finalPaidPlace + 1 : 0;
   const isSatellite =
     String(t.variant ?? '').toLowerCase() === 'satellite' ||
@@ -383,7 +381,7 @@ export default function RewardsTab({
   const placeLadderPool = effectivePlaceLadderPool(
     t.prize_pool,
     t.guaranteed_prize,
-    t.payout_structure,
+    parsedPlaces,
     entryCount,
     t.bubble_protection === true,
     num(t.buy_in_amount),

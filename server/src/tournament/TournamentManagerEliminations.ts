@@ -359,6 +359,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     eliminationSweepsInflight.inc();
 
     try {
+      // A terminal receipt is already the complete money verdict. Its process
+      // tail must outrank every ordinary sweep stage and every completion
+      // latch: a prior engine/channel cleanup failure left tournamentFinished
+      // true, so falling through to checkFinalTableDeal would otherwise return
+      // forever without retrying the retained normal or satellite receipt.
+      if (await this.resumeCommittedTerminalCleanup()) return;
+      if (sweepStopped()) return;
+
       // A close commits its durable receipt and a `late_registration` wake in
       // one database transaction. Registration uses the same reason while the
       // window is open; asking the authoritative RPC then is a cheap no-op.
@@ -3370,6 +3378,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private static readonly FINAL_TABLE_DEAL_PAUSE_MS = 15 * 60_000;
   private lastDealPollAt = 0;
   private lastDealVoteCount = -1;
+
+  /**
+   * Resume only the non-money tail of an already committed terminal receipt.
+   *
+   * Returning true means this admission belonged exclusively to terminal
+   * cleanup. A failed attempt keeps the receipt in memory and schedules the
+   * same manager through the shared causal scheduler; no payout RPC is called
+   * again and no fleet watcher or reconciler is introduced.
+   */
+  private async resumeCommittedTerminalCleanup(): Promise<boolean> {
+    let cleaned: boolean;
+    if (this.committedFinalTableDealCleanupPending && this.committedFinalTableDealReceipt) {
+      cleaned = await this.settleFinalTableDeal(this.committedFinalTableDealReceipt);
+    } else if (this.committedFinishReceipt) {
+      cleaned = await this.cleanupCommittedTournament(this.committedFinishReceipt);
+    } else if (this.committedSatelliteReceipt) {
+      cleaned = await this.cleanupCommittedSatellite(this.committedSatelliteReceipt);
+    } else {
+      return false;
+    }
+
+    if (!cleaned && this.running) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+    }
+    return true;
+  }
 
   /**
    * Deliver a committed, non-money outcome before terminal teardown.

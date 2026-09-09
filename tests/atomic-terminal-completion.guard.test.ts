@@ -11,7 +11,7 @@ const satelliteSql = readFileSync(
 );
 const cashSql = readFileSync(
   root(
-    'supabase/migrations/20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql'
+    'supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );
@@ -49,6 +49,29 @@ const collectBounty = functionDefinition(
   sql,
   'CREATE OR REPLACE FUNCTION public.fn_collect_bounty('
 );
+const finalizeBounty = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_finalize_bounty_pool('
+);
+const settleMysteryBounty = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_mystery_bounty_settle('
+);
+const payMysteryBounty = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_mystery_bounty_pay('
+);
+const reserveMysteryBounty = functionDefinition(
+  sql,
+  'CREATE OR REPLACE FUNCTION public.fn_mystery_bounty_reserve('
+);
+const bountyRoots: Array<[string, string]> = [
+  ['fn_collect_bounty', collectBounty],
+  ['fn_finalize_bounty_pool', finalizeBounty],
+  ['fn_mystery_bounty_settle', settleMysteryBounty],
+  ['fn_mystery_bounty_pay', payMysteryBounty],
+  ['fn_mystery_bounty_reserve', reserveMysteryBounty],
+];
 const satelliteTargetProvenanceGuard = functionDefinition(
   sql,
   'CREATE OR REPLACE FUNCTION public.fn_satellite_target_player_provenance_is_immutable()'
@@ -65,14 +88,8 @@ const rollingComponents: Array<[string, string]> = [
       'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_final_table_deal('
     ),
   ],
-  [
-    'fn_finalize_bounty_pool',
-    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_finalize_bounty_pool('),
-  ],
-  [
-    'fn_mystery_bounty_settle',
-    functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_mystery_bounty_settle('),
-  ],
+  ['fn_finalize_bounty_pool', finalizeBounty],
+  ['fn_mystery_bounty_settle', settleMysteryBounty],
   [
     'fn_settle_tournament_rake',
     functionDefinition(sql, 'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_rake('),
@@ -165,6 +182,26 @@ describe('non-satellite terminal completion is one database transaction', () => 
     );
     expect(sql).toContain('rolling satellite award lost its target-before-source row-lock order');
     expect(sql).toContain("position('WHERE id = p_target_id' IN v_satellite_award_source) >");
+  });
+
+  it('keeps all five bounty roots static when rolling helper bodies are retired', () => {
+    for (const [name, definition] of bountyRoots) {
+      expect(definition, `${name} is self-contained`).not.toMatch(/_unguarded_20260907\s*\(/i);
+      expect(definition, `${name} keeps the terminal lock`).toContain(
+        'ca:tournament-terminal-settlement:v1'
+      );
+    }
+    expect(collectBounty).toContain('public.fn_settle_tournament_obligation(');
+    expect(collectBounty).toContain('bounty_pool_underfunded');
+    expect(finalizeBounty).toContain('public.fn_settle_tournament_obligation(');
+    expect(finalizeBounty).toContain('Unclaimed bounty pool awarded to champion');
+    expect(settleMysteryBounty).toContain('public.fn_mystery_bounty_pay(');
+    expect(settleMysteryBounty).toContain('public.fn_settle_tournament_obligation(');
+    expect(payMysteryBounty).toContain('public.fn_settle_tournament_obligation(');
+    expect(payMysteryBounty).toContain('bounty_obligation_id');
+    expect(reserveMysteryBounty).toContain('INSERT INTO public.tournament_bounty_award_recipients');
+    expect(reserveMysteryBounty).toContain('bounty_obligation_id = (');
+    expect(sql).toContain('bounty root % is missing or still delegates to a rolling helper');
   });
 
   it('settles mystery, bounty and rake before one completed receipt', () => {
@@ -318,7 +355,22 @@ describe('the stored terminal receipt is immutable and exact', () => {
   });
 
   it('captures the cutover behind a write barrier and never classifies history by clock', () => {
-    expect(sql).toContain('LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE');
+    expect(sql).toContain("SET LOCAL transaction_timeout = '180s';");
+    const tournamentBarrier = sql.indexOf('LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE');
+    const firstChildDdl = sql.indexOf(
+      'CREATE INDEX IF NOT EXISTS idx_tournament_knockout_candidates_user_hand'
+    );
+    const firstTablesDdl = sql.indexOf('\nALTER TABLE public.tables\n');
+    expect(tournamentBarrier).toBeGreaterThan(-1);
+    expect(firstChildDdl).toBeGreaterThan(tournamentBarrier);
+    expect(firstTablesDdl).toBeGreaterThan(tournamentBarrier);
+    expect(sql.match(/LOCK TABLE public\.tournaments IN ACCESS EXCLUSIVE MODE/g)).toHaveLength(1);
+    expect(sql).toContain(
+      'The live terminal path first enters tournaments with SELECT ... FOR UPDATE'
+    );
+    expect(sql).toContain('This barrier refuses that entrant before');
+    expect(sql).toContain('It remains held through the later cutover inventory,');
+    expect(sql).toContain('so no timestamp inference or second lock upgrade is used.');
     expect(sql).toContain('preexisting_completed_ids         uuid[] NOT NULL');
     expect(sql).toContain('array_position(preexisting_completed_ids, NULL) IS NULL');
     expect(sql).toContain('clock_timestamp(), ARRAY(');

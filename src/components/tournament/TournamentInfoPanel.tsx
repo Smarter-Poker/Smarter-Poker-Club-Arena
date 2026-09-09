@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { money } from '../../utils/buyIn';
-import { effectivePlaceLadderPool, parsePayoutStructure, placePrize } from './details/types';
+import { effectivePlaceLadderPool, placePrize, resolvePayoutStructure } from './details/types';
 import './TournamentInfoPanel.css';
 
 type TabId = 'ranking' | 'prizes' | 'tables' | 'blinds';
@@ -66,6 +66,7 @@ interface TournamentRow {
   late_reg_levels: number | null;
   blind_structure: unknown;
   payout_structure: unknown;
+  spin_multiplier: number | null;
   is_bounty: boolean | null;
   start_time: string | null;
 }
@@ -121,7 +122,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, variant, tournament_type, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
+            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -195,7 +196,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
   }, [rows, t, heroUserId, fieldSize]);
 
   const blinds = useMemo(() => asArray(t?.blind_structure), [t]);
-  const payouts = useMemo(() => parsePayoutStructure(t?.payout_structure) ?? [], [t]);
+  const payouts = useMemo(() => resolvePayoutStructure(t) ?? [], [t]);
   const isSatellite =
     String(t?.variant ?? '').toLowerCase() === 'satellite' ||
     String(t?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
@@ -206,13 +207,13 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
     return effectivePlaceLadderPool(
       t.prize_pool,
       t.guaranteed_prize,
-      t.payout_structure,
+      payouts,
       fieldSize ?? 0,
       t.bubble_protection === true,
       num(t.buy_in_amount),
       isSatellite
     );
-  }, [fieldSize, isSatellite, t]);
+  }, [fieldSize, isSatellite, payouts, t]);
   /**
    * LEVEL DISPLAY IS 1-BASED, THE COLUMN IS NOT (2026-08-23).
    *

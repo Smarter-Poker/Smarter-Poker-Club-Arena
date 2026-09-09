@@ -27,7 +27,8 @@ import { computePlacePrize, prizePoolAvailableToPlaces } from '../../../lib/payo
 import { parsePayoutStructure } from '../../../lib/payoutStructure';
 
 export { parsePayoutStructure } from '../../../lib/payoutStructure';
-export type { PayoutPlace } from '../../../lib/payoutStructure';
+export { resolvePayoutStructure } from '../../../lib/payoutStructure';
+export type { PayoutPlace, PayoutSubject } from '../../../lib/payoutStructure';
 
 /**
  * SEVEN TABS. Dan 2026-08-25, verbatim: "CHIPS SHOULD BE CALLED 'RANKING'" and

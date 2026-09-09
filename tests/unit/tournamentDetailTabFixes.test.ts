@@ -118,12 +118,16 @@ describe('the money bubble reads the last paid place, not how many places pay', 
 
   it('every bubble-distance caller now uses it', () => {
     const rewards = strip(read('components/tournament/details/RewardsTab.tsx'));
-    expect(rewards).toMatch(/finalPaidPlace = useMemo\(\(\) => lastPaidPlace/);
+    expect(rewards).toMatch(/parsedPlaces = useMemo\(\(\) => resolvePayoutStructure\(tournament\)/);
+    expect(rewards).toMatch(/finalPaidPlace = useMemo\(\(\) => lastPaidPlace\(parsedPlaces\)/);
     const detail = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
-    expect(detail).toMatch(/lastPaidPlace\(tournament\?\.payout_structure\)/);
+    expect(detail).toMatch(
+      /payoutStructure = useMemo\(\(\) => resolvePayoutStructure\(tournament\)/
+    );
+    expect(detail).toMatch(/lastPaidPlace\(payoutStructure\)/);
     const ranking = strip(read('components/tournament/details/RankingTab.tsx'));
     expect(ranking).toMatch(
-      /deepestPaidPlace = useMemo\([\s\S]{0,100}lastPaidPlace\(tournament\?\.payout_structure\)/
+      /deepestPaidPlace = useMemo\([\s\S]{0,100}lastPaidPlace\(resolvePayoutStructure\(tournament\)\)/
     );
     // paidPlaceCount is still right for "N Paid Places"; it must not be the
     // thing feeding hand-for-hand.

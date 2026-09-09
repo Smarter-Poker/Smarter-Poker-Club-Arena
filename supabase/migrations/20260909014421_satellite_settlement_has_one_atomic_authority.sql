@@ -12,6 +12,52 @@ BEGIN;
 
 SET LOCAL lock_timeout = '8s';
 SET LOCAL statement_timeout = '120s';
+SET LOCAL transaction_timeout = '180s';
+
+-- This is a broad live-schema cutover: it takes ACCESS EXCLUSIVE on the
+-- tournament parent before altering the felt and then installs the complete
+-- entry/refund/settlement authority. Serialize with the same two roots used
+-- by every supported tournament entry. Taking the terminal root first is the
+-- canonical order; the shared maintenance root then pins the current freeze
+-- row so the engine cannot rewrite it halfway through this transaction. The
+-- predicate is time-bounded as well as row-backed, so the final proof below
+-- also refuses to commit if the advertised freeze expires while DDL runs.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+-- A source-controlled empty database has no engine and therefore no
+-- maintenance owner to publish a freeze row. Preserve deterministic clean
+-- replay only for that exact pristine state. Any database containing an
+-- account, club, game, journal leg or ticket is a live-shaped deployment and
+-- must already be inside the serialized entry freeze before this transaction
+-- is allowed to queue its first broad relation lock.
+DO $require_live_satellite_cutover_freeze$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'atomic satellite settlement requires the serialized maintenance predicate first';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'atomic satellite settlement live cutover requires the maintenance entry freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_live_satellite_cutover_freeze$;
 
 -- This authority deliberately builds on two already-hardened money rails:
 -- the cash cutover owns durable elimination order plus credit-and-evidence,
@@ -241,17 +287,21 @@ $preserve_atomic_escrow_close$;
 REVOKE ALL ON FUNCTION public.fn_ca_escrow_on_close()
   FROM PUBLIC, anon, authenticated, service_role;
 
+-- Drain every pre-existing tournament writer and block new legacy finish
+-- transactions before asking for ACCESS EXCLUSIVE on tables. Runtime readers
+-- and finishers open tournaments before reading tables; a weaker parent lock
+-- lets a new reader enter, then deadlocks when this transaction upgrades the
+-- parent after taking the tables DDL lock. Take the final parent mode first so
+-- no lock upgrade remains and the relation order is always tournaments then
+-- tables. This also makes the history inventory authoritative even when an
+-- older transaction started before this DDL.
+LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE;
+
 -- Terminal felt state is part of the satellite money receipt, not a later
--- lifecycle repair. Introduce its durable marker before creating the receipt
--- and stamp it in the same transaction as every new or adopted settlement.
+-- lifecycle repair. Introduce its durable marker behind the parent writer
+-- barrier and stamp it in the same transaction as every settlement.
 ALTER TABLE public.tables
   ADD COLUMN terminal_closed_at timestamptz;
-
--- Drain every pre-existing tournament writer and block new legacy finish
--- transactions until this migration commits. Capturing history after this
--- barrier makes the inventory authoritative even when an older transaction
--- started before DDL and carried an earlier transaction_timestamp().
-LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE;
 
 -- The cleanup stage needs an exact boundary between history that may have
 -- completed through the legacy per-seat writer and every completion after
@@ -7274,7 +7324,8 @@ COMMENT ON FUNCTION public.fn_resolve_satellite_settlement_outcome(uuid,uuid) IS
 -- event-specific adoption accepts no nearby shape: every identity, amount,
 -- row count, wallet claim, debt, standing and escrow balance is asserted. It
 -- adopts the already-paid leg, pays only the missing 85, writes the immutable
--- receipt, proves conservation, and is dropped in this transaction.
+-- receipt, and proves conservation. The helper remains owner-only until the
+-- separate post-freeze closeout calls or verifies it and drops it.
 CREATE OR REPLACE FUNCTION public.fn_ca_adopt_b066_satellite_remainder()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -8034,17 +8085,6 @@ $adopt_b066$;
 REVOKE ALL ON FUNCTION public.fn_ca_adopt_b066_satellite_remainder()
   FROM PUBLIC, anon, authenticated, service_role;
 
-DO $adopt_exact_known_miss$
-BEGIN
-  IF EXISTS (SELECT 1 FROM public.tournaments t
-              WHERE t.id = 'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'::uuid) THEN
-    PERFORM public.fn_ca_adopt_b066_satellite_remainder();
-  END IF;
-END;
-$adopt_exact_known_miss$;
-
-DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder();
-
 -- A second production event finished while this change was being verified.
 -- The legacy path paid its complete 285 exactly once: one 200 target seat and
 -- all 85 left below a ticket to place 2. It then left the source pool counter,
@@ -8052,7 +8092,13 @@ DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder();
 -- row. This one-time block accepts only the exact audited identities, amounts,
 -- claims, transfer, target registration, rake and zero escrow; it normalizes
 -- only caches/lifecycle and records the immutable whole-pool receipt.
-DO $adopt_exact_682_completion$
+CREATE OR REPLACE FUNCTION public.fn_ca_adopt_682_satellite_completion()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '30s'
+AS $adopt_exact_682_completion$
 DECLARE
   v_tournament_id constant uuid := '682045c5-cb07-47ed-ad0e-adbff9cb41af';
   v_target_id constant uuid := '13dd6b98-b882-4690-a479-3a6f77783ad6';
@@ -8777,6 +8823,9 @@ BEGIN
   END IF;
 END;
 $adopt_exact_682_completion$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_adopt_682_satellite_completion()
+  FROM PUBLIC, anon, authenticated, service_role;
 
 INSERT INTO public.ca_money_rpc_registry (proname, status, notes) VALUES
   ('fn_ca_find_tournament_entry_ticket_for', 'approved',
@@ -9562,6 +9611,8 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM public.tournaments t
               WHERE t.id = 'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'::uuid)
+     AND to_regprocedure(
+           'public.fn_ca_adopt_b066_satellite_remainder()') IS NULL
      AND NOT EXISTS (
        SELECT 1 FROM public.tournament_satellite_settlements s
         WHERE s.tournament_id = 'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'::uuid
@@ -9583,6 +9634,8 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM public.tournaments t
               WHERE t.id = '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid)
+     AND to_regprocedure(
+           'public.fn_ca_adopt_682_satellite_completion()') IS NULL
      AND NOT EXISTS (
        SELECT 1 FROM public.tournament_satellite_settlements s
        JOIN public.tournament_satellite_remainders r
@@ -9598,8 +9651,25 @@ BEGIN
                 '2026-09-08 11:23:11.485+00'::timestamptz
           AND s.source_table_count = 1 AND s.source_seat_count = 2
           AND s.released_seat_count = 0
-     ) THEN
+  ) THEN
     RAISE EXCEPTION 'known 682 legacy completion was not adopted exactly';
+  END IF;
+
+  -- Holding the maintenance advisory boundary prevents a row transition but
+  -- does not stop clock_timestamp() from passing a self-expiring break end.
+  -- Recheck at the commit boundary: a live deployment may not publish this
+  -- broad cutover after the maintenance interval it proved at entry.
+  IF (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) AND NOT public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION
+      'atomic satellite settlement live cutover freeze expired before commit'
+      USING ERRCODE = '55006';
   END IF;
 END;
 $verify_satellite_authority$;
@@ -9607,7 +9677,9 @@ $verify_satellite_authority$;
 COMMIT;
 
 -- DATA-FORWARD RELEASE: a statement failure rolls this migration transaction
--- back automatically. After commit, immutable settlement evidence and the
--- exact b066/682 cache and felt normalization are intentionally irreversible.
+-- back automatically. After commit, the atomic authorities and evidence
+-- boundaries are irreversible. The two exact historical adoption helpers stay
+-- owner-only and are consumed and dropped by the immediate post-freeze
+-- closeout migration, which carries no broad relation DDL locks.
 -- Repair a post-commit defect with a reviewed forward migration. Never drop
--- the receipts, reverse the normalized caches, or reopen the per-seat writer.
+-- the receipts, reverse normalized caches, or reopen the per-seat writer.

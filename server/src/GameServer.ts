@@ -1411,8 +1411,6 @@ export class GameServer {
    * anything on it.
    */
   private seatFirstFullSince: Map<string, number> = new Map();
-  /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
-  private lastRakeSweepAt = 0;
   /** One seat-first finish sweep per minute - see the call site for why. */
   private lastSeatFirstFinishSweepAt = 0;
   /** One reopen sweep per minute for tables closed under a live tournament. */
@@ -1421,12 +1419,8 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
-  /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
-  private lastPayoutGuaranteeCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
-  /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
-  private lastRakeAttributionRepairAt = 0;
   /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
   private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
@@ -5206,51 +5200,6 @@ export class GameServer {
           );
         }
 
-        // ── TOURNAMENT RAKE SWEEP (2026-08-26) ──
-        // The last line of the settlement-integrity fix: any terminal
-        // tournament whose fee ledger has no tournament_rake_settlements row
-        // (engine died before settling, wallet credit failed three times,
-        // event completed by a path that predates the settler) is settled by
-        // fn_sweep_unsettled_tournament_rake. Idempotent by PK claim, so it
-        // can never double-pay a tournament something else settled. Every 10
-        // minutes - this is a safety net, not the primary path.
-        //
-        // THE BATCH IS SMALL ON PURPOSE. 2026-08-31: this ran with p_limit 200
-        // and settled nothing for two and a half hours while 29 terminal events
-        // holding 215.98 in union rake piled up behind it. The whole sweep is
-        // ONE transaction, and every settlement inside it updates the SAME
-        // club_wallets row and the same union wallet. At 200 candidates that is
-        // minutes of held row locks, against a live engine settling its own
-        // finishing tournaments on those exact rows, so the sweep deadlocked,
-        // lost, and rolled back, every single pass. The alert it left behind
-        // said only "deadlock detected".
-        //
-        // Ten per pass is ~5s of locking, and at one pass per 10 minutes it
-        // drains 60 events an hour against a normal arrival rate near one. A
-        // backlog costs a little latency; a batch that deadlocks costs the
-        // whole sweep, forever, which is what actually happened.
-        if (Date.now() - this.lastRakeSweepAt > 10 * 60 * 1000) {
-          this.lastRakeSweepAt = Date.now();
-          try {
-            const { data: sweep, error: sweepErr } = await supabase.rpc(
-              'fn_sweep_unsettled_tournament_rake',
-              { p_since_days: 60, p_limit: 10 }
-            );
-            if (sweepErr) {
-              reportError(
-                new Error(`[GameServer] tournament rake sweep failed: ${sweepErr.message}`),
-                'GameServer.rake_sweep_failed'
-              );
-            } else if (Number(sweep?.settled) > 0 || Number(sweep?.failed) > 0) {
-              console.log(
-                `[GameServer] Tournament rake sweep: settled ${sweep.settled} event(s), ${sweep.chips} chips (scanned ${sweep.scanned}, failed ${sweep.failed})`
-              );
-            }
-          } catch (sweepEx) {
-            reportError(sweepEx, 'GameServer.rake_sweep_threw');
-          }
-        }
-
         // Conservation: per-event money in vs money out (prizes + bounties +
         // refunds + booked rake + funded overlay). Every 6 hours; anything
         // beyond tolerance files a deduped financial_alert. This is the
@@ -5310,54 +5259,6 @@ export class GameServer {
           }
         }
 
-        // ── EVERY EARNER IS PAID (2026-09-01) ──
-        // Dan, verbatim: "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET
-        // PAID OUT OF EVERY SINGLE MTT, SPIN OR HEADS UP THEY PLAY (IF THEY
-        // EARNED A PAYOUT)." This is the check that makes that verifiable, and
-        // it is the only one on the platform that asks the question against
-        // the WALLET rather than against tournament_payouts.
-        //
-        // It catches three things nothing else looked for:
-        //   - a paid place with no holder. Fifteen MTTs between 2026-05-08 and
-        //     2026-07-19 recorded finishing places 1, 2, then 6 onwards, so the
-        //     18/10/7 percent places had nobody in them and 193.10 chips went
-        //     to no one. The cause was fixed on 2026-07-19; the blindness was
-        //     not, and it had run for ten weeks.
-        //   - an earner whose wallet never saw the money. Across 150 days and
-        //     ~49,000 events that is exactly one player, short by 0.02.
-        //   - prizes paid with no payout record (61 events, 5,515.91 chips),
-        //     which is what arms fn_tournament_payout_reconcile to pay a second
-        //     time, because it reads that record to decide what is owed.
-        //
-        // Hourly, on its own timer, and it moves no money.
-        if (Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000) {
-          this.lastPayoutGuaranteeCheckAt = Date.now();
-          try {
-            const { data: pg, error: pgErr } = await supabase.rpc('fn_payout_guarantee_check', {
-              p_since_days: 7,
-            });
-            if (pgErr) {
-              reportError(
-                new Error(`[GameServer] payout guarantee check failed: ${pgErr.message}`),
-                'GameServer.payout_guarantee_check_failed'
-              );
-            } else if (
-              Number(pg?.vacant_paid_place_events) > 0 ||
-              Number(pg?.earners_not_paid) > 0 ||
-              Number(pg?.paid_but_unrecorded_events) > 0
-            ) {
-              console.log(
-                `[GameServer] Payout guarantee: ${pg.vacant_paid_place_events} event(s) with an unheld paid place ` +
-                  `(${pg.vacant_paid_place_chips} chips), ${pg.earners_not_paid} earner(s) unpaid ` +
-                  `(${pg.earners_not_paid_chips} chips), ${pg.paid_but_unrecorded_events} event(s) paid without a record ` +
-                  `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
-              );
-            }
-          } catch (pgEx) {
-            reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
-          }
-        }
-
         // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──
         // 259 duplicate finishing places were renumbered; 19 of the demoted
         // rows had collected more than their corrected place is worth. Dan's
@@ -5387,67 +5288,6 @@ export class GameServer {
             }
           } catch (chgEx) {
             reportError(chgEx, 'GameServer.place_overpay_charge_threw');
-          }
-        }
-
-        // ── RAKE ATTRIBUTION REPAIR (2026-08-28) ──
-        // fn_settle_tournament_rake banks the rake and then attributes it per
-        // player (VIP points, agent commission, rakeback stats). Attribution is
-        // allowed to fail without rolling the settlement back, which is right -
-        // but until now the whole remedy was a financial_alert, so a deadlock
-        // meant every player in that event lost their points permanently. The
-        // settle path records whether attribution happened; this retries the
-        // ones it did not. fn_attribute_tournament_rake is idempotent.
-        if (Date.now() - this.lastRakeAttributionRepairAt > 15 * 60 * 1000) {
-          this.lastRakeAttributionRepairAt = Date.now();
-          try {
-            const { data: att, error: attErr } = await supabase.rpc(
-              'fn_repair_tournament_rake_attribution',
-              { p_limit: 50 }
-            );
-            if (attErr) {
-              reportError(
-                new Error(`[GameServer] rake attribution repair failed: ${attErr.message}`),
-                'GameServer.rake_attribution_repair_failed'
-              );
-            } else if (Number(att?.repaired) > 0 || Number(att?.still_failing) > 0) {
-              console.log(
-                `[GameServer] Rake attribution repair: ${att.repaired} repaired, ` +
-                  `${att.still_failing} still failing (queue ${att.queue_before} -> ${att.queue_after})`
-              );
-            }
-          } catch (attEx) {
-            reportError(attEx, 'GameServer.rake_attribution_repair_threw');
-          }
-
-          // ── AND THE BACKLOG BEHIND IT (2026-08-31) ──
-          // fn_repair_ retries settlements the settle path recorded as FAILED.
-          // It cannot see the ones that were never measured at all, because
-          // before attributed_users existed there was nothing to record — and
-          // that was 40,055 rows on 2026-08-31, four years of VIP points and
-          // agent commission owed to 585 players and never paid. Draining it
-          // was a one-off by hand; keeping it drained cannot be, or the next
-          // outage rebuilds the same silent backlog. Small limit, on the same
-          // 15-minute clock: this is a floor sweeper, not a migration.
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_backpay_tournament_rake_attribution',
-              { p_limit: 200 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] rake attribution back-pay failed: ${bpErr.message}`),
-                'GameServer.rake_attribution_backpay_failed'
-              );
-            } else if (Number(bp?.paid) > 0 || Number(bp?.errors) > 0) {
-              console.log(
-                `[GameServer] Rake attribution back-pay: ${bp.paid} paid ` +
-                  `(${bp.chips} chips), ${bp.retried} retried, ${bp.errors} threw, ` +
-                  `${bp.remaining} unmeasured left, ${bp.needs_a_human} need a human`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.rake_attribution_backpay_threw');
           }
         }
 

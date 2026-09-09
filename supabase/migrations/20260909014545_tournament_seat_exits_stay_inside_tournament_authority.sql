@@ -16,6 +16,15 @@
 
 BEGIN;
 
+-- A deployment must fail closed instead of occupying tournament money/seat
+-- locks past the short maintenance trough. PostgreSQL 17's transaction budget
+-- bounds the complete lock-holding transaction; the other two budgets bound
+-- each blocked lock acquisition and statement. A retry is safe because the
+-- whole cutover, including its proof row and cron retirement, is atomic.
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '120s';
+SET LOCAL transaction_timeout = '180s';
+
 -- Terminal settlement is the root of every tournament identity mutation.
 -- Take that root before the historical reconciler lock or any relation lock:
 -- cancellation, a paid rebuy seat, and this one-time cutover can then never
@@ -424,7 +433,26 @@ SELECT w.candidate_id,w.tournament_id,w.user_id,e.id AS entitlement_id,
         AND l.created_at IS NOT DISTINCT FROM e.created_at
         AND l.amount>0 AND l.amount=round(l.amount,2)
         AND l.chain_seq IS NOT NULL AND l.row_hash IS NOT NULL
-        AND idem.purchase_amount IS NOT DISTINCT FROM e.gross
+        -- The retired rebuy writer stored 0 in wallet_credit_idempotency for
+        -- its first `:#0` attempt even though the same transaction wrote one
+        -- exact 1-chip wallet debit and one exact 1-chip immutable ledger leg.
+        -- That zero is metadata, never the funded amount. Admit only that
+        -- pinned legacy shape from the cutover backfill; every atomic receipt,
+        -- every re-entry, every nonzero mismatch and every differently named
+        -- key must still carry the exact gross amount.
+        AND (
+          idem.purchase_amount IS NOT DISTINCT FROM e.gross
+          OR (
+            e.evidence_kind='cutover_wallet_charge'
+            AND w.next_candidate_id IS NOT NULL
+            AND idem.purchase_type='rebuy'
+            AND idem.purchase_amount=0
+            AND e.gross=1
+            AND idem.purchase_idempotency_key=
+              'tourney:'||w.tournament_id::text||':rebuy:'||
+              w.user_id::text||':#0'
+          )
+        ) IS TRUE
         AND wallet.match_count=1 AND idem.match_count=1) AS exact_rebuy
   FROM ca_cutover_candidate_windows w
   JOIN public.tournament_refund_entitlements e
@@ -602,9 +630,18 @@ BEGIN
       USING ERRCODE='P0404';
   END IF;
 
+  -- A later generation makes its predecessor a mandatory classification: the
+  -- old pending row must close, but only exact payment evidence can close it.
+  -- A malformed payment after the latest zero generation authorizes nothing;
+  -- leave that live generation untouched instead of reconstructing a stack or
+  -- blocking the authority cutover for evidence it does not consume.
   IF EXISTS (
-    SELECT 1 FROM ca_cutover_candidate_rebuy_payments p
-     WHERE NOT p.exact_rebuy
+    SELECT 1
+      FROM ca_cutover_candidate_rebuy_payments p
+      JOIN ca_cutover_candidate_windows w
+        ON w.candidate_id=p.candidate_id
+     WHERE w.next_candidate_id IS NOT NULL
+       AND NOT p.exact_rebuy
   ) THEN
     RAISE EXCEPTION
       'a knockout interval contains a refund entitlement without exact rebuy journals'
@@ -1495,7 +1532,26 @@ BEGIN
         OR COALESCE(w.description,'') NOT LIKE
              'Tournament '||evidence.purchase_type||':%'
         OR i.user_id IS DISTINCT FROM r.user_id
-        OR i.amount IS DISTINCT FROM e.gross
+        OR (
+          i.amount IS NOT DISTINCT FROM e.gross
+          OR (
+            e.evidence_kind='cutover_wallet_charge'
+            AND r.repair_action='candidate_closed'
+            AND EXISTS (
+              SELECT 1
+                FROM public.tournament_knockout_candidates later
+               WHERE later.tournament_id=r.tournament_id
+                 AND later.eliminated_user_id=r.user_id
+                 AND (later.hand_number,later.id)>
+                     (r.zero_hand_number,r.candidate_id)
+            )
+            AND evidence.purchase_type='rebuy'
+            AND i.amount=0
+            AND e.gross=1
+            AND i.key='tourney:'||r.tournament_id::text||':rebuy:'||
+                      r.user_id::text||':#0'
+          )
+        ) IS NOT TRUE
         OR i.created_at IS DISTINCT FROM l.created_at
         OR i.key NOT LIKE 'tourney:'||r.tournament_id::text||':'||
              evidence.purchase_type||':'||r.user_id::text||':%'

@@ -154,35 +154,39 @@ receipt raises a critical alert and moves no additional money.
 
 ## Exact Historical Adoption
 
-The migration contains a temporary owner-only adoption function for production
-event `b066f432-2aae-4994-85c8-f9bfbfa4cd2f`. It proceeds only if every audited
-fact is unchanged: a finalized 285-chip source pool, 200-chip target ticket,
-the fixed source, target, player, table and seat identities, beer710 at place
-one with one exact settled 200-chip cash leg, DETVal at place two, no seat leg,
-exact wallet transactions, wallet claim, obligation, journal hashes, rake
-rows, terminal rake settlement, and every source escrow component with exactly
-85 chips remaining. All of those facts are locked and checked before money can
-move. Under those assertions it writes the immutable ticket line, pays DETVal
-exactly 85, proves 285-chip conservation and zero source escrow, then the
-migration drops the adoption function. Any mismatch aborts the entire
-migration.
+The broad authority migration runs only inside the quiet maintenance freeze. It
+defines two temporary owner-only exact-event helpers, revokes them from every
+runtime role, and deliberately does not execute either helper while its schema
+locks are held. The separate post-freeze closeout migration requires the exact
+committed `fn_settle_satellite_tournament:v2` cutover version, refuses to run
+while entry purchases remain frozen, calls a helper only when its exact event
+exists without an immutable settlement receipt, verifies both exact receipts,
+and drops both helpers in that same transaction. A mismatch rolls back the
+adoption and leaves the helpers available for a reviewed retry; a successful
+closeout leaves no callable adoption door behind.
 
-During final production preflight, event
-`682045c5-cb07-47ed-ad0e-adbff9cb41af` completed through the legacy split path.
-It paid the correct 200-chip target seat to SadWizard and all 85 residual chips
-to the single Bubble finisher, connorford, but left the source pool counter at
-85, the Bubble prize cache at zero and incomplete felt-closeout metadata. Its
-append-only payout used the legacy obligation key and left both position fields
-null. A second one-time owner block accepts only that exact event, player,
-target registration, two payout rows, obligation, wallet claim, pool transfer,
-target fee, both buy-in debits, all five source-linked journal rows, both source
-rake rows, the target rake row, every escrow component, table and seat
-identities, both seat stacks and occupancy flags, and the target's internally
-consistent roster, aggregate and escrow state. It moves no money and does not
-rewrite any financial row. It normalizes only the stale pool, prize and felt
-caches, stores the exact legacy
-identifiers in the immutable residual receipt, and must pass the same
-whole-pool verifier or the complete migration rolls back.
+For production event `b066f432-2aae-4994-85c8-f9bfbfa4cd2f`, the helper proceeds
+only if every audited fact is unchanged: a finalized 285-chip source pool,
+200-chip target ticket, the fixed source, target, player, table and seat
+identities, beer710 at place one with one exact settled 200-chip cash leg,
+DETVal at place two, no seat leg, exact wallet transactions, wallet claim,
+obligation, journal hashes, rake rows, terminal rake settlement, and every
+source escrow component with exactly 85 chips remaining. Under those locked
+assertions it writes the immutable ticket line, pays DETVal exactly the missing
+85 chips from the source prize pool, and proves 285-chip conservation with zero
+source escrow. It never draws from a house bank.
+
+Production event `682045c5-cb07-47ed-ad0e-adbff9cb41af` already paid the correct
+200-chip target seat to SadWizard and all 85 residual chips to the single Bubble
+finisher, connorford, through the legacy split path. Its helper accepts only the
+exact event, players, target registration, two payout rows, obligation, wallet
+claim, pool transfer, target fee, both buy-in debits, all five source-linked
+journal rows, all rake rows, every escrow component, table and seat identities,
+seat stacks and occupancy flags, plus the target's internally consistent
+roster, aggregate and escrow state. It moves no money and rewrites no financial
+row. It normalizes only the stale pool, prize and felt caches, stores the exact
+legacy identifiers in the immutable residual receipt, and must pass the same
+whole-pool verifier before either helper can be removed.
 
 This release is data-forward once committed. A statement failure rolls the
 whole migration transaction back. After a receipt exists, operators must use a

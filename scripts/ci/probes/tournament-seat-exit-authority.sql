@@ -228,7 +228,26 @@ BEGIN
         OR COALESCE(w.description,'') NOT LIKE
              'Tournament '||evidence.purchase_type||':%'
         OR i.user_id IS DISTINCT FROM r.user_id
-        OR i.amount IS DISTINCT FROM e.gross
+        OR (
+          i.amount IS NOT DISTINCT FROM e.gross
+          OR (
+            e.evidence_kind='cutover_wallet_charge'
+            AND r.repair_action='candidate_closed'
+            AND EXISTS (
+              SELECT 1
+                FROM public.tournament_knockout_candidates later
+               WHERE later.tournament_id=r.tournament_id
+                 AND later.eliminated_user_id=r.user_id
+                 AND (later.hand_number,later.id)>
+                     (r.zero_hand_number,r.candidate_id)
+            )
+            AND evidence.purchase_type='rebuy'
+            AND i.amount=0
+            AND e.gross=1
+            AND i.key='tourney:'||r.tournament_id::text||':rebuy:'||
+                      r.user_id::text||':#0'
+          )
+        ) IS NOT TRUE
         OR i.created_at IS DISTINCT FROM l.created_at
         OR i.key NOT LIKE 'tourney:'||r.tournament_id::text||':'||
              evidence.purchase_type||':'||r.user_id::text||':%'

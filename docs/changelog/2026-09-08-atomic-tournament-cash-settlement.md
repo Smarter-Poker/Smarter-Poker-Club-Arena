@@ -13,7 +13,7 @@ to insert.
 
 ## Root Repair
 
-Migration `20260909014410_tournament_cash_settlement_has_one_atomic_authority`
+Migration `20260909042455_tournament_cash_settlement_has_one_atomic_authority`
 installs one database-owned transaction boundary for each cash finish:
 
 - `fn_settle_tournament_places` locks the tournament, complete roster, and
@@ -75,11 +75,17 @@ No historical balance, payout, or obligation is changed by the migration.
 ## Band-Aid Retirement Gate
 
 This is the hard fix for items 1, 2, and 4 in
-`docs/BAND-AIDS-REGISTER.md`. Stage one deliberately leaves every legacy cash
-function, application grant, schedule, and heartbeat byte-for-byte unchanged
-while the database-first rolling deployment is in progress. Once the server
-build using the atomic doors is published, its live receipts are verified, and
-all pre-cutover instances have drained, stage two removes every scheduled alias
+`docs/BAND-AIDS-REGISTER.md`. The rolling release keeps only the exact service
+roots required by the old and new engine generations while those binaries
+overlap. It removes browser and default grants from every terminal money door,
+makes wrapper-only implementations owner-only, requires a live server-side
+session at the authenticated ticket door, and retires the uncalled 2026-04
+`fn_release_tournament_holds` chip-credit path after proving that no legacy
+hold remains.
+
+Once the server build using the database-first doors is published, its live
+receipts are verified, and all pre-cutover instances have drained, the final
+retirement removes the old-engine settlement roots and every scheduled alias
 of the payout reconciler, payout sweep, backed-shortfall payer,
 guarantee-backpay arm, alert resolver, and legacy final-table-deal payer. It
 then drops those routines with `RESTRICT`, removes their heartbeats and money

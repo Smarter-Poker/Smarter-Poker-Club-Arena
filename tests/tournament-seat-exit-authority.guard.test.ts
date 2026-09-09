@@ -55,6 +55,18 @@ const legacyCutoverProof = taggedBody('legacy_unregister_cutover_proof');
 const chipSyncPreflight = taggedBody('legacy_chip_sync_preflight');
 
 describe('tournament seat exits have one hard authority', () => {
+  it('fails closed if the production lock trough is missed', () => {
+    const begin = sql.indexOf('BEGIN;');
+    const firstLock = sql.indexOf('pg_advisory_xact_lock(', begin);
+    expect(begin).toBeGreaterThan(-1);
+    expect(sql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeGreaterThan(begin);
+    expect(sql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeGreaterThan(begin);
+    expect(sql.indexOf("SET LOCAL transaction_timeout = '180s';", begin)).toBeGreaterThan(begin);
+    expect(sql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeLessThan(firstLock);
+    expect(sql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeLessThan(firstLock);
+    expect(sql.indexOf("SET LOCAL transaction_timeout = '180s';", begin)).toBeLessThan(firstLock);
+  });
+
   it('repairs the exact historical terminal backlog once under a write barrier', () => {
     expect(sql).toContain('LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE');
     expect(sql).toContain('LOCK TABLE public.tournament_players IN SHARE ROW EXCLUSIVE MODE');
@@ -131,6 +143,25 @@ describe('tournament seat exits have one hard authority', () => {
     expect(payments).toContain("VALUES ('rebuy'::text),('reentry'::text)");
     expect(payments).toContain("kind.purchase_type||':'||w.user_id::text||':%'");
     expect(payments).toContain("tx.description LIKE 'Tournament '||idem.purchase_type||':%'");
+    expect(payments).toContain("e.evidence_kind='cutover_wallet_charge'");
+    expect(payments).toContain('w.next_candidate_id IS NOT NULL');
+    expect(payments).toContain("idem.purchase_type='rebuy'");
+    expect(payments).toContain('idem.purchase_amount=0');
+    expect(payments).toContain('e.gross=1');
+    expect(payments).toContain("w.user_id::text||':#0'");
+    expect(payments).toContain(') IS TRUE');
+    expect(payments).not.toMatch(/idem\.purchase_amount\s*=\s*0[\s\S]*?e\.gross\s*>\s*0/);
+    expect(terminalOrphanCutover).toContain('JOIN ca_cutover_candidate_windows w');
+    expect(terminalOrphanCutover).toContain('WHERE w.next_candidate_id IS NOT NULL');
+    expect(terminalOrphanCutover).toContain('AND NOT p.exact_rebuy');
+    expect(seatExitProbe).toContain("e.evidence_kind='cutover_wallet_charge'");
+    expect(seatExitProbe).toContain("r.repair_action='candidate_closed'");
+    expect(seatExitProbe).toContain('(later.hand_number,later.id)>');
+    expect(seatExitProbe).toContain("evidence.purchase_type='rebuy'");
+    expect(seatExitProbe).toContain('i.amount=0');
+    expect(seatExitProbe).toContain('e.gross=1');
+    expect(seatExitProbe).toContain("r.user_id::text||':#0'");
+    expect(seatExitProbe).toContain(') IS NOT TRUE');
     expect(terminalOrphanCutover).toContain(
       "SET state='rebought',resolved_at=v_item.first_paid_at"
     );

@@ -1,4 +1,4 @@
--- 20260909014410_tournament_cash_settlement_has_one_atomic_authority.sql
+-- 20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

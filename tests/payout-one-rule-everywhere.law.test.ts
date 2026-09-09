@@ -114,6 +114,41 @@ describe('the payout rule is written once', () => {
     // SMALLEST prize, deliberately.
     expect(code(read('src/services/PayoutEngine.ts'))).not.toMatch(/amounts\[0\]\.amount =/);
   });
+
+  it('every tournament payout surface resolves a Spin from its canonical multiplier', () => {
+    for (const file of [
+      'src/pages/TournamentPage.tsx',
+      'src/components/lobby/GameLobbyPanel.tsx',
+      'src/components/tournament/TournamentInfoPanel.tsx',
+      'src/components/tournament/details/DetailOverviewTab.tsx',
+      'src/components/tournament/details/RankingTab.tsx',
+      'src/components/tournament/details/RewardsTab.tsx',
+    ]) {
+      const display = code(read(file));
+      expect(display, `${file} can still advertise a stale Spin placeholder`).toContain(
+        'resolvePayoutStructure'
+      );
+      expect(display, `${file} reads the raw Spin payout copy directly`).not.toMatch(
+        /parsePayoutStructure\([^)]*payout_structure/
+      );
+    }
+  });
+
+  it('the open tournament detail refresh carries both Spin payout witnesses', () => {
+    const page = code(read('src/pages/TournamentPage.tsx'));
+    const panel = code(read('src/components/tournament/TournamentInfoPanel.tsx'));
+    for (const [name, source] of [
+      ['TournamentPage.tsx', page],
+      ['TournamentInfoPanel.tsx', panel],
+    ] as const) {
+      expect(source, `${name} detail query omits spin_multiplier`).toMatch(
+        /\.select\([\s\S]{0,900}spin_multiplier[\s\S]{0,900}\)/
+      );
+      expect(source, `${name} detail query omits payout_structure`).toMatch(
+        /\.select\([\s\S]{0,900}payout_structure[\s\S]{0,900}\)/
+      );
+    }
+  });
 });
 
 describe('cash bubble protection comes from the prize pool', () => {

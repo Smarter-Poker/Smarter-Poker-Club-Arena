@@ -214,10 +214,16 @@ BEGIN
   END IF;
   IF to_regprocedure(
        'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)') IS NULL
-     OR NOT has_function_privilege(
+     OR has_function_privilege(
        'service_role',
+       'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)', 'EXECUTE')
+     OR has_function_privilege(
+       'anon',
+       'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)', 'EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
        'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'FAIL rolling compatibility door was retired before the engine cutover';
+    RAISE EXCEPTION 'FAIL internal satellite award leaf retained application EXECUTE';
   END IF;
   IF EXISTS (
        SELECT 1
@@ -410,6 +416,6 @@ BEGIN
   END IF;
 
   RAISE EXCEPTION
-    'AUDIT_TEST_PASS: stage-one whole-pool authority, rolling compatibility, owner-only ACLs, floor tickets, one next-finisher residual, exact source-close times and terminal markers, status-aware target entrant counters and escrow deltas, short-field refusal, conservation, immutable replay and exact b066/682 adoptions pass; all locks and temp state rolled back';
+    'AUDIT_TEST_PASS: stage-one whole-pool authority, owner-only internal leaves, exact service roots, floor tickets, one next-finisher residual, exact source-close times and terminal markers, status-aware target entrant counters and escrow deltas, short-field refusal, conservation, immutable replay and exact b066/682 adoptions pass; all locks and temp state rolled back';
 END
 $probe$;

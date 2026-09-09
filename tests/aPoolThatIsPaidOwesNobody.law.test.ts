@@ -16,8 +16,9 @@
  * 2. 22 finished satellites could not settle at all: the settler needs an
  *    entry-close receipt, and the only writer of that receipt refuses once the
  *    tournament leaves RUNNING. 1,919.00 chips sat frozen for up to 27 hours.
- *    The eleven that then hit the concurrent-game cap are paid in cash - the
- *    fifth of five undeliverable-seat cases the delivery function handles.
+ *    A later live patch converted a concurrent-game cap into cash. That is
+ *    preserved only as history: the atomic authority now holds a cap-blocked
+ *    full award as a target-scoped tournament ticket, never wallet chips.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -33,7 +34,7 @@ const readMigration = (fragment: string): string => {
 
 const RECONCILE = readMigration('a_pool_that_is_fully_paid_owes_nobody_a_top_up');
 const SATELLITE = readMigration('a_finished_satellite_must_be_able_to_settle');
-const CASH = readMigration('a_seat_the_winner_cannot_take_is_paid_as_cash');
+const ATOMIC = readMigration('satellite_settlement_has_one_atomic_authority');
 
 describe('a pool that has paid out its whole self owes no top-up', () => {
   it('counts payouts made outside the ranked structure', () => {
@@ -82,31 +83,40 @@ describe('a finished satellite can settle', () => {
   });
 });
 
-describe('a seat the winner cannot take is paid as cash', () => {
-  it('adds the cap as a fifth cash fallback', () => {
-    expect(CASH).toContain('winner_at_concurrent_game_cap');
-    expect(CASH).toMatch(/delivery','cash'/);
+describe('a four-table cap preserves the award as a noncash ticket', () => {
+  it('serializes each winner cap decision before classifying delivery', () => {
+    const locks = ATOMIC.indexOf('FOR v_cap_user_id IN');
+    const plan = ATOMIC.indexOf('FOR v_place IN 1..v_ticket_award_count', locks);
+    expect(locks).toBeGreaterThan(-1);
+    expect(plan).toBeGreaterThan(locks);
+    expect(ATOMIC.slice(locks, plan)).toContain('ORDER BY tp.user_id');
+    expect(ATOMIC.slice(locks, plan)).toContain("hashtextextended('table_cap:'");
   });
 
-  it('converts ONLY the concurrent-game cap, never another check violation', () => {
-    expect(CASH).toMatch(/IF SQLERRM LIKE '%FOUR TABLE LIMIT%' THEN/);
-    expect(CASH).toMatch(/RAISE;/); // everything else still aborts
+  it('classifies a capped winner as ticket, not cash or a fifth table', () => {
+    expect(ATOMIC).toContain('v_cap_load:=public.fn_concurrent_game_load(');
+    expect(ATOMIC).toContain('IF v_cap_load>=4 THEN');
+    expect(ATOMIC).toContain("v_delivery_kind := 'ticket'");
+    expect(ATOMIC).not.toContain('winner_at_concurrent_game_cap');
   });
 
-  it('refuses to edit unless all four existing cash fallbacks are present', () => {
-    for (const reason of [
-      'target_missing',
-      'target_not_open',
-      'target_economics_changed',
-      'seat_already_held_elsewhere',
-    ]) {
-      expect(CASH).toContain(reason);
-    }
-    expect(CASH).toContain('the existing cash fallbacks are not all present');
+  it('moves the source-pool value into immutable ticket escrow with no wallet credit', () => {
+    const start = ATOMIC.indexOf("ELSIF v_delivery_kind = 'ticket' THEN");
+    const end = ATOMIC.indexOf("ELSIF v_delivery_kind = 'cash' THEN", start);
+    const ticket = ATOMIC.slice(start, end);
+    expect(ticket).toContain('INSERT INTO public.tournament_tickets');
+    expect(ticket).toContain("'tournament_entry_only', v_target_id, p_tournament_id");
+    expect(ticket).toContain("'prize_liability', p_tournament_id");
+    expect(ticket).toContain("'escrow', v_ticket_id");
+    expect(ticket).toContain('p_prize_out => v_ticket_cost');
+    expect(ticket).not.toContain('fn_credit_and_log');
   });
 
-  it('keeps the money-exactness landmarks of the seat path', () => {
-    expect(CASH).toContain('exact target-seat award refused or wrote incomplete money');
-    expect(CASH).toContain('target seat, payout and pool transfer are not one exact event');
+  it('keeps direct-ticket provenance target-scoped and one-to-one', () => {
+    expect(ATOMIC).toContain('source_satellite_award_place integer');
+    expect(ATOMIC).toContain('tournament_tickets_direct_satellite_award_fkey');
+    expect(ATOMIC).toContain('tournament_ticket_one_direct_satellite_award');
+    expect(ATOMIC).toContain('tk.source_tournament_id IS DISTINCT FROM v_h.target_id');
+    expect(ATOMIC).toContain("'entry_ticket_count', v_h.entry_ticket_count");
   });
 });

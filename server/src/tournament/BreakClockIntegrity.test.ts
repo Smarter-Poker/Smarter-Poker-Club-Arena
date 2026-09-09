@@ -194,9 +194,10 @@ describe('a registered player who cannot be seated is never silent', () => {
      * anywhere. A genuine unique-index race stays quiet because the resolved
      * state is correct.
      */
-    expect(seat).not.toMatch(/if\s*\(reuseErr\)\s*continue;/);
-    expect(seat).toMatch(/late_reg_seat_reuse_failed/);
-    expect(seat).toMatch(/late_reg_seat_insert_failed/);
-    expect(seat).toMatch(/quietRace/);
+    expect(seat).toContain('assignTournamentPlayerSeatAtomically({');
+    expect(seat).toMatch(/atomic_late_reg_seat_refused_or_unknown/);
+    expect(seat).toMatch(/requestUrgentEliminationSweepAfter/);
+    expect(seat).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.(?:insert|update|delete)\(/);
+    expect(seat).not.toMatch(/quietRace|restore|compensat/i);
   });
 });

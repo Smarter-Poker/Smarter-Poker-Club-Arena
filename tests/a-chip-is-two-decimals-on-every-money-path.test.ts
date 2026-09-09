@@ -102,8 +102,11 @@ describe('the engine refuses, and rounds, at its own doors', () => {
     expect(src).toMatch(/loserSeat\.stack = cents\(loserSeat\.stack \+ result\.loserShare\)/);
     expect(src).toMatch(/winnerSeat\.stack = cents\(winnerSeat\.stack \+ result\.winnerShare\)/);
     expect(src).toMatch(/seat\.stack = cents\(seat\.stack \+ result\.perPlayerShare\)/);
-    // the mini jackpot's table share is reserve/players - the same shape
-    expect(src).toMatch(/seat\.stack = cents\(Number\(seat\.stack \|\| 0\) \+ amount\)/);
+    // The mini jackpot's table share is reserve/players. Its existing stack,
+    // credit and rounded result must all pass the finite-money boundary.
+    expect(src).toMatch(/const credit = this\.requireFiniteStackMoney\(amount,/);
+    expect(src).toMatch(/const stack = this\.requireFiniteStackMoney\(seat\.stack,/);
+    expect(src).toMatch(/cents\(stack \+ credit\)/);
     expect(src).not.toMatch(/Seat\.stack \+= result\./);
   });
 
@@ -120,8 +123,10 @@ describe('the engine refuses, and rounds, at its own doors', () => {
     // there refuses a debit that is exactly the stack.
     const src = strip(read('server/src/engine/AtomicStackService.ts'));
     expect(src).toMatch(/const round2 = \(n: number\): number =>/);
+    expect(src).toMatch(/stack: round2\(stack\), version: 1/);
     expect(src).toMatch(/sv\.stack = round2\(sv\.stack - amount\);/);
-    expect(src).toMatch(/sv\.stack = round2\(sv\.stack \+ amount\);/);
+    expect(src).toMatch(/const nextStack = sv\.stack \+ amount;/);
+    expect(src).toMatch(/sv\.stack = round2\(nextStack\);/);
     expect(src).toMatch(/sv\.stack = round2\(sv\.stack \+ s\.delta\);/);
   });
 
@@ -136,7 +141,7 @@ describe('the engine refuses, and rounds, at its own doors', () => {
 
 describe('and the database will not accept one either', () => {
   const mig = read(
-    'supabase/migrations/20260909062006_chips_are_two_decimals_on_the_addon_path.sql'
+    'supabase/migrations/20260909165548_chips_are_two_decimals_on_the_addon_path.sql'
   );
 
   it('says who may call each function, so a replay cannot create it PUBLIC', () => {

@@ -38,11 +38,12 @@ export async function replaceOwnedTableEngine<T extends AsyncTableEngine>(
   tournamentOwnedTableIds: Set<string>,
   tableId: string,
   expected: T,
-  replacement: T
+  replacement: T,
+  replacementAllowed: () => boolean = () => true
 ): Promise<boolean> {
-  if (engines.get(tableId) !== expected) return false;
+  if (engines.get(tableId) !== expected || !replacementAllowed()) return false;
   await expected.stop();
-  if (engines.get(tableId) !== expected) return false;
+  if (engines.get(tableId) !== expected || !replacementAllowed()) return false;
   engines.set(tableId, replacement);
   tournamentOwnedTableIds.add(tableId);
   return true;

@@ -104,7 +104,7 @@ describe('an unknown origin is not a "no"', () => {
 
   it('one database RPC owns every seat/cash outcome and completion', () => {
     const manager = MANAGER();
-    expect(manager).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(manager).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
     expect(manager).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     expect(manager).not.toContain('settleTournamentObligation(supabase');
   });

@@ -114,6 +114,12 @@ describe('the real auth SDK releases its lock after a stalled refresh', () => {
     expect((await refreshing).error?.name).toBe('AuthRetryableFetchError');
     expect((await queuedSession).data.session?.access_token).toBe(oldToken);
     expect(JSON.parse(storage.get(key)!).refresh_token).toBe('original-refresh');
+    // Newer auth-js releases deliberately cache a retryable failure for two
+    // auto-refresh ticks. That cooldown is separate from the shared session
+    // lock proved released by queuedSession above; let it expire before
+    // proving that the next network attempt can rotate the token. Older
+    // releases have no cooldown, so this remains valid against package-lock.
+    await vi.advanceTimersByTimeAsync(60_001);
     transport.mockResolvedValueOnce(
       new Response(
         JSON.stringify({

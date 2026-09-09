@@ -614,15 +614,17 @@ export async function runMatchup(
     const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
     const dealerSeat = (p % SEATS) + 1;
     const withEvidence = (opts: HorseDecideOpts): HorseDecideOpts => {
-      if (!opts.gtoV31DatasetChecksum) return opts;
+      if (!opts.gtoV31DatasetChecksum && !opts.onGtoV31Decision) return opts;
       return {
         ...opts,
         onGtoV31Decision: (receipt) => {
-          if (receipt.executedAsIntended) {
-            candidatePolicyHits++;
-            candidateNodeRoles.add(receipt.nodeRole);
-          } else {
-            candidateExecutionMismatches++;
+          if (opts.gtoV31DatasetChecksum) {
+            if (receipt.executedAsIntended) {
+              candidatePolicyHits++;
+              candidateNodeRoles.add(receipt.nodeRole);
+            } else {
+              candidateExecutionMismatches++;
+            }
           }
           opts.onGtoV31Decision?.(receipt);
         },
@@ -1287,7 +1289,40 @@ async function alreadyRanToday(date: string): Promise<boolean> {
      * which stops a resumed attempt at the window edge.
      */
     const distinct = new Set((data ?? []).map((r) => (r as { matchup: string }).matchup));
-    return distinct.size >= LEAGUE_MATCHUPS.length;
+    if (distinct.size < LEAGUE_MATCHUPS.length) return false;
+
+    // A complete matchup card is not complete Phase 4 evidence when a
+    // certified corpus is active. Require a same-day decision receipt bound
+    // to that exact dataset; otherwise the catch-up window must retry the
+    // agreement probe instead of latching the day as done.
+    const { data: activeRows, error: activeError } = await supabase
+      .from('gto_v31_datasets')
+      .select('dataset_id,dataset_checksum')
+      .eq('state', 'active')
+      .limit(1);
+    if (activeError) throw new Error(activeError.message);
+    const active = (activeRows?.[0] ?? null) as {
+      dataset_id: string;
+      dataset_checksum: string;
+    } | null;
+    if (!active) return true;
+    const { data: receipts, error: receiptError } = await supabase
+      .from('horse_solver_agreement_v31_decisions')
+      .select('source_seal')
+      .eq('run_date', date)
+      .eq('reference', 'gto_v31_certified')
+      .limit(1);
+    if (receiptError) throw new Error(receiptError.message);
+    return (receipts ?? []).some((row) => {
+      const seal = (row as { source_seal?: unknown }).source_seal;
+      return (
+        !!seal &&
+        typeof seal === 'object' &&
+        !Array.isArray(seal) &&
+        (seal as Record<string, unknown>).dataset_id === active.dataset_id &&
+        (seal as Record<string, unknown>).dataset_checksum === active.dataset_checksum
+      );
+    });
   } catch (err) {
     // Never let a failed lookup silently skip the night; the upsert on
     // (run_date, matchup) makes a duplicate run harmless.
@@ -1446,6 +1481,10 @@ export function stopHorseLeague(): Promise<void> {
   return stopOperation;
 }
 
+class RequiredV31AgreementError extends Error {
+  override readonly name = 'RequiredV31AgreementError';
+}
+
 export async function runLeague(
   runDate?: string,
   shouldContinue: () => boolean = () => true,
@@ -1459,6 +1498,7 @@ export async function runLeague(
   const startedAt = Date.now();
   // Whichever runs out first: this attempt's own budget, or the window.
   const runBudgetMs = Math.min(MAX_RUN_MS, msLeftInRunWindow());
+  let requiresV31Agreement = false;
   // V13: SAY THAT IT STARTED. Rows are only written as each worker matchup
   // finishes, so a run in progress and a run that never began would otherwise
   // remain indistinguishable from outside.
@@ -1519,7 +1559,8 @@ export async function runLeague(
     // sync fallback: failed analysis is retried from its durable claim;
     // delaying live poker to finish a benchmark is never an allowed fallback.
     compute = computeFactory();
-    await compute.ready();
+    const solverStores = await compute.ready();
+    requiresV31Agreement = solverStores.postflopV31 > 0;
     if (!shouldContinue()) return results;
     // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
     // The matchups below measure a DIFFERENCE between two configs. This is
@@ -1610,6 +1651,118 @@ export async function runLeague(
       reportError(err, 'HorseLeague.agreement');
     }
 
+    if (!shouldContinue()) return results;
+    // PHASE 4 CERTIFIED V31 AGREEMENT. The chart score above is preflop-only
+    // and cannot prove that the promoted postflop corpus is being selected,
+    // legalized, or reconciled. This second probe drives deterministic hands
+    // through the ordinary active V31 path and persists its own reference row
+    // plus every regret/source-seal decision receipt.
+    try {
+      const agreement = await compute.scoreGtoV31Agreement(undefined, shouldContinue);
+      if (!shouldContinue()) return results;
+      if (agreement.reference) {
+        const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
+          p_rows: [
+            {
+              run_date: date,
+              reference: agreement.reference,
+              spots: agreement.spots,
+              agreement: round4(agreement.agreement),
+              pure_misses: agreement.pureMisses,
+              eligible_spots: agreement.eligibleSpots,
+              reconciled_spots: agreement.reconciledSpots,
+              action_regret_bb: agreement.actionRegretBb,
+              regret_eligible_spots: agreement.regretEligibleSpots,
+              decision_checksum: agreement.decisionChecksum,
+              decisions: agreement.decisions.map((decision) => ({
+                state_key: decision.stateKey,
+                decision_state: {
+                  schema_version: decision.decisionState.schemaVersion,
+                  street: decision.decisionState.street,
+                  game_variant: decision.decisionState.gameVariant,
+                  game_family: decision.decisionState.gameFamily,
+                  objective: decision.decisionState.objective,
+                  utility_context: decision.decisionState.utilityContext,
+                  format: decision.decisionState.format,
+                  table_size: decision.decisionState.tableSize,
+                  pot_type: decision.decisionState.potType,
+                  hero_position: decision.decisionState.heroPosition,
+                  opponent_position: decision.decisionState.opponentPosition,
+                  stack_bb: decision.decisionState.stackBb,
+                  depth_bucket: decision.decisionState.depthBucket,
+                  texture_class: decision.decisionState.textureClass,
+                  node_role: decision.decisionState.nodeRole,
+                  facing_kind: decision.decisionState.facingKind,
+                  facing_size_bucket: decision.decisionState.facingSizeBucket,
+                  hand: decision.decisionState.hand,
+                  hand_key: decision.decisionState.handKey,
+                  cell: decision.decisionState.cell,
+                  board: decision.decisionState.board,
+                  hole_cards: decision.decisionState.holeCards,
+                  pot: decision.decisionState.pot,
+                  current_bet: decision.decisionState.currentBet,
+                  to_call: decision.decisionState.toCall,
+                  big_blind: decision.decisionState.bigBlind,
+                  probe_scenario: decision.decisionState.probeScenario,
+                  probe_ordinal: decision.decisionState.probeOrdinal,
+                  sampled_action_id: decision.decisionState.sampledActionId,
+                  sampled_action_family: decision.decisionState.sampledActionFamily,
+                  sampled_amount: decision.decisionState.sampledAmount,
+                  final_action: decision.decisionState.finalAction,
+                  final_amount: decision.decisionState.finalAmount,
+                  executed_as_intended: decision.decisionState.executedAsIntended,
+                },
+                stage: decision.stage,
+                game_family: decision.gameFamily,
+                objective: decision.objective,
+                utility_context: decision.utilityContext,
+                table_size: decision.tableSize,
+                pot_type: decision.potType,
+                hero_position: decision.heroPosition,
+                opponent_position: decision.opponentPosition,
+                depth_bucket: decision.depthBucket,
+                texture_class: decision.textureClass,
+                node_role: decision.nodeRole,
+                facing_kind: decision.facingKind,
+                facing_size_bucket: decision.facingSizeBucket,
+                cell: decision.cell,
+                hand_key: decision.handKey,
+                sampled_action_id: decision.sampledActionId,
+                sampled_action_family: decision.sampledActionFamily,
+                final_action: decision.finalAction,
+                executed_as_intended: decision.executedAsIntended,
+                reference_distribution: decision.referenceDistribution,
+                chosen_probability: decision.chosenProbability,
+                action_regret_bb: decision.actionRegretBb,
+                regret_eligible: decision.regretEligible,
+                pure_miss: decision.pureMiss,
+                source_seal: decision.sourceSeal,
+              })),
+            },
+          ],
+        });
+        if (!shouldContinue()) return results;
+        if (error) throw new Error(error.message);
+        console.log(
+          `[HorseLeague] certified V31 agreement ${round4(agreement.agreement)} over ` +
+            `${agreement.spots} spots (${agreement.pureMisses} pure misses, ` +
+            `${agreement.regretEligibleSpots} regret-eligible)`
+        );
+      } else {
+        if (requiresV31Agreement) {
+          throw new Error('the active certified V31 store returned no agreement reference');
+        }
+        console.log('[HorseLeague] certified V31 agreement skipped - the active store is empty');
+      }
+    } catch (err) {
+      reportError(err, 'HorseLeague.agreement.v31');
+      if (requiresV31Agreement) {
+        throw new RequiredV31AgreementError(
+          err instanceof Error ? err.message : 'certified V31 agreement failed'
+        );
+      }
+    }
+
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
       if (!shouldContinue()) break;
@@ -1677,6 +1830,7 @@ export async function runLeague(
   } catch (err) {
     reportError(err, 'HorseLeague.run');
     lastLeagueDate = null;
+    if (err instanceof RequiredV31AgreementError) throw err;
   } finally {
     if (compute) {
       try {

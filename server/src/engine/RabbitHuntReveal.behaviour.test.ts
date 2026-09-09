@@ -34,8 +34,6 @@ vi.mock('../services/supabase.js', () => ({
     }),
   },
   loadTable: vi.fn(),
-  syncStacks: vi.fn(),
-  syncTournamentChips: vi.fn(),
   updateTableStatus: vi.fn(),
   autoRebuyHorse: vi.fn(),
   markSeatAsLeft: vi.fn(),

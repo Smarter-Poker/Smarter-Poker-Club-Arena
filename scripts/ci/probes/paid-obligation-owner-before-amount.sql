@@ -13,8 +13,15 @@ CREATE TEMP TABLE wallet_credit_idempotency(key text) ON COMMIT DROP;
 CREATE TEMP TABLE audit_credits(user_id uuid,amount numeric,key text) ON COMMIT DROP;
 EXECUTE $stub$CREATE FUNCTION pg_temp.fn_ca_escrow_can_pay(uuid,text,numeric) RETURNS jsonb LANGUAGE sql AS 'SELECT jsonb_build_object(''known'',true,''ok'',true)'$stub$;
 EXECUTE $stub$CREATE FUNCTION pg_temp.fn_credit_and_log(uuid,numeric,text,text,text,uuid,text,uuid,uuid,integer,text) RETURNS boolean LANGUAGE plpgsql AS 'BEGIN INSERT INTO pg_temp.audit_credits VALUES($1,$2,$3); RETURN true; END;'$stub$;
-SELECT pg_get_functiondef('public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure) INTO src;
-
+-- The public function is now a narrow refund gate.  The amount/owner laws
+-- remain in its durable settlement delegate, so copy that implementation
+-- into the temp schema under the public entry-point name.
+SELECT pg_get_functiondef(
+  'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure)
+  INTO src;
+src:=replace(src,
+  'public.fn_settle_tournament_obligation_before_atomic_batch_gate',
+  'pg_temp.fn_settle_tournament_obligation');
 EXECUTE replace(src,'public.','pg_temp.');
 INSERT INTO pg_temp.tournaments VALUES(event,'isolated audit',event,1000,0,0,'COMPLETED');
 INSERT INTO pg_temp.tournament_obligations VALUES(event,event,'place',1,owner_user,100,100,'engine.audit',now(),NULL,now());

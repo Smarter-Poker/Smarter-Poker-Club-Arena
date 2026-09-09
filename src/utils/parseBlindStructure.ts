@@ -13,6 +13,8 @@
 import type { BlindLevel } from '../types/database.types';
 import { parseJsonCached } from './parseJsonCached';
 
+export { parsePayoutStructure } from '../lib/payoutStructure';
+
 const DEFAULT_BLIND: BlindLevel = {
   level: 1,
   smallBlind: 25,
@@ -36,25 +38,4 @@ export function parseBlindStructure(raw: unknown): BlindLevel[] {
   if (Array.isArray(parsed) && parsed.length > 0) return parsed as BlindLevel[];
 
   return [DEFAULT_BLIND];
-}
-
-/**
- * Same as parseBlindStructure but also normalises payout_structure.
- */
-export function parsePayoutStructure(
-  raw: unknown
-): Array<{ place: number; position: number; percentage: number }> {
-  const normalize = (arr: Array<Record<string, unknown>>) =>
-    arr.map((p) => ({
-      place: (p.place as number) || (p.position as number) || 0,
-      position: (p.position as number) || (p.place as number) || 0,
-      percentage: (p.percentage as number) || 0,
-    }));
-
-  if (Array.isArray(raw) && raw.length > 0) return normalize(raw);
-
-  const parsed = parseJsonCached(raw);
-  if (Array.isArray(parsed) && parsed.length > 0) return normalize(parsed);
-
-  return [];
 }

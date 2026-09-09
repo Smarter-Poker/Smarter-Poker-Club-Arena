@@ -44,7 +44,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
+import { sliceEnclosingBlock, sliceMethod, sliceStatement } from '../helpers/sourceWindow';
 import {
   awaitTournamentResultEnrichment,
   TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS,
@@ -80,29 +80,17 @@ function exitFnBody(): string {
 
 /** The body of `finishTournament`, from its signature to the next method. */
 function finishTournamentBody(): string {
-  const start = engine.indexOf('protected async finishTournament(winnerId: string)');
-  expect(start, 'finishTournament must exist in TournamentManagerEliminations').toBeGreaterThan(-1);
-  const end = engine.indexOf('protected abstract checkTableBalance', start);
-  expect(end, 'could not find the end of finishTournament').toBeGreaterThan(start);
-  return engine.slice(start, end);
+  return sliceMethod(engine, 'finishTournament(winnerId: string): Promise<void>');
 }
 
 /** The committed normal-settlement announcement, which is also replay-safe. */
 function committedCleanupBody(): string {
-  const start = engine.indexOf('private async cleanupCommittedTournament()');
-  expect(start, 'cleanupCommittedTournament must exist').toBeGreaterThan(-1);
-  const end = engine.indexOf('private async cleanupCommittedFinalTableDeal()', start);
-  expect(end, 'could not find the end of cleanupCommittedTournament').toBeGreaterThan(start);
-  return engine.slice(start, end);
+  return sliceMethod(engine, 'private async cleanupCommittedTournament(');
 }
 
 /** The shared terminal cleanup that owns channel teardown. */
 function committedTableCleanupBody(): string {
-  const start = engine.indexOf('private async cleanupCommittedTablesAndManager()');
-  expect(start, 'cleanupCommittedTablesAndManager must exist').toBeGreaterThan(-1);
-  const end = engine.indexOf('private async cleanupCommittedTournament()', start);
-  expect(end, 'could not find the end of committed table cleanup').toBeGreaterThan(start);
-  return engine.slice(start, end);
+  return sliceMethod(engine, 'private async cleanupCommittedTablesAndManager(');
 }
 
 describe("The champion's exit", () => {
@@ -114,13 +102,13 @@ describe("The champion's exit", () => {
     expect(committedCleanupBody()).toMatch(
       /this\.broadcastCommittedOutcome\(\s*['"]tournament_winner['"]/
     );
-    expect(finishTournamentBody()).toMatch(/await this\.cleanupCommittedTournament\(\)/);
+    expect(finishTournamentBody()).toMatch(/await this\.cleanupCommittedTournament\(receipt\)/);
   });
 
   it('sends it BEFORE the channel is torn down', () => {
     const body = committedCleanupBody();
     const sent = body.indexOf("this.broadcastCommittedOutcome('tournament_winner'");
-    const cleanup = body.indexOf('cleanupCommittedTablesAndManager()');
+    const cleanup = body.indexOf('cleanupCommittedTablesAndManager(');
     expect(sent, 'tournament_winner must be broadcast').toBeGreaterThan(-1);
     expect(cleanup, 'winner cleanup must reach the shared terminal cleanup').toBeGreaterThan(-1);
     // Broadcasting after unsubscribe silently re-creates the channel and sends
@@ -134,10 +122,11 @@ describe("The champion's exit", () => {
     const payload = sliceEnclosingBlock(body, "this.broadcastCommittedOutcome('tournament_winner'");
     // TablePage matches on userId to decide whether this result is the local
     // player's; without it every seat at the table takes the champion's card.
-    expect(body).toMatch(/\.select\('user_id, username, prize'\)/);
-    expect(payload).toMatch(/userId:\s*winner\.user_id/);
+    expect(body).not.toMatch(/\.from\('tournament_players'\)/);
+    expect(body).toMatch(/const winnerPrize = receipt\.winnerAmount/);
+    expect(payload).toMatch(/userId:\s*receipt\.winnerId/);
     expect(payload).toMatch(/position:\s*1/);
-    expect(payload).toMatch(/prize:\s*Number\(winner\.prize/);
+    expect(payload).toMatch(/prize:\s*winnerPrize/);
   });
 
   it('does NOT announce the champion as eliminated', () => {
@@ -280,7 +269,8 @@ describe("The champion's exit", () => {
     expect(engine).toMatch(/while \(place >= 2 && takenPositions\.has\(place\)\) place--;/);
     expect(engine).toMatch(/let up = nextPosition \+ 1;/);
     expect(engine).not.toMatch(/eliminatePlayer\([^)]*,\s*1\s*\)/);
-    expect(engine).toMatch(/while \(finishNext >= 2 && finishTakenPositions\.has\(finishNext\)\)/);
+    expect(engine).toMatch(/Math\.max\(unplacedCount, playingCount, bustedOrdered\.length \+ 1\)/);
+    expect(engine.match(/this\.eliminatePlayer\(/g) ?? []).toHaveLength(1);
     expect(engine).toMatch(/no_free_finishing_place/);
   });
 });

@@ -668,6 +668,8 @@ export abstract class ServerTableEngineBase {
   protected lastSnapshotAtMs = 0;
   protected snapshotDirty = false;
   protected snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The exact snapshot writer currently owned by this engine generation. */
+  protected snapshotFlushPromise: Promise<void> | null = null;
 
   /**
    * CROSS-INSTANCE OWNERSHIP (2026-08-22).
@@ -1400,8 +1402,7 @@ export abstract class ServerTableEngineBase {
   // zero final stack even if a persistence mirror failed; consumers must stay
   // fire-and-forget and independently verify durable authority.
   protected handCompleteCallback:
-    | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
-    | null = null;
+    ((tableId: string, players: { user_id: string; stack: number }[]) => void) | null = null;
   /**
    * Exact hand-for-hand barrier signal. The tournament coordinator used to
    * rediscover this state by polling every table twice a second. Emitting at
@@ -1487,6 +1488,38 @@ export abstract class ServerTableEngineBase {
    */
   protected finalTableDealPaused: boolean = false;
 
+  /**
+   * Terminal tournament closeout owns a stricter gate than an ordinary pause.
+   *
+   * Once armed, elapsed time may make the closeout caller stand down, but it
+   * may never make the table deal again.  Only the caller that received a
+   * proven pre-commit refusal may explicitly release this authority.  The
+   * waiters are event-driven so settlement completion, the physical pause
+   * edge, or an engine stop wakes the closeout without a polling reconciler.
+   */
+  protected terminalCloseoutPaused: boolean = false;
+  /**
+   * A tournament seat move owns the source felt until its one atomic receipt
+   * returns.  The owner is the exact TournamentManager generation, not a
+   * boolean: overlapping pause authorities cannot release one another.
+   *
+   * An unclaimed owner is deliberately retained while the current hand lands.
+   * Once the loop reaches the physical pause gate it gets a short expiry, so a
+   * planner that no longer wants the move cannot strand an otherwise healthy
+   * table.  A claimed owner has no elapsed-time escape; the bounded RPC's
+   * finally block is the only release authority.
+   */
+  protected tournamentMovePauseOwners: Set<string> = new Set();
+  protected claimedTournamentMovePauseOwners: Set<string> = new Set();
+  private tournamentMovePauseExpiryTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private tournamentMoveOperations: Set<Promise<void>> = new Set();
+  private tournamentMoveOperationByOwner: Map<string, Promise<void>> = new Map();
+  protected boundaryPauseWaiters: Set<() => void> = new Set();
+  protected terminalBoundaryPersistenceGeneration = 0;
+  protected terminalBoundaryPendingGenerations: Set<number> = new Set();
+  protected terminalBoundaryPersistenceFailed = false;
+  protected terminalCloseoutDiscardedPreparedHand = false;
+
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
 
@@ -1513,7 +1546,7 @@ export abstract class ServerTableEngineBase {
 
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
-  protected settlementInFlight: Promise<void> | null = null;
+  protected settlementInFlight: Set<Promise<void>> = new Set();
   private settlementStartedAtMs: number | null = null;
 
   /**
@@ -1584,6 +1617,8 @@ export abstract class ServerTableEngineBase {
    * budgeted steps can outlast the idle window without ever looking wedged.
    */
   protected static readonly DEAL_STEP_BUDGET_MS = 20_000;
+  /** Time a physically parked but unclaimed balancer fence may wait for its next sweep. */
+  private static readonly TOURNAMENT_MOVE_UNCLAIMED_PARK_MS = 15_000;
 
   /**
    * Attempts at the opening `loadTable` before start() gives up and lets the
@@ -2501,6 +2536,8 @@ export abstract class ServerTableEngineBase {
         if (
           this.maintenancePaused ||
           this.finalTableDealPaused ||
+          this.terminalCloseoutPaused ||
+          this.tournamentMovePauseOwners.size > 0 ||
           (this.handForHandPaused && this.holdBeforeNextHand)
         ) {
           this.setLoopPhase('parked_for_pause');
@@ -2637,7 +2674,7 @@ export abstract class ServerTableEngineBase {
       void dealingLoop.catch(() => undefined);
     } catch (err) {
       this.settleReady(false);
-      reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
+      reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start`);
       // 2026-08-22: was a bare `running = false`, which could leak an armed
       // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
       // awaits later in start()) and left partial state for the reaper to
@@ -2666,25 +2703,33 @@ export abstract class ServerTableEngineBase {
     // reacts to that fence and may return in the same microtask turn; neither
     // it nor its current settlement may disappear from the ownership proof.
     const dealingLoopAtFence = this.dealingLoopPromise;
-    const settlementAtFence = this.settlementInFlight ?? this.postHandTasksPromise;
+    const settlementsAtFence = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
+    if (this.postHandTasksPromise) settlementsAtFence.push(this.postHandTasksPromise);
+    settlementsAtFence.push(...this.tournamentMoveOperations);
 
     // Publish the terminal fence synchronously. Any start/restart attempt in
     // the same turn observes it before teardown reaches its first await.
     this.terminal = true;
     this.running = false;
     this.clearEngineLeaseExpiryTimer();
+    this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
+    this.notifyBoundaryPauseWaiters();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
 
-    const teardown = this.performStop(dealingLoopAtFence, settlementAtFence);
+    const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
     this.teardownPromise = teardown;
     return teardown;
   }
 
   private async performStop(
     dealingLoopAtFence: Promise<void> | null = this.dealingLoopPromise,
-    settlementAtFence: Promise<void> | null = this.settlementInFlight ?? this.postHandTasksPromise
+    settlementsAtFence: readonly Promise<void>[] = [
+      ...(this.settlementInFlight ?? new Set<Promise<void>>()),
+      ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
+      ...this.tournamentMoveOperations,
+    ]
   ): Promise<void> {
     const failures: unknown[] = [];
 
@@ -2712,13 +2757,20 @@ export abstract class ServerTableEngineBase {
     };
 
     if (dealingLoopAtFence) await joinOwnedWriter(dealingLoopAtFence);
-    if (settlementAtFence) await joinOwnedWriter(settlementAtFence);
-    while (this.settlementInFlight || this.postHandTasksPromise) {
-      const settlement = this.settlementInFlight;
+    for (const settlementAtFence of settlementsAtFence) {
+      await joinOwnedWriter(settlementAtFence);
+    }
+    while (
+      (this.settlementInFlight?.size ?? 0) > 0 ||
+      this.postHandTasksPromise ||
+      this.tournamentMoveOperations.size > 0
+    ) {
+      const settlements = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
       const postHandTasks = this.postHandTasksPromise;
-      await joinOwnedWriter(settlement);
+      const tournamentMoves = [...this.tournamentMoveOperations];
+      for (const settlement of settlements) await joinOwnedWriter(settlement);
       await joinOwnedWriter(postHandTasks);
-      if (this.settlementInFlight === settlement) this.settlementInFlight = null;
+      for (const tournamentMove of tournamentMoves) await joinOwnedWriter(tournamentMove);
       if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
     }
     if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
@@ -2749,9 +2801,17 @@ export abstract class ServerTableEngineBase {
       // handController is null saveSnapshot() early-returns, so a pending write
       // would be silently lost on every shutdown.
       try {
-        await this.flushSnapshot();
+        await this.flushSnapshot(true);
       } catch (error) {
+        // stop() is shared by cash tables and tournament tables that do not
+        // necessarily have a durable terminal receipt. Keep the failure in the
+        // teardown certificate while still completing physical cleanup below;
+        // committed-terminal callers may retire this exact generation only
+        // after hasReleasedProcessOwnership() proves that cleanup completed.
         failures.push(error);
+        reportError(error, 'ServerTableEngine.terminal_snapshot_flush_failed', {
+          tableId: this.tableId,
+        });
       }
     }
     if (this.snapshotTimer) {
@@ -3553,6 +3613,7 @@ export abstract class ServerTableEngineBase {
     this.terminal = true;
     this.running = false;
     this.clearEngineLeaseExpiryTimer();
+    this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
     this.settleReady(false);
     this.heartbeatActive = false;
@@ -3645,12 +3706,12 @@ export abstract class ServerTableEngineBase {
    * board_not_recorded detectors have been finding their work.
    */
   hasSettlementInFlight(): boolean {
-    return this.settlementInFlight !== null;
+    return (this.settlementInFlight?.size ?? 0) > 0;
   }
 
   /** Continuous age of the owned settlement; null after completion. */
   settlementAgeMs(): number | null {
-    if (!this.settlementInFlight || this.settlementStartedAtMs === null) return null;
+    if (!this.hasSettlementInFlight() || this.settlementStartedAtMs === null) return null;
     return Math.max(0, Date.now() - this.settlementStartedAtMs);
   }
 
@@ -3669,21 +3730,35 @@ export abstract class ServerTableEngineBase {
    * newer one.
    */
   protected trackSettlementInFlight(p: Promise<void> | null): void {
+    // Some recovery/test harnesses are deliberately constructed without the
+    // class field initializers. Re-establish the same empty-set invariant at
+    // the ownership boundary instead of throwing while trying to record the
+    // very writer teardown must wait for.
+    const settlements =
+      this.settlementInFlight ?? (this.settlementInFlight = new Set<Promise<void>>());
+    if (!p) {
+      settlements.clear();
+      this.settlementStartedAtMs = null;
+      this.notifyBoundaryPauseWaiters();
+      return;
+    }
     // Extending a hand's barrier must retain its original age. Retry
     // heartbeats prove the process runs, not that this settlement completed.
-    if (!p) this.settlementStartedAtMs = null;
-    else if (!this.settlementInFlight) this.settlementStartedAtMs = Date.now();
-    this.settlementInFlight = p;
-    if (!p) return;
+    if (settlements.size === 0) this.settlementStartedAtMs = Date.now();
+    settlements.add(p);
     const tracked = p;
-    const clear = (): void => {
-      if (this.settlementInFlight === tracked) this.settlementInFlight = null;
+    const clear = (failed: boolean): void => {
+      settlements.delete(tracked);
+      if (failed) this.terminalBoundaryPersistenceFailed = true;
+      if (settlements.size === 0) this.settlementStartedAtMs = null;
+      if (this.postHandTasksPromise === tracked) this.postHandTasksPromise = null;
+      this.notifyBoundaryPauseWaiters();
     };
     /* .then(clear).catch(clear) rather than .then(clear, clear): the two-arg
        form handles rejection just as well, but noUnhandledRejections.law reads
        `void ....then(` and asks for a visible .catch, and a reader scanning for
        one deserves the same answer the linter gets. */
-    void tracked.then(clear).catch(clear);
+    void tracked.then(() => clear(false)).catch(() => clear(true));
   }
   /**
    * Allocate this hand's GLOBAL hand number (2026-08-18).
@@ -3913,6 +3988,298 @@ export abstract class ServerTableEngineBase {
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
+  /** Register the one hand whose durable stack boundary is about to begin. */
+  protected beginTerminalBoundaryPersistence(): number {
+    if (
+      !this.terminalCloseoutPaused &&
+      this.terminalBoundaryPendingGenerations.size === 0 &&
+      !this.hasSettlementInFlight()
+    ) {
+      this.terminalBoundaryPersistenceFailed = false;
+    }
+    const generation = ++this.terminalBoundaryPersistenceGeneration;
+    this.terminalBoundaryPendingGenerations.add(generation);
+    this.notifyBoundaryPauseWaiters();
+    return generation;
+  }
+
+  /** Resolve exactly the generation opened immediately before HandController.start. */
+  protected finishTerminalBoundaryPersistence(generation: number, succeeded: boolean): void {
+    if (!this.terminalBoundaryPendingGenerations.delete(generation)) return;
+    if (!succeeded) this.terminalBoundaryPersistenceFailed = true;
+    this.notifyBoundaryPauseWaiters();
+  }
+
+  /** Wake every closeout waiter after a relevant lifecycle edge. */
+  private notifyBoundaryPauseWaiters(): void {
+    const registered = this.boundaryPauseWaiters;
+    if (!registered || registered.size === 0) return;
+    const waiters = [...registered];
+    registered.clear();
+    for (const wake of waiters) wake();
+  }
+
+  /**
+   * Install an irreversible-until-explicit-release next-hand fence and wait
+   * until the table is physically inside that fence with every accepted hand
+   * writer drained.  Timeout returns false but deliberately leaves the fence
+   * armed; elapsed wall time is never authority to start another hand.
+   */
+  async parkForTerminalCloseout(maxWaitMs: number): Promise<boolean> {
+    this.terminalCloseoutPaused = true;
+    this.holdBeforeNextHand = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    this.notifyBoundaryPauseWaiters();
+
+    const deadline = Date.now() + Math.max(0, maxWaitMs);
+    for (;;) {
+      if (!this.running || this.terminalBoundaryPersistenceFailed) return false;
+      if (
+        this.handForHandResolve !== null &&
+        this.isBetweenHands() &&
+        this.terminalBoundaryPendingGenerations.size === 0 &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null
+      ) {
+        return true;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await new Promise<void>((resolve) => {
+        let finished = false;
+        const wake = (): void => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          this.boundaryPauseWaiters.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, remaining);
+        (timer as { unref?: () => void }).unref?.();
+        this.boundaryPauseWaiters.add(wake);
+      });
+    }
+  }
+
+  /**
+   * Fence this exact source engine before a tournament player is moved.
+   *
+   * A caller may wait only a small slice of its shared scheduler budget.  If
+   * the current hand needs longer, the owner remains armed and the next
+   * deterministic tournament sweep claims the already-parked boundary.  The
+   * fence becomes time-bounded only AFTER the engine is physically parked;
+   * this guarantees a long legitimate hand cannot outrun the request while a
+   * stale planner can never leave a healthy table parked forever.
+   */
+  async parkForTournamentMove(ownerId: string, maxWaitMs: number): Promise<boolean> {
+    if (!ownerId) return false;
+    // Recovery may have stopped and fully drained this exact generation while
+    // an earlier lost response remains unresolved. Its claimed owner survives
+    // teardown, and the stopped object is then a safe quarantine for replay:
+    // it cannot deal, owns no process scheduler, and still proves the UUID's
+    // source generation. No new owner may be created on a stopped engine.
+    if (!this.running) {
+      return (
+        this.claimedTournamentMovePauseOwners.has(ownerId) &&
+        this.terminal &&
+        this.hasReleasedProcessOwnership() &&
+        this.tournamentMoveOperations.size === 0 &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null
+      );
+    }
+    this.tournamentMovePauseOwners.add(ownerId);
+    this.holdBeforeNextHand = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    this.notifyBoundaryPauseWaiters();
+
+    const deadline = Date.now() + Math.max(0, maxWaitMs);
+    for (;;) {
+      if (!this.running || this.terminalBoundaryPersistenceFailed) {
+        this.releaseTournamentMovePause(ownerId);
+        return false;
+      }
+      if (
+        this.tournamentMovePauseOwners.has(ownerId) &&
+        this.handForHandResolve !== null &&
+        this.isBetweenHands() &&
+        this.terminalBoundaryPendingGenerations.size === 0 &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null
+      ) {
+        this.claimedTournamentMovePauseOwners.add(ownerId);
+        const expiry = this.tournamentMovePauseExpiryTimers.get(ownerId);
+        if (expiry) clearTimeout(expiry);
+        this.tournamentMovePauseExpiryTimers.delete(ownerId);
+        return true;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await new Promise<void>((resolve) => {
+        let finished = false;
+        const wake = (): void => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          this.boundaryPauseWaiters.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, remaining);
+        (timer as { unref?: () => void }).unref?.();
+        this.boundaryPauseWaiters.add(wake);
+      });
+    }
+  }
+
+  /** Release only the tournament-move owner named by the caller. */
+  releaseTournamentMovePause(ownerId: string): void {
+    // An early or duplicate release may not erase the physical fence beneath
+    // an RPC that still owns this source. The awaited caller must release again
+    // after executeTournamentMoveAtBoundary has removed its exact barrier.
+    if (this.tournamentMoveOperationByOwner.has(ownerId)) return;
+    this.tournamentMovePauseOwners.delete(ownerId);
+    this.claimedTournamentMovePauseOwners.delete(ownerId);
+    const expiry = this.tournamentMovePauseExpiryTimers.get(ownerId);
+    if (expiry) clearTimeout(expiry);
+    this.tournamentMovePauseExpiryTimers.delete(ownerId);
+    this.notifyBoundaryPauseWaiters();
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    )
+      return;
+    this.releasePauseGate();
+  }
+
+  /** Start the stale-planner deadline only after the source is truly parked. */
+  private armUnclaimedTournamentMovePauseExpiry(): void {
+    for (const ownerId of this.tournamentMovePauseOwners) {
+      if (
+        this.claimedTournamentMovePauseOwners.has(ownerId) ||
+        this.tournamentMovePauseExpiryTimers.has(ownerId)
+      )
+        continue;
+      const timer = setTimeout(() => {
+        if (!this.claimedTournamentMovePauseOwners.has(ownerId)) {
+          this.releaseTournamentMovePause(ownerId);
+        }
+      }, ServerTableEngineBase.TOURNAMENT_MOVE_UNCLAIMED_PARK_MS);
+      (timer as { unref?: () => void }).unref?.();
+      this.tournamentMovePauseExpiryTimers.set(ownerId, timer);
+    }
+  }
+
+  /** Engine teardown owns every local pause timer and waiter. */
+  private clearUnclaimedTournamentMovePauses(): void {
+    for (const timer of this.tournamentMovePauseExpiryTimers.values()) clearTimeout(timer);
+    this.tournamentMovePauseExpiryTimers.clear();
+    for (const ownerId of [...this.tournamentMovePauseOwners]) {
+      if (!this.claimedTournamentMovePauseOwners.has(ownerId)) {
+        this.tournamentMovePauseOwners.delete(ownerId);
+      }
+    }
+  }
+
+  /**
+   * Run the one source-seat RPC inside a claimed physical boundary.  The
+   * non-rejecting barrier is process ownership: engine replacement and stop()
+   * must join it before another dealer generation can start on this table.
+   */
+  async executeTournamentMoveAtBoundary<T>(
+    ownerId: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const stoppedQuarantine =
+      !this.running &&
+      this.terminal &&
+      this.hasReleasedProcessOwnership() &&
+      this.tournamentMoveOperations.size === 0 &&
+      !this.hasSettlementInFlight() &&
+      this.postHandTasksPromise === null;
+    const livePhysicalBoundary =
+      this.running &&
+      this.handForHandResolve !== null &&
+      this.isBetweenHands() &&
+      this.terminalBoundaryPendingGenerations.size === 0 &&
+      !this.hasSettlementInFlight() &&
+      this.postHandTasksPromise === null;
+    if (
+      !this.claimedTournamentMovePauseOwners.has(ownerId) ||
+      (!livePhysicalBoundary && !stoppedQuarantine)
+    ) {
+      throw new Error('tournament move source boundary is not physically owned');
+    }
+
+    if (this.tournamentMoveOperationByOwner.has(ownerId)) {
+      throw new Error('tournament move source owner already has an operation in flight');
+    }
+
+    const result = operation();
+    const barrier = result.then(
+      () => undefined,
+      () => undefined
+    );
+    this.tournamentMoveOperations.add(barrier);
+    this.tournamentMoveOperationByOwner.set(ownerId, barrier);
+    this.notifyBoundaryPauseWaiters();
+    try {
+      return await result;
+    } finally {
+      this.tournamentMoveOperations.delete(barrier);
+      if (this.tournamentMoveOperationByOwner.get(ownerId) === barrier) {
+        this.tournamentMoveOperationByOwner.delete(ownerId);
+      }
+      this.notifyBoundaryPauseWaiters();
+    }
+  }
+
+  /** A replacement dealer may not cross an unresolved move outcome. */
+  hasClaimedTournamentMoveBoundary(): boolean {
+    return this.claimedTournamentMovePauseOwners.size > 0 || this.tournamentMoveOperations.size > 0;
+  }
+
+  /** Only a proven pre-commit refusal may call this terminal release. */
+  releaseTerminalCloseoutPause(): void {
+    this.terminalCloseoutPaused = false;
+    this.notifyBoundaryPauseWaiters();
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused
+    )
+      return;
+    this.releasePauseGate();
+  }
+
+  /**
+   * Drop a controller that was prepared but has not crossed start().  This is
+   * local lifecycle cleanup only: no table, seat, stack, or wallet write is
+   * performed here.
+   */
+  protected discardPreparedHandForTerminalCloseout(): boolean {
+    if (!this.terminalCloseoutPaused) return false;
+    this.handController = null;
+    this.currentHandDealtStacks.clear();
+    if (this.handSpan) {
+      try {
+        this.handSpan.end();
+      } catch {
+        // Tracing can never keep a terminal boundary open.
+      }
+      this.handSpan = null;
+    }
+    this.shadowRecorder = null;
+    this.terminalCloseoutDiscardedPreparedHand = true;
+    this.notifyBoundaryPauseWaiters();
+    return true;
+  }
+
   /**
    * Write this table's presence FSM to engine_presence_parked so the next
    * boot (loadPresenceFromPark in start()) continues it rather than
@@ -3960,14 +4327,26 @@ export abstract class ServerTableEngineBase {
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
     this.maintenancePaused = false;
-    if (this.handForHandPaused || this.finalTableDealPaused) return;
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    )
+      return;
     this.releasePauseGate();
   }
 
   /** Lift only the final-table-deal authority. Other pause owners remain. */
   resumeFromFinalTableDeal(): void {
     this.finalTableDealPaused = false;
-    if (this.handForHandPaused || this.maintenancePaused) return;
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.terminalCloseoutPaused
+    )
+      return;
     this.releasePauseGate();
   }
 
@@ -4078,7 +4457,12 @@ export abstract class ServerTableEngineBase {
     // during a break is immediately — and without this line it would deal a
     // hand inside the break and destroy the break's pause budget on the way
     // through. See the `maintenancePaused` field.
-    if (this.maintenancePaused || this.finalTableDealPaused) {
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    ) {
       this.pausedSinceMs = this.pausedSinceMs || Date.now();
       return;
     }
@@ -4139,7 +4523,11 @@ export abstract class ServerTableEngineBase {
   protected async awaitPauseGate(): Promise<void> {
     // Either authority holds the gate; see the `maintenancePaused` field.
     if (
-      (!this.handForHandPaused && !this.maintenancePaused && !this.finalTableDealPaused) ||
+      (!this.handForHandPaused &&
+        !this.maintenancePaused &&
+        !this.finalTableDealPaused &&
+        !this.terminalCloseoutPaused &&
+        this.tournamentMovePauseOwners.size === 0) ||
       !this.running
     )
       return;
@@ -4155,6 +4543,8 @@ export abstract class ServerTableEngineBase {
     );
     await new Promise<void>((resolve) => {
       this.handForHandResolve = resolve;
+      this.armUnclaimedTournamentMovePauseExpiry();
+      this.notifyBoundaryPauseWaiters();
       /**
        * Safety timeout so a table can never wedge forever.
        *
@@ -4168,6 +4558,13 @@ export abstract class ServerTableEngineBase {
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
       this.pauseGateTimer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
+          if (this.terminalCloseoutPaused || this.claimedTournamentMovePauseOwners.size > 0) {
+            // Terminal closeout is fail-closed. Its caller has its own bounded
+            // wait, but this table stays fenced until that caller explicitly
+            // proves the transaction did not commit and releases it.
+            this.pauseGateTimer = null;
+            return;
+          }
           console.warn(
             `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
               maxWaitMs / 1000
@@ -4300,6 +4697,8 @@ export abstract class ServerTableEngineBase {
       this.handForHandPaused ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      (this.tournamentMovePauseOwners.size > 0 && this.handForHandResolve !== null) ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'
     );
@@ -5077,12 +5476,12 @@ export abstract class ServerTableEngineBase {
   /**
    * C15 FIX (2026-08-09): coalesce snapshot writes instead of paying one per action.
    *
-   * saveSnapshot() serializes the whole hand state and does one or two upserts.
+   * saveSnapshot() serializes the whole hand state and does one upsert.
    * It was fired after EVERY accepted action — 20 to 80 writes per hand per
    * table — which at 500+ tables is enough on its own to saturate the connection
    * pool. And it buys very little today: rehydrate() is never called and
    * checkCrashRecovery() abandons in-flight hands (see B10), so the snapshot's
-   * only live consumers are forensics and getActiveHandSnapshot.
+   * only live consumers are forensics and getActiveHandSnapshotFull.
    *
    * Rather than drop it (which would foreclose resume-after-restart) this
    * coalesces: write immediately if the last write is old enough, otherwise mark
@@ -5106,19 +5505,42 @@ export abstract class ServerTableEngineBase {
     this.snapshotTimer.unref?.();
   }
 
-  /** Write now if anything changed since the last write. Safe to call spuriously. */
-  protected async flushSnapshot(): Promise<void> {
+  /**
+   * Write now if anything changed since the last write. Safe to call spuriously.
+   * Gameplay-triggered snapshots stay best-effort; terminal teardown opts into a
+   * rejection so its owner receives an honest cleanup certificate.
+   */
+  protected async flushSnapshot(rejectOnFailure = false): Promise<void> {
     if (this.snapshotTimer) {
       clearTimeout(this.snapshotTimer);
       this.snapshotTimer = null;
     }
-    if (!this.snapshotDirty) return;
-    this.snapshotDirty = false;
-    this.lastSnapshotAtMs = Date.now();
-    try {
-      await this.saveSnapshot();
-    } catch {
-      /* snapshotting must never affect gameplay */
+
+    for (;;) {
+      let write = this.snapshotFlushPromise;
+      if (!write) {
+        if (!this.snapshotDirty) return;
+        this.snapshotDirty = false;
+        this.lastSnapshotAtMs = Date.now();
+        write = this.saveSnapshot();
+        this.snapshotFlushPromise = write;
+      }
+
+      try {
+        await write;
+      } catch (error) {
+        /* Gameplay remains best-effort; teardown observes the same writer. */
+        if (rejectOnFailure) throw error;
+        return;
+      } finally {
+        if (this.snapshotFlushPromise === write) this.snapshotFlushPromise = null;
+      }
+
+      // An action may have dirtied the snapshot while the prior write was in
+      // flight. A teardown caller has already fenced actions and therefore
+      // drains this loop to a stable point without letting a writer outlive it.
+      if (this.snapshotFlushPromise && this.snapshotFlushPromise !== write) continue;
+      if (!this.snapshotDirty) return;
     }
   }
 
@@ -5919,7 +6341,11 @@ export abstract class ServerTableEngineBase {
   abstract rePushHoleCards(userId: string): Promise<void>;
 
   // ── Implemented by ServerTableEngineHandEvents (layer 7/8) ──
-  protected abstract handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void>;
+  protected abstract handleHandEvent(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration?: number
+  ): Promise<void>;
 
   // ── Implemented by ServerTableEngine (layer 8/8) ──
   protected abstract broadcastCurrentState(): Promise<void>;

@@ -97,6 +97,7 @@ import {
   type GtoV31ActionFamily,
   type GtoV31GameFamily,
   type GtoV31Objective,
+  type GtoV31SourceSeal,
 } from './GtoPostflopV31.js';
 import {
   classifyGtoDecisionContext,
@@ -105,7 +106,12 @@ import {
   gtoV31Position,
   gtoV31PotType,
   gtoV31UtilityContext,
+  type GtoV31FacingKind,
   type GtoV31NodeRole,
+  type GtoV31Position,
+  type GtoV31PotType,
+  type GtoV31SizeBucket,
+  type GtoV31UtilityContext,
 } from './GtoDecisionContext.js';
 import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
@@ -1365,6 +1371,55 @@ function icmRiskBase(
   return Math.min(endgameAdjust(Math.min(risk, 0.12), gs, stackBB, useV23End), 0.15);
 }
 
+export interface GtoV31DecisionStateReceipt {
+  schemaVersion: 1;
+  street: Extract<HandStage, 'flop' | 'turn' | 'river'>;
+  gameVariant: 'nlh';
+  gameFamily: GtoV31GameFamily;
+  objective: GtoV31Objective;
+  utilityContext: GtoV31UtilityContext;
+  format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  tableSize: number;
+  potType: GtoV31PotType;
+  heroPosition: GtoV31Position;
+  opponentPosition: GtoV31Position;
+  stackBb: number;
+  depthBucket: number;
+  textureClass: string;
+  nodeRole: GtoV31NodeRole;
+  facingKind: GtoV31FacingKind;
+  facingSizeBucket: GtoV31SizeBucket;
+  hand: string;
+  handKey: string;
+  cell: string;
+  board: Card[];
+  holeCards: Card[];
+  pot: number;
+  currentBet: number;
+  toCall: number;
+  bigBlind: number;
+}
+
+export interface GtoV31DecisionReceipt {
+  datasetId: string;
+  datasetChecksum: string;
+  decisionState: GtoV31DecisionStateReceipt;
+  nodeRole: GtoV31NodeRole;
+  cell: string;
+  handKey: string;
+  actionId: string;
+  sampledActionFamily: GtoV31ActionFamily;
+  sampledAmount: number | null;
+  finalAction: HorseDecision['action'];
+  finalAmount: number | null;
+  /** True only when legalization preserved the sampled family and wager size. */
+  executedAsIntended: boolean;
+  referenceDistribution: Record<string, number>;
+  policyEvBb: number | null;
+  actionEvsBb: Record<string, number | null> | null;
+  sourceSeal: GtoV31SourceSeal;
+}
+
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
 export interface HorseDecideOpts {
   /**
@@ -1611,19 +1666,12 @@ export interface HorseDecideOpts {
    * same action path without allowing a candidate to replace live policy.
    */
   gtoV31DatasetChecksum?: string;
-  /** Offline promotion evidence hook. Never set by the live engine. */
-  onGtoV31Decision?: (receipt: {
-    datasetChecksum: string;
-    nodeRole: GtoV31NodeRole;
-    cell: string;
-    actionId: string;
-    sampledActionFamily: GtoV31ActionFamily;
-    sampledAmount: number | null;
-    finalAction: HorseDecision['action'];
-    finalAmount: number | null;
-    /** True only when legalization preserved the sampled family and wager size. */
-    executedAsIntended: boolean;
-  }) => void;
+  /**
+   * Offline evidence hook used by candidate gates and the daily active-corpus
+   * agreement probe. Never set by the live engine. The receipt is emitted
+   * only after the ordinary V31 lookup, sample, and legalization path runs.
+   */
+  onGtoV31Decision?: (receipt: GtoV31DecisionReceipt) => void;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
   /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
@@ -3865,6 +3913,8 @@ export class HorseLogic {
               tournament: gs.tournament,
             })
           : null;
+      const potType31 = gtoV31PotType(gs.actionHistory);
+      const hand31 = gtoHandClass(player.cards[0], player.cards[1]);
 
       const opponentRootStack31 = gtoV31FlopRootStack({
         street,
@@ -3904,12 +3954,12 @@ export class HorseLogic {
               objective: objective31,
               utilityContext: utility31,
               tableSize: heroSeat31.tableSize,
-              potType: gtoV31PotType(gs.actionHistory),
+              potType: potType31,
               heroPosition: heroSeat31.position,
               opponentPosition: opponentSeat31.position,
               stackBB: stackBB31,
               board: gs.communityCards,
-              hand: gtoHandClass(player.cards[0], player.cards[1]),
+              hand: hand31,
               holeCards: player.cards,
               nodeRole: context31.nodeRole,
               facingKind: context31.facingKind,
@@ -3966,17 +4016,60 @@ export class HorseLogic {
               finalAmount: finalAmount31,
               bigBlind: gs.bigBlind,
             });
-            if (opts.gtoV31DatasetChecksum && opts.onGtoV31Decision) {
+            if (
+              opts.onGtoV31Decision &&
+              hand31 &&
+              context31 &&
+              family31 &&
+              objective31 &&
+              utility31 &&
+              heroSeat31 &&
+              opponentSeat31
+            ) {
               opts.onGtoV31Decision({
+                datasetId: direct31.sourceSeal.dataset_id,
                 datasetChecksum: direct31.sourceSeal.dataset_checksum,
+                decisionState: {
+                  schemaVersion: 1,
+                  street,
+                  gameVariant: 'nlh',
+                  gameFamily: family31,
+                  objective: objective31,
+                  utilityContext: utility31,
+                  format: gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash'),
+                  tableSize: heroSeat31.tableSize,
+                  potType: potType31,
+                  heroPosition: heroSeat31.position,
+                  opponentPosition: opponentSeat31.position,
+                  stackBb: stackBB31,
+                  depthBucket: direct31.depthBucket,
+                  textureClass: direct31.textureClass,
+                  nodeRole: direct31.nodeRole,
+                  facingKind: context31.facingKind,
+                  facingSizeBucket: context31.facingSizeBucket,
+                  hand: hand31,
+                  handKey: direct31.handKey,
+                  cell: direct31.cell,
+                  board: structuredClone(gs.communityCards),
+                  holeCards: structuredClone(player.cards),
+                  pot,
+                  currentBet,
+                  toCall,
+                  bigBlind: gs.bigBlind,
+                },
                 nodeRole: direct31.nodeRole,
                 cell: direct31.cell,
+                handKey: direct31.handKey,
                 actionId: actionId31,
                 sampledActionFamily: action31.family,
                 sampledAmount: sampledAmount31,
                 finalAction: final31.action,
                 finalAmount: finalAmount31,
                 executedAsIntended: executedAsIntended31,
+                referenceDistribution: structuredClone(direct31.mix),
+                policyEvBb: direct31.policyEvBb,
+                actionEvsBb: structuredClone(direct31.actionEvsBb),
+                sourceSeal: structuredClone(direct31.sourceSeal),
               });
             }
             if (tele15) {

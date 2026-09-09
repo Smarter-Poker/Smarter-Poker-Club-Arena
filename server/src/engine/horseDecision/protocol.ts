@@ -106,9 +106,7 @@ export type HorseDecisionJobRequest =
   | DecidePineappleDiscardRequest;
 
 export type HorseDecisionWorkerRequest =
-  | HorseDecisionJobRequest
-  | { type: 'CANCEL'; requestId: number }
-  | { type: 'SHUTDOWN' };
+  HorseDecisionJobRequest | { type: 'CANCEL'; requestId: number } | { type: 'SHUTDOWN' };
 
 export interface HorseDecisionWorkerReady {
   type: 'READY';
@@ -116,11 +114,57 @@ export interface HorseDecisionWorkerReady {
     charts: number;
     postflop: number;
     postflopV31: number;
+    /** Exact promoted corpus currently owned by this worker; null iff empty. */
+    postflopV31Dataset: { id: string; checksum: string } | null;
   };
   /** Worker-owned snapshot; the main-thread module store is intentionally empty. */
   solverPolicyArtifact: ReturnType<typeof solverPolicyArtifactStatus>;
   /** Governor for the worker event loop where live Monte Carlo actually runs. */
   governor: GovernorSnapshot;
+}
+
+const SOLVER_STORE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const SOLVER_STORE_CHECKSUM = /^[0-9a-f]{64}$/;
+
+/**
+ * Runtime guard for the structured-clone boundary.
+ *
+ * TypeScript types disappear before a worker message arrives. In particular,
+ * a positive V31 cell count without the exact promoted dataset identity must
+ * never leave the engine in READY or let nightly evidence compare two
+ * anonymous stores that merely have the same size.
+ */
+export function horseDecisionSolverStoresAreValid(
+  value: unknown
+): value is HorseDecisionWorkerReady['solverStores'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const stores = value as Record<string, unknown>;
+  if (
+    Object.keys(stores).length !== 4 ||
+    !['charts', 'postflop', 'postflopV31', 'postflopV31Dataset'].every((key) =>
+      Object.prototype.hasOwnProperty.call(stores, key)
+    ) ||
+    !['charts', 'postflop', 'postflopV31'].every(
+      (key) => Number.isSafeInteger(stores[key]) && (stores[key] as number) >= 0
+    )
+  ) {
+    return false;
+  }
+
+  const count = stores.postflopV31 as number;
+  const dataset = stores.postflopV31Dataset;
+  if (count === 0) return dataset === null;
+  if (!dataset || typeof dataset !== 'object' || Array.isArray(dataset)) return false;
+  const identity = dataset as Record<string, unknown>;
+  return (
+    Object.keys(identity).length === 2 &&
+    typeof identity.id === 'string' &&
+    SOLVER_STORE_UUID.test(identity.id) &&
+    typeof identity.checksum === 'string' &&
+    SOLVER_STORE_CHECKSUM.test(identity.checksum) &&
+    identity.checksum !== '0'.repeat(64)
+  );
 }
 
 export type HorseDecisionWorkerReadiness = Omit<HorseDecisionWorkerReady, 'type'>;

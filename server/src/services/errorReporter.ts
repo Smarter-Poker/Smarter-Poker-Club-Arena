@@ -57,7 +57,9 @@ export function flushBudgetSummary(): boolean {
   if (!summary) return false;
   const top = summary.byKey.slice(0, 15);
   const lines = top.map((r) => `${r.dropped} x ${r.key}`).join('\n');
-  console.warn(`[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`);
+  console.warn(
+    `[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`
+  );
   try {
     Sentry.captureMessage(
       `[SentryBudget] dropped ${summary.total} engine event(s) in the last ${BUDGET_SUMMARY_INTERVAL_MS / 60_000} min`,
@@ -67,7 +69,7 @@ export function flushBudgetSummary(): boolean {
         contexts: { sentryBudget: { total: summary.total, top, distinct: summary.byKey.length } },
         // One issue per engine, not one per interval: group every summary together.
         fingerprint: ['sentry-budget-summary'],
-      },
+      }
     );
   } catch {
     // Never let the summary crash the engine
@@ -163,6 +165,43 @@ export function initSentry(): void {
  * @param context - A short string identifying where the error occurred
  * @param extra - Optional additional data to attach to the Sentry event
  */
+/**
+ * Describe ANY thrown value as readable text.
+ *
+ * `String(err)` renders every non-Error object as the literal string
+ * "[object Object]". Supabase rejects with a PostgrestError - a plain object,
+ * never an Error instance - so every money path that reported an error with
+ * `err instanceof Error ? err.message : String(err)` recorded the four words
+ * "[object Object]" and threw the diagnosis away.
+ *
+ * Measured 2026-09-08/09: 1,058 CRITICAL `financial_alerts` rows for
+ * `ServerTableEngine.post_commit_obligations_pending`, every one of them
+ * carrying `"error": "[object Object]"`. The incident dashboard classified
+ * all of them `unknown` because there was nothing left to classify. Nobody
+ * could act on them, so nobody did.
+ *
+ * Same precedence `reportError` already applies below, extracted so the alert
+ * paths can share it: message, then the Supabase/GoTrue detail fields, then
+ * JSON, and a PostgREST code when one is present.
+ */
+export function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error === null || error === undefined) return String(error);
+  if (typeof error === 'object') {
+    const e = error as Record<string, any>;
+    const head = e.message || e.error_description || e.details || e.hint || e.error || null;
+    const code = e.code ? ` (${e.code})` : '';
+    if (head) return `${String(head)}${code}`;
+    try {
+      return `${JSON.stringify(error)}`;
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+  return String(error);
+}
+
 export function reportError(error: unknown, context: string, extra?: Record<string, any>): void {
   // Always log to console for stdout/stderr visibility
   console.error(`[${context}]`, error);

@@ -13,6 +13,7 @@ const leagueClient = readFileSync(
   new URL('../benchmark/HorseLeagueComputeWorkerClient.ts', import.meta.url),
   'utf8'
 );
+const decisionClient = readFileSync(new URL('./horseDecision/client.ts', import.meta.url), 'utf8');
 const alertRules = readFileSync(
   new URL('../../../infra/monitoring/alert-rules.yml', import.meta.url),
   'utf8'
@@ -71,12 +72,17 @@ describe('live horse compute health has one authority', () => {
     expect(health).toContain("liveHorseDecision.phase === 'ready'");
   });
 
-  it('pins nightly solver underfill to worker-owned live stores', () => {
+  it('pins nightly solver evidence to the exact worker-owned live V31 corpus', () => {
     expect(leagueClient).toContain('liveHorseDecisionWorkerStatus');
     expect(leagueClient).toContain("live.phase !== 'ready' || !live.solverStores");
-    expect(leagueClient).toContain('return { ...live.solverStores };');
+    expect(leagueClient).toContain('return structuredClone(live.solverStores);');
+    expect(leagueClient).toContain('postflopV31Dataset');
+    expect(leagueClient).toContain('does not exactly match the live decision worker');
     expect(leagueClient).not.toContain('gtoChartCount');
     expect(leagueClient).not.toContain('gtoPostflopCount');
     expect(leagueClient).not.toContain('gtoPostflopV31Count');
+    expect(decisionClient).toContain('horseDecisionSolverStoresAreValid(message.solverStores)');
+    expect(decisionClient).toContain('invalid solver-store identity');
+    expect(decisionClient).toContain('status lost solver-store identity');
   });
 });

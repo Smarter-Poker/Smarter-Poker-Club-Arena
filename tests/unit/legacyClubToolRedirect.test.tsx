@@ -67,7 +67,7 @@ describe('LegacyClubToolRedirect', () => {
       });
 
       expect(
-        screen.getByText('Club Arena could not determine which club should open Players.')
+        screen.getByText('Poker Arena could not determine which club should open Players.')
       ).toBeInTheDocument();
       expect(mocks.navigate).not.toHaveBeenCalled();
     } finally {

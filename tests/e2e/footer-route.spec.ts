@@ -5,7 +5,7 @@ test.describe('Club Arena footer route contract', () => {
     await page.goto('dev/footer');
     await expect(page).toHaveURL(/\/hub\/club-arena\/dev\/footer\/?$/);
 
-    const nav = page.getByRole('navigation', { name: 'Club Arena' });
+    const nav = page.getByRole('navigation', { name: 'Poker Arena' });
     await expect(nav).toHaveCount(1);
     await expect(nav).toBeVisible();
     await expect(nav).toHaveCSS('position', 'fixed');

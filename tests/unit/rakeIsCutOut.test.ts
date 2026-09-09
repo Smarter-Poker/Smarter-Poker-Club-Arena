@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import {
   splitBuyIn,
   totalBuyIn,
+  formatBuyIn,
   DEFAULT_RAKE_RATE,
   clampRakeToCap,
   isRakeWithinCap,
@@ -132,5 +133,19 @@ describe('the fee is cut OUT of the advertised price', () => {
 
   it('the house rate is 10%', () => {
     expect(DEFAULT_RAKE_RATE).toBe(0.1);
+  });
+});
+
+describe('the displayed entry split retains the charged fee', () => {
+  it.each<[number, number, string]>([
+    [0.9, 0.1, '1 (0.90 + 0.10)'],
+    [4.5, 0.5, '5 (4.50 + 0.50)'],
+    [13.5, 1.5, '15 (13.50 + 1.50)'],
+    [0.95, 0.05, '1 (0.95 + 0.05)'],
+    [18, 2, '20 (18 + 2)'],
+    [10, 0, '10'],
+    [0, 0, 'Free Buy'],
+  ])('shows %s plus %s as %s', (prize, fee, displayed) => {
+    expect(formatBuyIn(prize, fee)).toBe(displayed);
   });
 });

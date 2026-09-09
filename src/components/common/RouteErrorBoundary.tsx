@@ -106,7 +106,7 @@ export default class RouteErrorBoundary extends Component<Props, State> {
           eyebrow="Route Recovery"
           tone="error"
           title="This Page Ran Into An Issue"
-          description="Reload The Latest Club Arena Assets, Or Return To The Previous Page. Your Navigation Shell And Active Session Remain Available."
+          description="Reload The Latest Poker Arena Assets, Or Return To The Previous Page. Your Navigation Shell And Active Session Remain Available."
           action={{ label: 'Reload Page', onClick: this.handleReload }}
           secondaryAction={{ label: 'Go Back', onClick: () => window.history.back() }}
         />

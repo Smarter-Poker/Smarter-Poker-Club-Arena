@@ -139,7 +139,7 @@ describe('Daily Missions production certification', () => {
     const spec = source('tests/e2e/production-daily-missions.spec.ts');
     expect(pageObject).toContain('placeControlInSafeViewport');
     expect(pageObject).toContain("block: 'center'");
-    expect(pageObject).toContain("getByRole('navigation', { name: 'Club Arena' })");
+    expect(pageObject).toContain("getByRole('navigation', { name: 'Poker Arena' })");
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
     expect(pageObject).toContain('authenticatedUserId !== account.id');
     expect(pageObject).toContain("for (const tier of ['Daily', 'Weekly', 'Monthly'] as const)");

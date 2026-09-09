@@ -20,9 +20,16 @@ import './SpadeConsole.css';
  *                                 with its title zone, the pill slot and the
  *                                 chrome rule with the blue gem
  *   mid.png            y 336-348  the plain rails, averaged and repeated
- *   bottom-plates.png  y 700-end  the steel and blue-glass plates painted
- *                                 into the foot, and the spade chip
- *   bottom-foot.png    y 878-end  the closing rail and chip only
+ *   bottom-plates.png             the steel and blue-glass plates painted
+ *                                 into the foot, closed by the flat cap
+ *   bottom-foot.png               the flat closing cap on its own
+ *
+ * THE BOTTOM IS FLAT AND CARRIES NOTHING (Dan 2026-09-08): "I ACTUALLY
+ * PREFER IT WITH ONLY AN ICON AT THE TOP, IM NOT A HUGE FAN OF THE CHIP ON
+ * THE BOTTOM. AND WITH NO ICON ON THE BOTTOM, IT SHOULDN'T POINT OUT STILL
+ * ON THE BOTTOM. IT SHOULD BE A FLAT BOTTOM." So the closing cap is the
+ * master's OWN top rails turned over - the same rails, the same four corner
+ * chamfers, no chip and no dive to the centre. The spade stays at the top.
  *
  * Everything printed on it - title, eyebrow, the word in the pill slot, the
  * labels on the plates - lands in a zone measured in pixels on that master,
@@ -32,8 +39,8 @@ import './SpadeConsole.css';
 
 export const SPADE_CONSOLE_W = 1000;
 export const SPADE_CONSOLE_TOP_H = 348;
-export const SPADE_CONSOLE_PLATES_H = 435;
-export const SPADE_CONSOLE_FOOT_H = 257;
+export const SPADE_CONSOLE_PLATES_H = 277;
+export const SPADE_CONSOLE_FOOT_H = 72;
 
 interface Zone {
   x: number;
@@ -46,6 +53,9 @@ interface Zone {
 export const SPADE_CONSOLE_ZONES = {
   eyebrow: { x: 100, y: 128, width: 540, height: 34 },
   title: { x: 100, y: 166, width: 540, height: 86 },
+  /* A long title beside a pill: it stops with air before the pill's slot
+     rather than running up against its rim (ANNOUNCEMENTS did). */
+  titleBesidePill: { x: 100, y: 166, width: 486, height: 86 },
   subtitle: { x: 102, y: 262, width: 540, height: 42 },
   pill: { x: 673, y: 190, width: 197, height: 54 },
   /* Relative to bottom-plates.png (master y minus 700). */
@@ -136,7 +146,11 @@ export function SpadeConsole({
           id={titleId}
           text={title}
           className="sc__title sc-ink--silver"
-          style={zonePct(SPADE_CONSOLE_ZONES.title, W, SPADE_CONSOLE_TOP_H)}
+          style={zonePct(
+            pill ? SPADE_CONSOLE_ZONES.titleBesidePill : SPADE_CONSOLE_ZONES.title,
+            W,
+            SPADE_CONSOLE_TOP_H
+          )}
         />
         {subtitle && (
           <ZoneText

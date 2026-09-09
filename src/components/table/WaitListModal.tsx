@@ -1,19 +1,27 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  WAIT LIST MODAL — Queue Management Component
+ *  WAIT LIST MODAL - the queue for a full table, on the spade console
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Modal for managing wait list position:
- * - Current position display
- * - Estimated wait time
- * - Leave wait list option
- * - Auto-seat toggle
+ * - The table in the header well, your place in line in the painted pill slot
+ * - Estimated wait, then the queue printed on the glass
+ * - CLOSE / LEAVE WAIT LIST on the painted plates; leaving asks once
+ *
+ * THE CONSOLE (2026-09-08). This was a rounded navy sheet with a circled
+ * position badge, avatar discs, a grey table header and a red pill button -
+ * a generic list dressed as a popup. It is now the spade console (the same
+ * master every Omaha card is drawn from): the table name is the eyebrow,
+ * WAIT LIST is engraved in the header well, #3 sits in the well's painted
+ * pill slot, the queue prints between the rails in the master's own inks
+ * (lit blue numerals, silver names, your own row in white), and the two
+ * actions are the plates painted into the foot. Nothing is drawn; no
+ * avatars, no discs, no header bar.
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './WaitListModal.css';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -53,20 +61,37 @@ export interface WaitListModalProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/* Whole minutes, Title Case, no tilde and no decimal: this is a forward
+   facing figure. */
 function formatDuration(minutes: number): string {
-  if (minutes < 1) return 'Less than 1 min';
-  if (minutes < 60) return `~${Math.round(minutes)} min`;
+  if (minutes < 1) return 'Under A Minute';
+  if (minutes < 60) return `About ${Math.round(minutes)} Min`;
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
-  return `~${hours}h ${mins}m`;
+  return mins > 0 ? `About ${hours}h ${mins}m` : `About ${hours}h`;
 }
 
 function formatWaitTime(joinedAt: Date): string {
   const ms = Date.now() - joinedAt.getTime();
   const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) return 'Just now';
+  if (minutes < 1) return 'Just Now';
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -84,7 +109,6 @@ export function WaitListModal({
   avgWaitTimeMinutes = 5,
 }: WaitListModalProps) {
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
-  const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
 
   // Same stale-confirm trap as SitOutModal: the confirm step survived a close,
   // so reopening the wait list dropped the destructive "Leave" button exactly
@@ -92,21 +116,6 @@ export function WaitListModal({
   useEffect(() => {
     if (!isOpen) setShowConfirmLeave(false);
   }, [isOpen]);
-  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  // Cleanup stagger timers on unmount
-  useEffect(() => {
-    return () => {
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
-    };
-  }, []);
-
-  useEffect(() => {
-    staggerTimersRef.current.forEach((t) => clearTimeout(t));
-    staggerTimersRef.current = players.map((_, i) =>
-      setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 50)
-    );
-  }, [players.length]);
 
   // Find my position
   const myPosition = useMemo(() => {
@@ -135,132 +144,117 @@ export function WaitListModal({
 
   if (!isOpen) return null;
 
+  const inLine = myPosition > 0;
+  const pill = !inLine
+    ? players.length === 0
+      ? 'Empty'
+      : 'Watching'
+    : myPosition === 1
+      ? 'Next Up'
+      : `#${myPosition}`;
+  const pillInk = !inLine ? 'muted' : myPosition === 1 ? 'green' : 'blue';
+
+  const plates = showConfirmLeave
+    ? {
+        secondary: {
+          label: 'Cancel',
+          onClick: () => setShowConfirmLeave(false),
+          autoFocus: true,
+          'aria-label': 'Stay On The Wait List',
+        },
+        primary: {
+          label: 'Leave',
+          ink: 'red' as const,
+          onClick: () => {
+            haptic.light();
+            handleLeave();
+          },
+          'aria-label': 'Leave Wait List',
+        },
+      }
+    : {
+        secondary: { label: 'Close', onClick: onClose, 'aria-label': 'Close Wait List' },
+        primary: inLine
+          ? {
+              label: 'Leave Wait List',
+              ink: 'red' as const,
+              onClick: () => setShowConfirmLeave(true),
+            }
+          : { label: 'Not In Line', ink: 'muted' as const, disabled: true },
+      };
+
   return (
-    <div className="waitlist-overlay" onClick={onClose}>
-      <div className="waitlist-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="waitlist-modal__header">
-          <h2 className="waitlist-modal__title">Wait List</h2>
-          <button className="waitlist-modal__close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-
-        {/* Table Info */}
-        <div className="waitlist-modal__table-info">
-          <span className="waitlist-modal__table-name">{tableName}</span>
-          <span className="waitlist-modal__table-blinds">{blinds}</span>
-        </div>
-
-        {/* My Position */}
-        {myPosition > 0 && (
-          <div className="waitlist-modal__position">
-            <div className="waitlist-modal__position-number">#{myPosition}</div>
-            <div className="waitlist-modal__position-info">
-              <span className="waitlist-modal__position-label">Your Position</span>
-              <span className="waitlist-modal__position-eta">
-                Est. Wait: {formatDuration(estimatedWait)}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Queue List */}
-        <div className="waitlist-modal__queue">
-          <div className="waitlist-modal__queue-header">
-            <span>Position</span>
-            <span>Player</span>
-            <span>Waiting</span>
-          </div>
-          <div className="waitlist-modal__queue-body">
-            {players.length === 0 ? (
-              <div className="waitlist-modal__empty">No Players Waiting</div>
-            ) : (
-              players.map((player, i) => (
-                <div
-                  key={player.playerId}
-                  className={`waitlist-modal__player ${player.playerId === myPlayerId ? 'waitlist-modal__player--me' : ''}`}
-                  style={{
-                    opacity: visiblePlayers.has(i) ? 1 : 0,
-                    transform: visiblePlayers.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                    transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                  }}
-                >
-                  <span className="waitlist-modal__player-position">#{player.position}</span>
-                  <div className="waitlist-modal__player-info">
-                    <div className="waitlist-modal__player-avatar">
-                      {player.avatar ? (
-                        <img
-                          loading="lazy"
-                          decoding="async"
-                          src={player.avatar}
-                          alt=""
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                          }}
-                        />
-                      ) : (
-                        <span>{player.playerName[0]?.toUpperCase()}</span>
-                      )}
-                    </div>
-                    <span className="waitlist-modal__player-name">
-                      {player.playerName}
-                      {player.playerId === myPlayerId && ' (You)'}
-                    </span>
-                  </div>
-                  <span className="waitlist-modal__player-wait">
-                    {formatWaitTime(player.joinedAt)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="waitlist-modal__actions">
-          {myPosition > 0 && !showConfirmLeave && (
-            <button
-              type="button"
-              className="waitlist-modal__leave-btn"
-              onClick={() => setShowConfirmLeave(true)}
-            >
-              Leave Wait List
-            </button>
-          )}
-
-          {showConfirmLeave && (
+    <div className="waitlist-modal__overlay" onClick={onClose}>
+      <div
+        className="waitlist-modal ac-popup"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="waitlist-modal-title"
+      >
+        <SpadeConsole
+          as="div"
+          eyebrow={blinds && !tableName.includes(blinds) ? `${tableName} ${blinds}` : tableName}
+          title="Wait List"
+          titleId="waitlist-modal-title"
+          pill={pill}
+          pillInk={pillInk}
+          plates={plates}
+        >
+          {showConfirmLeave ? (
             <div className="waitlist-modal__confirm">
-              <span>Are You Sure You Want To Leave?</span>
-              <div className="waitlist-modal__confirm-actions">
-                <button
-                  type="button"
-                  className="waitlist-modal__confirm-no"
-                  onClick={() => setShowConfirmLeave(false)}
-                  autoFocus
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="waitlist-modal__confirm-yes"
-                  onClick={() => {
-                    haptic.light();
-                    handleLeave();
-                  }}
-                >
-                  Leave
-                </button>
-              </div>
+              <span className="sc-label sc-ink--red">Leave The Line?</span>
+              <p className="sc-copy sc-copy--center">
+                You Are {ordinal(myPosition)} In Line. Leaving Gives Up Your Place, And Joining
+                Again Starts You At The Back.
+              </p>
             </div>
+          ) : (
+            <>
+              {inLine && (
+                <p className="sc-copy sc-copy--center waitlist-modal__eta">
+                  {myPosition === 1
+                    ? 'You Are Next. Stay Close To The Table.'
+                    : `You Are ${ordinal(myPosition)} In Line. Estimated Wait ${formatDuration(estimatedWait)}.`}
+                </p>
+              )}
+              {players.length === 0 ? (
+                <p className="sc-copy sc-copy--center sc-ink--muted">No Players Waiting</p>
+              ) : (
+                <ol className="waitlist-modal__queue" aria-label="Players Waiting">
+                  <li className="waitlist-modal__row waitlist-modal__row--head" aria-hidden="true">
+                    <span className="sc-label sc-ink--muted">Spot</span>
+                    <span className="sc-label sc-ink--muted">Player</span>
+                    <span className="sc-label sc-ink--muted waitlist-modal__wait">Waiting</span>
+                  </li>
+                  {players.map((player) => {
+                    const me = player.playerId === myPlayerId;
+                    return (
+                      <li
+                        key={player.playerId}
+                        className={`waitlist-modal__row ${me ? 'waitlist-modal__row--me' : ''}`.trim()}
+                        aria-current={me ? 'true' : undefined}
+                      >
+                        <span className="waitlist-modal__position sc-ink--blue">
+                          {player.position}
+                        </span>
+                        <span
+                          className={`waitlist-modal__name ${me ? 'sc-ink--white' : 'sc-ink--silver'}`}
+                        >
+                          {player.playerName}
+                          {me && <span className="waitlist-modal__you sc-ink--gold">You</span>}
+                        </span>
+                        <span className="waitlist-modal__wait sc-ink--muted">
+                          {formatWaitTime(player.joinedAt)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </>
           )}
-
-          {myPosition <= 0 && (
-            <button className="waitlist-modal__close-btn" onClick={onClose}>
-              Close
-            </button>
-          )}
-        </div>
+        </SpadeConsole>
       </div>
     </div>
   );

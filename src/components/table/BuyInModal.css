@@ -68,8 +68,9 @@
   width: 100%;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-variant-numeric: tabular-nums lining-nums;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') center /
-    100% auto repeat-y;
+  /* No art on the master itself: each piece paints its own box, so nothing
+     is drawn above the crest or below the chip. See SpadeConsole.css. */
+  background: none;
 }
 
 .buy-in-modal__head {
@@ -87,7 +88,7 @@
 .buy-in-modal__deck {
   position: relative;
   width: 100%;
-  aspect-ratio: 1000 / 785;
+  aspect-ratio: 1000 / 627;
   background: url('/hub/club-arena/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100%
     auto no-repeat;
 }
@@ -96,6 +97,8 @@
 
 .buy-in-modal__stage {
   position: relative;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
+    center / 100% auto repeat-y;
   display: grid;
   grid-template-columns: 22% minmax(0, 1fr);
   align-items: center;

@@ -28,26 +28,30 @@
   color: #e6e9ee;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-variant-numeric: tabular-nums lining-nums;
-  background:
-    url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top center / 100%
-      auto no-repeat,
-    url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-foot.png') bottom
-      center / 100% auto no-repeat,
-    url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') center / 100% auto
-      repeat-y;
+  background: none;
 }
 
-.sc--plates {
-  background-image:
-    url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png'),
-    url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-plates.png'),
-    url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png');
-}
+/* ── ONE PICTURE, NOTHING OUTSIDE IT (Dan 2026-09-08) ──────────────────
+   "THE CARDS AND POP UP SHOULD JUST BE THE CARDS ... THEY SHOULD JUST BE
+   STAND ALONE IMAGES WITH FRAMES AROUND THEM ... WHERE THE IMAGE HAS THESE
+   WEIRD LINES COMING OUT OF THEM."
 
+   The three slices used to be three background layers on the CONSOLE, and
+   the rails (mid.png) repeated over its whole height - so they painted in
+   the transparent margin ABOVE the crest and BELOW the closing rail, where
+   the head and the foot draw nothing. That is what the lines running past
+   the frame were: the side rails carrying on into empty space, so the card
+   read as a frame with rails sliding under it instead of one picture.
+
+   Each slice now paints its own box and nothing else: the head is the head,
+   the rails run only beside the body they carry, and the foot closes it.
+   The frame ends exactly where the picture ends. */
 .sc__head {
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 348;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
+    center / 100% auto no-repeat;
 }
 
 /* Between the rails: inside x 85-915 of the master, with a little air. */
@@ -57,16 +61,24 @@
   flex-direction: column;
   gap: 3cqw;
   padding: 0 10.5% 3cqw;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
+    center / 100% auto repeat-y;
 }
 
+/* A FLAT BOTTOM, CARRYING NOTHING (Dan 2026-09-08). The closing cap is the
+   master's own top rails turned over: same rails, same four corner chamfers,
+   no chip and no dive to the centre. */
 .sc__foot {
   position: relative;
   width: 100%;
-  aspect-ratio: 1000 / 257;
+  aspect-ratio: 1000 / 72;
+  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-foot.png')
+    bottom center / 100% auto no-repeat;
 }
 
 .sc--plates .sc__foot {
-  aspect-ratio: 1000 / 435;
+  aspect-ratio: 1000 / 277;
+  background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-plates.png');
 }
 
 /* ── Zones: absolute, centred, one line, fitted ───────────────────────── */

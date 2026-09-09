@@ -1,14 +1,20 @@
 import React from 'react';
 import { soundService } from '../../services/SoundService';
-// Whole-number tournament money (Dan 2026-08-20): "Sit and Go and any
-// tournament buy-ins must never be decimal buy-ins, whole numbers only."
-// This file used to define its own money() that FORCED two decimals.
-import { money } from '../../utils/buyIn';
+import { compactChips } from '../../utils/format';
+import {
+  PlateButton,
+  SPADE_CONSOLE_TOP_H,
+  SPADE_CONSOLE_W,
+  SPADE_CONSOLE_ZONES,
+  ZoneText,
+  zonePct,
+} from '../console/SpadeConsole';
+import { BUY_IN_DECK_H, BUY_IN_ZONES, BayLabel, BayValue } from './BuyInModal';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
   isOpen: boolean;
-  /** Base rebuy cost — the part that feeds the prize pool. */
+  /** Base rebuy cost - the part that feeds the prize pool. */
   rebuyCost: number;
   /**
    * House fee charged ON TOP of rebuyCost (10% by default). Before 2026-08-20
@@ -25,6 +31,23 @@ interface RebuyModalProps {
   isProcessing: boolean;
 }
 
+/**
+ * THE REBUY SHEET ON THE SPADE MASTER (2026-09-08).
+ *
+ * This was a rounded navy card with five text rows and two pill buttons - the
+ * one sheet a tournament player meets at the worst moment, having just
+ * busted, and it looked nothing like the felt around it. It is now the same
+ * sheet as Buy-In: Dan's spade master cut into its head (the header well with
+ * REBUY engraved and the chips coming back printed in the pill slot), a stage
+ * on the rails (the total the server will charge, large, and the reason when
+ * the wallet cannot cover it), and the deck (the four bays printing COST /
+ * FEE / CHIPS / BALANCE, and the two painted plates: DECLINE on steel, REBUY
+ * on the blue glass). Nothing is drawn or stuck on. Every figure is the
+ * lobby's compact one (1K, 1.2K), rounded down, so a sheet never overstates.
+ *
+ * Whole-number tournament money (Dan 2026-08-20): "Sit and Go and any
+ * tournament buy-ins must never be decimal buy-ins, whole numbers only."
+ */
 const RebuyModal: React.FC<RebuyModalProps> = ({
   isOpen,
   rebuyCost,
@@ -38,88 +61,108 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   if (!isOpen) return null;
 
   // Whole chips both halves, so the total is whole and matches the debit.
-  const totalCost = Math.round(rebuyCost) + Math.round(rebuyFee);
-  // Gate on the TOTAL — this is the number the server debits.
+  const cost = Math.round(rebuyCost);
+  const fee = Math.round(rebuyFee);
+  const totalCost = cost + fee;
+  // Gate on the TOTAL - this is the number the server debits.
   const canAfford = walletBalance >= totalCost;
+  const primaryLabel = isProcessing ? 'Working' : `Rebuy ${compactChips(totalCost)}`;
 
   return (
-    <div className="rebuyModalOverlay" onClick={onClose}>
+    <div
+      className="rebuy-modal__overlay"
+      onClick={() => {
+        if (!isProcessing) onClose();
+      }}
+    >
       <div
-        className="rebuyModalContent"
+        className="rebuy-modal ac-popup"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="rebuy-modal-title"
+        aria-busy={isProcessing || undefined}
       >
-        <div className="rebuyModalHeader">
-          <h3 id="rebuy-modal-title">Rebuy</h3>
-          <button
-            type="button"
-            className="rebuyCloseBtn"
-            onClick={onClose}
-            disabled={isProcessing}
-            aria-label="Close Rebuy"
-          >
-            ×
-          </button>
-        </div>
-        <div className="rebuyModalBody">
-          <div className="rebuyInfo">
-            {/* FIX 197: Format amounts with .toLocaleString() — was raw unformatted numbers */}
-            <div className="rebuyRow">
-              <span>Rebuy Cost</span>
-              <span className="rebuyValue">{money(rebuyCost)}</span>
-            </div>
-            {rebuyFee > 0 && (
-              <div className="rebuyRow">
-                <span>House Fee</span>
-                <span className="rebuyValue">{money(rebuyFee)}</span>
-              </div>
-            )}
-            <div className="rebuyRow rebuyRow--total">
-              <span>Total Charged</span>
-              <span className="rebuyValue">{money(totalCost)}</span>
-            </div>
-            <div className="rebuyRow">
-              <span>Chips Received</span>
-              <span className="rebuyValue rebuyChips">+{money(rebuyChips)}</span>
-            </div>
-            <div className="rebuyRow">
-              <span>Wallet Balance</span>
-              <span className={`rebuyValue ${!canAfford ? 'insufficient' : ''}`}>
-                {money(walletBalance)}
-              </span>
-            </div>
+        <div className="rebuy-modal__master">
+          {/* Head: the master's header well. */}
+          <div className="rebuy-modal__head">
+            <ZoneText
+              text="Tournament"
+              className="sc__eyebrow sc-ink--blue"
+              style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
+            <ZoneText
+              as="h2"
+              id="rebuy-modal-title"
+              text="Rebuy"
+              className="sc__title sc-ink--silver"
+              style={zonePct(SPADE_CONSOLE_ZONES.title, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
+            <ZoneText
+              text={`+${compactChips(rebuyChips)}`}
+              className="sc__pill sc-ink--green"
+              style={zonePct(SPADE_CONSOLE_ZONES.pill, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
           </div>
-          {!canAfford && (
-            <div className="rebuyWarning">
-              Insufficient Balance - You Need {money(totalCost)} To Rebuy
-            </div>
-          )}
-        </div>
-        <div className="rebuyModalFooter">
-          <button
-            type="button"
-            className="rebuyDeclineBtn"
-            onClick={onClose}
-            disabled={isProcessing}
-          >
-            Decline
-          </button>
-          <button
-            type="button"
-            className="rebuyConfirmBtn"
-            onClick={() => {
-              // Guard here too: the disabled attribute alone loses a race if a
-              // second tap lands in the same frame as the first.
-              if (!canAfford || isProcessing) return;
-              soundService.playBuyInConfirm();
-              onConfirm();
-            }}
-            disabled={!canAfford || isProcessing}
-          >
-            {isProcessing ? 'Processing...' : `Rebuy ${money(totalCost)}`}
-          </button>
+
+          {/* Stage: the total the server will charge, and why it cannot be. */}
+          <div className="rebuy-modal__stage">
+            <span className="sc-label sc-ink--blue">Total Charged</span>
+            <span className="rebuy-modal__amount sc-ink--silver">{compactChips(totalCost)}</span>
+            {fee > 0 && (
+              <p className="sc-copy sc-copy--center sc-ink--muted rebuy-modal__breakdown">
+                {compactChips(cost)} Rebuy Plus {compactChips(fee)} <span>House Fee</span>
+              </p>
+            )}
+            {!canAfford && (
+              <p role="alert" className="sc-copy sc-copy--center sc-ink--red rebuy-modal__warning">
+                Insufficient Balance. You Need {compactChips(totalCost)} To Rebuy.
+              </p>
+            )}
+          </div>
+
+          {/* Deck: the four bays, the two plates, the chip. */}
+          <div className="rebuy-modal__deck">
+            <BayLabel zone={BUY_IN_ZONES.bays[0].label} text="Cost" />
+            <BayLabel zone={BUY_IN_ZONES.bays[1].label} text="Fee" />
+            <BayLabel zone={BUY_IN_ZONES.bays[2].label} text="Chips" />
+            <BayLabel zone={BUY_IN_ZONES.bays[3].label} text="Balance" />
+            <BayValue zone={BUY_IN_ZONES.bays[0].value} text={compactChips(cost)} ink="silver" />
+            <BayValue zone={BUY_IN_ZONES.bays[1].value} text={compactChips(fee)} ink="silver" />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[2].value}
+              text={`+${compactChips(rebuyChips)}`}
+              ink="green"
+            />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[3].value}
+              text={compactChips(walletBalance)}
+              ink={canAfford ? 'silver' : 'red'}
+            />
+            <PlateButton
+              zone={BUY_IN_ZONES.secondaryAction}
+              canvasH={BUY_IN_DECK_H}
+              label="Decline"
+              onClick={onClose}
+              disabled={isProcessing}
+              aria-label="Decline Rebuy"
+            />
+            <PlateButton
+              zone={BUY_IN_ZONES.primaryAction}
+              canvasH={BUY_IN_DECK_H}
+              label={primaryLabel}
+              ink={canAfford ? 'white' : 'red'}
+              className={isProcessing ? 'rebuy-modal__confirm--processing' : ''}
+              onClick={() => {
+                // Guard here too: the disabled attribute alone loses a race if a
+                // second tap lands in the same frame as the first.
+                if (!canAfford || isProcessing) return;
+                soundService.playBuyInConfirm();
+                onConfirm();
+              }}
+              disabled={!canAfford || isProcessing}
+            />
+          </div>
         </div>
       </div>
     </div>

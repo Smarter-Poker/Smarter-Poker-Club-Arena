@@ -142,3 +142,56 @@ role checks, WaitlistPage's realtime and bus subscriptions.
 felt-reachable (pin moved to `titleId=`), WaitlistService, buy-in window /
 idempotency / seat guards, no-hover law, law registry, club buttons, lobby
 controls: 208 tests green.
+
+## Round six (Dan 2026-09-08): three more surfaces, and the frame itself
+
+Dan: "PICK 3 MORE AREAS THAT ARE IN NEED OF THE SAME TYPE OF UPGRADES ... GIVE
+ME SCREENSHOTS OF WHAT THEY LOOKED LIKE BEFORE, AND WHAT THEY LOOK LIKE AFTER."
+
+| Surface            | Where a player meets it               | Was                                                                  |
+| ------------------ | ------------------------------------- | -------------------------------------------------------------------- |
+| Rebuy popup        | busting out of a tournament           | rounded navy card, five text rows, grey / blue pills                 |
+| Wait List popup    | the queue on a full table             | circled position badge, avatar discs, grey header, red pill          |
+| Club Announcements | the club's noticeboard from the lobby | rounded cards, yellow pinned stripe, cyan bar, outlined Pin / Delete |
+
+Rebuy is Buy-In's sibling on the same deck (bays print COST / FEE / CHIPS /
+BALANCE, the total is the figure the server debits); the Wait List and the
+noticeboard are the spade console. Every printed figure is `compactChips`.
+Handlers, guards and the tests that pin them are untouched: the rebuy still
+gates on cost + fee, the wait list still confirms before it drops your place,
+and the noticeboard's pin / delete still read their RPC's answer.
+
+### The lines coming out of the frames
+
+Dan: "THEY SHOULDN'T HAVE THE LINES BEHIND THEM, WHERE THEY APPEAR LIKE UNDER
+THE FRAMES ... THEY SHOULD JUST BE STAND ALONE IMAGES WITH FRAMES AROUND THEM."
+
+The three slices were three background layers on the CONSOLE, and the rails
+(`mid.png`) repeated over its whole height - so they painted in the
+transparent margin above the crest and below the closing rail, where the head
+and the foot draw nothing. Each slice now paints its own box: the head is the
+head, the rails run only beside the body they carry, and the foot closes it.
+Same fix in Buy-In and Rebuy, whose master is built the same way.
+
+**The same defect is still live on two surfaces this round did not touch**:
+`.glp--cash .glp__section` (the desktop cash lobby panel) and `.dbs__panel`
+(the daily bonus sheet) tile `shark-panel-v1/mid.png` behind the whole
+element, and that art is transparent for its first 33 rows. A pseudo-element
+inset to the caps fixes it (proved on a probe); `background-clip: content-box`
+does NOT - it clips the side rails away too.
+
+### A flat bottom, and the spade at the top
+
+Dan: "I ACTUALLY PREFER IT WITH ONLY AN ICON AT THE TOP, IM NOT A HUGE FAN OF
+THE CHIP ON THE BOTTOM. AND WITH NO ICON ON THE BOTTOM, IT SHOULDN'T POINT OUT
+STILL ON THE BOTTOM. IT SHOULD BE A FLAT BOTTOM."
+
+The closing cap is now the master's OWN top rails turned over: the same rails,
+the same four corner chamfers, no chip and no dive to the centre. Nothing is
+drawn that the master did not already contain, and every printed zone stays
+where it was - only the foot's height changes (257 -> 72 plain, 435 -> 277 with
+plates, and the Buy-In deck 785 -> 627), so the plate and bay zones are
+re-based on those canvases.
+
+A long title beside a pill now stops with air before the pill's slot;
+ANNOUNCEMENTS was running up against its rim.

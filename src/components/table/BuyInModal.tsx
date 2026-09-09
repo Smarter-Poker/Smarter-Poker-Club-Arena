@@ -13,6 +13,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
 import {
+  type ConsoleInk,
   PlateButton,
   SPADE_CONSOLE_TOP_H,
   SPADE_CONSOLE_W,
@@ -501,7 +502,7 @@ export const BUY_IN_ASSETS = {
   deck: `${BUY_IN_ASSET_ROOT}/deck.png`,
   reference: `${BUY_IN_ASSET_ROOT}/source/approved-reference.png`,
 } as const;
-export const BUY_IN_DECK_H = 785;
+export const BUY_IN_DECK_H = 627;
 const DECK_Y = 350;
 
 const bay = (x: number) => ({
@@ -517,7 +518,7 @@ export const BUY_IN_ZONES = {
 
 type BuyInZone = { x: number; y: number; width: number; height: number };
 
-function BayLabel({ zone, text }: { zone: BuyInZone; text: string }) {
+export function BayLabel({ zone, text }: { zone: BuyInZone; text: string }) {
   return (
     <ZoneText
       text={text}
@@ -527,7 +528,7 @@ function BayLabel({ zone, text }: { zone: BuyInZone; text: string }) {
   );
 }
 
-function BayValue({
+export function BayValue({
   zone,
   text,
   ink,
@@ -535,7 +536,7 @@ function BayValue({
 }: {
   zone: BuyInZone;
   text: string;
-  ink: 'silver' | 'white' | 'red' | 'muted';
+  ink: ConsoleInk;
   className?: string;
 }) {
   return (

@@ -392,11 +392,10 @@ export function formatBuyIn(prize: number, fee: number | null | undefined): stri
   // IS - free to enter, 1-chip rebuys and add-ons - not just "free".
   if (total <= 0) return FREE_BUY_LABEL;
   if (f <= 0) return money(total);
-  // Round the FEE and take the prize as the remainder, rather than rounding
-  // both ends. Rounding each independently is how a legacy 13.5 + 1.5 row
-  // renders as "15 (14 + 2)" and the parts stop adding up to the total.
-  const shownFee = Math.min(total, Math.max(0, Math.round(f)));
-  return `${money(total)} (${money(total - shownFee)} + ${money(shownFee)})`;
+  // Entry totals stay whole chips; their disclosed components retain cents.
+  // Derive the remainder from the displayed total so the split still adds up.
+  const shownFee = Math.min(total, Math.max(0, round2(f)));
+  return `${money(total)} (${moneyExact(total - shownFee)} + ${moneyExact(shownFee)})`;
 }
 
 /** Compact form for a narrow lobby card: just the total. */

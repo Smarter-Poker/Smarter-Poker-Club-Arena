@@ -2510,10 +2510,10 @@ export abstract class TournamentManagerBase {
   }
 
   /**
-   * Read the launch receipt's durable chip-supply protocol. The pre-ledger
-   * schema has no supply_version column; only that exact 42703 capability
-   * state maps to version 0. Every other unreadable or future state fails
-   * closed instead of guessing a compatibility path.
+   * Read the launch receipt's durable chip-supply protocol. The sealed
+   * pre-ledger schema exposes version 0 explicitly. Only an older/restored
+   * schema's exact 42703 capability state also maps to version 0; every other
+   * unreadable or future state fails closed instead of guessing a path.
    */
   private async readTournamentLaunchSupplyVersion(
     lifecycle: TournamentLifecycleToken,

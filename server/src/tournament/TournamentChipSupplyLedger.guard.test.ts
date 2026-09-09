@@ -20,14 +20,46 @@ if (sealMigrationNames.length !== 1) {
     `Expected one tournament chip-supply RPC seal migration, found ${sealMigrationNames.length}`
   );
 }
+const versionSealMigrationNames = readdirSync(join(repoRoot, 'supabase/migrations')).filter(
+  (name) => name.endsWith('_tournament_launch_supply_version_zero_is_explicit.sql')
+);
+if (versionSealMigrationNames.length !== 1) {
+  throw new Error(
+    `Expected one tournament launch supply-version seal, found ${versionSealMigrationNames.length}`
+  );
+}
 const migration = readRepo(`supabase/migrations/${migrationNames[0]}`);
 const sealMigration = readRepo(`supabase/migrations/${sealMigrationNames[0]}`);
+const versionSealMigration = readRepo(`supabase/migrations/${versionSealMigrationNames[0]}`);
 const fixture = readRepo('scripts/dev/fixtures/tournament-chip-supply-ledger-pg17-bootstrap.sql');
 const runtimeProbe = readRepo('scripts/dev/probe-tournament-chip-supply-ledger-pg17.sql');
 const harness = readRepo('scripts/dev/probe-tournament-chip-supply-ledger-pg17.sh');
 const activationRunbook = readRepo('docs/runbooks/tournament-fractional-stack-cutover.md');
 
 describe('tournament chip supply is one immutable conserved ledger', () => {
+  it('publishes an explicit zero-only supply version without activating the ledger', () => {
+    expect(versionSealMigrationNames[0].localeCompare(sealMigrationNames[0])).toBeGreaterThan(0);
+    expect(versionSealMigration).toContain(
+      'ADD COLUMN IF NOT EXISTS supply_version smallint NOT NULL DEFAULT 0'
+    );
+    expect(versionSealMigration).toContain('CHECK (supply_version = 0) NOT VALID');
+    expect(versionSealMigration).toContain(
+      'VALIDATE CONSTRAINT tournament_launch_receipts_supply_version_check'
+    );
+    expect(versionSealMigration).toContain('WHERE supply_version IS DISTINCT FROM 0');
+    expect(versionSealMigration).not.toContain('ALTER COLUMN supply_version SET DEFAULT 1');
+    expect(versionSealMigration).not.toContain('GRANT ');
+    expect(versionSealMigration).not.toContain('CREATE TRIGGER');
+    expect(versionSealMigration).not.toContain('cron.');
+    expect(versionSealMigration).not.toContain('supply_roster_count');
+
+    expect(migration).toContain(
+      'DROP CONSTRAINT IF EXISTS tournament_launch_receipts_supply_version_check'
+    );
+    expect(migration).toContain('CHECK (supply_version IN (0, 1)) NOT VALID');
+    expect(migration).toContain('ALTER COLUMN supply_version SET DEFAULT 1');
+  });
+
   it('publishes fail-closed RPC signatures before the capable caller can ship', () => {
     expect(sealMigrationNames[0].localeCompare(migrationNames[0])).toBeLessThan(0);
     for (const signature of [

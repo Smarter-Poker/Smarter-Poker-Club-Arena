@@ -50,11 +50,13 @@ export async function saveHandStateSnapshot(params: {
       p_pending_deadlines: params.pendingDeadlines ?? [],
       p_disconnect_states: params.disconnectStates ?? {},
     });
-    if (error) {
-      console.warn(`[saveHandStateSnapshot] Error:`, error.message);
-    }
-  } catch (e) {
-    console.warn(`[saveHandStateSnapshot] Exception:`, e);
+    if (error) throw error;
+  } catch (error) {
+    // Gameplay snapshot callers deliberately remain best-effort at the engine
+    // boundary. Teardown asks that same boundary to reject, so swallowing here
+    // would make its cleanup certificate claim success after an unwritten row.
+    console.warn(`[saveHandStateSnapshot] Error:`, error instanceof Error ? error.message : error);
+    throw error;
   }
 }
 
@@ -68,17 +70,21 @@ export async function completeHandSnapshot(tableId: string, handNumber: number):
       p_table_id: tableId,
       p_hand_number: handNumber,
     });
-    if (error) {
-      console.warn(`[completeHandSnapshot] Error:`, error.message);
-    }
-  } catch (e) {
-    console.warn(`[completeHandSnapshot] Exception:`, e);
+    if (error) throw error;
+  } catch (error) {
+    // Settlement deliberately attaches its own non-fatal reporter, while crash
+    // recovery awaits this proof before starting fresh. Preserve the rejection
+    // so both callers can enforce the policy their boundary documents.
+    console.warn(`[completeHandSnapshot] Error:`, error instanceof Error ? error.message : error);
+    throw error;
   }
 }
 
 /**
  * Get active (incomplete) hand snapshot for crash recovery.
- * Returns null if no active hand found.
+ * Returns null only when the database proves that no active hand exists.
+ * An unreadable snapshot is not an empty snapshot: callers must stop startup
+ * rather than deal over a hand whose durable state could not be inspected.
  */
 export async function getActiveHandSnapshot(tableId: string): Promise<{
   handNumber: number;
@@ -93,7 +99,8 @@ export async function getActiveHandSnapshot(tableId: string): Promise<{
     const { data, error } = await supabase.rpc('get_active_hand_snapshot', {
       p_table_id: tableId,
     });
-    if (error || !data || data.length === 0) return null;
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
     const row = data[0];
     return {
       handNumber: row.hand_number,
@@ -104,9 +111,9 @@ export async function getActiveHandSnapshot(tableId: string): Promise<{
       stage: row.stage,
       updatedAt: row.updated_at,
     };
-  } catch (e) {
-    console.warn(`[getActiveHandSnapshot] Exception:`, e);
-    return null;
+  } catch (error) {
+    console.warn(`[getActiveHandSnapshot] Exception:`, error);
+    throw error;
   }
 }
 
@@ -143,7 +150,8 @@ export interface DisconnectStateEntry {
  * Get the active snapshot with pending_deadlines + disconnect_states.
  * Used by ServerTableEngine.start() to rehydrate the deadline scheduler
  * and disconnect FSM after a crash or restart. Returns null if no active
- * hand snapshot exists.
+ * hand snapshot exists. Database and transport failures reject so engine
+ * startup cannot reinterpret UNKNOWN recovery state as an empty table.
  */
 export async function getActiveHandSnapshotFull(tableId: string): Promise<{
   handNumber: number;
@@ -167,7 +175,8 @@ export async function getActiveHandSnapshotFull(tableId: string): Promise<{
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error || !data) return null;
+    if (error) throw error;
+    if (!data) return null;
     return {
       handNumber: data.hand_number,
       stateJson: data.state_json,
@@ -179,9 +188,9 @@ export async function getActiveHandSnapshotFull(tableId: string): Promise<{
       pendingDeadlines: (data.pending_deadlines as PendingDeadline[]) ?? [],
       disconnectStates: (data.disconnect_states as Record<string, DisconnectStateEntry>) ?? {},
     };
-  } catch (e) {
-    console.warn(`[getActiveHandSnapshotFull] Exception:`, e);
-    return null;
+  } catch (error) {
+    console.warn(`[getActiveHandSnapshotFull] Exception:`, error);
+    throw error;
   }
 }
 

@@ -1813,7 +1813,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         new Error(
           `[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`
         ),
-        'ServerTableEnginethistableId.RIT'
+        `ServerTableEngine.${this.tableId}.rit_insufficient_deck`
       );
       /**
        * 2026-08-27: this path had BOTH silent-fallback defects at once. It

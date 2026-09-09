@@ -60,7 +60,7 @@ import {
   type LobbyTournamentRow,
   withClubLabel,
 } from '../components/lobby/lobbyEntries';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
@@ -3685,13 +3685,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!currentUserId || actionBusy) return;
       setActionBusy(true);
       try {
-        await tournamentService.unregisterPlayer(t.id, currentUserId);
+        const result = await tournamentService.unregisterPlayer(t.id, currentUserId);
         setRegisteredTournamentIds((prev) => {
           const s = new Set(prev);
           s.delete(t.id);
           return s;
         });
-        toast.success('You Are No Longer Registered');
+        toast.success(tournamentUnregisterSuccessText(result));
       } catch (e) {
         reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');

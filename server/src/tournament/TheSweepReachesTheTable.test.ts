@@ -71,16 +71,16 @@ describe('the busted batch is taken before the RPC that caps its input', () => {
   });
 });
 
-describe('one un-eliminable player does not hold the queue for ever', () => {
+describe('a refusal cannot corrupt the global bust order', () => {
   /**
    * The assignment loop aborts the pass on a refusal, and it must - a refusal
    * can mean the CAS missed because another generation took the place, and
    * handing out a stale place is how two players get paid for one finish. But
-   * every candidate holds ZERO chips, so the chip sort is a tie and the order
-   * was stable: the same refused player was first on every five-second sweep,
-   * for ever, and the nineteen behind him were never attempted.
+   * every candidate holds ZERO chips, so the old chip sort was a tie. The
+   * accepted hand now supplies the exact order; retry rotation is permitted
+   * only after hand number and hand-start stack are both tied.
    */
-  it('records who refused so the next pass tries somebody else first', () => {
+  it('records who refused without allowing a later hand to pass it', () => {
     expect(ELIM).toMatch(/private readonly bustRefusalStreak = new Map<string, number>\(\)/);
     const loop = ELIM.slice(
       ELIM.indexOf('const eliminated = await this.eliminatePlayer('),
@@ -94,28 +94,46 @@ describe('one un-eliminable player does not hold the queue for ever', () => {
     expect(ELIM).toMatch(/this\.bustRefusalStreak\.delete\(bustedOrdered\[i\]\.user_id\)/);
   });
 
-  it('orders refused players last, then by the hand the bust happened in', () => {
+  it('orders by hand and starting stack before its exact-tie refusal streak', () => {
     // The chip tiebreak became the LAST resort on 2026-09-09: every candidate
     // here holds zero, so chips decided nothing, and the resulting arbitrary
     // order stranded 49 PKO bounties behind the settlement watermark. The
-    // refusal streak still wins - it is the deadlock breaker - then the hand
-    // number, which is the witness to who actually busted first.
+    // Hand number is the primary witness, then the accepted hand's starting
+    // stack resolves simultaneous busts. Refusal rotation is only a final
+    // exact-tie mechanism and cannot advance the PKO watermark.
     const order = ELIM.slice(
-      ELIM.indexOf('let bustedOrdered = [...busted].sort'),
-      ELIM.indexOf('TOURNEY-AUDIT 2026-07-24')
+      ELIM.indexOf('const compareBusted ='),
+      ELIM.indexOf('const bustedTotal = busted.length')
     );
-    expect(order).toMatch(/this\.bustRefusalStreak\.get\(a\.user_id\) \?\? 0/);
     expect(order).toMatch(/bustRank\(a\.user_id\) - bustRank\(b\.user_id\)/);
-    expect(order).toMatch(/\(a\.chips \?\? 0\) - \(b\.chips \?\? 0\)/);
-    expect(order.indexOf('bustRefusalStreak')).toBeLessThan(order.indexOf('bustRank(a.user_id)'));
+    expect(order).toMatch(/bustStartingStack\(a\.user_id\) - bustStartingStack\(b\.user_id\)/);
+    expect(order).toMatch(/this\.bustRefusalStreak\.get\(a\.user_id\) \?\? 0/);
+    expect(order.indexOf('bustRank(a.user_id)')).toBeLessThan(
+      order.indexOf('bustStartingStack(a.user_id)')
+    );
+    expect(order.indexOf('bustStartingStack(a.user_id)')).toBeLessThan(
+      order.indexOf('bustRefusalStreak')
+    );
+    expect(order).toContain('a.user_id.localeCompare(b.user_id)');
+    expect(ELIM).toContain('let bustedOrdered = [...busted].sort(compareBusted)');
   });
 
-  it('reads the bust order from the knockout candidates, and treats a failed read as unknown', () => {
+  it('reads the complete bust order before slicing and fails closed on a partial read', () => {
     expect(ELIM).toMatch(
-      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number'\)/
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number, stack_before'\)/
     );
-    expect(ELIM).toMatch(/'Tournament\.bust_order_unreadable'/);
-    // UNKNOWN must not sort to the front and claim a place it cannot prove.
+    const orderReadAt = ELIM.indexOf('const bustHandNumbers = new Map<string, number>()');
+    const sliceAt = ELIM.indexOf('const bustedTotal = busted.length');
+    expect(orderReadAt).toBeGreaterThan(0);
+    expect(orderReadAt).toBeLessThan(sliceAt);
+    const readFailure = ELIM.slice(
+      ELIM.indexOf('if (bustHandsErr)'),
+      ELIM.indexOf('const bustRank =')
+    );
+    expect(readFailure).toMatch(/'Tournament\.bust_order_unreadable'/);
+    expect(readFailure).toContain('requestUrgentEliminationSweepAfter');
+    expect(readFailure).toMatch(/\breturn;/);
+    // A genuinely missing row is still UNKNOWN and must not sort to the front.
     expect(ELIM).toMatch(/bustHandNumbers\.get\(userId\) \?\? Number\.MAX_SAFE_INTEGER/);
   });
 });
@@ -146,8 +164,10 @@ describe('the launch proof tells a bust from an uncredited stack', () => {
   });
 
   it('asserts conservation instead: the roster must hold what its seats were bought for', () => {
-    expect(BASE).toMatch(/const expectedFloor = roster\.length \* startingChips;/);
-    expect(BASE).toMatch(/if \(startingChips > 0 && rosterChips < expectedFloor\)/);
+    expect(BASE).toMatch(/const expectedFloor = fundingFieldSize \* startingChips;/);
+    expect(BASE).toMatch(
+      /launchStacksMeetFundingFloor\(\s*roster\.map\(\(row\) => row\.chips\),\s*startingChips/
+    );
     // The original hazard - a field with no money on it - is still refused.
     expect(BASE).toMatch(/the playing roster holds no chips at all/);
   });
@@ -155,17 +175,29 @@ describe('the launch proof tells a bust from an uncredited stack', () => {
   it('applies the same rule to the felt, and still requires a funded total there', () => {
     expect(BASE).toMatch(/Number\(seat\.stack\) < 0/);
     expect(BASE).toMatch(/const seatChips = seats\.reduce\(/);
+    expect(BASE).toMatch(
+      /launchStacksMeetFundingFloor\(\s*seats\.map\(\(seat\) => seat\.stack\),\s*startingChips/
+    );
     expect(BASE).toMatch(/the felt holds \$\{seatChips\} chips, short of the/);
   });
 
-  it('leaves the deferred-stack window alone: conservation is only asserted once credit is claimed done', () => {
-    for (const marker of [
-      'const rosterChips = roster.reduce(',
-      'const seatChips = seats.reduce(',
-    ]) {
-      const before = BASE.slice(BASE.indexOf(marker) - 400, BASE.indexOf(marker));
-      expect(before, marker).toMatch(/if \(!stacksMayBeDeferred\)/);
-    }
+  it('allows redistribution only behind the exact played-Spin proof', () => {
+    expect(BASE).toContain('playedSpinRecovery === null');
+    expect(BASE).toContain('an ordinary seat-first roster does not hold its exact starting stacks');
+    expect(BASE).toContain('does not hold the exact seat-first starting stack');
+    expect(BASE).toMatch(/Number\(seat\.stack\) !== startingChips/);
+    expect(BASE).toMatch(/Number\(row\.chips\) !== startingChips/);
+    expect(BASE).toContain('Number(seat.stack) !== Number(player.chips)');
+  });
+
+  it('has no deferred-stack window: atomic launch credit is proven before both conservation checks', () => {
+    expect(BASE).not.toMatch(/deferStacksForSpinReveal|stacksMayBeDeferred|seats_credited/);
+    expect(BASE).toMatch(
+      /const rosterChips = roster\.reduce\([\s\S]*?const expectedFloor = fundingFieldSize \* startingChips;[\s\S]*?launchStacksMeetFundingFloor\(\s*roster\.map\(\(row\) => row\.chips\),\s*startingChips,\s*fundingFieldSize/
+    );
+    expect(BASE).toMatch(
+      /const seatChips = seats\.reduce\([\s\S]*?launchStacksMeetFundingFloor\(\s*seats\.map\(\(seat\) => seat\.stack\),\s*startingChips,\s*fundingFieldSize/
+    );
   });
 });
 
@@ -173,23 +205,39 @@ describe('the migration that ships beside this one', () => {
   const MIGRATION = readFileSync(
     resolve(
       __dirname,
-      '../../../supabase/migrations/20260909005925_a_busted_player_without_a_seat_can_still_be_eliminated.sql'
+      '../../../supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
     ),
     'utf8'
   );
 
-  it('resolves duplicate pending generations to the newest instead of refusing', () => {
-    expect(MIGRATION).not.toMatch(
-      /RETURN jsonb_build_object\('ok',false,'reason','multiple_pending_knockout_generations'\)/
+  it('never invents a rebuy while eliminating a later generation', () => {
+    const elimination = MIGRATION.slice(
+      MIGRATION.lastIndexOf(
+        'CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic('
+      ),
+      MIGRATION.indexOf(
+        '$function$;',
+        MIGRATION.lastIndexOf(
+          'CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic('
+        )
+      )
     );
-    expect(MIGRATION).toMatch(/SET state='rebought'/);
-    expect(MIGRATION).toMatch(/SELECT max\(c2\.seat_joined_at\)/);
+    expect(elimination).not.toMatch(/SET state='rebought'/);
+    expect(elimination).not.toMatch(/max\([^)]*joined_at/);
+    expect(elimination).toMatch(/AND c\.state<>'rebought'/);
+    expect(elimination).toMatch(/'unresolved_knockout_generation_chain'/);
   });
 
-  it('only compares seat generations when the player still holds a seat', () => {
-    expect(MIGRATION).toMatch(
-      /IF v_latest_joined_at IS NOT NULL\s*\n\s*AND v_candidate\.seat_joined_at IS DISTINCT FROM v_latest_joined_at THEN/
-    );
+  it('selects the immutable latest candidate and proves its exact accepted hand', () => {
+    expect(MIGRATION).toMatch(/fn_ca_latest_committed_knockout_candidate\(/);
+    expect(MIGRATION).toMatch(/a\.table_id=v_candidate\.table_id/);
+    expect(MIGRATION).toMatch(/a\.hand_number=v_candidate\.hand_number/);
+    expect(MIGRATION).toMatch(/a\.hand_id=v_candidate\.hand_id/);
+    expect(MIGRATION).toMatch(/v_settlement_hand_id:=v_settlement_hand_text::uuid/);
+    expect(MIGRATION).toMatch(/k\.hand_id=v_settlement_hand_id/);
+    expect(MIGRATION).toMatch(/'knockout_candidate_required'/);
+    expect(MIGRATION).not.toMatch(/ORDER BY \(k\.result->>'hand_number'\)::bigint DESC/);
+    expect(MIGRATION).not.toMatch(/SELECT max\(c2\.seat_joined_at\)/);
   });
 
   it('keeps the function closed to every browser role', () => {

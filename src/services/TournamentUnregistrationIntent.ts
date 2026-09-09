@@ -1,6 +1,7 @@
+import { uuid as createRequestId } from '../utils/uuid';
 type Intent = { requestId: string; state: 'pending' | 'resolved' };
 const prefix = 'ca:tournament-unregister:v1:';
-const running = new Map<string, Promise<void>>();
+const running = new Map<string, Promise<unknown>>();
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function read(raw: string | null): Intent | null {
@@ -12,14 +13,14 @@ function read(raw: string | null): Intent | null {
 }
 
 /** Retain the original refund request until its matching server receipt is confirmed. */
-export function withTournamentUnregistrationIntent(
+export function withTournamentUnregistrationIntent<T>(
   userId: string,
   tournamentId: string,
-  submit: (requestId: string) => Promise<void>
-): Promise<void> {
+  submit: (requestId: string) => Promise<T>
+): Promise<T> {
   const key = prefix + userId + ':' + tournamentId;
   const active = running.get(key);
-  if (active) return active;
+  if (active) return active as Promise<T>;
   const work = (async () => {
     if (!globalThis.navigator?.locks || !globalThis.crypto?.randomUUID)
       throw new Error('This Browser Cannot Safely Save The Tournament Refund Request.');
@@ -42,7 +43,7 @@ export function withTournamentUnregistrationIntent(
                 ? current
                 : null;
       const intent: Intent = {
-        requestId: original?.requestId ?? crypto.randomUUID(),
+        requestId: original?.requestId ?? createRequestId(),
         state: 'pending',
       };
       const raw = JSON.stringify(intent);
@@ -54,7 +55,7 @@ export function withTournamentUnregistrationIntent(
         if (storage.getItem(key) !== raw)
           throw new Error('The Tournament Refund Request Could Not Be Saved.');
       }
-      await submit(intent.requestId);
+      const result = await submit(intent.requestId);
       try {
         const resolved = JSON.stringify({ ...intent, state: 'resolved' });
         session.setItem(key, resolved);
@@ -63,6 +64,7 @@ export function withTournamentUnregistrationIntent(
       } catch {
         // A confirmed refund remains confirmed; retained identity safely replays it.
       }
+      return result;
     });
   })();
   running.set(key, work);

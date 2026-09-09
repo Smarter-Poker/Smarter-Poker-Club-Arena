@@ -207,6 +207,17 @@
     "service_tests": 91,
     "storage_tests": 4,
     "request_identity": "wired to deployed request-id overload; auth account and returned request ID verified",
-    "pr": 4013
+    "pr": 4013,
+    "integrated_tests": {
+      "passed": 106,
+      "files": 3,
+      "typescript": "passed",
+      "reason": "merge overlapping receipt/ticket implementation; reuse canonical parser and return value"
+    }
+  },
+  "prepared_batch_publication": {
+    "status": "verified_live",
+    "evidence": "docs/audits/2026-09-09-tournament-retry-release-evidence.json",
+    "phase_complete": false
   }
 }

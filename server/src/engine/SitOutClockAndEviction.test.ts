@@ -207,12 +207,11 @@ describe('a busted cash seat is released', () => {
   });
 
   it('sweeps at the top of the loop, beside the horse recovery it mirrors', () => {
-    /* Placement is load-bearing, not tidiness. Settlement fires postHandTasks
-       WITHOUT awaiting it and postHandTasks is what runs syncStacks, so at the
-       END of a hand the busted stack may not have reached the database yet — a
-       check there reads a stale non-zero stack, skips, and never gets another
-       chance because the player is no longer in `activePlayers` next pass.
-       The top of the loop is after `await postHandTasksPromise`. */
+    /* Placement is load-bearing, not tidiness. Settlement can finish its
+       accepted-hand transaction while post-hand cleanup is still in flight, so
+       an END-of-hand cleanup check can race that boundary and never get another
+       chance once the player leaves `activePlayers`. The top of the loop is
+       after `await postHandTasksPromise`. */
     const horseAt = dealing.indexOf('this.recoverBustedSeatedHorses()');
     const humanAt = dealing.indexOf('this.standUpBustedCashPlayers()');
     expect(horseAt).toBeGreaterThan(-1);

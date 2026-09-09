@@ -61,7 +61,7 @@ describe('TournamentStartingTicker registration predicate', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const registration = service.slice(start, end);
-    expect(registration).toMatch(/\.rpc\(\s*'fn_register_for_tournament'/);
+    expect(registration).toMatch(/\.rpc\(\s*'fn_register_for_tournament_request'/);
     expect(registration).not.toMatch(/\.from\(\s*'tournament_players'\s*\)\s*\.insert\(/);
   });
 });

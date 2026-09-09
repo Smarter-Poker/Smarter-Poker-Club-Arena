@@ -41,8 +41,12 @@ describe('Cap', () => {
   });
 
   it('is Infinity when the table is uncapped, so every clamp is a no-op', () => {
-    const block = sliceStatement(TURNS, 'const capRemaining =');
-    expect(block).toContain('Infinity');
+    // The human action path retains Infinity as its arithmetic no-op. The
+    // Phase 5 canonical menu represents the same state as null so it can cross
+    // the worker boundary without serializing a non-finite number.
+    const humanCap = sliceEnclosingBlock(TURNS, '── CAP: A PER-HAND CEILING');
+    expect(humanCap).toMatch(/const capRemaining =[\s\S]*?: Infinity;/);
+    expect(TURNS).toContain('commitmentCapRemaining: null');
   });
 
   it('CLAMPS rather than rejects, like the pot-limit ceiling beside it', () => {
@@ -56,7 +60,10 @@ describe('Cap', () => {
   it('closes the all-in hole, which skips every amount clamp', () => {
     // validateAllIn returns sanitizedAmount: playerStack unconditionally, so
     // without this the cap would hold for every action EXCEPT the largest.
-    const fn = sliceBlockAfter(TURNS, "if (normalizedAction === 'all_in' && capRemaining !== Infinity)");
+    const fn = sliceBlockAfter(
+      TURNS,
+      "if (normalizedAction === 'all_in' && capRemaining !== Infinity)"
+    );
     expect(fn).toContain('Math.min(player.stack, capRemaining)');
     expect(fn).toMatch(/normalizedAction = state\.currentBet > 0 \? 'raise' : 'bet'/);
   });

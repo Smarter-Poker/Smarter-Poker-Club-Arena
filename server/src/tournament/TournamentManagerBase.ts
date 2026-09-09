@@ -3716,17 +3716,20 @@ export abstract class TournamentManagerBase {
             new Set((regs ?? []).map((r: any) => r.table_id).filter(Boolean) as string[])
           );
 
-          const { data: paidEntitlements, error: entitlementErr } = await supabase
-            .from('tournament_refund_entitlements')
-            // `created_at` is read for the REVEAL ANCHOR, not for the gate:
-            // Dan 2026-08-21, "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD
-            // PLAYER PAYS FOR HIS SEAT", and the last of these rows IS that
-            // moment. See stampSpinRevealAnchor below.
-            .select('user_id, gross, created_at')
-            .eq('tournament_id', this.tournamentId)
-            .eq('entitlement_kind', 'wallet_charge')
-            .eq('charge_category', 'tournament_buyin')
-            .in('user_id', regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000']);
+          /* Refund entitlements are immutable owner-only financial evidence.
+             service_role deliberately has no table SELECT, so the manager
+             reads only these three paid-gate fields through one narrow
+             SECURITY DEFINER RPC. The database binds the request's verified
+             tournament-manager actor to this exact tournament id before it
+             returns any row. `created_at` is included for the REVEAL ANCHOR:
+             the last paid entitlement is the third-payment instant. */
+          const { data: paidEntitlements, error: entitlementErr } = await supabase.rpc(
+            'fn_ca_paid_spin_launch_entitlements',
+            {
+              p_tournament_id: this.tournamentId,
+              p_user_ids: regIds,
+            }
+          );
           this.assertLifecycleCurrent(lifecycle);
 
           if (entitlementErr) {

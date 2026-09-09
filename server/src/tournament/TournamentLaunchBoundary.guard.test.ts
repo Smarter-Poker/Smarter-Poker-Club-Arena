@@ -15,7 +15,7 @@ const seatAssignment = readFileSync(join(here, 'tournamentSeatAssignmentRpc.ts')
 
 describe('a tournament launch crosses maintenance exactly once', () => {
   it('claims after field/payment preconditions and before every launch mutation', () => {
-    const paidEvidence = start.indexOf(".eq('charge_category', 'tournament_buyin')");
+    const paidEvidence = start.indexOf("'fn_ca_paid_spin_launch_entitlements'");
     const claim = start.indexOf('await this.beginTournamentLaunch(');
 
     expect(paidEvidence).toBeGreaterThan(-1);

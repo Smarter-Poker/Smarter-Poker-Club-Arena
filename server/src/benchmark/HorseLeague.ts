@@ -1407,8 +1407,7 @@ async function maybeRunLeague(generation: number): Promise<void> {
 function launchMaybeRunLeague(): void {
   const generation = lifecycleGeneration;
   if (!lifecycleIsCurrent(generation) || inFlightRuns.size > 0) return;
-  let tracked!: Promise<void>;
-  tracked = maybeRunLeague(generation)
+  const tracked = maybeRunLeague(generation)
     .catch((err) => reportError(err, 'HorseLeague.tick'))
     .finally(() => inFlightRuns.delete(tracked));
   inFlightRuns.add(tracked);

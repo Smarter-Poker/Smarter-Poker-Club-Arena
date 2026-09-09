@@ -1,7 +1,7 @@
 # Phase 4 final closure audit - Club Arena
 
-Date: 2026-09-08 America/Chicago  
-Branch: `agent/codex-horse-phase4-final/fix/horse-phase4-final-closure`  
+Date: 2026-09-08 America/Chicago
+Branch: `agent/codex-horse-phase4-final/fix/horse-phase4-final-closure`
 Scope: certified NLH V31 ingestion, in-memory stores, decision execution receipts, candidate evaluation, release gates, and PostgreSQL behavior probes.
 
 ## A. Repository and production truth
@@ -32,18 +32,24 @@ Scope: certified NLH V31 ingestion, in-memory stores, decision execution receipt
 - The database freezes every `horse_league_results` row once used as release evidence. Candidate and promotion functions recheck the source rows and checksums rather than trusting copied verdict labels.
 - A transaction-scoped advisory lock with the stable key `smarter-poker:gto-v31-release-gate` serializes candidate and promotion transitions across different dataset rows. The helper remains private to service role callers.
 - The V30 facing-defense middle band now fails closed explicitly instead of naming a nonexistent action bucket.
+- Changed-file lint also exposed one inherited mutable declaration and five dead HorseLogic imports/locals; they were removed without changing the decision path.
 
-## D. Verification completed before main reconciliation
+## D. Verification completed on the current-main candidate
 
 - Focused Vitest: 9 files, 134 tests passed.
 - Server TypeScript: `npx tsc --noEmit` passed.
+- Complete server Vitest: 596 files passed, 1 skipped; 7,995 tests passed, 18 skipped.
+- Complete repository Vitest: 1,252 files passed; 17,357 tests passed.
+- Server production build and root production build passed. The root build compiled 2,970 modules, converted 104 WebP assets, self-hosted 39 font files, and reported zero media-optimizer failures.
 - PostgreSQL 17 adversarial harness passed:
   - `V31_CERTIFICATION_BEHAVIOR_OK`
   - `SOLVER_AGREEMENT_BEHAVIOR_OK`
   - `LIVENESS_BEHAVIOR_OK`
   - `OPERATOR_READ_AUTHORIZATION_OK`
   - `PHASE4_STATUS_OK`
-- `git diff --check`, conflict-marker scans, action-clock I/O scans, and Phase 4 TODO/stub scans were clean.
+- All three migrations passed the live-object gate and the new-version collision gate. The schema manifest and all 180 fragments parsed successfully.
+- Every changed server file passed ESLint with zero errors and zero warnings. The repository UI lint completed with zero errors and 936 pre-existing warnings outside this server-only change.
+- `git diff --check`, conflict-marker scans, action-clock I/O scans, and Phase 4 TODO/stub scans were clean after the audit hard-break whitespace was removed.
 
 ## E. Release boundary
 

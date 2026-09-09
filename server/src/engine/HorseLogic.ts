@@ -57,7 +57,7 @@ import type {
   HorseGameState,
   ActionRecord,
 } from '../types.js';
-import { SUITS, RANKS, RANK_VALUES, validateAction, calculateBettingState } from './PokerEngine.js';
+import { RANK_VALUES, validateAction, calculateBettingState } from './PokerEngine.js';
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
@@ -128,12 +128,10 @@ import {
   type NlhNutStatus,
   preflopEquity,
   holdemPreflopScore,
-  omahaPreflopScore,
   omahaPreflopStrength,
   multiwayValueBar,
   shortDeckPreflopStrength,
   pineapplePreflopStrength,
-  pineapplePreflopScore,
   scoreHoldem,
   scoreOmahaHi,
   scoreOmahaHiPartial,
@@ -2688,8 +2686,6 @@ export class HorseLogic {
     }
 
     const position = classifyPosition(player.seat, gs.dealerSeat, gs.players);
-    const oppsLeft = gs.players.filter((p) => !p.is_folded && p.seat !== player.seat).length;
-
     // Position-based open thresholds (percentile strength required)
     const OPEN_THRESH: Record<PositionClass, number> = {
       early: 0.62,

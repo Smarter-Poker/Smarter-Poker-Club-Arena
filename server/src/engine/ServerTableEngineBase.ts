@@ -1402,7 +1402,8 @@ export abstract class ServerTableEngineBase {
   // zero final stack even if a persistence mirror failed; consumers must stay
   // fire-and-forget and independently verify durable authority.
   protected handCompleteCallback:
-    ((tableId: string, players: { user_id: string; stack: number }[]) => void) | null = null;
+    | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
+    | null = null;
   /**
    * Exact hand-for-hand barrier signal. The tournament coordinator used to
    * rediscover this state by polling every table twice a second. Emitting at

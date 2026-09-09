@@ -60,7 +60,8 @@ export async function configurePurchases(userId: string): Promise<boolean> {
 }
 
 export type NativePurchaseRequest =
-  { kind: 'diamonds'; packageKey: string } | { kind: 'vip'; tier: 'monthly' | 'yearly' | 'annual' };
+  | { kind: 'diamonds'; packageKey: string }
+  | { kind: 'vip'; tier: 'monthly' | 'yearly' | 'annual' };
 
 export interface NativePurchaseResult {
   ok: boolean;

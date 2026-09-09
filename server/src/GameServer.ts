@@ -207,7 +207,8 @@ type DealerPrerequisiteGate = {
   settled: boolean;
 };
 type ExternalShutdownOwnershipResult =
-  { status: 'fulfilled' } | { status: 'rejected'; reason: unknown };
+  | { status: 'fulfilled' }
+  | { status: 'rejected'; reason: unknown };
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -3591,7 +3592,8 @@ export class GameServer {
         return;
       }
       const row = (Array.isArray(data) ? data[0] : data) as
-        { table_leases_deleted?: number; tournament_leases_deleted?: number } | undefined;
+        | { table_leases_deleted?: number; tournament_leases_deleted?: number }
+        | undefined;
       const tables = row?.table_leases_deleted ?? 0;
       const tourneys = row?.tournament_leases_deleted ?? 0;
       if (tables > 0 || tourneys > 0) {
@@ -3711,7 +3713,8 @@ export class GameServer {
           return;
         }
         const row = (Array.isArray(data) ? data[0] : data) as
-          { hands_written?: number; units_written?: number; hands_skipped?: number } | undefined;
+          | { hands_written?: number; units_written?: number; hands_skipped?: number }
+          | undefined;
         const hands = Number(row?.hands_written ?? 0);
         if (hands > 0) {
           console.log(

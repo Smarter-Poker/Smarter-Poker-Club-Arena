@@ -798,7 +798,10 @@ class TournamentService {
   /**
    * Get a single tournament
    */
-  async getTournament(tournamentId: string): Promise<Tournament | null> {
+  async getTournament(
+    tournamentId: string,
+    options?: { throwOnError?: boolean }
+  ): Promise<Tournament | null> {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
@@ -808,6 +811,7 @@ class TournamentService {
       .maybeSingle();
 
     if (error) {
+      if (options?.throwOnError) throw error;
       reportError(error, 'TournamentService.Error_fetching_tournament');
       return null;
     }

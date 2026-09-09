@@ -367,6 +367,7 @@ export class RunItTwiceEngine {
   decline(tableId: string, playerId: string, reason: RITDeclineReason = 'player'): void {
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'offered') return;
+    if (!state.allPlayerIds.includes(playerId)) return;
 
     state.status = 'declined';
     // Phase 1.2 PR-G-real: cancel pending expiry deadline.
@@ -497,14 +498,6 @@ export class RunItTwiceEngine {
     // this is the last gate in front of a pot split.
     if (!state.chooserDecided) return 1;
     return state.chosenRuns;
-  }
-
-  /**
-   * FIX 96: Chooser decides how many runs (1, 2, or 3).
-   */
-  setChosenRuns(tableId: string, runs: 1 | 2 | 3): void {
-    const state = this.activeOffers.get(tableId);
-    if (state) state.chosenRuns = runs;
   }
 
   /**

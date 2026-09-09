@@ -216,7 +216,7 @@ describe('the drill-in carries everything the route carried', () => {
 describe('nothing throws a seated player off their table without a gesture', () => {
   const SUPABASE_LIB = read('src/lib/supabase.ts');
   const AD_SERVICE = read('src/services/AdService.ts');
-  const AD_STRIP = read('src/components/lobby/LobbyAdStrip.tsx');
+  const AD_ROTATOR = read('src/components/ads/HouseAdRotator.tsx');
   const AD_CARD = read('src/components/ads/HouseAdCard.tsx');
 
   it('a failed auth read is not evidence that there is no user', () => {
@@ -281,7 +281,7 @@ describe('nothing throws a seated player off their table without a gesture', () 
     // target_url is unvalidated admin-entered text handed straight to
     // navigate(). isSafeAdImage existed; its destination twin did not.
     expect(AD_SERVICE).toContain('export function isSafeAdTarget');
-    expect(AD_STRIP).toContain('isSafeAdTarget(url)');
+    expect(AD_ROTATOR).toContain('isSafeAdTarget(url)');
     expect(AD_CARD).toContain('isSafeAdTarget(ad.targetUrl)');
     // Protocol-relative and backslash forms must be rejected, not just
     // "starts with a slash".

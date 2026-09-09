@@ -153,7 +153,11 @@ describe('consent progress - live checkmarks and the accept banner', () => {
 });
 
 describe('per-run pot awards - the split-pot ship sequence', () => {
-  function resolveRIT(stacks: number[], runs: 2 | 3) {
+  function resolveRIT(
+    stacks: number[],
+    runs: 2 | 3,
+    onResult?: (engine: any, result: any) => void
+  ) {
     const { e, hc, emitted } = atAllIn(stacks);
     const st = (hc as unknown as { state: { players: SeatPlayer[] } }).state;
     const ids = st.players.filter((p) => !p.is_folded).map((p) => p.user_id);
@@ -161,6 +165,13 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
     e.runItTwiceEngine.chooserDecides(TABLE, ids[0], runs);
     for (const id of ids.slice(1)) e.runItTwiceEngine.accept(TABLE, id);
     const allIn = st.players.filter((p) => !p.is_folded);
+    if (onResult) {
+      const emit = e.hub.emitEvent;
+      e.hub.emitEvent = (tableId: string, event: any) => {
+        emit(tableId, event);
+        if (event.type === 'rit_result') onResult(e, event);
+      };
+    }
     e.dealAndResolveRIT(allIn);
     return { e, hc, emitted, st };
   }
@@ -229,9 +240,32 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
     // rit_result tells the client where the reveal starts.
     const result = emitted.find((p) => p.type === 'rit_result');
     expect(result).toBeTruthy();
+    expect(result!.per_board_awards).toEqual(
+      e.currentHandPerPotAwards.map((award: any) => ({
+        board: award.board ?? 1,
+        user_id: award.userId,
+        amount: award.amount,
+        low: award.low === true,
+        hand_name: award.hand?.name ?? null,
+        cards: award.hand?.cards ?? [],
+      }))
+    );
+
     expect(typeof result!.base_board_count).toBe('number');
     expect(result!.base_board_count as number).toBeGreaterThanOrEqual(0);
     expect(result!.base_board_count as number).toBeLessThanOrEqual(5);
+  });
+
+  it('a late request cannot change runs after additional board cards are published', () => {
+    let observed = false;
+    resolveRIT([100, 300, 500], 2, (engine, result) => {
+      observed = true;
+      expect(result.boards).toHaveLength(2);
+      expect(result.boards.every((board: unknown[]) => board.length === 5)).toBe(true);
+      expect(engine.respondToRIT('u1', undefined, 3)).toMatchObject({ success: false });
+      expect(engine.runItTwiceEngine.getChosenRuns(TABLE)).toBe(2);
+    });
+    expect(observed).toBe(true);
   });
 
   it('three runs label boards 1, 2 and 3', () => {

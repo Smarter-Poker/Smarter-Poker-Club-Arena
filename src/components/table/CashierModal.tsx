@@ -158,7 +158,11 @@ export function CashierModal({
       { label: '25%', value: Math.trunc(max * 0.25 * 100) / 100 },
       { label: '50%', value: Math.trunc(max * 0.5 * 100) / 100 },
       { label: '75%', value: Math.trunc(max * 0.75 * 100) / 100 },
-      { label: 'MAX', value: max },
+      // To the cent like its three siblings (2026-09-09). `max` is
+      // `Math.min(maxStack - currentStack, accountBalance, maxBuyIn)` - a
+      // subtraction, so a float artifact - and MAX was the one preset that
+      // reached `atomic_table_addon` without passing through `clampToCents`.
+      { label: 'MAX', value: Math.trunc(max * 100) / 100 },
     ];
   }, [canAddAmount]);
 

@@ -35,9 +35,13 @@ Tournament unregistration only before start; return chips to the originating wal
 
 ## Phase 1 Verification Status
 
-In progress. Earlier accounting #3807 and cashout receipt #3809 are merged, but their runtime adoption is independently tracked. Additional defects reproduced here: unhandled cashout failures returned zero as success; eviction emitted seat_left before confirmation; final roster filtering removed all-in players whose eviction was skipped. This phase changes the shared error contract and confirmed-departure filtering. It does not certify the remainder of the financial system.
+Complete for the Phase 1 scope defined in the build-order table. The final outstanding probe/evidence PR #3840 merged on September 8 at 18:10:48 UTC as eeb5ced46bfe41396c0624c1960e133cfc5ceadf. Its required CI run 34260688307 passed, including server TypeScript, 7,621 server tests and all four client shards. The six PostgreSQL cases skipped in ordinary CI were executed separately; the current expanded probe passed all 18 cases during the September 9 recovery check.
 
-Regression baseline: 16 failures with 28 passing tests before the correction. After correction, 73 focused tests across four files passed; server TypeScript passed. Broader push gates and deployed engine verification remain required. Do not label this phase complete while either is pending.
+The production engine observed September 9 at 00:37:47 UTC reports version 276faa64, resolves to 276faa64d658f966202f8ba4425041f9fb0d74d1, and contains #3809, #3818, #3823, #3837 and #3840. The observed source retains receipt validation, failure propagation, confirmed-departure filtering and all-in protection. Health was ok, maintenance idle, with zero stalled tables and zero blocked settlements. Both frontend build stamps agreed. See docs/audits/2026-09-08-phase1-departure-evidence.md and docs/audits/2026-09-09-phase1-closeout.json for exact evidence and boundaries.
+
+This continuation also passed server TypeScript, 80 focused receipt/departure/rebuy tests and 18 isolated PostgreSQL tests on source 078dbd26861f33f0f49492c61c52ac4637aa230b. Later changes in that source are not all claimed deployed by the older engine observation. The closure applies to the named Phase 1 corrections. It does not certify the entire financial system or the 216-requirement programme.
+
+Historical baseline: 16 failures and 28 passing tests before correction; 73 focused tests passed after the first correction. Subsequent follow-up and runtime gates are resolved by the evidence above. Phase 2 is poker rules and fairness for supported variants; its audit remains to be completed under this programme.
 
 ## Required Phase Summary
 
@@ -47,10 +51,10 @@ Only after all exit evidence is satisfied: Phase N Of 12 Is Done, followed by co
 
 The zero-stack no-rebuy sweep also emitted departure before cashout confirmation and attempted a different fallback after failure. Two behavioral tests reproduced premature events. The sweep now waits for the same atomic cashout receipt before its event and cleanup, retaining seat and grace tracking for retry on failure. Pending-ledger rebuy, prompt grace and live all-in protections remain in place.
 
-September 8 verification: 74 focused tests across receipt, eviction, rebuy-ledger and sit-out safeguards passed; server TypeScript passed. PR #3818 merged as ab0f53926ac53c7b8b3d0d7be1278e9fd08e7500. This follow-up still requires its own push gates, merge and engine adoption evidence. Phase 1 remains incomplete.
+September 8 verification: 74 focused tests across receipt, eviction, rebuy-ledger and sit-out safeguards passed; server TypeScript passed. PR #3818 merged as ab0f53926ac53c7b8b3d0d7be1278e9fd08e7500. That checkpoint was superseded by #3823, which passed its required checks and merged; the containing engine deployment and final evidence merge are verified above.
 
 ## Original Requirement Register Reconciliation
 
 The original 216 requirement IDs and control text are preserved in docs/audits/2026-09-08-platform-coverage/phase-requirements.json, extracted from Smarter-Poker-Club-Arena-Audit.docx version 22 (SHA256 recorded in the JSON). Extraction verified 216 rows and 216 unique IDs. Every original requirement has a primary phase or explicit user exclusion; cross-phase scope notes prevent partial evidence being mistaken for a full requirement pass. G07 is retained as excluded, G06 excludes the real-time assistance clause, and World Hub portions of cross-repository requirements remain deferred. All included rows remain pending full requirement verification. This is a scope reconciliation, not 216 completed audits.
 
-Primary-phase assignment counts: 1:4, 2:18, 3:58, 4:26, 5:52, 6:9, 7:13, 8:3, 9:9, 10:6, 11:10, 12:7; one excluded row. The 7,038-file inventory adds implementation coverage beyond these controls. Phase 1's engine/service integration adds eight passing tests with isolated database transport; live adoption and behavior remain separate gates.
+Primary-phase assignment counts: 1:4, 2:18, 3:58, 4:26, 5:52, 6:9, 7:13, 8:3, 9:9, 10:6, 11:10, 12:7; one excluded row. The 7,038-file inventory adds implementation coverage beyond these controls. Phase 1's engine/service integration adds eight passing tests with isolated database transport. The separate PostgreSQL recovery and scoped engine adoption gates are now verified; the wider requirements retain their later-phase verification obligations.

@@ -4474,7 +4474,16 @@ export default function MultiTablePage() {
                             const pot = table.pot ?? 0;
                             // Standard pot-raise size: call first, then raise
                             // the pot that call creates (server re-validates).
-                            const size = Math.round(toCall + (pot + toCall * 2) * frac);
+                            // TO THE CENT, not to the chip (2026-09-09).
+                            // `Math.round` here sent a real wager: at 0.05/0.10
+                            // an exact 0.65 pot raise went as 1 (a 2.2x-pot bet
+                            // the player never chose) and a 0.375 half-pot went
+                            // as 0, so `capped <= 0` silently removed the
+                            // button. The single-table definition
+                            // (ActionPanel.potSizedRaiseTo) is exact, and its
+                            // own comment claims to be the only one.
+                            const size =
+                              Math.round((toCall + (pot + toCall * 2) * frac) * 100) / 100;
                             const stack = table.heroStack ?? 0;
                             const capped = stack > 0 ? Math.min(size, stack) : size;
                             if (capped <= 0) return null;

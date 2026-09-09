@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   claim: vi.fn(),
-  toast: { success: vi.fn(), error: vi.fn() },
+  markShown: vi.fn(),
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toast }));
@@ -30,6 +31,7 @@ vi.mock('../../src/services/DailyBonusService', async () => {
     dailyBonusService: {
       getStatus: mocks.getStatus,
       claim: mocks.claim,
+      markShown: mocks.markShown,
       requestIdFor: () => 'req',
     },
   };
@@ -64,6 +66,7 @@ const status = {
   multiplier: 1,
   is_vip: false,
   claimed_today: false,
+  shown_today: false,
   unclaimed: 2,
   tiles: [
     tile({ slot: 1 }),
@@ -111,6 +114,8 @@ describe('DailyBonusSheet', () => {
   beforeEach(() => {
     mocks.getStatus.mockReset();
     mocks.claim.mockReset();
+    mocks.markShown.mockReset();
+    mocks.markShown.mockResolvedValue(undefined);
     mocks.toast.success.mockReset();
     mocks.toast.error.mockReset();
     mocks.getStatus.mockResolvedValue(status);
@@ -226,5 +231,17 @@ describe('DailyBonusSheet', () => {
     expect(
       await screen.findByText('The Daily Bonus Is Not Available On This Account.')
     ).toBeTruthy();
+  });
+
+  it('tells the server the sheet was shown, once, and not when today was already shown elsewhere', async () => {
+    render(<DailyBonusSheet mode="inline" />);
+    await screen.findByText('+5');
+    await waitFor(() => expect(mocks.markShown).toHaveBeenCalledTimes(1));
+
+    mocks.markShown.mockClear();
+    mocks.getStatus.mockResolvedValue({ ...status, shown_today: true });
+    render(<DailyBonusSheet mode="inline" />);
+    await waitFor(() => expect(screen.getAllByText('+5').length).toBeGreaterThan(1));
+    expect(mocks.markShown).not.toHaveBeenCalled();
   });
 });

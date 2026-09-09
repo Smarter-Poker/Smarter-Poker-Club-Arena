@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-dailybonus/fix/daily-bonus-audit",
+  "functions": ["fn_ca_daily_bonus_mark_shown"],
+  "columns": { "ca_daily_bonus_days": ["sheet_shown_at"] }
+}

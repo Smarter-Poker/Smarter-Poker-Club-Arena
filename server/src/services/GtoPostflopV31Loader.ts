@@ -7,12 +7,11 @@
  * not read: it has no source seal and cannot distinguish response nodes.
  *
  * Paged at 500 rows so no single response carries an unbounded amount of
- * jsonb, and refreshed every 6 hours so the ongoing V31 aggregation reaches
- * the fleet without a deploy. The live worker explicitly awaits the initial
- * load; this module's timer owns periodic refresh plus bounded failed-load
- * recovery. That refresh matters far more here than it does for V30: this
- * table is built from empty over days, so nearly every refresh is delivering
- * cells that did not exist before.
+ * jsonb, and refreshed every 6 hours so a newly promoted immutable dataset
+ * reaches the fleet without an engine deploy. The live worker explicitly
+ * awaits the initial load; this module's timer owns periodic refresh plus
+ * bounded failed-load recovery. Evaluating and candidate datasets remain
+ * physically unavailable to this path until PostgreSQL promotes one active.
  *
  * COLLECT-THEN-SWAP, deliberately: every page is fetched and every row is
  * revalidated before the store is touched. A failed or partial load leaves

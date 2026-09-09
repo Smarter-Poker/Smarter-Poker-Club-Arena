@@ -134,7 +134,34 @@ export function handleMetrics(res: ServerResponse, deps: HealthDeps): void {
   // registry's exposition text. Default OFF keeps the response byte-for-byte
   // identical to the pre-wiring behavior.
   if (ENGINE_METRICS_ENABLED) {
-    body += '\n' + metricsRegistry.renderPrometheus();
+    /* Drop any family the always-on text already carries (2026-09-09). Some
+       instruments moved to `alwaysOnRegistry` because an alert reads them,
+       and the default registry still declares its own of the same name -
+       emitting both would give Prometheus one metric name with two HELP/TYPE
+       headers, which it rejects for the whole scrape. */
+    const already = new Set(
+      body
+        .split('\n')
+        .filter((l) => l.startsWith('# TYPE '))
+        .map((l) => l.split(' ')[2])
+    );
+    const gated = metricsRegistry
+      .renderPrometheus()
+      .split('\n')
+      .reduce<{ out: string[]; skip: boolean }>(
+        (acc, line) => {
+          if (line.startsWith('# HELP ') || line.startsWith('# TYPE ')) {
+            acc.skip = already.has(line.split(' ')[2]);
+          } else if (line && !line.startsWith('#')) {
+            const name = line.split(/[{ ]/)[0];
+            if (already.has(name)) acc.skip = true;
+          }
+          if (!acc.skip) acc.out.push(line);
+          return acc;
+        },
+        { out: [], skip: false }
+      ).out;
+    body += '\n' + gated.join('\n');
   }
   // Note: original index.ts does NOT attach CORS_HEADERS to /metrics — keep it
   // that way for byte-identical behavior. Prometheus scrapers don't need CORS.

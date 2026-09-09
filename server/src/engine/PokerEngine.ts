@@ -435,13 +435,9 @@ export function describeHand(hand: EvaluatedHand): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function evaluateOmahaHand(holeCards: Card[], communityCards: Card[]): EvaluatedHand {
-  if (holeCards.length < 4) {
-    if (holeCards.length >= 2 && communityCards.length >= 3) {
-      return evaluateHand(holeCards.slice(0, 2), communityCards.slice(0, 5));
-    }
-    return { ranking: 1, name: 'High Card', cards: [...holeCards, ...communityCards], kickers: [] };
-  }
-
+  // This selection utility can receive a subset of known hole cards. Even
+  // then Omaha always selects exactly two holes and three board cards; it
+  // must never fall back to Holdem or discard the third available hole.
   const holeCombos = getCombinations(holeCards, 2);
   const boardCombos = getCombinations(communityCards, 3);
   let bestHand: EvaluatedHand | null = null;
@@ -466,7 +462,7 @@ export function evaluateOmahaLowHand(
   holeCards: Card[],
   communityCards: Card[]
 ): EvaluatedHand | null {
-  if (holeCards.length < 4) return null;
+  if (holeCards.length < 2 || communityCards.length < 3) return null;
 
   const holeCombos = getCombinations(holeCards, 2);
   const boardCombos = getCombinations(communityCards, 3);

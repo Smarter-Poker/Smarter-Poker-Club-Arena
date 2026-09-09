@@ -297,7 +297,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
        * 10000` with `rgba(0,0,0,0.85)` and an 8px backdrop blur over the whole
        * viewport. So the player got a dead button, a locked body scroll
        * (AvatarGallery sets `overflow: hidden`) and a focus trap inside a dialog
-       * they could not see. That is the whole "Club Arena is blocking play"
+       * they could not see. That is the whole "Poker Arena is blocking play"
        * report.
        *
        * Raising the gallery instead would have been the wrong end: Toast sits at
@@ -322,8 +322,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
             <div className={styles.content}>
               <p className={styles.intro}>
-                Welcome To Club Arena! Before You Hit The Tables, Please Choose Your Poker Alias And
-                Avatar.
+                Welcome To Poker Arena! Before You Hit The Tables, Please Choose Your Poker Alias
+                And Avatar.
               </p>
 
               <div className={styles.avatarSection}>

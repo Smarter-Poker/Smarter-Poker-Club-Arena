@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/cowork-ads3/feat/image-ad-rotator. Applied to production as migration 20260903184811_an_advert_is_a_picture_now: per-placement creative, viewable event, resolver returns placement_id / advertiser_kind / advertiser_name.",
+  "functions": ["fn_resolve_ads"],
+  "columns": { "ad_placement": ["image_url"] }
+}

@@ -114,6 +114,27 @@ export async function getSeatCashoutReceipt(
     : confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
 }
 
+/** Only the original authenticated administrator may replay retained authority. */
+export async function getAdminSeatCashoutReceipt(
+  actorId: string,
+  userId: string,
+  tableId: string,
+  seatNumber: number,
+  occupancyId: string
+): Promise<SeatCashoutReceipt | null> {
+  const { data, error } = await supabase.rpc('fn_get_admin_seat_cashout_receipt', {
+    p_actor_id: actorId,
+    p_user_id: userId,
+    p_table_id: tableId,
+    p_seat_number: seatNumber,
+    p_occupancy_id: occupancyId,
+  });
+  if (error) throw new Error(String(error.message || 'Admin cashout outcome lookup failed'));
+  return data === null
+    ? null
+    : confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
+}
+
 export interface AdminDepartureAuthority {
   actorId: string;
   clubId: string;

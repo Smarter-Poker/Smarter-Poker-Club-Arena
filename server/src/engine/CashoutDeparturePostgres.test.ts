@@ -598,6 +598,72 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   const requestAdmin = (occupancy: string, actor = ACTOR, reason = 'house decision') =>
     sql(`SELECT fn_request_admin_seat_departure('${USER}','${TABLE}',2,
       '${occupancy}','${actor}','${CLUB}','${reason}')`);
+
+  const adminReceipt = (occupancy: string, actor = ACTOR, table = TABLE, seat = 2) =>
+    sql(
+      `SELECT coalesce(fn_get_admin_seat_cashout_receipt('${actor}','${USER}','${table}',${seat},'${occupancy}'),'null'::jsonb)`
+    );
+  it('replays only the original admin outcome after table and profile deletion', () => {
+    const occupancy = seedOccupancy();
+    requestAdmin(occupancy);
+    expect(adminReceipt(occupancy)).toBe(null);
+    const paid = boundCashout(occupancy);
+    sql('DELETE FROM profiles; DELETE FROM table_seats; DELETE FROM tables');
+    expect(adminReceipt(occupancy)).toEqual(paid);
+    expect(adminReceipt(occupancy, USER)).toBe(null);
+    expect(adminReceipt(occupancy, ACTOR, CLUB)).toBe(null);
+    expect(adminReceipt(occupancy, ACTOR, TABLE, 3)).toBe(null);
+    expect(sql('SELECT count(*) FROM wallet_transactions')).toBe(1);
+  });
+  it('does not expose a voluntary cashout as an admin receipt', () => {
+    const occupancy = seedOccupancy();
+    boundCashout(occupancy);
+    expect(adminReceipt(occupancy)).toBe(null);
+  });
+  it.each(['anon', 'authenticated'])('refuses %s direct admin outcome lookup', (role) => {
+    const occupancy = seedOccupancy();
+    requestAdmin(occupancy);
+    boundCashout(occupancy);
+    expect(() =>
+      sql(`BEGIN; SET LOCAL ROLE ${role};
+      SELECT fn_get_admin_seat_cashout_receipt('${ACTOR}','${USER}','${TABLE}',2,'${occupancy}'); COMMIT;`)
+    ).toThrow(/permission denied/);
+  });
+  it('requires engine authority even for the read-only retained outcome', () => {
+    const occupancy = seedOccupancy();
+    expect(() =>
+      sql(`BEGIN; SET LOCAL test.is_engine='false';
+      SELECT fn_get_admin_seat_cashout_receipt('${ACTOR}','${USER}','${TABLE}',2,'${occupancy}'); COMMIT;`)
+    ).toThrow(/Engine authority required/);
+  });
+  it('classifies admin departure from durable authority and restores the prior marker', () => {
+    const occupancy = seedOccupancy();
+    requestAdmin(occupancy);
+    sql(`BEGIN; SET LOCAL app.cash_exit_authority='prior';
+      SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${occupancy}',NULL);
+      DO $proof$ BEGIN
+        IF current_setting('app.cash_exit_authority')<>'prior' THEN
+          RAISE EXCEPTION 'prior authority was not restored';
+        END IF;
+      END $proof$;
+      COMMIT;`);
+    // The next occupancy must not inherit the restored caller's admin marker.
+    sql(`BEGIN;
+      UPDATE table_seats SET left_at=NULL,stack=40;
+      SET LOCAL app.cash_exit_authority='club_admin';
+      DO $proof$ DECLARE result jsonb; BEGIN
+        SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,occupancy_id,'forced')
+          INTO result FROM table_seats;
+        IF current_setting('app.cash_exit_authority')<>'club_admin' THEN
+          RAISE EXCEPTION 'prior authority was not restored';
+        END IF;
+      END $proof$;
+      COMMIT;`);
+    expect(sql('SELECT jsonb_agg(reason ORDER BY stack) FROM session_closes')).toEqual([
+      'kicked',
+      'system',
+    ]);
+  });
   it('retains original administrative authority and moderation history with the departure', () => {
     const occupancy = seedOccupancy();
     expect(requestAdmin(occupancy)).toMatchObject({

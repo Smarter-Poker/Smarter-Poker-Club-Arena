@@ -1,4 +1,8 @@
-import { getSeatCashoutReceipt, type AdminDepartureAuthority } from '../services/supabase/seats.js';
+import {
+  getAdminSeatCashoutReceipt,
+  getSeatCashoutReceipt,
+  type AdminDepartureAuthority,
+} from '../services/supabase/seats.js';
 /**
  * Admin handlers — Bible V8 §6.17: pause / resume table dealing.
  *
@@ -50,11 +54,12 @@ export interface AdminDeps {
  */
 async function authorizeTableAdmin(
   req: IncomingMessage,
-  tableId: string | undefined
+  tableId: string | undefined,
+  verifiedAuth?: { userId: string }
 ): Promise<
   { ok: true; userId: string; clubId: string } | { ok: false; status: number; error: string }
 > {
-  const auth = await authenticateRequest(req);
+  const auth = verifiedAuth ?? (await authenticateRequest(req));
   if (!auth) return { ok: false, status: 401, error: 'Authentication required' };
   if (!tableId) return { ok: false, status: 400, error: 'Missing tableId' };
 
@@ -247,8 +252,31 @@ export async function handleAdminKick(
     const identity = occupancyBound
       ? { protocol: 'seat-occupancy-v1', occupancyId, seatNumber }
       : {};
-    // Resolve caller + verify club-admin role (owner / admin / super_agent).
-    const authz = await authorizeTableAdmin(req, tableId);
+    const verifiedAuth = await authenticateRequest(req);
+    if (!verifiedAuth)
+      return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+    if (occupancyBound) {
+      // A committed original action remains replayable after table deletion.
+      // This lookup cannot authorize a new action or another actor's receipt.
+      const previous = await getAdminSeatCashoutReceipt(
+        verifiedAuth.userId,
+        targetUserId,
+        tableId,
+        seatNumber!,
+        occupancyId!
+      );
+      if (previous)
+        return sendJSON(res, 200, {
+          ...identity,
+          success: true,
+          immediate: true,
+          cashout: previous,
+          kicked_by: verifiedAuth.userId,
+          target_user_id: targetUserId,
+        });
+    }
+    // Every new action still requires current club-admin authorization.
+    const authz = await authorizeTableAdmin(req, tableId, verifiedAuth);
     if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const callerUserId = authz.userId;
     const clubId = authz.clubId;

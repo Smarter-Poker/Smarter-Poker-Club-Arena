@@ -8,6 +8,7 @@ import {
   markSeatAsLeft,
   processLeavePending,
   requestSeatDeparture,
+  getAdminSeatCashoutReceipt,
 } from './seats.js';
 const occupancyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const receipt = {
@@ -229,5 +230,40 @@ describe('durable departure request receipts', () => {
     await expect(
       requestSeatDeparture('player', 'table', 2, occupancyId, 'voluntary')
     ).rejects.toThrow('transaction rejected');
+  });
+});
+
+describe('original administrative outcome service boundary', () => {
+  it('sends verified actor and full original scope to the read-only RPC', async () => {
+    mock.rpc.mockResolvedValue({ data: receipt, error: null });
+    expect(await getAdminSeatCashoutReceipt('actor', 'player', 'table', 2, occupancyId)).toEqual(
+      receipt
+    );
+    expect(mock.rpc).toHaveBeenCalledWith('fn_get_admin_seat_cashout_receipt', {
+      p_actor_id: 'actor',
+      p_user_id: 'player',
+      p_table_id: 'table',
+      p_seat_number: 2,
+      p_occupancy_id: occupancyId,
+    });
+  });
+  it('returns null only for a confirmed absent retained outcome', async () => {
+    mock.rpc.mockResolvedValue({ data: null, error: null });
+    expect(await getAdminSeatCashoutReceipt('actor', 'player', 'table', 2, occupancyId)).toBe(null);
+  });
+  it.each(invalid.filter((value) => value !== null))(
+    'rejects malformed original outcome %#',
+    async (data) => {
+      mock.rpc.mockResolvedValue({ data, error: null });
+      await expect(
+        getAdminSeatCashoutReceipt('actor', 'player', 'table', 2, occupancyId)
+      ).rejects.toThrow();
+    }
+  );
+  it('propagates lookup failure rather than authorizing a replacement request', async () => {
+    mock.rpc.mockResolvedValue({ data: null, error: { message: 'connection lost' } });
+    await expect(
+      getAdminSeatCashoutReceipt('actor', 'player', 'table', 2, occupancyId)
+    ).rejects.toThrow('connection lost');
   });
 });

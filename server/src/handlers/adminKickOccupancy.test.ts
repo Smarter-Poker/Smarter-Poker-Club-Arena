@@ -4,10 +4,13 @@ vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn() }));
 vi.mock('../http/body.js', () => ({ readBody: vi.fn() }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 vi.mock('../services/supabase.js', () => ({ supabase: { from: mocks.from } }));
-vi.mock('../services/supabase/seats.js', () => ({ getSeatCashoutReceipt: vi.fn() }));
+vi.mock('../services/supabase/seats.js', () => ({
+  getSeatCashoutReceipt: vi.fn(),
+  getAdminSeatCashoutReceipt: vi.fn(),
+}));
 import { authenticateRequest } from '../http/auth.js';
 import { readBody } from '../http/body.js';
-import { getSeatCashoutReceipt } from '../services/supabase/seats.js';
+import { getSeatCashoutReceipt, getAdminSeatCashoutReceipt } from '../services/supabase/seats.js';
 import { handleAdminKickOccupancy } from './admin.js';
 import { mockReq, mockRes, parseJson } from './_testHelpers.js';
 const tableId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -34,6 +37,7 @@ beforeEach(() => {
   vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'admin' });
   vi.mocked(readBody).mockResolvedValue(JSON.stringify(input));
   vi.mocked(getSeatCashoutReceipt).mockResolvedValue(null);
+  vi.mocked(getAdminSeatCashoutReceipt).mockResolvedValue(null);
   leaveTable.mockResolvedValue({ success: true, immediate: false });
   getTableEngine.mockReturnValue({ leaveTable });
   mocks.insert.mockResolvedValue({ error: null });
@@ -54,10 +58,38 @@ async function request() {
   return { status: captured.statusCode, body: parseJson(captured) };
 }
 describe('occupancy-bound administrative removal', () => {
+  it('replays the original administrator outcome after the table has disappeared', async () => {
+    vi.mocked(getAdminSeatCashoutReceipt).mockResolvedValue(receipt);
+    mocks.from.mockImplementation(() => {
+      throw new Error('table no longer exists');
+    });
+    expect(await request()).toMatchObject({
+      status: 200,
+      body: { success: true, cashout: receipt, kicked_by: 'admin' },
+    });
+    expect(getAdminSeatCashoutReceipt).toHaveBeenCalledWith(
+      'admin',
+      userId,
+      tableId,
+      2,
+      occupancyId
+    );
+    expect(authenticateRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(leaveTable).not.toHaveBeenCalled();
+  });
+  it('does not dispatch if original-authority lookup is unavailable', async () => {
+    vi.mocked(getAdminSeatCashoutReceipt).mockRejectedValue(new Error('database unavailable'));
+    expect((await request()).status).toBe(500);
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(leaveTable).not.toHaveBeenCalled();
+  });
+
   it('requires authentication before reading an old financial receipt', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue(null);
     expect((await request()).status).toBe(401);
     expect(getSeatCashoutReceipt).not.toHaveBeenCalled();
+    expect(getAdminSeatCashoutReceipt).not.toHaveBeenCalled();
     expect(leaveTable).not.toHaveBeenCalled();
   });
   it('requires admin authority even when an original receipt exists', async () => {

@@ -2,7 +2,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createServer, type Server } from 'node:http';
 const mock = vi.hoisted(() => ({ from: vi.fn(), receipt: vi.fn(), engine: vi.fn() }));
 vi.mock('../services/supabase.js', () => ({ supabase: { from: mock.from } }));
-vi.mock('../services/supabase/seats.js', () => ({ getSeatCashoutReceipt: mock.receipt }));
+vi.mock('../services/supabase/seats.js', () => ({
+  getSeatCashoutReceipt: mock.receipt,
+  getAdminSeatCashoutReceipt: vi.fn().mockResolvedValue(null),
+}));
 vi.mock('../http/auth.js', () => ({
   authenticateRequest: async (req: any) =>
     req.headers.authorization === 'Bearer test-admin'

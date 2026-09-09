@@ -119,12 +119,14 @@ describe('seat-first unregistration follows actual start truth', () => {
     expect(schemaFragment.columns?.tournament_unregistration_receipts).toEqual(['start_authority']);
   });
 
-  it('keeps wallet and ticket provenance inside the same atomic refund core', () => {
+  it('keeps funded cash and historical ticket provenance in the atomic refund core', () => {
     expect(unregister).toContain("e.entitlement_kind='wallet_charge'");
     expect(unregister).toContain("e.entitlement_kind IN ('satellite_seat','tournament_ticket')");
     expect(unregister).toContain('v_ent.refund_wallet_club_id');
-    expect(unregister).toContain('public.fn_ca_return_satellite_entitlement_as_ticket(');
-    expect(receipt).toContain("'wallet_chips_from_satellite_entitlements',0");
+    expect(unregister).not.toContain('public.fn_ca_return_satellite_entitlement_as_ticket(');
+    expect(receipt).toContain("'wallet_chips_from_satellite_entitlements',(");
+    expect(receipt).toContain("e.entitlement_kind IN ('satellite_seat','tournament_ticket')");
+    expect(receipt).toContain('sum(tr.amount_paid_now)');
     expect(unregister).toContain('INSERT INTO public.tournament_unregistration_receipts(');
     expect(unregister).toContain('v_start_authority,v_unregistered_at');
   });

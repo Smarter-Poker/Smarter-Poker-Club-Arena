@@ -1,0 +1,54 @@
+# Phase 11: Tournament Lobby Snapshot Recovery
+
+Scope: The existing TournamentDetails page, shared by the routed tournament
+lobby and embedded tournament tabs. No engine, accounting, schema, scheduler,
+credential, or notification-delivery changes.
+
+## Reproduced Failures
+
+The actual mounted page failed 11 targeted cases before the repair: no read on
+SUBSCRIBED, ten reads for a pending refresh plus a burst, an old tournament
+response overwriting a new scope, failed player reads clearing confirmed rows,
+initial failure rendering an empty field, zero chips replaced by starting chips,
+unrelated tournament invalidations issuing reads, failed scope transitions
+retaining the previous event, retired channel callbacks changing the new event,
+and an older snapshot overwriting a live entry update. The SUBSCRIBED case ran
+for both routed and embedded mounts.
+
+## Repair And Invocation
+
+- Tournament/account effects create and retire the snapshot owner. Every read
+  verifies that owner before applying any result. Registration UI completions
+  use the same boundary; mutation authorities and request identities are unchanged.
+- Mount, channel SUBSCRIBED, matching TOURNAMENT_UPDATED, visibility/focus, the
+  existing watchdog, and Try Again all invoke loadTournament. A pending read
+  retains one follow-up invalidation instead of starting overlapping requests.
+- Existing tournament, player, and table callbacks apply their patches immediately.
+  Patches arriving during a read are replayed on its result, without starting
+  a full-field query for every live update.
+- The service's explicit throwOnError read option separates failed reads from
+  verified missing rows. Confirmed entries/tables survive refresh errors;
+  initial failure and retry have an explicit UI state. Zero chips stay zero.
+- Navigation waits for the current scope's complete snapshot. The existing
+  pre-seat timing and fallback polling cadence remain unchanged.
+
+## Verification
+
+- Before repair: 11 targeted mounted-page failures.
+- Final focused pass: 193 tests across tournamentSnapshotRecovery (14),
+  TournamentService (85), tourneyUxSweep20260825 (74), and
+  the-field-is-seated-before-the-clock (20).
+- The final mounted tests use the real useMasterBusSubscription hook, including
+  its payload contract. They also verify account retirement, retry recovery,
+  purchased-seat navigation after a delayed table read, and no extra read for
+  an in-flight live entry patch.
+- TypeScript: npx tsc --noEmit passed. The worktree's dependencies were restored
+  from the existing lockfile with npm ci; no dependency versions changed.
+- Production build: npm run build passed; Vite completed in 15.52 seconds.
+- Controlled Chrome opened a running tournament read-only; this is a baseline
+  rendered-page check, before publication of this repair.
+- CI, main adoption, and public asset verification are pending.
+
+Physical iPad/PWA acceptance remains open. A Chrome page or a server metric is
+not physical-device acceptance. No live seats, registrations, balances, or push
+notifications are modified as test probes.

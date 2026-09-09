@@ -1,6 +1,6 @@
 # Phase 2 Final Cashout Retirement
 
-Status: applied and application-role privileges verified; final migration-file publication pending.
+Status: applied, verified, automatically merged and published.
 
 The previous retirement draft revoked browser access to the canonical cashout and the old admin RPC, but left SECURITY DEFINER aliases callable. The final stage revokes PUBLIC, anon, authenticated and service_role access to all four unbound entrypoints: atomic_seat_cashout_locked, atomic_table_cashout, player_leave_table and fn_admin_kick_player. The occupancy-bound engine function continues to invoke the private primitive as its owner.
 
@@ -18,3 +18,7 @@ On September 9, 2026 at 21:02 UTC, compatible engine 561eaa523829ef8ecbd6b11fffe
 The exact staged SQL, SHA256 5ecc6d171b53f019f069e5463099d4ab191352ef73edd55a4b4b5ca977ce49ed, was copied to the reserved migration 20260909210038 and applied once through Supabase MCP as live version 20260909210206. All four unbound functions now deny anon, authenticated and service_role; the bound function denies browsers and retains service execution. No money test or balance correction was performed. Existing local PostgreSQL tests had already applied this identical SQL twice and proved bound payouts and retired-role denial.
 
 The earlier paragraphs describe the historical staged checkpoint. Migration and evidence publication are still pending. Overall Phase 3 remains open.
+
+## Final Acceptance Evidence
+
+PR 4023 automatically merged as ea1fbbdb9217a2b04054b1c3a1dc189c5fdb7ac3. Required checks passed; one redundant Agent Open PR run was canceled after the PR existed. Both public and origin build-info serve that exact merge, built 21:26:08 UTC by publisher 34406655838. The compatible engine completed maintenance with 177/177 tables resumed. Read-only verification found 53 ordinary cashouts after retirement, 3,211 move receipts with exactly two balanced legs each, zero pending unbound moves, zero active missing occupancy/scope keys and zero application-executable retired aliases. All 13 acceptance evidence paths are present. No historical incident or later phase is closed by this result.

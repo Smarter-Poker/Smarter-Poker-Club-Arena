@@ -57,7 +57,7 @@ watchdog was the one dispatcher in the repo without one.
 
 ## What did not change
 
-- `auto-deploy-hetzner.yml`'s concurrency. Cancelling a superseded *pending*
+- `auto-deploy-hetzner.yml`'s concurrency. Cancelling a superseded _pending_
   run is right. The bug was the dispatcher, not the group.
 - No `force: true` was dispatched at any point. The engine catches up inside
   the next announced break, on tables with no cards in the air, as designed.

@@ -19,6 +19,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
+import { uuid } from '../utils/uuid';
 import { useUserStore } from '../stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -300,7 +301,7 @@ export const WalletService = {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'X-Idempotency-Key': crypto.randomUUID(),
+        'X-Idempotency-Key': uuid(),
       },
       body: JSON.stringify({
         clubId: resolvedClubId,
@@ -544,7 +545,7 @@ export const WalletService = {
     if (!club) throw new Error('Club not found');
 
     // One payment identity survives every network retry, including a lost commit response.
-    const operationId = crypto.randomUUID();
+    const operationId = uuid();
     const { data, error } = await retryAsync(
       () =>
         supabase.rpc('fn_promo_disburse', {

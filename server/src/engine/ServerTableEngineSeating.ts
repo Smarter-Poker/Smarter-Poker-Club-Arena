@@ -11,6 +11,7 @@
 import { supabase, atomicCashout, atomicCashoutVoluntary } from '../services/supabase.js';
 import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { pushFinancialUpdate } from '../services/financialPush.js';
 import { randomUUID } from 'node:crypto';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
@@ -98,7 +99,19 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const pending = this.pendingAddOns.get(userId) || 0;
     const effectiveStack = player.stack + pending;
     const headroom = Math.max(0, maxBuyIn - effectiveStack);
-    const applied = Math.min(amount, headroom);
+    /* TO THE CENT (2026-09-08 sweep). `maxBuyIn - stack` is a float
+       subtraction (50 - 33.33 = 16.670000000000002), and this number was
+       sent to atomic_table_addon verbatim, which stores it verbatim in
+       table_pending_addons.amount - 49 such rows on production, ~2 a day.
+       resolve_pending_addon returns ROUND(applied, 2) and ROUND(amount -
+       applied, 2), and the post-commit obligation check (20260908175113)
+       refuses a receipt where applied + refunded <> amount. An unrounded
+       amount therefore fails that check DETERMINISTICALLY, the obligation
+       transaction rolls back, settlement retries until the lease dies, and
+       the table never deals again. A chip is two decimal places, everywhere
+       it is stored (#3358); this is the one place a mid-hand add-on became
+       one that was not. */
+    const applied = Math.round(Math.min(amount, headroom) * 100) / 100;
     if (applied <= 0) {
       return { success: false, error: 'Already at the maximum buy-in for this table' };
     }
@@ -315,13 +328,26 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         const applied = Number(row.applied ?? 0);
         const refunded = Number(row.refunded ?? 0);
         if (typeof row.user_id === 'string') {
-          this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded);
+          this.tellPlayerAddOnAdjusted(
+            row.user_id,
+            row.kind ?? 'addon',
+            applied,
+            refunded,
+            typeof row.id === 'string' ? row.id : null
+          );
         }
         if (!(applied > 0) || !Number.isFinite(applied) || typeof row.user_id !== 'string') {
           continue;
         }
         delivered++;
         const player = players.find((candidate) => candidate.user_id === row.user_id);
+        // The capped remainder went back to the wallet: tell the wallet screen.
+        pushFinancialUpdate(row.user_id, {
+          clubId: this.tableInfo?.club_id ?? null,
+          tableId: this.tableId,
+          ledgerEntry:
+            refunded > 0 ? { direction: 'in', amount: refunded, kind: 'addon_refund' } : null,
+        });
         this.hub?.emitEvent(this.tableId, {
           type: 'add_on_applied',
           table_id: this.tableId,
@@ -401,7 +427,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       const refunded = Number(result?.refunded ?? 0);
       const wasResolvedByUs = result?.was_resolved !== false;
       if (wasResolvedByUs) {
-        this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded);
+        this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded, row.id);
       }
 
       // Mirror the DB's decision into the live in-memory stack. The RPC has
@@ -477,22 +503,181 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     userId: string,
     kind: string,
     applied: number,
-    refunded: number
+    refunded: number,
+    pendingId: string | null = null
   ): void {
-    // The hub type carries sendToUser; a test double that only stubs
-    // emitEvent must not turn a refund notice into a thrown settlement.
     if (!this.hub || typeof this.hub.sendToUser !== 'function' || !userId) return;
     if (!(refunded > 0) || !Number.isFinite(refunded)) return;
     const safeApplied = Number.isFinite(applied) && applied > 0 ? applied : 0;
-    this.hub.sendToUser(this.tableId, userId, {
+    const frame = {
       kind: 'add_on_adjusted',
       addon_kind: kind,
+      // The ledger row id: the client de-duplicates on it, so a RESYNC
+      // re-send (below) or a replayed settlement can never apply the same
+      // correction twice.
+      pending_id: pendingId,
       requested: Math.round((safeApplied + refunded) * 100) / 100,
       applied: Math.round(safeApplied * 100) / 100,
       refunded: Math.round(refunded * 100) / 100,
       max_buy_in: this.getMaxBuyIn(),
       hand_number: this.handCount,
-    });
+    };
+    /* Retained for the player's next RESYNC. Settlement is a likely moment to
+       be between reconnects, and sendToUser to a player with no open socket
+       delivers to nobody; without this the correction is simply lost and the
+       client's balance stays wrong until an absolute read. One frame per
+       player is enough: it is the newest adjustment that matters. */
+    const delivered = this.hub.sendToUser(this.tableId, userId, frame);
+    /* Retained ONLY while undelivered. `onResync` fires on EVERY connect
+       and mux subscribe, not just a seq-gap RESYNC, so a frame kept after
+       delivery would greet this player on every reload until the hourly
+       restart - and a freshly loaded client, whose balance was just read
+       absolutely, would credit the refund a second time. Delivered once to
+       an open socket is delivered; the same-session dedupe covers a later
+       gap-RESYNC. */
+    if (delivered > 0) this.lastAddOnAdjustedByUser.delete(userId);
+    else this.lastAddOnAdjustedByUser.set(userId, frame);
+  }
+
+  /** An add_on_adjusted frame that found no open socket, held for the
+   *  player's next connect. Delivered frames are never kept. */
+  protected lastAddOnAdjustedByUser = new Map<string, Record<string, unknown>>();
+
+  /** RESYNC / reconnect: deliver a held add-on adjustment, once. */
+  public rePushAddOnAdjusted(userId: string): void {
+    const frame = this.lastAddOnAdjustedByUser.get(userId);
+    if (!frame || !this.hub || typeof this.hub.sendToUser !== 'function') return;
+    if (this.hub.sendToUser(this.tableId, userId, frame) > 0) {
+      this.lastAddOnAdjustedByUser.delete(userId);
+    }
+  }
+
+  /**
+   * ═══ THE ROWS THE HAND'S ENVELOPE RESOLVED ARE ANNOUNCED (2026-09-08) ══════
+   *
+   * On the verified lease path (every production cash engine) a mid-hand
+   * add-on is FROZEN into the hand's post-commit envelope at commit time and
+   * resolved inside `fn_ca_process_hand_post_commit_obligations`, which
+   * returns only a COUNT. `processPendingAddOns` - the one place that emits
+   * the table-wide `add_on_applied` bubble (Dan 2026-09-04, "HAS ADDED ON FOR
+   * XX.XX") and the private `add_on_adjusted` frame - runs on that path only
+   * for UNBOUND rows before the next deal. So for the very case those two
+   * exist for, the mid-hand add-on that lands with the pot, neither fired.
+   *
+   * This reads back what the envelope resolved and says it: the bubble for
+   * every row that landed chips, the private frame for every row that was
+   * reduced. Then the in-memory cap cache is rebuilt from the rows still
+   * unresolved, because the landed rows are now IN `player.stack` (settlement
+   * refreshed it from the seat) and counting them a second time from the map
+   * refused legitimate between-hands top-ups as "already at the maximum".
+   *
+   * Best effort and presentation only: the money moved in the RPC. A failed
+   * read here is reported, never thrown - a bubble is not worth a restart.
+   */
+  protected async announceEnvelopeResolvedAddOns(
+    handId: string,
+    players: SeatedPlayer[],
+    /** The obligation RPC's own count of rows it resolved (`pending_addons`
+     *  in its receipt). 0 means nothing to read back; undefined (an older
+     *  receipt shape) means read to find out. */
+    resolvedCount?: number
+  ): Promise<void> {
+    // A tournament envelope carries `pending_addons: null` by construction;
+    // and 99.6% of cash hands carry none. Do not spend a read on the
+    // settlement critical path to learn what the receipt already said.
+    if (this.isTournamentTable()) return;
+    if (resolvedCount === 0 && this.pendingAddOns.size === 0) return;
+    try {
+      let ids: string[] = [];
+      if (resolvedCount === undefined || resolvedCount > 0) {
+        const { data: commit, error: commitErr } = await supabase
+          .from('hand_atomic_commits')
+          .select('ids:post_commit_payload->pending_addons->ids')
+          .eq('hand_id', handId)
+          .maybeSingle();
+        if (!this.lifecycleCanMutate()) return;
+        if (commitErr) throw commitErr;
+        const rawIds = (commit as { ids?: unknown } | null)?.ids;
+        ids = Array.isArray(rawIds)
+          ? (rawIds.filter((v): v is string => typeof v === 'string') as string[])
+          : [];
+      }
+      if (ids.length > 0) {
+        const { data: rows, error: rowsErr } = await supabase
+          .from('table_pending_addons')
+          .select('id, user_id, kind, amount, applied_to_stack, refunded, resolved_at')
+          .in('id', ids);
+        if (!this.lifecycleCanMutate()) return;
+        if (rowsErr) throw rowsErr;
+        for (const row of (rows ?? []) as Array<{
+          id: string;
+          user_id: string;
+          kind?: string | null;
+          amount: number | string;
+          applied_to_stack: number | string | null;
+          refunded: number | string | null;
+          resolved_at: string | null;
+        }>) {
+          if (!row.resolved_at) continue;
+          const applied = Number(row.applied_to_stack ?? 0);
+          const refunded = Number(row.refunded ?? 0);
+          const kind = row.kind ?? 'addon';
+          const player = players.find((p) => p.user_id === row.user_id);
+          if (applied > 0 && Number.isFinite(applied)) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'add_on_applied',
+              table_id: this.tableId,
+              seat: player?.seat_number ?? null,
+              user_id: row.user_id,
+              amount: applied,
+              stack: player?.stack ?? null,
+              kind,
+              timestamp: Date.now(),
+            });
+          }
+          this.tellPlayerAddOnAdjusted(row.user_id, kind, applied, refunded, row.id);
+        }
+      }
+      // Rebuild the cap cache from what is STILL owed: the frozen rows landed.
+      if (ids.length > 0 || this.pendingAddOns.size > 0) {
+        await this.rebuildPendingAddOnCache();
+      }
+    } catch (err) {
+      reportError(err, `ServerTableEngine.${this.tableId}.envelope_addon_announce_failed`, {
+        handId,
+      });
+    }
+  }
+
+  /**
+   * The cap cache, from the ledger. Called after the envelope landed its rows
+   * (they are in `player.stack` now) and on engine start (a restart with a
+   * frozen-but-unresolved row otherwise sized the next between-hands top-up
+   * as if the queued one did not exist - the wrong add-on adjusted, in the
+   * restart window). A concurrent mid-hand addChips bumps the sweep
+   * generation when it writes the map; if that happened under this read,
+   * the read is stale and the sweep it asked for will rebuild instead.
+   */
+  protected async rebuildPendingAddOnCache(): Promise<void> {
+    const genAtRead = this.pendingAddOnSweepGen;
+    const { data: open, error: openErr } = await supabase
+      .from('table_pending_addons')
+      .select('user_id, amount')
+      .eq('table_id', this.tableId)
+      .is('resolved_at', null);
+    if (!this.lifecycleCanMutate()) return;
+    if (openErr) throw openErr;
+    if (this.pendingAddOnSweepGen !== genAtRead) return;
+    this.pendingAddOns.clear();
+    for (const row of (open ?? []) as Array<{ user_id: string; amount: number | string }>) {
+      const amt = Number(row.amount);
+      if (!(amt > 0)) continue;
+      this.pendingAddOns.set(
+        row.user_id,
+        Math.round(((this.pendingAddOns.get(row.user_id) || 0) + amt) * 100) / 100
+      );
+    }
+    if (this.pendingAddOns.size > 0) this.requestPendingAddOnSweep();
   }
 
   /**
@@ -507,6 +692,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   protected async resolveOrphanedAddOns(): Promise<void> {
     try {
       await this.processPendingAddOns(this.seatedPlayers);
+      // What the sweep could not resolve (rows frozen in a hand's envelope
+      // that has not completed yet) must still count against the cap.
+      await this.rebuildPendingAddOnCache();
     } catch (err) {
       reportError(err, `ServerTableEngine.${this.tableId}.orphaned_addon_sweep_failed`);
     }
@@ -707,7 +895,8 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // and is only cleared when the next hand builds a fresh player array, which
     // is exactly the window this rule is about.
     //
-    // A folded player is free to go: their chips are no longer in the pot.
+    // A folded player may leave the UI, but their contribution remains in
+    // this hand until settlement. Their cashout must wait for that boundary.
     // ═══════════════════════════════════════════════════════════════════════
     const liveHand = this.handController?.getState();
     const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
@@ -882,12 +1071,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // UI, still in the seat, chips still on the table. It could sit like that
     // forever, and nothing swept it.
     //
-    // Deferral is now reserved for the only case that needs it: a player with
-    // live chips in the pot of a hand still being played. Everyone else —
-    // sitting out, already folded, all-in and settled, or simply not dealt in —
-    // leaves immediately.
+    // Every participant in this live hand waits for settlement, including a
+    // folded player. Folding removes winning eligibility, not the committed
+    // contribution or the need to persist the final stack. A player who was
+    // not dealt into this hand can still leave immediately.
     const handState = this.handController?.getState();
-    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId && !p.is_folded);
+    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId);
 
     if (this.handController !== null && playerInLiveHand) {
       // Mid-hand: fold the player immediately if it's their turn or they're still in
@@ -995,6 +1184,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         this.leaveHeldByClock.delete(userId);
         this.forcedLeaves.delete(userId);
         this.chipContinuity.forget(userId);
+        this.lastAddOnAdjustedByUser.delete(userId);
       };
 
       if (opts.forced) {

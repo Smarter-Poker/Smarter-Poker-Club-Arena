@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { AsyncResource } from 'node:async_hooks';
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
@@ -110,7 +111,10 @@ import {
   TOURNAMENT_LEASE_PROOF_WINDOW_MS,
   tournamentLeaseDiagnostics,
 } from './services/tournamentLease.js';
-import { bindTournamentDataAuthorityMethods } from './services/supabase/dataActorContext.js';
+import {
+  bindTournamentDataAuthorityMethods,
+  currentTournamentDataAuthority,
+} from './services/supabase/dataActorContext.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import {
@@ -5721,23 +5725,33 @@ export class GameServer {
    */
   private startTournamentBountyObligationSubscription(): void {
     if (this.tournamentBountyObligationChannel) return;
+    if (currentTournamentDataAuthority() !== null) {
+      throw new Error('Tournament recovery subscriptions must start outside tournament authority');
+    }
+    // The shared Realtime socket can reconnect inside any manager's async
+    // chain. Capture this process-owned receiver at registration so incoming
+    // notifications cannot inherit that unrelated tournament or lease.
+    // Manager methods still establish and enforce their own exact authority.
 
-    const onObligationChange = (payload: { new?: Record<string, unknown> }): void => {
-      const row = payload.new;
-      if (!this.running || !row) return;
-      const state = String(row.state ?? '');
-      if (state === 'pending') {
-        // The database is the clock authority. Read the order-eligible,
-        // DB-relative retry delay from the sweep response instead of comparing
-        // a database timestamp with this host's wall clock.
-        this.requestPendingTournamentBountyRecovery();
-        return;
-      }
-      if (state === 'settled') {
-        const tournamentId = String(row.tournament_id ?? '');
-        this.tournamentEngines.get(tournamentId)?.requestEliminationSweep('bounty_settled');
-      }
-    };
+    const onObligationChange = AsyncResource.bind(
+      (payload: { new?: Record<string, unknown> }): void => {
+        const row = payload.new;
+        if (!this.running || !row) return;
+        const state = String(row.state ?? '');
+        if (state === 'pending') {
+          // The database is the clock authority. Read the order-eligible,
+          // DB-relative retry delay from the sweep response instead of comparing
+          // a database timestamp with this host's wall clock.
+          this.requestPendingTournamentBountyRecovery();
+          return;
+        }
+        if (state === 'settled') {
+          const tournamentId = String(row.tournament_id ?? '');
+          this.tournamentEngines.get(tournamentId)?.requestEliminationSweep('bounty_settled');
+        }
+      },
+      'GameServer.bountyObligations.notification'
+    );
 
     const channel = supabase
       .channel(`tournament-bounty-obligations:${process.pid}`)
@@ -5752,35 +5766,37 @@ export class GameServer {
         onObligationChange
       );
     this.tournamentBountyObligationChannel = channel;
-    channel.subscribe((status: string) => {
-      if (this.tournamentBountyObligationChannel !== channel) return;
-      if (status === 'SUBSCRIBED') {
-        bountyRecoveryRealtimeConnected.set(1);
-        this.tournamentBountyReconnectBackoffMs = 1_000;
-        // Subscription first, snapshot second closes the boot/reconnect
-        // race.  The snapshot also reconstructs the exact due timer after a
-        // process crash, so no periodic poll is needed.
-        this.requestPendingTournamentBountyRecovery();
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        bountyRecoveryRealtimeConnected.set(0);
-        reportError(
-          new Error(`Tournament bounty obligation channel entered ${status}`),
-          'GameServer.tournament_bounty_channel_error'
-        );
-        // Realtime will rejoin this channel. A direct database drain closes
-        // the delivery gap without waiting for that transport recovery.
-        this.requestPendingTournamentBountyRecovery();
-      } else if (status === 'CLOSED') {
-        bountyRecoveryRealtimeConnected.set(0);
-        this.tournamentBountyObligationChannel = null;
-        this.launchServerLifecycleJob(
-          Promise.resolve(supabase.removeChannel(channel)),
-          'GameServer.tournament_bounty_closed_channel_remove_failed'
-        );
-        this.requestPendingTournamentBountyRecovery();
-        this.scheduleTournamentBountySubscriptionReconnect();
-      }
-    });
+    channel.subscribe(
+      AsyncResource.bind((status: string) => {
+        if (this.tournamentBountyObligationChannel !== channel) return;
+        if (status === 'SUBSCRIBED') {
+          bountyRecoveryRealtimeConnected.set(1);
+          this.tournamentBountyReconnectBackoffMs = 1_000;
+          // Subscription first, snapshot second closes the boot/reconnect
+          // race.  The snapshot also reconstructs the exact due timer after a
+          // process crash, so no periodic poll is needed.
+          this.requestPendingTournamentBountyRecovery();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          bountyRecoveryRealtimeConnected.set(0);
+          reportError(
+            new Error(`Tournament bounty obligation channel entered ${status}`),
+            'GameServer.tournament_bounty_channel_error'
+          );
+          // Realtime will rejoin this channel. A direct database drain closes
+          // the delivery gap without waiting for that transport recovery.
+          this.requestPendingTournamentBountyRecovery();
+        } else if (status === 'CLOSED') {
+          bountyRecoveryRealtimeConnected.set(0);
+          this.tournamentBountyObligationChannel = null;
+          this.launchServerLifecycleJob(
+            Promise.resolve(supabase.removeChannel(channel)),
+            'GameServer.tournament_bounty_closed_channel_remove_failed'
+          );
+          this.requestPendingTournamentBountyRecovery();
+          this.scheduleTournamentBountySubscriptionReconnect();
+        }
+      }, 'GameServer.bountyObligations.status')
+    );
     // Boot is itself a causal recovery signal. Do not make durable settlement
     // depend on receiving SUBSCRIBED from the transport.
     this.requestPendingTournamentBountyRecovery();
@@ -5851,8 +5867,15 @@ export class GameServer {
 
   private startTournamentManagerWakeSubscription(): void {
     if (this.tournamentManagerWakeChannel) return;
+    if (currentTournamentDataAuthority() !== null) {
+      throw new Error('Tournament recovery subscriptions must start outside tournament authority');
+    }
+    // The shared Realtime socket can reconnect inside any manager's async
+    // chain. Capture this process-owned receiver at registration so incoming
+    // notifications cannot inherit that unrelated tournament or lease.
+    // Manager methods still establish and enforce their own exact authority.
 
-    const onManagerWake = (payload: { new?: Record<string, unknown> }): void => {
+    const onManagerWake = AsyncResource.bind((payload: { new?: Record<string, unknown> }): void => {
       if (!this.running || this.tournamentManagerWakeChannel !== channel) return;
       const row = payload.new;
       // The acknowledgement UPDATE is also published. It is completion, not a
@@ -5862,7 +5885,7 @@ export class GameServer {
         this.admitTournamentManagerWake(row),
         'GameServer.tournament_manager_realtime_wake_failed'
       );
-    };
+    }, 'GameServer.managerWakes.notification');
     const channel = supabase
       .channel(`tournament-manager-wakes:${process.pid}`)
       .on(
@@ -5896,50 +5919,52 @@ export class GameServer {
           schema: 'public',
           table: 'tournament_deal_votes',
         },
-        (payload: { new?: Record<string, unknown> }) => {
+        AsyncResource.bind((payload: { new?: Record<string, unknown> }) => {
           if (!this.running || this.tournamentManagerWakeChannel !== channel) return;
           const tournamentId = String(payload.new?.tournament_id ?? '');
           if (!tournamentId) return;
           this.tournamentEngines.get(tournamentId)?.requestEliminationSweep('deal_vote');
-        }
+        }, 'GameServer.managerWakes.dealVote')
       );
     this.tournamentManagerWakeChannel = channel;
-    channel.subscribe((status: string) => {
-      if (this.tournamentManagerWakeChannel !== channel) return;
-      if (status === 'SUBSCRIBED') {
-        tournamentManagerWakeRealtimeConnected.set(1);
-        this.tournamentManagerWakeReconnectBackoffMs = 1_000;
-        // Subscription comes first, drain second: an INSERT cannot disappear
-        // between the snapshot and the live frame. Duplicate delivery is
-        // harmless because the scheduler coalesces by tournament.
-        this.launchServerLifecycleJob(
-          this.drainTournamentManagerWakes(),
-          'GameServer.tournament_manager_wake_initial_drain_failed'
-        );
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        tournamentManagerWakeRealtimeConnected.set(0);
-        reportError(
-          new Error(`Tournament manager wake channel entered ${status}`),
-          'GameServer.tournament_manager_wake_channel_error'
-        );
-        this.launchServerLifecycleJob(
-          this.drainTournamentManagerWakes(),
-          'GameServer.tournament_manager_wake_error_drain_failed'
-        );
-      } else if (status === 'CLOSED') {
-        tournamentManagerWakeRealtimeConnected.set(0);
-        this.tournamentManagerWakeChannel = null;
-        this.launchServerLifecycleJob(
-          Promise.resolve(supabase.removeChannel(channel)),
-          'GameServer.tournament_manager_wake_closed_channel_remove_failed'
-        );
-        this.launchServerLifecycleJob(
-          this.drainTournamentManagerWakes(),
-          'GameServer.tournament_manager_wake_closed_drain_failed'
-        );
-        this.scheduleTournamentManagerWakeSubscriptionReconnect();
-      }
-    });
+    channel.subscribe(
+      AsyncResource.bind((status: string) => {
+        if (this.tournamentManagerWakeChannel !== channel) return;
+        if (status === 'SUBSCRIBED') {
+          tournamentManagerWakeRealtimeConnected.set(1);
+          this.tournamentManagerWakeReconnectBackoffMs = 1_000;
+          // Subscription comes first, drain second: an INSERT cannot disappear
+          // between the snapshot and the live frame. Duplicate delivery is
+          // harmless because the scheduler coalesces by tournament.
+          this.launchServerLifecycleJob(
+            this.drainTournamentManagerWakes(),
+            'GameServer.tournament_manager_wake_initial_drain_failed'
+          );
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          tournamentManagerWakeRealtimeConnected.set(0);
+          reportError(
+            new Error(`Tournament manager wake channel entered ${status}`),
+            'GameServer.tournament_manager_wake_channel_error'
+          );
+          this.launchServerLifecycleJob(
+            this.drainTournamentManagerWakes(),
+            'GameServer.tournament_manager_wake_error_drain_failed'
+          );
+        } else if (status === 'CLOSED') {
+          tournamentManagerWakeRealtimeConnected.set(0);
+          this.tournamentManagerWakeChannel = null;
+          this.launchServerLifecycleJob(
+            Promise.resolve(supabase.removeChannel(channel)),
+            'GameServer.tournament_manager_wake_closed_channel_remove_failed'
+          );
+          this.launchServerLifecycleJob(
+            this.drainTournamentManagerWakes(),
+            'GameServer.tournament_manager_wake_closed_drain_failed'
+          );
+          this.scheduleTournamentManagerWakeSubscriptionReconnect();
+        }
+      }, 'GameServer.managerWakes.status')
+    );
     // Boot is a causal recovery signal even if the transport never reports
     // SUBSCRIBED. This closes the process-start gap without a polling loop.
     this.launchServerLifecycleJob(

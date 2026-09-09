@@ -1,5 +1,17 @@
 # CONTINUATION HANDOFF - Club Arena Engine-Restart & Platform-Hardening Programme
 
+## 2026-09-09 Release Blocker Addendum
+
+The 23:55 cutover on September 8 did not occur. A foreign expired 22:53
+maintenance record survived the database outage and rejected the replacement
+engine's next announcement. The guarded renewal fix is installed as migration
+20260909002144, tested with 42 isolated PostgreSQL checks and 82 maintenance
+tests. The next scheduled announcement/cutover still needs live acceptance.
+Read [the incident and installation evidence](audits/2026-09-09-expired-maintenance-owner.md)
+before claiming current server PRs have deployed. Recent direct metrics show
+four database CPU cores under sustained pressure; the older two-core statement
+in the September 8 addendum is superseded by those measurements.
+
 Last updated: 2026-09-08 ~02:20 UTC (addendum 00); 2026-09-03 (addendum 0); body 2026-09-02 ~22:25 UTC. Author: the "cowork-maintbreak" agent
 session (session_01Mcyo7VW3Wdw5oC6qzm4C5y). This file REPLACES the prior
 engine-restart handoff (that record is preserved in git history at

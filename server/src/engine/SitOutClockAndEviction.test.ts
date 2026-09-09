@@ -245,9 +245,28 @@ describe('a busted cash seat is released', () => {
        Deleting or hand-stamping the row instead is what put 48 chips nowhere on
        2026-08-25 (CLAUDE.md 11.5) and is what fn_unaccounted_seat_exits now
        reports on. */
+    /* One door out (final sweep 2026-09-08): the human sweep, both horse
+       sweeps and Settlement's two horse exits all leave through
+       releaseBustedSeat in the base, and THAT is where atomicCashout is. */
     const body = sliceMethod(dealing, 'protected async standUpBustedCashPlayers');
-    expect(body).toMatch(/await atomicCashout\(/);
+    expect(body).toMatch(/await this\.releaseBustedSeat\(player, 'busted_no_rebuy'\)/);
     expect(body).not.toMatch(/\.delete\(\)/);
+    expect(body).not.toMatch(/markSeatAsLeft\(/);
+    const base = readFileSync(
+      join(process.cwd(), 'src', 'engine', 'ServerTableEngineBase.ts'),
+      'utf8'
+    );
+    const door = sliceMethod(base, 'protected async releaseBustedSeat');
+    expect(door).toMatch(
+      /await atomicCashout\(player\.user_id, this\.tableId, player\.seat_number/
+    );
+    // The event goes out only after the row says the chair is empty.
+    expect(door.indexOf('await atomicCashout(')).toBeLessThan(door.indexOf("type: 'seat_left'"));
+    // ...and the horse exits use the same door, not a hand-stamped row.
+    const horses = sliceMethod(dealing, 'protected async recoverBustedSeatedHorses');
+    expect(horses).toMatch(/releaseBustedSeat\(horse, 'busted_stop_loss'\)/);
+    expect(horses).toMatch(/releaseBustedSeat\(horse, 'busted_unfunded'\)/);
+    expect(horses).not.toMatch(/markSeatAsLeft\(/);
   });
 
   it('only pauses for a rebuy the player can actually afford', () => {

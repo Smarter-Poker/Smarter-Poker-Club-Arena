@@ -25,7 +25,13 @@
 
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { ServerTableEngineHandEvents } from './ServerTableEngineHandEvents.js';
-import { bettingStructureFor, fixedLimitBetSize, isFixedLimitCapped } from './BettingStructure.js';
+import {
+  bettingStructureFor,
+  fixedLimitBetSize,
+  fixedLimitStreetBounds,
+  potLimitBettingPot,
+  isFixedLimitCapped,
+} from './BettingStructure.js';
 import type { GameState } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -173,7 +179,9 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
 
   private bettingStructureFields(state: GameState): {
     betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+    pot_limit_pot?: number;
     fixed_bet_size?: number;
+    fixed_raise_size?: number;
     wagers_capped?: boolean;
   } {
     // VARIANT OVERRIDE 2026-08-28: the LIVE hand's variant, not the table's —
@@ -181,12 +189,25 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // draws a no-limit slider and has every drag rejected.
     const variant = this.activeHandVariant();
     const structure = bettingStructureFor(variant);
+    if (structure === 'pot_limit') {
+      return { betting_structure: structure, pot_limit_pot: potLimitBettingPot(state) };
+    }
     if (structure !== 'fixed_limit') return { betting_structure: structure };
     const stage = state.stage ?? 'preflop';
     return {
       betting_structure: structure,
       fixed_bet_size: fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
-      wagers_capped: isFixedLimitCapped(state.actionHistory ?? [], stage),
+      fixed_raise_size: fixedLimitStreetBounds(
+        state.actionHistory ?? [],
+        stage,
+        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+        state.currentBet
+      ).raiseSize,
+      wagers_capped: isFixedLimitCapped(
+        state.actionHistory ?? [],
+        stage,
+        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage)
+      ),
     };
   }
 
@@ -292,6 +313,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // and action_history is broadcast without its isFullRaise flag.
       ...this.bettingStructureFields(state),
       // Bible V8 §2.4: Timer fields required for client-side countdown
+      action_context: this.getActionContext(),
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
@@ -363,6 +385,17 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             // table was never shown.
             showCards = true;
           }
+          // A voluntary per-card show survives HTTP resync just as it does
+          // the live snapshot. Unselected cards remain null, and no pick is
+          // public before the hand ends. Owners still receive their own hand.
+          const picked = this.showHandCards?.get(p.user_id);
+          const handIsOver = state.stage === 'showdown' || this.currentHandWinnerIds.length > 0;
+          const partialReveal = !showCards && handIsOver && !!picked && picked.size > 0;
+          const cardsOut = showCards
+            ? (p.cards ?? [])
+            : partialReveal
+              ? (p.cards ?? []).map((card, index) => (picked!.has(index) ? card : null))
+              : [];
           return {
             seat: p.seat,
             user_id: p.user_id,
@@ -370,7 +403,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0,
-            cards: showCards ? (p.cards ?? []) : [],
+            cards: cardsOut,
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
             /* THE ENGINE, NOT THE ROSTER (2026-08-28). `p.is_sitting_out` is the
@@ -521,6 +554,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // particular is NOT derivable client-side — the cap counts full raises,
       // and action_history is broadcast without its isFullRaise flag.
       ...this.bettingStructureFields(state),
+      action_context: this.getActionContext(),
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15

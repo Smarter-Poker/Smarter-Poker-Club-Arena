@@ -206,3 +206,65 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
     expect(out.sidePots.map((p) => p.eligibleSeats)).not.toContainEqual([3, 5, 7]);
   });
 });
+
+describe('fixed-limit completion metadata', () => {
+  it('keeps the street bet distinct from the current completion increment', () => {
+    const result = mapEngineSnapshot(
+      makeSnapshot({
+        betting_structure: 'fixed_limit',
+        fixed_bet_size: 20,
+        fixed_raise_size: 15,
+        current_bet: 5,
+        stage: 'flop',
+      }),
+      'hero',
+      3
+    );
+    expect(result.fixedBetSize).toBe(20);
+    expect(result.fixedRaiseSize).toBe(15);
+  });
+  it('leaves completion unspecified on older engine snapshots', () => {
+    expect(
+      mapEngineSnapshot(makeSnapshot({ fixed_bet_size: 20 }), 'hero', 3).fixedRaiseSize
+    ).toBeUndefined();
+  });
+});
+
+it('maps the pot-limit wager basis separately from the real pot', () => {
+  const out = mapEngineSnapshot(
+    makeSnapshot({
+      stage: 'preflop',
+      betting_structure: 'pot_limit',
+      pot: 1.5,
+      pot_limit_pot: 3,
+    }),
+    'hero',
+    4
+  );
+  expect(out.pot).toBe(1.5);
+  expect(out.potLimitPot).toBe(3);
+  const later = mapEngineSnapshot(
+    makeSnapshot({
+      stage: 'flop',
+      betting_structure: 'pot_limit',
+      pot: 6.5,
+      pot_limit_pot: 6.5,
+    }),
+    'hero',
+    4
+  );
+  expect(later.potLimitPot).toBe(6.5);
+  expect(mapEngineSnapshot(makeSnapshot(), 'hero', 4).potLimitPot).toBeUndefined();
+});
+
+describe('decision context from live and reconnect snapshots', () => {
+  it('preserves the opaque server context without recreating it from client time', () => {
+    expect(
+      mapEngineSnapshot(makeSnapshot({ action_context: 'original-hand-turn' }), 'hero', 9)
+        .actionContext
+    ).toBe('original-hand-turn');
+  });
+  it('does not invent a context for an older engine', () => {
+    expect(mapEngineSnapshot(makeSnapshot(), 'hero', 9).actionContext).toBeUndefined();
+  });
+});

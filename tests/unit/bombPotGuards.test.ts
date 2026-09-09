@@ -794,6 +794,9 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
        top seats when the band is short. */
     const CSS_OVERLAY = read('src/components/table/BombPotOverlay.css');
     const OVERLAY = read('src/components/table/BombPotOverlay.tsx');
+    // The geometry lives in its own module (react-refresh: a component file
+    // exports only the component); the component imports and applies it.
+    const ANCHOR = read('src/lib/bombPotTitleAnchor.ts');
     const block = CSS_OVERLAY.slice(
       CSS_OVERLAY.indexOf('.bpo-title-block {'),
       CSS_OVERLAY.indexOf('}', CSS_OVERLAY.indexOf('.bpo-title-block {'))
@@ -802,11 +805,13 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     expect(block).toMatch(/transform-origin:\s*50% 100%/);
     // The component measures and anchors by the felt: pot/board ceiling,
     // top-seat floor, and a scale for short bands.
-    expect(OVERLAY).toMatch(/function measureTitleAnchor\(/);
-    expect(OVERLAY).toMatch(
+    expect(ANCHOR).toMatch(/export function measureTitleAnchor\(/);
+    expect(OVERLAY).toMatch(/from '\.\.\/\.\.\/lib\/bombPotTitleAnchor'/);
+    expect(OVERLAY).toMatch(/measureTitleAnchor\(scope, blockH\)/);
+    expect(ANCHOR).toMatch(
       /rectOf\('\.pot-display'\),\s*\n?\s*rectOf\('\.pot-display__pile--pot'\),\s*\n?\s*rectOf\('\.community-area'\)/
     );
-    expect(OVERLAY).toMatch(/scope\.querySelectorAll\('\.seat-wrapper'\)/);
+    expect(ANCHOR).toMatch(/scope\.querySelectorAll\('\.seat-wrapper'\)/);
     expect(OVERLAY).toMatch(/bottom: `\$\{titleAnchor\.bottomPx\}px`/);
     expect(OVERLAY).toMatch(/scale\(\$\{titleAnchor\.scale\}\)/);
     // Scoped to this overlay's own table, so a hidden multi-table sibling
@@ -814,7 +819,11 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     expect(OVERLAY).toMatch(/containerRef\.current\?\.closest\('\.table-page'\)/);
     expect(OVERLAY).toMatch(/useLayoutEffect\(\(\) => \{\s*\n\s*if \(phase !== 'title'\)/);
     // And the fallback, for a table that has not painted, is ABOVE the board.
-    expect(OVERLAY).toMatch(/const TITLE_FALLBACK_TOP = '2\d%'/);
+    expect(ANCHOR).toMatch(/export const TITLE_FALLBACK_TOP = '2\d%'/);
+    // and the block's height is measured transform-independently, or a
+    // resize re-reads its own scaled box and climbs back onto the seats
+    expect(OVERLAY).toMatch(/titleBlockRef\.current\?\.offsetHeight/);
+    expect(OVERLAY).not.toMatch(/titleBlockRef\.current\?\.getBoundingClientRect/);
   });
 
   it('a regular ante is seen leaving the player: the engine announces it and the felt flies it (Dan 2026-09-04)', () => {

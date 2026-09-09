@@ -2557,10 +2557,58 @@ export abstract class TournamentManagerBase {
           !Number.isInteger(Number(row.seat_number)) ||
           Number(row.seat_number) <= 0 ||
           !Number.isFinite(Number(row.chips)) ||
-          Number(row.chips) <= 0
+          Number(row.chips) < 0
       )
     ) {
-      return refuse('the playing roster does not have positive chips and an exact table seat');
+      return refuse('the playing roster does not have a finite stack and an exact table seat');
+    }
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A BUST IS NOT AN UNCREDITED STACK (2026-09-09)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This used to demand `chips > 0` from EVERY roster row, and that cannot
+     * tell the hazard it was written for - "the stacks were never credited, do
+     * not launch a field with no money on it" - from its exact opposite: the
+     * stacks WERE credited and then somebody lost them at the table.
+     *
+     * The second case is real and it wedged events permanently. Measured on
+     * production 2026-09-09: eight Spins stuck in REGISTERING, one of them for
+     * ten hours, each retrying the launch every thirty seconds - 478 refusals
+     * in half an hour, all this one message. Every one was a 3-max Spin whose
+     * roster summed to EXACTLY 3 x starting_chips with one seat holding zero,
+     * because the table had already dealt (one of them 73 hands) before the
+     * launch was proven. Sum right, distribution uneven: chips were credited
+     * and then played for. There is no state that function can reach on its
+     * own, so the retry could never converge.
+     *
+     * CONSERVATION IS THE TEST THAT ACTUALLY SEPARATES THEM. An uncredited
+     * field is short of `roster x starting_chips`; a field that has been played
+     * still adds up to it. Early-bird bonuses and rebuys only ever ADD, so the
+     * expected total is a floor, not an equality. A field where nothing was
+     * credited sums to zero and is still refused, which is the whole point of
+     * the original check.
+     *
+     * `stacksMayBeDeferred` still means the credit legitimately has not
+     * happened yet (the Spin reveal hold credits after this); the later
+     * durable-stack check below owns that case, so conservation is only
+     * asserted once the credit is claimed to be done.
+     */
+    if (!stacksMayBeDeferred) {
+      const startingChips = Math.max(0, Math.floor(Number(tournament?.starting_chips) || 0));
+      const rosterChips = roster.reduce((sum, row) => sum + Number(row.chips), 0);
+      const expectedFloor = roster.length * startingChips;
+      if (startingChips > 0 && rosterChips < expectedFloor) {
+        return refuse(
+          `the playing roster holds ${rosterChips} chips, short of the ${expectedFloor} its ${roster.length} seats were bought for - the stacks were not credited`
+        );
+      }
+      if (rosterChips <= 0) {
+        return refuse('the playing roster holds no chips at all - the stacks were not credited');
+      }
+      if (!roster.some((row) => Number(row.chips) > 0)) {
+        return refuse('no seat on the playing roster holds a positive stack');
+      }
     }
     if (new Set(roster.map((row) => row.user_id)).size !== roster.length) {
       return refuse('the active roster contains a duplicate player');
@@ -2680,7 +2728,14 @@ export abstract class TournamentManagerBase {
       ) {
         return refuse(`${userId.slice(0, 8)} has contradictory roster and seat coordinates`);
       }
-      if (!Number.isFinite(Number(seat.stack)) || Number(seat.stack) <= 0) {
+      // Same rule as the roster conservation above: a seat that has been played
+      // down to zero is funded, it is just busted. Only a stack that is missing
+      // or impossible is a funding failure at this point; the seat TOTAL is
+      // checked once, below, against what the field was bought for.
+      if (
+        !stacksMayBeDeferred &&
+        (!Number.isFinite(Number(seat.stack)) || Number(seat.stack) < 0)
+      ) {
         return refuse(`${userId.slice(0, 8)} has no funded stack`);
       }
       if (
@@ -2688,6 +2743,20 @@ export abstract class TournamentManagerBase {
         (Number(seat.stack) !== startingStack || Number(player.chips) !== startingStack)
       ) {
         return refuse(`${userId.slice(0, 8)} does not hold the exact seat-first starting stack`);
+      }
+    }
+
+    // The felt has to hold what the field paid for. One seat at zero is a bust;
+    // every seat short of the floor is a credit that never landed, and that is
+    // the case this proof exists to stop from ever dealing a hand.
+    if (!stacksMayBeDeferred) {
+      const startingChips = Math.max(0, Math.floor(Number(tournament?.starting_chips) || 0));
+      const seatChips = seats.reduce((sum, seat) => sum + Number(seat.stack ?? 0), 0);
+      const expectedFloor = roster.length * startingChips;
+      if (startingChips > 0 && seatChips < expectedFloor) {
+        return refuse(
+          `the felt holds ${seatChips} chips, short of the ${expectedFloor} its ${roster.length} seats were bought for`
+        );
       }
     }
 

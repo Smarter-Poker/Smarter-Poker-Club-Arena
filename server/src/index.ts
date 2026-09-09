@@ -101,6 +101,9 @@ const engineWs = new EngineWebSocketServer({
     // 2026-09-04 (disconnect audit item 11): and the engine's copy of this
     // player's pre-action, so a reconnected bar shows what is actually armed.
     engine?.rePushPreAction(userId);
+    // 2026-09-08: and the last add-on adjustment, if one was made while this
+    // socket was down - the client de-duplicates on the ledger row id.
+    engine?.rePushAddOnAdjusted(userId);
   },
   // CONNECTIVITY UPGRADE (2026-08-22): wire transport presence straight into
   // the engine's DisconnectEngine. The transport knows a player dropped within

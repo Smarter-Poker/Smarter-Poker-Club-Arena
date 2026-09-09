@@ -14,6 +14,8 @@ import {
   isPotLimitVariant,
   isFixedLimitVariant,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
   substituteOnCappedStreet,
   type BettingStructure,
@@ -1384,13 +1386,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   handlePlayerAction(
     userId: string,
     action: string,
-    amount?: number
+    amount?: number,
+    actionContext?: string | null
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.lifecycleCanMutate()) {
       return {
         success: false,
         error: 'Table ownership changed - reconnect',
         code: 'TABLE_LEASE_EXPIRED',
+      };
+    }
+    // HTTP always supplies a context (null for an old bundle). Only trusted
+    // in-process callers omit this argument. Check before clocks or chips move.
+    if (
+      actionContext !== undefined &&
+      (typeof actionContext !== 'string' || actionContext !== this.getActionContext())
+    ) {
+      return {
+        success: false,
+        code: actionContext === null ? 'ACTION_CONTEXT_REQUIRED' : 'STALE_ACTION',
+        error:
+          actionContext === null
+            ? 'The table view is out of date. Reload to continue.'
+            : 'The turn has changed. Review the table before acting again.',
       };
     }
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
@@ -1468,7 +1486,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // Previous formula (pot + toCall + toCall) was one toCall too permissive.
       // For a BET (toCall=0): maxBet = pot. For a RAISE: maxRaiseSize = pot + toCall.
       // This matches PokerEngine.calculateBettingState (FIX 121).
-      potLimitMaxBet = state.pot + toCall;
+      potLimitMaxBet = potLimitBettingPot(state) + toCall;
     }
 
     // Fixed limit has exactly one legal wager size per street, so a client that
@@ -1477,7 +1495,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // no-limit sizing should still make a legal bet. Small bet preflop and
     // flop, big bet turn and river.
     const flBetSize = isFixedLimit
-      ? fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage)
+      ? fixedLimitStreetBounds(
+          state.actionHistory,
+          state.stage,
+          fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage),
+          state.currentBet
+        ).raiseSize
       : 0;
 
     /**
@@ -1832,7 +1855,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const structure = bettingStructureFor(variant);
     let betSize: number | undefined;
     if (structure === 'pot_limit') {
-      const potLimitMaxBet = state.pot + toCall;
+      const potLimitMaxBet = potLimitBettingPot(state) + toCall;
       const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
       maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
     } else if (structure === 'fixed_limit') {
@@ -1841,7 +1864,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // stack as maxRaise here is what would have let a limit table render a
       // no-limit slider and then have every drag rejected.
       betSize = fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage);
-      const wagerTo = state.currentBet + betSize;
+      const wagerTo =
+        state.currentBet +
+        fixedLimitStreetBounds(state.actionHistory, state.stage, betSize, state.currentBet)
+          .raiseSize;
       minRaiseTo = Math.min(wagerTo, maxRaiseTo);
       maxRaiseTo = minRaiseTo;
     }
@@ -2111,6 +2137,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       console.warn(
         `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} - falling through to the turn timer`
       );
+      // The engine's copy is already gone (single-shot); the client's arm is
+      // not, and it is holding every "your turn" surface down on the strength
+      // of it. Say so, with the reason, so the bar clears and the player is
+      // prompted now rather than at the end of the client's grace window.
+      this.pushPreActionToPlayer(player.user_id, { reason: 'rejected' });
     }
 
     // Step 2: Check disconnect state before starting timer (applies to ALL players)
@@ -2712,7 +2743,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const liveState = handControllerRef.getState();
           if (
             horseFlBetSize > 0 &&
-            isFixedLimitCapped(liveState.actionHistory ?? [], liveState.stage)
+            isFixedLimitCapped(
+              liveState.actionHistory ?? [],
+              liveState.stage,
+              fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, liveState.stage)
+            )
           ) {
             const substituted = substituteOnCappedStreet(action as ActionType, toCall);
             if (substituted !== action) {

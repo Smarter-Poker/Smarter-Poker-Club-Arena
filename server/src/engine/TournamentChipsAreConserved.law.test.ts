@@ -20,9 +20,8 @@
  *      not hold, after settlement, exactly what they were dealt. CRITICAL
  *      alert `Tournament.chip_conservation_broken`, and neither stack write
  *      runs.
- *   3. When the database refuses a hand write for a conservation violation,
- *      syncStacks does NOT fall back to the per-seat loop that would write the
- *      refused total anyway.
+ *   3. When the database refuses an accepted-hand write for a conservation
+ *      violation, no per-seat fallback writes the refused total anyway.
  *   4. The database asserts the same identity for tournament tables inside
  *      fn_ca_settle_hand_stacks_absolute, and the detector counts rebuy /
  *      add-on games instead of looking away from them.

@@ -160,7 +160,7 @@ describe('the busted-seat stand-up keeps a seat with money in flight', () => {
 
     await engine.standUpBustedCashPlayers();
 
-    expect(atomicCashout).toHaveBeenCalledWith('hero', TABLE, 1);
+    expect(atomicCashout).toHaveBeenCalledWith('hero', TABLE, 1, { leaveMode: 'forced' });
   });
 
   it('stands nobody up on an unreadable ledger (fail open toward the seat)', async () => {
@@ -211,7 +211,7 @@ describe('a sweep request cannot be erased by a sweep already in flight', () => 
 });
 
 describe('the rebuy is on the felt for the first hand after it', () => {
-  it('delivers the row into the next deal, in memory, before syncStacks could persist a zero', async () => {
+  it('delivers the row into the next deal before the accepted-hand commit could persist a zero', async () => {
     const engine = bareEngine();
     const hero = { user_id: 'hero', username: 'hero', seat_number: 1, stack: 0, is_horse: false };
     const villain = {
@@ -253,8 +253,8 @@ describe('the rebuy is on the felt for the first hand after it', () => {
     await engine.processPendingAddOns(engine.seatedPlayers);
 
     expect(resolved).toEqual(['row-rebuy']);
-    // The chips are in ENGINE MEMORY, so the next absolute syncStacks writes
-    // 200 rather than the 0 it would have written before the sweep.
+    // The chips are in ENGINE MEMORY, so the next accepted-hand transaction
+    // commits 200 rather than the 0 it would have seen before the sweep.
     expect(hero.stack).toBe(200);
     // ...and the seat is funded for the deal.
     const active = engine.seatedPlayers.filter((p: { stack: number }) => p.stack > 0);

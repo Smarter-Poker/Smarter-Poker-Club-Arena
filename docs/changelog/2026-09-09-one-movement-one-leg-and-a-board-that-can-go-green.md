@@ -167,6 +167,30 @@ be dealt a hand. `fn_ca_stranded_tournament_players` gives that its own name
 and number in the sweep - eight players holding 673,500 chips across four
 events as of today.
 
+### The trap this nearly walked into
+
+`count(DISTINCT table_seats.user_id)` says only 275 of that freeroll's 391
+registrants were ever seated, and 115 of Morning Free Buy's 200. That looks
+like a large finding and it is not one: a `table_seats` row is a CHAIR, and
+its `user_id` is overwritten as players bust and tables consolidate, so the
+distinct set is who last sat in each chair rather than who was ever dealt in.
+Morning Free Buy has 85 registrants "never seated" and balances to the chip at
+2,630,000. The conservation check already carries a comment saying exactly
+this, from the session that got it wrong once.
+
+So the stranded finding was checked against that objection before it was
+allowed to stand, and it survives on four counts:
+
+- each stranded player has **exactly one** seat row naming them, and it is
+  marked left - not a chair that was recycled away from them;
+- **nobody else occupies that chair**, so the seat was vacated and left empty;
+- their `tournament_players.status` is still `playing`;
+- the control holds: **Morning Free Buy reports zero stranded players**
+  despite its 85 "never seated", and its drift is 0.00.
+
+One of the five has been out of their chair since 04:48 yesterday. Two are
+horse accounts, which under CLAUDE.md 10.5 are players like any other.
+
 ## Three criticals arrived mid-session, and one of them was a rate
 
 Two criticals landed at 11:21 while this work was in flight, both from one

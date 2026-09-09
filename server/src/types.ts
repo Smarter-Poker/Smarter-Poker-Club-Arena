@@ -447,6 +447,8 @@ export interface GameState {
    */
   communityCards3: Card[];
   pot: number;
+  /** Missing SB/BB chips, used only for preflop pot-limit sizing. Never money. */
+  potLimitBlindAdjustment?: number;
   currentBet: number;
   lastRaise: number;
   minRaise: number;
@@ -492,6 +494,8 @@ export interface HandStateBroadcast {
    * fixed-limit table would have drawn a no-limit bet slider.
    */
   betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Pot-limit wager basis; the displayed/accounted pot remains `pot`. */
+  pot_limit_pot?: number;
   /** Fixed limit only: the street's one legal wager (small bet or big bet). */
   fixed_bet_size?: number;
   /**

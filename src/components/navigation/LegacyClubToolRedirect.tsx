@@ -100,7 +100,7 @@ export default function LegacyClubToolRedirect({
   if (state === 'error') {
     return (
       <ErrorState
-        message={`Club Arena could not determine which club should open ${toolName}.`}
+        message={`Poker Arena could not determine which club should open ${toolName}.`}
         onRetry={() => void resolveDestination()}
       />
     );
@@ -114,8 +114,8 @@ export default function LegacyClubToolRedirect({
       title={`Choose A Club Before Opening ${toolName}`}
       description={
         destination === 'invite'
-          ? 'Join Or Create A Club First So Club Arena Can Build An Invitation For The Right Community.'
-          : 'This Tool Changes Club-Owned Data. Join Or Create A Club First So Club Arena Can Open The Correct Workspace And Permissions.'
+          ? 'Join Or Create A Club First So Poker Arena Can Build An Invitation For The Right Community.'
+          : 'This Tool Changes Club-Owned Data. Join Or Create A Club First So Poker Arena Can Open The Correct Workspace And Permissions.'
       }
       action={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
       secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}

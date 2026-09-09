@@ -1,6 +1,6 @@
 # Phase 2: Final Rules And Consent Boundaries
 
-Status: local corrections verified; final build, CI, merge and production adoption pending. Club Arena only. Other phases and external certification are not closed by this report.
+Status: local corrections and final build verified; published as PR #3934. Required CI, merge and production adoption pending. Club Arena only. Other phases and external certification are not closed by this report.
 
 ## Confirmed Corrections
 
@@ -52,3 +52,7 @@ At 03:40:42 UTC, engine 5b92dc78722c084b4a04522b40f9a1f7b46f4404 contained both 
 Automatic approval review rejected the normal branch push twice, citing missing explicit user authorization for the private-source payload and GitHub destination. Read-only verification confirmed the existing canonical SSH push URL and documented publication route, but the second review still required user approval. No alternate route, force push, hook override or direct deployment was attempted. The final source and evidence are committed locally and ready for review. A new PR, required CI, merge and actual production adoption remain unverified and blocked. Phase 2 of 12 is not complete.
 
 Machine-readable evidence, including exact changed-source blob identities and prior release ancestry: docs/audits/2026-09-09-phase2-release-status.json. The 216-requirement register is unchanged.
+
+## Explicit Authorization And Publication
+
+The user explicitly authorized pushing and publishing Phase 2 changes to Smarter-Poker/Smarter-Poker-Club-Arena. This resolved the prior approval block. The normal branch push succeeded, with 4406 related tests passed and 18 opt-in database cases skipped. PR #3934 opened through the normal automation. Current main was merged normally; all nine verified implementation blob identities were preserved. Required CI on the updated branch, automated merge and actual frontend/engine adoption remain pending. No bypass or forced restart was used.

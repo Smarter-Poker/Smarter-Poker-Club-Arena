@@ -55,6 +55,18 @@ export interface POYLeaderboardEntry {
 const POY_WEBHOOK_URL = '/api/club-arena/results';
 const POY_LEADERBOARD_URL = '/api/poy/leaderboard';
 
+/**
+ * NEITHER ROUTE EXISTS (final sweep 2026-09-08). The World Hub has no
+ * `pages/api/club-arena/results.js` and no `pages/api/poy/`; `/api/poker/
+ * results` is the live-series results feed, a different thing. So every cash
+ * session a human finished and every tournament result POSTed into a 404 and
+ * reported a failure to Sentry, and the leaderboard read 404'd on every open.
+ * Until the World Hub grows the routes this flag stays false: the session
+ * tracking below keeps its accounting (the tests pin it), but nothing is sent
+ * and nothing is reported as failed. Flip it in the PR that lands the routes.
+ */
+const POY_ROUTES_EXIST = false;
+
 // Batch tracking for cash sessions
 interface SessionTracker {
   playerId: string;
@@ -81,6 +93,7 @@ export const POYService = {
   async submitTournamentResult(
     data: TournamentResultPayload
   ): Promise<{ success: boolean; points_awarded?: number }> {
+    if (!POY_ROUTES_EXIST) return { success: false };
     try {
       const response = await fetch(POY_WEBHOOK_URL, {
         method: 'POST',
@@ -112,6 +125,7 @@ export const POYService = {
   async submitCashSession(
     data: CashSessionPayload
   ): Promise<{ success: boolean; points_awarded?: number }> {
+    if (!POY_ROUTES_EXIST) return { success: false };
     try {
       const response = await fetch(POY_WEBHOOK_URL, {
         method: 'POST',
@@ -205,6 +219,7 @@ export const POYService = {
    * Get POY leaderboard from World Hub
    */
   async getLeaderboard(year?: number, limit = 50): Promise<POYLeaderboardEntry[]> {
+    if (!POY_ROUTES_EXIST) return [];
     try {
       const params = new URLSearchParams({
         limit: limit.toString(),
@@ -232,6 +247,7 @@ export const POYService = {
     points: number;
     percentile: number;
   } | null> {
+    if (!POY_ROUTES_EXIST) return null;
     try {
       const response = await fetch(`${POY_LEADERBOARD_URL}?player_id=${playerId}`);
       if (!response.ok) return null;

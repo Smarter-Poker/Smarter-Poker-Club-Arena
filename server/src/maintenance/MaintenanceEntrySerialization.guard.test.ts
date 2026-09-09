@@ -49,12 +49,24 @@ const SUPABASE_CLIENT = readFileSync(
   'utf8'
 );
 
+const MAINTENANCE_SAVE_SQL = readFileSync(
+  resolve(
+    process.cwd(),
+    '..',
+    'supabase',
+    'migrations',
+    '20260909001350_expired_maintenance_owners_cannot_block_a_new_hour.sql'
+  ),
+  'utf8'
+);
+
 function functionDefinition(name: string): string {
-  const start = SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  const source = name === 'fn_save_engine_maintenance_break' ? MAINTENANCE_SAVE_SQL : SQL;
+  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
   expect(start, `${name} definition`).toBeGreaterThan(-1);
-  const end = SQL.indexOf('$function$;', start);
+  const end = source.indexOf('$function$;', start);
   expect(end, `${name} terminator`).toBeGreaterThan(start);
-  return SQL.slice(start, end + '$function$;'.length);
+  return source.slice(start, end + '$function$;'.length);
 }
 
 describe('maintenance and new entries share one transaction boundary', () => {

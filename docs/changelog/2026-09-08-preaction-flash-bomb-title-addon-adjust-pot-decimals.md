@@ -17,13 +17,14 @@ hand, and hand #6206699's detail):
 
 ## 1. The pre-action prompt and clock flash
 
-The engine executes an armed pre-action itself, after a deliberate 900ms beat
-(`preActionVisibleMs`) so it does not read as instant to the table. But it
+The engine executes an armed pre-action itself, after a deliberate visible
+beat (`preActionVisibleMs`, 250ms since 2026-09-07) so it does not read as
+instant to the table. But it
 stamps a full turn deadline and broadcasts "hero is on the clock" BEFORE that
 beat (`ServerTableEngineHandEvents` TURN_CHANGE, then
 `ServerTableEngineTurns.handleTurnChange`). The 2026-08-29 fix
 (`suppressPanelForPreAction`) hid exactly one of the surfaces that react to
-that broadcast, the ActionPanel. The other six kept announcing the turn for
+that broadcast, the ActionPanel. The other seven kept announcing the turn for
 the beat plus a round trip: the bell and the haptic (discrete TURN_CHANGE
 event), the countdown ring on the hero's seat, the control strip's time-bank
 button and ticking numeral, the time-bank tile in the HUD corner, the
@@ -34,8 +35,9 @@ second before the fold lands.
 There is now ONE boolean, `heroPromptedToAct = isHeroTurnContext &&
 !suppressPanelForPreAction`, and every surface reads it:
 
-- `hudSlotControl` (time-bank tile), the page pulse class, the control strip
-  and `isHeroOnTheClock` (ActionClockWarning) read `heroPromptedToAct`.
+- `hudSlotControl` (time-bank tile), the page pulse class and the control
+  strip read `heroPromptedToAct`; `isHeroOnTheClock` (ActionClockWarning)
+  carries `!suppressPanelForPreAction`.
 - `heroActionState`'s `'active'` arm carries `!suppressPanelForPreAction`,
   restoring its claim to be "character-for-character the ActionPanel
   branch's test".
@@ -43,12 +45,13 @@ There is now ONE boolean, `heroPromptedToAct = isHeroTurnContext &&
   suppressed. Every other player's screen still shows the seat on the clock
   for the beat, which is what keeps a pre-action from being a tell.
 - The bell and the buzz: the TURN_CHANGE handler reads a ref mirror of the
-  armed pre-action (`preActionArmedRef`; the event lands before the
-  snapshot, so render state is stale there). With an arm it DEFERS
-  (`deferredTurnAlertRef`) to an effect on `heroPromptedToAct`, which rings
-  only if the hero ends up genuinely prompted - the engine refused the arm,
-  or missed the grace window. A turn the engine takes for the player is
-  never announced to the player.
+  armed pre-action (`preActionArmedRef`; the discrete event runs outside
+  render, so render state is stale there). With an arm it DEFERS through
+  STATE (`turnAlertDeferred`; the snapshot lands before the discrete event,
+  so a ref write would not re-run the effect) to an effect on
+  `heroPromptedToAct`, which rings only if the hero ends up genuinely
+  prompted - the engine refused the arm, or missed the grace window. A turn
+  the engine takes for the player is never announced to the player.
 
 The suppression is still bounded by the same grace window
 (`PRE_ACTION_EXEC_GRACE_MS`) and the same honorability rule, so a refused or
@@ -149,76 +152,135 @@ now emits `antes_posted` (from the `FORCED_BETS_POSTED` handler, `kind ===
 `createChipToPotEvent` the bomb ante uses, the moment they post. Presentation
 only; the money was already right. Pinned in `bombPotGuards.test.ts`.
 
-## Sweep after merge (PR #3870 -> the follow-up branch)
+## Sweep after merge (PR #3870 -> PR #3880 -> this branch)
 
 Dan: "DO A FINAL SWEEP AND CHECK FOR ANY AND ALL BUGS, GAPS, STUBS, ERRORS,
-REGRESSIONS OR WIRING ISSUES." An adversarial second read of the merged
-commit found nine things; all are fixed in the follow-up:
+REGRESSIONS OR WIRING ISSUES", then "DO A SECONDARY DEEPER SWEEP AND DIVE."
+Three independent adversarial reads (server/money, client/React,
+tests/docs) over the merged commit and the follow-up. Everything below is
+fixed on this branch.
 
-1. **`add_on_adjusted` (and Dan's `add_on_applied` bubble) were dead on
-   production.** Every cash engine is lease-verified, so a mid-hand add-on is
-   frozen into the hand's post-commit envelope and resolved inside
+### The one that mattered: the pre-action fix was dead on the wire
+
+`handleTurnChange` consumes the armed pre-action synchronously at its top -
+BEFORE the visible beat, BEFORE the snapshot that puts the hero on the clock,
+BEFORE the discrete `turn_change`. `PreActionEngine` emits
+`PRE_ACTION_EXECUTED` right there, and since 2026-09-04 the engine pushed its
+(now empty) copy to the hero at once, as a private frame. So the hero's
+client received "nothing armed" a frame AHEAD of the turn: the bar disarmed,
+`awaitingPreActionExec` was false, `suppressPanelForPreAction` was false, and
+every surface - bell, ring, clock, panel, tile, pulse, tab badge - fired for
+the beat plus a round trip, and then the fold landed. Both the 2026-08-29
+suppression and the #3870 gate were correct on paper and had nothing to key
+on in practice. That is Dan's glitch, still live after two fixes.
+
+- **Engine**: no push on `PRE_ACTION_EXECUTED`
+  (`ServerTableEngineBase`). The executed action clears the client's arm when
+  it lands (`heroLastAction`). Every OTHER empty push carries its reason:
+  `invalidated` (a bet under an armed Check), `cleared` (the player, or a new
+  hand), `rejected` (pushed explicitly from `handleTurnChange`'s fallthrough
+  when `performAction` refuses, so the player is prompted at once rather
+  than at the end of the grace window), `resync` (RESYNC re-send,
+  authoritative). Note: the early returns after the beat (hand replaced,
+  seat moved) push nothing; the client's arm is then cleared by the
+  street/hand reset, as before.
+- **Client**: an empty frame with NO reason can only be the execution push
+  of an older engine; it is held while an arm is up, bounded by the grace
+  window. `PreActionBar` stays mounted through the beat
+  (`suppressPanelForPreAction` in its gate) so the pressed button stays
+  pressed instead of an empty strip between "armed" and "unarmed";
+  `heroActionState` holds `'waiting'` through the beat instead of `'none'`
+  (which collapsed the bottom chrome to 1px). The deferred bell is STATE
+  (`turnAlertDeferred`), because the snapshot lands before the discrete
+  `turn_change` and a ref write cannot re-run the effect. The multi-table
+  reporting effect (tab badge, soft ping, dock countdown, Notification)
+  reads `heroPromptedToAct`; the whole gate moved ~14,000 lines up, above
+  that effect, because a const cannot be read before its declaration.
+  `server/src/engine/PreActionPushDoesNotOutrunTheTurn.test.ts` drives the
+  real `PreActionEngine` and fails on any of it reverting.
+
+### The add-on, all the way through
+
+1. **`add_on_applied` / `add_on_adjusted` were dead on production.** Every
+   cash engine is lease-verified, so a mid-hand add-on is frozen into the
+   hand's post-commit envelope and resolved inside
    `fn_ca_process_hand_post_commit_obligations`, which returns a COUNT.
    `processPendingAddOns` - the only emitter of both - runs on that path only
-   for unbound rows before the next deal. New `announceEnvelopeResolvedAddOns`
-   (Seating) runs from settlement right after the obligations land: reads the
-   frozen ids from `hand_atomic_commits.post_commit_payload`, the resolved
-   rows from `table_pending_addons`, emits the bubble per landed row and the
-   private frame per reduced row. Best effort; a failed read is reported,
-   never thrown.
-2. **The cap cache double-counted a landed add-on between hands.** The
-   envelope path refreshed `player.stack` from the seat and left
-   `pendingAddOns` alone, so `stack + pending` counted the same chips twice
-   and refused a legitimate top-up as "already at the maximum" - until the
-   next deal's sweep. The announcer rebuilds the map from the rows still
-   unresolved.
-3. **The client could apply the refund correction twice.** The USER_EVENT
-   effect re-runs when `handleHoleCardPayload` changes identity (mute, tab
-   switch) with the same frame still in state. Gated on frame identity, and
-   on the ledger row id (`pending_id`, now on the frame) so a RESYNC re-send
-   or a replayed settlement is a no-op too.
-4. **A capped bust REBUY would have credited a balance the client never
-   debited** (`confirmBustRebuy` calls `atomic_table_rebuy` directly). The
-   correction now applies only to `addon_kind === 'addon'`; a rebuy is told,
-   not adjusted.
-5. **The frame was fire-and-forget.** Retained per player and re-sent on
-   RESYNC (`rePushAddOnAdjusted`, wired beside `rePushPreAction`).
-6. **The deferred bell could be lost.** The engine sends the snapshot
-   BEFORE the discrete turn_change; the effect had already run for the turn
-   and a ref write does not re-run it. `turnAlertDeferred` is state now.
-7. **The multi-table surfaces still read the raw seat**: tab badge, soft
-   ping, dock countdown and desktop Notification fired "YOUR TURN" for the
-   engine's beat. `isHeroTurn` in the reporting effect reads
-   `heroPromptedToAct`; the whole gate moved ~14,000 lines up, above that
-   effect, because a const cannot be read before its declaration.
-8. **The bottom chrome blinked** for the beat: `heroActionState` returned
-   `'none'` (wrapper collapsed to 1px) between the `'waiting'` before and the
-   `'waiting'` after. It holds `'waiting'` through the beat.
-9. **BombPotOverlay re-measured its own SCALED box on resize** and snapped
-   back to full size onto the seats. `offsetHeight` (layout height) instead.
+   for unbound rows before the next deal. New
+   `announceEnvelopeResolvedAddOns` runs from settlement after the
+   obligations land: reads the frozen ids from
+   `hand_atomic_commits.post_commit_payload` and the resolved rows from
+   `table_pending_addons` (both reads verified against production over
+   PostgREST, read-only), emits the bubble per landed row and the private
+   frame per reduced row. Gated on the RPC's own `pending_addons` count (0
+   and an empty cache spend no read; tournaments never do; an absent count
+   reads to find out), lease-fenced after every await, best effort - a
+   failed read is reported, never thrown. Pinned from the settlement side in
+   `PostCommitObligationBarrier.guard.test.ts` so deleting the call is red.
+2. **A float reached the ledger and would have wedged a table.** `applied`
+   was `Math.min(amount, maxBuyIn - stack)` unrounded (50 - 33.33 =
+   16.670000000000002) and `atomic_table_addon` stores it verbatim: 49 such
+   rows on production, ~2 a day. `resolve_pending_addon` returns
+   `ROUND(applied, 2)` / `ROUND(refunded, 2)`, and the obligation check that
+   went live on 2026-09-08 (`20260908175113`) refuses a receipt where
+   `applied + refunded <> amount` - deterministically, so settlement would
+   retry every 5s until the lease died and the table never dealt again. No
+   unrounded row was open at the time of the fix. `addChips` rounds to the
+   cent; so does `confirmBustRebuy` at the wire (its modal already did).
+3. **The cap cache double-counted a landed add-on between hands.** The
+   envelope path refreshed `player.stack` and left `pendingAddOns` alone, so
+   `stack + pending` counted the same chips twice and refused a legitimate
+   top-up as "already at the maximum". `rebuildPendingAddOnCache` rebuilds
+   it from the rows still unresolved - after the envelope, and on engine
+   start (`resolveOrphanedAddOns`; a restart with a frozen-but-unresolved
+   row otherwise sized the next top-up as if the queued one did not exist).
+   A rebuild overtaken by a concurrent mid-hand `addChips` (sweep generation
+   moved under the read) is discarded; the sweep it asked for rebuilds.
+4. **The client could apply the refund correction twice, or to a session
+   that never made the debit.** The USER_EVENT effect re-runs when
+   `handleHoleCardPayload` changes identity with the same frame in state;
+   `onResync` fires on EVERY connect, not only a seq-gap RESYNC. Gated on
+   frame identity, on the ledger row id (`pending_id`, on the frame), and on
+   `queuedAddOnsThisMountRef` - only a mount that itself queued a mid-hand
+   add-on (and debited its own figures) credits the refund; a reloaded page
+   is told, never credited. A capped bust REBUY (`atomic_table_rebuy`
+   directly, never debited client-side) is told, not adjusted.
+5. **The frame is retained ONLY while undelivered** (`sendToUser` found no
+   socket), delivered once on the next connect, then forgotten; dropped on
+   leave. Retaining a delivered frame greeted the player on every reload
+   until the hourly restart.
+6. **Auto top-up**: "already at the maximum" is a silent no-op remembered per
+   hand (it cannot see a queued add-on that already fills the seat, and the
+   effect re-runs on every snapshot); a queued auto top-up is announced once
+   (by `handleAddChips`), not twice; the success toast prints what landed.
 
-Plus: the auto top-up treats "already at the maximum buy-in" as a silent
-no-op (it cannot see a queued add-on that already fills the seat);
-`ANTES_POSTED` no longer stacks a second chip click on `BLINDS_POSTED`'s;
-the 900ms beat claim in a comment corrected to the 250ms it has been since
-2026-09-07.
+### Smaller
+
+- `BombPotOverlay` measures `offsetHeight`, not its own scaled rect, so a
+  resize while the title is up cannot climb back onto the seats; the
+  geometry lives in `src/lib/bombPotTitleAnchor.ts` (a component file
+  exports only its component).
+- `ANTES_POSTED` no longer stacks a second chip click on `BLINDS_POSTED`'s.
+- The chip-flight label (`ChipAnimation`) squared off anything from 1 up
+  (a 2026-08-14 rule against engine sub-chip noise, which #3358 has since
+  removed at the source), so a 1.50 ante flew to the pot as "2" while the
+  pill read "1.50". To the cent, two places when there are cents.
+- A comment claimed a 900ms beat; it is 250ms.
 
 Left as is, on purpose: hotkeys during the beat (engine dedupes; harmless),
-and `lastAddChipsResultRef` being shared by manual and auto top-ups (the
-auto toast reads the last result; overlapping requests are not a real path).
+and `lastAddChipsResultRef` being shared by manual and auto top-ups
+(overlapping requests are not a real path).
 
 ## Verified
 
 - `npx tsc --noEmit` clean (client and `server/`).
-- Client: preActionPanelGate, preActionArmedPriceIsTheEngines,
-  LiveHandNeverDimsAndPreActionsLand, mobileTableBehaviours,
-  tableBottomChromeAudit20260825, bottomBarReserve, bombPotGuards,
-  bombPotTitleAboveTheBoard, pot-push-to-winner, potCarryAndRaiseCeiling,
-  chips-on-the-felt, all-in-cannot-leave-and-the-hud-slot, addOnBubble,
-  cashoutAddonRace, noDeadBusSubscriptions, OneCashOutPathOneSeatCreator.law,
-  GameServerAPI, shipped-invariants, animations-always-play.law,
-  handCompletionLaw - all green.
-- Server: AddOnAdjustsItself, PendingAddOnIdleSweep, RebuyRowCannotBeErased,
-  SitOutClockAndEviction, handlers - all green.
+- Full client suite (`npx vitest run`) and full server suite
+  (`cd server && npx vitest run`) green on the sweep branch, including the
+  new `PreActionPushDoesNotOutrunTheTurn`, `AddOnAdjustsItself`,
+  `bombPotTitleAboveTheBoard`, and the moved pins in `preActionPanelGate`,
+  `reconnectIsAnEvent`, `all-in-cannot-leave-and-the-hud-slot`,
+  `a-top-up-is-charged-once.law`, `bombPotGuards`.
+- The two PostgREST reads the announcer issues were run against production
+  (read-only, service role) and returned the expected shapes.
 - Felt-harness screenshot of the title block at 390x844 and 1280x800
   (scratch, not committed).

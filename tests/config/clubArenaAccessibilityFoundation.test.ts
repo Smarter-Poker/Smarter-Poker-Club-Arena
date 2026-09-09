@@ -122,7 +122,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain("label: 'Settings'");
     expect(source).toContain("label: 'Stats'");
     expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");
-    expect(source).toContain('aria-label="Club Arena"');
+    expect(source).toContain('aria-label="Poker Arena"');
     expect(source).toContain("aria-current={activeTab === destination.key ? 'page' : undefined}");
     expect(source).toContain('data-footer-control={destination.key}');
   });

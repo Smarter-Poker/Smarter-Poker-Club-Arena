@@ -953,7 +953,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             <span>
               <span className={styles.brandEyebrow}>Smarter.Poker</span>
               <span className={styles.brandTitle} id={dialogTitleId}>
-                Club Arena
+                Poker Arena
               </span>
             </span>
           </div>
@@ -1495,7 +1495,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </button>
         </div>
 
-        <div className={styles.footer}>Club Arena · Command Deck V1.12</div>
+        <div className={styles.footer}>Poker Arena · Command Deck V1.12</div>
       </div>
 
       {/* Avatar Gallery Modal */}

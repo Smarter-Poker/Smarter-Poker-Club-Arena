@@ -2,6 +2,10 @@
 
 Date: September 8, 2026. Phase count: 12.
 
+## Execution Update, September 8, 2026
+
+Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is monitored and repaired in the background. This supersedes the earlier instruction to block Phase 3 solely on Phase 2 deployment. Phase 2 must still be verified and any regression corrected; queued publication does not count as completed publication. Public funded Diamond games remain subject to the later gameplay and accounting release gates.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.

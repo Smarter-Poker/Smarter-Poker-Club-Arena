@@ -2693,6 +2693,32 @@
       "created_at",
       "resolved_at"
     ],
+    "cash_seat_move_ledger": [
+      "move_id",
+      "player_id",
+      "game_id",
+      "club_id",
+      "table_id",
+      "occupancy_id",
+      "amount",
+      "side",
+      "created_at"
+    ],
+    "cash_seat_move_receipts": [
+      "move_id",
+      "player_id",
+      "game_id",
+      "club_id",
+      "from_table_id",
+      "from_seat_number",
+      "source_occupancy_id",
+      "to_table_id",
+      "to_seat_number",
+      "destination_occupancy_id",
+      "amount",
+      "receipt",
+      "created_at"
+    ],
     "cash_seat_moves": [
       "id",
       "game_id",
@@ -2708,7 +2734,9 @@
       "note",
       "announced_at",
       "swap_move_id",
-      "ready_at"
+      "ready_at",
+      "source_occupancy_id",
+      "source_seat_number"
     ],
     "cashier_operations": [
       "id",
@@ -6512,12 +6540,23 @@
       "engine_version",
       "recorded_at"
     ],
+    "engine_maintenance_thaw_targets": [
+      "freeze_started_at",
+      "step",
+      "target_id",
+      "credited_seconds"
+    ],
     "engine_maintenance_thaws": [
       "freeze_started_at",
       "thawed_at",
       "frozen_seconds",
       "shifted",
-      "thawed_by"
+      "thawed_by",
+      "announced_at",
+      "ownership_token",
+      "contract_version",
+      "release_target_at",
+      "release_generation"
     ],
     "engine_presence_parked": [
       "table_id",
@@ -10822,6 +10861,16 @@
       "value",
       "updated_at"
     ],
+    "seat_admin_departure_authorizations": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_number",
+      "actor_id",
+      "club_id",
+      "reason",
+      "created_at"
+    ],
     "seat_cashout_receipts": [
       "occupancy_id",
       "user_id",
@@ -11715,6 +11764,16 @@
       "seed_returned_amount",
       "required_seed_at_activation"
     ],
+    "spin_draw_receipts": [
+      "tournament_id",
+      "launch_id",
+      "lease_generation",
+      "rule_manifest",
+      "rule_sha256",
+      "entrants",
+      "receipt",
+      "created_at"
+    ],
     "spin_fill_policy": [
       "id",
       "unfilled_timeout_minutes",
@@ -12034,7 +12093,9 @@
       "sit_out_at",
       "entry_hold",
       "entry_post_agreed",
-      "occupancy_id"
+      "occupancy_id",
+      "active_game_scope",
+      "active_parent_key"
     ],
     "table_sessions": [
       "id",
@@ -12246,7 +12307,9 @@
       "break_eligible_since",
       "promote_pending",
       "observer_show_cards",
-      "terminal_closed_at"
+      "terminal_closed_at",
+      "seat_game_scope",
+      "seat_admission_key"
     ],
     "theme_asset_unlocks": [
       "user_id",

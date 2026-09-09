@@ -21,27 +21,38 @@ pass, through every hourly restart.
 
 ## What that looked like on production
 
-Measured 2026-09-09, either side of the 05:55 maintenance restart:
+Measured 2026-09-09, across the 05:55 maintenance restart:
 
-| time  | tournaments dealing (10m window) | RUNNING |
-| ----- | -------------------------------- | ------- |
-| 05:43 | 86                               | 140     |
-| 06:04 | **8**                            | 126     |
+| time      | tournaments dealing (10m window) | RUNNING | stalled >1h |
+| --------- | -------------------------------- | ------- | ----------- |
+| 05:43     | 86                               | 140     | 13          |
+| 06:04     | 8                                | 126     | 13          |
+| **06:12** | **170**                          | **196** | **13**      |
 
-and at the same moment, **13 RUNNING tournaments had dealt no hand for over an
-hour**, with **183 players** still sitting `playing` in them. Those thirteen had
-been through several hourly restarts and lost the race every time. The oldest,
-`$100 Freeroll 6:00 AM`, had not dealt a hand in **903 minutes**.
+**Read all three rows before drawing anything from the middle one.** The first
+draft of this page stopped at 06:04 and presented `86 -> 8` as the starvation
+biting. It is not: it is the fleet being re-adopted after a restart, and eight
+minutes later 170 of 196 were dealing again. That claim is withdrawn.
 
-The downstream shapes all follow from a tournament having no manager, and none
-of them is a separate bug:
+What survives the third sample is the last column. **Thirteen RUNNING
+tournaments had dealt no hand for over an hour, and they were the same thirteen
+before, during and after a full recovery of every other event on the platform.**
+183 players were sitting `playing` in them. The oldest, `$100 Freeroll 6:00 AM`,
+had not dealt a hand in **903 minutes**.
 
-- no balance pass, so `$100 Freeroll 12:00 PM` held 41 open tables for 42 seated
-  players, forty of them with exactly one player and therefore undealable;
-- no seating sweep, so 29 players who had re-entered held 5,000 chips with no
-  seat (`process_tournament_rebuy` credits chips seatlessly by design and the
-  seating sweep is what places them);
-- no elimination sweep, so pending knockout candidates climbed to 207.
+So those thirteen are not a slow tail. They are separately stuck, next to 170
+healthy events, and this change is not what fixes them - see "What this does not
+claim" below.
+
+The shapes underneath them, all consistent with a tournament whose tables are
+not being balanced:
+
+- `$100 Freeroll 12:00 PM` held 41 open tables for 42 seated players, forty of
+  them with exactly one player and therefore undealable;
+- 29 players who had re-entered held 5,000 chips with no seat
+  (`process_tournament_rebuy` credits chips seatlessly by design and the seating
+  sweep is what places them);
+- pending knockout candidates climbed to 207 platform-wide.
 
 ## The fix
 
@@ -61,11 +72,41 @@ that prove nothing.
 
 ## What this does not claim
 
-It does not explain why the fleet cannot be adopted in one pass in the first
-place - that is still open, and the changelog beside this one
-(`2026-09-09-the-fleet-nobody-was-running.md`) carries the measurements and the
-new `poker_tournament_fleet_unserved` gauge that makes the next occurrence
-visible in ten minutes instead of fifteen hours.
+**It does not fix the thirteen.** They stayed stalled through a recovery that
+took the rest of the platform from 8 dealing to 170, so whatever holds them is
+not adoption order. This change is a correctness fix on its own terms - a stable
+order IS a starvation order, and adoption cannot all happen in one pass - and it
+should not be read as the answer to that incident.
+
+Where that trail was left, so the next person does not restart it from zero.
+Every one of the thirteen has open tables WITH live seats, roughly one player
+per table, so no table can deal and only the balancer can rescue them. The
+balancer builds its picture from `[...this.tableEngines.keys()]` - the tables
+this manager holds an ENGINE for, not the tables the tournament has:
+
+```ts
+const balancerTables = await this.loadBalancerTables([...this.tableEngines.keys()], ...)
+...
+if (this.tableEngines.size > 1) { /* STEP 2: gap rebalance */ }
+```
+
+and `shouldBreakTable` returns false immediately when `allTables.length <= 1`.
+So a manager holding engines for fewer than two of its tournament's tables can
+neither break a table nor rebalance one, forever, while the tournament sits
+there fully seated. That is consistent with every measurement taken, and the
+next step is an engine log for those thirteen tournament ids - specifically
+whether their table engines were ever adopted. It was not confirmed here, and it
+is deliberately not asserted.
+
+Two other things worth knowing at that point:
+
+- `waitForHandComplete` returns `Boolean(engine && engine.isBetweenHands() &&
+!engine.hasSettlementInFlight())`, so a MISSING engine reads as "still in a
+  hand". STEP 1 guards that with its own `if (engine)`; the gap-rebalance path
+  and the final-table path do not.
+- `2026-09-09-the-fleet-nobody-was-running.md` carries the
+  `poker_tournament_fleet_unserved` gauge, which makes the whole-fleet version of
+  this visible in ten minutes instead of fifteen hours.
 
 Worth recording for whoever picks that up: **cash-table adoption is bounded per
 sweep (the C20 `engineStartBudget`, max 5, with a 40 ms stagger and a comment

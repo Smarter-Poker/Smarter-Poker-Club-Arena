@@ -10,7 +10,11 @@ import {
   solverPolicyArtifactStatus,
 } from '../gto/SolverPolicyArtifactLoader.js';
 import { startGtoChartLoader, stopGtoChartLoader } from './GtoChartLoader.js';
-import { startGtoPostflopLoader, stopGtoPostflopLoader } from './GtoPostflopLoader.js';
+import {
+  assertCompleteGtoPostflopSnapshot,
+  startGtoPostflopLoader,
+  stopGtoPostflopLoader,
+} from './GtoPostflopLoader.js';
 import { startGtoPostflopV31Loader, stopGtoPostflopV31Loader } from './GtoPostflopV31Loader.js';
 
 afterEach(() => {
@@ -50,6 +54,26 @@ function completeCorpus(): GtoChartRow[] {
 }
 
 describe('GTO chart corpus refresh guard', () => {
+  it('refuses a shifted or uncounted legacy postflop snapshot', () => {
+    const stable = { count: 7_747, latestBuiltAt: '2026-09-01T00:00:00.000Z' };
+    expect(() => assertCompleteGtoPostflopSnapshot(stable, 7_747, stable)).not.toThrow();
+    expect(() =>
+      assertCompleteGtoPostflopSnapshot({ ...stable, count: null }, 7_747, stable)
+    ).toThrow(/exact_count_unavailable/);
+    expect(() => assertCompleteGtoPostflopSnapshot(stable, 7_500, stable)).toThrow(
+      /snapshot_shifted/
+    );
+    expect(() =>
+      assertCompleteGtoPostflopSnapshot(stable, 7_747, { ...stable, count: 7_748 })
+    ).toThrow(/snapshot_shifted/);
+    expect(() =>
+      assertCompleteGtoPostflopSnapshot(stable, 7_747, {
+        ...stable,
+        latestBuiltAt: '2026-09-01T00:00:01.000Z',
+      })
+    ).toThrow(/snapshot_shifted/);
+  });
+
   it('requires the exact 240-row game, node, position, and depth lattice', () => {
     const rows = completeCorpus();
     expect(expectedGtoChartCorpusKeys().size).toBe(240);

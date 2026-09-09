@@ -237,6 +237,158 @@ describe('who is speaking, and who paid (Dan 2026-09-03)', () => {
   });
 });
 
+describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
+  /* "allow others to advertise with us." An advertiser who cannot send a
+     player to their own site is not an advertiser. The whole design question
+     was how to do that WITHOUT weakening any of the four same-origin checks,
+     and the answer is that the address never travels. */
+  const SPONSOR_MIGRATION = read(
+    'supabase/migrations/20260909071146_a_sponsor_sends_traffic_to_its_own_site.sql'
+  );
+  const CAMPAIGNS = read('src/services/AdCampaignService.ts');
+  const QUEUE = read('src/components/ads/CampaignQueue.tsx');
+
+  it('the address is stored on the campaign and never served to a browser', () => {
+    // The resolver hands out /c/<code>. Approval is what mints the code.
+    expect(SPONSOR_MIGRATION).toMatch(/v_target := '\/c\/' \|\| v_code;/);
+    expect(SPONSOR_MIGRATION).toMatch(/external_url\s+text/);
+    // https only, enforced on the column as well as at the door that writes it.
+    expect(SPONSOR_MIGRATION).toMatch(/ad_campaign_external_is_https/);
+    expect(SPONSOR_MIGRATION).toMatch(/external_url ~ '\^https:\/\/\[a-zA-Z0-9\]'/);
+    // A code with nothing to point at cannot exist.
+    expect(SPONSOR_MIGRATION).toMatch(/ad_campaign_code_needs_a_destination/);
+  });
+
+  it('the redirect takes a code and returns a url, never the other way round', () => {
+    /* This is the open-redirect question. A route that accepted a URL and
+       redirected to it would be one; this one cannot be, because there is no
+       URL in the request at all - only an opaque key into a row we approved. */
+    expect(SPONSOR_MIGRATION).toMatch(/fn_ad_click_redirect\(\s*p_click_code text/);
+    expect(SPONSOR_MIGRATION).toMatch(/WHERE click_code = p_click_code/);
+    expect(SPONSOR_MIGRATION).not.toMatch(/p_url|p_destination|p_target_url/);
+    // An unknown code is refused, and the migration asks the live function.
+    expect(SPONSOR_MIGRATION).toMatch(/fn_ad_click_redirect returned a url for an unknown code/);
+    // Browser roles cannot call it: it would expose every sponsor's destination.
+    expect(SPONSOR_MIGRATION).toMatch(
+      /revoke all on function public\.fn_ad_click_redirect\(text, uuid\) from public, anon, authenticated;/
+    );
+    expect(SPONSOR_MIGRATION).toMatch(
+      /grant execute on function public\.fn_ad_click_redirect\(text, uuid\) to service_role;/
+    );
+  });
+
+  it('a flight that is over stops sending traffic', () => {
+    const fn = SPONSOR_MIGRATION.slice(
+      SPONSOR_MIGRATION.indexOf('create or replace function public.fn_ad_click_redirect'),
+      SPONSOR_MIGRATION.indexOf('create or replace function public.fn_ad_campaign_list')
+    );
+    expect(fn).toMatch(/v_c\.status <> 'approved'/);
+    expect(fn).toMatch(/now\(\) < v_c\.starts_at OR now\(\) >= v_c\.ends_at/);
+  });
+
+  it('an external click is counted ONCE, by the redirect, not also by the browser', () => {
+    /* The page is being torn down as the request leaves, so the browser is the
+       least reliable place to count the one number an advertiser can dispute.
+       Counting in both places would bill a sponsor for double the clicks. */
+    expect(SPONSOR_MIGRATION).toMatch(
+      /INSERT INTO public\.ad_event \(ad_id, user_id, slot, event_type, club_id\)/
+    );
+    const activate = ROTATOR.slice(
+      ROTATOR.indexOf('const activate = () => {'),
+      ROTATOR.indexOf('const ratio =')
+    );
+    // The external branch leaves without logging, and returns before the
+    // internal branch's logClick can run.
+    expect(activate).toMatch(/if \(external\) \{/);
+    expect(activate.indexOf('window.location.assign(target)')).toBeLessThan(
+      activate.indexOf('AdService.logClick')
+    );
+    expect(activate).toMatch(/return;\s*\}\s*AdService\.logClick/);
+  });
+
+  it('the router is not handed a path it would resolve under the basename', () => {
+    // navigate('/c/x') would become /hub/club-arena/c/x, which is nothing.
+    expect(SERVICE).toMatch(/export const AD_CLICK_PREFIX = '\/c\/';/);
+    expect(SERVICE).toMatch(/export function isExternalAdClick/);
+    expect(ROTATOR).toMatch(/const external = isExternalAdClick\(target\);/);
+    expect(ROTATOR).toMatch(/window\.location\.assign\(target\)/);
+    // Leaving does not need the router, so it is activatable without one.
+    expect(ROTATOR).toMatch(
+      /const activatable = Boolean\(target\) && \(external \|\| Boolean\(onNavigate\)\);/
+    );
+  });
+
+  it('the same-origin checks are untouched: /c/<code> is a rooted path', () => {
+    // isSafeAdTarget still sees exactly what it always saw. If this rewrite had
+    // needed to relax it, that would be the bug.
+    expect(SERVICE).toMatch(/export function isSafeAdTarget/);
+    expect(SERVICE).toMatch(/url\.startsWith\('\/'\)/);
+    expect(SERVICE).toMatch(/!url\.startsWith\('\/\/'\)/);
+    expect(ROTATOR).toMatch(/return isSafeAdTarget\(url\) \? url : null;/);
+  });
+
+  it('a flight is paced rather than spent on day one, and never goes dark', () => {
+    expect(SPONSOR_MIGRATION).toMatch(/AS pace_debt/);
+    expect(SPONSOR_MIGRATION).toMatch(
+      /ORDER BY r\.priority DESC, r\.pace_debt DESC, random\(\) \^ \(1\.0 \/ GREATEST\(r\.weight, 1\)\) DESC/
+    );
+    // A campaign with no goal is decided exactly as before.
+    expect(SPONSOR_MIGRATION).toMatch(
+      /cam\.goal_impressions IS NULL OR cam\.pacing <> 'even' THEN 0::numeric/
+    );
+  });
+
+  it('a sponsor campaign is visible to the queue that must approve it', () => {
+    /* The previous version INNER JOINed clubs, and a sponsor has no club, so
+       every sponsor campaign would have been invisible to its own reviewer. */
+    expect(SPONSOR_MIGRATION).toMatch(/LEFT JOIN public\.clubs cl/);
+    expect(SPONSOR_MIGRATION).toMatch(/COALESCE\(cl\.name, adv\.name\) AS club_name/);
+    expect(SPONSOR_MIGRATION).toMatch(
+      /still inner-joins clubs, so no sponsor campaign can be reviewed/
+    );
+  });
+
+  it('opening a sponsor takes no money and needs platform staff', () => {
+    expect(SPONSOR_MIGRATION).toMatch(/fn_sponsor_campaign_create/);
+    const fn = SPONSOR_MIGRATION.slice(
+      SPONSOR_MIGRATION.indexOf('create or replace function public.fn_sponsor_campaign_create'),
+      SPONSOR_MIGRATION.indexOf('create or replace function public.fn_ad_campaign_review')
+    );
+    expect(fn).toMatch(/'not_platform_admin'/);
+    // No diamonds anywhere in the sponsor path: it is invoiced off platform.
+    expect(fn).not.toMatch(/deduct_diamonds|add_diamonds_to_balance/);
+    expect(fn).toMatch(/0, v_user, p_external_url/);
+    expect(CAMPAIGNS).toMatch(/async createSponsor/);
+    expect(QUEUE).toMatch(/Open A Sponsor Flight/);
+  });
+
+  it('rejecting a sponsor does not try to refund diamonds it never took', () => {
+    const review = SPONSOR_MIGRATION.slice(
+      SPONSOR_MIGRATION.indexOf('create or replace function public.fn_ad_campaign_review'),
+      SPONSOR_MIGRATION.indexOf('create or replace function public.fn_ad_click_redirect')
+    );
+    expect(review).toMatch(/IF v_c\.diamonds_charged > 0 AND v_c\.submitted_by IS NOT NULL THEN/);
+  });
+
+  it('the report is computed on read, with no scheduler anywhere', () => {
+    // CLAUDE.md section 11 routes every scheduled trigger through Open Claw,
+    // and a number recomputed on read cannot silently go stale.
+    expect(SPONSOR_MIGRATION).toMatch(/fn_ad_campaign_report/);
+    expect(SPONSOR_MIGRATION).not.toMatch(/cron\.schedule|pg_cron/);
+    expect(CAMPAIGNS).toMatch(/async report/);
+  });
+
+  it('no country column pretends to be a compliance control', () => {
+    /* A real-money operator may only be advertised where it is licensed. The
+       only country this database could consult is one the browser told it, and
+       a control a player can edit is decorative. Shipping it would read as
+       armed while being nothing, which is the failure shape this estate keeps
+       paying for. The migration says so out loud instead. */
+    expect(SPONSOR_MIGRATION).not.toMatch(/country_allow|geo_allow|p_country/);
+    expect(SPONSOR_MIGRATION).toMatch(/NO GEO TARGETING/);
+  });
+});
+
 describe('impressions are counted honestly', () => {
   it('de-duplicates per page load rather than per render', () => {
     /* The strip rotates every 7s and re-renders constantly. Counting renders
@@ -1118,7 +1270,16 @@ describe('a click is only counted when it went somewhere (2026-08-29)', () => {
   });
 
   it('a creative with no safe destination is not rendered as a button', () => {
-    expect(ROTATOR).toMatch(/const activatable = Boolean\(target\) && Boolean\(onNavigate\);/);
+    /* Updated 2026-09-09 with the sponsor phase, and the rule is unchanged:
+       `Boolean(target)` is still what decides, and target is still the CHECKED
+       destination. What moved is the second clause. An external click leaves
+       through window.location and does not need the router, so it no longer
+       requires an onNavigate handler to be activatable - but with no safe
+       target it is still a static div, which is the thing this test exists to
+       hold. */
+    expect(ROTATOR).toMatch(
+      /const activatable = Boolean\(target\) && \(external \|\| Boolean\(onNavigate\)\);/
+    );
     expect(ROTATOR).toMatch(/ad-rotator__frame--static/);
     expect(ROTATOR).not.toMatch(/activatable =[^;]*Boolean\(ad\.targetUrl\)/);
   });

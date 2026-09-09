@@ -82,18 +82,7 @@ export interface Card {
 export type PlayerStatus = 'active' | 'away' | 'sitting_out' | 'folded' | 'all_in' | 'disconnected';
 /** Bible V8 Appendix B: Position labels for all table sizes */
 export type PositionBadge =
-  | 'D'
-  | 'BTN'
-  | 'SB'
-  | 'BB'
-  | 'UTG'
-  | 'UTG+1'
-  | 'UTG+2'
-  | 'MP'
-  | 'MP+1'
-  | 'HJ'
-  | 'CO'
-  | null;
+  'D' | 'BTN' | 'SB' | 'BB' | 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO' | null;
 /* CRAZY PINEAPPLE PHASE 3 2026-08-31: 'discard' was missing from this union
    even though the engine has emitted PLAYER_ACTION action:'discard' since the
    variant shipped and TablePage writes it into lastActions like any other
@@ -3404,7 +3393,12 @@ export const SeatSlot = memo(
               ◎
             </span>
             <span className="seat__bounty-val" aria-hidden="true">
-              {bountyValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              {/* Two places when there ARE cents (2026-09-09): a 7.50 bounty
+                  rendered "7.5" beside a 2-dp BBJ credit on the same seat. */}
+              {bountyValue.toLocaleString('en-US', {
+                minimumFractionDigits: Number.isInteger(bountyValue) ? 0 : 2,
+                maximumFractionDigits: 2,
+              })}
             </span>
           </div>
         )}

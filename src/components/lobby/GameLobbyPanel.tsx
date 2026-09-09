@@ -39,6 +39,7 @@ import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
+import { formatTableChips } from '../../utils/format';
 
 export interface GameLobbyPanelProps {
   entry: LobbyEntry;
@@ -770,7 +771,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   {avgPot != null && avgPot > 0 && (
                     <div>
                       <dt>Avg Pot</dt>
-                      <dd className="glp__mono">{Math.round(avgPot).toLocaleString()}</dd>
+                      <dd className="glp__mono">{formatTableChips(avgPot)}</dd>
                     </div>
                   )}
                   <div>
@@ -1105,13 +1106,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                   Number(tournament.guaranteed_prize) || 0
                                 ) > 0 && (
                                   <td>
+                                    {/* The bubble promise is reserved before the
+                                        place ladder is projected. Display the
+                                        same cent-rounded amount settlement uses. */}
                                     {panelPlaceLadderPool === null
                                       ? '-'
-                                      : placePrize(
-                                          panelPlaceLadderPool,
-                                          panelPayouts,
-                                          p.place
-                                        ).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                                      : formatTableChips(
+                                          placePrize(panelPlaceLadderPool, panelPayouts, p.place)
+                                        )}
                                   </td>
                                 )}
                               </tr>

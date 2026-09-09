@@ -24,6 +24,80 @@ SELECT pg_advisory_xact_lock(
   hashtextextended('ca:tournament-terminal-settlement:v1',0));
 SELECT pg_advisory_xact_lock_shared(530090,1);
 
+-- The freeze predicate is executable cutover authority, not a name to trust.
+-- Authenticate its exact body and the statement trigger that serializes every
+-- maintenance-row writer before using either the live or pristine branch.
+DO $authenticate_entry_freeze_authority$
+DECLARE
+  v_break_relation oid := to_regclass('public.engine_maintenance_break');
+  v_predicate oid := to_regprocedure('public.fn_entry_purchases_frozen()');
+  v_writer oid :=
+    to_regprocedure('public.fn_serialize_engine_maintenance_break_write()');
+  v_relation_owner oid;
+BEGIN
+  IF v_break_relation IS NULL OR v_predicate IS NULL OR v_writer IS NULL THEN
+    RAISE EXCEPTION 'canonical maintenance entry-freeze authority is missing'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT c.relowner INTO STRICT v_relation_owner
+    FROM pg_class c WHERE c.oid = v_break_relation;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_predicate
+       AND md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'boolean'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'sql'
+  ) THEN
+    RAISE EXCEPTION 'maintenance entry-freeze predicate is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_writer
+       AND md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'trigger'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'plpgsql'
+  ) THEN
+    RAISE EXCEPTION 'maintenance-row serialization function is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (
+    SELECT count(*)
+      FROM pg_trigger tg
+     WHERE tg.tgrelid = v_break_relation
+       AND tg.tgname = 'aa_serialize_maintenance_break_write'
+       AND tg.tgfoid = v_writer
+       AND NOT tg.tgisinternal
+       AND tg.tgenabled = 'O'
+       AND tg.tgtype = 62
+       AND tg.tgattr::text = ''
+       AND tg.tgqual IS NULL
+       AND tg.tgnargs = 0
+  ) <> 1 THEN
+    RAISE EXCEPTION 'maintenance-row serialization trigger is not canonical and enabled'
+      USING ERRCODE = '55000';
+  END IF;
+END;
+$authenticate_entry_freeze_authority$;
+
 DO $require_live_terminal_cutover_freeze$
 DECLARE
   v_database_is_pristine boolean;

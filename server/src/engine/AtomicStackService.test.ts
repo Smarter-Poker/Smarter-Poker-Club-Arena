@@ -62,7 +62,13 @@ describe('AtomicStackService finite-money boundary', () => {
 
   it('refuses a finite credit or batch that would overflow to Infinity', () => {
     const service = new AtomicStackService();
-    service.initializeStack('table', 'player', Number.MAX_VALUE);
+    // MAX_VALUE itself cannot cross the cent-rounding boundary. A smaller
+    // finite baseline can, but adding MAX_VALUE still overflows.
+    expect(() => service.initializeStack('table', 'too-large', Number.MAX_VALUE)).toThrow(
+      /overflowed the finite cent boundary/
+    );
+    service.initializeStack('table', 'player', Number.MAX_VALUE / 1000);
+    const before = service.getStackWithVersion('table', 'player');
 
     expect(service.atomicCredit('table', 'player', Number.MAX_VALUE)).toMatchObject({
       success: false,
@@ -74,10 +80,8 @@ describe('AtomicStackService finite-money boundary', () => {
       success: false,
       errors: ["Settlement would make player's stack non-finite"],
     });
-    expect(service.getStackWithVersion('table', 'player')).toEqual({
-      stack: Number.MAX_VALUE,
-      version: 1,
-    });
+    expect(service.getStackWithVersion('table', 'player')).toEqual(before);
+    expect(service.getTableStacks('table').has('too-large')).toBe(false);
   });
 
   it('keeps valid debit, credit, and batch behavior intact', () => {

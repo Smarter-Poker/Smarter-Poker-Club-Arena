@@ -60,6 +60,25 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
 
 /**
+ * A chip is two decimal places, everywhere it is stored (#3358).
+ *
+ * `table_seats.stack` is numeric(15,2) and rounds on write, but the SAME
+ * numbers travel into `hand_history.players[].stack` (jsonb, no scale) and
+ * from there into `club_member_table_state.last_stack` and
+ * `club_member_daily_stats.profit`, which are unscaled and had 720 and 1,328
+ * non-cent rows respectively. Every stack mutation in this file goes through
+ * here.
+ */
+const cents = (n: number): number => {
+  if (!Number.isFinite(n)) throw new Error('Stack money must be finite before cent rounding');
+  const rounded = Math.round(n * 100) / 100;
+  if (!Number.isFinite(rounded)) {
+    throw new Error('Stack money overflowed the finite cent boundary');
+  }
+  return rounded;
+};
+
+/**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
  * the only other bound is "the map holds the last two hands" — which stops
  * bounding anything the moment a table stops dealing (an idle cash table, a
@@ -317,7 +336,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         `[ServerTableEngine:${this.tableId}] *** BBJ DRILL FIRED *** hand #${handNumber}. ` +
           `This is a drill, not a real bad beat. The chips are real.`
       );
-      EngineMetrics.bbjDrillsFiredTotal.inc(1, { table_id: this.tableId });
+      EngineMetrics.bbjDrillsFiredTotal.inc(1);
 
       return {
         hit: true,
@@ -688,7 +707,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // stack. EV CASHOUT 2026-08-28: a cashed-out player's locked amount
           // rides the same branch — paid from the bank regardless of outcome.
           if (seatedPlayer) {
-            seatedPlayer.stack += settlement.payout;
+            seatedPlayer.stack = cents(seatedPlayer.stack + settlement.payout);
             insuranceDeltas.set(
               settlement.playerId,
               (insuranceDeltas.get(settlement.playerId) ?? 0) + settlement.payout
@@ -729,8 +748,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 }
               );
             }
-            seatedPlayer.stack = Math.max(0, before - wonAmt);
-            const applied = before - seatedPlayer.stack;
+            seatedPlayer.stack = cents(Math.max(0, before - wonAmt));
+            /* `before - stack` is float CANCELLATION: it does not recover
+               wonAmt even though wonAmt was rounded three lines up. Round the
+               difference, not just the operands. */
+            const applied = cents(before - seatedPlayer.stack);
             this.currentHandCashoutRedirects.set(settlement.playerId, applied);
             insuranceDeltas.set(
               settlement.playerId,
@@ -780,7 +802,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
           if (seatedPlayer) {
             const beforePremium = seatedPlayer.stack;
-            seatedPlayer.stack = Math.max(0, seatedPlayer.stack - settlement.premium);
+            seatedPlayer.stack = cents(Math.max(0, seatedPlayer.stack - settlement.premium));
             // The CLAMPED amount, not settlement.premium — a short stack pays
             // what it has and the engine must debit exactly that.
             insuranceDeltas.set(
@@ -794,7 +816,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
 
-      if (insuranceDeltas.size > 0) this.handController?.applyStackDeltas(insuranceDeltas);
+      if (insuranceDeltas.size > 0) {
+        this.handController?.applyStackDeltas(insuranceDeltas);
+        /* AND SAY SO (2026-09-09). The client flies the payout to the seat
+           and toasts "Insurance Paid You N" off INSURANCE_SETTLED, and the
+           stack number underneath it did not move until the NEXT hand's
+           HAND_START broadcast - through the whole 1.4-2.2s post-hand hold.
+           The 7-2 bounty 130 lines below already learned this ("Move the
+           engine's own stacks BEFORE the re-broadcast - the WINNERS snapshot
+           went out before these transfers were applied"); insurance is the
+           same defect and never got the same line. */
+        void this.broadcastCurrentState();
+      }
       // Chip standard 2026-09-04: what the bank net moved onto the seats, as
       // applied. Declared to the stack write as inflow (see postHandTasks).
       let insuranceNet = 0;
@@ -1058,7 +1091,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // The actual pool amounts are fetched from Supabase and paid from union/club bank
         // For now, broadcast the BBJ_HIT event with payout percentages.
         // The actual payout amounts will be calculated in postHandTasks() using the pool balance.
-        EngineMetrics.bbjHitsDetectedTotal.inc(1, { table_id: this.tableId });
+        EngineMetrics.bbjHitsDetectedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_hit',
           table_id: this.tableId,
@@ -2017,10 +2050,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             buttonSeat: snap.dealerSeat,
             showdownReveal,
             atomicCommit: {
+              /* Rounded, as the writer this replaced did (services/supabase/
+                 tables.ts `rounded()`); the replacement dropped it and these
+                 two fields are the source of the non-cent rows in
+                 club_member_table_state / club_member_daily_stats. */
               stacks: playersForRecord.map((p) => ({
                 user_id: p.user_id,
-                stack: p.stack,
-                stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
+                stack: cents(p.stack),
+                stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
@@ -2576,7 +2613,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (!this.lifecycleCanMutate()) return;
 
       if (outcome.status === 'queued') {
-        EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+        EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_payout_pending',
           kind: 'mini',
@@ -2616,7 +2653,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         if (seat) {
           const stack = this.requireFiniteStackMoney(seat.stack, 'mini_bbj_existing_stack', userId);
           seat.stack = this.requireFiniteStackMoney(
-            stack + credit,
+            cents(stack + credit),
             'mini_bbj_resulting_stack',
             userId
           );
@@ -2698,7 +2735,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            explanation. The payout itself is safe (write-ahead claim + the
            reconciler), so this is only about telling them. */
         if (outcome.status === 'queued') {
-          EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+          EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
           this.hub?.emitEvent(this.tableId, {
             type: 'bbj_payout_pending',
             table_id: this.tableId,
@@ -2720,12 +2757,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
         if (outcome.status === 'paid') {
           const result = outcome.result;
-          EngineMetrics.bbjPayoutsPaidTotal.inc(1, { table_id: this.tableId });
+          EngineMetrics.bbjPayoutsPaidTotal.inc(1);
           // Credit chips directly to players' table stacks
           // LOSER (bad beat holder) gets 50% of total payout
           const loserSeat = players.find((p) => p.user_id === bbjHit.loserUserId);
           if (loserSeat) {
-            loserSeat.stack += result.loserShare;
+            // Two decimals (#3358): every BBJ share is a PERCENTAGE of the
+            // jackpot (50/25/25, the last one split again per player), so all
+            // three are division results landing on the seat array that
+            // persistStacks writes.
+            loserSeat.stack = cents(loserSeat.stack + result.loserShare);
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ → Loser ${bbjHit.loserUserId} +$${result.loserShare}`
             );
@@ -2734,7 +2775,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // WINNER (hand winner) gets 25% of total payout
           const winnerSeat = players.find((p) => p.user_id === bbjHit.winnerUserId);
           if (winnerSeat) {
-            winnerSeat.stack += result.winnerShare;
+            winnerSeat.stack = cents(winnerSeat.stack + result.winnerShare);
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ → Winner ${bbjHit.winnerUserId} +$${result.winnerShare}`
             );
@@ -2747,7 +2788,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           for (const playerId of tableOnlyPlayers) {
             const seat = players.find((p) => p.user_id === playerId);
             if (seat) {
-              seat.stack += result.perPlayerShare;
+              seat.stack = cents(seat.stack + result.perPlayerShare);
               console.log(
                 `[ServerTableEngine:${this.tableId}] BBJ → Table player ${playerId} +$${result.perPlayerShare}`
               );

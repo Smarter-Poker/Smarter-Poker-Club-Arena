@@ -1612,6 +1612,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('table_id', tableId)
         .eq('hand_number', handNumber)
         .eq('hand_id', handId)
+        // The immutable candidate chooses the exact hand. This additional
+        // range bound makes a malformed pre-rebuy receipt impossible to read
+        // as evidence for the candidate's newer seat generation.
+        .gte('committed_at', seatJoinedAt)
         .maybeSingle();
       if (atomicErr)
         return defer(`atomic receipt for hand #${handNumber} is unreadable`, atomicErr);
@@ -1625,7 +1629,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (
         String(atomic?.table_id ?? '') !== tableId ||
         String(atomic?.hand_id ?? '') !== handId ||
-        Number(atomic?.hand_number) !== handNumber
+        Number(atomic?.hand_number) !== handNumber ||
+        !Number.isFinite(Date.parse(String(atomic?.committed_at ?? ''))) ||
+        Date.parse(String(atomic?.committed_at ?? '')) < Date.parse(seatJoinedAt)
       ) {
         return defer(`atomic receipt for hand #${handNumber} does not match its candidate`);
       }

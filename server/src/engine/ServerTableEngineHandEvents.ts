@@ -793,10 +793,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // other — no DB sampling needed to notice. Metrics must never affect
         // gameplay, hence the fence.
         try {
-          EngineMetrics.showdownHandsTotal.inc(1, { table_id: this.tableId });
+          // Fleet totals, no table_id: these live on the always-on registry
+          // now (see engineInstruments), whose contract is bounded cardinality.
+          EngineMetrics.showdownHandsTotal.inc(1);
           const muckedCount = this.currentHandShowdownResults.filter((r) => r.mucked).length;
           if (muckedCount > 0) {
-            EngineMetrics.muckedHandsTotal.inc(muckedCount, { table_id: this.tableId });
+            EngineMetrics.muckedHandsTotal.inc(muckedCount);
           }
         } catch {
           /* metrics must never affect gameplay */

@@ -167,6 +167,53 @@ be dealt a hand. `fn_ca_stranded_tournament_players` gives that its own name
 and number in the sweep - eight players holding 673,500 chips across four
 events as of today.
 
+## Three criticals arrived mid-session, and one of them was a rate
+
+Two criticals landed at 11:21 while this work was in flight, both from one
+event: hand #8689238 on Union Morning Classic table 5 was refused by the
+atomic settlement contract because seat 4 had been vacated thirteen seconds
+earlier - at 11:21:16 to 11:21:18 the balancer marked six of seven seats left
+as it broke the table, and the engine then tried to commit a hand for one of
+those players. The contract rejected the write whole and rolled it back before
+any money step. The player was moved, not stranded, and the event holds
+190,000 chips at its seats against 190,000 put in play, exact.
+
+The class behind it is larger than the one incident: **1,226 hand commits
+refused across 312 tables in two days** - 572 stack mismatches, 382 expired
+lease proofs, 203 duplicate commits, 47 seats the balancer had already
+vacated. Every one is a refusal, so no chips move; what is lost is the hand.
+That is a `ServerTableEngine` problem on the poker host, not a function here,
+and the fault on this side was the shape of the reporting: each distinct
+refusal was promoted to its own critical on the money board, so a standing
+rate arrived as a stream of one-off criticals nobody could act on or close.
+`fn_ca_hand_commit_refusals` measures it as a rate with its reasons in it.
+
+## One window is noise
+
+`fn_ca_trial_balance_watch` compared a single hour-long window and filed
+anything over 100 chips. It filed two notices today - `table_stack` -608.39
+and `player_wallets` +511.79, which very nearly cancel, because they are two
+sides of the same handful of buy-ins caught on the boundary. `created_at` is
+the transaction start, so a movement that opened before the window and
+committed inside it has its leg outside and its balance change inside. On a
+table taking twenty thousand legs an hour that is certain every window.
+
+The third meter this session with that fault. It keeps its window and learns
+the other half of the rule the jackpot meter already uses: only a difference
+that persists in the **same direction across two consecutive readings** is a
+finding.
+
+Exercising it immediately found a fault in the fix. `fn_ca_trial_balance`
+returns a NULL difference for every account whenever the window does not span
+two account snapshots, which is most of the time. Recording that emptiness as
+a reading would put a blank predecessor in front of the next real one, so two
+genuine readings could never be adjacent and the rule would have made the
+watch **blind rather than quiet** - the worst outcome for a detector and
+exactly the fault this session exists to end. A run that measured nothing now
+records nothing. `ca_detector_runs.ran_at` also defaulted to `now()`, the
+transaction start, so two runs in one transaction were stamped at the same
+instant; it is `clock_timestamp()` now.
+
 ## Left open on purpose
 
 - **`fn_ca_conservation_sweep:fn_tournament_chip_conservation_check`** - the
@@ -180,9 +227,9 @@ events as of today.
   after the last of them, and `ca_ledger_write_failures` has recorded nothing
   since, through more than thirty maintenance freezes. The window ages out on
   its own and the resolver closes the incident when it does.
-- **`fn_ca_trial_balance_watch`** - two info notes raised at 11:20 today,
-  `table_stack` -608.39 and `player_wallets` +511.79, against in-flight play.
-  Not investigated this session.
+- **`fn_ca_hand_commit_refusals`** - the refusal rate itself is real and
+  unfixed. It lives in `ServerTableEngine` on the poker host, so no migration
+  here can close it; it is now measured rather than announced.
 
 ## Closed with evidence
 

@@ -54,6 +54,9 @@ const JACKPOT_CLOSES = readMigration('the_jackpot_meter_closes_what_it_has_stopp
 const BANK = readMigration('the_shared_player_payout_door_names_the_bank_it_pays_from');
 const RUNNER_UP = readMigration('the_spin_runner_up_gets_the_share_the_ladder_promised');
 const NO_CHAIR = readMigration('a_player_still_in_the_event_with_no_chair_is_a_finding_of_its_own');
+const REFUSALS = readMigration('a_refused_hand_is_counted_as_a_rate_not_announced_one_at_a_time');
+const ONE_WINDOW = readMigration('one_window_is_noise_and_two_in_the_same_direction_is_a_finding');
+const NOT_A_READING = readMigration('a_run_that_measured_nothing_is_not_a_reading');
 
 describe('one movement is one leg', () => {
   it('the club_members journal writer stands down when told to', () => {
@@ -189,5 +192,38 @@ describe('the ladder decides the split, and the record says what was paid', () =
     expect(NO_CHAIR).toContain("('fn_ca_stranded_tournament_players',");
     // It does not pretend to close the conservation finding it came out of.
     expect(NO_CHAIR).toContain('That part stays open and unexplained');
+  });
+});
+
+describe('a rate is one finding, and one window is noise', () => {
+  it('a refused hand is counted, not announced one at a time', () => {
+    expect(REFUSALS).toContain('fn_ca_hand_commit_refusals');
+    // A refusal is a rollback: the money is protected, the hand is lost.
+    expect(REFUSALS).toContain('A refusal rolls the hand back whole ');
+    expect(REFUSALS).toContain('HAVING count(*) >= 25');
+    expect(REFUSALS).toContain('the sweep did not take the refusal rate check');
+  });
+
+  it('the trial balance needs two readings agreeing before it files', () => {
+    expect(ONE_WINDOW).toContain('ONE WINDOW IS NOISE');
+    expect(ONE_WINDOW).toContain(
+      'CONTINUE WHEN abs(v_prev_d) <= v_thr OR sign(v_prev_d) <> sign(r.difference);'
+    );
+    expect(ONE_WINDOW).toContain('two consecutive windows drifting the same way');
+    expect(ONE_WINDOW).toContain('the watch did not take the persistence rule');
+  });
+
+  it('a run that measured nothing does not become the predecessor', () => {
+    // Recording an empty result as a reading would put a blank in front of
+    // the next real one, so two genuine readings could never be adjacent and
+    // the persistence rule would silence the watch instead of steadying it.
+    expect(NOT_A_READING).toContain('A RUN THAT MEASURED NOTHING IS NOT A READING');
+    expect(NOT_A_READING).toContain('IF v_measured > 0 THEN');
+    expect(NOT_A_READING).toContain('the empty readings were not cleared');
+  });
+
+  it('a run stamps itself at the clock, not at its transaction start', () => {
+    expect(NOT_A_READING).toContain('ALTER COLUMN ran_at SET DEFAULT clock_timestamp()');
+    expect(NOT_A_READING).toContain('ran_at DEFAULTED TO now(), WHICH IS THE TRANSACTION START');
   });
 });

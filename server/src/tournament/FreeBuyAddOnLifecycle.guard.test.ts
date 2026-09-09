@@ -63,17 +63,29 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     );
   });
 
-  it('anchors the break and close to advertised start plus late reg plus configured break', () => {
+  it('anchors the break and close to the later of advertised start and the actual seat, plus late reg plus configured break', () => {
     expect(trigger).toContain('const requestedStart = new Date().toISOString()');
     expect(trigger).toContain(
       "const advertisedStartMs = Date.parse(String(this.tournamentCache?.start_time ?? ''))"
     );
+    // 2026-09-09: the anchor is max(advertised, seat). On time that IS the
+    // advertised start (the pre-seat minute runs early), so the break still
+    // falls at the advertised clock. A field seated late - the 2026-09-09
+    // outage left ten Free Buys hours past their start - gets the full
+    // promised window from the seat instead of a window that ends before it
+    // starts and a launch that can never complete.
     expect(trigger).toMatch(
-      /const requestedEndMs = fromStart\s*\? advertisedStartMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*requestedStartMs \+ 60_000/
+      /const windowAnchorMs = fromStart \? Math\.max\(advertisedStartMs, requestedStartMs\) : NaN;/
+    );
+    expect(trigger).toMatch(
+      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*requestedStartMs \+ 60_000/
     );
     expect(trigger).toContain('addon_period_started_at: requestedStart');
     expect(trigger).toContain('addon_period_ends_at: requestedEnd');
+    // Never the seat ALONE: that would move an on-time event's break off the
+    // advertised clock by the pre-seat minute.
     expect(trigger).not.toMatch(/\? requestedStartMs \+ lateRegMs/);
+    expect(trigger).not.toMatch(/\? advertisedStartMs \+ lateRegMs/);
 
     expect(breakStart).toMatch(/endMs - this\.addOnBreakDurationMs\(\)/);
     expect(scheduleBreak).toContain('const breakStartMs = this.addOnBreakStartMs(endsAt)');

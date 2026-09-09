@@ -1,6 +1,16 @@
 # Diamond Phase 3: Atomic Custody Release And Publication Evidence
 
-Updated September 9, 2026. Phase completion remains open until the Arena publication and authenticated UI checks pass.
+Updated September 9, 2026. Phase 3 runtime and acceptance gates are verified. The dated checkpoints below retain their original status; the final evidence here supersedes their pending rollout statements.
+
+## Final Runtime Adoption, September 9 At 21:05 UTC
+
+Production engine health now reports 561eaa523829ef8ecbd6b11fffe946b6e53fd756 (health prefix 561eaa52), with status, liveness and settlementStatus all ok and blockedSettlementCount 0. GitHub comparison proves it is 15 commits ahead of final repair 4c385b09b72aa458235d6fa1bc486dcf70a01bee with zero commits behind. This is actual runtime adoption, not a staged-image or green-workflow claim.
+
+Both frontend build-info endpoints serve b30e1b8513bf51937276c8d57b44c03ff038cb51, built at 20:48:43 UTC. Ancestry proves inclusion of final repair 4c385b09 and merged acceptance documentation 18e0f76e7282655f37739750ea40b160a43cbdb8. The prior authenticated Diamond routes, invite/home and repaired Shark acceptance remain the recorded UI evidence; they were not rerun to inflate totals. The applied five-migration contract, 79 isolated SQL assertions, original build/browser checks, final repair's 17,590 client and 8,127 server passes (18 skipped), and worker/scheduler retirement evidence above remain applicable.
+
+The user directs dispatching staged releases immediately toward their maintenance window while other implementation proceeds. Normal dispatches with force=false were submitted; cancelled runs were never counted as deployment, and no restart/window protection was bypassed. The running engine version and source ancestry close the remaining adoption gate.
+
+Phase 3's stated custody deliverable is complete. No public funded Diamond game is enabled; those gameplay and accounting release gates remain in later phases. Phase 4 continues separately.
 
 ## Verified Publication And Browser Acceptance, September 9 At 18:02 UTC
 

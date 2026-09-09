@@ -1,7 +1,5 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE WHEEL FIRES ON THE DRAW, NOT FOUR ROUND TRIPS LATER (round 18)
- * ═══════════════════════════════════════════════════════════════════════════
+ * The wheel announces the booked draw before table-building work.
  *
  * Dan, 2026-08-30: "AS SOON AS THE 3RD SEAT IS PAID FOR THE ANIMATION SHOULD
  * START AS SOON AS POSSIBLE."
@@ -76,7 +74,7 @@ describe('the reveal is emitted from the committed atomic draw receipt', () => {
     expect(CODE).toMatch(/for \(const tableId of this\.seatFirstTableIds\)/);
   });
 
-  it('carries every field the wheel needs, all known at the draw', () => {
+  it('carries every field the wheel needs from the booked draw', () => {
     const emitBlock = CODE.slice(
       CODE.indexOf('if (this.seatFirstTableIds.length > 0 && spinMultiplier > 0)'),
       CODE.indexOf('spin_reveal_early_emit')

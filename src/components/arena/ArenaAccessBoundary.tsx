@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
 import PageSkeleton from '../common/PageSkeleton';
+import DiamondCustodyBalance from './DiamondCustodyBalance';
+import DiamondArenaWallet from './DiamondArenaWallet';
 
 interface AccessState {
   key: string;
@@ -101,6 +103,8 @@ export default function ArenaAccessBoundary({
         <h2>Diamond Arena</h2>
         <p>You Are Already A Member.</p>
         <p>Diamond Games Are Not Open For Play Yet.</p>
+        <DiamondCustodyBalance />
+        <DiamondArenaWallet />
       </section>
     );
   if (!state.context.member && redirectToJoin)

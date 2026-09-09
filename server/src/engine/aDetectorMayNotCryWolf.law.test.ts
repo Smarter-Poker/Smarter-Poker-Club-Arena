@@ -130,8 +130,8 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
       MOVES.indexOf('protected redrivePendingTournamentSeatMoveOutcomes')
     );
     expect(request).toContain('executeTournamentMoveAtBoundary(');
-    expect(request).toContain(
-      '() => moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })'
+    expect(request).toMatch(
+      /\(\) =>\s*moveTournamentPlayerAtomically\(input, \{ outcomeWasAlreadyUnknown \}\)/
     );
     expect(ENGINE).toContain('this.handForHandResolve !== null');
     expect(ENGINE).toContain('this.postHandTasksPromise === null');

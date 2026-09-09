@@ -285,6 +285,8 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
+  /** Database-generated seating identity, required at every cashout boundary. */
+  occupancy_id?: string;
   /** Server-only, authoritative membership used by disconnect protection. */
   reconnect_membership?: {
     is_vip?: boolean | null;

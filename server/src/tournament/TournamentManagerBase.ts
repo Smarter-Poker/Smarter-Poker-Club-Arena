@@ -1730,6 +1730,9 @@ export abstract class TournamentManagerBase {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
     }
+    // Tables may all have parked during the break. Recheck after any deferred
+    // add-on has acquired its own hold; no new table completion edge is due.
+    this.advanceHandForHandBarrier();
   }
 
   /**
@@ -2250,7 +2253,8 @@ export abstract class TournamentManagerBase {
    * deadline exist, so the synchronous resume below cannot be lost.
    */
   private advanceHandForHandBarrier(): void {
-    if (!this.handForHandActive || !this.running) return;
+    // The tournament break owns this shared pause until its own end edge.
+    if (!this.handForHandActive || !this.running || this.isOnBreak()) return;
     const expectedIds = [...this.handForHandTableIds];
     if (expectedIds.length === 0) return;
     const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
@@ -2272,7 +2276,8 @@ export abstract class TournamentManagerBase {
     this.handForHandRePauseTimer = this.setLifecycleTimeout(() => {
       this.handForHandRePauseTimer = null;
       // Bubble burst and manager stop are terminal for this exact re-pause.
-      if (!this.running || !this.handForHandActive) return;
+      // A break starting during this delay retains its longer pause budget.
+      if (!this.running || !this.handForHandActive || this.isOnBreak()) return;
       for (const engine of this.tableEngines.values()) engine.pauseAfterHand();
     }, 500);
   }
@@ -6000,7 +6005,6 @@ export abstract class TournamentManagerBase {
       return;
     }
 
-    const ownsPause = this.addOnBreakOwnsPause;
     const ownsLevelClock = this.addOnBreakOwnsLevelClock;
     this.addOnBreakActive = false;
     this.addOnBreakEndsAtMs = 0;
@@ -6012,7 +6016,10 @@ export abstract class TournamentManagerBase {
     }
     if (!this.running) return;
 
-    if (ownsPause && !this.onBreak && !this.handForHandActive) {
+    // Hand-for-hand may have ended while the add-on owned this shared gate.
+    // With neither tournament pause remaining, release it even when the
+    // add-on originally inherited the parked table from hand-for-hand.
+    if (!this.onBreak && !this.handForHandActive) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -6028,6 +6035,7 @@ export abstract class TournamentManagerBase {
       this.savedBlindTimerRemaining = 0;
       this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
     }
+    this.advanceHandForHandBarrier();
   }
 
   /**

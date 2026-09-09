@@ -7,6 +7,8 @@ const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
 const CANCELLATION = '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql';
 const SEAT_EXIT = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
+const COMPOSED_CLOSE =
+  '20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
 const cancellation = readFileSync(resolve(MIGRATIONS, CANCELLATION), 'utf8');
 const seatExit = readFileSync(resolve(MIGRATIONS, SEAT_EXIT), 'utf8');
@@ -63,7 +65,7 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
   it('counts every active seat when the current close helper decides', () => {
     const latest = latestDefinition('fn_close_managed_game(');
 
-    expect(latest.file).toBe(CANCELLATION);
+    expect(latest.file).toBe(COMPOSED_CLOSE);
     expect(latest.source).toContain('FROM public.table_seats ts');
     expect(latest.source).toContain('AND ts.left_at IS NULL');
     expect(latest.source).not.toContain('ts.user_id IS NOT NULL');
@@ -75,7 +77,7 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     const close = latestDefinition('fn_close_managed_game(');
 
     expect(update.file).toBe(SEAT_EXIT);
-    expect(close.file).toBe(CANCELLATION);
+    expect(close.file).toBe(COMPOSED_CLOSE);
     for (const definition of [update.source, close.source]) {
       expect(definition).toContain('FROM public.tournament_players tp');
       expect(definition).not.toContain('tp.user_id IS NOT NULL');

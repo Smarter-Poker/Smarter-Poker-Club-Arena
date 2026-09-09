@@ -21,6 +21,13 @@ const PHASE_ONE_MANAGEMENT = readFileSync(
   ),
   'utf8'
 );
+const LATEST_MANAGED_CLOSE = readFileSync(
+  resolve(
+    __dirname,
+    '../../../supabase/migrations/20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql'
+  ),
+  'utf8'
+);
 const MANAGED_CANCELLATION_PROBE = readFileSync(
   resolve(__dirname, '../../../scripts/ci/probes/managed-tournament-cancellation-authority.sql'),
   'utf8'
@@ -53,6 +60,21 @@ const MANAGED_CLOSE = SQL.slice(
 );
 const MANAGED_TOURNAMENT = MANAGED_CLOSE.slice(
   MANAGED_CLOSE.indexOf("ELSIF p_kind = 'tournament' THEN")
+);
+const LATEST_MANAGED_CLOSE_SQL = executable(LATEST_MANAGED_CLOSE);
+const LATEST_MANAGED_CLOSE_BODY = LATEST_MANAGED_CLOSE_SQL.slice(
+  LATEST_MANAGED_CLOSE_SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game'),
+  LATEST_MANAGED_CLOSE_SQL.indexOf(
+    '$managed_close$;',
+    LATEST_MANAGED_CLOSE_SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game')
+  )
+);
+const LATEST_CASH_CLOSE = cashTableBranch(
+  LATEST_MANAGED_CLOSE_BODY,
+  LATEST_MANAGED_CLOSE_BODY.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game')
+);
+const LATEST_TOURNAMENT_CLOSE = LATEST_MANAGED_CLOSE_BODY.slice(
+  LATEST_MANAGED_CLOSE_BODY.indexOf("ELSIF p_kind = 'tournament' THEN")
 );
 const MANAGED_GATEWAY = SQL.slice(
   SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_execute_managed_game_command'),
@@ -194,6 +216,51 @@ describe('tournament cancellation has one replayable database owner', () => {
     );
     expect(cashTableBranch(MIGRATION, currentStart)).toBe(
       cashTableBranch(PHASE_ONE_MANAGEMENT, historicStart)
+    );
+  });
+
+  it('keeps the later native cash-occupancy close contract in the final declaration', () => {
+    expect(LATEST_CASH_CLOSE).toMatch(/v_initial_cluster/);
+    expect(LATEST_CASH_CLOSE).toMatch(
+      /FROM public\.cash_games[\s\S]*id = v_initial_cluster[\s\S]*FOR UPDATE/
+    );
+    expect(LATEST_CASH_CLOSE).toMatch(
+      /v_cluster IS DISTINCT FROM v_initial_cluster[\s\S]*STALE_GAME_CONTEXT/
+    );
+    expect(LATEST_CASH_CLOSE).toMatch(
+      /FROM public\.table_seats ts[\s\S]*ts\.left_at IS NULL[\s\S]*LIMIT 1/
+    );
+    expect(LATEST_CASH_CLOSE).toMatch(/UPDATE public\.cash_games[\s\S]*state = 'dormant'/);
+  });
+
+  it('keeps atomic tournament cancellation in the final managed-close declaration', () => {
+    const terminalLock = LATEST_TOURNAMENT_CLOSE.indexOf('ca:tournament-terminal-settlement:v1');
+    const tournamentLock = LATEST_TOURNAMENT_CLOSE.indexOf('FROM public.tournaments');
+    const cancellation = LATEST_TOURNAMENT_CLOSE.indexOf(
+      'v_cancel := public.atomic_cancel_tournament(p_game_id, v_uid)'
+    );
+    expect(terminalLock).toBeGreaterThan(-1);
+    expect(tournamentLock).toBeGreaterThan(terminalLock);
+    expect(cancellation).toBeGreaterThan(tournamentLock);
+    expect(LATEST_TOURNAMENT_CLOSE).toMatch(/v_cancel->>'fully_settled'/);
+    expect(LATEST_TOURNAMENT_CLOSE).not.toMatch(/UPDATE public\.tournaments/i);
+    expect(LATEST_MANAGED_CLOSE_SQL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_close_managed_game\(text, uuid\)[\s\S]*FROM PUBLIC, anon, authenticated/
+    );
+    expect(LATEST_MANAGED_CLOSE_SQL).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_close_managed_game\(text, uuid\)[\s\S]*TO service_role/
+    );
+  });
+
+  it('refuses every managed-close baseline except the exact known before and after bodies', () => {
+    expect(LATEST_MANAGED_CLOSE_SQL).toMatch(
+      /md5\(v_definition\) NOT IN \(\s*'96be8943f1b86538d2b825c894d21f7a',\s*'0ad2e40801bb235892305071e9bc78cb'\s*\)/
+    );
+    expect(LATEST_MANAGED_CLOSE_SQL).not.toMatch(
+      /md5\(v_definition\)[\s\S]*AND NOT \([\s\S]*position\(/
+    );
+    expect(LATEST_MANAGED_CLOSE_SQL).toMatch(
+      /IF md5\(v_definition\) <> '0ad2e40801bb235892305071e9bc78cb'[\s\S]*managed close composition did not install exactly/
     );
   });
 

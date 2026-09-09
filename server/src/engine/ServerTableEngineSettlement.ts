@@ -33,7 +33,6 @@ import {
   reconcileTableSeatCount,
   autoRebuyHorse,
   processLeavePending,
-  atomicCashoutVoluntary,
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
@@ -3120,8 +3119,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // orbit" - the target still stands and it tries again when the big
           // blind comes back around, exactly as a human would.
           if (!this.lifecycleCanMutate()) return;
-          const exit = await atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number);
+          const exit = await this.cashoutVoluntaryStay(horse);
           if (!this.lifecycleCanMutate()) return;
+          if (!exit) continue;
           if (!exit.ok) {
             if (exit.code === 'LEAVE_LOCKED') {
               this.chipContinuity.noteRefusal(horse.user_id, exit.stayRemainingMs);
@@ -3171,12 +3171,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // playerBanks Map sheds its entry too — same architectural fix.
         const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
         if (!this.lifecycleCanMutate()) return;
-        for (const userId of cashedOutIds) {
+        for (const { userId, occupancyId } of cashedOutIds) {
+          const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
+          if (current && current.occupancy_id !== occupancyId) continue;
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
-          this.forcedLeaves.delete(userId);
           this.leaveHeldByClock.delete(userId);
           this.chipContinuity.forget(userId);
         }
@@ -3237,7 +3238,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * database locks; the caller retains the announced-only filter. This list belongs to this boundary only.
    */
   protected async readCashHandDepartures(): Promise<{
-    cashedOutIds: string[];
+    cashedOutIds: Array<{ userId: string; occupancyId: string }>;
     pendingMoves: PendingSeatMove[];
   }> {
     if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: [] };
@@ -3245,12 +3246,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       processLeavePending(
         this.tableId,
         this.tableInfo?.club_id || '',
-        (lockedUserId, stayRemainingMs) => {
+        (lockedUserId, stayRemainingMs, occupancyId) => {
           if (this.lifecycleCanMutate()) {
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
           }
-        },
-        this.forcedLeaves
+        }
       ),
       this.tableInfo?.cluster_id ? pendingSeatMoves(this.tableId) : Promise.resolve([]),
     ]);

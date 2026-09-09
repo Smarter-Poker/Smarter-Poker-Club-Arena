@@ -26,7 +26,8 @@ const accepted = () => new Response('{"success":true}', { status: 200 });
 const session = (access_token: string) => ({ data: { session: { access_token } }, error: null });
 let fetchMock: ReturnType<typeof vi.fn>;
 let table = 0;
-const act = () => submitAction(`retry-session-${++table}`, 'player-a', 'raise', 100);
+const act = () =>
+  submitAction(`retry-session-${++table}`, 'player-a', 'raise', 100, 'displayed-decision');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -47,6 +48,7 @@ describe('engine HTTP retry belongs to the original login', () => {
     const retry = fetchMock.mock.calls[1][1];
     expect(retry.body).toBe(first.body);
     expect(JSON.parse(retry.body).idempotencyKey).toBeTruthy();
+    expect(JSON.parse(retry.body).actionContext).toBe('displayed-decision');
     expect(retry.headers.Authorization).toBe(`Bearer ${jwt('player-a', 'login-a', 2)}`);
   });
 
@@ -249,4 +251,53 @@ describe('the initial HTTP request belongs to the initiating login', () => {
     expect((await act()).success).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('action decision rejection reaches the caller', () => {
+  it.each(['ACTION_CONTEXT_REQUIRED', 'STALE_ACTION'])(
+    'preserves %s without retrying or reporting success',
+    async (code) => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ success: false, code, error: 'Reload or review the current turn' }),
+          { status: 400 }
+        )
+      );
+      const result = await act();
+      expect(result).toEqual({
+        success: false,
+        code,
+        error: 'Reload or review the current turn',
+        hint: undefined,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+  it('keeps the displayed decision through a rate-limit retry', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('{}', { status: 429 }))
+      .mockResolvedValueOnce(accepted());
+    expect((await act()).success).toBe(true);
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body));
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(bodies[1].actionContext).toBe('displayed-decision');
+  });
+});
+
+it('an old-engine-compatible client reads the reload rejection from its HTTP 200 envelope', async () => {
+  fetchMock.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        success: false,
+        code: 'ACTION_CONTEXT_REQUIRED',
+        error: 'The table view is out of date. Reload to continue.',
+      }),
+      { status: 200 }
+    )
+  );
+  const result = await submitAction(`legacy-${++table}`, 'player-a', 'call');
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('Reload');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });

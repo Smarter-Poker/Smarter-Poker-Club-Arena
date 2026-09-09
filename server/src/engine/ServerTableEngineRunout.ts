@@ -2293,6 +2293,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         amount: a.amount,
         low: a.low === true,
         hand_name: a.hand?.name ?? null,
+        cards: a.hand?.cards ?? [],
       })),
       // What is actually paid out across every run, after rake and drops.
       // The felt's per-board share labels divide THIS, not the gross pot.

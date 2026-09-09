@@ -25,6 +25,7 @@ import {
   isPotLimitVariant,
   fixedLimitBetSize,
   fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import {
@@ -445,6 +446,12 @@ export class HandController {
       this.state.currentBet = Math.max(this.state.currentBet, bigBlind);
       if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
     }
+
+    // Record the normal blind deficit once, before extra posts and straddles.
+    // This changes only the pot-limit wager ceiling, never pot or eligibility.
+    this.state.potLimitBlindAdjustment =
+      Math.round((smallBlind - (sbPlayer?.bet ?? 0) + (bigBlind - (bbPlayer?.bet ?? 0))) * 100) /
+      100;
 
     // Bible V8 §4.2: Dead blinds — players returning from sit-out post SB+BB (SB is dead money)
     if (this.config.deadBlinds && this.config.deadBlinds.length > 0) {
@@ -3117,7 +3124,7 @@ export class HandController {
     }
 
     return calculateBettingState(
-      this.state.pot,
+      isPotLimitVariant(variant) ? potLimitBettingPot(this.state) : this.state.pot,
       this.state.currentBet,
       player.bet,
       this.config.bigBlind,

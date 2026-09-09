@@ -4572,10 +4572,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
                 <span className="lobby-wallets-trigger__copy">
                   <strong>My Wallets</strong>
+                  {/* THE COUNT, OR NOTHING AT ALL (Dan 2026-09-09): it
+                      "shouldn't say LOADING BALANC. It should just have 5
+                      BALANCES or how ever many wallets that user has only."
+
+                      DynamicWallet knows how many rows this viewer gets before
+                      a single balance has loaded - the row set comes from the
+                      role, not from the money - and it now publishes that count
+                      in a layout effect, so the real number is here for the
+                      first painted frame. The empty string is only the frame
+                      before that: an empty bay, never a word that has to be
+                      taken back a moment later. */}
                   <small>
                     {visibleWalletCount > 0
                       ? `${visibleWalletCount} ${visibleWalletCount === 1 ? 'Balance' : 'Balances'}`
-                      : 'Loading Balances'}
+                      : ''}
                   </small>
                 </span>
                 <span

@@ -72,12 +72,13 @@ import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps, PayoutPlace } from './types';
 import {
   chips,
+  effectivePlaceLadderPool,
   effectivePrizePool,
   isPlayerLive,
   lastPaidPlace,
   ordinal,
-  parsePayoutStructure,
   placePrize,
+  resolvePayoutStructure,
 } from './types';
 import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
@@ -214,6 +215,7 @@ interface RewardColumns {
   guaranteed_prize?: number | null;
   prize_pool_finalized?: boolean | null;
   payout_structure?: unknown;
+  spin_multiplier?: number | null;
   is_bounty?: boolean | null;
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
@@ -222,6 +224,12 @@ interface RewardColumns {
   bounty_pool_paid?: number | null;
   status?: string | null;
   current_players?: number | null;
+  bubble_protection?: boolean | null;
+  buy_in_amount?: number | null;
+  variant?: string | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
 }
 
 /* Still holding chips, by the lobby's ONE definition of "in". This tab used to
@@ -330,10 +338,7 @@ export default function RewardsTab({
 
   /* ── THE LADDER OF PLACES ─────────────────────────────────────────────── */
 
-  const parsedPlaces = useMemo(
-    () => parsePayoutStructure(t.payout_structure),
-    [t.payout_structure]
-  );
+  const parsedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
   const bands = useMemo(() => (parsedPlaces ? toBands(parsedPlaces) : []), [parsedPlaces]);
   const paidPlaces = parsedPlaces ? parsedPlaces.length : 0;
 
@@ -351,8 +356,8 @@ export default function RewardsTab({
 
   /* ── THE BUBBLE ───────────────────────────────────────────────────────── */
 
-  /* The money bubble is the LAST PAID PLACE. Players still to bust before it
-     is how many must go out before the field is all in the money. */
+  /* The stone bubble is one place AFTER the deepest paid place. Players still
+     to bust before the money is still measured against the final paid place. */
   /**
    * A COUNT AND A PLACE NUMBER ARE NOT THE SAME THING.
    *
@@ -360,17 +365,33 @@ export default function RewardsTab({
    * de-duplicates and sorts but does not require the places to run contiguously
    * from 1, so a structure paying 1, 2, 3 and 5 has length 4 -- a place that is
    * not paid at all. Three things then went wrong at once on such a structure:
-   * the "Money Bubble" tile printed 4th, `isBubbleRow` below matched the wrong
+   * the "Money Bubble" tile printed 4th, the highlighted row matched the wrong
    * band or none, and `toTheMoney` counted down to the wrong number.
    *
    * `paidPlaces` is still the right value for "N Paid Places" and for the
-   * percentage-of-field figure. It is only the BUBBLE that needs the deepest
-   * place, so the two now come from two different functions with two names.
+   * percentage-of-field figure. The final paid place comes from the deepest
+   * structure position, and the stone bubble is exactly one place after it.
    */
-  const bubblePlace = useMemo(() => lastPaidPlace(t.payout_structure), [t.payout_structure]);
-  const toTheMoney = bubblePlace > 0 ? Math.max(0, playersRemaining - bubblePlace) : 0;
-  const inTheMoney = bubblePlace > 0 && playersRemaining <= bubblePlace;
-  const onTheBubble = bubblePlace > 0 && playersRemaining === bubblePlace + 1;
+  const finalPaidPlace = useMemo(() => lastPaidPlace(parsedPlaces), [parsedPlaces]);
+  const stoneBubblePlace = finalPaidPlace > 0 ? finalPaidPlace + 1 : 0;
+  const isSatellite =
+    String(t.variant ?? '').toLowerCase() === 'satellite' ||
+    String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(t.satellite_target_id || t.satellite_target);
+  const placeLadderPool = effectivePlaceLadderPool(
+    t.prize_pool,
+    t.guaranteed_prize,
+    parsedPlaces,
+    entryCount,
+    t.bubble_protection === true,
+    num(t.buy_in_amount),
+    isSatellite
+  );
+  const bubbleProtectionReserve =
+    placeLadderPool === null ? 0 : Math.max(0, effectivePool - placeLadderPool);
+  const toTheMoney = finalPaidPlace > 0 ? Math.max(0, playersRemaining - finalPaidPlace) : 0;
+  const inTheMoney = finalPaidPlace > 0 && playersRemaining <= finalPaidPlace;
+  const onTheBubble = stoneBubblePlace > 0 && playersRemaining === stoneBubblePlace;
 
   /* ── THE HERO ─────────────────────────────────────────────────────────── */
 
@@ -485,18 +506,28 @@ export default function RewardsTab({
             {isRunning && <span className="tl-stat__sub">{chips(playersRemaining)} Left</span>}
           </div>
 
-          {bubblePlace > 0 && (
+          {stoneBubblePlace > 0 && (
             <div className="tl-stat">
               <span className="tl-stat__label">Money Bubble</span>
-              <span className="tl-stat__value">{ordinal(bubblePlace)}</span>
+              <span className="tl-stat__value">{ordinal(stoneBubblePlace)}</span>
               <span className="tl-stat__sub">
                 {!isRunning
-                  ? 'Last Paid Place'
+                  ? 'First Place Outside The Money'
                   : inTheMoney
                     ? 'Field Is In The Money'
                     : onTheBubble
                       ? 'One Player To Go'
                       : `${chips(toTheMoney)} To Bust`}
+              </span>
+            </div>
+          )}
+
+          {bubbleProtectionReserve > 0 && (
+            <div className="tl-stat">
+              <span className="tl-stat__label">Bubble Protection</span>
+              <span className="tl-stat__value">{chips(bubbleProtectionReserve)}</span>
+              <span className="tl-stat__sub">
+                From Prize Pool For {ordinal(stoneBubblePlace)} Place
               </span>
             </div>
           )}
@@ -547,15 +578,15 @@ export default function RewardsTab({
           <ul className="tl-list rw-list">
             {bands.map((band, i) => {
               const isPodium = band.fromPlace <= 3 && band.fromPlace === band.toPlace;
-              const isBubbleRow = band.toPlace === bubblePlace;
+              const isLastPaidRow = band.toPlace === finalPaidPlace;
               const isHeroRow = i === heroBandIndex;
               // Priced from the WHOLE structure: the last paid place absorbs the
               // residual so the places sum to the pool, which a single
               // percentage cannot express. A band shares one percentage, so its
               // first place is representative of the band.
               const prize =
-                effectivePool > 0 && parsedPlaces
-                  ? placePrize(effectivePool, parsedPlaces, band.fromPlace)
+                placeLadderPool !== null && placeLadderPool > 0 && parsedPlaces
+                  ? placePrize(placeLadderPool, parsedPlaces, band.fromPlace)
                   : 0;
 
               return (
@@ -566,7 +597,7 @@ export default function RewardsTab({
                     'rw-row',
                     isPodium ? `rw-row--podium rw-row--p${band.fromPlace}` : '',
                     isHeroRow ? 'tl-row--hero' : '',
-                    isBubbleRow ? 'rw-row--bubble' : '',
+                    isLastPaidRow ? 'rw-row--bubble' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
@@ -582,8 +613,8 @@ export default function RewardsTab({
                         {heroFinish ? 'Your Finish' : 'You If You Bust Now'}
                       </span>
                     )}
-                    {isBubbleRow && !isHeroRow && (
-                      <span className="tl-badge tl-badge--mute rw-tag">Money Bubble</span>
+                    {isLastPaidRow && !isHeroRow && (
+                      <span className="tl-badge tl-badge--mute rw-tag">Last Paid Place</span>
                     )}
                   </span>
 

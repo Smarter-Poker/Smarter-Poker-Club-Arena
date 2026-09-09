@@ -162,6 +162,30 @@ describe('table-engine generation admission', () => {
     expect(replacement.stop).not.toHaveBeenCalled();
   });
 
+  it('rechecks an admission quarantine after teardown before publishing the replacement', async () => {
+    const teardown = deferred();
+    const incumbent = { stop: vi.fn(() => teardown.promise) };
+    const replacement = { stop: vi.fn(async () => undefined) };
+    const engines = new Map([['table', incumbent]]);
+    const tournamentTables = new Set(['table']);
+    let allowed = true;
+
+    const replacing = replaceOwnedTableEngine(
+      engines,
+      tournamentTables,
+      'table',
+      incumbent,
+      replacement,
+      () => allowed
+    );
+    await Promise.resolve();
+    allowed = false;
+    teardown.resolve();
+
+    await expect(replacing).resolves.toBe(false);
+    expect(engines.get('table')).toBe(incumbent);
+  });
+
   it('leaves a failed teardown quarantined and propagates its failure', async () => {
     const failure = new Error('could not flush snapshot');
     const incumbent = { stop: vi.fn(async () => Promise.reject(failure)) };

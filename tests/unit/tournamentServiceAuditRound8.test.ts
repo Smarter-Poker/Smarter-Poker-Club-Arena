@@ -19,8 +19,9 @@
  *   and CANCEL the tournament;
  * - a failed final-table lookup fell into the create branch and minted a
  *   duplicate Final Table;
- * - the add-on and re-entry duplicate gates (money actions) waved through
- *   anyone whose check query timed out.
+ * - the former add-on duplicate preflight (a money action) waved through
+ *   anyone whose check query timed out. It is now gone: the transactional RPC
+ *   is the only duplicate/eligibility authority and can replay a lost reply.
  *
  * Every window is structure-bounded (tests/helpers/sourceWindow.ts). Fixed
  * byte windows are forbidden — see noFixedSizeSourceWindows.test.ts.
@@ -111,12 +112,14 @@ describe('round 8: the browser start path delegates to the authoritative engine'
   });
 });
 
-describe('round 8: money-action gates fail closed on a failed read', () => {
-  it('add-on duplicate check refuses, retryably, when it cannot read', () => {
+describe('round 8: money actions have one transactional authority', () => {
+  it('add-on execution has no mutable availability or duplicate preflight', () => {
     const addOn = sliceMethod(SRC, 'async processAddOn(');
-    expect(addOn).toContain('error: addonCheckErr');
-    expect(addOn).toContain('addon_duplicate_check_read_failed');
-    expect(addOn).toContain('Could not verify your add-on status. Please try again.');
+    expect(addOn).not.toContain('await this.canAddOn(');
+    expect(addOn).not.toContain(".from('wallet_transactions')");
+    expect(addOn).toContain("supabase.rpc('process_tournament_rebuy'");
+    expect(addOn).toContain("p_rebuy_type: 'addon'");
+    expect(addOn).toContain('The RPC owns');
   });
 
   it('there is no second re-entry path to gate', () => {
@@ -179,10 +182,10 @@ describe('round 8: waitlist joins cannot be positioned by a failed count', () =>
 });
 
 describe('round 8: silent under-reports and confident zeros now leave a trace', () => {
-  it('the total_rake fallback read reports its failure', () => {
-    const rec = sliceMethod(SRC, 'private async recordTournamentFee(');
-    expect(rec).toContain('recordTournamentFee_fallback_read_failed');
-    expect(rec).toContain('recordTournamentFee_union_read_failed');
+  it('the dead browser-side rake writer and its non-atomic fallback are gone', () => {
+    expect(SRC).not.toContain('recordTournamentFee(');
+    expect(SRC).not.toContain("supabase.rpc('increment_tournament_rake'");
+    expect(SRC).not.toContain(".from('rake_records').insert(");
   });
 
   it('a failed bounty read reports before returning its display 0', () => {

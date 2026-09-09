@@ -3,9 +3,9 @@
  * Absorb and retire the manifest fragments.
  *
  * scripts/ci/schema-manifest.d/*.json let an agent declare a table, function or
- * column it just created without editing the shared snapshot every other agent
- * is editing. That only stays honest if the fragments are temporary and if a
- * fragment that names something production does not have gets found.
+ * column it just created, or tombstone a function/table it just retired,
+ * without editing the shared snapshot every other agent is editing. That only
+ * stays honest if the fragments are temporary and checked against production.
  *
  * Run this straight after gen-schema-manifest.mjs, when the base file is a
  * fresh copy of the live schema:
@@ -63,6 +63,11 @@ for (const { file, data } of readFragments(REPO)) {
   const rel = `${FRAGMENT_DIR}/${file}`;
   const keepTables = (data.tables || []).filter((t) => !baseTables.has(t));
   const keepFns = (data.functions || []).filter((f) => !baseFns.has(f));
+  // A removal is absorbed only when the fresh production snapshot no longer
+  // carries the object. Until then the tombstone remains both an immediate CI
+  // deny-list and a deployment promise that can become stale.
+  const keepRemovedTables = (data.removedTables || []).filter((t) => baseTables.has(t));
+  const keepRemovedFns = (data.removedFunctions || []).filter((f) => baseFns.has(f));
   const keepCols = {};
   for (const [table, cols] of Object.entries(data.columns || {})) {
     const known = new Set(baseColumns[table] || []);
@@ -73,6 +78,8 @@ for (const { file, data } of readFragments(REPO)) {
   const outstanding = [
     ...keepTables.map((t) => `table ${t}`),
     ...keepFns.map((f) => `function ${f}`),
+    ...keepRemovedTables.map((t) => `table removal ${t}`),
+    ...keepRemovedFns.map((f) => `function removal ${f}`),
     ...Object.entries(keepCols).flatMap(([t, cs]) => cs.map((c) => `column ${t}.${c}`)),
   ];
 
@@ -92,6 +99,8 @@ for (const { file, data } of readFragments(REPO)) {
   const next = { ...data };
   if (data.tables) next.tables = keepTables;
   if (data.functions) next.functions = keepFns;
+  if (data.removedTables) next.removedTables = keepRemovedTables;
+  if (data.removedFunctions) next.removedFunctions = keepRemovedFns;
   if (data.columns) next.columns = keepCols;
   const before = JSON.stringify(data);
   if (JSON.stringify(next) !== before) {

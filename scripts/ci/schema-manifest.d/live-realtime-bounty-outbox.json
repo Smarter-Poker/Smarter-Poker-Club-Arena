@@ -11,7 +11,6 @@
     "tournament_pko_settlement_watermarks"
   ],
   "functions": [
-    "fn_sync_tournament_live_seat_chips",
     "fn_eliminate_tournament_player_atomic",
     "fn_close_tournament_addon_period",
     "fn_tournament_late_registration_open",

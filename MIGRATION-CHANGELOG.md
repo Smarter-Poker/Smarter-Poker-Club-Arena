@@ -8,6 +8,14 @@ Before: handlers/action.ts forwarded only user/action/amount; ServerTableEngineT
 After: server snapshots and turn_change carry a controller-incarnation/action-state context; TablePage and MultiTablePage return the displayed context unchanged through HTTP retries. The engine rejects stale/missing context before mutation and the replay fingerprint includes context. Old clients receive a readable success:false reload envelope. Structured rejection details reach current clients; late optimistic rollback is fenced to its original decision.
 Re-read: yes. TypeScript: both projects passed. Regression history and remaining build/publication gates: docs/audits/2026-09-08-phase2-poker-rules.md. Real-time law: context travels on the discrete turn_change event; snapshots provide reconciliation, no polling added.
 
+## 2026-09-08: Voluntary Card Reveals Survive Resync
+
+HTTP table state now retains selected card reveals after the hand ends, matching live snapshots while hiding unselected cards. 49 tests and server TypeScript pass; stored-card RLS read checks pass in production. Normal CI and adoption pending. Evidence: docs/audits/2026-09-08-phase2-card-visibility.md.
+
+## 2026-09-08: Individual Ante Caps And Inactive Blind Seats
+
+Individual antes now precede live blinds and retain matched-contribution pot caps. Heads-up skips an inactive old button; stale queued dead blinds cannot debit sitting-out seats. BBA remains shared and BB-first. The forced-bet event has an explicit type. 211 related tests and server TypeScript pass; CI and engine adoption remain pending. Evidence: docs/audits/2026-09-08-phase2-partial-antes.md.
+
 ## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
 
 Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.
@@ -17102,3 +17110,7 @@ Migration 20260908151800 applied and live definition/permissions verified. Self-
 ## 2026-09-08: BBJ Main Leg Source Correction
 
 Migration 20260908160032 appends one proven missing 0.25 main BBJ journal entry without changing any balance. It preserves the correct 0.25/0.12/0.13 split and the prior incident explanation. Twenty-four isolated PostgreSQL cases pass; live hand total, correction receipt and incident were read-verified. Details: docs/changelog/2026-09-08-bbj-main-leg-source-correction.md.
+
+## 2026-09-08: Phase 2 fixed-limit completion
+
+Correct below-half wager completion and counted-wager caps across engine validation, action bounds and snapshot/client wiring. Add fixed-limit and pot-limit regression evidence in docs/audits/2026-09-08-phase2-limit-completion.md. No database migration. Merge and runtime adoption remain separate gates.

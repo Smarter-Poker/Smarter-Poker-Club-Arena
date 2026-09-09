@@ -129,6 +129,7 @@ export interface EnginePublishedState {
   betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   /** Fixed limit only: the street's one legal wager (small bet or big bet). */
   fixed_bet_size?: number;
+  fixed_raise_size?: number;
   /** Fixed limit only: bet and three raises are in — fold or call only. */
   wagers_capped?: boolean;
   action_context?: string | null;
@@ -228,6 +229,7 @@ export interface MappedTableStatePatch {
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   /** Fixed limit only: the street's one legal wager. */
   fixedBetSize?: number;
+  fixedRaiseSize?: number;
   /** Fixed limit only: the round is capped — fold or call only. */
   wagersCapped?: boolean;
 
@@ -578,6 +580,7 @@ export function mapEngineSnapshot(
     // drawn a no-limit slider and had every drag rejected.
     bettingStructure: s.betting_structure,
     fixedBetSize: s.fixed_bet_size,
+    fixedRaiseSize: s.fixed_raise_size,
     wagersCapped: s.wagers_capped,
 
     lastRaise: s.last_raise ?? 0,

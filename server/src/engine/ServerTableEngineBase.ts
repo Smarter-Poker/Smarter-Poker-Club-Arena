@@ -68,6 +68,7 @@ import {
   executePendingSeatMoves,
   pendingSeatMoves,
   seatMoveNotice,
+  type PendingSeatMove,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
@@ -1812,8 +1813,32 @@ export abstract class ServerTableEngineBase {
          the bar dark while the engine was armed, or lit while the engine had
          invalidated it. Every change to the engine's copy now goes to the
          player's own sockets as a private frame; the client reconciles its
-         bar to it, and asks for it again on RESYNC (rePushPreAction). */
-      this.pushPreActionToPlayer(event.playerId);
+         bar to it, and asks for it again on RESYNC (rePushPreAction).
+
+         EXCEPT THE EXECUTION ITSELF (2026-09-08 sweep). executePreAction
+         deletes the entry and emits PRE_ACTION_EXECUTED synchronously, at
+         the top of handleTurnChange, BEFORE the visible beat, the snapshot
+         and the turn_change. Pushing "nothing armed" here reached the hero
+         ahead of the snapshot that put them on the clock, so the client's
+         bar disarmed, its suppression of every "your turn" surface
+         (heroPromptedToAct) had nothing to key on, and the bell, the ring,
+         the clock and the panel all fired for a turn the engine was already
+         taking - Dan's "it still prompts you" glitch, alive underneath two
+         fixes that were correct on paper. The executed action lands ~250ms
+         later and the client clears its own arm when it sees it
+         (heroLastAction); a REJECTED pre-action is pushed explicitly from
+         handleTurnChange's fallthrough, with a reason, so the bar clears and
+         the player is prompted at once. RESYNC still re-sends the engine's
+         copy, so a reconnect converges either way. */
+      if (event.type === 'PRE_ACTION_EXECUTED') return;
+      this.pushPreActionToPlayer(
+        event.playerId,
+        event.type === 'PRE_ACTION_INVALIDATED'
+          ? { reason: 'invalidated' }
+          : event.type === 'PRE_ACTION_CLEARED'
+            ? { reason: 'cleared' }
+            : undefined
+      );
     });
     this.atomicStackService = new AtomicStackService((event) => {
       console.log(`[ServerTableEngine:${tableId}] Stack: ${event.type}`);
@@ -2969,10 +2994,11 @@ export abstract class ServerTableEngineBase {
    * that has none.
    */
   protected async executePendingSeatMoves(
-    opts: { announcedOnly: boolean } = { announcedOnly: false }
+    opts: { announcedOnly: boolean } = { announcedOnly: false },
+    prefetched?: readonly PendingSeatMove[]
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const { done, held } = await executePendingSeatMoves(this.tableId, opts);
+    const { done, held } = await executePendingSeatMoves(this.tableId, opts, prefetched);
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];
@@ -3817,7 +3843,7 @@ export abstract class ServerTableEngineBase {
    * Send this player the engine's current pre-action (or its absence) as a
    * private frame. Called on every PreActionEngine event and on RESYNC.
    */
-  protected pushPreActionToPlayer(userId: string): void {
+  protected pushPreActionToPlayer(userId: string, extra?: { reason: string }): void {
     if (!this.hub || !userId) return;
     const entry = this.preActionEngine.getPreAction(this.tableId, userId);
     this.hub.sendToUser(this.tableId, userId, {
@@ -3825,12 +3851,16 @@ export abstract class ServerTableEngineBase {
       hand_number: this.handCount,
       action: entry?.action ?? null,
       to_call_at_set: entry?.toCallAtSet ?? null,
+      ...(extra ?? {}),
     });
   }
 
   /** RESYNC / reconnect: re-send the engine's pre-action for this player. */
   public rePushPreAction(userId: string): void {
-    this.pushPreActionToPlayer(userId);
+    // Authoritative: a reconnecting bar takes the engine's copy as it stands,
+    // armed or not. The reason lets the client tell this "nothing armed" from
+    // one it should hold through an execution beat.
+    this.pushPreActionToPlayer(userId, { reason: 'resync' });
   }
 
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */

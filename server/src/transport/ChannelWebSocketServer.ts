@@ -69,6 +69,13 @@ import {
 /** B13: how long a club-membership verdict may be reused. */
 const CLUB_MEMBERSHIP_TTL_MS = 60_000;
 const CLUB_MEMBERSHIP_CACHE_MAX = 10_000;
+const MAX_PENDING_CLUB_JOINS = 64;
+
+interface PendingClubJoin {
+  failures: number;
+  timer?: ReturnType<typeof setTimeout>;
+  presence?: { status: 'online' | 'at_table' | 'away'; currentTableId?: string };
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -93,6 +100,7 @@ const CLOSE_RATE_LIMITED = 4429;
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ConnectionState {
+  clubJoins: Map<string, PendingClubJoin>;
   userId: string;
   ws: WebSocket;
   lastPongAt: number;
@@ -268,6 +276,7 @@ export class ChannelWebSocketServer {
       return;
     }
     const conn: ConnectionState = {
+      clubJoins: new Map(),
       userId,
       ws,
       lastPongAt: Date.now(),
@@ -294,35 +303,112 @@ export class ChannelWebSocketServer {
    */
   private clubMembershipCache: Map<string, { member: boolean; readAt: number }> = new Map();
 
-  private async joinClubIfMember(userId: string, clubId: string): Promise<void> {
-    const key = `${userId}|${clubId}`;
-    const hit = this.clubMembershipCache.get(key);
-    if (hit && Date.now() - hit.readAt < CLUB_MEMBERSHIP_TTL_MS) {
-      if (hit.member) channelHub.joinClub(userId, clubId);
+  private cancelClubJoin(conn: ConnectionState, clubId: string): void {
+    const pending = conn.clubJoins.get(clubId);
+    if (pending?.timer) clearTimeout(pending.timer);
+    conn.clubJoins.delete(clubId);
+  }
+
+  private clubJoinIsCurrent(
+    conn: ConnectionState,
+    clubId: string,
+    pending: PendingClubJoin
+  ): boolean {
+    return (
+      this.connections.get(conn.ws) === conn &&
+      conn.ws.readyState === WebSocket.OPEN &&
+      conn.clubJoins.get(clubId) === pending
+    );
+  }
+
+  private joinClubIfMember(conn: ConnectionState, clubId: string): void {
+    // Invalid IDs are permanent request errors, never a reason to schedule
+    // repeated membership reads during transport recovery.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clubId)) {
+      channelHub.sendWs(conn.ws, {
+        type: 'CHANNEL_ERROR',
+        code: 'INVALID_CLUB_ID',
+        message: 'Invalid Club Identifier',
+      });
       return;
     }
+    // Reasserts coalesce with an in-flight read or its retry, never multiplying
+    // database work. Only this socket's current intent may publish the result.
+    if (conn.clubJoins.has(clubId)) return;
+    if (conn.clubJoins.size >= MAX_PENDING_CLUB_JOINS) {
+      channelHub.sendWs(conn.ws, {
+        type: 'CHANNEL_ERROR',
+        code: 'CLUB_JOIN_LIMIT',
+        message: 'Too Many Pending Club Subscriptions',
+      });
+      return;
+    }
+    const pending: PendingClubJoin = { failures: 0 };
+    conn.clubJoins.set(clubId, pending);
+    void this.resolveClubJoin(conn, clubId, pending);
+  }
 
+  private async resolveClubJoin(
+    conn: ConnectionState,
+    clubId: string,
+    pending: PendingClubJoin
+  ): Promise<void> {
+    if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
+    const { userId } = conn;
+    const key = `${userId}|${clubId}`;
+    const hit = this.clubMembershipCache.get(key);
+    let member: boolean;
     try {
-      const { data, error } = await supabase
-        .from('club_members')
-        .select('user_id')
-        .eq('club_id', clubId)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      // Fail closed, and do NOT cache an unknown: a transient error must not
-      // pin a user out of their own club for the whole TTL.
-      if (error) return;
-
-      const member = !!data;
-      if (this.clubMembershipCache.size >= CLUB_MEMBERSHIP_CACHE_MAX) {
-        const oldest = this.clubMembershipCache.keys().next().value;
-        if (oldest !== undefined) this.clubMembershipCache.delete(oldest);
+      if (hit && Date.now() - hit.readAt < CLUB_MEMBERSHIP_TTL_MS) {
+        member = hit.member;
+      } else {
+        const { data, error } = await supabase
+          .from('club_members')
+          .select('user_id')
+          .eq('club_id', clubId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (error) throw error;
+        if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
+        member = !!data;
+        if (this.clubMembershipCache.size >= CLUB_MEMBERSHIP_CACHE_MAX) {
+          const oldest = this.clubMembershipCache.keys().next().value;
+          if (oldest !== undefined) this.clubMembershipCache.delete(oldest);
+        }
+        this.clubMembershipCache.set(key, { member, readAt: Date.now() });
       }
-      this.clubMembershipCache.set(key, { member, readAt: Date.now() });
-      if (member) channelHub.joinClub(userId, clubId);
     } catch {
-      /* fail closed */
+      // An unavailable read is not a membership verdict. Recover on the same
+      // live intent with bounded, jittered backoff instead of silently waiting
+      // for the client's three-minute reassert. No unknown verdict is cached.
+      if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
+      const delay = Math.min(30_000, 1_000 * 2 ** Math.min(pending.failures++, 5));
+      pending.timer = setTimeout(
+        () => {
+          pending.timer = undefined;
+          void this.resolveClubJoin(conn, clubId, pending);
+        },
+        delay + Math.floor(Math.random() * 500)
+      );
+      pending.timer.unref?.();
+      return;
+    }
+    if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
+    conn.clubJoins.delete(clubId);
+    if (!member) {
+      // Revalidation can revoke a previously granted feed. A confirmed denial
+      // must not leave the old membership subscribed indefinitely.
+      channelHub.leaveClub(userId, clubId);
+      return;
+    }
+    channelHub.joinClub(userId, clubId);
+    if (pending.presence) {
+      channelHub.updatePresence(
+        userId,
+        clubId,
+        pending.presence.status,
+        pending.presence.currentTableId
+      );
     }
   }
 
@@ -406,12 +492,13 @@ export class ChannelWebSocketServer {
          * made optimistically on a database blip.
          */
         if (typeof msg.clubId === 'string' && msg.clubId) {
-          void this.joinClubIfMember(userId, msg.clubId);
+          this.joinClubIfMember(conn, msg.clubId);
         }
         return;
 
       case 'LEAVE_CLUB':
         if (typeof msg.clubId === 'string' && msg.clubId) {
+          this.cancelClubJoin(conn, msg.clubId);
           channelHub.leaveClub(userId, msg.clubId);
         }
         return;
@@ -425,7 +512,12 @@ export class ChannelWebSocketServer {
           // B13: presence WRITES into a club's broadcast feed, so it needs the
           // same gate as reading it. Subscription implies the membership check
           // above already passed, which keeps this synchronous and off the DB.
-          if (channelHub.isInClub(userId, msg.clubId)) {
+          const pending = conn.clubJoins.get(msg.clubId);
+          if (pending) {
+            // JOIN is async; the immediately following presence frame must not
+            // disappear while membership is being checked. Keep only the latest.
+            pending.presence = { status: msg.status, currentTableId: msg.currentTableId };
+          } else if (channelHub.isInClub(userId, msg.clubId)) {
             channelHub.updatePresence(userId, msg.clubId, msg.status, msg.currentTableId);
           }
         }
@@ -577,6 +669,7 @@ export class ChannelWebSocketServer {
   private onClose(ws: WebSocket): void {
     const conn = this.connections.get(ws);
     if (!conn) return;
+    for (const clubId of conn.clubJoins.keys()) this.cancelClubJoin(conn, clubId);
     // Pass the closing socket so ChannelHub can ignore this teardown if the user
     // has already reconnected on a newer socket (reconnect race).
     channelHub.removeConnection(conn.userId, ws);

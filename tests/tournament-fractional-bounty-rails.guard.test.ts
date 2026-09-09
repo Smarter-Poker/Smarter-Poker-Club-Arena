@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const refundSql = read(
-  'supabase/migrations/20260909014421_satellite_settlement_has_one_atomic_authority.sql'
+  'supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql'
 );
 const purchaseSql = read(
   'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'

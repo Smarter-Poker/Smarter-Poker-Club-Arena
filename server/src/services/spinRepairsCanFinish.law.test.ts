@@ -26,6 +26,10 @@ const paidJournalCloseout = readFileSync(
   ),
   'utf8'
 );
+const currentOverlayFixture = readFileSync(
+  join(__dirname, '../../../scripts/dev/fixtures/spin-stage-one-current-overlay-pg17.sql'),
+  'utf8'
+);
 describe('the Spin payout repair fleet has one stage-one replacement', () => {
   it('has no GameServer winner-backpay caller or timer', () => {
     expect(executableGameServer).not.toMatch(/fn_backpay_spin_unpaid_winners/);
@@ -51,6 +55,31 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
     expect(stageOne).toMatch(
       /REVOKE ALL ON public\.tournament_spin_settlement_cutover[\s\S]*?service_role;/
     );
+  });
+
+  it('accepts the published 10.00 draw plus 1.40 overlay without moving money again', () => {
+    const acceptanceAt = stageOne.indexOf('DO $accept_6d688095$');
+    const acceptanceEnd = stageOne.indexOf('$accept_6d688095$;', acceptanceAt);
+    const acceptance = stageOne.slice(acceptanceAt, acceptanceEnd);
+
+    expect(acceptanceAt).toBeGreaterThan(-1);
+    expect(acceptanceEnd).toBeGreaterThan(acceptanceAt);
+    expect(acceptance).toContain('e.reserve_in = 10 AND e.overlay_in = 1.40');
+    expect(acceptance).toContain('e.prize_out = 11.40');
+    expect(acceptance).toContain('v_total_before <> 11.40 OR v_wallet_before <> 11.40');
+    expect(acceptance).toContain("l.idempotency_key = 'spin-ladder-overlay:'");
+    expect(acceptance).toContain('o.amount_paid = 2.00');
+    expect(acceptance).toContain("v_alert constant uuid := '514fdb44-0433-4602-bb5e-4ddf4597b4b0'");
+    expect(acceptance).not.toContain('UPDATE public.ca_drift_incidents');
+    expect(acceptance).not.toContain('UPDATE public.union_wallets');
+    expect(acceptance).not.toContain('fn_settle_tournament_obligation(');
+    expect(acceptance).not.toContain('fn_ca_escrow_apply(');
+
+    expect(currentOverlayFixture).toContain(
+      "'spin-ladder-overlay:6d688095-c3c5-4d40-a5a0-952934667732'"
+    );
+    expect(currentOverlayFixture).toContain('3, 0.24, 1.40, 11.40, 0.24');
+    expect(currentOverlayFixture).toContain("'bbcaaed4-92b3-4ad7-86ee-7770bb36751a', 2, 2");
   });
 
   it('consumes the globally strict auto-ledger without redefining it', () => {

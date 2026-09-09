@@ -15,7 +15,7 @@ const MIGRATION = readFileSync(
   join(
     process.cwd(),
     '..',
-    'supabase/migrations/20260909014421_satellite_settlement_has_one_atomic_authority.sql'
+    'supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );

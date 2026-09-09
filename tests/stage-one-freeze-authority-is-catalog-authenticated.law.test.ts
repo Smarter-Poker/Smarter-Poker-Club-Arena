@@ -6,7 +6,7 @@ const root = resolve(__dirname, '..');
 
 const cutovers = [
   {
-    file: '20260909014421_satellite_settlement_has_one_atomic_authority.sql',
+    file: '20260909165629_satellite_settlement_has_one_atomic_authority.sql',
     gate: 'require_live_satellite_cutover_freeze',
   },
   {
@@ -42,7 +42,7 @@ const cutovers = [
     gate: 'require_live_terminal_acl_cutover_freeze',
   },
   {
-    file: '20260909071500_the_four_table_limit_is_never_satellite_cash.sql',
+    file: '20260909165602_the_four_table_limit_is_never_satellite_cash.sql',
     gate: 'require_live_cap_correction_freeze',
   },
 ].map((cutover) => ({

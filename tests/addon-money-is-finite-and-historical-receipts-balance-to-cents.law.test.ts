@@ -11,7 +11,7 @@ import { resolve } from 'node:path';
 const predecessorVersion = '20260909062006';
 const migrationVersion = '20260909072626';
 const migrationPath =
-  'supabase/migrations/20260909072626_addon_money_is_finite_and_historical_receipts_balance_to_cents.sql';
+  'supabase/migrations/20260909165555_addon_money_is_finite_and_historical_receipts_balance_to_cents.sql';
 const sql = readFileSync(resolve(__dirname, '..', migrationPath), 'utf8');
 
 describe('add-on money is finite cents without rewriting settled history', () => {

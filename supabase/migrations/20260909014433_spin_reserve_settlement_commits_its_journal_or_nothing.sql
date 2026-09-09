@@ -3576,16 +3576,22 @@ GRANT EXECUTE ON FUNCTION public.fn_spin_draw_and_settle(uuid,jsonb)
 -- 20260909053000 performs that one-row adoption immediately after thaw, under
 -- the same terminal and maintenance advisory roots, with no broad relation DDL.
 
--- Exact historical acceptance: this legacy 10x event paid 10.00 in total
--- against an immutable 10.00 reserve draw while tournaments.prize_pool still
--- said 3.00. The 9.40 winner payment and 0.60 runner-up payment are accepted;
--- no clawback and no additional 0.60 payment. Normalize only the stale winner
--- obligation and close every alert/incident for this known shape.
+-- Exact historical acceptance: this legacy 10x event first paid the immutable
+-- 10.00 reserve draw as 9.40 to first and 0.60 to second while
+-- tournaments.prize_pool still said 3.00. Migration 20260909110818 then kept
+-- the good-faith winner payment, funded the missing 1.40 from the union bank as
+-- one explicit overlay, and brought second place to the promised 2.00. The
+-- final event outflow is therefore exactly 11.40: reserve draw 10.00 plus the
+-- one-time overlay 1.40. This block only accepts that exact published shape;
+-- it moves no chips and does not rewrite unrelated incident history.
 DO $accept_6d688095$
 DECLARE
   v_tid constant uuid := '6d688095-c3c5-4d40-a5a0-952934667732';
+  v_union constant uuid := 'fade0000-0000-0000-0000-000000000001';
+  v_alert constant uuid := '514fdb44-0433-4602-bb5e-4ddf4597b4b0';
   v_actual_winner uuid;
   v_actual_runner uuid;
+  v_adjustment uuid;
   v_total_before numeric;
   v_wallet_before numeric;
 BEGIN
@@ -3621,11 +3627,23 @@ BEGIN
             AND l.from_type = 'spin_reserve'
             AND l.to_type = 'prize_liability' AND l.to_entity_id = v_tid
             AND l.amount = 10) <> 1
+     OR (SELECT count(*) FROM public.chip_ledger l
+          WHERE l.tournament_id = v_tid AND l.category = 'overlay'
+            AND l.from_type = 'union_bank' AND l.union_id = v_union
+            AND l.to_type = 'prize_liability' AND l.to_entity_id = v_tid
+            AND l.amount = 1.40
+            AND l.idempotency_key = 'spin-ladder-overlay:' || v_tid::text) <> 1
+     OR (SELECT count(*) FROM public.chip_ledger l
+          WHERE l.tournament_id = v_tid AND l.category = 'tournament_prize'
+            AND l.from_type = 'prize_liability' AND l.from_entity_id = v_tid
+            AND l.to_type = 'player_wallet'
+            AND l.to_entity_id = v_actual_runner AND l.amount = 1.40) <> 1
      OR (SELECT count(*) FROM public.tournament_escrow e
           WHERE e.tournament_id = v_tid AND e.reserve_out = 2.76
-            AND e.reserve_in = 10 AND e.prize_out = 10
+            AND e.reserve_in = 10 AND e.overlay_in = 1.40
+            AND e.prize_out = 11.40
             AND e.prize_balance = 0) <> 1 THEN
-    RAISE EXCEPTION 'Spin % no longer matches the accepted legacy 10x evidence',v_tid;
+    RAISE EXCEPTION 'Spin % no longer matches the accepted 10x draw plus 1.40 overlay evidence',v_tid;
   END IF;
 
   SELECT round(COALESCE(sum(p.amount),0),2) INTO v_total_before
@@ -3634,53 +3652,43 @@ BEGIN
     FROM public.wallet_transactions w
    WHERE w.related_entity_id = v_tid AND w.type = 'credit'
      AND w.category = 'prize';
-  IF v_total_before <> 10 OR v_wallet_before <> 10
+  IF v_total_before <> 11.40 OR v_wallet_before <> 11.40
      OR (SELECT round(COALESCE(sum(p.amount),0),2)
            FROM public.tournament_payouts p
           WHERE p.tournament_id = v_tid AND p.user_id = v_actual_winner) <> 9.40
      OR (SELECT round(COALESCE(sum(p.amount),0),2)
            FROM public.tournament_payouts p
-          WHERE p.tournament_id = v_tid AND p.user_id = v_actual_runner) <> 0.60
+          WHERE p.tournament_id = v_tid AND p.user_id = v_actual_runner) <> 2.00
      OR (SELECT count(*) FROM public.tournament_obligations o
           WHERE o.tournament_id = v_tid AND o.kind = 'place' AND o.place = 1
             AND o.user_id = v_actual_winner AND o.amount_paid = 9.40
-            AND o.amount_owed IN (9.40,10.00)) <> 1
+            AND o.amount_owed = 9.40) <> 1
      OR (SELECT count(*) FROM public.tournament_obligations o
           WHERE o.tournament_id = v_tid AND o.kind = 'place' AND o.place = 2
-            AND o.user_id = v_actual_runner AND o.amount_paid = 0.60
-            AND o.amount_owed = 0.60) <> 1 THEN
+            AND o.user_id = v_actual_runner AND o.amount_paid = 2.00
+            AND o.amount_owed = 2.00 AND o.adjustment_id IS NOT NULL) <> 1 THEN
     RAISE EXCEPTION 'Spin % payout/obligation evidence moved; no automatic action is safe',v_tid;
   END IF;
 
-  UPDATE public.tournament_obligations o
-     SET amount_owed = 9.40,
-         amount_paid = 9.40,
-         source = 'accepted_historical_spin_overpayment_no_clawback',
-         settled_at = COALESCE(o.settled_at,now()),
-         updated_at = now()
-   WHERE o.tournament_id = v_tid AND o.kind = 'place' AND o.place = 1
-     AND o.user_id = v_actual_winner AND o.amount_paid = 9.40
-     AND o.amount_owed IN (9.40,10.00);
+  SELECT o.adjustment_id INTO v_adjustment
+    FROM public.tournament_obligations o
+   WHERE o.tournament_id = v_tid AND o.kind = 'place' AND o.place = 2
+     AND o.user_id = v_actual_runner;
+  IF (SELECT count(*) FROM public.ca_manual_adjustments a
+       WHERE a.id = v_adjustment AND a.tournament_id = v_tid
+         AND a.target_kind = 'player_wallet' AND a.target_id = v_actual_runner
+         AND a.asset = 'chips' AND a.amount = 2.00 AND a.status = 'approved'
+         AND a.decision_note =
+           'migration 20260909110818_the_spin_runner_up_gets_the_share_the_ladder_promised') <> 1 THEN
+    RAISE EXCEPTION 'Spin % runner-up adjustment evidence moved; no automatic action is safe',v_tid;
+  END IF;
 
   UPDATE public.financial_alerts f
      SET resolved = true,
          resolved_at = COALESCE(f.resolved_at,now()),
-         resolution = COALESCE(NULLIF(f.resolution,'') || ' | ','')
-           || 'Accepted historical Spin payout: immutable reserve draw and total payout are both 10.00. Legacy prize_pool remained 3.00; winner 9.40 plus runner-up 0.60 is final. No clawback and no further 0.60 payment. Root fixed by fn_spin_draw_and_settle (20260909014433).'
-   WHERE f.context->>'tournament_id' = v_tid::text
-      OR f.context#>>'{rows,0,tournament_id}' = v_tid::text
-      OR f.message ILIKE '%' || v_tid::text || '%'
-      OR f.message ILIKE '%6d688095%';
-
-  UPDATE public.ca_drift_incidents i
-     SET status = 'resolved',
-         resolved_at = COALESCE(i.resolved_at,now()),
-         auto_repair_status = 'not_applicable',
-         root_cause = 'Legacy Spin row retained prize_pool 3.00 after an exact 10.00 reserve draw and 10.00 total payout.',
-         correction_ref = '20260909014433:accepted-no-clawback-no-further-payment',
-         resolution = 'Accepted historical payout; no chips moved. Winner obligation normalized from 10.00 owed / 9.40 paid to its final 9.40 receipt; runner-up remains paid 0.60.'
-   WHERE i.tournament_id = v_tid
-      OR i.metadata->>'tournament_id' = v_tid::text;
+         resolution = 'Accepted historical Spin distribution: immutable reserve draw 10.00 plus one explicit union-bank overlay 1.40; winner 9.40 and runner-up 2.00 are final. No clawback and no further payment. Root fixed by fn_spin_draw_and_settle (20260909014433).'
+   WHERE f.id = v_alert AND f.source = 'fn_spin_repair_missing_multiplier'
+     AND f.context->>'tournament_id' = v_tid::text AND NOT f.resolved;
 
   IF (SELECT round(COALESCE(sum(p.amount),0),2)
         FROM public.tournament_payouts p WHERE p.tournament_id = v_tid)
@@ -3692,8 +3700,16 @@ BEGIN
      OR (SELECT count(*) FROM public.tournament_obligations o
           WHERE o.tournament_id = v_tid AND o.kind = 'place' AND o.place = 1
             AND o.user_id = v_actual_winner AND o.amount_owed = 9.40
-            AND o.amount_paid = 9.40 AND o.settled_at IS NOT NULL) <> 1 THEN
-    RAISE EXCEPTION 'Spin % acceptance moved chips or left a stale obligation',v_tid;
+            AND o.amount_paid = 9.40 AND o.settled_at IS NOT NULL) <> 1
+     OR EXISTS (SELECT 1 FROM public.tournament_obligations o
+                 WHERE o.tournament_id = v_tid AND o.amount_paid < o.amount_owed)
+     OR EXISTS (SELECT 1 FROM public.financial_alerts f
+                 WHERE NOT f.resolved
+                   AND (f.context->>'tournament_id' = v_tid::text
+                     OR f.context#>>'{rows,0,tournament_id}' = v_tid::text
+                     OR f.message ILIKE '%' || v_tid::text || '%'
+                     OR f.message ILIKE '%6d688095%')) THEN
+    RAISE EXCEPTION 'Spin % acceptance moved chips or left a stale obligation/alert',v_tid;
   END IF;
 END;
 $accept_6d688095$;

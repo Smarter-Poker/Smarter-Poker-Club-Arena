@@ -6,7 +6,7 @@ const root = (path: string) => resolve(__dirname, '..', path);
 const migration = '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
 const sql = readFileSync(root(`supabase/migrations/${migration}`), 'utf8');
 const satelliteSql = readFileSync(
-  root('supabase/migrations/20260909014421_satellite_settlement_has_one_atomic_authority.sql'),
+  root('supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql'),
   'utf8'
 );
 const cashSql = readFileSync(

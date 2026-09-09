@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 canonical="${repo_dir}/supabase/migrations/20260908042800_maintenance_announcement_and_entry_purchases_are_serialized.sql"
-cutover="${repo_dir}/supabase/migrations/20260909014421_satellite_settlement_has_one_atomic_authority.sql"
+cutover="${repo_dir}/supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql"
 bootstrap="${repo_dir}/scripts/dev/fixtures/stage-one-freeze-authority-pg17-bootstrap.sql"
 
 pg17_bin="${PG17_BINDIR:-}"

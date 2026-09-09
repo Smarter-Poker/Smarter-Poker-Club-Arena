@@ -2,10 +2,10 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-predecessor_rel="supabase/migrations/20260909062006_chips_are_two_decimals_on_the_addon_path.sql"
+predecessor_rel="supabase/migrations/20260909165548_chips_are_two_decimals_on_the_addon_path.sql"
 predecessor="${repo_dir}/${predecessor_rel}"
 processor="${repo_dir}/supabase/migrations/20260908175113_post_commit_addons_accept_proven_resolution_receipts.sql"
-forward="${repo_dir}/supabase/migrations/20260909072626_addon_money_is_finite_and_historical_receipts_balance_to_cents.sql"
+forward="${repo_dir}/supabase/migrations/20260909165555_addon_money_is_finite_and_historical_receipts_balance_to_cents.sql"
 bootstrap="${repo_dir}/scripts/dev/fixtures/addon-finite-cent-forward-pg17-bootstrap.sql"
 probe="${repo_dir}/scripts/dev/probe-addon-finite-cent-forward-pg17.sql"
 

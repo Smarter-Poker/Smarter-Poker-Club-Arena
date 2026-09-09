@@ -141,7 +141,7 @@ describe('the engine refuses, and rounds, at its own doors', () => {
 
 describe('and the database will not accept one either', () => {
   const mig = read(
-    'supabase/migrations/20260909062006_chips_are_two_decimals_on_the_addon_path.sql'
+    'supabase/migrations/20260909165548_chips_are_two_decimals_on_the_addon_path.sql'
   );
 
   it('says who may call each function, so a replay cannot create it PUBLIC', () => {

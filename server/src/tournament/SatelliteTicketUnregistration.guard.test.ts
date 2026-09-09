@@ -10,7 +10,7 @@ const SQL = readFileSync(
     ROOT,
     'supabase',
     'migrations',
-    '20260909014421_satellite_settlement_has_one_atomic_authority.sql'
+    '20260909165629_satellite_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );

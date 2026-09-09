@@ -35,6 +35,15 @@ with tempfile.TemporaryDirectory(prefix="ca-route-", dir="/tmp") as temporary:
                    check=True, capture_output=True)
     try:
         def sql(statement):
+            # CI's pinned embedded server ships no psql. Reuse its existing
+            # pinned Node SQL client, with this probe's isolated connection.
+            if os.environ.get("PGNODE"):
+                connection = dict(os.environ, PGHOST=str(socket), PGPORT="55442",
+                                  PGUSER="route_test", PGDATABASE="postgres")
+                return subprocess.run(
+                    [os.environ["PGNODE"], str(ROOT / "scripts/ci/probes/chip-journal-atomicity/postgres-runtime/query.mjs")],
+                    input=statement, text=True, capture_output=True, env=connection
+                )
             return subprocess.run(
                 [str(BINDIR / "psql"), "-X", "-v", "ON_ERROR_STOP=1",
                  "-h", str(socket), "-p", "55442", "-U", "route_test", "-d", "postgres", "-c", statement],

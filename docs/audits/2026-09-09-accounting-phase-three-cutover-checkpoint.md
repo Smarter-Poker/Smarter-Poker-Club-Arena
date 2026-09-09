@@ -51,3 +51,7 @@ This probe verifies request routing and lease proof only. It does not simulate m
 ## Publication Operating Rule
 
 The user explicitly requires immediate dispatch of an already-staged normal Hetzner deployment toward its scheduled window when no compatible deployment is active. Do not passively wait for that window before dispatching. Continue implementation while publication runs. Do not duplicate an active compatible dispatch, cancel shared deployments, force an engine restart, or treat dispatch/workflow success as proof of live adoption. Database contractions still require actual compatible runtime evidence.
+
+## CI Client Compatibility
+
+The first PR 4037 run failed because the pinned embedded PostgreSQL package ships no psql binary. The focused probe now uses the existing pinned Node query client when PGNODE is supplied, with explicit isolated host, port and role. All 18 cases passed through that client with inherited journal-runner connection variables present. No production SQL or behavioral assertion changed.

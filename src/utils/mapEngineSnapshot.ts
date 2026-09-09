@@ -127,11 +127,14 @@ export interface EnginePublishedState {
    * Optional so a snapshot from an older engine build still maps cleanly.
    */
   betting_structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Pot-limit wager basis, including nominal short blinds only preflop. */
+  pot_limit_pot?: number;
   /** Fixed limit only: the street's one legal wager (small bet or big bet). */
   fixed_bet_size?: number;
   fixed_raise_size?: number;
   /** Fixed limit only: bet and three raises are in — fold or call only. */
   wagers_capped?: boolean;
+  action_context?: string | null;
   turn_start_time_ms?: number;
 
   turn_duration_ms?: number;
@@ -226,6 +229,7 @@ export interface MappedTableStatePatch {
    * panel then falls back to deriving it from the variant string.
    */
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  potLimitPot?: number;
   /** Fixed limit only: the street's one legal wager. */
   fixedBetSize?: number;
   fixedRaiseSize?: number;
@@ -240,6 +244,7 @@ export interface MappedTableStatePatch {
   discardDurationMs?: number;
   /** Server-authoritative turn start wall-clock (for CSS ring animation). */
   actionTimerStartTime?: number;
+  actionContext?: string;
   actionTimerPlayerId?: string;
   isTimeBankActive?: boolean;
   /** hand number */
@@ -577,6 +582,7 @@ export function mapEngineSnapshot(
     // everything that was not PLO no-limit — a fixed-limit table would have
     // drawn a no-limit slider and had every drag rejected.
     bettingStructure: s.betting_structure,
+    potLimitPot: s.pot_limit_pot,
     fixedBetSize: s.fixed_bet_size,
     fixedRaiseSize: s.fixed_raise_size,
     wagersCapped: s.wagers_capped,
@@ -585,6 +591,7 @@ export function mapEngineSnapshot(
     actionTimerDeadline,
     discardDeadline,
     discardDurationMs: typeof s.discard_duration_ms === 'number' ? s.discard_duration_ms : 0,
+    actionContext: s.action_context ?? undefined,
     actionTimerStartTime: s.turn_start_time_ms,
     actionTimerPlayerId: s.current_player ?? undefined,
     isTimeBankActive: s.time_bank_active ?? false,

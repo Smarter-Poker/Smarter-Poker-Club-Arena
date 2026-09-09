@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-legacy-horse-id-is-still-a-player",
+  "functions": ["trg_ca_reporting_repair_changed_day"]
+}

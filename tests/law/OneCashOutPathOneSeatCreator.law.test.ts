@@ -200,19 +200,15 @@ describe('C1: one cash-out path', () => {
     expect(leave).toContain('result.deferred');
   });
 
-  it('the engine says so only where it will not cash out itself', () => {
-    expect(LEAVE_HANDLER).toMatch(
-      /clientCashout: true,\s*note: 'No engine running, client handles DB cleanup'/
-    );
-    expect(ENGINE_SEATING).toMatch(
-      /return \{ success: true, immediate: true, clientCashout: true \};/
-    );
-    // The between-hands path (engine cashes out after settlement) does NOT set it.
-    const betweenHands = ENGINE_SEATING.slice(
-      ENGINE_SEATING.indexOf('// Between hands: remove immediately via atomic cashout.'),
-      ENGINE_SEATING.indexOf('const finishCashout = ()')
-    );
-    expect(betweenHands).not.toMatch(/clientCashout/);
+  it('retired requests cannot delegate cashout to the browser or claim success', () => {
+    expect(LEAVE_HANDLER).toContain("code: 'SEAT_OCCUPANCY_REQUIRED'");
+    expect(LEAVE_HANDLER).toContain('reloadRequired: true');
+    expect(LEAVE_HANDLER).not.toMatch(/success: true|clientCashout/);
+    expect(ENGINE_SEATING).not.toContain('clientCashout');
+    const bound = read('server/src/handlers/leaveOccupancy.ts');
+    expect(bound).toContain('getSeatCashoutReceipt');
+    expect(bound).toContain('engine.leaveTable');
+    expect(bound).not.toMatch(/clientCashout|supabase\.rpc/);
   });
 
   it('HydraService.removeHorse refuses instead of cashing a horse out from the browser', () => {

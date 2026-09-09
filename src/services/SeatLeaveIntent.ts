@@ -62,19 +62,39 @@ async function requestSeatWithIntent(
     (action.kind === 'kick' ? 'ca:seat-kick:v1:' : 'ca:seat-leave:v1:') + userId + ':' + tableId;
   const active = running.get(key);
   if (active) return active;
+  // Capture the request generation before waiting behind another browser tab.
+  // A queued click cannot become a new cashout merely because the first tab
+  // resolved the original request while this tab waited for its Web Lock.
+  let invocationRaw: string | null;
+  try {
+    invocationRaw = globalThis.localStorage.getItem(key);
+  } catch (error) {
+    return {
+      success: false,
+      chipsReturned: 0,
+      error: error instanceof Error ? error.message : 'Could Not Read The Leave Request.',
+    };
+  }
   const execute = async (): Promise<SeatLeaveResult> => {
     try {
       if (!UUID.test(tableId) || !UUID.test(userId)) throw new Error('Invalid Table Or Player.');
       const storage = globalThis.localStorage;
       const raw = storage.getItem(key);
+      const interveningAction = raw !== invocationRaw;
       let intent: Intent | null = null;
-      if (raw !== null) {
+      if (invocationRaw !== null) {
+        const invoked: unknown = JSON.parse(invocationRaw);
+        if (!validIntent(invoked, userId, tableId, action.kind))
+          throw new Error('The Saved Leave Request Could Not Be Verified.');
+        if (invoked.state === 'pending') intent = invoked;
+      }
+      if (!intent && raw !== null) {
         const saved: unknown = JSON.parse(raw);
         if (!validIntent(saved, userId, tableId, action.kind))
           throw new Error('The Saved Leave Request Could Not Be Verified.');
         intent = saved;
       }
-      if (!intent || intent.state === 'resolved') {
+      if (!intent || (intent.state === 'resolved' && !interveningAction)) {
         const { data, error } = await supabase
           .from('table_seats')
           .select('seat_number, occupancy_id')

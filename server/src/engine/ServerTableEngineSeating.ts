@@ -854,14 +854,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     success: boolean;
     error?: string;
     immediate: boolean;
-    /**
-     * CHIP STANDARD C1 (2026-09-02): set ONLY when this engine will not cash
-     * the seat out itself and the browser must (a reserved seat the engine
-     * never loaded). Absent on the between-hands path, where the engine cashes
-     * out after settlement persists the final stack; the browser used to race
-     * that with its own cash-out of the stale pre-hand stack.
-     */
-    clientCashout?: boolean;
     tournament?: boolean;
     /**
      * CHIP CONTINUITY (2026-09-04): 'LEAVE_LOCKED' when the player is ahead
@@ -1001,40 +993,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           return { success: true, immediate: true };
         }
 
-        // Dan 2026-08-20 (leave-stuck fix): `seatedPlayers` is the HAND roster,
-        // reloaded from the DB at each hand start. A player who reserved a seat
-        // mid-hand ("Seat Reserved, you'll be dealt in next hand") is legally
-        // absent from it. The old response was a hard failure -> HTTP 400 ->
-        // TableService refused to cash out -> the player could NEVER leave while
-        // waiting to be dealt in; the seat stayed reserved forever. The engine
-        // holds no in-memory state for this player (no live stack, not in any
-        // hand), so the departure is trivially safe to acknowledge: return
-        // success + immediate so the client proceeds with atomic DB cashout,
-        // exactly like the engine-not-running branch of the /leave handler.
-        if (opts.forced && !this.isTournamentTable()) {
-          // CHIP CONTINUITY: an admin kick of a seat the engine never loaded is
-          // still a system exit the engine can complete itself - the target's
-          // browser is not the caller and would never do the "client cleanup".
-          const { data: reserved, error: reservedError } = await supabase
-            .from('table_seats')
-            .select('seat_number, occupancy_id')
-            .eq('table_id', this.tableId)
-            .eq('user_id', userId)
-            .is('left_at', null)
-            .maybeSingle();
-          if (reservedError) throw new Error(reservedError.message);
-          if (!reserved) return { success: true, immediate: true };
-          await atomicCashout(userId, this.tableId, reserved.seat_number, {
-            occupancyId: reserved.occupancy_id,
-            leaveMode: 'forced',
-          });
-          this.chipContinuity.forget(userId);
-          return { success: true, immediate: true };
-        }
-        console.log(
-          `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) - acking, client handles DB cleanup`
-        );
-        return { success: true, immediate: true, clientCashout: true };
+        // Without the original occupancy, a delayed internal request could
+        // target a replacement seat. Neither a fresh lookup nor a browser
+        // handoff can establish that the requested cashout committed.
+        return {
+          success: false,
+          immediate: false,
+          code: 'STALE_OCCUPANCY',
+          error: 'Original Seat Identity Is Required. Please Refresh The Table.',
+        };
       }
 
       if (this.isTournamentTable()) {

@@ -438,6 +438,28 @@ describe('occupancy-bound engine leave', () => {
       expect(e.hub.emitEvent).not.toHaveBeenCalled();
     }
   );
+  it.each([false, true])(
+    'refuses an absent roster departure without its original occupancy: forced=%s',
+    async (forced) => {
+      const e = makeEngine();
+      e.seatedPlayers = [];
+      const from = vi.spyOn(supabase, 'from');
+      try {
+        expect(await e.leaveTable(HUMAN, { forced })).toMatchObject({
+          success: false,
+          immediate: false,
+          code: 'STALE_OCCUPANCY',
+        });
+        expect(from).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+        expect(departure).not.toHaveBeenCalled();
+        expect(e.hub.emitEvent).not.toHaveBeenCalled();
+      } finally {
+        from.mockRestore();
+      }
+    }
+  );
   it('cashes a reserved seat through the captured identity instead of handing money work to the browser', async () => {
     const e = makeEngine();
     e.seatedPlayers = [];

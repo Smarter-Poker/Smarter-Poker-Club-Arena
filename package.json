@@ -12,7 +12,7 @@
     "cap:sync": "npm run build:native && npx cap sync",
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "cap:android": "npm run cap:sync && npx cap open android",
-    "cap:assets": "npx capacitor-assets generate --iconBackgroundColor \"#0a0a1a\" --iconBackgroundColorDark \"#0a0a1a\" --splashBackgroundColor \"#0a0a1a\" --splashBackgroundColorDark \"#0a0a1a\"",
+    "cap:assets": "npx capacitor-assets generate --ios --android --iconBackgroundColor \"#0a0a1a\" --iconBackgroundColorDark \"#0a0a1a\" --splashBackgroundColor \"#0a0a1a\" --splashBackgroundColorDark \"#0a0a1a\"",
     "preview": "vite preview",
     "analyze": "vite build --mode production && npx vite-bundle-visualizer",
     "assets:customization-thumbnails": "node scripts/generate-customization-thumbnails.mjs --force",

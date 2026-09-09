@@ -426,6 +426,40 @@ describe('tournament-entry ticket client service', () => {
     expect(mockEmit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
   });
 
+  it('retains a seat refund identity after exhausted transport retries and a later retry', async () => {
+    mockRpc.mockRejectedValue(new Error('response lost after commit'));
+    await expect(
+      tournamentService.leaveTournamentSeatAndRefund('table-1', 'user-1')
+    ).rejects.toThrow('Could Not Confirm Tournament Unregistration');
+    const original = mockRpc.mock.calls[0][1].p_request_id;
+    mockUuid.mockReturnValue('00000000-0000-4000-8000-000000000002');
+    mockRpc.mockResolvedValue({
+      data: {
+        ok: true,
+        request_id: original,
+        registration_id: 'registration-1',
+        refunded_chips: 110,
+        returned_ticket_value: 0,
+        wallet_chips_from_satellite_entitlements: 0,
+      },
+      error: null,
+    });
+    await expect(
+      tournamentService.leaveTournamentSeatAndRefund('table-1', 'user-1')
+    ).resolves.toEqual({ refundedChips: 110, returnedTicketValue: 0 });
+    expect(mockRpc).toHaveBeenCalledTimes(3);
+    expect(mockRpc.mock.calls[2]).toEqual(mockRpc.mock.calls[0]);
+    expect(mockUuid).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls.filter(([name]) => name === 'BALANCE_UPDATED')).toHaveLength(1);
+  });
+
+  it('refuses a seat refund for a stale signed-in account before submitting', async () => {
+    await expect(
+      tournamentService.leaveTournamentSeatAndRefund('table-1', 'other-user')
+    ).rejects.toThrow('Correct Account');
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
   it('explains the real start boundary without a one-minute rule', async () => {
     mockRpc.mockResolvedValue({
       data: { ok: false, reason: 'tournament_started' },

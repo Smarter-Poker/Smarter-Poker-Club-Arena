@@ -212,6 +212,33 @@ refusal was promoted to its own critical on the money board, so a standing
 rate arrived as a stream of one-off criticals nobody could act on or close.
 `fn_ca_hand_commit_refusals` measures it as a rate with its reasons in it.
 
+## The board was still re-flooding while this session watched it
+
+Two criticals were closed at 11:32 with evidence. Two more of exactly the same
+shape were open again by 11:40.
+
+The dedupe key is built from the normalised message and error, but the
+echo-fold path also requires the `suspected_cause` to match byte for byte -
+and that text names the table and the hand number, which differ on every
+refusal. So each refused hand opened a fresh critical on the money board.
+At 1,226 refusals in two days that is the flood, arriving faster than anyone
+can read it. **This is the shape that produced 3,402 open incidents.**
+
+A refusal is not a money incident. The contract rejects the hand write whole
+and rolls it back before any downstream money step - its own message says so -
+so what is lost is a hand, not a chip. And since the rate check landed an hour
+earlier, the question has an owner: `fn_ca_hand_commit_refusals` reports it
+with its reasons and raises whenever one passes 25 in a day. The per-hand
+promotion was duplicate reporting that could only accumulate, and it is
+withdrawn.
+
+Nothing else is silenced. The test names the refusal specifically rather than
+the post-hand reporter in general, so a post-hand step that fails for any
+other reason still pages exactly as before. Both arms were proved in a
+transaction that was rolled back: a refusal opened 0 incidents, an unrelated
+critical opened 1. Every alert is still written to `financial_alerts` and
+still counted.
+
 ## One window is noise
 
 `fn_ca_trial_balance_watch` compared a single hour-long window and filed

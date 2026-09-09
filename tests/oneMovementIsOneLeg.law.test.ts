@@ -57,6 +57,7 @@ const NO_CHAIR = readMigration('a_player_still_in_the_event_with_no_chair_is_a_f
 const REFUSALS = readMigration('a_refused_hand_is_counted_as_a_rate_not_announced_one_at_a_time');
 const ONE_WINDOW = readMigration('one_window_is_noise_and_two_in_the_same_direction_is_a_finding');
 const NOT_A_READING = readMigration('a_run_that_measured_nothing_is_not_a_reading');
+const NOT_AN_INCIDENT = readMigration('a_refused_hand_stops_opening_an_incident_of_its_own');
 
 describe('one movement is one leg', () => {
   it('the club_members journal writer stands down when told to', () => {
@@ -225,5 +226,26 @@ describe('a rate is one finding, and one window is noise', () => {
   it('a run stamps itself at the clock, not at its transaction start', () => {
     expect(NOT_A_READING).toContain('ALTER COLUMN ran_at SET DEFAULT clock_timestamp()');
     expect(NOT_A_READING).toContain('ran_at DEFAULTED TO now(), WHICH IS THE TRANSACTION START');
+  });
+});
+
+describe('a refused hand stops opening an incident of its own', () => {
+  it('the promoter defers a refusal to the rate check', () => {
+    expect(NOT_AN_INCIDENT).toContain('A REFUSED HAND IS A RATE, NOT AN INCIDENT');
+    expect(NOT_AN_INCIDENT).toContain(
+      "IF NEW.source = 'ServerTableEngine.authoritative_hand_semantic_refusal'"
+    );
+    expect(NOT_AN_INCIDENT).toContain('the promoter did not learn to defer refusals');
+  });
+
+  it('nothing else is silenced', () => {
+    // The test names the refusal specifically, never the post-hand reporter in
+    // general: a post-hand step that fails for any other reason still pages.
+    expect(NOT_AN_INCIDENT).toContain('NOTHING ELSE IS SILENCED');
+    expect(NOT_AN_INCIDENT).toContain(
+      "COALESCE(NEW.context->>'error', '') LIKE '%authoritative_hand_semantic_refusal%'"
+    );
+    // The alert is still written and still countable; only the promotion goes.
+    expect(NOT_AN_INCIDENT).toContain('still written to financial_alerts');
   });
 });

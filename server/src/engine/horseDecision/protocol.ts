@@ -106,7 +106,9 @@ export type HorseDecisionJobRequest =
   | DecidePineappleDiscardRequest;
 
 export type HorseDecisionWorkerRequest =
-  HorseDecisionJobRequest | { type: 'CANCEL'; requestId: number } | { type: 'SHUTDOWN' };
+  | HorseDecisionJobRequest
+  | { type: 'CANCEL'; requestId: number }
+  | { type: 'SHUTDOWN' };
 
 export interface HorseDecisionWorkerReady {
   type: 'READY';

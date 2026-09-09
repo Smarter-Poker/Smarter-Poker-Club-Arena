@@ -47,6 +47,11 @@ function latestMigrationDefining(fnName: string): string {
 const seatRule = () => latestMigrationDefining('fn_enforce_four_table_limit');
 const bookingRule = () => latestMigrationDefining('fn_enforce_booking_game_cap');
 const loadFn = () => latestMigrationDefining('fn_concurrent_game_load');
+const enforcementInstall = () =>
+  readFileSync(
+    join(MIGRATIONS, '20260828_the_four_table_claim_is_atomic_and_counts_bookings.sql'),
+    'utf8'
+  );
 
 /**
  * The EXECUTABLE half. These migrations carry long write-ups that quote the
@@ -57,7 +62,7 @@ const code = (sql: string) => sql.replace(/--.*$/gm, '');
 
 describe('the four-table limit is enforced in the database', () => {
   it('creates a BEFORE trigger on table_seats', () => {
-    const sql = seatRule();
+    const sql = enforcementInstall();
     expect(sql).toMatch(/CREATE TRIGGER trg_enforce_four_table_limit/);
     // BEFORE, or the seat already exists by the time we object.
     expect(sql).toMatch(/BEFORE INSERT OR UPDATE OF left_at ON public\.table_seats/);
@@ -94,9 +99,7 @@ describe('the four-table limit is enforced in the database', () => {
 
   it('ships the partial indexes the count depends on', () => {
     // Without them the count seq-scans a hot table on every seat insert.
-    expect(latestMigrationDefining('fn_enforce_four_table_limit')).toMatch(
-      /idx_tournament_players_user_open/
-    );
+    expect(enforcementInstall()).toMatch(/idx_tournament_players_user_open/);
     const legacy = readdirSync(MIGRATIONS).find((n) => n.includes('four_table_limit')) as string;
     const legacySql = readFileSync(join(MIGRATIONS, legacy), 'utf8');
     expect(legacySql).toMatch(/idx_table_seats_user_live/);
@@ -104,7 +107,7 @@ describe('the four-table limit is enforced in the database', () => {
   });
 
   it('carries a rollback, because it is a Tier 2 change to a hot table', () => {
-    const sql = seatRule();
+    const sql = enforcementInstall();
     expect(sql).toMatch(/ROLLBACK/);
     expect(sql).toMatch(/DROP TRIGGER IF EXISTS trg_enforce_booking_game_cap/);
   });

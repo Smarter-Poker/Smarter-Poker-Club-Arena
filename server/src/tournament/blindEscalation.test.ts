@@ -15,8 +15,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_BLIND_VALUE,
+  capLevelToChipsInPlay,
   escalationFactor,
   escalatedBlindLevel,
+  enforcePlayableBlindLevel,
   lastPlayableIndex,
 } from './blindEscalation.js';
 
@@ -97,8 +99,31 @@ describe('escalation is anchored to the PERSISTED length', () => {
 describe('the escalated level is safe to write to the database', () => {
   it('clamps at the DECIMAL(10,2) ceiling', () => {
     const far = escalatedBlindLevel(LAST, 400, LEN, 10);
-    expect(far.smallBlind).toBe(MAX_BLIND_VALUE);
     expect(far.bigBlind).toBe(MAX_BLIND_VALUE);
+    expect(far.smallBlind).toBe(MAX_BLIND_VALUE / 2);
+    expect(far.smallBlind).toBeLessThan(far.bigBlind);
+  });
+
+  it('repairs the exact shared-ceiling shape before the engine writes it', () => {
+    expect(
+      enforcePlayableBlindLevel({
+        smallBlind: MAX_BLIND_VALUE,
+        bigBlind: MAX_BLIND_VALUE,
+        ante: MAX_BLIND_VALUE,
+      })
+    ).toMatchObject({
+      smallBlind: MAX_BLIND_VALUE / 2,
+      bigBlind: MAX_BLIND_VALUE,
+      ante: MAX_BLIND_VALUE,
+      adjusted: true,
+    });
+
+    const capped = capLevelToChipsInPlay(
+      { smallBlind: MAX_BLIND_VALUE, bigBlind: MAX_BLIND_VALUE, ante: MAX_BLIND_VALUE },
+      6_000_000
+    );
+    expect(capped).toMatchObject({ smallBlind: 150_000, bigBlind: 300_000, capped: true });
+    expect(capped.smallBlind).toBeLessThan(capped.bigBlind);
   });
 
   it('never produces NaN or Infinity, however far out the level is', () => {

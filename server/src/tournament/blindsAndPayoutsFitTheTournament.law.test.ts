@@ -183,6 +183,17 @@ describe('a big blind may never exceed the chips that exist', () => {
     expect(capped.bigBlind).toBeLessThanOrEqual(TOTAL / MIN_TOTAL_BB_IN_PLAY);
     // And what is left is a playable game, not a lottery.
     expect(TOTAL / capped.bigBlind).toBeGreaterThanOrEqual(MIN_TOTAL_BB_IN_PLAY - 1);
+    expect(capped.smallBlind).toBeLessThan(capped.bigBlind);
+  });
+
+  it('a shared ceiling cannot survive as an equal small and big blind', () => {
+    const capped = capLevelToChipsInPlay(
+      { smallBlind: MAX_BLIND_VALUE, bigBlind: MAX_BLIND_VALUE, ante: MAX_BLIND_VALUE },
+      TOTAL
+    );
+    expect(capped.bigBlind).toBe(300_000);
+    expect(capped.smallBlind).toBe(150_000);
+    expect(capped.smallBlind).toBeLessThan(capped.bigBlind);
   });
 
   it('leaves a healthy level completely untouched', () => {

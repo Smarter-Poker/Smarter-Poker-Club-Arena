@@ -1,3 +1,4 @@
+import './DiamondWalletModal.css';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { playerDisplayName } from '../../utils/playerDisplayName';

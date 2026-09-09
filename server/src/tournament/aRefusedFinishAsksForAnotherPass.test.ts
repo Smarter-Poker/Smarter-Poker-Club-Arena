@@ -15,14 +15,18 @@
  * maintenance freeze, a refused claim, an unreadable row, a transport blip -
  * stopped the event where it stood with its winner unpaid.
  *
- * Read off production 2026-09-09 04:09 UTC: TEN tournaments at exactly one
- * player, that player holding chips, every opponent already `eliminated` on a
- * zero stack, zero pending knockout candidates between them. Decided events
- * waiting for a caller that was never coming. Oldest wait 5h09m.
- *
  * This is CLAUDE.md 10.86 in its purest form: a component answering
  * confidently ("the next sweep will resume it") about something it had no way
  * to know. The pins below are the listener.
+ *
+ * FOUND BY READING, NOT BY WATCHING. No production incident is attributed to
+ * this. The changelog beside it
+ * (`docs/changelog/2026-09-09-a-refused-finish-asks-for-another-pass.md`)
+ * carries a retraction of the ten-tournament "backlog" its first draft claimed:
+ * that was one snapshot of a population which turns over all day, and a
+ * re-read seven minutes later found nine of the ten already finished. The
+ * defect stands on the control flow. The evidence for it does not need to be
+ * invented, and these pins do not depend on it.
  */
 
 import { describe, it, expect } from 'vitest';

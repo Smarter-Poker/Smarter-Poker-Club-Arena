@@ -3563,12 +3563,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * refused claim, an unreadable row, a transport blip) the event simply stopped
    * where it stood, with its winner unpaid and its status still RUNNING.
    *
-   * Measured on production 2026-09-09 at 04:09 UTC: TEN tournaments sitting at
-   * exactly one player, that player holding chips, every opponent already
-   * `eliminated` with a zero stack and not one pending knockout candidate
-   * between them - decided events, waiting for a caller that was never coming.
-   * The oldest had been waiting since 02:52; `Sunday Deep Stack Satellite $10`
-   * since 23:00 the previous day.
+   * This was found by reading the control flow, and no production incident is
+   * attributed to it: a first pass DID read ten tournaments sitting at one
+   * player and called them wedged, and a re-read seven minutes later found nine
+   * of the ten already finished. That sample is retracted in the changelog. The
+   * defect is the missing listener, which is visible without it.
    *
    * So the flag is read where the call was made. It is not a repair job (10.12)
    * and nothing here back-fills or compensates anything: the finish has not

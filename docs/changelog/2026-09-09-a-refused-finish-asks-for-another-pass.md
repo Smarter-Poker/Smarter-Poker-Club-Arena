@@ -2,27 +2,16 @@
 
 2026-09-09
 
-## What was wrong
+## What this is, and what the evidence for it actually is
 
-Ten tournaments were sitting on production at exactly one player.
+**Read the correction in the next section before quoting any number from this
+page.** This defect is real and was found by reading the code, not by watching
+it bite. The first version of this changelog claimed a ten-tournament
+production incident and it was wrong; the claim is retracted below rather than
+quietly deleted, because a wrong measurement left in a changelog is how the
+next agent inherits it as fact.
 
-Read at 04:09 UTC, every one of them the same shape: one row `status='playing'`
-holding chips, every other row already `status='eliminated'` on a zero stack,
-zero pending knockout candidates, one open table. Decided events. Nothing about
-them was ambiguous and nothing about them was in progress.
-
-| tournament                        | one survivor since | waited |
-| --------------------------------- | ------------------ | ------ |
-| `Sunday Deep Stack Satellite $10` | 2026-09-08 23:00   | 5h 09m |
-| `5 Chip Deep Stack Spin PLO6`     | 02:52              | 1h 17m |
-| `10 Chip Deep Stack Spin PLO6`    | 03:10              | 59m    |
-| `PLO4 Heads-Up 1`                 | 03:12              | 57m    |
-| `1 Chip Spin PLO5`                | 03:13              | 56m    |
-| `50 Chip Spin PLO4`               | 03:24              | 45m    |
-| `NLH Heads-Up 5`                  | 03:27              | 42m    |
-| `10 Chip Deep Stack Spin PLO6`    | 03:39              | 30m    |
-| `100 Chip Deep Stack Spin PLO6`   | 03:40              | 29m    |
-| `10 Chip Spin PLO4`               | 03:40              | 29m    |
+The defect: `finishTournament` can refuse, and a refusal was terminal.
 
 ## The cause, read rather than guessed
 
@@ -61,6 +50,37 @@ This is CLAUDE.md 10.86 exactly - a component answering confidently about
 something it had no way to know. The comment asserts a recovery mechanism as
 fact, the mechanism does not exist for this shape, and it reads as covered to
 every agent who has opened the file since.
+
+## RETRACTED: the ten wedged tournaments (2026-09-09, same hour)
+
+The first version of this page opened with a table of ten tournaments "wedged"
+at one survivor, the oldest for 5h09m, presented as the incident this fix was
+written for. **That table was wrong twice over and none of it should be
+believed.**
+
+1. **The waits were fabricated by a column misread.** The "one survivor since"
+   column was `tournaments.started_at` - when the event STARTED. It says nothing
+   about when the field came down to one player. There is no column on that row
+   that says what I claimed it said, so the 5h09m and every other duration in
+   that table was arithmetic on the wrong number.
+2. **They were not wedged.** Re-read seven minutes later, at 04:16 UTC, the
+   count of RUNNING tournaments at exactly one player had gone from 10 to 1, and
+   `Sunday Deep Stack Satellite $10` - the "5h09m" case - was `COMPLETED` with
+   zero players. Every one of them finished on its own. A snapshot of a
+   population that turns over constantly (Spins and heads-up events finish all
+   day) was read as a backlog.
+
+So: this fix ships on a code reading. `finishTournament` genuinely has about
+thirty-five exits that hand the event back and nothing that asks for it again,
+and that is worth closing on its own terms - but **no production incident has
+been attributed to it**, and if one is later, it should be recorded here rather
+than assumed from this page.
+
+The irony is the point. This changelog's own thesis is CLAUDE.md 10.86 - a
+component answering confidently when it could not tell - and its first draft did
+exactly that from a single sample. Two reads seven minutes apart cost nothing
+and would have caught it. That is the rule: **before a snapshot becomes a
+finding, take the second sample.**
 
 ## The fix
 
@@ -134,6 +154,8 @@ all bounded by structure via `testHelpers/sourceWindow`:
 - `npx vitest run src/tournament`: 116 files, 1207 tests, all passing.
 - `tests/unit/noFixedSizeSourceWindows.test.ts` and `tests/law-registry.law.test.ts`:
   passing.
-- Production: the ten wedged tournaments are the measurement. They clear on the
-  next engine restart once this deploys, and the count is expected to stay at
-  zero afterwards rather than being cleared again by hand.
+- Production: nothing to verify, and that is the honest answer. See the
+  retraction above. The behaviour this closes is a path that had no retry;
+  proving it fired would need an engine log line from inside one of the refusal
+  branches, which is what the new `finish deferred` log gives the next person
+  who looks.

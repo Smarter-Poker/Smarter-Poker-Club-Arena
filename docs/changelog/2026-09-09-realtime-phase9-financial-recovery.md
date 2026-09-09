@@ -47,10 +47,41 @@ Diamond reads, ledger writes, game timing, and engine authority are unchanged.
   The Cashier callback is located structurally with the TypeScript parser and
   executed against the real store with a fresh cached balance.
 - npx tsc --noEmit passed with no diagnostics.
-- Build, normal push gates, CI, merge, and served publication evidence are
-  recorded when complete. An initial local build correctly refused a checkout
-  that became one commit behind main; no guard was bypassed.
+- The final production build passed (13.48 seconds), with provenance
+  a60cbac528d26847bc522eb27d470d34ab6b82ef and behind-main=0.
+  An earlier build correctly refused a checkout that became one commit behind
+  main. The interrupted rebase and its commits were preserved; the patch was
+  transferred to a fresh isolated worktree. No hook or review was bypassed.
+- Normal push gates passed: 29 direct tests, 2,837 related tests across 246
+  files, and 226 source-reading checks across 11 files. No --no-verify was used.
+- CI run 34323617873 passed TypeScript, production build, all four client test
+  shards, and the CSS/component E2E job. Live Production E2E was skipped, so it
+  does not establish authenticated production acceptance.
+- PR3955 merged automatically at 2026-09-09 07:31:18 UTC as
+  9a20a259ef888dc51262e17faa27c889a6c5ffe8. The four runtime files on main
+  match the tested PR head exactly.
 
 Physical iPad/PWA and authenticated live-player acceptance remain unverified.
 The previously offered secure sign-in was cancelled; this phase does not retry
 it or infer device success from automated tests or published bytes.
+
+## Published release
+
+Public and origin build-info were freshly read at 2026-09-09T07:40:30.169Z. Both served
+9a20a259ef888dc51262e17faa27c889a6c5ffe8, built at 2026-09-09 07:37:03 UTC
+by publisher run 34324555902. The previously queued run was superseded;
+its cancellation was not treated as a release failure or deployment proof.
+
+The actual public HTML references index-CelZsBvu-v6.js; its Cashier import
+references CashierPage-BS24HlPQ-v6.js, which imports
+useRealtimeFinancials-BBY34oep-v6.js. All four changed functions were parsed
+from these served assets and compared to the tested build, preserving
+identifier relationships, properties and literal values. All four matched.
+Executing the served status callback in an isolated context produced exactly
+two BALANCE_UPDATED events for first open and a reconnect through connecting.
+
+Exact fresh URLs, timestamps, asset SHA-256 values, comparison results,
+ancestry and publisher step evidence are stored in
+`docs/audits/2026-09-09-realtime-phase9-publication.json`.
+This establishes publication and automated behavior, with the authenticated
+and physical-device acceptance limitation above still open.

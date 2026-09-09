@@ -1,0 +1,189 @@
+{
+  "checked_at": "2026-09-09T07:40:30.169Z",
+  "verified_merge": "9a20a259ef888dc51262e17faa27c889a6c5ffe8",
+  "tested_build_head": "a60cbac528d26847bc522eb27d470d34ab6b82ef",
+  "comparison_method": "AST functions with consistent identifier renaming; property names, values, and binding relationships retained",
+  "stamps": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/build-info.json",
+      "ca_sha": "9a20a259ef888dc51262e17faa27c889a6c5ffe8",
+      "built_at": "2026-09-09T07:37:03Z",
+      "run_id": "34324555902"
+    },
+    {
+      "url": "https://ca-static.smarter.poker/build-info.json",
+      "ca_sha": "9a20a259ef888dc51262e17faa27c889a6c5ffe8",
+      "built_at": "2026-09-09T07:37:03Z",
+      "run_id": "34324555902"
+    }
+  ],
+  "assets": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/index-CelZsBvu-v6.js",
+      "sha256": "23c86f586925cdc8d6fe79739496142ebd6955ad04719b0351856de313f0c78f"
+    },
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/CashierPage-BS24HlPQ-v6.js",
+      "sha256": "f7f8b5efcdeb77edb02972686f206875d8ae06be1eecaaeadd3c16c27d164550"
+    },
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/useRealtimeFinancials-BBY34oep-v6.js",
+      "sha256": "1b61af560d5cca0c711a38878d5a8f49a544e62a7ae43d6221fe59a2914a1bf4"
+    }
+  ],
+  "comparisons": [
+    {
+      "kind": "reconnect",
+      "matchesTestedBuild": true
+    },
+    {
+      "kind": "global",
+      "matchesTestedBuild": true
+    },
+    {
+      "kind": "store",
+      "matchesTestedBuild": true
+    },
+    {
+      "kind": "cashier",
+      "matchesTestedBuild": true
+    }
+  ],
+  "servedCallbackRefreshes": 2,
+  "merged_code_is_ancestor_of_main": true,
+  "publisher_jobs": [
+    {
+      "conclusion": "success",
+      "name": "publish-needed",
+      "status": "completed",
+      "steps": []
+    },
+    {
+      "conclusion": "success",
+      "name": "client-tests (3)",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Checkout Club Arena at the publish target",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout Club Arena at the publish target",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "name": "client-tests (1)",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Checkout Club Arena at the publish target",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout Club Arena at the publish target",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "name": "build-and-store",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Checkout Club Arena at the publish target",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stamp build provenance",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify dist is complete",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout Club Arena at the publish target",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "name": "client-tests (2)",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Checkout Club Arena at the publish target",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout Club Arena at the publish target",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "name": "client-tests (4)",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Checkout Club Arena at the publish target",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout Club Arena at the publish target",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "name": "publish-to-origin",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Install the origin key and pin the host key",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stand down if the origin already serves a newer bundle",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Publish - rsync the release, swap the symlink, prune",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify the origin serves this bundle",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Converge - chain another publish if main moved while this one built",
+          "status": "completed"
+        }
+      ]
+    }
+  ]
+}

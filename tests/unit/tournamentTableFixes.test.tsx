@@ -262,13 +262,12 @@ describe('Tournament Leave & Unregister Refund Rules', () => {
     );
   });
 
-  it('does not clear seat or eliminate player on tournament table leave in TableService', () => {
+  it('delegates tournament departure without client seat deletion or elimination', () => {
     const code = tsCode(read('src/services/TableService.ts'));
-    expect(code).toMatch(/table_seats[\s\S]*?status:\s*'sitting_out'/);
-    // Ensure we do NOT set left_at for tournament leaves
-    expect(code).not.toMatch(
-      /if\s*\(tableData\?\.tournament_id\)\s*\{\s*await supabase[\s\S]*?status:\s*'eliminated'/
-    );
+    const start = code.indexOf('async leaveTable(');
+    const leave = code.slice(start, code.indexOf('subscribeToTable(', start));
+    expect(leave).toContain('leaveSeatWithIntent(tableId, userId)');
+    expect(leave).not.toMatch(/\.update\(|\.delete\(|supabase\.rpc/);
   });
 
   it('informs player of tournament sit-out behavior on LeaveTableConfirm', () => {

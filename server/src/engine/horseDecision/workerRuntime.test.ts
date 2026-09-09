@@ -52,6 +52,11 @@ const governor = () => ({
   timerLateMs: 40,
 });
 
+const V31_DATASET = {
+  id: '11111111-1111-4111-8111-111111111111',
+  checksum: 'a'.repeat(64),
+};
+
 function harness() {
   const messages: HorseDecisionWorkerResponse[] = [];
   const restored: number[] = [];
@@ -71,7 +76,12 @@ function harness() {
     async startServices() {
       started++;
       return {
-        solverStores: { charts: 7, postflop: 8, postflopV31: 9 },
+        solverStores: {
+          charts: 7,
+          postflop: 8,
+          postflopV31: 9,
+          postflopV31Dataset: V31_DATASET,
+        },
         solverPolicyArtifact: {
           totalPolicies: 12,
         } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -106,7 +116,12 @@ function harness() {
     },
     governorScale: () => 0.2,
     workerReadiness: () => ({
-      solverStores: { charts: 17, postflop: 18, postflopV31: 19 },
+      solverStores: {
+        charts: 17,
+        postflop: 18,
+        postflopV31: 19,
+        postflopV31Dataset: V31_DATASET,
+      },
       solverPolicyArtifact: {
         totalPolicies: 22,
       } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -168,7 +183,12 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.started()).toBe(1);
     expect(h.messages[0]).toEqual({
       type: 'READY',
-      solverStores: { charts: 7, postflop: 8, postflopV31: 9 },
+      solverStores: {
+        charts: 7,
+        postflop: 8,
+        postflopV31: 9,
+        postflopV31Dataset: V31_DATASET,
+      },
       solverPolicyArtifact: { totalPolicies: 12 },
       governor: governor(),
     });
@@ -328,7 +348,12 @@ describe('HorseDecisionWorkerRuntime', () => {
 
     expect(h.messages.at(-1)).toMatchObject({
       type: 'STATUS_RESULT',
-      solverStores: { charts: 17, postflop: 18, postflopV31: 19 },
+      solverStores: {
+        charts: 17,
+        postflop: 18,
+        postflopV31: 19,
+        postflopV31Dataset: V31_DATASET,
+      },
       solverPolicyArtifact: { totalPolicies: 22 },
       governor: { scale: 0.08, sampledAt: 199 },
     });

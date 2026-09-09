@@ -33,6 +33,7 @@ vi.mock('../services/supabase.js', async () => {
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const { supabase } = await import('../services/supabase.js');
 
+const occupancyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const TABLE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TOURNEY = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
@@ -44,7 +45,7 @@ function engineWith(
   roster: Array<{ user_id: string; status: string }> | { error: true }
 ) {
   const engine = new ServerTableEngine(TABLE) as any;
-  engine.seatedPlayers = seated.map((s) => ({ ...s, is_horse: true }));
+  engine.seatedPlayers = seated.map((s) => ({ ...s, is_horse: true, occupancy_id: occupancyId }));
   engine.tableInfo = { id: TABLE, tournament_id: TOURNEY };
   engine.disconnectEngine = { unregisterPlayer: vi.fn() };
   engine.timeBankEngine = { removePlayer: vi.fn() };
@@ -79,7 +80,7 @@ describe('a chair is released when the field says the player is out', () => {
       [{ user_id: 'ghost', status: 'eliminated' }]
     );
     return engine.releaseDeadTournamentSeats().then(() => {
-      expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'ghost', 3);
+      expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'ghost', 3, occupancyId);
       // And the chair is free for the hand about to be dealt, not the next one.
       expect(engine.seatedPlayers).toHaveLength(0);
     });
@@ -91,7 +92,7 @@ describe('a chair is released when the field says the player is out', () => {
       [{ user_id: 'champ', status: 'winner' }]
     );
     await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'champ', 1);
+    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'champ', 1, occupancyId);
   });
 
   it('releases a seat held by somebody with no row in this tournament at all', async () => {
@@ -100,7 +101,7 @@ describe('a chair is released when the field says the player is out', () => {
       []
     );
     await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'stranger', 5);
+    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'stranger', 5, occupancyId);
   });
 
   it('tears down the per-player engines with the seat', async () => {
@@ -178,6 +179,6 @@ describe('what it must never do', () => {
       is_horse: false,
     }));
     await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'human', 7);
+    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'human', 7, occupancyId);
   });
 });

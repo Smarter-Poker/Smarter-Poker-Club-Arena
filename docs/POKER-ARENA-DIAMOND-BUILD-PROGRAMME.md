@@ -6,6 +6,10 @@ Date: September 8, 2026. Phase count: 12.
 
 Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is monitored and repaired in the background. This supersedes the earlier instruction to block Phase 3 solely on Phase 2 deployment. Phase 2 must still be verified and any regression corrected; queued publication does not count as completed publication. Public funded Diamond games remain subject to the later gameplay and accounting release gates.
 
+## Execution Update, September 9, 2026
+
+Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 remains open until its remaining repairs, running-engine adoption and live regression checks pass. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -165,9 +169,9 @@ Exit: reviewable programme and reconciled policy, required checks passed, merged
 - [x] Make unknown/mismatched asset fail at transaction entry; no fallback to chips.
 
 - [x] Verify the merged Phase 2 frontend on production and confirm the engine runs the Phase 2 server code. Both serve release 4932f6f91ad9b08300cf20afbeb9576b6559770f, a verified descendant of the Phase 2 merge, on September 8, 2026.
-- [ ] Complete the authenticated live recheck of the automatic-entry card and Diamond navigation repair. PR #3858 is merged and published, verified by production commit ancestry; browser connection failures still prevent the final live UI acceptance check. The earlier missing-card and management-link findings are repaired in source, not claimed verified in the live UI. The shared selector artwork and skin remain Phase 5.
+- [x] Complete the authenticated live recheck of the automatic-entry card and Diamond navigation repair. Verified September 9 on published Phase 3 merge `ec5a84f994`: automatic home entry, UUID/finance/agents access-only routes, no Diamond operations rail or chip footer, and automatic stale-invite redirect. The shared selector artwork and skin remain Phase 5.
 
-Implementation and audit evidence: PR #3814, merged as ea30980397158749d0d91c1726c9f8e004e83e56. All 24,638 unit tests, 166 browser checks and 39 isolated SQL assertions pass. Six production migrations are applied. Runtime publication is verified; the monitor UI acceptance discrepancy above remains open. The user explicitly authorized Phase 3 to proceed while Phase 2 publication and any scoped repairs are monitored in the background. Phase 2 rollout latency does not block Phase 3. See the Phase 2 changelog for exact release and browser evidence.
+Implementation and audit evidence: PR #3814, merged as ea30980397158749d0d91c1726c9f8e004e83e56. All 24,638 unit tests, 166 browser checks and 39 isolated SQL assertions pass. Six production migrations are applied. Runtime publication and the repaired Diamond UI acceptance are verified. The additional Shark seat-query regression discovered during Phase 3 acceptance is tracked in PR 3982. The user explicitly authorized Phase 3 to proceed while Phase 2 publication and any scoped repairs are monitored in the background. Phase 2 rollout latency does not block Phase 3. See the Phase 2 changelog for exact release and browser evidence.
 
 Exit: access and wrong-asset integration tests pass, merged frontend and server publication verified, no public funded games yet.
 

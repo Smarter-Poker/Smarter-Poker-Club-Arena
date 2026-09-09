@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..', '..');
@@ -178,9 +178,15 @@ describe('one tournament manager carries one database fencing generation', () =>
     expect(gameServerSource).toContain('const heartbeat = await heartbeatTournaments(');
     expect(gameServerSource).toContain('leaseGeneration: candidate.leaseGeneration');
     expect(managerSource).toContain('protected readonly tournamentLeaseGeneration: string | null;');
-    expect(
-      managerSource.match(/p_lease_generation: this\.tournamentLeaseGeneration/g) ?? []
-    ).toHaveLength(2);
+    for (const rpc of [
+      'fn_begin_tournament_launch_atomic',
+      'fn_complete_tournament_launch_atomic',
+      'fn_spin_draw_and_settle_atomic',
+    ]) {
+      const call = sliceCall(managerSource, `supabase.rpc('${rpc}'`);
+      expect(call).toContain('p_tournament_id: this.tournamentId');
+      expect(call).toContain('p_lease_generation: this.tournamentLeaseGeneration');
+    }
     expect(managerSource).toContain('engine.renewEngineLeaseProof(authority)');
   });
 

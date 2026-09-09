@@ -184,8 +184,8 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
 
   it('the between-hands answer IS the database answer: awaited, seat_left only after the money, no fallback (A0.16)', () => {
     const body = sliceMethod(SEATING, 'public async leaveTable(');
-    expect(body).toContain(
-      'await atomicCashoutVoluntary(userId, this.tableId, player.seat_number)'
+    expect(body.replace(/\s+/g, '').replace(/,\)/g, ')')).toContain(
+      'awaitatomicCashoutVoluntary(userId,this.tableId,player.seat_number,player.occupancy_id)'
     );
     expect(blankNonCode(body)).not.toContain('markSeatAsLeft');
     const emit = body.indexOf('const emitSeatLeft = () =>');
@@ -201,13 +201,15 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
 
   it('a leave refused at settlement is held by the clock and released by the heartbeat', () => {
     expect(sliceMethod(BASE, 'protected onLeaveRefusedAtSettlement(')).toContain(
-      'this.leaveHeldByClock.add(userId)'
+      'this.leaveHeldByClock.set(userId, original)'
     );
     expect(sliceMethod(BASE, 'protected isContinuityActive(userId: string)')).toContain(
       'if (this.leaveHeldByClock.has(userId)) return true;'
     );
     const release = sliceMethod(BASE, 'protected async releaseLeavesHeldByClock()');
-    expect(release).toContain('atomicCashoutVoluntary(userId, this.tableId, seated.seat_number)');
+    expect(release.replace(/\s+/g, '').replace(/,\)/g, ')')).toContain(
+      'atomicCashoutVoluntary(userId,this.tableId,seated.seat_number,seated.occupancy_id)'
+    );
     expect(sliceMethod(BASE, 'protected scheduleHeartbeatCheck()')).toContain(
       'releaseLeavesHeldByClock()'
     );
@@ -217,11 +219,12 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
   });
 
   it('the leave handler answers a lawful refusal with 200, and the admin kick is forced', () => {
-    const LEAVE = read('src/handlers/leave.ts');
-    expect(LEAVE).toContain("result.success || result.code === 'LEAVE_LOCKED' ? 200 : 400");
-    expect(LEAVE).toContain('await engine.leaveTable(userId)');
+    const LEAVE = read('src/handlers/leaveOccupancy.ts');
+    expect(LEAVE).toContain("result.code === 'LEAVE_LOCKED' ? 200");
+    expect(LEAVE).toContain('await engine.leaveTable(auth.userId, { occupancyId, seatNumber })');
     const ADMIN = read('src/handlers/admin.ts');
-    expect(ADMIN).toContain('await engine.leaveTable(targetUserId, { forced: true })');
+    expect(ADMIN).toMatch(/await engine\.leaveTable\(targetUserId,\s*\{\s*forced: true,/);
+    expect(ADMIN).toContain('occupancyBound ? { occupancyId, seatNumber } : {}');
     const ROTATOR = read('src/services/HorseSessionRotator.ts');
     // Four doors, all the human one: the retirement drain, the session end,
     // (2026-09-05, no lone horse) the lone-table stand in standLoneHorses, and
@@ -256,17 +259,22 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
       body.indexOf("runStep('horse_cashouts'"),
       body.indexOf("runStep('deferred_sitouts'")
     );
-    expect(horse).toContain(
-      'atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number)'
+    expect(horse).toContain('await this.cashoutVoluntaryStay(horse)');
+    expect(horse).toContain('if (!exit) continue');
+    const stay = sliceMethod(BASE, 'protected async cashoutVoluntaryStay(');
+    expect(stay).toContain(
+      'await atomicCashoutVoluntary(user_id, this.tableId, seat_number, occupancy_id)'
     );
+    expect(stay).toContain('return mayReflect() ? result : null');
     expect(blankNonCode(horse)).not.toContain('markSeatAsLeft');
     expect(horse).toContain("exit.code === 'LEAVE_LOCKED'");
   });
 
   it('a leave_pending seat is cashed out through the guarded door and a refusal keeps the seat', () => {
     const body = sliceMethod(SEATS, 'export async function processLeavePending(');
-    expect(body).toContain("forcedUserIds?.has(seat.user_id) ? 'forced' : 'voluntary'");
-    expect(body).toContain('leave_pending: false');
+    expect(body).toContain("leaveMode: 'voluntary'");
+    expect(body).not.toContain('forcedUserIds');
+    expect(body).not.toContain('leave_pending: false');
     expect(body).toContain('onLocked?.(');
   });
 

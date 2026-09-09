@@ -1,0 +1,95 @@
+{
+  "programme": "POKER ROOM AUDIT / Club Arena Twelve-Phase Audit And Build Programme",
+  "phase": 1,
+  "status": "scoped_exit_evidence_complete",
+  "verified_on": "2026-09-09",
+  "regression_source": "078dbd26861f33f0f49492c61c52ac4637aa230b",
+  "final_implementation_pr": 3840,
+  "merge": "eeb5ced46bfe41396c0624c1960e133cfc5ceadf",
+  "merged_at": "2026-09-08T18:10:48Z",
+  "ci": {
+    "head": "bd6ae54b03b1deac41b59bc8815a67b54973a0a8",
+    "run": 34260688307,
+    "server_job": 102178450687,
+    "result": "success",
+    "server_tests_passed": 7621,
+    "server_test_files_passed": 567,
+    "preliminary_checks_passed": 92,
+    "postgres_tests_skipped_in_ordinary_ci": 6,
+    "client_shards_passed": 4,
+    "skipped_jobs": [
+      "Live Production E2E",
+      "Post-Deploy Verification",
+      "Production Build",
+      "CSS Beat E2E (multi-table + animations)"
+    ]
+  },
+  "continuation_checks": {
+    "server_types": "pass",
+    "focused_tests": 80,
+    "focused_files": 5,
+    "postgres_cases": 18,
+    "original_requirement_count": 216,
+    "unique_requirement_ids": 216
+  },
+  "production_observation": {
+    "checked_at": "2026-09-09T00:37:47.265691+00:00",
+    "endpoints": [
+      {
+        "url": "https://engine.smarter.poker/health",
+        "body": {
+          "status": "ok",
+          "version": "276faa64",
+          "instanceId": "1-1d3b2141",
+          "running": true,
+          "uptime": 1110,
+          "stalledTableCount": 0,
+          "blockedSettlementCount": 0,
+          "settlementStatus": "ok",
+          "maintenance": {
+            "active": false,
+            "phase": "idle",
+            "breakEndsAt": null,
+            "remainingMs": 0,
+            "unparkedTables": 0,
+            "readyForRestart": false,
+            "reason": "Scheduled Engine Maintenance",
+            "resumeWaves": null,
+            "dbClockSkewMs": -65
+          }
+        }
+      },
+      {
+        "url": "https://ca-static.smarter.poker/build-info.json",
+        "body": {
+          "ca_sha": "f6f5ae11d8308ee3ec897410568c7987098b48be",
+          "built_at": "2026-09-09T00:30:47Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34295151998"
+        }
+      },
+      {
+        "url": "https://smarter.poker/hub/club-arena/build-info.json",
+        "body": {
+          "ca_sha": "f6f5ae11d8308ee3ec897410568c7987098b48be",
+          "built_at": "2026-09-09T00:30:47Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34295151998"
+        }
+      }
+    ]
+  },
+  "engine_full_sha": "276faa64d658f966202f8ba4425041f9fb0d74d1",
+  "engine_contains_prs": [3809, 3818, 3823, 3837, 3840],
+  "next_phase": {
+    "number": 2,
+    "scope": "Poker rules and fairness for every supported variant",
+    "status": "not_complete"
+  },
+  "limits": [
+    "The whole room audit is incomplete.",
+    "No fresh synthetic production financial transactions or browser certification.",
+    "Current-source regression does not certify all later commits as deployed.",
+    "World Hub repository and Bots, Horses And Real-Time Assistance workstream remain excluded."
+  ]
+}

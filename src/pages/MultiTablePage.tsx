@@ -114,6 +114,7 @@ interface TableInstance {
   /** Absolute epoch-ms the hero's turn clock started (with the deadline it
    *  drives the depleting timer bar under the tab — PokerBros parity). */
   turnStartMs?: number;
+  actionContext?: string;
   pot: number;
   /**
    * Hero's hole cards at this table as ONE comma-joined string ("Ah,Qc"; ""
@@ -2115,7 +2116,13 @@ export default function MultiTablePage() {
       tileActionLockRef.current.set(tblId, now);
       setTilePending((p) => ({ ...p, [tblId]: true }));
       try {
-        const res = await submitAction(tblId, user?.id || '', action, amount);
+        const res = await submitAction(
+          tblId,
+          user?.id || '',
+          action,
+          amount,
+          tables.find((t) => t.id === tblId)?.actionContext
+        );
         if (!res?.success) {
           toast.error(res?.error || 'Action Failed', 3500);
         } else if (soundService.isEnabled()) {
@@ -2133,7 +2140,7 @@ export default function MultiTablePage() {
         closeTileRaise(tblId);
       }
     },
-    [user?.id, toast, closeTileRaise]
+    [user?.id, toast, closeTileRaise, tables]
   );
 
   // Close any open tile raise slider the moment that table's turn ends —

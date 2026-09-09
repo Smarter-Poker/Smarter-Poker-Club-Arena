@@ -30,3 +30,11 @@ must pass before publication. Production byte verification is recorded separatel
 
 Physical iPad/PWA acceptance requires a reachable supported device session.
 Simulated wake events and public bundle reads do not establish device acceptance.
+
+## Release gate correction
+
+CI run 34317955567 passed 5,290 of 5,291 tests in shard 1. The existing wallet
+Retry test observed the button commit before its passive focus effect finished.
+It now waits for the same focus assertion before pressing Enter. The separate
+split-result/loading regression still pins the actual component fix from PR3911.
+No production wallet code or focus behavior changed. All 20 tile tests passed.

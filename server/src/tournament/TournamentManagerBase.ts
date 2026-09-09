@@ -1,3 +1,9 @@
+import {
+  continueBookedSpinBlinds,
+  readFundedSpinDraw,
+  spinRuleManifest,
+  type FundedSpinDraw,
+} from './SpinDrawReceipt.js';
 /**
  * TournamentManager, layer 1/3 — state, lifecycle, blinds, breaks.
  *
@@ -15,13 +21,11 @@ import { supabase } from '../services/supabase.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
-  SPIN_TIERS,
   SPIN_REVEAL,
   spinRevealToDealMs,
   spinRevealTotalMs,
   spinPostRevealMs,
   SPIN_SEATS as SPEC_SPIN_SEATS,
-  spinTier,
   spinRakeRate,
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
@@ -3251,262 +3255,51 @@ export abstract class TournamentManagerBase {
       //   reserve_in = the remainder, into the pool
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
-        let spinMultiplier = tournament.spin_multiplier || 0;
-        // Set when THIS path draws — the normal case. A row that already
-        // carries a multiplier (created before the draw moved to start, or a
-        // restart re-entering this block after the draw committed) also
-        // already carries the locked tiers recorded with that draw, and
-        // overwriting them with a gate evaluated now — against a pool balance
-        // that has moved since — would make the wheel show a restriction that
-        // never applied.
-        let redrawnLockedTiers: Array<{
-          multiplier: number;
-          reason?: string;
-          unlocksAt?: number;
-        }> | null = null;
-
-        if (!spinMultiplier || spinMultiplier <= 0) {
-          /* A CRASH BETWEEN SETTLE AND THE ROW WRITE MUST NOT REDRAW
-             (2026-08-30 audit). The settle books the drawn multiplier into
-             spin_reserve_ledger BEFORE the tournament row is patched with it.
-             A process death in that window restarts start() with
-             spin_multiplier NULL, and drawing again here would broadcast and
-             PAY a different prize than the ledger booked - silently, because
-             fn_spin_settle_game answers already_settled. The ledger is the
-             booked truth, so it is consulted first; unreadable evidence is a
-             stand-down (the house rule), never a licence to redraw. */
-          const { data: bookedRows, error: bookedErr } = await supabase
-            .from('spin_reserve_ledger')
-            .select('multiplier')
-            .eq('tournament_id', this.tournamentId)
-            .eq('kind', 'jackpot_draw')
-            .limit(1);
-          this.assertLifecycleCurrent(lifecycle);
-          if (bookedErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Booked-draw ledger unreadable (${bookedErr.message}) - standing down rather than risking a redraw of a settled spin`
-              ),
-              'Tournament.spin_booked_draw_unreadable'
-            );
-            this.running = false;
-            return;
-          }
-          const bookedMult = Number(bookedRows?.[0]?.multiplier);
-          if (Number.isFinite(bookedMult) && bookedMult > 0) {
-            spinMultiplier = bookedMult;
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Adopting ALREADY-BOOKED ${bookedMult}x from spin_reserve_ledger - a previous process settled this spin but died before writing the row`
-              ),
-              'Tournament.spin_adopted_booked_multiplier'
-            );
-          }
-        }
-
-        if (!spinMultiplier || spinMultiplier <= 0) {
-          // THE DRAW. Through fn_spin_draw_multiplier, so a high multiplier
-          // is only ever SELECTED when the Reserve Pool can pay it — an
-          // unfundable tier is excluded from the draw rather than drawn and
-          // refused, which is what makes an unpayable jackpot structurally
-          // impossible.
-          //
-          // D5 (2026-08-25) — A DRAW THAT COULD NOT BE READ IS NOT A DRAW.
-          //
-          // This call used to destructure `{ data: draw }` and throw the
-          // `error` away, sitting inside a `try { } catch { }` whose body was
-          // the comment "handled below". "Below" then read the still-zero
-          // multiplier and resolved it DOWN to SPIN_TIERS[0] — 2x — as though
-          // that were a merciful default. It is not a default, it is an
-          // invented result: three players watched a genuine-looking wheel
-          // chase five laps and land on a tier the database was never able to
-          // tell us it had drawn, and fn_spin_settle_game then moved real
-          // money against that number. A money-facing lie.
-          //
-          // The house rule is the one already applied to the elimination count
-          // (see 'remaining_count_unavailable' in TournamentManagerEliminations):
-          // an unreadable result is UNKNOWN, never a value. There is no honest
-          // multiplier to substitute, so the failure is made explicit and
-          // RETRYABLE instead — three attempts here, then the start stands
-          // down exactly like the short-field and unpaid-seat gates above.
-          // Nothing irreversible has happened at this point: the
-          // registrations are still 'registered', no table exists, no ledger
-          // row has been written, so standing down costs nothing and the
-          // discovery loop calls start() again on its next pass. The player
-          // sees a game that has not started yet, which is true, rather than a
-          // wheel telling him something that is false.
-          let drawFailure: string | null = null;
-          for (
-            let attempt = 1;
-            attempt <= 3 && (!spinMultiplier || spinMultiplier <= 0);
-            attempt++
-          ) {
-            try {
-              const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
-                p_club_id: tournament.club_id,
-                p_buy_in: tournament.buy_in_amount || 0,
-                p_tiers: SPIN_TIERS.map((t) => ({
-                  multiplier: t.multiplier,
-                  freq: t.freq,
-                  reserveThresholdX: t.reserveThresholdX,
-                })),
-                p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
-                /* A SPIN HAS THREE SEATS BY DEFINITION (2026-08-28). This
-                   read `current_players`, the registration counter that
-                   GameServer's own start gate refuses to trust — "it drifts
-                   badly: the live lobby was carrying spins reading 3/3 with
-                   two seats actually sold, and others reading 0/3 with three
-                   sold". `p_seats` is what `collected = seats x buy_in` is
-                   computed from, so a drifted counter mis-books the house
-                   rake and the reserve contribution while the prize
-                   (buy_in x multiplier) stays correct — the two halves of
-                   the pool identity disagreeing by exactly the drift.
-                   SPIN_SEATS is forced at creation and is the honest number. */
-                p_seats: SPEC_SPIN_SEATS,
-              });
-              this.assertLifecycleCurrent(lifecycle);
-              // The error is READ now. It was the whole defect.
-              if (drawErr) throw new Error(drawErr.message || 'draw_rpc_error');
-              const drawn = Number(draw?.multiplier);
-              // A response we cannot read a positive multiplier out of is a
-              // failure too, not a licence to pick one.
-              if (!Number.isFinite(drawn) || drawn <= 0) {
-                throw new Error(
-                  `draw returned no usable multiplier (${JSON.stringify(draw ?? null).slice(0, 160)})`
-                );
-              }
-              spinMultiplier = drawn;
-              drawFailure = null;
-              if (Array.isArray(draw?.locked)) {
-                redrawnLockedTiers = draw.locked
-                  .map((l: any) => ({
-                    multiplier: Number(l?.multiplier),
-                    reason: l?.reason ? String(l.reason) : undefined,
-                    unlocksAt: Number.isFinite(Number(l?.unlocksAt))
-                      ? Number(l.unlocksAt)
-                      : undefined,
-                  }))
-                  .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
-              }
-            } catch (err: any) {
-              if (err instanceof TournamentLifecycleAbortedError) throw err;
-              drawFailure = err?.message ? String(err.message) : String(err);
-              // Same short backoff the settlement and row-write loops below
-              // use; lock contention on a busy club's reserve pool is the
-              // expected cause and it clears in well under a second.
-              if (attempt < 3) {
-                await new Promise((r) => setTimeout(r, 250 * attempt));
-                this.assertLifecycleCurrent(lifecycle);
-              }
-            }
-          }
-          this.assertLifecycleCurrent(lifecycle);
-          if (!spinMultiplier || spinMultiplier <= 0) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) - standing down; NO multiplier is invented and NO wheel is shown`
-              ),
-              'Tournament.spin_draw_unavailable'
-            );
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable - standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
-            );
-            this.running = false;
-            return; // discovery calls start() again once the RPC answers
-          }
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw: ${spinMultiplier}x through the reserve gate`
-          );
-        }
-
         const buyIn = tournament.buy_in_amount || 0;
-        // Same reasoning as p_seats on the draw above: three seats, always.
-        const seats = SPEC_SPIN_SEATS;
-        let prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
-
-        // Book it. This is the row that did not exist before the cutover.
-        //
-        // RETRIED. Settlement is idempotent (it returns already_settled on a
-        // second call), so retrying is free, and a single attempt proved
-        // insufficient in production: three spins ran unbooked within twenty
-        // minutes of the cutover because one transient failure was enough to
-        // lose the row permanently. Lock contention on a busy club's pool is
-        // the expected cause; a couple of short retries covers it.
-        let settled = false;
-        for (let attempt = 1; attempt <= 3 && !settled; attempt++) {
+        const ruleManifest = spinRuleManifest(buyIn, tournament.starting_chips);
+        let fundedSpin: FundedSpinDraw | null = null;
+        let drawFailure = '';
+        for (let attempt = 1; attempt <= 3 && !fundedSpin; attempt++) {
           try {
-            const { data: settle, error: settleErr } = await supabase.rpc('fn_spin_settle_game', {
+            // One transaction freezes the entrant/rule proof, selects against
+            // actual funds and books the prize before releasing the pool lock.
+            // A lost response replays that same receipt, including every rule.
+            const { data, error } = await supabase.rpc('fn_spin_draw_and_settle_atomic', {
               p_tournament_id: this.tournamentId,
-              p_club_id: tournament.club_id,
-              p_buy_in: buyIn,
-              p_seats: seats,
-              p_multiplier: spinMultiplier,
-              p_rake_rate: spinRakeRate(buyIn),
+              p_launch_id: launchId,
+              p_lease_generation: this.tournamentLeaseGeneration,
+              p_rule_manifest: ruleManifest,
             });
             this.assertLifecycleCurrent(lifecycle);
-            if (settleErr || !settle?.ok) {
-              throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
+            if (error || !data?.ok) {
+              throw new Error(error?.message || data?.reason || 'spin_draw_receipt_unavailable');
             }
-            /* THE LEDGER OUTRANKS A FRESH DRAW (2026-08-30). already_settled
-               now carries the multiplier the original settlement booked. If it
-               disagrees with the one this process holds, the booked one is the
-               money truth - adopt it before the row write and the payouts
-               below, and say so loudly. The pre-draw ledger check makes this
-               near-unreachable; this is the backstop for a race between two
-               processes settling the same spin. */
-            if (settle.reason === 'already_settled') {
-              const booked = Number(settle.multiplier);
-              if (!Number.isFinite(booked) || booked <= 0) {
-                throw new Error('Already-settled Spin receipt has no usable booked multiplier');
-              }
-              if (booked !== spinMultiplier) {
-                reportError(
-                  new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] Settle was ALREADY BOOKED at ${booked}x but this process drew ${spinMultiplier}x - adopting the booked ${booked}x`
-                  ),
-                  'Tournament.spin_settle_multiplier_mismatch'
-                );
-                spinMultiplier = booked;
-                prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
-              }
-            }
-            settled = true;
-            if (Number(settle.operator_shortfall) > 0) {
-              // The pool was too thin to cover the prize. Players are paid in
-              // full regardless; this says the club needs seeding.
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x - club ${tournament.club_id} needs a larger reserve seed`
-                ),
-                'Tournament.spin_pool_shortfall'
-              );
-            }
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x - pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
-            );
-          } catch (settleErr: any) {
-            if (settleErr instanceof TournamentLifecycleAbortedError) throw settleErr;
-            if (attempt === 3) {
-              // Settlement is part of launch, not optional accounting. The
-              // incomplete launch receipt keeps the tournament REGISTERING so
-              // the next start pass can replay this idempotent RPC exactly.
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) - standing down before RUNNING; the incomplete launch receipt will retry the same settlement`
-                ),
-                'Tournament.spin_settle_failed'
-              );
-            } else {
-              await new Promise((r) => setTimeout(r, 250 * attempt));
+            fundedSpin = readFundedSpinDraw(data, {
+              tournamentId: this.tournamentId,
+              launchId,
+              buyIn,
+            });
+          } catch (err: any) {
+            if (err instanceof TournamentLifecycleAbortedError) throw err;
+            drawFailure = err?.message ? String(err.message) : String(err);
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
               this.assertLifecycleCurrent(lifecycle);
             }
           }
         }
         this.assertLifecycleCurrent(lifecycle);
-        if (!settled) {
+        if (!fundedSpin) {
+          reportError(
+            new Error(`Spin funded draw receipt unavailable after 3 attempts: ${drawFailure}`),
+            'Tournament.spin_draw_unavailable'
+          );
           this.running = false;
           return;
         }
+        const spinMultiplier = fundedSpin.multiplier;
+        const prizePool = fundedSpin.prizePool;
+        const redrawnLockedTiers = fundedSpin.locked;
 
         // The reserve receipt is the durable result. A response loss, failed
         // settlement or already-booked multiplier must be resolved before the
@@ -3523,7 +3316,7 @@ export abstract class TournamentManagerBase {
                 tournament_id: this.tournamentId,
                 multiplier: spinMultiplier,
                 buy_in: buyIn,
-                locked_tiers: tournament.spin_locked_tiers ?? null,
+                locked_tiers: redrawnLockedTiers,
                 reveal_at: revealAt,
                 hold_until: holdUntil,
                 reveal_lag_ms: this.spinRevealLagMs,
@@ -3555,31 +3348,8 @@ export abstract class TournamentManagerBase {
           );
         }
 
-        // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
-        // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
-        // Stack 1000, spinSpec SPIN_STACKS), written at creation and held by
-        // the seat from the moment the buy-in is paid. This comment used to
-        // read "300 chips at 2x, 500 chips at 500x", describing the retired
-        // behaviour where the wheel decided how many chips you played with.
-        // The code below never did that; the sentence did, and spinSpec warns
-        // in as many words not to reintroduce it. Since the draw moved to
-        // start, creation writes only a smallest-tier placeholder, so the
-        // blinds MUST be rewritten here — before
-        // createTablesAndSeatPlayers below reads them — or a 500x would run
-        // on 1-minute levels.
-        // Settlement may adopt an already-booked multiplier. Derive every
-        // tier-dependent field from that final value, including payout shares.
-        const tier = spinTier(spinMultiplier);
-        const spinBlinds = Array.from({ length: 12 }, (_, i) => {
-          const b = spinBlindsForLevel(i + 1);
-          return {
-            level: i + 1,
-            smallBlind: b.small,
-            bigBlind: b.big,
-            ante: 0,
-            duration: (tier?.levelMinutes ?? 3) * 60,
-          };
-        });
+        // The receipt owns the rules across process and specification changes.
+        const spinBlinds = fundedSpin.blinds;
 
         // RETRIED AND CHECKED (2026-08-22). This single write carries the
         // whole result of the draw — the multiplier, the pool, the stack, the
@@ -3607,12 +3377,9 @@ export abstract class TournamentManagerBase {
              SPIN_STACKS), it is written at creation, and the seat holds it from
              the moment the buy-in is paid. Re-adding it here would put the seat
              back to guessing until the draw lands. */
-          starting_chips: tournament.starting_chips,
+          starting_chips: fundedSpin.startingChips,
           blind_structure: spinBlinds,
-          payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
-            place: i + 1,
-            percentage: Math.round(pct * 10000) / 100,
-          })),
+          payout_structure: fundedSpin.payouts,
           /* THE ONE NUMBER DAN ASKS ABOUT, WRITTEN DOWN (2026-08-31 audit).
              How far behind the third payment the wheel actually went out.
              It was computed on every spin, logged to the console and sent to
@@ -5818,8 +5585,8 @@ export abstract class TournamentManagerBase {
         String(t?.variant ?? '').toLowerCase() === 'spin' ||
         String(t?.tournament_type ?? '').toUpperCase() === 'SPIN';
       if (isSpin) {
-        const b = spinBlindsForLevel(i + 1);
         const lastRow = blindStructure[blindStructure.length - 1] ?? {};
+        const b = continueBookedSpinBlinds(lastRow, i + 1) ?? spinBlindsForLevel(i + 1);
         return {
           ...lastRow,
           level: i + 1,

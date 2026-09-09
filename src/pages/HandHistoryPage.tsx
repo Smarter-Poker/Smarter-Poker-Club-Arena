@@ -48,6 +48,7 @@ import { handNotesService, type HandNote } from '../services/HandNotesService';
 import { handFlagService, type HandFlag } from '../services/HandFlagService';
 import { toPokerStarsFile } from '../utils/pokerStarsExport';
 import { openInBrowser } from '../lib/openExternal';
+import { downloadBlob } from '../utils/downloadCsv';
 
 /**
  * PHASE 5 (2026-09-06): the chips are a QUERY now, not four hard-coded
@@ -402,16 +403,10 @@ export default function HandHistoryPage() {
       toast.error('None Of These Hands Can Be Written In That Format');
       return;
     }
-    const blob = new Blob([file.text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `club-arena-pokerstars-${Date.now()}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    /* Revoking synchronously cancels the download on Firefox. */
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    downloadBlob(
+      `club-arena-pokerstars-${Date.now()}.txt`,
+      new Blob([file.text], { type: 'text/plain;charset=utf-8' })
+    );
     toast.success(
       file.skipped.length
         ? `Exported ${file.written} Hands. ${file.skipped.length} Could Not Be Written In That Format.`

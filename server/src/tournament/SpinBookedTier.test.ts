@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { spinTier, spinRakeRate, spinBlindsForLevel, SPIN_SEATS } from '../config/spinSpec.js';
+import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
 
 // Execute the real start fragment, including the RPC loop and row patch.
 // Only external I/O is stubbed; the payout transformation is production code.
@@ -19,15 +19,12 @@ const compiled = ts.transpileModule(
 class TestTournamentLifecycleAbortedError extends Error {}
 const execute = new Function(
   'tournament',
-  'spinMultiplier',
   'supabase',
-  'spinTier',
-  'spinRakeRate',
-  'spinBlindsForLevel',
-  'SPEC_SPIN_SEATS',
+  'spinRuleManifest',
+  'readFundedSpinDraw',
+  'launchId',
   'reportError',
   'console',
-  'redrawnLockedTiers',
   'lifecycle',
   'TournamentLifecycleAbortedError',
   compiled
@@ -40,48 +37,65 @@ describe('the booked Spin tier determines the start patch', () => {
     [2, 25, [80, 12, 8]],
     [25, 10, [80, 20]],
     [10, 10, [80, 20]],
-  ])('draw %s and booked %s produce the booked payout', async (drawn, booked, percentages) => {
-    const rpc = vi.fn(async () => ({
-      data: {
-        ok: true,
-        reason: 'already_settled',
-        multiplier: booked,
-        house_rake: 0.24,
-        balance: 100,
-      },
-      error: null,
-    }));
-    const patch = await execute.call(
-      {
-        tournamentId: 'test-spin',
-        seatFirstTableIds: [],
-        spinRevealLagMs: 0,
-        spinRevealAt: 0,
-        assertLifecycleCurrent: vi.fn(),
-      },
-      { buy_in_amount: 1, club_id: 'club', starting_chips: 1000 },
-      drawn,
-      { rpc },
-      spinTier,
-      spinRakeRate,
-      spinBlindsForLevel,
-      SPIN_SEATS,
-      vi.fn(),
-      { log: vi.fn() },
-      null,
-      { generation: 1 },
-      TestTournamentLifecycleAbortedError
-    );
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(patch.spin_multiplier).toBe(booked);
-    expect(patch.prize_pool).toBe(booked);
-    expect(patch.starting_chips).toBe(1000);
-    expect(patch.payout_structure).toEqual(
-      (percentages as number[]).map((percentage, i) => ({ place: i + 1, percentage }))
-    );
-    expect(patch.blind_structure).toHaveLength(12);
-    expect(
-      patch.blind_structure.every((level: { duration: number }) => level.duration === 180)
-    ).toBe(true);
-  });
+  ])(
+    'projection %s and booked %s produce the booked payout',
+    async (drawn, booked, percentages) => {
+      const rules = spinRuleManifest(1, 1000);
+      const tier = rules.tiers.find((t) => t.multiplier === booked)!;
+      const rpc = vi.fn(async () => ({
+        data: {
+          ok: true,
+          replay: true,
+          tournament_id: 'test-spin',
+          launch_id: 'launch',
+          buy_in: 1,
+          multiplier: booked,
+          prize_pool: booked,
+          pool_covered: booked,
+          operator_shortfall: 0,
+          starting_chips: 1000,
+          blind_structure: tier.blind_structure,
+          payout_structure: tier.payout_structure,
+          locked: [],
+          entrants: [1, 2, 3].map((i) => ({ user_id: `user-${i}`, registration_id: `entry-${i}` })),
+          rule_manifest: rules,
+          rule_sha256: 'a'.repeat(64),
+          rule_provenance: 'at_draw',
+          house_rake: 0.24,
+          balance: 100,
+        },
+        error: null,
+      }));
+      const patch = await execute.call(
+        {
+          tournamentId: 'test-spin',
+          tournamentLeaseGeneration: 'lease',
+          seatFirstTableIds: [],
+          spinRevealLagMs: 0,
+          spinRevealAt: 0,
+          assertLifecycleCurrent: vi.fn(),
+        },
+        { buy_in_amount: 1, club_id: 'club', starting_chips: 1000, spin_multiplier: drawn },
+        { rpc },
+        spinRuleManifest,
+        readFundedSpinDraw,
+        'launch',
+        vi.fn(),
+        { log: vi.fn() },
+        { generation: 1 },
+        TestTournamentLifecycleAbortedError
+      );
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(patch.spin_multiplier).toBe(booked);
+      expect(patch.prize_pool).toBe(booked);
+      expect(patch.starting_chips).toBe(1000);
+      expect(patch.payout_structure).toEqual(
+        (percentages as number[]).map((percentage, i) => ({ place: i + 1, percentage }))
+      );
+      expect(patch.blind_structure).toHaveLength(12);
+      expect(
+        patch.blind_structure.every((level: { duration: number }) => level.duration === 180)
+      ).toBe(true);
+    }
+  );
 });

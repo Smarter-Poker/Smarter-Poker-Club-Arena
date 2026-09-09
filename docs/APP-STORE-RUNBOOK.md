@@ -30,21 +30,24 @@ The audit's phases and where each one lives:
   in the binary, so Guideline 4.8 (Sign in with Apple) does not apply.
 - **OTA from launch, via Capgo.** Binaries are scheduled events - monthly, or
   when a plugin, permission or minimum OS changes.
+- **Artwork is regenerated LAST (2026-09-09).** The art is still being
+  upgraded; every icon, splash, listing graphic and screenshot waits until it
+  is final, so the image pass happens once. See "Artwork" below.
 - **No accounts existed on 2026-09-07.** Every account below is Dan's to
   create; agents never set a credential (CLAUDE.md 10.84).
 
 ## Accounts and credentials Dan creates (never an agent)
 
-| account                                                                   | why                                                                                  | where the value goes                                                                                                                                                                                 |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Apple Developer Program ($99/yr; organisation needs a D-U-N-S, 1-2 weeks) | TestFlight, App Store Connect, signing, universal links                              | Team ID into `ios/App/App/App.entitlements` (Associated Domains) and into the World Hub's `apple-app-site-association`                                                                               |
-| Google Play Console ($25 once; identity verification)                     | internal testing, the Play listing, app links                                        | release keystore SHA-256 into the World Hub's `assetlinks.json`                                                                                                                                      |
-| Xcode on the Mac (App Store download, ~10 GB)                             | building and archiving iOS; this Mac has only the Command Line Tools                 | nothing to store                                                                                                                                                                                     |
-| A JDK 17 or 21 on PATH (Android Studio bundles one)                       | Gradle refuses the Mac's default Java 25 (`Unsupported class file major version 69`) | nothing to store                                                                                                                                                                                     |
-| RevenueCat project (free under $2,500/mo)                                 | StoreKit + Play Billing for diamonds and VIP                                         | public SDK keys as `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the native build; webhook auth as `REVENUECAT_WEBHOOK_AUTH` in Vercel                                                |
-| Firebase project (free)                                                   | FCM for Android push and APNs relay for iOS                                          | `google-services.json` in `android/app/`, `GoogleService-Info.plist` in `ios/App/App/`, an APNs .p8 key uploaded to Firebase; service-account JSON as `FCM_SERVICE_ACCOUNT_JSON` in Vercel (phase 4) |
-| Capgo account (~$15/mo)                                                   | OTA updates                                                                          | app id and channel in the Capgo console; `CAPGO_TOKEN` for the publisher (phase 6)                                                                                                                   |
-| Supabase dashboard: Auth > URL Configuration                              | provider redirects from the app                                                      | add `capacitor://localhost` and `https://localhost` to the redirect allow-list (email links already use smarter.poker, which is allowed)                                                             |
+| account                                                                                   | why                                                                                  | where the value goes                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apple Developer Program ($99/yr; organisation, D-U-N-S **142936760**, in hand 2026-09-09) | TestFlight, App Store Connect, signing, universal links                              | Team ID into `ios/App/App/App.entitlements` (Associated Domains) and into the World Hub's `apple-app-site-association`                                                                               |
+| Google Play Console ($25 once; identity verification)                                     | internal testing, the Play listing, app links                                        | release keystore SHA-256 into the World Hub's `assetlinks.json`                                                                                                                                      |
+| Xcode on the Mac (App Store download, ~10 GB)                                             | building and archiving iOS; this Mac has only the Command Line Tools                 | nothing to store                                                                                                                                                                                     |
+| A JDK 17 or 21 on PATH (Android Studio bundles one)                                       | Gradle refuses the Mac's default Java 25 (`Unsupported class file major version 69`) | nothing to store                                                                                                                                                                                     |
+| RevenueCat project (free under $2,500/mo)                                                 | StoreKit + Play Billing for diamonds and VIP                                         | public SDK keys as `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the native build; webhook auth as `REVENUECAT_WEBHOOK_AUTH` in Vercel                                                |
+| Firebase project (free)                                                                   | FCM for Android push and APNs relay for iOS                                          | `google-services.json` in `android/app/`, `GoogleService-Info.plist` in `ios/App/App/`, an APNs .p8 key uploaded to Firebase; service-account JSON as `FCM_SERVICE_ACCOUNT_JSON` in Vercel (phase 4) |
+| Capgo account (~$15/mo)                                                                   | OTA updates                                                                          | app id and channel in the Capgo console; `CAPGO_TOKEN` for the publisher (phase 6)                                                                                                                   |
+| Supabase dashboard: Auth > URL Configuration                                              | provider redirects from the app                                                      | add `capacitor://localhost` and `https://localhost` to the redirect allow-list (email links already use smarter.poker, which is allowed)                                                             |
 
 ## Building the app
 
@@ -53,8 +56,20 @@ npm run build:native          # VITE_NATIVE=1 -> dist-native/ (base '/', no sour
 npx cap sync                  # copies dist-native/ into ios/ and android/, installs plugins
 npx cap open ios              # Xcode (needs Xcode installed)
 npx cap open android          # Android Studio
-npm run cap:assets            # icons + splash from resources/ (see "Artwork")
+
+npm run ios:archive           # build + sync + archive + export + TestFlight upload
+npm run android:bundle        # build + sync + signed .aab for Play
 ```
+
+`ios:archive` needs Xcode installed and signed in; add `CA_ASC_KEY_ID`,
+`CA_ASC_ISSUER_ID` and `CA_ASC_KEY_PATH` (an App Store Connect API key) for
+the upload step, or it stops after the `.ipa` and you open that in
+Transporter. `android:bundle` needs a JDK 17 or 21 (the Mac's default Java 25
+is refused by Gradle) and the release keystore in the environment:
+`CA_ANDROID_KEYSTORE`, `CA_ANDROID_KEYSTORE_PASSWORD`, and
+`CA_ANDROID_KEY_ALIAS` / `CA_ANDROID_KEY_PASSWORD` if they differ from
+`clubarena` / the keystore password. Both scripts refuse rather than produce
+an artifact the store will reject.
 
 The web build is untouched by any of this: `npm run build` still produces
 `dist/` at `/hub/club-arena/`, and
@@ -64,6 +79,31 @@ native difference behind `VITE_NATIVE=1`.
 Identity: appId `poker.smarter.clubarena`, app name "Club Arena", custom
 scheme `clubarena://`, webview origins `capacitor://localhost` (iOS) and
 `https://localhost` (Android). Portrait only on phones; iPad rotates.
+
+## What the binary declares (2026-09-09)
+
+Not in the readiness audit; every one of these is a crash or a rejection.
+
+- `ios/App/App/Info.plist`: usage strings for microphone (table voice chat
+  calls `getUserMedia`), camera and photo library (the avatar and club-logo
+  pickers). iOS TERMINATES the app on the first request without them. Plus
+  `ITSAppUsesNonExemptEncryption=false`, so no upload stops to ask.
+- `ios/App/App/App.entitlements`: `aps-environment` (push) and Associated
+  Domains `applinks:smarter.poker` + `webcredentials:smarter.poker`. Wired
+  into BOTH Xcode build configurations, or a release archive drops them
+  silently. Automatic signing swaps development for production at archive.
+- `ios/App/App/PrivacyInfo.xcprivacy`: Apple's privacy manifest, a build
+  resource so it reaches the bundle. Answers match the data-safety table in
+  `docs/APP-STORE-LISTING.md`; `NSPrivacyTracking` is false (no ad SDK, and
+  analytics are consented in-app). Declares the UserDefaults reason code
+  Capacitor Preferences needs.
+- `android/app/src/main/AndroidManifest.xml`: `RECORD_AUDIO`,
+  `MODIFY_AUDIO_SETTINGS`, `POST_NOTIFICATIONS` beside `INTERNET`.
+- `android/app/build.gradle`: the release signing config, read entirely from
+  the environment (10.84). No password, path or alias is ever in the repo,
+  and `android/.gitignore` refuses `*.jks` / `*.keystore`.
+
+All of it pinned by `tests/unit/nativeBinaryConfig.test.ts`.
 
 ## Store products (phase 3)
 
@@ -106,20 +146,30 @@ served by the World Hub at `/.well-known/`, both blocked on Dan's accounts:
   `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"poker.smarter.clubarena","sha256_cert_fingerprints":["<RELEASE SHA-256>"]}}]`
   (the intent filter with `autoVerify` is already in `AndroidManifest.xml`).
 
-## Artwork (phase 6) - DONE 2026-09-08
+## Artwork - REGENERATED LAST (Dan, 2026-09-09)
 
-`resources/icon.png` (1024x1024, opaque) and `resources/splash.png`
-(2732x2732, the chip logo centred on `#0a0a1a`) are generated from the one
-logo the app already ships by `node scripts/native/make-resources.mjs`, and
-`npm run cap:assets` (pinned to `--ios --android` so it never touches the web
-manifest or `public/`) writes every icon and splash size into `ios/` and
-`android/`. All of it is committed, so a binary is cut from a clean checkout.
-When the logo changes, run both again and commit the result.
+**Dan's ruling: every image step happens at the very END, after the art
+upgrade is finished. Do not do it twice.** The pipeline below is built and
+proven; it is one command when the final art lands.
 
-Still needed for the LISTINGS, not the binary: a 512x512 Play icon and a
-1024x500 feature graphic (both can be exported from `resources/icon.png`),
-and screenshots (iPhone 6.7" and 6.5", iPad 12.9" if iPad is offered; Play
-phone + 7" + 10") - taken from a device once one exists.
+What is committed today came from `public/poker-chip-logo.png`, which the art
+upgrade replaces. So the icon and splash tree in `ios/` and `android/` is
+PLACEHOLDER art: correct sizes, correct plumbing, wrong picture.
+
+The last-step sequence, in order:
+
+1. Drop the final source art in, then
+   `node scripts/native/make-resources.mjs` (writes `resources/icon.png`
+   1024x1024 opaque, `resources/splash.png` 2732x2732 on `#0a0a1a`).
+2. `npm run cap:assets` (pinned to `--ios --android` so it never rewrites the
+   web manifest or `public/`) - 87 Android and 10 iOS files, committed.
+3. Play listing graphics: the 512x512 hi-res icon and the 1024x500 feature
+   graphic, from the same final art.
+4. Screenshots on a real device: iPhone 6.7" and 6.5"; Play phone, 7" and
+   10". The five shots and their captions are in
+   `docs/APP-STORE-LISTING.md`.
+
+Nothing else in the programme depends on this, which is why it can be last.
 
 ## Versions
 

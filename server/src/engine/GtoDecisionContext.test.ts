@@ -281,6 +281,27 @@ describe('canonical V31 node context', () => {
     expect(result).toEqual({ nodeRole: 'facing_bet', facingKind: 'bet', facingSizeBucket: 'mid' });
   });
 
+  it('never substitutes an open cell when wager state and public history disagree', () => {
+    expect(
+      context([], {
+        street: 'flop',
+        currentBet: 100,
+        pot: 200,
+        opponents: [{ seat: 2, bet: 100, stack: 900, is_all_in: false }],
+      })
+    ).toBeNull();
+
+    expect(
+      context([rec(2, 'bet', 100, 'flop')], {
+        street: 'flop',
+        hero: { seat: 1, bet: 100, stack: 900 },
+        currentBet: 100,
+        pot: 200,
+        opponents: [{ seat: 2, bet: 100, stack: 900, is_all_in: false }],
+      })
+    ).toBeNull();
+  });
+
   it('distinguishes a check-raise from a plain bet-raise and a generic facing raise', () => {
     const checkRaise = context(
       [rec(2, 'check', 0, 'turn'), rec(1, 'bet', 50, 'turn'), rec(2, 'raise', 250, 'turn')],

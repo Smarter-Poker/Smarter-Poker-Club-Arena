@@ -45,17 +45,37 @@ export default function MembershipTab({
   const inFlightRef = useRef(false);
   const intentKeyRef = useRef<string | null>(null);
 
+  /* ONE KEY PER PURCHASE, HELD ACROSS RETRIES (2026-09-09).
+     This minted a fresh uuid on every claim and destroyed it in `finally`,
+     so a committed purchase whose response was lost - the exact case an
+     idempotency key exists for - charged the player again on the next tap.
+     Lifetime VIP is 19,999 diamonds. `inFlightRef` only ever blocked
+     OVERLAPPING taps, never the sequential retry.
+     The key is now keyed to WHAT is being bought: the same plan keeps its
+     key until that purchase succeeds (or is terminally refused), and a
+     different plan gets its own. Same shape as `bustRebuyKeyRef` on the
+     table, which discriminates on a settled, user-chosen value. */
+  const intentPlanRef = useRef<string | null>(null);
   const claimIntent = (key: string): boolean => {
     if (inFlightRef.current) return false;
     inFlightRef.current = true;
-    intentKeyRef.current = uuid();
+    if (intentPlanRef.current !== key || !intentKeyRef.current) {
+      intentPlanRef.current = key;
+      intentKeyRef.current = uuid();
+    }
     setBusy(key);
     return true;
   };
 
-  const releaseIntent = () => {
+  /** Release the in-flight latch. `spent` retires the key: the purchase
+   *  either succeeded or was refused terminally, so the next press is a new
+   *  purchase. An ambiguous failure keeps it, and the server replays. */
+  const releaseIntent = (spent = false) => {
     inFlightRef.current = false;
-    intentKeyRef.current = null;
+    if (spent) {
+      intentKeyRef.current = null;
+      intentPlanRef.current = null;
+    }
     setBusy(null);
   };
 
@@ -85,7 +105,7 @@ export default function MembershipTab({
     } catch {
       toast.error('Could Not Restore Purchases.');
     } finally {
-      releaseIntent();
+      releaseIntent(true);
     }
   };
 
@@ -140,7 +160,8 @@ export default function MembershipTab({
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not start checkout');
-      releaseIntent();
+      // The hosted checkout never opened, so the key was never presented.
+      releaseIntent(true);
     }
   };
 
@@ -173,9 +194,11 @@ export default function MembershipTab({
         variant: 'default',
       }))
     ) {
-      releaseIntent();
+      // Declined at the confirm dialog: nothing was sent, so nothing is spent.
+      releaseIntent(true);
       return;
     }
+    let spent = false;
     try {
       await storeFetch('/api/store/purchase-vip-with-diamonds', {
         body: { plan: planKey, idempotencyKey: intentKeyRef.current },
@@ -188,10 +211,16 @@ export default function MembershipTab({
         source: 'vip-purchase',
       });
       onWalletChanged();
+      spent = true;
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
+      /* Keep the key unless the server gave a terminal answer. A transport
+         failure or a 5xx may be a purchase that COMMITTED and lost its
+         response; presenting the same key again is what makes the second tap
+         a replay instead of a second charge. */
+      spent = (err as { definitive?: boolean })?.definitive === true;
     } finally {
-      releaseIntent();
+      releaseIntent(spent);
     }
   };
 

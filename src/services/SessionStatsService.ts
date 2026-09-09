@@ -15,6 +15,10 @@ import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 
+/** Chips are stored to the cent. Every money field this service persists goes
+ *  through here; a derived stat (BB won, percentages) may keep its own scale. */
+const cents = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) / 100 : 0);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -139,8 +143,15 @@ class SessionStatsServiceClass {
     if (vpip) session.vpipHands++;
     if (pfr) session.pfrHands++;
 
-    session.currentStack = finalStack;
-    session.profitLoss = finalStack - session.buyInTotal;
+    /* A CHIP IS TWO DECIMAL PLACES, EVERYWHERE IT IS STORED (#3358, 2026-09-09).
+       These three go verbatim into `session_history` (unscaled numeric, no
+       CHECK): 60 of 261 rows there were non-cent floats, the newest written
+       the day this was found. `finalStack - buyInTotal` is a raw IEEE754
+       subtraction, and `buyInTotal += amount` accumulates whatever the
+       add-on path handed it. The very next line already rounds the derived
+       stat; the money did not. */
+    session.currentStack = cents(finalStack);
+    session.profitLoss = cents(session.currentStack - session.buyInTotal);
     session.bigBlindsWon =
       session.bigBlind > 0 ? Math.round((session.profitLoss / session.bigBlind) * 100) / 100 : 0;
 
@@ -175,7 +186,7 @@ class SessionStatsServiceClass {
     const session = this.sessions.get(tableId);
     if (!session) return;
 
-    session.buyInTotal += amount;
+    session.buyInTotal = cents(session.buyInTotal + amount);
     session.currentStack += amount;
     session.profitLoss = session.currentStack - session.buyInTotal;
     session.bigBlindsWon =

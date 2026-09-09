@@ -1553,9 +1553,36 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       try {
         const data = await loadTable(this.tableId);
         if (data) {
+          /* AND TELL THE FELT (2026-09-09). `TABLE_META_UPDATE` - the message
+             `TableService.subscribeToTable` has consumed since the 2026-05-18
+             migration off `postgres_changes` - is CONSTRUCTED NOWHERE in this
+             engine, and `ChannelHub` has no table subscription to deliver it
+             on, so live blind-level changes and table renames have been
+             silent for every seated player since that migration. The table's
+             own socket is already subscribed and already carries every other
+             discrete fact about this table, so the meta change goes out the
+             same way, as `table_meta_update`. (`useTableStore`'s copy of the
+             subscription still goes through the channel client and is still
+             dead; the FELT is the surface a player is looking at.) */
+          const changed =
+            Number(this.tableInfo.small_blind) !== Number(data.small_blind) ||
+            Number(this.tableInfo.big_blind) !== Number(data.big_blind) ||
+            Number(this.tableInfo.ante ?? 0) !== Number(data.ante ?? 0);
           this.tableInfo.small_blind = data.small_blind;
           this.tableInfo.big_blind = data.big_blind;
           this.tableInfo.ante = data.ante;
+          if (changed) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'table_meta_update',
+              table_id: this.tableId,
+              name: this.tableInfo.name ?? null,
+              game_variant: this.tableInfo.game_variant ?? null,
+              small_blind: data.small_blind,
+              big_blind: data.big_blind,
+              ante: data.ante ?? 0,
+              timestamp: Date.now(),
+            });
+          }
         }
         return; // success
       } catch (err: any) {
@@ -1813,25 +1840,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         });
     }
-    // THE BUTTON MUST ALWAYS MOVE. getNextSeat over a ONE-seat roster returns
-    // that same seat from both of its branches, so when exactly one player is
-    // button-eligible and already holds the button, the button stands still and
-    // the same two players post the small and big blind twice running. That is
-    // reachable any time several players arrive at once around one incumbent.
-    //
-    // Heads-up is deliberately excluded: with two players the button IS the
-    // small blind, so parking it on the veteran is what makes the newcomer the
-    // big blind and gets them dealt in free. Forcing it across would put them in
-    // the small blind, which the hold-out then refuses, leaving one active
-    // player and no hand — a table that never deals again.
-    if (
-      !drawnIsSeated &&
-      prevButtonSeat > 0 &&
-      dealerSeat === prevButtonSeat &&
-      players.length > 2
-    ) {
-      dealerSeat = this.getNextSeat(prevButtonSeat, players);
-    }
+    // A sole eligible incumbent can keep the button for one entry hand.
+    // Giving it to a newcomer breaks cash entry rules and disagrees with the
+    // blind predictor. Once dealt, the newcomers join the eligible rotation.
     /**
      * THE DEAD BUTTON, AND THE BIG BLIND THAT WAS PAID TWICE
      * (2026-08-31, Phase 2.2. TDA Rule 33.)

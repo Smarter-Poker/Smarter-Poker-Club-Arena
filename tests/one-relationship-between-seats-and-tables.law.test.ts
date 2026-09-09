@@ -91,9 +91,7 @@ describe('the fix is on disk exactly as production ran it', () => {
     expect(fn).toMatch(/FROM public\.tables t WHERE t\.id = NEW\.table_id FOR KEY SHARE;/);
     // same error class and the same names the other programme's tests match on
     for (const name of ['active_seat_game_scope_parent', 'live_seat_parent_cannot_close']) {
-      expect(fn).toContain(
-        `USING ERRCODE = 'foreign_key_violation', CONSTRAINT = '${name}'`
-      );
+      expect(fn).toContain(`USING ERRCODE = 'foreign_key_violation', CONSTRAINT = '${name}'`);
     }
   });
 
@@ -156,7 +154,9 @@ describe('nothing after the fix puts a second relationship back', () => {
         'zzzzz_table_parent_keys_guard',
         'zzzzz_table_scope_cascade',
       ]) {
-        const dropped = new RegExp(`DROP\\s+TRIGGER\\s+(?:IF\\s+EXISTS\\s+)?${t}\\b`, 'i').test(sql);
+        const dropped = new RegExp(`DROP\\s+TRIGGER\\s+(?:IF\\s+EXISTS\\s+)?${t}\\b`, 'i').test(
+          sql
+        );
         const recreated = new RegExp(`CREATE\\s+TRIGGER\\s+${t}\\b`, 'i').test(sql);
         if (dropped && !recreated) offenders.push(`${f}: ${t}`);
       }
@@ -165,7 +165,11 @@ describe('nothing after the fix puts a second relationship back', () => {
         'trg_table_parent_keys_guard',
         'trg_table_scope_cascade',
       ]) {
-        if (new RegExp(`DROP\\s+FUNCTION\\s+(?:IF\\s+EXISTS\\s+)?(?:public\\.)?${fn}\\b`, 'i').test(sql)) {
+        if (
+          new RegExp(`DROP\\s+FUNCTION\\s+(?:IF\\s+EXISTS\\s+)?(?:public\\.)?${fn}\\b`, 'i').test(
+            sql
+          )
+        ) {
           offenders.push(`${f}: ${fn}`);
         }
       }
@@ -178,6 +182,8 @@ describe('the engine still depends on the hint-less embed the fix protects', () 
   it('the launch reads its live-seat inventory through tables!inner(tournament_id)', () => {
     const base = read('server/src/tournament/TournamentManagerBase.ts');
     const launch = base.slice(base.indexOf('protected async createTablesAndSeatPlayers('));
-    expect(launch).toContain("select('user_id, table_id, seat_number, tables!inner(tournament_id)')");
+    expect(launch).toContain(
+      "select('user_id, table_id, seat_number, tables!inner(tournament_id)')"
+    );
   });
 });

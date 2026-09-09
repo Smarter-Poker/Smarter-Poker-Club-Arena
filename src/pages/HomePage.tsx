@@ -138,7 +138,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 
 function HomePageInner() {
   useEffect(() => {
-    document.title = 'Home | Smarter Poker';
+    document.title = 'Poker Arena | Smarter Poker';
   }, []);
 
   const navigate = useAppNavigate();
@@ -583,7 +583,7 @@ function HomePageInner() {
     } catch {
       /* quota */
     }
-    toast.info('Welcome to Club Arena - Create or join a club to get started!');
+    toast.info('Welcome To Poker Arena - Choose An Arena Or Join A Club To Get Started!');
   }, [isLoading, userClubs.length, toast]);
 
   // Enhancement #6: Real-time stats refresh for ALL club cards
@@ -1156,7 +1156,7 @@ function HomePageInner() {
           : undefined
       }
       role="main"
-      aria-label="Club Arena Home"
+      aria-label="Poker Arena Home"
     >
       {/* ═══════════════════════════════════════════════════════════════════════
                 CINEMATIC BACKGROUND LAYERS — World Hub Aesthetic
@@ -1209,6 +1209,7 @@ function HomePageInner() {
                 MAIN CONTENT — Scrollable card layout
             ═══════════════════════════════════════════════════════════════════════ */}
       <div className={styles.mainContent}>
+        <h1 className={styles.arenaTitle}>Poker Arena</h1>
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
@@ -1290,7 +1291,7 @@ function HomePageInner() {
         {!isLoading && !loadFailed && hasFetchedOnceRef.current && displayClubs.length === 0 && (
           <div className={styles.emptyStateCard}>
             <div className={styles.emptyStateIcon}>♠</div>
-            <h3 className={styles.emptyStateTitle}>Welcome To Club Arena</h3>
+            <h3 className={styles.emptyStateTitle}>Welcome To Poker Arena</h3>
             <p className={styles.emptyStateDesc}>
               Join A Club To Play Poker With Friends, Compete On Leaderboards, And Earn Rewards.
             </p>

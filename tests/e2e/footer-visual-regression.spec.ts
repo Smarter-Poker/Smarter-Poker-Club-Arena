@@ -59,7 +59,7 @@ test.describe('Club Arena footer visual contract', () => {
         </style>
         </head>
         <body>
-        <nav class="bottomNav" aria-label="Club Arena">
+        <nav class="bottomNav" aria-label="Poker Arena">
           <div class="viewport">
             <div class="artwork">
               <img class="artworkImage" alt="" width="1916" height="256"
@@ -84,7 +84,7 @@ test.describe('Club Arena footer visual contract', () => {
 
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 
-      const nav = page.getByRole('navigation', { name: 'Club Arena' });
+      const nav = page.getByRole('navigation', { name: 'Poker Arena' });
       await expect(nav).toBeVisible();
       await expect(nav).toHaveCSS('position', 'fixed');
       await expect(nav).toHaveCSS('transform', 'none');

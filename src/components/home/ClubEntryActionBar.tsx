@@ -9,7 +9,7 @@ interface ClubEntryActionBarProps {
   onJoin: () => void;
 }
 
-/** The reusable, semantic control surface for all three Club Arena entry flows. */
+/** The reusable, semantic control surface for all three Poker Arena entry flows. */
 export default function ClubEntryActionBar({
   flags,
   onCreate,
@@ -17,7 +17,7 @@ export default function ClubEntryActionBar({
   onJoin,
 }: ClubEntryActionBarProps) {
   return (
-    <nav className={styles.actionBarRow} aria-label="Club Arena Actions">
+    <nav className={styles.actionBarRow} aria-label="Poker Arena Actions">
       <div className={styles.actionBarWrapper}>
         <img
           className={styles.actionBarArtwork}

@@ -107,7 +107,7 @@ describe('ClubBottomNav approved footer contract', () => {
 
     expect(labels()).toEqual(LABELS);
     expect(screen.getAllByRole('listitem')).toHaveLength(6);
-    expect(screen.getByRole('navigation', { name: 'Club Arena' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Poker Arena' })).toBeInTheDocument();
   });
 
   it('keeps the current control and marks it with aria-current', async () => {
@@ -242,7 +242,7 @@ describe('ClubBottomNav approved footer contract', () => {
 
     it('starts visible, drops travelling down, and returns travelling up', async () => {
       await renderAt('/marketplace', CLUB);
-      const nav = screen.getByRole('navigation', { name: 'Club Arena' });
+      const nav = screen.getByRole('navigation', { name: 'Poker Arena' });
 
       expect(nav).toHaveAttribute('data-footer-hidden', 'false');
       expect(nav.style.transform).toBe('none');
@@ -261,7 +261,7 @@ describe('ClubBottomNav approved footer contract', () => {
 
     it('is always present at the top of the page', async () => {
       await renderAt('/marketplace', CLUB);
-      const nav = screen.getByRole('navigation', { name: 'Club Arena' });
+      const nav = screen.getByRole('navigation', { name: 'Poker Arena' });
 
       await scrollTo(120);
       await scrollTo(520);
@@ -273,7 +273,7 @@ describe('ClubBottomNav approved footer contract', () => {
 
     it('ignores the jitter inside a momentum scroll', async () => {
       await renderAt('/marketplace', CLUB);
-      const nav = screen.getByRole('navigation', { name: 'Club Arena' });
+      const nav = screen.getByRole('navigation', { name: 'Poker Arena' });
 
       await scrollTo(400);
       await scrollTo(900);

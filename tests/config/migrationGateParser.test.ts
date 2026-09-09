@@ -5,7 +5,7 @@
  *
  * scripts/ci/check-migrations-applied.mjs asserts that every object a migration
  * DECLARES exists in the live schema. It finds those declarations with regexes
- * over the raw SQL, stripping `--` comments first.
+ * over the raw SQL, stripping comments first.
  *
  * It did not strip string literals, and on 2026-08-23 that turned a correct,
  * fully-applied migration into a permanently failing gate. The migration
@@ -36,7 +36,11 @@ const gate = readFileSync(
 );
 
 /** The gate's cleaning step, mirrored. */
-const clean = (sql: string) => sql.replace(/--[^\n]*/g, '').replace(/'(?:[^']|'')*'/g, "''");
+const clean = (sql: string) =>
+  sql
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/--[^\n]*/g, '')
+    .replace(/'(?:[^']|'')*'/g, "''");
 
 /** The gate's CREATE TABLE matcher, mirrored. */
 const tables = (sql: string) =>
@@ -66,6 +70,12 @@ describe('the gate still finds what it must find', () => {
       'still_seen',
     ]);
   });
+
+  it('is not confused by an apostrophe in a block comment before a real one', () => {
+    expect(
+      tables("/* the manager's canonical door */ CREATE TABLE public.still_seen (id int);")
+    ).toEqual(['still_seen']);
+  });
 });
 
 describe('the gate no longer invents tables out of quoted text', () => {
@@ -76,6 +86,10 @@ describe('the gate no longer invents tables out of quoted text', () => {
   it('ignores prose inside a COMMENT', () => {
     expect(tables("COMMENT ON FUNCTION f() IS 'CREATE TABLE here inherits grants';")).toEqual([]);
   });
+
+  it('ignores a declaration quoted inside a block comment', () => {
+    expect(tables('/* CREATE TABLE public.never_existed (id int); */')).toEqual([]);
+  });
 });
 
 describe('the fix is actually in the gate, not just in this test', () => {
@@ -84,8 +98,11 @@ describe('the fix is actually in the gate, not just in this test', () => {
   });
 
   it('strips comments first, and says why', () => {
+    const idxBlockComments = gate.indexOf('replace(/\\/\\*[\\s\\S]*?\\*\\//g');
     const idxComments = gate.indexOf('replace(/--[^\\n]*/g');
     const idxStrings = gate.indexOf("replace(/'(?:[^']|'')*'/g");
+    expect(idxBlockComments).toBeGreaterThan(-1);
+    expect(idxComments).toBeGreaterThan(idxBlockComments);
     expect(idxComments).toBeGreaterThan(-1);
     expect(idxStrings).toBeGreaterThan(idxComments);
     expect(gate).toMatch(/cannot unbalance the quote scan/);

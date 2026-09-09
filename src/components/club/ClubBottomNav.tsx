@@ -1,5 +1,5 @@
 /**
- * Club Arena's authoritative global footer.
+ * Poker Arena's authoritative global footer.
  *
  * The approved artwork is the visual source of truth. The DOM above it only
  * supplies six semantic, full-cell navigation targets; it does not redraw or
@@ -165,7 +165,7 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     <nav
       ref={navRef}
       className={styles.bottomNav}
-      aria-label="Club Arena"
+      aria-label="Poker Arena"
       data-footer-hidden={hidden ? 'true' : 'false'}
       /* Keyboard focus has no scroll direction to read, so tabbing into a
          footer that scroll has parked off-screen would move focus somewhere

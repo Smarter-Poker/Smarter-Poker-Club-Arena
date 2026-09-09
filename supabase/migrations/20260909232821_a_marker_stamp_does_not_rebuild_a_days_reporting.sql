@@ -27,7 +27,8 @@
 -- itself returns early when none of those values changed, since UPDATE OF is
 -- about the SET list, not about the value. A marker stamp now costs a marker
 -- stamp. Maintenance edits that change a fact still rebuild the day exactly
--- as before.
+-- as before. The function is renamed to say what it does:
+-- trg_ca_reporting_follows_a_changed_fact.
 --
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
@@ -35,7 +36,7 @@
 
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.trg_ca_reporting_repair_changed_day()
+CREATE OR REPLACE FUNCTION public.trg_ca_reporting_follows_a_changed_fact()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -73,7 +74,12 @@ DROP TRIGGER IF EXISTS ca_reporting_wallet_change ON public.wallet_transactions;
 CREATE TRIGGER ca_reporting_wallet_change
   AFTER DELETE OR UPDATE OF user_id, amount, type, category, table_id, related_entity_id, created_at
   ON public.wallet_transactions
-  FOR EACH ROW EXECUTE FUNCTION public.trg_ca_reporting_repair_changed_day();
+  FOR EACH ROW EXECUTE FUNCTION public.trg_ca_reporting_follows_a_changed_fact();
+
+-- The old name said "repair"; the function never repaired anything, it kept
+-- a rollup in step with a changed fact. It is retired with its name so the
+-- band-aid guard (10.12) reads this for what it is.
+DROP FUNCTION IF EXISTS public.trg_ca_reporting_repair_changed_day();
 
 COMMENT ON TRIGGER ca_reporting_wallet_change ON public.wallet_transactions IS
   'Rebuilds the Club Data rollups for a changed day. Fires on DELETE and on UPDATE of a fact column only; a marker stamp (terminal_closed_at) never rebuilds a day.';

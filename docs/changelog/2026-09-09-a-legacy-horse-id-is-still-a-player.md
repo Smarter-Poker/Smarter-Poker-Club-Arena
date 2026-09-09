@@ -77,7 +77,7 @@ trigger consumes after it. A GUC with no row is not an authority. No mode flip.
 ## Root cause three: a marker stamp rebuilt a whole day of reporting, per row
 
 The same probe then timed out inside `atomic_cancel_tournament`'s own 120 s:
-`ca_reporting_wallet_change` fired `AFTER UPDATE FOR EACH ROW` on
+`ca_reporting_wallet_change` (function `trg_ca_reporting_repair_changed_day`, now `trg_ca_reporting_follows_a_changed_fact`) fired `AFTER UPDATE FOR EACH ROW` on
 `wallet_transactions` for ANY update and rebuilt every Club Data rollup for the
 row's day (`ca_refresh_reporting_rollups`, 5.5 s for today, measured). The
 journal is append-only, so the only UPDATE it ever sees is the terminal marker

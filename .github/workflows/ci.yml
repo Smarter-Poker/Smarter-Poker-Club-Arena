@@ -1009,38 +1009,14 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      # `migration-resolver-is-shell-neutral.law.test.ts` executes the same
-      # resolver under every shell that calls it in production. The estate
-      # runners are intentionally minimal and do not all preinstall zsh, so
-      # declare and provision that test dependency instead of silently
-      # skipping half of the compatibility contract.
-      - name: Provision shell compatibility test dependency
-        shell: bash
-        run: |
-          set -euo pipefail
-          if command -v zsh >/dev/null 2>&1; then
-            zsh --version
-            exit 0
-          fi
-          if ! command -v apt-get >/dev/null 2>&1; then
-            echo "::error::zsh is required by the shell-neutral migration resolver test, and this runner has no apt-get"
-            exit 1
-          fi
-          if [ "$(id -u)" = "0" ]; then
-            APT=(apt-get)
-          elif command -v sudo >/dev/null 2>&1 && sudo -n true; then
-            APT=(sudo apt-get)
-          else
-            echo "::error::zsh is required by the shell-neutral migration resolver test, and this runner cannot install it"
-            exit 1
-          fi
-          "${APT[@]}" update -qq
-          "${APT[@]}" install -y -qq zsh
-          command -v zsh >/dev/null 2>&1
-          zsh --version
-
       - name: Run Test Suite
-        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
+        # The shell-neutral law has its own required hosted-runner job below.
+        # Keeping it out of the shards prevents four concurrent package-manager
+        # mutations on a shared estate runner and ensures it runs exactly once.
+        run: >-
+          npx vitest run tests/
+          --exclude tests/migration-resolver-is-shell-neutral.law.test.ts
+          --shard=${{ matrix.shard }}/4
 
       - name: Report
         if: always()
@@ -1049,6 +1025,52 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`tests/**\` via vitest. Blocking - see the note above this job" >> $GITHUB_STEP_SUMMARY
           echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
+
+  shell_compatibility:
+    needs: changes
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'pull_request' &&
+        (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
+    name: Shell Compatibility
+    # This contract requires both bash and zsh. Keep it on an isolated hosted
+    # runner so installing zsh cannot contend with the shared estate runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Provision declared zsh dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zsh >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq zsh
+          fi
+          zsh --version
+
+      - name: Run shell-neutral migration resolver contract
+        run: npx vitest run tests/migration-resolver-is-shell-neutral.law.test.ts
 
   # ── THE REQUIRED CHECK KEEPS ITS NAME ────────────────────────────────────
   #
@@ -1059,16 +1081,16 @@ jobs:
   # leaves every pull request pending forever. AGENT-PLAYBOOK calls that "the
   # quiet killer: a required context no job produces".
   #
-  # So the shards do the work under new names and this one-second job carries
-  # the old name and the verdict. `needs` on a matrix waits for EVERY shard, so
-  # one red shard still stops the merge, exactly as before.
+  # So the shards and required shell contract do the work under new names and
+  # this one-second job carries the old name and the verdict. `needs` on a
+  # matrix waits for EVERY shard, so one red shard still stops the merge.
   #
   # It must also survive the shards being SKIPPED. The ruleset counts a skipped
   # required check as satisfied, and the `if:` on unit_shards deliberately skips
   # when the diff touches neither src nor tests - so this runs on `always()`
   # and only fails on a real failure, never on a skip.
   unit:
-    needs: unit_shards
+    needs: [unit_shards, shell_compatibility]
     if: always()
     name: Client Unit Tests (vitest)
     runs-on: ubuntu-latest
@@ -1076,19 +1098,20 @@ jobs:
     steps:
       - name: Every shard passed
         run: |
-          RESULT="${{ needs.unit_shards.result }}"
+          SHARDS="${{ needs.unit_shards.result }}"
+          SHELL="${{ needs.shell_compatibility.result }}"
           echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Four shards, aggregated. Matrix result: **$RESULT**" >> $GITHUB_STEP_SUMMARY
-          case "$RESULT" in
-            success)
-              echo "All four shards passed." >> $GITHUB_STEP_SUMMARY ;;
-            skipped)
+          echo "Four shards: **$SHARDS**; shell contract: **$SHELL**" >> $GITHUB_STEP_SUMMARY
+          case "$SHARDS:$SHELL" in
+            success:success)
+              echo "All four shards and the shell contract passed." >> $GITHUB_STEP_SUMMARY ;;
+            skipped:skipped)
               # Not a failure: the diff touched neither src/ nor tests/.
               echo "Skipped - the diff touched neither \`src/\` nor \`tests/\`." >> $GITHUB_STEP_SUMMARY ;;
             *)
-              echo "A shard did not pass. Open the shard job for the failing test." >> $GITHUB_STEP_SUMMARY
-              echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the four vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
+              echo "A unit-test dependency did not pass. Open the shard or shell job for the failure." >> $GITHUB_STEP_SUMMARY
+              echo "::error title=CLIENT UNIT TESTS FAILED::The four-shard result was $SHARDS and the shell-contract result was $SHELL."
               exit 1 ;;
           esac
 

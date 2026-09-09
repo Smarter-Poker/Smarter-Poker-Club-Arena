@@ -20,6 +20,13 @@ verification when it lands.
 | 6     | Prove it from outside                     | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done                              |
 | 7     | Guardrails                                | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done                              |
 | 8     | Connection ownership and refusal recovery | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets                                                                     | published; device acceptance open |
+| 9     | Financial reconnect and refresh ownership | Refresh after every channel open; bypass stale cashier cache; retain invalidations during reads; reject retired balance responses                                                         | published; device acceptance open |
+
+Phase 9 (2026-09-09) follows missed financial updates through the actual
+channel, MasterBus consumers, and displayed balance stores. Scope and evidence:
+`docs/changelog/2026-09-09-realtime-phase9-financial-recovery.md`.
+PR3955 and its public/origin publication were verified on 2026-09-09 at
+07:40 UTC. Exact runtime asset evidence is in the phase changelog and audit JSON.
 
 Phase 8 (2026-09-09) extends the programme after the callback ownership and
 loaded-fleet repairs. Scope and reproducible evidence:

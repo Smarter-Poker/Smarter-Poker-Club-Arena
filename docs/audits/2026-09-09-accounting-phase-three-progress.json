@@ -203,6 +203,10 @@
     "status": "tested_build_passed_publication_pending",
     "tests_passed": 89,
     "typescript": "passed",
-    "evidence": "docs/changelog/2026-09-09-tournament-refund-client-contract.md"
+    "evidence": "docs/changelog/2026-09-09-tournament-refund-client-contract.md",
+    "service_tests": 91,
+    "storage_tests": 4,
+    "request_identity": "wired to deployed request-id overload; auth account and returned request ID verified",
+    "pr": 4013
   }
 }

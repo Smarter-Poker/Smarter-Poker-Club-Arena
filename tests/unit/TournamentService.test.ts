@@ -7,7 +7,7 @@
  * getTournament null return, and getTournaments empty return.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { mockRpc, mockEmit } = vi.hoisted(() => ({
   mockRpc: vi.fn(),
@@ -30,6 +30,7 @@ vi.mock('../../src/lib/supabase', () => {
     return new Proxy({}, handler);
   };
   return {
+    getAuthUser: async () => ({ data: { user: { id: 'u-1' } }, error: null }),
     supabase: {
       from: () => buildChain(),
       rpc: mockRpc,
@@ -65,7 +66,25 @@ import {
 } from '../../src/services/TournamentService';
 
 describe('TournamentService', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+    let lane = Promise.resolve();
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: (_key: string, fn: () => Promise<void>) => {
+          const work = lane.then(fn);
+          lane = work.then(
+            () => undefined,
+            () => undefined
+          );
+          return work;
+        },
+      },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
 
   // ─────────────────────────────────────────────────────────────────────────
   // BLIND STRUCTURES
@@ -259,28 +278,37 @@ describe('TournamentService', () => {
       mockEmit.mockReset();
     });
 
-    it('sends only the tournament id — no user, no amount', async () => {
+    it('sends the tournament and retained request identity, no user or amount', async () => {
       // No user parameter is the authorization model: a player may only
       // unregister themselves, and the way to guarantee that is to never accept
       // a target. No amount is the anti-mint rule: the refund is read from the
       // tournaments row server-side.
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 110 }, error: null });
+      mockRpc.mockImplementation(async (_name, args) => ({
+        data: { ok: true, refunded_chips: 110, request_id: args.p_request_id },
+        error: null,
+      }));
 
       await tournamentService.unregisterPlayer('t-1', 'u-1');
 
       expect(mockRpc).toHaveBeenCalledTimes(1);
       const [name, args] = mockRpc.mock.calls[0];
       expect(name).toBe('fn_unregister_from_tournament');
-      expect(args).toEqual({ p_tournament_id: 't-1' });
-      expect(Object.keys(args)).toHaveLength(1);
+      expect(args).toEqual({ p_tournament_id: 't-1', p_request_id: expect.any(String) });
+      expect(Object.keys(args)).toHaveLength(2);
     });
 
     it('emits a balance update only when something was actually refunded', async () => {
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 0 }, error: null });
+      mockRpc.mockImplementation(async (_name, args) => ({
+        data: { ok: true, refunded_chips: 0, request_id: args.p_request_id },
+        error: null,
+      }));
       await tournamentService.unregisterPlayer('t-1', 'u-1');
       expect(mockEmit).not.toHaveBeenCalled();
 
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 110 }, error: null });
+      mockRpc.mockImplementation(async (_name, args) => ({
+        data: { ok: true, refunded_chips: 110, request_id: args.p_request_id },
+        error: null,
+      }));
       await tournamentService.unregisterPlayer('t-1', 'u-1');
       expect(mockEmit).toHaveBeenCalledWith('BALANCE_UPDATED', {
         source: 'tournament_unregister_refund',
@@ -297,9 +325,42 @@ describe('TournamentService', () => {
       { ok: true, refunded_chips: NaN },
       { ok: true, refunded_chips: Infinity },
     ])('rejects an unconfirmed refund receipt without success events: %j', async (data) => {
-      mockRpc.mockResolvedValue({ data, error: null });
+      mockRpc.mockImplementation(async (_name, args) => ({
+        data: { ...data, request_id: args.p_request_id },
+        error: null,
+      }));
       await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow();
       expect(mockEmit).not.toHaveBeenCalled();
+    });
+
+    it('reuses the original request after a lost response and requires its receipt', async () => {
+      mockRpc.mockRejectedValueOnce(new Error('Lost Response'));
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow();
+      const original = mockRpc.mock.calls[0][1].p_request_id;
+      mockRpc.mockResolvedValueOnce({
+        data: { ok: true, refunded_chips: 110, request_id: crypto.randomUUID() },
+        error: null,
+      });
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(/Confirmed/);
+      expect(mockEmit).not.toHaveBeenCalled();
+      mockRpc.mockResolvedValueOnce({
+        data: { ok: true, refunded_chips: 110, request_id: original },
+        error: null,
+      });
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+      expect(mockRpc.mock.calls.map((call) => call[1].p_request_id)).toEqual([
+        original,
+        original,
+        original,
+      ]);
+      expect(mockEmit).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not submit a refund for a stale account', async () => {
+      await expect(tournamentService.unregisterPlayer('t-1', 'another-user')).rejects.toThrow(
+        /Correct Account/
+      );
+      expect(mockRpc).not.toHaveBeenCalled();
     });
 
     it('surfaces the server refusal reason rather than a generic failure', async () => {
@@ -341,7 +402,10 @@ describe('TournamentService', () => {
         'atomic_tournament_unregister',
       ];
 
-      mockRpc.mockResolvedValue({ data: { ok: true, refunded_chips: 110 }, error: null });
+      mockRpc.mockImplementation(async (_name, args) => ({
+        data: { ok: true, refunded_chips: 110, request_id: args.p_request_id },
+        error: null,
+      }));
       await tournamentService.unregisterPlayer('t-1', 'u-1');
 
       for (const [name] of mockRpc.mock.calls) {

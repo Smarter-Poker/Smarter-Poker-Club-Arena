@@ -11,7 +11,7 @@ export {
 } from '../config/blindStructures';
 import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, type BlindLevel } from '../config/blindStructures';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
@@ -30,6 +30,7 @@ import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
+import { withTournamentUnregistrationIntent } from './TournamentUnregistrationIntent';
 
 /** A transport success alone does not confirm a tournament chip purchase. */
 function confirmedTournamentPurchaseStack(
@@ -1217,33 +1218,45 @@ class TournamentService {
    * registered.
    */
   async unregisterPlayer(tournamentId: string, userId: string): Promise<void> {
-    const { data, error } = await supabase.rpc('fn_unregister_from_tournament', {
-      p_tournament_id: tournamentId,
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId)
+      throw new Error('Sign In To The Correct Account Before Requesting A Refund.');
+    await withTournamentUnregistrationIntent(userId, tournamentId, async (requestId) => {
+      const { data, error } = await supabase.rpc('fn_unregister_from_tournament', {
+        p_tournament_id: tournamentId,
+        p_request_id: requestId,
+      });
+
+      if (error) {
+        reportError(error, 'TournamentService.unregisterPlayer', { tournamentId, userId });
+        throw new Error('Could not unregister - please try again');
+      }
+
+      const res = data as {
+        ok?: unknown;
+        reason?: string;
+        refunded_chips?: unknown;
+        request_id?: unknown;
+      } | null;
+
+      if (res?.ok !== true) {
+        throw new Error(unregisterReasonText(res?.reason));
+      }
+      // The exact unregistration RPC returns refunded_chips. Missing or malformed
+      // amounts cannot confirm a refund, including a ticket-only zero-chip refund.
+      if (
+        res.request_id !== requestId ||
+        typeof res.refunded_chips !== 'number' ||
+        !Number.isFinite(res.refunded_chips) ||
+        res.refunded_chips < 0
+      ) {
+        throw new Error('The Tournament Refund Could Not Be Confirmed.');
+      }
+
+      if (res.refunded_chips > 0) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+      }
     });
-
-    if (error) {
-      reportError(error, 'TournamentService.unregisterPlayer', { tournamentId, userId });
-      throw new Error('Could not unregister - please try again');
-    }
-
-    const res = data as { ok?: unknown; reason?: string; refunded_chips?: unknown } | null;
-
-    if (res?.ok !== true) {
-      throw new Error(unregisterReasonText(res?.reason));
-    }
-    // The exact unregistration RPC returns refunded_chips. Missing or malformed
-    // amounts cannot confirm a refund, including a ticket-only zero-chip refund.
-    if (
-      typeof res.refunded_chips !== 'number' ||
-      !Number.isFinite(res.refunded_chips) ||
-      res.refunded_chips < 0
-    ) {
-      throw new Error('The Tournament Refund Could Not Be Confirmed.');
-    }
-
-    if (res.refunded_chips > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
-    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './ChipMintModal.css';
+import { uuid } from '../../utils/uuid';
 
 const CHIPS_PER_DIAMOND = 100; // 100 diamonds = 10,000 chips
 
@@ -225,7 +226,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     busyRef.current = true;
     setBusy(true);
     try {
-      if (!opIdRef.current) opIdRef.current = crypto.randomUUID();
+      if (!opIdRef.current) opIdRef.current = uuid();
       const { data, error } = await supabase.rpc('fn_mint_chips_from_diamonds', {
         // Resolved uuid from the pre-flight, never the raw route param.
         p_club_id: canMintHere ? (target as { clubUuid: string }).clubUuid : clubId,

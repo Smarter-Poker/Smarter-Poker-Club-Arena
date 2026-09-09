@@ -186,7 +186,7 @@ describe('the client passes the keys the server now expects', () => {
   it('the mint sends p_op_id and holds it across a failure', () => {
     expect(MINT_UI).toContain('p_op_id: opIdRef.current');
     // Held across a failure is the whole point; cleared on success only.
-    expect(MINT_UI).toContain('if (!opIdRef.current) opIdRef.current = crypto.randomUUID();');
+    expect(MINT_UI).toContain('if (!opIdRef.current) opIdRef.current = uuid();'); // uuid(): never throws on http / old Safari (final sweep 2026-09-08)
     expect(MINT_UI).toContain('setDiamondsAndResetKey');
   });
 

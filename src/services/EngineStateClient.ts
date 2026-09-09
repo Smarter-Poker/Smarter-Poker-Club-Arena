@@ -24,6 +24,7 @@ import { noteServerTime, serverNow } from '../utils/serverClock';
 import jsonPatch from 'fast-json-patch';
 import {
   engineSocketMux,
+  MuxTableSocket,
   isMuxEnabled,
   CLOSE_MUX_SUPERSEDED,
   engineSocketUrl,
@@ -439,6 +440,8 @@ export class EngineStateClient {
   private lastInboundAt = 0;
   /** Heartbeats prove transport liveness, not delivery of a requested snapshot. */
   private pendingSnapshotSince: number | null = null;
+  private foregroundProbeTimer: number | null = null;
+  private static readonly FOREGROUND_STATE_BUDGET_MS = 5_000;
   /** Wake grace must not forgive resyncs that still have no snapshot reply. */
   private unansweredSnapshotResyncs = 0;
   private watchdogTimer: number | null = null;
@@ -506,8 +509,11 @@ export class EngineStateClient {
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        // Healthy OPEN socket — nothing to do.
-        if (this.ws !== null && this.ws.readyState === 1) return;
+        // Mobile network changes can leave readyState OPEN on a dead link.
+        if (this.ws !== null && this.ws.readyState === 1) {
+          this.beginForegroundStateProbe();
+          return;
+        }
         // 2026-08-22: a socket wedged in CONNECTING (captive portal, TCP
         // blackhole, network transition) used to BLOCK this recovery path —
         // the guard treated CONNECTING as healthy, no timer was pending, and
@@ -766,6 +772,7 @@ export class EngineStateClient {
       // second reconnect against a live connection.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.clearForegroundStateProbe();
       // Clean intentional close
       if (this.intentionalClose) return;
 
@@ -1095,6 +1102,7 @@ export class EngineStateClient {
       this.snapshot = msg.state;
       this.seq = msg.seq;
       this.pendingSnapshotSince = null;
+      this.clearForegroundStateProbe();
       this.unansweredSnapshotResyncs = 0;
       this.opts.onSnapshot(this.snapshot, this.seq);
       return;
@@ -1130,6 +1138,7 @@ export class EngineStateClient {
    * first snapshot must not sit behind a dead socket's events.
    */
   private resetInbox(): void {
+    this.clearForegroundStateProbe();
     this.inbox = [];
     this.lastEventSeq = 0;
     this.eventGapReportedForSeq = 0;
@@ -1166,6 +1175,54 @@ export class EngineStateClient {
     this.snapshot = null;
     this.pendingSnapshotSince = null;
     this.unansweredSnapshotResyncs = 0;
+  }
+
+  private clearForegroundStateProbe(): void {
+    if (this.foregroundProbeTimer !== null) {
+      window.clearTimeout(this.foregroundProbeTimer);
+      this.foregroundProbeTimer = null;
+    }
+  }
+
+  /** Wake recovery must fit inside the player's existing reconnect allowance. */
+  private beginForegroundStateProbe(): void {
+    if (
+      this.intentionalClose ||
+      this.status !== 'connected' ||
+      document.visibilityState !== 'visible' ||
+      this.inAnnouncedRestart() ||
+      this.foregroundProbeTimer !== null
+    )
+      return;
+    const socket = this.ws;
+    if (!socket || socket.readyState !== 1) return;
+    const startedAt = Date.now();
+    // Arm before sending: even a synchronous test/adapter response may cancel
+    // it. Repeated wake events never move the first request's deadline.
+    this.foregroundProbeTimer = window.setTimeout(() => {
+      this.foregroundProbeTimer = null;
+      if (
+        this.ws !== socket ||
+        this.intentionalClose ||
+        this.status !== 'connected' ||
+        document.visibilityState !== 'visible' ||
+        this.inAnnouncedRestart()
+      )
+        return;
+      this.opts.onError({ reason: 'table state did not answer the foreground recovery probe' });
+      beacon('stale');
+      this.setStatus('reconnecting');
+      this.ws = null;
+      try {
+        if (socket instanceof MuxTableSocket) socket.recoverAfterUnansweredProbe(startedAt);
+        else socket.close(4001, 'no table state after foreground probe');
+      } catch {
+        // The old generation is already detached; its close cannot own recovery.
+      }
+      this.retryCount = 0;
+      this.scheduleReconnect();
+    }, EngineStateClient.FOREGROUND_STATE_BUDGET_MS);
+    this.requestResync();
   }
 
   /** Refresh authoritative state after a confirmed server purchase. */
@@ -1278,13 +1335,17 @@ export class EngineStateClient {
             Date.now() - EngineStateClient.STALE_SOFT_MS
           );
         }
-        if (this.status === 'connected') this.requestResync();
+        if (this.status === 'connected') {
+          if (this.inAnnouncedRestart()) this.requestResync();
+          else this.beginForegroundStateProbe();
+        }
       };
       document.addEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private stopWatchdog(): void {
+    this.clearForegroundStateProbe();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
@@ -1523,6 +1584,12 @@ export interface FinancialUpdateMessage {
   total: number;
   ledgerEntry?: unknown;
 }
+/** The server refused a subscribe (ChannelHub ChannelErrorMsg). */
+export interface ChannelErrorMessage {
+  type: 'CHANNEL_ERROR';
+  code: string;
+  message: string;
+}
 
 export type ChannelServerMessage =
   | ChannelPingMessage
@@ -1533,7 +1600,8 @@ export type ChannelServerMessage =
   | LobbyUpdateMessage
   | HandReplayEventMessage
   | TableMetaUpdateMessage
-  | FinancialUpdateMessage;
+  | FinancialUpdateMessage
+  | ChannelErrorMessage;
 
 // ─── Client → Server message types ───────────────────────────────────────────
 
@@ -1688,6 +1756,8 @@ export class EngineChannelClient {
   // network silently killed club presence, lobby, tournament events and
   // FINANCIAL_UPDATE (wallet!) for the rest of the page's life.
   private lastInboundAt = 0;
+  private foregroundProbeTimer: number | null = null;
+  private static readonly FOREGROUND_CHANNEL_BUDGET_MS = 5_000;
   private watchdogTimer: number | null = null;
   private onOnline: (() => void) | null = null;
   private onResume: ((event: Event) => void) | null = null;
@@ -1746,7 +1816,10 @@ export class EngineChannelClient {
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        if (this.ws !== null && this.ws.readyState === 1) return;
+        if (this.ws !== null && this.ws.readyState === 1) {
+          this.beginForegroundChannelProbe();
+          return;
+        }
         if (this.ws !== null && this.ws.readyState === 0) {
           try {
             this.ws.close();
@@ -2038,12 +2111,14 @@ export class EngineChannelClient {
         return;
       }
       if (!msg || typeof (msg as { type?: string }).type !== 'string') return;
+      this.clearForegroundChannelProbe();
       this.handleMessage(msg);
     };
 
     ws.onclose = (e) => {
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.clearForegroundChannelProbe();
       if (this.intentionalClose) return;
       if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
@@ -2113,6 +2188,14 @@ export class EngineChannelClient {
         this.emit('onFinancialUpdate', msg);
         return;
       }
+      case 'CHANNEL_ERROR': {
+        /* The server sends this when it refuses a subscribe. It fell through
+           this switch unread (final sweep 2026-09-08): a subscribe rejection
+           produced no log, no status change and no UI. It is at least on the
+           record now. */
+        console.warn(`[EngineChannelClient] CHANNEL_ERROR ${msg.code}: ${msg.message}`);
+        return;
+      }
     }
   }
 
@@ -2143,6 +2226,53 @@ export class EngineChannelClient {
    * minute of silence on an OPEN socket is a half-open link that will never
    * fire onclose on its own. Tear it down into the backoff ladder.
    */
+  private clearForegroundChannelProbe(): void {
+    if (this.foregroundProbeTimer !== null) {
+      window.clearTimeout(this.foregroundProbeTimer);
+      this.foregroundProbeTimer = null;
+    }
+  }
+
+  private beginForegroundChannelProbe(): void {
+    if (
+      this.intentionalClose ||
+      this.status !== 'connected' ||
+      document.visibilityState !== 'visible' ||
+      this.foregroundProbeTimer !== null
+    )
+      return;
+    const socket = this.ws;
+    if (!socket || socket.readyState !== 1) return;
+    this.foregroundProbeTimer = window.setTimeout(() => {
+      this.foregroundProbeTimer = null;
+      if (
+        this.ws !== socket ||
+        this.intentionalClose ||
+        this.status !== 'connected' ||
+        document.visibilityState !== 'visible'
+      )
+        return;
+      this.setStatus('reconnecting');
+      this.ws = null;
+      try {
+        socket.close(4001, 'channel did not answer foreground probe');
+      } catch {
+        /* Detached generation cannot drive a second recovery. */
+      }
+      this.retryCount = 0;
+      this.scheduleReconnect();
+    }, EngineChannelClient.FOREGROUND_CHANNEL_BUDGET_MS);
+    try {
+      // Already implemented by the running channel server. A quiet lobby has
+      // a deterministic response; it need not wait for the next 25-second ping.
+      socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
+      this.lastReassertAt = Date.now();
+      this.replayDesiredState(socket);
+    } catch {
+      // The bounded probe owns recovery even if send does not emit onclose.
+    }
+  }
+
   private startWatchdog(): void {
     this.lastInboundAt = Date.now();
     if (this.watchdogTimer !== null) return;
@@ -2185,12 +2315,14 @@ export class EngineChannelClient {
           this.lastInboundAt,
           Date.now() - EngineChannelClient.WAKE_GRACE_MS
         );
+        this.beginForegroundChannelProbe();
       };
       document.addEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private stopWatchdog(): void {
+    this.clearForegroundChannelProbe();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;

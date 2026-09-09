@@ -9,9 +9,10 @@
  * Paged at 500 rows so no single response carries an unbounded amount of
  * jsonb, and refreshed every 6 hours so the ongoing V31 aggregation reaches
  * the fleet without a deploy. The live worker explicitly awaits the initial
- * load; this module's timer owns periodic refresh only. That refresh matters
- * far more here than it does for V30: this table is built from empty over days,
- * so nearly every refresh is delivering cells that did not exist before.
+ * load; this module's timer owns periodic refresh plus bounded failed-load
+ * recovery. That refresh matters far more here than it does for V30: this
+ * table is built from empty over days, so nearly every refresh is delivering
+ * cells that did not exist before.
  *
  * COLLECT-THEN-SWAP, deliberately: every page is fetched and every row is
  * revalidated before the store is touched. A failed or partial load leaves
@@ -32,14 +33,15 @@ import {
   gtoPostflopV31EvaluationCount,
   type GtoPostflopV31Row,
 } from '../engine/GtoPostflopV31.js';
+import { createAdaptiveRefreshLoop } from './AdaptiveRefreshLoop.js';
 
 const REFRESH_MS = 6 * 60 * 60_000;
+const RETRY_MS = 30_000;
+const MAX_RETRY_MS = 5 * 60_000;
 const PAGE = 500;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-let timer: NodeJS.Timeout | null = null;
-
-export async function loadGtoPostflopV31(): Promise<number> {
+async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number }> {
   try {
     const rows: GtoPostflopV31Row[] = [];
     for (let offset = 0; ; offset += PAGE) {
@@ -57,14 +59,25 @@ export async function loadGtoPostflopV31(): Promise<number> {
     console.log(
       `[GtoPostflopV31Loader] ${applied} certified solver cells loaded (${gtoPostflopV31Count()} in the store)`
     );
-    return applied;
+    return { ok: true, count: applied };
   } catch (err) {
     reportError(err, 'GtoPostflopV31Loader.load');
     console.warn(
       `[GtoPostflopV31Loader] certified V31 load FAILED - the brain keeps the last sealed snapshot or falls back (${gtoPostflopV31Count()} cached)`
     );
-    return 0;
+    return { ok: false, count: 0 };
   }
+}
+
+const refreshLoop = createAdaptiveRefreshLoop({
+  load: loadGtoPostflopV31Attempt,
+  refreshMs: REFRESH_MS,
+  retryMs: RETRY_MS,
+  maxRetryMs: MAX_RETRY_MS,
+});
+
+export async function loadGtoPostflopV31(): Promise<number> {
+  return (await refreshLoop.runNow()).count;
 }
 
 /**
@@ -104,14 +117,9 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
 }
 
 export function startGtoPostflopV31Loader(): void {
-  if (timer) return;
-  timer = setInterval(() => void loadGtoPostflopV31(), REFRESH_MS);
-  timer.unref?.();
+  refreshLoop.start();
 }
 
 export function stopGtoPostflopV31Loader(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  refreshLoop.stop();
 }

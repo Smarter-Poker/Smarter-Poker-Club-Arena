@@ -155,3 +155,52 @@ for the three readers that need the row; `logHandHistory` writes the id when it
 is given one and omits the key entirely when it is not; the insert returns the
 minted id rather than null when the response body is empty; and nothing on the
 engine side reads `player_contributions` off `hand_history` again.
+
+## Verified in production, 2026-09-09
+
+Read from rows two days after the engine picked the mint up (first successful
+`auto-deploy-hetzner` run containing `7087bd2385` was `f8ca3d64`; sixty runs
+since, zero failures):
+
+| day        | cash rake bookings | booked with a null hand id |
+| ---------- | -----------------: | -------------------------: |
+| 2026-09-06 |             59,027 |                         37 |
+| 2026-09-07 |             77,517 |                        171 |
+| 2026-09-08 |            107,094 |                      **0** |
+| 2026-09-09 |             68,861 |                      **0** |
+
+- **Hands booked twice since:** 0.
+- **`FeeReconciler.bbj_unlinkable`:** 5 fires in the three days before, 0 since.
+  The alert class is dead at the root.
+- **`bbj_near_misses`:** first row 2026-09-07 22:15, the first `:55` cutover
+  after the merge. 37 rows in 46 hours: `winner_not_quads` 21,
+  `both_cards_must_play` 10, `pot_too_small` 4, `not_enough_players` 2. The
+  thirty-day question now has an instrument.
+- **The jackpot paid.** After seventeen days of silence the main fired **five
+  times** from 2026-09-08 10:07 (98,823.81 chips) and the mini **fourteen
+  times** (8,150.00). The union pool went from 109,308 to 42,377. No causal
+  claim is made here - the mint touched hand ids, not detection - and the
+  near-miss log is what will say whether the bar is right.
+
+**What the net caught, and why it is not this defect.** `fn_rake_repair_unbanked`
+fired twelve times on 2026-09-08 between 02:32 and 17:47 and banked 209 hands
+(464.34 chips) with no attribution. That was a database incident, not the null
+id: `Could not query the database for the schema cache` on both the live rake
+RPC and the queue write, lock timeouts and deadlocks across every rake path,
+and 524 `postHandTasks.hand_history_failed` alerts between 14:00 and 18:00 -
+the PGRST002 reload storm CLAUDE.md section 2 describes, on a day some twenty
+migrations landed. Every one of the 209 carries a real hand id and none was
+booked twice: the mint held through the outage. Their contributions were lost
+with the failed queue write, so their attribution cannot be reconstructed
+truthfully and is not invented (10.9 rule 1). Zero recurrences in the 26 hours
+since. This is the residual the net exists for, and it is named in
+`docs/BAND-AIDS-REGISTER.md` TIER 1 #5 as the thing that lets the net be deleted
+once its own cause - DDL reload storms - is closed.
+
+A parallel settlement the same night (`atomic_distribute_rake.ghost_twin_phantom_retired`,
+2026-09-08 02:00) retired the WIDER historical double-bank - 1,171 union hands
+and 239 club hands, 2026-08-20 to 2026-09-07 - from the rake treasuries through
+`fn_ca_burn`, matching both credit rows per twin by time and amount. That is the
+population this changelog deliberately left unsettled because the leg rows could
+not prove it; it targets the treasury supply, not the `club_wallets` accumulators
+corrected by `20260907200330`, so the two do not overlap.

@@ -323,7 +323,8 @@ let shutdownMustFail = false;
 let shutdownFailureExitScheduled = false;
 
 type ShutdownStepResult =
-  { step: string; status: 'fulfilled' } | { step: string; status: 'rejected'; reason: unknown };
+  | { step: string; status: 'fulfilled' }
+  | { step: string; status: 'rejected'; reason: unknown };
 
 function beginShutdownStep(
   step: string,

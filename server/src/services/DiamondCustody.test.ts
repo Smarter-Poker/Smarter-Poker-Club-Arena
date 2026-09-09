@@ -51,7 +51,7 @@ describe('Diamond custody server contract', () => {
     rpc.mockResolvedValue({ data: { ...receipt, amount: 99 }, error: null });
     await expect(reserveDiamondEntry(input)).rejects.toThrow('Diamond Reservation Amount Mismatch');
   });
-  it('returns a durable pending release without inventing a compensating credit', async () => {
+  it('rejects an obsolete pending response from a stale release contract', async () => {
     const pending = {
       success: false,
       pending: true,
@@ -60,7 +60,9 @@ describe('Diamond custody server contract', () => {
       error: 'diamond_release_pending',
     };
     rpc.mockResolvedValue({ data: pending, error: null });
-    expect(await releaseDiamondEntry('custody', 'request')).toEqual(pending);
+    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+      'Invalid Diamond Custody Receipt'
+    );
     expect(rpc).toHaveBeenCalledTimes(1);
   });
   it('retains the original request across caller retries after response loss', async () => {

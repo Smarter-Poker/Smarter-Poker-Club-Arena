@@ -63,7 +63,13 @@ ALTER TABLE ca_mint_ledger ADD COLUMN op_id text UNIQUE, ADD COLUMN diamond_tx_i
 \ir poker-diamond-production-register-fixture.sql
 INSERT INTO clubs VALUES('20000000-0000-0000-0000-000000000001','diamonds',true,null);
 INSERT INTO ca_arena_settings VALUES(1,'20000000-0000-0000-0000-000000000001',14);
-\ir ../../supabase/migrations/20260908173525_poker_diamond_custody.sql
+\ir ../../supabase/migrations/20260909065458_poker_diamond_custody.sql
+CREATE SCHEMA IF NOT EXISTS cron;
+CREATE TABLE IF NOT EXISTS cron.job(jobname text,command text);
+\ir ../../supabase/migrations/20260909164740_seal_diamond_custody_retry_doors_before_retirement.sql
+\ir ../../supabase/migrations/20260909164847_diamond_custody_release_is_atomic_without_recovery.sql
+\ir ../../supabase/migrations/20260909165003_diamond_internal_writers_are_service_only.sql
+\ir ../../supabase/migrations/20260909165102_diamond_internal_writer_acl_contract_is_explicit.sql
 CREATE FUNCTION fixture_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$
  BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',label; END IF; RAISE NOTICE 'PASS: %',label; END $$;
 INSERT INTO profiles(id,diamonds) VALUES('10000000-0000-0000-0000-000000000001',1000);
@@ -82,4 +88,4 @@ SELECT fixture_assert((SELECT diamonds=1000 FROM profiles),'release restores ava
 SELECT fixture_assert(fn_ca_arena_diamonds()=0,'release empties custody');
 SELECT fixture_assert((SELECT arena_reserved=0 AND consumed=0 FROM diamond_purchase_lots),'release preserves purchased provenance');
 SELECT fixture_assert((SELECT sum(amount)=0 FROM diamond_transactions),'reserve release journal conserves');
-SELECT fixture_assert((SELECT count(*)=1 FROM poker_diamond_obligations WHERE state='completed'),'obligation completes');
+SELECT fixture_assert(to_regclass('public.poker_diamond_obligations') IS NULL,'no recovery obligation table');

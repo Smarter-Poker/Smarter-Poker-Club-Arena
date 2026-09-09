@@ -1,6 +1,20 @@
-# Diamond Phase 3: Verified Implementation, Production Cutover Pending
+# Diamond Phase 3: Atomic Custody Release And Publication Evidence
 
-Updated September 9, 2026. This is not a phase-completion or publication claim.
+Updated September 9, 2026. Phase completion remains open until the Arena publication and authenticated UI checks pass.
+
+## Current Contract, September 9 At 17:25 UTC
+
+This section supersedes the historical recovery design below. Production migrations `20260909164740`, `20260909164847`, `20260909165003`, and `20260909165102` are applied. They replace release with a strict transaction, remove the obligations table and recovery/report RPCs, and state the existing service-only writer ACLs. No pending release receipt or scheduled repayment exists. Failed credit rolls back wallet, lot, custody and movement writes together. The original applied migration is recorded byte-for-byte under actual version `20260909065458`; it must not be reapplied.
+
+The obsolete, unapplied reporting-name follow-up is withdrawn. The Arena adapter rejects stale pending receipts. The isolated PostgreSQL fixture applies all four exact follow-up migrations before its assertions: 10 baseline and 69 additional assertions passed, including journal refusal, replay, purchased lots, provider debt and concurrent store spend. No actual player funds were used.
+
+Workers PR 126 merged as `1bbf3d98107dd71c13f3ec2d431a7c41218808a8`, removing calls to the retired database functions. All 313 remaining tests and the production build passed. Deployment run `34381299915` completed successfully. World Hub PR 1681 merged as `39f7d7b8cdec571de24faa78decf4414d3621ee4` after withdrawing the proposed schedule and its obsolete schedule test. The dispatcher has no new Diamond recovery job to deploy.
+
+Fresh production reads confirm zero custody and movement rows, no obligations table, no recovery function, and release EXECUTE allowed for service_role and denied to authenticated.
+
+The older test totals below describe the earlier implementation, not the final atomic contract. Arena publishing and authenticated balance-screen acceptance remain open.
+
+## Historical Implementation And Checkpoints
 
 ## Scope And Implementation
 

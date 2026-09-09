@@ -179,7 +179,7 @@ Exit: access and wrong-asset integration tests pass, merged frontend and server 
 - [ ] Inventory/forward-migrate any old arena balances without erasing history.
 - [ ] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
 - [ ] Preserve provenance, purchased-lot/debt treatment and audit identities.
-- [ ] Add recoverable obligation records and management incident wiring.
+- [ ] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
 
 Exit: concurrent/replayed/failure-path movements conserve diamonds and produce zero chip effects.
 

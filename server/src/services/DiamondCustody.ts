@@ -18,13 +18,6 @@ export interface DiamondCustodyReceipt {
   journal_id: string;
   debt_settled?: number;
 }
-export interface PendingDiamondRelease {
-  success: false;
-  pending: true;
-  custody_id: string;
-  request_id: string;
-  error: 'diamond_release_pending';
-}
 function receipt(value: unknown, requestId: string): DiamondCustodyReceipt {
   if (!value || typeof value !== 'object') throw new Error('Missing Diamond Custody Receipt');
   const v = value as Record<string, unknown>;
@@ -76,20 +69,12 @@ export async function reserveDiamondEntry(
 export async function releaseDiamondEntry(
   custodyId: string,
   requestId: string
-): Promise<DiamondCustodyReceipt | PendingDiamondRelease> {
+): Promise<DiamondCustodyReceipt> {
   const { data, error } = await supabase.rpc('fn_poker_diamond_release', {
     p_custody_id: custodyId,
     p_request_id: requestId,
   });
   if (error) throw new Error(error.message || 'Diamond Release Failed');
-  if (
-    data?.success === false &&
-    data?.pending === true &&
-    data.custody_id === custodyId &&
-    data.request_id === requestId &&
-    data.error === 'diamond_release_pending'
-  )
-    return data;
   const result = receipt(data, requestId);
   if (result.custody_id !== custodyId) throw new Error('Diamond Release Custody Mismatch');
   if (result.custody_balance !== 0) throw new Error('Diamond Release Balance Mismatch');

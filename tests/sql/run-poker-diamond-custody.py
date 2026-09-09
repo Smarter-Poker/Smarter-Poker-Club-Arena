@@ -10,6 +10,8 @@ PSQL = ['/opt/homebrew/opt/postgresql@17/bin/psql', '-h', '/tmp/codex-diamond-ph
         '-p', '55472', '-d', 'poker_diamond_phase3_test', '-v', 'ON_ERROR_STOP=1', '-At']
 USER = '10000000-0000-0000-0000-000000000001'
 TABLE = '30000000-0000-0000-0000-000000000001'
+# Test-only independent journal and lot invariant query, not a production RPC.
+discrepancy_count = "select count(*) from (WITH posted AS (\n SELECT m.custody_id,sum(CASE WHEN action='reserve' THEN amount ELSE -amount END) amount\n FROM public.poker_diamond_movements m GROUP BY m.custody_id\n )\n SELECT c.id,'custody_vs_movements'::text,(c.balance-COALESCE(p.amount,0))::numeric\n FROM public.poker_diamond_custody c LEFT JOIN posted p ON p.custody_id=c.id\n WHERE c.balance<>COALESCE(p.amount,0)\n UNION ALL\n SELECT m.custody_id,'wallet_journal'::text,m.amount::numeric\n FROM public.poker_diamond_movements m LEFT JOIN (SELECT id,user_id,amount FROM public.diamond_transactions UNION ALL SELECT id,user_id,amount FROM public.ca_diamond_journal_archive) t ON t.id=m.wallet_journal_id\n WHERE t.id IS NULL OR t.user_id IS DISTINCT FROM m.user_id OR\n t.amount IS DISTINCT FROM (CASE WHEN m.action='reserve' THEN -m.amount ELSE m.amount END)\n UNION ALL\n SELECT NULL::uuid,'purchase_reservations'::text,\n (l.arena_reserved-COALESCE(r.amount,0))::numeric\n FROM public.diamond_purchase_lots l LEFT JOIN (\n SELECT lot_id,sum(amount) amount FROM public.poker_diamond_lot_reservations WHERE released_at IS NULL GROUP BY lot_id\n ) r ON r.lot_id=l.id WHERE l.arena_reserved<>COALESCE(r.amount,0)) fixture_discrepancies"
 passed = 0
 
 def sql(query, ok=True):
@@ -59,27 +61,19 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
 check(len(set(results)) == 1, 'concurrent retries return identical receipt')
 check(sql(f"select count(*) from poker_diamond_movements where request_id='{request}'") == '1', 'concurrent retries write one movement')
 custody = json.loads(results[0])['custody_id']
-# Inject a journal failure, not a mocked successful money write.
+# A rejected journal must raise and leave every held rail intact.
 sql("create function fixture_fail_release() returns trigger language plpgsql as $$ begin if NEW.type='arena_withdraw' then raise exception 'injected journal failure'; end if; return NEW; end $$; create trigger fixture_fail_release before insert on diamond_transactions for each row execute function fixture_fail_release()")
 release_id = str(uuid.uuid4())
-sql("create function fixture_fail_incident() returns trigger language plpgsql as $$ begin raise exception 'injected incident failure'; end $$; create trigger fixture_fail_incident before insert on fixture_incidents for each row execute function fixture_fail_incident()")
-failed = release(custody, release_id)
-check(sql("select count(*) from poker_diamond_obligations where state='pending'") == '1', 'incident failure cannot erase release obligation')
-sql('drop trigger fixture_fail_incident on fixture_incidents')
-check(failed.get('pending') is True and failed['success'] is False, 'failed release remains recoverable')
+failed = sql(f"select fn_poker_diamond_release('{custody}','{release_id}')", False)
+check(failed.returncode != 0, 'failed release raises without a pending receipt')
 check(sql('select diamonds from profiles') == '900', 'failed release rolls back wallet credit')
 check(sql('select fn_ca_arena_diamonds()') == '100', 'failed release retains custody')
-check(sql("select count(*) from poker_diamond_obligations where state='pending'") == '1', 'failure persists obligation')
-competing_release = sql(f"select fn_poker_diamond_release('{custody}','{uuid.uuid4()}')", False)
-check(competing_release.returncode != 0 and 'diamond_release_request_already_bound' in competing_release.stderr,
-      'pending custody binds one durable release request')
+check(sql("select to_regclass('public.poker_diamond_obligations') is null") == 't', 'no deferred obligation exists')
+check(sql(f"select count(*) from poker_diamond_movements where request_id='{release_id}'") == '0', 'failed release has no movement receipt')
 sql('drop trigger fixture_fail_release on diamond_transactions')
-reconcile_definition = sql("select pg_get_functiondef('fn_poker_diamond_reconcile()'::regprocedure)")
-sql("create or replace function fn_poker_diamond_reconcile() returns table(custody_id uuid,kind text,difference numeric) language plpgsql as $$ begin raise exception 'injected reconciliation outage'; end $$")
-check(sql('select fn_poker_diamond_recover_releases()') == '1', 'recovery completes despite reconciliation outage')
-sql(reconcile_definition)
-check(sql('select diamonds from profiles') == '1000', 'recovery pays exactly once')
-check(sql('select count(*) from fn_poker_diamond_reconcile()') == '0', 'movement and lot reconciliation clear')
+paid = release(custody, release_id)
+check(paid == release(custody, release_id), 'successful retry returns one immutable receipt')
+check(sql('select diamonds from profiles') == '1000', 'retry credits once after rolled-back failure')
 # Release is exact even for a boosted account; borrowed money is not a reward.
 sql('update profiles set diamond_multiplier=4')
 x=json.loads(reserve(100))
@@ -93,31 +87,13 @@ x=json.loads(reserve(100))
 sql(f"insert into diamond_debts(user_id,amount,reason) values('{USER}',60,'fixture provider reversal')")
 sql("create function fixture_fail_register() returns trigger language plpgsql as $$ begin raise exception 'injected register failure'; end $$; create trigger fixture_fail_register before insert on ca_mint_ledger for each row execute function fixture_fail_register()")
 debt_release_id=str(uuid.uuid4())
-check(release(x['custody_id'],debt_release_id).get('pending') is True, 'register failure leaves debt release recoverable')
+check(sql(f"select fn_poker_diamond_release('{x['custody_id']}','{debt_release_id}')", False).returncode != 0, 'register failure raises and rolls back release')
 check(sql('select diamonds from profiles')=='900', 'register failure rolls back spendable credit')
 check(sql('select amount from diamond_debts where settled_at is null')=='60', 'register failure preserves debt')
 sql('drop trigger fixture_fail_register on ca_mint_ledger')
 r=release(x['custody_id'],debt_release_id)
 check(sql("select sum(amount) from ca_mint_ledger where action='burn'")=='60', 'release registers debt retirement exactly once')
 check(r['debt_settled']==60 and r['available_balance']==940,'release settles debt without negative balance')
-# A damaged recovery item must not abort the rest of the batch.
-x=json.loads(reserve(20))
-sql("create trigger fixture_fail_release before insert on diamond_transactions for each row execute function fixture_fail_release()")
-bad_id=str(uuid.uuid4())
-check(release(x['custody_id'],bad_id).get('pending') is True, 'prepare durable recovery failure')
-second_table=str(uuid.uuid4())
-sql(f"insert into tables select '{second_table}'::uuid,club_id,min_buy_in,max_buy_in,status from tables where id='{TABLE}'")
-good=json.loads(sql(f"select fn_poker_diamond_reserve('{USER}','cash_seat','{second_table}','later-release',20,'{uuid.uuid4()}')"))
-check(release(good['custody_id']).get('pending') is True, 'prepare independent later release')
-sql('drop trigger fixture_fail_release on diamond_transactions')
-sql(f"update poker_diamond_custody set state='active' where id='{x['custody_id']}'")
-check(sql('select fn_poker_diamond_recover_releases()')=='1', 'invalid recovery item does not abort later release')
-check(sql(f"select state from poker_diamond_custody where id='{good['custody_id']}'")=='released',
-      'later release commits despite earlier invalid item')
-check('diamond_custody_requires_settlement' in sql(f"select last_error from poker_diamond_obligations where request_id='{bad_id}'"),
-      'recovery keeps actionable error on obligation')
-sql(f"update poker_diamond_custody set state='reserved' where id='{x['custody_id']}'")
-check(sql('select fn_poker_diamond_recover_releases()')=='1', 'repaired obligation completes with original identity')
 # Role boundaries: authenticated callers read only their own holdings, cannot fund or edit.
 check(sql("set role authenticated; select fn_poker_diamond_reserve(null,null,null,null,null,null)",False).returncode!=0,'client cannot invoke funding RPC')
 check(sql("set role authenticated; update poker_diamond_custody set balance=999",False).returncode!=0,'client cannot edit custody')
@@ -181,7 +157,7 @@ sql(f"delete from profiles where id='{other}'")
 # Archiving a wallet journal must not make the independent movement disappear.
 sql("insert into ca_diamond_journal_archive select * from diamond_transactions")
 sql("delete from diamond_transactions")
-check(sql('select count(*) from fn_poker_diamond_reconcile()')=='0',
+check(sql(discrepancy_count)=='0',
       'custody reconciliation follows archived wallet journals')
 # All remaining available balance is covered by an unsettled purchase.
 sql(f"insert into diamond_purchase_lots(user_id,issued,created_at) values('{USER}',940,now())")
@@ -216,7 +192,7 @@ paid=release(held['custody_id'])
 check(paid['debt_settled']==1000 and paid['available_balance']==0, 'release settles provider debt without spendable overpayment')
 check(sql(f"select arena_reserved from diamond_purchase_lots where purchase_id='{purchase}'")=='0', 'provider debt release clears lot reservation')
 check(sql('select difference from fn_ca_diamond_register_vs_supply()')=='0.00', 'provider refund and custody release conserve registered supply')
-check(sql('select count(*) from fn_poker_diamond_reconcile()')=='0', 'provider refund and custody release reconcile')
+check(sql(discrepancy_count)=='0', 'provider refund and custody release reconcile')
 # Concurrent shop debit and custody cashout serialize on the same profile.
 race_user='10000000-0000-0000-0000-000000000004'
 sql(f"insert into profiles(id,diamonds) values('{race_user}',0)")
@@ -231,6 +207,6 @@ check(released['success'], 'cashout completes during concurrent shop spend')
 expected=200 if spent['success'] else 1000
 check(sql(f"select diamonds from profiles where id='{race_user}'")==str(expected), 'cashout and shop spend produce one serialized wallet result')
 check(sql('select difference from fn_ca_diamond_register_vs_supply()')=='0.00', 'concurrent shop spend and cashout conserve registered supply')
-check(sql('select count(*) from fn_poker_diamond_reconcile()')=='0', 'concurrent shop spend and cashout reconcile')
+check(sql(discrepancy_count)=='0', 'concurrent shop spend and cashout reconcile')
 check(sql('select count(*) from ca_ledger_write_failures')=='0', 'production audit triggers complete without hidden failures')
 print(f'{passed} additional assertions passed', flush=True)

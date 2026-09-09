@@ -153,7 +153,8 @@ describe('the shipped wiring - an instrument nobody calls measures nothing', () 
     // `(gameState as any)?.variant ?? 'nlh'` relabelled every decision and
     // made the plo6 15ms budget unverifiable. The scope must come from
     // activeHandVariant(), the accessor built for "read the live hand".
-    expect(turns).toContain("gameVariant: (this.activeHandVariant() || 'nlh') as string");
+    expect(turns).toContain("const activeVariant = this.activeHandVariant() || 'nlh'");
+    expect(turns).toContain('gameVariant: activeVariant');
     expect(worker).toContain("request.gameState.gameVariant || 'nlh'");
     expect(turns).not.toContain('(gameState as any)?.variant');
   });

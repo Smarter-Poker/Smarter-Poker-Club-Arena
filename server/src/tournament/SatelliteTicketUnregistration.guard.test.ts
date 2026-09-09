@@ -62,7 +62,9 @@ const HORSE_REGISTRATION = functionDefinition(
 const CASH_REDEEM = taggedBody('redeem_cash_ticket_only');
 const CASH_CANCEL = taggedBody('cancel_cash_ticket_only');
 
-describe('satellite-funded tournament unregistration is ticket-only', () => {
+// Historical migration evidence remains necessary for replaying issued tickets.
+// Current cash refunds are exercised by scripts/dev/probe-satellite-refund-pg17.py.
+describe('historical satellite ticket migration preserves its original evidence', () => {
   it('permits unregistration only before the scheduled start', () => {
     expect(UNREGISTER).toContain(
       "upper(COALESCE(v_t.status::text,'')) NOT IN ('ANNOUNCED','REGISTERING')"

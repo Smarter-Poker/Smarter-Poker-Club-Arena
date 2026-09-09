@@ -183,11 +183,17 @@ describe('the two table cash-out paths cannot diverge again', () => {
      exactly ONE implementation of "cash a seat out", so the two paths cannot
      drift apart at all - which is what this describe block has always been
      about. */
-  it('markSeatAsLeft and atomicCashout call the SAME rpc', () => {
+
+  it('markSeatAsLeft delegates to the one occupancy-bound cashout RPC', () => {
     const calls = [...seats.matchAll(/rpc\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
-    const cashouts = calls.filter((c) => c === 'atomic_seat_cashout_locked');
-    expect(cashouts.length, 'both cash-out paths should cash out').toBe(2);
-    expect(new Set(cashouts).size, 'the two paths must use one RPC').toBe(1);
+    expect(calls.filter((c) => c === 'fn_cashout_seat_occupancy')).toHaveLength(1);
+    expect(calls).not.toContain('atomic_seat_cashout_locked');
+    const delegated = seats.slice(
+      seats.indexOf('export async function markSeatAsLeft('),
+      seats.indexOf('export async function atomicCashout(')
+    );
+    expect(delegated).toMatch(/await atomicCashout\(/);
+    expect(delegated).toContain('occupancyId');
   });
 
   it('neither path credits or vacates outside that rpc', () => {

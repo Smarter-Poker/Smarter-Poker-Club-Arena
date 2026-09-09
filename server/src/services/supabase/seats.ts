@@ -57,8 +57,20 @@ import { tableCountChangedFilter } from './tables.js';
  */
 type CashoutScope = { userId: string; tableId: string; seatNumber: number; occupancyId: string };
 
+export interface SeatCashoutReceipt {
+  ok: true;
+  stack: number;
+  credited: boolean;
+  seat_number: number;
+  occupancy_id: string;
+  user_id: string;
+  table_id: string;
+  idempotency_key: string;
+  tournament_table: boolean;
+}
+
 /** A receipt must prove the exact occupancy this request was authorized for. */
-function confirmedCashout(data: unknown, scope: CashoutScope): { stack: number } {
+function confirmedCashout(data: unknown, scope: CashoutScope): SeatCashoutReceipt {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('Cash-out receipt missing; departure unconfirmed');
   }
@@ -80,7 +92,25 @@ function confirmedCashout(data: unknown, scope: CashoutScope): { stack: number }
   ) {
     throw new Error('Cash-out receipt does not confirm the requested occupancy');
   }
-  return { stack: receipt.stack };
+  return receipt as unknown as SeatCashoutReceipt;
+}
+
+export async function getSeatCashoutReceipt(
+  userId: string,
+  tableId: string,
+  seatNumber: number,
+  occupancyId: string
+): Promise<SeatCashoutReceipt | null> {
+  const { data, error } = await supabase.rpc('fn_get_seat_cashout_receipt', {
+    p_user_id: userId,
+    p_table_id: tableId,
+    p_seat_number: seatNumber,
+    p_occupancy_id: occupancyId,
+  });
+  if (error) throw new Error(String(error.message || 'Cashout outcome lookup failed'));
+  return data === null
+    ? null
+    : confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
 }
 
 export async function markSeatAsLeft(

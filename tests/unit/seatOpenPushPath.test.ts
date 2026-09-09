@@ -87,12 +87,19 @@ describe('seat-open push — the engine side', () => {
     expect(fn).toMatch(/if \(error\)/);
   });
 
-  it('is still called from every path that opens a seat', () => {
-    // markSeatAsLeft, atomicCashout and processLeavePending. A cash-out that
-    // forgets to offer the seat is a queue that never moves.
-    expect(
-      (src.match(/void notifyWaitlistSeatOpen\(tableId\)/g) || []).length
-    ).toBeGreaterThanOrEqual(3);
+  it('offers the seat through atomicCashout and pending processing, including the delegated leave', () => {
+    const delegated = src.slice(
+      src.indexOf('export async function markSeatAsLeft('),
+      src.indexOf('export async function atomicCashout(')
+    );
+    expect(delegated).toMatch(/await atomicCashout\(/);
+    const cashout = src.slice(
+      src.indexOf('export async function atomicCashout('),
+      src.indexOf('export async function notifyWaitlistSeatOpen(')
+    );
+    expect(cashout).toContain('void notifyWaitlistSeatOpen(tableId)');
+    const pending = src.slice(src.indexOf('export async function processLeavePending('));
+    expect(pending).toContain('void notifyWaitlistSeatOpen(tableId)');
   });
 });
 

@@ -1,0 +1,166 @@
+import { supabase } from '../lib/supabase';
+import { notifyServerLeaveOccupancy } from './GameServerAPI';
+
+type Intent = {
+  version: 1;
+  userId: string;
+  tableId: string;
+  seatNumber: number;
+  occupancyId: string;
+  state: 'pending' | 'resolved';
+};
+export type SeatLeaveResult = {
+  success: boolean;
+  chipsReturned: number;
+  deferred?: boolean;
+  error?: string;
+};
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const running = new Map<string, Promise<SeatLeaveResult>>();
+function validIntent(value: unknown, userId: string, tableId: string): value is Intent {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const x = value as Intent;
+  return (
+    x.version === 1 &&
+    x.userId === userId &&
+    x.tableId === tableId &&
+    Number.isInteger(x.seatNumber) &&
+    x.seatNumber >= 0 &&
+    typeof x.occupancyId === 'string' &&
+    UUID.test(x.occupancyId) &&
+    (x.state === 'pending' || x.state === 'resolved')
+  );
+}
+
+/** An unknown response retains the original target across retries and reloads. */
+export async function leaveSeatWithIntent(
+  tableId: string,
+  userId: string
+): Promise<SeatLeaveResult> {
+  const key = 'ca:seat-leave:v1:' + userId + ':' + tableId;
+  const active = running.get(key);
+  if (active) return active;
+  const execute = async (): Promise<SeatLeaveResult> => {
+    try {
+      if (!UUID.test(tableId) || !UUID.test(userId)) throw new Error('Invalid Table Or Player.');
+      const storage = globalThis.localStorage;
+      const raw = storage.getItem(key);
+      let intent: Intent | null = null;
+      if (raw !== null) {
+        const saved: unknown = JSON.parse(raw);
+        if (!validIntent(saved, userId, tableId))
+          throw new Error('The Saved Leave Request Could Not Be Verified.');
+        intent = saved;
+      }
+      if (!intent || intent.state === 'resolved') {
+        const { data, error } = await supabase
+          .from('table_seats')
+          .select('seat_number, occupancy_id')
+          .eq('table_id', tableId)
+          .eq('user_id', userId)
+          .is('left_at', null)
+          .maybeSingle();
+        if (error) throw new Error('Could Not Read Your Seat. Please Try Again.');
+        if (data) {
+          const candidate = {
+            version: 1,
+            userId,
+            tableId,
+            seatNumber: data.seat_number,
+            occupancyId: data.occupancy_id,
+            state: 'pending',
+          };
+          if (!validIntent(candidate, userId, tableId))
+            throw new Error('Your Seat Identity Could Not Be Verified.');
+          intent = candidate;
+        }
+        if (!intent) throw new Error('No Seat Was Found For This Leave Request.');
+      }
+      intent = { ...intent, state: 'pending' };
+      // Persist before sending. Storage failure must not create an unrepeatable request.
+      storage.setItem(key, JSON.stringify(intent));
+      const response = await notifyServerLeaveOccupancy(
+        tableId,
+        intent.seatNumber,
+        intent.occupancyId
+      );
+      if (!response || typeof response !== 'object' || Array.isArray(response)) {
+        throw new Error('The Server Did Not Confirm The Leave.');
+      }
+      const result = response as Record<string, unknown>;
+      const matches =
+        result.protocol === 'seat-occupancy-v1' &&
+        result.occupancyId === intent.occupancyId &&
+        result.seatNumber === intent.seatNumber;
+      if (result.success !== true) {
+        if (matches && (result.code === 'STALE_OCCUPANCY' || result.code === 'LEAVE_LOCKED')) {
+          storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
+        }
+        return {
+          success: false,
+          chipsReturned: 0,
+          error:
+            typeof result.error === 'string'
+              ? result.error
+              : 'The Server Did Not Confirm The Leave.',
+        };
+      }
+      if (!matches || typeof result.immediate !== 'boolean') {
+        throw new Error('The Server Did Not Confirm The Original Seat.');
+      }
+      let outcome: SeatLeaveResult;
+      if (result.immediate === false && result.cashout === null) {
+        outcome = { success: true, chipsReturned: 0, deferred: true };
+      } else if (result.tournament === true && result.cashout === null) {
+        outcome = { success: true, chipsReturned: 0 };
+      } else {
+        const receipt = result.cashout as Record<string, unknown> | null;
+        if (
+          !receipt ||
+          typeof receipt !== 'object' ||
+          Array.isArray(receipt) ||
+          receipt.ok !== true ||
+          receipt.reason !== undefined ||
+          receipt.user_id !== userId ||
+          receipt.table_id !== tableId ||
+          receipt.occupancy_id !== intent.occupancyId ||
+          receipt.seat_number !== intent.seatNumber ||
+          receipt.idempotency_key !== 'cashout:occupancy:' + intent.occupancyId ||
+          receipt.tournament_table !== false ||
+          typeof receipt.credited !== 'boolean' ||
+          typeof receipt.stack !== 'number' ||
+          !Number.isFinite(receipt.stack) ||
+          receipt.stack < 0 ||
+          Math.round(receipt.stack * 100) / 100 !== receipt.stack
+        ) {
+          throw new Error('The Server Did Not Confirm The Cashout.');
+        }
+        outcome = { success: true, chipsReturned: receipt.stack };
+      }
+      storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
+      return outcome;
+    } catch (error) {
+      return {
+        success: false,
+        chipsReturned: 0,
+        error:
+          error instanceof Error ? error.message : 'Could Not Confirm The Leave. Please Try Again.',
+      };
+    }
+  };
+  const work = Promise.resolve(
+    globalThis.navigator?.locks ? globalThis.navigator.locks.request(key, execute) : execute()
+  );
+  running.set(key, work);
+  try {
+    return await work;
+  } catch (error) {
+    return {
+      success: false,
+      chipsReturned: 0,
+      error: error instanceof Error ? error.message : 'Could Not Acquire The Leave Request Lock.',
+    };
+  } finally {
+    if (running.get(key) === work) running.delete(key);
+  }
+}

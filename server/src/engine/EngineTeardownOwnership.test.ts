@@ -82,6 +82,26 @@ describe('table-engine lifecycle ownership', () => {
     await successor.stop();
   });
 
+  it('retains ownership until an accepted seat cashout releases its boundary', async () => {
+    const tableId = '23232323-2323-4232-8232-232323232323';
+    const engine = new ServerTableEngine(tableId) as any;
+    expect(engine.claimProcessOwnership()).toBe(true);
+    engine.running = true;
+    engine.flushSnapshot = vi.fn(async () => undefined);
+    const release = await engine.acquireSeatBoundary();
+    const stopping = engine.stop();
+    const successor = new ServerTableEngine(tableId) as any;
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(engine.flushSnapshot).not.toHaveBeenCalled();
+    expect(successor.claimProcessOwnership()).toBe(false);
+    await expect(engine.acquireSeatBoundary()).rejects.toThrow('Table Engine Is Stopping');
+    release();
+    await stopping;
+    expect(engine.flushSnapshot).toHaveBeenCalledOnce();
+    expect(successor.claimProcessOwnership()).toBe(true);
+    await successor.stop();
+  });
+
   it('makes a stopped generation terminal', async () => {
     const engine = new ServerTableEngine('30303030-3030-4030-8030-303030303030') as any;
 

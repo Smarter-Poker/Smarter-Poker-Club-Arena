@@ -310,6 +310,45 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     expect(boundCashout(original)).toEqual(receipt);
     expect(sql('SELECT count(*)::integer FROM wallet_transactions')).toBe(1);
   });
+  it('looks up an original receipt without touching the live seat', () => {
+    const original = seedOccupancy();
+    const lookup = () =>
+      sql(`SELECT fn_get_seat_cashout_receipt('${USER}','${TABLE}',2,'${original}')`);
+    // psql renders SQL NULL as empty output; the transport represents it as data:null.
+    expect(lookup()).toBeUndefined();
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    const receipt = boundCashout(original);
+    expect(lookup()).toEqual(receipt);
+    expect(snapshot()).toEqual({ balance: 125, active: 0, credits: 1, keys: 1, closes: 1 });
+  });
+  it('refuses receipt lookup with a different owner or seat', () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    expect(() =>
+      sql(`SELECT fn_get_seat_cashout_receipt(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','${TABLE}',2,'${original}')`)
+    ).toThrow(/CASHOUT_OCCUPANCY_SCOPE_MISMATCH/);
+    expect(() =>
+      sql(`SELECT fn_get_seat_cashout_receipt('${USER}','${TABLE}',3,'${original}')`)
+    ).toThrow(/CASHOUT_OCCUPANCY_SCOPE_MISMATCH/);
+  });
+  it('requires engine authority for the HTTP receipt lookup even when the owner is known', () => {
+    const original = seedOccupancy();
+    boundCashout(original);
+    expect(() =>
+      sql(`BEGIN; SET LOCAL test.is_engine='false';
+      SET LOCAL test.auth_uid='${USER}';
+      SELECT fn_get_seat_cashout_receipt('${USER}','${TABLE}',2,'${original}'); COMMIT;`)
+    ).toThrow(/Engine authority required/);
+  });
+  it('grants the receipt lookup only to the service role', () => {
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      expect(
+        sql(`SELECT to_json(has_function_privilege('${role}',
+        'public.fn_get_seat_cashout_receipt(uuid,uuid,integer,uuid)','EXECUTE'))`)
+      ).toBe(role === 'service_role');
+    }
+  });
   it('keeps occupancy stable for stack updates and refuses caller-chosen replacements', () => {
     const original = seedOccupancy();
     sql('UPDATE table_seats SET stack=30');

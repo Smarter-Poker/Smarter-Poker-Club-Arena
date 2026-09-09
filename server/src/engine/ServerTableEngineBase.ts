@@ -1487,6 +1487,23 @@ export abstract class ServerTableEngineBase {
   // FIX 211: Bible V8 §1.9 — Track postHandTasks promise to prevent next hand
   // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
   protected postHandTasksPromise: Promise<void> | null = null;
+  // Serialize financial departure against asynchronous hand preparation.
+  // Release after controller start, not after the hand finishes.
+  protected seatBoundaryTail: Promise<void> = Promise.resolve();
+  protected async acquireSeatBoundary(): Promise<() => void> {
+    if (this.terminal) throw new Error('Table Engine Is Stopping');
+    const previous = this.seatBoundaryTail;
+    let release!: () => void;
+    this.seatBoundaryTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    if (this.terminal) {
+      release();
+      throw new Error('Table Engine Is Stopping');
+    }
+    return release;
+  }
 
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
@@ -2644,6 +2661,9 @@ export abstract class ServerTableEngineBase {
       if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
     }
     if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
+    // A cashout accepted before the terminal fence remains an owned writer.
+    // Do not release this engine's resources until its transaction returns.
+    await this.seatBoundaryTail;
 
     // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
     // tableId has already been constructed, every shared resource (scheduler

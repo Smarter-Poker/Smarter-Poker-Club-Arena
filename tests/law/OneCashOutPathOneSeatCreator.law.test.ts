@@ -189,20 +189,15 @@ describe('C1: one cash-out path', () => {
     }
   });
 
-  it('the browser cashes out only when the engine hands it the cleanup, through the keyed function', () => {
+  it('the browser delegates leave to the persisted occupancy contract and never writes money', () => {
     const leave = TABLE_SERVICE.slice(
       TABLE_SERVICE.indexOf('async leaveTable('),
-      TABLE_SERVICE.indexOf('async kickPlayer(')
+      TABLE_SERVICE.indexOf('subscribeToTable(')
     );
-    expect(leave).toMatch(
-      /serverLeave\.clientCashout === true \|\| typeof serverLeave\.note === 'string'/
-    );
-    expect(leave).toMatch(/engineOwnsCashout = true;/);
-    expect(leave).toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
-    // The deferred return carries the flag the session card reconciles on.
-    expect(leave).toMatch(
-      /if \(engineOwnsCashout\) \{\s*return \{ success: true, chipsReturned: 0, deferred: true \};/
-    );
+    expect(leave).toContain('leaveSeatWithIntent(tableId, userId)');
+    expect(leave).not.toMatch(/supabase\.rpc|clientCashout|atomic_seat_cashout_locked/);
+    expect(leave).toContain('return result');
+    expect(leave).toContain('result.deferred');
   });
 
   it('the engine says so only where it will not cash out itself', () => {

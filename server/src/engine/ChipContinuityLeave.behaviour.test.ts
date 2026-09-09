@@ -207,9 +207,17 @@ describe('a kick is a system exit', () => {
       }),
       performAction: () => true,
     };
-    const res = await e.leaveTable(HUMAN, { forced: true });
-    expect(res).toMatchObject({ success: true, immediate: false });
-    expect(e.forcedLeaves.has(HUMAN)).toBe(true);
+    const chain: any = {};
+    for (const method of ['update', 'eq', 'is', 'select']) chain[method] = vi.fn(() => chain);
+    chain.maybeSingle = vi.fn(async () => ({ data: { occupancy_id: occupancyId }, error: null }));
+    const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
+    try {
+      const res = await e.leaveTable(HUMAN, { forced: true });
+      expect(res).toMatchObject({ success: true, immediate: false });
+      expect(e.forcedLeaves.has(HUMAN)).toBe(true);
+    } finally {
+      from.mockRestore();
+    }
   });
 });
 
@@ -315,7 +323,11 @@ describe('a folded player still has an unsettled hand contribution', () => {
       const chain: any = {
         update: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
-        is: vi.fn().mockResolvedValue({ error: null }),
+        is: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: { occupancy_id: occupancyId }, error: null }),
       };
       const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
       e.handController = {
@@ -359,5 +371,193 @@ describe('a player who was not dealt into the live hand', () => {
     const result = await e.leaveTable(HUMAN);
     expect(result).toMatchObject({ success: true, immediate: true });
     expect(cashoutVoluntary).toHaveBeenCalledOnce();
+  });
+});
+
+describe('occupancy-bound engine leave', () => {
+  it('rejects a previous occupancy before folding or changing live player state', async () => {
+    const e = makeEngine();
+    e.handController = {
+      getState: () => ({
+        players: [{ user_id: HUMAN, seat: 1, is_folded: false, is_all_in: false }],
+      }),
+      performAction: vi.fn(),
+    };
+    const result = await e.leaveTable(HUMAN, {
+      occupancyId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      seatNumber: 1,
+    });
+    expect(result).toMatchObject({ success: false, code: 'STALE_OCCUPANCY' });
+    expect(e.handController.performAction).not.toHaveBeenCalled();
+    expect(cashout).not.toHaveBeenCalled();
+    expect(cashoutVoluntary).not.toHaveBeenCalled();
+    expect(e.hub.emitEvent).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(
+    'keeps a rejoined seat when an old cashout response arrives: forced=%s',
+    async (forced) => {
+      const e = makeEngine();
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      cashout.mockImplementation(async () => {
+        await pending;
+        return 180;
+      });
+      cashoutVoluntary.mockImplementation(async () => {
+        await pending;
+        return { ok: true, stack: 180 };
+      });
+      const unregister = vi.spyOn(e.disconnectEngine, 'unregisterPlayer');
+      const leaving = e.leaveTable(HUMAN, { forced, occupancyId, seatNumber: 1 });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(forced ? cashout : cashoutVoluntary).toHaveBeenCalledOnce();
+      const replacement = {
+        ...e.seatedPlayers[0],
+        occupancy_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        stack: 40,
+      };
+      e.seatedPlayers[0] = replacement;
+      finish();
+      expect(await leaving).toMatchObject({ success: true, immediate: true });
+      expect(e.seatedPlayers).toContain(replacement);
+      expect(unregister).not.toHaveBeenCalled();
+      expect(e.hub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+  it('cashes a reserved seat through the captured identity instead of handing money work to the browser', async () => {
+    const e = makeEngine();
+    e.seatedPlayers = [];
+    cashout.mockResolvedValue(25);
+    expect(await e.leaveTable(HUMAN, { occupancyId, seatNumber: 1 })).toEqual({
+      success: true,
+      immediate: true,
+    });
+    expect(cashout).toHaveBeenCalledWith(
+      HUMAN,
+      TABLE,
+      1,
+      expect.objectContaining({ occupancyId, leaveMode: 'voluntary' })
+    );
+  });
+  it('does not mistake a missing roster entry for a reserved seat when the player is in the hand', async () => {
+    const e = makeEngine();
+    e.seatedPlayers = [];
+    e.handController = {
+      getState: () => ({
+        players: [{ user_id: HUMAN, seat: 1, is_folded: true, is_all_in: false }],
+      }),
+    };
+    expect(await e.leaveTable(HUMAN, { occupancyId, seatNumber: 1 })).toMatchObject({
+      success: false,
+      immediate: false,
+    });
+    expect(cashout).not.toHaveBeenCalled();
+  });
+});
+
+describe('deferred leave acknowledgement requires a durable scoped request', () => {
+  it.each([false, true])(
+    'does not acknowledge a failed departure write: forced=%s',
+    async (forced) => {
+      const e = makeEngine();
+      e.handController = {
+        getState: () => ({
+          players: [{ user_id: HUMAN, seat: 1, is_folded: true, is_all_in: false }],
+        }),
+        performAction: vi.fn(),
+      };
+      const chain: any = {};
+      for (const method of ['update', 'eq', 'is', 'select']) chain[method] = vi.fn(() => chain);
+      chain.maybeSingle = vi.fn(async () => ({ data: null, error: { message: 'write rejected' } }));
+      const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
+      try {
+        const result = await e.leaveTable(HUMAN, { forced, occupancyId, seatNumber: 1 });
+        expect(result.success).toBe(false);
+        expect(chain.eq).toHaveBeenCalledWith('occupancy_id', occupancyId);
+        expect(e.hub.emitEvent).not.toHaveBeenCalled();
+        expect(e.handController.performAction).not.toHaveBeenCalled();
+        expect(cashout).not.toHaveBeenCalled();
+        expect(cashoutVoluntary).not.toHaveBeenCalled();
+      } finally {
+        from.mockRestore();
+      }
+    }
+  );
+});
+
+describe('hand preparation and cashout share the seat boundary', () => {
+  it('does not cash out while asynchronous hand preparation owns the boundary', async () => {
+    const e = makeEngine();
+    let rejectPreparation!: (error: Error) => void;
+    const preparing = new Promise<number>((_resolve, reject) => {
+      rejectPreparation = reject;
+    });
+    e.takePreparedHandNumber = vi.fn(() => null);
+    e.allocateGlobalHandNumber = vi.fn(() => preparing);
+    const dealing = e.dealHand([...e.seatedPlayers]);
+    const failedDeal = expect(dealing).rejects.toThrow('preparation failed');
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(e.allocateGlobalHandNumber).toHaveBeenCalledOnce();
+    cashout.mockResolvedValue(180);
+    const leaving = e.leaveTable(HUMAN, { forced: true });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(cashout).not.toHaveBeenCalled();
+    rejectPreparation(new Error('preparation failed'));
+    await failedDeal;
+    expect((await leaving).success).toBe(true);
+    expect(cashout).toHaveBeenCalledOnce();
+  });
+  it('never substitutes a new occupancy for a queued internal leave', async () => {
+    const e = makeEngine();
+    const release = await e.acquireSeatBoundary();
+    const leaving = e.leaveTable(HUMAN, { forced: true });
+    e.seatedPlayers[0] = {
+      ...e.seatedPlayers[0],
+      occupancy_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    };
+    release();
+    expect(await leaving).toMatchObject({ success: false, code: 'STALE_OCCUPANCY' });
+    expect(cashout).not.toHaveBeenCalled();
+  });
+  it('removes a cashed-out occupancy from a previously selected deal roster', async () => {
+    const e = makeEngine();
+    const selected = [...e.seatedPlayers];
+    cashout.mockResolvedValue(180);
+    expect((await e.leaveTable(HUMAN, { forced: true })).success).toBe(true);
+    e.allocateGlobalHandNumber = vi.fn(() => {
+      throw new Error('must not allocate for one player');
+    });
+    await e.dealHand(selected);
+    expect(e.allocateGlobalHandNumber).not.toHaveBeenCalled();
+    expect(e.handController).toBeNull();
+  });
+});
+
+describe('tournament departure confirms durable sit-out without moving chips', () => {
+  it.each([false, true])('database rejection=%s', async (rejected) => {
+    const e = makeEngine();
+    e.tableInfo.tournament_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const chain: any = {};
+    for (const method of ['update', 'eq', 'is', 'select']) chain[method] = vi.fn(() => chain);
+    chain.maybeSingle = vi.fn(async () =>
+      rejected
+        ? { data: null, error: { message: 'write rejected' } }
+        : { data: { occupancy_id: occupancyId }, error: null }
+    );
+    const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
+    try {
+      const result = await e.leaveTable(HUMAN, { occupancyId, seatNumber: 1 });
+      expect(result.success).toBe(!rejected);
+      if (!rejected) expect(result).toMatchObject({ tournament: true, immediate: true });
+      expect(chain.eq).toHaveBeenCalledWith('occupancy_id', occupancyId);
+      expect(chain.update).toHaveBeenCalledWith({ status: 'sitting_out', is_sitting_out: true });
+      expect(cashout).not.toHaveBeenCalled();
+      expect(cashoutVoluntary).not.toHaveBeenCalled();
+      expect(e.seatedPlayers).toHaveLength(2);
+    } finally {
+      from.mockRestore();
+    }
   });
 });

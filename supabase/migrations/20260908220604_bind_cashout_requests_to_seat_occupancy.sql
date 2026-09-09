@@ -2,6 +2,7 @@
 -- This is a coordinated protocol migration. Legacy entrypoint retirement follows
 -- verified engine/client adoption; this file alone does not close Phase 2.
 BEGIN;
+SET LOCAL lock_timeout = '2s';
 DO $baseline$
 DECLARE v_hash text;
 BEGIN
@@ -301,6 +302,34 @@ REVOKE ALL ON FUNCTION public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,t
  FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text)
  TO authenticated,service_role;
+-- An authenticated HTTP handler may look up an old outcome before consulting
+-- a newly joined seat. This function performs no financial mutation.
+CREATE OR REPLACE FUNCTION public.fn_get_seat_cashout_receipt(
+  p_user_id uuid, p_table_id uuid, p_seat_number integer, p_occupancy_id uuid
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO public,pg_temp SET statement_timeout TO '5s'
+AS $function$
+DECLARE v_previous public.seat_cashout_receipts%ROWTYPE;
+BEGIN
+  IF NOT coalesce(public.fn_caller_is_engine(),false) THEN
+    RAISE EXCEPTION 'Engine authority required' USING ERRCODE='42501';
+  END IF;
+  IF p_user_id IS NULL OR p_table_id IS NULL OR p_seat_number IS NULL OR p_occupancy_id IS NULL THEN
+    RAISE EXCEPTION 'CASHOUT_OCCUPANCY_REQUIRED' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO v_previous FROM public.seat_cashout_receipts WHERE occupancy_id=p_occupancy_id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  IF v_previous.user_id <> p_user_id OR v_previous.table_id <> p_table_id
+     OR v_previous.seat_number <> p_seat_number THEN
+    RAISE EXCEPTION 'CASHOUT_OCCUPANCY_SCOPE_MISMATCH' USING ERRCODE='22023';
+  END IF;
+  RETURN v_previous.receipt;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_get_seat_cashout_receipt(uuid,uuid,integer,uuid)
+ FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_get_seat_cashout_receipt(uuid,uuid,integer,uuid)
+ TO service_role;
 INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
  ('fn_cashout_seat_occupancy','approved',
   'Occupancy-bound cashout, canonical credit/seat exit and immutable request outcome in one transaction. Legacy retirement is a separate release gate.')

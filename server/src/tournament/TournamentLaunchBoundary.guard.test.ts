@@ -122,11 +122,21 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(prove).toContain("tournamentProof.status !== 'REGISTERING'");
     expect(prove).toContain("row.status !== 'playing'");
     expect(prove).toContain('the active roster changed after launch migration began');
-    expect(prove).toContain('Number(row.chips) <= 0');
+    // STACK FUNDING IS PROVEN BY CONSERVATION, NOT PER SEAT (2026-09-09).
+    // `chips <= 0` on every row could not tell "the stacks were never credited"
+    // from "they were credited and then played for", and it wedged eight Spins
+    // in REGISTERING - one for ten hours - after their tables dealt before the
+    // launch was proven. The funding claim this test exists to pin is intact and
+    // stronger: the roster and the felt must each hold what the seats were bought
+    // for. See TheSweepReachesTheTable.test.ts.
+    expect(prove).toContain('Number(row.chips) < 0');
+    expect(prove).toContain('const expectedFloor = roster.length * startingChips;');
+    expect(prove).toContain('the playing roster holds no chips at all');
     expect(prove).toContain('durableTables.length !== this.tableEngines.size');
     expect(prove).toContain('ownedSeats.length !== 1');
     expect(prove).toContain('seat.table_id !== player.table_id');
-    expect(prove).toContain('Number(seat.stack) <= 0');
+    expect(prove).toContain('Number(seat.stack) < 0');
+    expect(prove).toContain('const seatChips = seats.reduce(');
     expect(prove).toContain('occupiedCoordinates.has(coordinate)');
     expect(prove).toContain('Number(durableTable.current_players) !== liveCount');
     expect(prove).toContain('!this.tableEngines.has(tableId)');

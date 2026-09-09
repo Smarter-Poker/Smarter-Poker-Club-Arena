@@ -21,8 +21,9 @@ import { reportError } from '../../utils/errorReporter';
 
 export interface BuyInModalProps {
   isOpen: boolean;
+  recovery?: { amount: number; seat: number } | null;
   onClose: () => void;
-  onConfirm: (amount: number, autoRebuy: boolean) => void;
+  onConfirm: (amount: number, autoRebuy: boolean) => boolean | void | Promise<boolean | void>;
   tableName?: string;
   minBuyIn: number;
   maxBuyIn: number;
@@ -64,6 +65,7 @@ function formatAmount(amount: number, currency: string = ''): string {
 
 export function BuyInModal({
   isOpen,
+  recovery,
   onClose,
   onConfirm,
   tableName,
@@ -83,7 +85,8 @@ export function BuyInModal({
   // Default to MAX buy-in (capped by account balance) — Dan's directive.
   // Unknown balance: default to the table max; the confirm stays closed below.
   const effectiveDefault =
-    defaultBuyIn || Math.min(maxBuyIn, balanceKnown ? accountBalance : maxBuyIn);
+    recovery?.amount ??
+    (defaultBuyIn || Math.min(maxBuyIn, balanceKnown ? accountBalance : maxBuyIn));
   const [buyInAmount, setBuyInAmount] = useState(effectiveDefault);
   // Auto-rebuy was removed on 2026-08-20 (see the note in the render below).
   // `onConfirm` keeps its second parameter so callers and the atomic_table_buyin
@@ -93,6 +96,8 @@ export function BuyInModal({
   const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const confirmInFlightRef = useRef(false);
 
   // 60-second kicker visual countdown
   const [timeLeft, setTimeLeft] = useState(60);
@@ -113,8 +118,10 @@ export function BuyInModal({
   // time the modal OPENS (and if min/max settle late), from the live props.
   useEffect(() => {
     if (!isOpen) return;
-    const fresh = defaultBuyIn || Math.min(maxBuyIn, balanceKnown ? accountBalance : maxBuyIn);
-    const clamped = Math.max(minBuyIn, Math.min(maxBuyIn, fresh));
+    const fresh =
+      recovery?.amount ??
+      (defaultBuyIn || Math.min(maxBuyIn, balanceKnown ? accountBalance : maxBuyIn));
+    const clamped = recovery?.amount ?? Math.max(minBuyIn, Math.min(maxBuyIn, fresh));
     if (Number.isFinite(clamped) && clamped > 0) {
       setBuyInAmount(clamped);
       setDisplayAmount(clamped);
@@ -122,12 +129,22 @@ export function BuyInModal({
     // Intentionally NOT depending on accountBalance/defaultBuyIn: once open
     // with settled table limits, the player's own slider input must win.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, minBuyIn, maxBuyIn]);
+  }, [isOpen, minBuyIn, maxBuyIn, recovery?.amount]);
 
-  // Clamp buy-in to valid range
+  /* Clamp buy-in to valid range, TO THE CENT (2026-09-09).
+     `CashBuyInRecovery.validIntent` refuses any amount where
+     `Math.round(x*100)/100 !== x`, and TablePage surfaces that refusal as
+     "Unable To Start Your Buy-In. Please Try Again." The 33%/66% presets
+     below are `min + (max - min) * 0.33`, which on ordinary stakes is a
+     float artifact (min 40 / max 137.50 -> 72.17500000000001), so pressing
+     the 66BB button could not seat the player at all, repeatably. Rounding
+     here covers the presets, the slider and the typed value in one place -
+     which is what the comment beside the bust rebuy already claimed was
+     true of this component. */
   const clampedBuyIn = useMemo(() => {
-    return Math.max(effectiveMinBuyIn, Math.min(maxBuyIn, buyInAmount));
-  }, [buyInAmount, effectiveMinBuyIn, maxBuyIn]);
+    const raw = recovery?.amount ?? Math.max(effectiveMinBuyIn, Math.min(maxBuyIn, buyInAmount));
+    return Math.round(raw * 100) / 100;
+  }, [buyInAmount, effectiveMinBuyIn, maxBuyIn, recovery?.amount]);
 
   // Calculate slider percentage
   const sliderPercent = useMemo(() => {
@@ -137,11 +154,16 @@ export function BuyInModal({
 
   // Check if user has enough balance. Unknown is not enough - and not "insufficient".
   const hasEnoughBalance = balanceKnown && accountBalance >= clampedBuyIn;
+  const canConfirm = !!recovery || hasEnoughBalance;
 
   // Animate amount counter when buyInAmount changes
   useEffect(() => {
     if (!isOpen) return;
 
+    if (recovery) {
+      setDisplayAmount(recovery.amount);
+      return;
+    }
     countStartRef.current = displayAmount;
     const startTime = Date.now();
     const duration = 400;
@@ -168,7 +190,7 @@ export function BuyInModal({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [clampedBuyIn, isOpen]);
+  }, [clampedBuyIn, isOpen, recovery?.amount]);
 
   // Pulse confirm button when ready
   useEffect(() => {
@@ -230,17 +252,29 @@ export function BuyInModal({
 
   // Handle confirm
   const handleConfirm = useCallback(async () => {
-    if (!hasEnoughBalance || isProcessing) return;
-    soundService.playBuyInConfirm();
+    if (!canConfirm || isProcessing) return;
+    if (confirmInFlightRef.current) return;
+    confirmInFlightRef.current = true;
+    setConfirmError(null);
     setIsProcessing(true);
     try {
-      await onConfirm(clampedBuyIn, autoRebuy);
+      try {
+        soundService.playBuyInConfirm();
+      } catch (audioError) {
+        reportError(audioError, 'BuyInModal.confirm_sound_failed');
+      }
+      const confirmed = await onConfirm(clampedBuyIn, autoRebuy);
+      if (confirmed === false) {
+        setConfirmError('Buy-In Not Yet Confirmed.');
+      }
     } catch (err) {
       reportError(err, 'BuyInModal.onConfirm_threw');
+      setConfirmError('Unable To Confirm Your Buy-In. Please Check Your Connection And Try Again.');
     } finally {
+      confirmInFlightRef.current = false;
       setIsProcessing(false);
     }
-  }, [clampedBuyIn, autoRebuy, hasEnoughBalance, isProcessing, onConfirm]);
+  }, [clampedBuyIn, autoRebuy, canConfirm, isProcessing, onConfirm]);
 
   if (!isOpen) return null;
 
@@ -250,11 +284,15 @@ export function BuyInModal({
      * to sit down, and it had no dialog semantics at all: no role, no
      * aria-modal, no accessible name, and no Escape handler — the backdrop
      * click was the only way out, which is not reachable by keyboard. The
-     * overlay is marked aria-hidden because it is a redundant affordance for
-     * the same action Escape now performs (the pattern TableMenu already
-     * uses).
+     * overlay must not be aria-hidden: that would hide the dialog and its
+     * error messages from assistive technology too.
      */
-    <div className="buy-in-modal__overlay" onClick={onClose} aria-hidden="true">
+    <div
+      className="buy-in-modal__overlay"
+      onClick={() => {
+        if (!confirmInFlightRef.current) onClose();
+      }}
+    >
       <div
         className="buy-in-modal"
         onClick={(e) => e.stopPropagation()}
@@ -270,7 +308,14 @@ export function BuyInModal({
           <h2 className="buy-in-modal__title" id="buy-in-modal-title">
             BUY-IN
           </h2>
-          <button className="buy-in-modal__close" onClick={onClose} aria-label="Close Buy-In">
+          <button
+            className="buy-in-modal__close"
+            disabled={isProcessing}
+            onClick={() => {
+              if (!confirmInFlightRef.current) onClose();
+            }}
+            aria-label="Close Buy-In"
+          >
             <span aria-hidden="true">×</span>
           </button>
         </div>
@@ -310,79 +355,90 @@ export function BuyInModal({
             </span>
           </div>
 
-          <div className="buy-in-modal__slider-container">
-            <span className="buy-in-modal__slider-cap">{formatAmount(maxBuyIn, currency)}</span>
-            <input
-              type="range"
-              className="buy-in-modal__slider"
-              min={effectiveMinBuyIn}
-              max={maxBuyIn}
-              value={clampedBuyIn}
-              onChange={handleSliderChange}
-              step={bigBlind}
-              aria-label="Buy-In Amount"
-              aria-orientation="vertical"
-              style={
-                {
-                  '--slider-percent': `${sliderPercent}%`,
-                } as React.CSSProperties
-              }
-            />
-            <span className="buy-in-modal__slider-cap">
-              {formatAmount(effectiveMinBuyIn, currency)}
-            </span>
-          </div>
+          {!recovery && (
+            <div className="buy-in-modal__slider-container">
+              <span className="buy-in-modal__slider-cap">{formatAmount(maxBuyIn, currency)}</span>
+              <input
+                type="range"
+                className="buy-in-modal__slider"
+                min={effectiveMinBuyIn}
+                max={maxBuyIn}
+                value={clampedBuyIn}
+                onChange={handleSliderChange}
+                step={bigBlind}
+                aria-label="Buy-In Amount"
+                aria-orientation="vertical"
+                style={
+                  {
+                    '--slider-percent': `${sliderPercent}%`,
+                  } as React.CSSProperties
+                }
+              />
+              <span className="buy-in-modal__slider-cap">
+                {formatAmount(effectiveMinBuyIn, currency)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Quick Amounts dynamically scale the interval between min and max */}
-        <div className="buy-in-modal__quick-amounts">
-          <button
-            className="buy-in-modal__quick-btn"
-            onClick={() => setBuyInAmount(effectiveMinBuyIn)}
-          >
-            {Math.round(effectiveMinBuyIn / bigBlind)}BB
-          </button>
-          {maxBuyIn > effectiveMinBuyIn && (
-            <>
-              {Math.round(
-                (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
-              ) !== Math.round(effectiveMinBuyIn / bigBlind) && (
-                <button
-                  className="buy-in-modal__quick-btn"
-                  onClick={() =>
-                    setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33)
-                  }
-                >
-                  {Math.round(
-                    (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
-                  )}
-                  BB
-                </button>
-              )}
-              {Math.round(
-                (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
-              ) !== Math.round(maxBuyIn / bigBlind) && (
-                <button
-                  className="buy-in-modal__quick-btn"
-                  onClick={() =>
-                    setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66)
-                  }
-                >
-                  {Math.round(
-                    (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
-                  )}
-                  BB
-                </button>
-              )}
-            </>
-          )}
-          <button
-            className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"
-            onClick={() => setBuyInAmount(maxBuyIn)}
-          >
-            MAX
-          </button>
-        </div>
+        {!recovery && (
+          <div className="buy-in-modal__quick-amounts">
+            <button
+              className="buy-in-modal__quick-btn"
+              onClick={() => setBuyInAmount(effectiveMinBuyIn)}
+            >
+              {Math.round(effectiveMinBuyIn / bigBlind)}BB
+            </button>
+            {maxBuyIn > effectiveMinBuyIn && (
+              <>
+                {Math.round(
+                  (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
+                ) !== Math.round(effectiveMinBuyIn / bigBlind) && (
+                  <button
+                    className="buy-in-modal__quick-btn"
+                    onClick={() =>
+                      setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33)
+                    }
+                  >
+                    {Math.round(
+                      (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
+                    )}
+                    BB
+                  </button>
+                )}
+                {Math.round(
+                  (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
+                ) !== Math.round(maxBuyIn / bigBlind) && (
+                  <button
+                    className="buy-in-modal__quick-btn"
+                    onClick={() =>
+                      setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66)
+                    }
+                  >
+                    {Math.round(
+                      (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
+                    )}
+                    BB
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"
+              onClick={() => setBuyInAmount(maxBuyIn)}
+            >
+              MAX
+            </button>
+          </div>
+        )}
+
+        {recovery && !isProcessing && (
+          <p role="status">
+            Your {formatAmount(recovery.amount)} Chip Buy-In For Seat {recovery.seat} Needs
+            Confirmation. We Will Check It Before Retrying The Same Buy-In.
+          </p>
+        )}
 
         {/* Balance Display */}
         <div className="buy-in-modal__balance">
@@ -415,19 +471,27 @@ export function BuyInModal({
             needs a real server-side implementation and a product decision about
             automatically spending a player's wallet while they are away. */}
 
+        {confirmError && !recovery && (
+          <p role="alert" className="buy-in-modal__balance-value--insufficient">
+            {confirmError}
+          </p>
+        )}
+
         {/* Confirm Button */}
         <button
-          className={`buy-in-modal__confirm ${!hasEnoughBalance ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''} ${isProcessing ? 'buy-in-modal__confirm--processing' : ''}`}
+          className={`buy-in-modal__confirm ${!canConfirm ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''} ${isProcessing ? 'buy-in-modal__confirm--processing' : ''}`}
           onClick={handleConfirm}
-          disabled={!hasEnoughBalance || isProcessing}
+          disabled={!canConfirm || isProcessing}
         >
           {isProcessing
             ? 'Joining...'
-            : hasEnoughBalance
-              ? 'Buy Chips'
-              : balanceKnown
-                ? 'Insufficient Balance'
-                : 'Balance Unavailable'}
+            : recovery
+              ? 'Retry Original Buy-In'
+              : hasEnoughBalance
+                ? 'Buy Chips'
+                : balanceKnown
+                  ? 'Insufficient Balance'
+                  : 'Balance Unavailable'}
         </button>
 
         {/* Top Up Link.
@@ -435,7 +499,7 @@ export function BuyInModal({
             player has too little to sit down, so the single moment they need to
             add funds was the one moment the button was inert — and the modal's
             own container calls stopPropagation, so nothing bubbled either. */}
-        {!hasEnoughBalance && onTopUp && (
+        {!recovery && !hasEnoughBalance && onTopUp && (
           <button className="buy-in-modal__top-up" onClick={onTopUp}>
             Top Up Account
           </button>

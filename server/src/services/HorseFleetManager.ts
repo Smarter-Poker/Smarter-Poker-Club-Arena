@@ -439,6 +439,16 @@ export class HorseFleetManager {
   private isRunning = false;
   private seedInterval: ReturnType<typeof setInterval> | null = null;
   /**
+   * Every background seeding promise owned by this service. Clearing the
+   * interval only prevents the next pass; it does not stop the pass that has
+   * already crossed an await and may still buy a seat. Shutdown therefore
+   * fences the generation synchronously, then joins this set to a fixed point
+   * before the GameServer may release leadership.
+   */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
+  /**
    * The game keys each horse held at the END of the previous cycle.
    *
    * A key that was there and is not now is a seat GIVEN UP, and that is what
@@ -525,26 +535,57 @@ export class HorseFleetManager {
   // START / STOP
   // ─────────────────────────────────────────────────────────────────────
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private launchSeedCycle(generation: number, context: string, successMessage?: string): void {
+    if (!this.lifecycleIsCurrent(generation)) return;
+    void this.trackLifecycleJob(this.seedAllTables(generation))
+      .then(() => {
+        if (successMessage) console.log(successMessage);
+      })
+      .catch((err) => reportError(err, context));
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    // A finishing pass may schedule/chain another owned promise before its
+    // finally handler runs. Re-snapshot until the ownership set is truly empty.
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
   async start(): Promise<void> {
+    // A same-instance restart may only begin after the prior generation has
+    // completely joined. GameServer normally creates one generation, but this
+    // makes the service contract sound in tests and supervised restarts too.
+    if (this.stopOperation) await this.stopOperation;
     if (this.isRunning) {
       console.log('[HorseFleet] Already running');
       return;
     }
 
     this.isRunning = true;
+    const generation = ++this.lifecycleGeneration;
     console.log('[HorseFleet] Starting fleet manager...');
 
     // Ensure all tables exist (fast — just inserts)
     await this.ensureAllTablesExist();
+    if (!this.lifecycleIsCurrent(generation)) return;
 
     // Kick off initial seeding in background — DON'T block the server
-    this.seedAllTables()
-      .then(() => {
-        console.log('[HorseFleet] Initial seeding complete');
-      })
-      .catch((err) => {
-        reportError(err, 'HorseFleet.Initial_seeding_error');
-      });
+    this.launchSeedCycle(
+      generation,
+      'HorseFleet.Initial_seeding_error',
+      '[HorseFleet] Initial seeding complete'
+    );
 
     // Recurring check: every 30 seconds, ensure horses are seated
     // Overlap guard — see HorseLifecycleManager. seedAllTables has its own
@@ -562,19 +603,32 @@ export class HorseFleetManager {
         this.overrunTicks++;
         return;
       }
-      this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
+      this.launchSeedCycle(generation, 'HorseFleet.Seed_cycle_error');
     }, 30000);
 
     console.log('[HorseFleet] Running - seeding in background, checking every 30s');
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
+
+    // This is the synchronous ownership fence. No await may precede it.
     this.isRunning = false;
+    this.lifecycleGeneration++;
     if (this.seedInterval) {
       clearInterval(this.seedInterval);
       this.seedInterval = null;
     }
-    console.log('[HorseFleet] Stopped');
+
+    const drain = (async () => {
+      await this.drainLifecycleJobs();
+      console.log('[HorseFleet] Stopped');
+    })();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -792,9 +846,10 @@ export class HorseFleetManager {
   // SEED ALL TABLES — Fill empty seats with available horses
   // ─────────────────────────────────────────────────────────────────────
 
-  private async seedAllTables(): Promise<void> {
+  private async seedAllTables(generation?: number): Promise<void> {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): seeding is a seat INSERT and a buy-in.
     // start() runs this once immediately; a boot inside the break must not.
+    if (generation !== undefined && !this.lifecycleIsCurrent(generation)) return;
     if (isMaintenanceFrozen()) return;
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;

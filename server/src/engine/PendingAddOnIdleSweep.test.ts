@@ -24,6 +24,19 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const loadSeatedPlayers = vi.fn();
 const loadTable = vi.fn();
+// This suite owns isolated add-on/idle behavior, never an external database.
+// Fail loudly if a newly added ancillary path escapes its explicit fixture.
+vi.mock('../services/supabase/client.js', () => ({
+  supabase: {
+    from: vi.fn(() => {
+      throw new Error('Unmodeled database read in idle-sweep fixture');
+    }),
+    rpc: vi.fn(() => {
+      throw new Error('Unmodeled database RPC in idle-sweep fixture');
+    }),
+  },
+  maintenanceSupabase: {},
+}));
 
 vi.mock('../services/supabase.js', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
@@ -31,6 +44,7 @@ vi.mock('../services/supabase.js', async () => {
     ...actual,
     loadSeatedPlayers: (...a: unknown[]) => loadSeatedPlayers(...a),
     loadTable: (...a: unknown[]) => loadTable(...a),
+    processLeavePending: vi.fn(async () => []),
   };
 });
 
@@ -47,6 +61,9 @@ afterEach(() => {
 /** A table parked in the idle branch: one seated player, busted to 0. */
 function idleEngine() {
   const engine = new ServerTableEngine(TABLE) as any;
+  // dealingLoop is entered directly in this harness; model the exact
+  // process-owned generation that production start() establishes first.
+  engine.isCurrentEngine = () => true;
   const busted = {
     user_id: 'hero',
     seat_number: 1,
@@ -59,6 +76,9 @@ function idleEngine() {
   engine.postHandTasksPromise = null;
   engine.refreshBlinds = vi.fn().mockResolvedValue(undefined);
   engine.refreshRakeConfig = vi.fn().mockResolvedValue(undefined);
+  engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+  engine.executePendingSeatMoves = vi.fn(async () => {});
+  engine.standUpBustedCashPlayers = vi.fn(async () => {});
   engine.recoverBustedSeatedHorses = vi.fn().mockResolvedValue(undefined);
   engine.isTournamentTable = () => false;
   // A real (tiny) yield, not an instantly-resolved promise: the idle branch
@@ -111,7 +131,7 @@ describe('pending add-ons are swept on an idle tick', () => {
     // rather than hanging: nothing else in the idle branch would ever stop it.
     const bail = setTimeout(() => {
       engine.running = false;
-    }, 750);
+    }, 5_000);
     await engine.dealingLoop();
     clearTimeout(bail);
 
@@ -139,7 +159,7 @@ describe('pending add-ons are swept on an idle tick', () => {
     engine.running = true;
     const bail = setTimeout(() => {
       engine.running = false;
-    }, 750);
+    }, 5_000);
     await engine.dealingLoop();
     clearTimeout(bail);
 
@@ -149,9 +169,60 @@ describe('pending add-ons are swept on an idle tick', () => {
   }, 15000);
 });
 
+describe('completed idle dealing sweeps are live work', () => {
+  it('keeps a short-handed engine alive across completed sweeps without dealing', async () => {
+    const { engine } = idleEngine();
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    engine.processPendingAddOns = vi.fn(async () => {});
+    engine.executePendingSeatMoves = vi.fn(async () => {});
+    engine.stopIfClusterTableClosed = vi.fn(async () => {});
+    engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+    const ages: number[] = [];
+    engine.sleep = async () => {
+      ages.push(engine.msSinceProgress());
+      now += 181_000;
+      if (ages.length === 2) engine.running = false;
+    };
+    engine.running = true;
+    await engine.dealingLoop();
+    expect(ages).toEqual([0, 0]);
+    expect(engine.executePendingSeatMoves).toHaveBeenCalledTimes(2);
+    expect(engine.handController).toBeFalsy();
+  });
+
+  it('does not stamp progress while idle seat-move work is unresolved', async () => {
+    const { engine } = idleEngine();
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    engine.processPendingAddOns = vi.fn(async () => {});
+    engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    engine.executePendingSeatMoves = vi.fn(() => pending);
+    const progress = vi.spyOn(engine, 'markProgress');
+    engine.running = true;
+    const loop = engine.dealingLoop();
+    try {
+      await vi.waitFor(() => expect(engine.executePendingSeatMoves).toHaveBeenCalled());
+      now += 181_000;
+      expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
+      expect(progress).not.toHaveBeenCalled();
+    } finally {
+      engine.running = false;
+      release();
+      await loop;
+    }
+  });
+});
+
 describe('processPendingAddOns resolves a busted player who is not in the hand', () => {
   it('resolves the ledger row even when the user is absent from `players`', async () => {
     const engine = new ServerTableEngine(TABLE) as any;
+    engine.running = true;
+    engine.isCurrentEngine = () => true;
     engine.tableInfo = { id: TABLE, tournament_id: null };
     engine.getMaxBuyIn = () => 1000;
     engine.broadcastCurrentState = vi.fn();

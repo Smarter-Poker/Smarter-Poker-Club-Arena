@@ -18,6 +18,9 @@ const isCI = !!process.env.CI;
  */
 const rawBaseURL = process.env.BASE_URL || 'http://localhost:5173/hub/club-arena/';
 const baseURL = rawBaseURL.endsWith('/') ? rawBaseURL : `${rawBaseURL}/`;
+const baseHostname = new URL(baseURL).hostname.toLowerCase();
+const targetsLocalDevServer =
+  baseHostname === 'localhost' || baseHostname === '127.0.0.1' || baseHostname === '[::1]';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -63,6 +66,11 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      /* This certification deliberately belongs to the real mobile Safari
+         transport. Running the same file in Chromium would double the live
+         outage and make a green Chromium retry capable of obscuring a WebKit
+         regression. */
+      testIgnore: /production-live-table-realtime\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
@@ -70,9 +78,26 @@ export default defineConfig({
       testMatch: /footer-(?:visual-regression|route)\.spec\.ts$/,
       use: { ...devices['iPhone 13'] },
     },
+    {
+      name: 'webkit-live-table-realtime',
+      testMatch: /production-live-table-realtime\.spec\.ts$/,
+      /* One failed continuity pass is the verdict. A retry can land on a
+         different hand or table and turn a real production freeze green. */
+      retries: 0,
+      use: {
+        ...devices['iPhone 13'],
+        trace: 'retain-on-failure',
+        screenshot: 'only-on-failure',
+        video: 'retain-on-failure',
+      },
+    },
   ],
-  // Skip local dev server in CI — tests run against production (BASE_URL)
-  ...(isCI
+  /* A manual production certification is not necessarily running under CI.
+     Starting Vite merely because CI is unset used to put an unrelated local
+     process beside a BASE_URL=https://smarter.poker run. Start it only when
+     the selected target is actually the local app; retain CI's existing
+     externally-managed-server behavior. */
+  ...(isCI || !targetsLocalDevServer
     ? {}
     : {
         webServer: {

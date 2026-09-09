@@ -10,9 +10,9 @@
  *
  * THE IDEA THAT MAKES THIS BUILDABLE FROM OPEN-NODE DATA ALONE: a cell's
  * per-holding action mix IS the opponent's betting range at a known size.
- * `hand_matrix['AKs'] = { check: 0.4, bet_mid: 0.6 }` does not only tell hero
+ * `hand_matrix['AKs'] = { check: 0.4, bet_small: 0.6 }` does not only tell hero
  * what to do with AKs — read from the BETTOR'S seat it says the bettor holds
- * AKs betting mid 60% of the time. Bayes does the rest:
+ * AKs betting small 60% of the time. Bayes does the rest:
  *
  *     P(hand | bet of size s) ∝ P(bet of size s | hand) × P(hand)
  *
@@ -36,23 +36,25 @@
  * hand — this layer exists to fix the fold/call line, and duplicating raise
  * sizing here would fork it. A null is "no opinion", never "check-fold".
  *
- * SIZE BUCKETS mirror fn_aggregate_gto_v31_next EXACTLY (size_pct: 0 check,
- * <60 small, <110 mid, else big). The observed bet is bucketed by the same
- * edges, so the range consulted is the range the solver bet AT THAT SIZE.
+ * SIZE BUCKETS must respect the V30 compact store this module actually reads.
+ * That store has only `check`, `bet_small`, and `bet_big`; worse, multi-size
+ * trees label their largest root size big while single-size trees label a
+ * sub-pot root small. The compact row no longer preserves those source sizes,
+ * so an observed 60-110% bet cannot be mapped honestly. The layer fails closed
+ * in that middle band and waits for a certified V31 response cell instead of
+ * inventing a range. The unambiguous tails retain the shipped <60% small and
+ * >=110% big behavior.
  *
- * V31 cells are consulted first (disjoint export, suit-aware); V30 second.
- * V31 keys carry the flush-suit-count suffix (`AKs:2`), so combo expansion
- * must respect it: with two spades on board, `AKs:2` expands ONLY to
- * As Ks. That is the suit dimension doing real work on the defence side —
- * the betting range on a flush board is mostly the combos that interact
- * with it, and a class-mean range would miss exactly that.
+ * This remains an explicitly DERIVED legacy fallback. Certified V31 response
+ * nodes are consulted directly before this module. V31 open cells are not
+ * relabeled as exact responses here; if no genuine response cell exists, the
+ * caller may use this V30 range inference and telemetry names it as derived.
  */
 
 import type { Card, CardRank, CardSuit } from '../types.js';
 import { evaluateHand, compareHands } from './PokerEngine.js';
 import { textureClass } from './GtoPostflop.js';
 import { gtoV30CellMatrix } from './GtoPostflop.js';
-import { gtoV31CellMatrix, boardFlushSuit } from './GtoPostflopV31.js';
 
 const RANKS: CardRank[] = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const SUITS: CardSuit[] = ['clubs', 'diamonds', 'hearts', 'spades'];
@@ -69,13 +71,17 @@ const MC_SAMPLES = 160;
 const MIN_RANGE_COMBOS = 8;
 
 /**
- * The aggregator's own size edges (fn_aggregate_gto_v31_next):
- * 0 = check, <60% of pot = small, <110% = mid, else big.
+ * The only defensible observed-size mapping into the V30 compact action domain:
+ * 0 = no bet, <60% of pot = small, 60-110% = unknown, >=110% = big.
+ *
+ * Do not add `bet_mid` here. V31 owns that three-bucket action domain and is
+ * consulted directly before this legacy-derived fallback. V30 compact rows
+ * have never persisted a mid bucket.
  */
-export function betBucketForFraction(frac: number): 'bet_small' | 'bet_mid' | 'bet_big' | null {
+export function betBucketForFraction(frac: number): 'bet_small' | 'bet_big' | null {
   if (!isFinite(frac) || frac <= 0) return null;
   if (frac < 0.6) return 'bet_small';
-  if (frac < 1.1) return 'bet_mid';
+  if (frac < 1.1) return null;
   return 'bet_big';
 }
 
@@ -114,7 +120,7 @@ export interface WeightedRange {
   combos: Array<[Card, Card]>;
   weights: number[];
   totalWeight: number;
-  source: 'v31' | 'v30';
+  source: 'v30_legacy_derived';
 }
 
 /**
@@ -136,62 +142,28 @@ export function solverBettingRange(args: {
   if (!tex) return null;
   const dead = new Set<number>([...args.board, ...args.heroCards].map(cardKey));
 
-  const build = (
-    matrix: Record<string, Record<string, number>>,
-    suitAware: boolean,
-    source: 'v31' | 'v30'
-  ): WeightedRange | null => {
-    const fs = suitAware ? boardFlushSuit(args.board) : -1;
+  const build = (matrix: Record<string, Record<string, number>>): WeightedRange | null => {
     const combos: Array<[Card, Card]> = [];
     const weights: number[] = [];
     let total = 0;
     for (const [key, mix] of Object.entries(matrix)) {
       const w = mix?.[bucket];
       if (!w || w <= 0) continue;
-      let cls = key;
-      let wantSuitCount = -1;
-      if (suitAware) {
-        const i = key.lastIndexOf(':');
-        if (i < 0) continue;
-        cls = key.slice(0, i);
-        wantSuitCount = Number(key.slice(i + 1));
-        if (!isFinite(wantSuitCount)) continue;
-      }
-      for (const combo of expandHandClass(cls)) {
+      for (const combo of expandHandClass(key)) {
         const k0 = cardKey(combo[0]);
         const k1 = cardKey(combo[1]);
         if (dead.has(k0) || dead.has(k1)) continue;
-        if (suitAware) {
-          const n =
-            (fs >= 0 && SUIT_INDEX[combo[0].suit] === fs ? 1 : 0) +
-            (fs >= 0 && SUIT_INDEX[combo[1].suit] === fs ? 1 : 0);
-          const have = fs >= 0 ? n : 0;
-          if (have !== wantSuitCount) continue;
-        }
         combos.push(combo);
         weights.push(w);
         total += w;
       }
     }
     if (combos.length < MIN_RANGE_COMBOS || total <= 0) return null;
-    return { combos, weights, totalWeight: total, source };
+    return { combos, weights, totalWeight: total, source: 'v30_legacy_derived' };
   };
-
-  const m31 = gtoV31CellMatrix(
-    args.street,
-    args.family,
-    args.bettorPosition,
-    args.stackBB,
-    tex,
-    args.board
-  );
-  if (m31) {
-    const r = build(m31, true, 'v31');
-    if (r) return r;
-  }
   const m30 = gtoV30CellMatrix(args.street, args.family, args.bettorPosition, args.stackBB, tex);
   if (m30) {
-    const r = build(m30, false, 'v30');
+    const r = build(m30);
     if (r) return r;
   }
   return null;
@@ -260,14 +232,14 @@ export type FacingDefense =
       potOdds: number;
       /** The equity the call actually needed, after realization and rake. */
       required: number;
-      source: 'v31' | 'v30';
+      source: 'v30_legacy_derived';
     }
   | {
       action: 'pass_strong';
       equity: number;
       potOdds: number;
       required: number;
-      source: 'v31' | 'v30';
+      source: 'v30_legacy_derived';
     }
   | null;
 

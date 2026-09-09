@@ -43,6 +43,13 @@ const MIGRATION = readFileSync(
   resolve(__dirname, '../../supabase/migrations/20260821d_seat_first_spins_and_heads_up.sql'),
   'utf8'
 );
+const ATOMIC_CREATION = readFileSync(
+  resolve(
+    __dirname,
+    '../../supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql'
+  ),
+  'utf8'
+);
 
 describe('which formats are seat-first', () => {
   it('the predicate covers spins and any 2-seat game, and nothing else', () => {
@@ -63,19 +70,68 @@ describe('creation opens a table with empty seats', () => {
     expect(spinAt, 'createSpin not found').toBeGreaterThan(-1);
     expect(endAt, 'createSpin return not found').toBeGreaterThan(spinAt);
     const createSpin = RECURRING.slice(spinAt, endAt);
-    expect(createSpin).toMatch(/createOpenSeatTable\(/);
+    expect(createSpin).toMatch(/createSeatFirstGameAtomic\(/);
+    expect(createSpin).toMatch(/seedOpenSeatTable\(/);
     expect(createSpin).toMatch(/const registered = 0;/);
     // The old MTT-shaped pre-seeding must be gone from the Spin path.
     expect(createSpin).not.toMatch(/registerHorses\(/);
   });
 
-  it('the open table is created waiting, with zero players and its real seat count', () => {
-    const openAt = RECURRING.indexOf('private async createOpenSeatTable');
-    const fn = RECURRING.slice(openAt, RECURRING.indexOf('private async ', openAt + 10));
-    expect(fn).toMatch(/status: 'waiting'/);
-    expect(fn).toMatch(/current_players: 0/);
-    expect(fn).toMatch(/max_players: seats/);
-    expect(fn).toMatch(/tournament_id: tournament\.id/);
+  it('the open table commits waiting with zero players and the same real seat count', () => {
+    const tournamentInsert = ATOMIC_CREATION.indexOf('INSERT INTO public.tournaments');
+    const tableInsert = ATOMIC_CREATION.indexOf('INSERT INTO public.tables');
+    expect(tournamentInsert).toBeGreaterThan(-1);
+    expect(tableInsert).toBeGreaterThan(tournamentInsert);
+    expect(ATOMIC_CREATION).toContain("v_max_players, 0, 'waiting'");
+    expect(ATOMIC_CREATION).toContain('v_club_id, p_tournament_id, v_name');
+  });
+
+  it('an exact-id replay rejects every durable config or table mismatch', () => {
+    for (const durableField of [
+      'v_existing.club_id IS DISTINCT FROM v_club_id',
+      'v_existing.union_id IS DISTINCT FROM v_union_id',
+      'v_existing.name IS DISTINCT FROM v_name',
+      'lower(v_existing.game_type) IS DISTINCT FROM lower(v_game_type)',
+      'lower(v_existing.variant) IS DISTINCT FROM v_variant',
+      'upper(v_existing.tournament_type) IS DISTINCT FROM v_tournament_type',
+      'v_existing.buy_in_amount IS DISTINCT FROM v_buy_in',
+      'v_existing.buy_in_fee IS DISTINCT FROM v_buy_in_fee',
+      'v_existing.guaranteed_prize IS DISTINCT FROM v_guarantee',
+      'v_existing.starting_chips IS DISTINCT FROM v_starting_chips',
+      'v_existing.max_players IS DISTINCT FROM v_max_players',
+      'v_existing.min_players IS DISTINCT FROM v_min_players',
+      'v_existing.table_size IS DISTINCT FROM v_table_size',
+      '(v_existing.blind_structure)::jsonb IS DISTINCT FROM v_blinds',
+      '(v_existing.payout_structure)::jsonb IS DISTINCT FROM v_payouts',
+      'v_existing.start_time IS DISTINCT FROM v_start_time',
+      'v_existing.late_reg_levels IS DISTINCT FROM v_late_reg_levels',
+      'v_existing.late_reg_mins IS DISTINCT FROM v_late_reg_mins',
+      'v_existing.satellite_target_id IS DISTINCT FROM v_satellite_target_id',
+      'v_existing.satellite_seats IS DISTINCT FROM v_satellite_seats',
+      'v_existing.short_description IS DISTINCT FROM v_short_description',
+      'v_existing_table.club_id IS DISTINCT FROM v_club_id',
+      'v_existing_table.tournament_id IS DISTINCT FROM p_tournament_id',
+      'v_existing_table.name IS DISTINCT FROM v_name',
+      "lower(v_existing_table.game_type) IS DISTINCT FROM 'tournament'",
+      'lower(v_existing_table.game_variant) IS DISTINCT FROM v_table_variant',
+      'v_existing_table.small_blind IS DISTINCT FROM v_small_blind',
+      'v_existing_table.big_blind IS DISTINCT FROM v_big_blind',
+      'v_existing_table.max_players IS DISTINCT FROM v_max_players',
+    ]) {
+      expect(ATOMIC_CREATION, durableField).toContain(durableField);
+    }
+    expect(ATOMIC_CREATION).toContain('SEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY');
+    expect(ATOMIC_CREATION).toContain('SEAT_FIRST_CREATE_IDEMPOTENCY_MISMATCH');
+  });
+
+  it('maps the canonical tournament game type to the exact table variant', () => {
+    expect(ATOMIC_CREATION).toContain('v_table_variant := lower(v_game_type)');
+    expect(ATOMIC_CREATION).toContain(
+      "v_table_variant NOT IN ('nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'flh', 'flo8')"
+    );
+    expect(ATOMIC_CREATION).toContain(
+      "v_club_id, p_tournament_id, v_name, 'tournament', v_table_variant"
+    );
   });
 
   it('heads-up SNGs are seat-first while bigger fields keep registration', () => {

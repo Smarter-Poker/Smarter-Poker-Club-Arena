@@ -32,6 +32,10 @@ afterEach(() => {
 
 function harness(overrides: Record<string, unknown> = {}) {
   const engine = new ServerTableEngine(TABLE) as any;
+  // This focused harness bypasses start(); explicitly preserve the production
+  // precondition that only the process-owned live generation may mutate turns.
+  engine.running = true;
+  engine.isCurrentEngine = () => true;
   engine.tableInfo = {} as any;
   engine.handController = {
     getState: () => ({
@@ -173,4 +177,79 @@ describe('a player who drops out of reconnect grace mid-turn', () => {
     expect(engine.timeBankSuppressedThisTurn).toBe(false);
     engine.preciseTimer.dispose();
   });
+});
+
+describe('unified outage allowance on a live turn', () => {
+  it('preserves the outage deadline when the clock advances during timer handoff', () => {
+    const engine = harness();
+    engine.disconnectEngine.registerPlayer(TABLE, 'u1');
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now++);
+    engine.startTurnTimer('u1', SEAT, 15);
+    engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+    const expected = engine.disconnectEngine.getFsmState(TABLE, 'u1').graceDeadlineMs;
+    try {
+      expect(engine.disconnectEngine.armedAutoActionDeadlineMs(TABLE, 'u1')).toBe(expected);
+      expect(engine.playerTurnStartTime + engine.playerTurnDuration * 1000).toBe(expected);
+    } finally {
+      engine.preciseTimer.dispose();
+    }
+  });
+
+  it.each([false, true])(
+    'transfers the primary clock to the original protection deadline, VIP=%s',
+    (vip) => {
+      const engine = harness();
+      engine.disconnectEngine.registerPlayer(TABLE, 'u1', {
+        is_vip: vip,
+        vip_tier: vip ? 'lifetime' : null,
+        vip_expires_at: null,
+      });
+      engine.startTurnTimer('u1', SEAT, 15);
+      engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+      const expected = engine.disconnectEngine.getFsmState(TABLE, 'u1').graceDeadlineMs;
+      expect(engine.preciseTimer.getRemainingMs(TABLE, 'u1')).toBe(0);
+      expect(engine.disconnectEngine.armedAutoActionDeadlineMs(TABLE, 'u1')).toBe(expected);
+      expect(engine.playerTurnStartTime + engine.playerTurnDuration * 1000).toBe(expected);
+      expect(expected - Date.now()).toBeGreaterThan((vip ? 45 : 30) * 1000 - 100);
+      expect(engine.timeBankEngine.getRemainingSeconds(TABLE, 'u1')).toBe(40);
+      engine.preciseTimer.dispose();
+    }
+  );
+});
+
+it('a paid bank finishes its accounting before handing the turn to remaining VIP protection', async () => {
+  const engine = harness();
+  engine.running = true;
+  engine.disconnectEngine.registerPlayer(TABLE, 'u1', {
+    is_vip: true,
+    vip_tier: 'lifetime',
+    vip_expires_at: null,
+  });
+  engine.playerTurnStartTime = Date.now() - 15001;
+  expect((await engine.activateTimeBank('u1')).success).toBe(true);
+  engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+  const deadline = engine.disconnectEngine.getFsmState(TABLE, 'u1').graceDeadlineMs;
+  expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1').isActive).toBe(true);
+  const resolve = vi.spyOn(engine, 'forceResolveSeat');
+  engine.timeBankEngine.onTimeBankExpired(TABLE, 'u1');
+  expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1').isActive).toBe(false);
+  expect(engine.timeBankEngine.getRemainingSeconds(TABLE, 'u1')).toBe(20);
+  expect(engine.disconnectEngine.armedAutoActionDeadlineMs(TABLE, 'u1')).toBe(deadline);
+  expect(resolve).not.toHaveBeenCalled();
+  engine.preciseTimer.dispose();
+});
+
+it('an expired allowance cannot turn another heartbeat into a fresh action clock', () => {
+  const engine = harness();
+  engine.disconnectEngine.registerPlayer(TABLE, 'u1');
+  engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+  engine.disconnectEngine.getState(TABLE, 'u1').reconnectDeadlineMs = Date.now() - 100;
+  const resolve = vi.spyOn(engine, 'forceResolveSeat').mockReturnValue(true);
+  vi.spyOn(engine, 'markProgress').mockImplementation(() => {});
+  const start = vi.spyOn(engine, 'startTurnTimer');
+  engine.disconnectEngine.heartbeat(TABLE, 'u1');
+  expect(resolve).toHaveBeenCalledWith(SEAT, true);
+  expect(start).not.toHaveBeenCalled();
+  engine.preciseTimer.dispose();
 });

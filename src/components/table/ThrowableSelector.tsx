@@ -33,10 +33,11 @@ import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import './ThrowableSelector.css';
 import { haptic } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
+import { prepareThrowableArtwork } from '../../throwables/artwork';
 
 interface ThrowableSelectorProps {
   userId: string;
-  onSelect: (throwable: Throwable) => void;
+  onSelect: (throwable: Throwable, requestId?: string) => void;
   onClose: () => void;
 }
 
@@ -70,24 +71,31 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Warm the render cache the moment the panel opens
+    let disposed = false;
+    let latestRequest = 0;
     preloadThrowableImages();
+    setThrowables(throwableService.getThrowablesByCategory());
+    setAllowance(null);
+    setLoading(true);
 
-    async function load() {
-      const data = throwableService.getThrowablesByCategory();
-      const allowanceData = await throwableService.getThrowAllowance(userId);
-      setThrowables(data);
-      setAllowance(allowanceData);
+    async function refreshAllowance() {
+      const request = ++latestRequest;
+      const next = await throwableService.getThrowAllowance(userId);
+      // An old account or an earlier entitlement refresh must not overwrite
+      // the currently displayed balance when responses arrive out of order.
+      if (disposed || request !== latestRequest) return;
+      setAllowance(next);
       setLoading(false);
     }
-    load();
-  }, [userId]);
-
-  useEffect(() => {
-    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+    void refreshAllowance();
+    const unsubscribe = masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
       if (event.payload.userId !== userId || event.payload.category !== 'throwable') return;
-      void throwableService.getThrowAllowance(userId).then(setAllowance);
+      void refreshAllowance();
     });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, [userId]);
 
   /**
@@ -95,12 +103,18 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
    *
    * The panel stayed open and tappable for the whole round trip (onClose is
    * two awaits away), the grid buttons were never disabled, and
-   * fn_use_throwable carries no idempotency key — its advisory lock stops a
-   * concurrent double-spend of the last FREE throw but cannot deduplicate two
-   * legitimate sequential charges. A ref, not state, because two taps inside
+   * the server receipt protects repeated requests while this ref blocks a
+   * second UI intent before the first has completed. A ref, not state, because two taps inside
    * one commit both read stale state.
    */
   const sendingRef = useRef(false);
+  const generationRef = useRef(0);
+  useEffect(
+    () => () => {
+      generationRef.current += 1;
+    },
+    [userId]
+  );
   const [sending, setSending] = useState(false);
 
   const handleSelect = async (throwable: Throwable) => {
@@ -116,8 +130,21 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   };
 
   const sendThrowable = async (throwable: Throwable) => {
-    // Use the throwable (deducts from allowance or charges diamonds)
+    const generation = generationRef.current;
+    try {
+      await prepareThrowableArtwork(throwable.id);
+    } catch {
+      if (generation === generationRef.current)
+        toast.error('Reaction artwork could not load. Please try again.');
+      return;
+    }
+    // Closing the picker or changing account cancels an uncharged intent.
+    if (generation !== generationRef.current) return;
+    // Use the throwable only after its artwork is ready.
     const result = await throwableService.useThrowable(userId, throwable.id);
+    // The charge may finish after this picker closes or switches accounts.
+    // Its receipt belongs to that original intent, never the replacement UI.
+    if (generation !== generationRef.current) return;
     if (!result.success) {
       if (/diamond|insufficient/i.test(result.error || '')) {
         showDiamondTopUp(toast, navigate, {
@@ -129,7 +156,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
       }
       return;
     }
-    onSelect(throwable);
+    onSelect(throwable, result.requestId);
     onClose();
   };
 
@@ -151,7 +178,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
               <span className="throwable-selector__cost">Allowance Unavailable</span>
             ) : allowance.unlimited ? (
               <span className="throwable-selector__free">Unlimited</span>
-            ) : allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
+            ) : allowance.freeThrowsRemaining > 0 ? (
               <span className="throwable-selector__free">
                 {' '}
                 {allowance.freeThrowsRemaining} Free

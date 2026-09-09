@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './TournamentWinnerOverlay.css';
+import { formatTableChips } from '../../utils/format';
 
 interface TournamentWinnerOverlayProps {
   isWinner: boolean;
@@ -43,18 +44,25 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         delay: Math.random() * 2.5,
       }));
       setParticles(newParticles);
+    } else {
+      setVisible(false);
     }
   }, [isWinner]);
 
   // Animate prize amount
   useEffect(() => {
-    if (!visible || prize <= 0) return;
+    setDisplayPrize(0);
+    if (!isWinner || !visible || prize <= 0) return;
+
+    let stopped = false;
+    let frameId = 0;
 
     const startTime = Date.now();
     const duration = 1500;
     const startValue = 0;
 
     const animate = () => {
+      if (stopped) return;
       const elapsed = Date.now() - startTime;
       const progress = Math.min(1, elapsed / duration);
 
@@ -65,13 +73,16 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
       setDisplayPrize(current);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        frameId = requestAnimationFrame(animate);
       }
     };
 
-    const frameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameId);
-  }, [visible, prize]);
+    frameId = requestAnimationFrame(animate);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [isWinner, visible, prize]);
 
   const handleDismiss = useCallback(() => {
     setVisible(false);
@@ -112,7 +123,9 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         <div className="winnerTournament">{tournamentName}</div>
         {prize > 0 && (
           <div className="winnerPrize prize-counter">
-            Prize: {Math.round(displayPrize).toLocaleString()}
+            {/* To the cent (2026-09-09): this is the banner shown at the
+                moment a player cashes, and a prize of 98.72 read "99". */}
+            Prize: {formatTableChips(displayPrize)}
           </div>
         )}
         <button className="winnerDismissBtn" onClick={handleDismiss}>

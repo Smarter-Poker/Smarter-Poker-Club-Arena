@@ -247,19 +247,34 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
        * post rows — so old and new hands both rebuild correctly, and no
        * backfill is needed or possible.
        */
-      case 'FORCED_BETS_POSTED' as never: {
-        const postings = (
-          event as never as {
-            postings?: Array<{
-              seat: number;
-              userId: string;
-              kind: string;
-              amount: number;
-              dead?: boolean;
-            }>;
-          }
-        ).postings;
+      case 'FORCED_BETS_POSTED': {
+        const postings = event.postings;
+        /**
+         * THE ANTE IS SEEN LEAVING THE PLAYER (Dan 2026-09-04): "IF THERE IS
+         * AN ANTE, THAT NEEDS TO BE TAKEN FROM THE PLAYER AND ADDED TO THE
+         * POT PRE FLOP." The money already moves that way - postBlinds adds a
+         * regular ante straight to state.pot, so the pot pill has always
+         * counted it from the first snapshot. What the table never SHOWED
+         * was the chips going: BLINDS_POSTED carries only the SB and BB (and
+         * says so, above), and a bomb ante flies at the blast, but a plain
+         * ante just made every stack a little smaller and the pot a little
+         * bigger with nothing in between. This event is the presentation the
+         * bomb ante already has, for the regular ante: every seat that posted
+         * one, and how much, so the client can fly it to the middle.
+         */
         if (Array.isArray(postings)) {
+          const antePostings = postings
+            .filter((p) => p && p.kind === 'ante' && p.amount > 0)
+            .map((p) => ({ seat: p.seat, amount: p.amount }));
+          if (antePostings.length > 0) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'antes_posted',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              postings: antePostings,
+              timestamp: Date.now(),
+            });
+          }
           for (const p of postings) {
             if (!p || !(p.amount > 0)) continue;
             this.currentHandActions.push({
@@ -360,6 +375,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       }
 
       case 'TURN_CHANGE': {
+        const decisionContext = this.getActionContext();
         // ═══════════════════════════════════════════════════════════════════
         // Dan 2026-08-20: "every player's action MUST GO IN TURN. Their action
         // MUST BE DISPLAYED, an animation MUST PLAY after every decision. NO
@@ -447,6 +463,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           break;
         }
 
+        if (this.getActionContext() !== decisionContext) break;
+
         const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
 
         const baseActionTime = this.tableInfo?.action_time_seconds || 15;
@@ -505,11 +523,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           reportError(err, 'ServerTableEngine.' + this.tableId + '.broadcast_threw');
         }
 
+        if (this.getActionContext() !== decisionContext) break;
+
         // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
         // carries the correct absolute deadline for the CURRENT player.
         try {
           this.hub?.emitEvent(this.tableId, {
             type: 'turn_change',
+            action_context: decisionContext,
             table_id: this.tableId,
             hand_number: this.handCount,
             seat: event.seat,
@@ -769,10 +790,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // other — no DB sampling needed to notice. Metrics must never affect
         // gameplay, hence the fence.
         try {
-          EngineMetrics.showdownHandsTotal.inc(1, { table_id: this.tableId });
+          // Fleet totals, no table_id: these live on the always-on registry
+          // now (see engineInstruments), whose contract is bounded cardinality.
+          EngineMetrics.showdownHandsTotal.inc(1);
           const muckedCount = this.currentHandShowdownResults.filter((r) => r.mucked).length;
           if (muckedCount > 0) {
-            EngineMetrics.muckedHandsTotal.inc(muckedCount, { table_id: this.tableId });
+            EngineMetrics.muckedHandsTotal.inc(muckedCount);
           }
         } catch {
           /* metrics must never affect gameplay */

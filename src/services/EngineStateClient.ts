@@ -24,12 +24,38 @@ import { noteServerTime, serverNow } from '../utils/serverClock';
 import jsonPatch from 'fast-json-patch';
 import {
   engineSocketMux,
+  MuxTableSocket,
   isMuxEnabled,
   CLOSE_MUX_SUPERSEDED,
   engineSocketUrl,
 } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
+
+/** The socket watchdog cannot run until authentication has returned a token. */
+async function tokenForConnection(
+  getToken: () => Promise<string | null>,
+  signal: AbortSignal
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<string | null>((resolve, reject) => {
+      onAbort = () => reject(new Error('Engine connection cancelled'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      timer = setTimeout(() => reject(new Error('Engine token request timed out')), 15_000);
+      // Both outcomes stay observed if the deadline or disconnect wins first.
+      Promise.resolve(getToken()).then(resolve, reject);
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
+}
 
 // ─── Protocol types — mirror server/src/transport/TableStateHub.ts ────────────
 
@@ -87,6 +113,77 @@ export type ServerMessage =
   | ServerPingMessage
   | ServerEventMessage
   | ServerUserEventMessage;
+
+/**
+ * A reconnect / EVENT-sequence gap may prove that HAND_STARTED was lost, but
+ * it does not prove that the opening presentation is still timely. Recovery
+ * is deliberately fail-closed: it is allowed only for an in-session hand
+ * transition, close to the continuity boundary, while the authoritative
+ * snapshot is still preflop with empty boards and no player action recorded.
+ *
+ * This is exported from the transport module because it is the transport-gap
+ * contract, and because keeping the decision pure makes the two frame orders
+ * testable: gap-before-snapshot and snapshot-before-gap.
+ */
+export const HAND_START_GAP_RECOVERY_WINDOW_MS = 10_000;
+
+export interface MissedHandStartPresentationEvidence {
+  previousHandNumber: number;
+  handNumber: number;
+  continuityReportedAt: number | null;
+  transitionObservedAt: number;
+  now: number;
+  engineStage: unknown;
+  communityCards: readonly unknown[] | null | undefined;
+  communityCards2: readonly unknown[] | null | undefined;
+  communityCards3: readonly unknown[] | null | undefined;
+  lastActions: readonly unknown[] | null | undefined;
+}
+
+export function shouldRecoverMissedHandStartPresentation(
+  evidence: MissedHandStartPresentationEvidence
+): boolean {
+  const {
+    previousHandNumber,
+    handNumber,
+    continuityReportedAt,
+    transitionObservedAt,
+    now,
+    engineStage,
+    communityCards,
+    communityCards2,
+    communityCards3,
+    lastActions,
+  } = evidence;
+
+  // Hydrating hand N with no prior in-session hand is never a missed deal.
+  if (!(previousHandNumber > 0) || !(handNumber > 0) || handNumber === previousHandNumber) {
+    return false;
+  }
+  if (typeof continuityReportedAt !== 'number' || !Number.isFinite(continuityReportedAt)) {
+    return false;
+  }
+  const continuityAge = now - continuityReportedAt;
+  const transitionAge = now - transitionObservedAt;
+  if (
+    continuityAge < 0 ||
+    transitionAge < 0 ||
+    continuityAge > HAND_START_GAP_RECOVERY_WINDOW_MS ||
+    transitionAge > HAND_START_GAP_RECOVERY_WINDOW_MS
+  ) {
+    return false;
+  }
+
+  // A late reconnect must never rewind the felt into an opening deal.
+  if (String(engineStage || '').toLowerCase() !== 'preflop') return false;
+  const boards = [communityCards, communityCards2, communityCards3];
+  if (!boards.every((board) => Array.isArray(board) && board.length === 0)) return false;
+
+  // Empty boards alone are not enough: late preflop is already mid-hand.
+  if (!Array.isArray(lastActions) || lastActions.some((action) => action != null)) return false;
+
+  return true;
+}
 
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
 /**
@@ -147,6 +244,8 @@ function closeMeansAuth(code: number | undefined, reason: string | undefined): b
  * anyway. The first one wins the navigation; the rest are noise. Latched
  * rather than debounced: there is no second attempt to make.
  */
+// Also gates new and in-flight handshakes while the shared reload is pending.
+// Once the engine refuses this protocol, reconnecting the same bundle cannot help.
 let reloadingForNewBundle = false;
 
 function reloadForNewBundle(): Promise<void> {
@@ -170,10 +269,25 @@ function reloadForNewBundle(): Promise<void> {
  * Resolves 'unknown' if the module cannot be loaded, so a chunk that fails to
  * arrive can never sign a player out.
  */
-function askWhetherTheSessionIsAlive(source: string): Promise<'alive' | 'revoked' | 'unknown'> {
-  return import('../lib/sessionRevoked')
-    .then((m) => m.handleEngineAuthRejection(source))
-    .catch(() => 'unknown' as const);
+async function askWhetherTheSessionIsAlive(
+  source: string
+): Promise<'alive' | 'revoked' | 'unknown'> {
+  // The auth service may be unreachable during the same outage that closed
+  // the engine socket. A probe that never settles must not own the reconnect
+  // ladder forever. This bounds only our wait, not the shared SDK operation.
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let waiting = true;
+  try {
+    return await new Promise<'alive' | 'revoked' | 'unknown'>((resolve) => {
+      deadline = setTimeout(() => resolve('unknown'), 15_000);
+      void import('../lib/sessionRevoked')
+        .then((m) => (waiting ? m.handleEngineAuthRejection(source) : ('unknown' as const)))
+        .then(resolve, () => resolve('unknown'));
+    });
+  } finally {
+    waiting = false;
+    clearTimeout(deadline);
+  }
 }
 
 /**
@@ -328,6 +442,8 @@ export class EngineStateClient {
   private lastInboundAt = 0;
   /** Heartbeats prove transport liveness, not delivery of a requested snapshot. */
   private pendingSnapshotSince: number | null = null;
+  private foregroundProbeTimer: number | null = null;
+  private static readonly FOREGROUND_STATE_BUDGET_MS = 5_000;
   /** Wake grace must not forgive resyncs that still have no snapshot reply. */
   private unansweredSnapshotResyncs = 0;
   private watchdogTimer: number | null = null;
@@ -349,10 +465,13 @@ export class EngineStateClient {
    * reconnect — two live sockets, one orphaned OPEN forever (which also
    * defeated the server's last-socket disconnect detection).
    */
-  private opening = false;
+  private connectionGeneration = 0;
+  private openingGeneration: number | null = null;
+  private tokenWait: AbortController | null = null;
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
+  private onResume: ((event: Event) => void) | null = null;
 
   /** How often the watchdog samples. */
   private static readonly WATCHDOG_TICK_MS = 5_000;
@@ -380,6 +499,7 @@ export class EngineStateClient {
 
   /** Open the connection. Call once from the owning hook. */
   async connect(): Promise<void> {
+    if (reloadingForNewBundle) return;
     // P2-1: guard against concurrent connects (React StrictMode double-invoke,
     // rapid re-mounts / tableId switches). If a socket is already OPEN or
     // CONNECTING, do nothing — otherwise we'd leak a second zombie socket.
@@ -392,8 +512,11 @@ export class EngineStateClient {
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        // Healthy OPEN socket — nothing to do.
-        if (this.ws !== null && this.ws.readyState === 1) return;
+        // Mobile network changes can leave readyState OPEN on a dead link.
+        if (this.ws !== null && this.ws.readyState === 1) {
+          this.beginForegroundStateProbe();
+          return;
+        }
         // 2026-08-22: a socket wedged in CONNECTING (captive portal, TCP
         // blackhole, network transition) used to BLOCK this recovery path —
         // the guard treated CONNECTING as healthy, no timer was pending, and
@@ -415,18 +538,43 @@ export class EngineStateClient {
       };
       window.addEventListener('online', this.onOnline);
     }
+    if (this.onResume === null && typeof window !== 'undefined') {
+      this.onResume = (event) => {
+        if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        if (this.status === 'connected') {
+          // pageshow can be the only wake event after Home Screen/BFCache
+          // restoration. A healthy link keeps its existing bounded resync.
+          if (event.type === 'pageshow') this.onVisibility?.();
+          return;
+        }
+        // Browser wake does not necessarily produce an online event. Do not
+        // leave a foreground table behind a 30-second retry scheduled asleep.
+        // Reuse the existing single-flight, authenticated recovery path.
+        this.onOnline?.();
+      };
+      window.addEventListener('pageshow', this.onResume);
+      document.addEventListener('visibilitychange', this.onResume);
+    }
     await this.openOnce();
   }
 
   /** Close the connection permanently. */
   disconnect(): void {
+    this.connectionGeneration++;
     this.intentionalClose = true;
+    this.tokenWait?.abort();
+    this.tokenWait = null;
     // Review fix 2026-08-25: no queued frame may fire onSnapshot/onEvent
     // against a page that has moved on (the CA-22 class).
     this.resetInbox();
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
+    }
+    if (this.onResume !== null && typeof window !== 'undefined') {
+      window.removeEventListener('pageshow', this.onResume);
+      document.removeEventListener('visibilitychange', this.onResume);
+      this.onResume = null;
     }
     // Dan 2026-08-15 (item 6): tear the watchdog down here or its interval and
     // visibilitychange listener outlive the client. In MultiTablePage, where
@@ -468,19 +616,22 @@ export class EngineStateClient {
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private async openOnce(): Promise<void> {
-    // Single-flight + live-socket guard (see `opening`). scheduleReconnect's
+    if (reloadingForNewBundle) return;
+    // Single-flight + live-socket guard (see `openingGeneration`). scheduleReconnect's
     // timer, the online handler and connect() can all race into here.
-    if (this.opening) return;
+    const generation = this.connectionGeneration;
+    if (this.openingGeneration === generation) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
-    this.opening = true;
+    this.openingGeneration = generation;
     try {
-      await this.openOnceInner();
+      await this.openOnceInner(generation);
     } finally {
-      this.opening = false;
+      // A disconnected attempt must not release its replacement's guard.
+      if (this.openingGeneration === generation) this.openingGeneration = null;
     }
   }
 
-  private async openOnceInner(): Promise<void> {
+  private async openOnceInner(generation: number): Promise<void> {
     if (!this.tableMissing) {
       this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     }
@@ -491,18 +642,25 @@ export class EngineStateClient {
     // status stuck at 'connecting' — the single worst frozen-table path in
     // the client. A rejection is now just another retry.
     let token: string | null = null;
+    const tokenWait = new AbortController();
+    this.tokenWait = tokenWait;
     try {
-      token = await this.opts.getToken();
+      token = await tokenForConnection(() => this.opts.getToken(), tokenWait.signal);
     } catch {
-      if (!this.intentionalClose) this.scheduleReconnect();
+      if (!this.intentionalClose && generation === this.connectionGeneration) {
+        this.scheduleReconnect();
+      }
       return;
+    } finally {
+      if (this.tokenWait === tokenWait) this.tokenWait = null;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight
     // (tableId switch / unmount / StrictMode double-invoke). If so, abort before
     // creating the socket — opening one now would spawn a zombie WS the owning
     // hook's cleanup can never reach (clientRef already points at a new client),
     // leaking a server table-slot and flip-flopping cross-table snapshots.
-    if (this.intentionalClose) return;
+    if (reloadingForNewBundle || this.intentionalClose || generation !== this.connectionGeneration)
+      return;
     if (!token) {
       // No token available. Retry on backoff — the auth layer may be warming up.
       this.scheduleReconnect();
@@ -581,6 +739,12 @@ export class EngineStateClient {
       // Server sends SNAPSHOT on subscribe — no explicit RESYNC needed on
       // first connect. On reconnect after a gap, we explicitly request one.
       if (hadState) {
+        // A reconnect is an event-continuity boundary even when the first full
+        // snapshot makes state look seamless. Tell the presentation layer
+        // BEFORE that snapshot arrives so it can recover a HAND_STARTED that
+        // happened while this socket was away without animating first-load
+        // hydration.
+        this.reportEventGap('reconnect');
         try {
           ws.send(JSON.stringify({ type: 'RESYNC' }));
         } catch {
@@ -611,8 +775,9 @@ export class EngineStateClient {
       // Stale-socket guard: only the CURRENT socket's close drives recovery.
       // Without this, a superseded socket's late close could schedule a
       // second reconnect against a live connection.
-      if (this.ws !== null && this.ws !== ws) return;
+      if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.clearForegroundStateProbe();
       // Clean intentional close
       if (this.intentionalClose) return;
 
@@ -658,7 +823,10 @@ export class EngineStateClient {
       // facade. Reconnecting would evict IT and ping-pong forever — the old
       // owner stands down for good. The newer instance carries the game.
       if (e.code === CLOSE_MUX_SUPERSEDED) {
-        this.setStatus('idle');
+        // Retire the entire lifecycle, including wake listeners and queued
+        // events. An idle status alone lets online/pageshow reclaim the mux
+        // and evict the newer owner. Facade release is identity-guarded.
+        this.disconnect();
         return;
       }
 
@@ -669,9 +837,9 @@ export class EngineStateClient {
          host, which knows how to fetch a fresh bundle rather than a fresh
          copy of the same one. */
       if (e.code === CLOSE_UPGRADE_REQUIRED) {
-        this.setStatus('idle');
-        this.opts.onError({ code: e.code, reason: e.reason || 'upgrade_required' });
+        this.disconnect();
         void reloadForNewBundle();
+        this.opts.onError({ code: e.code, reason: e.reason || 'upgrade_required' });
         return;
       }
 
@@ -679,6 +847,9 @@ export class EngineStateClient {
       // rejoining the thundering herd at the fast end of the ladder.
       if (e.code === CLOSE_RATE_LIMITED) {
         this.retryCount = Math.max(this.retryCount, 4);
+        // Capacity has an explicit verdict. It is not a failed auth handshake.
+        this.scheduleReconnect();
+        return;
       }
 
       // 2026-09-04: an engine that still writes a bare 401 before the
@@ -746,6 +917,30 @@ export class EngineStateClient {
    * and a fresh socket legitimately re-receives retained reveal events.
    */
   private lastEventSeq = 0;
+  /**
+   * The gapped EVENT is requeued for the next macrotask after the synthetic
+   * continuity notice. Remember its sequence so that second pass dispatches
+   * the real event instead of reporting the same gap forever.
+   */
+  private eventGapReportedForSeq = 0;
+
+  private reportEventGap(
+    reason: 'reconnect' | 'event_sequence_gap',
+    expectedEventSeq?: number,
+    receivedEventSeq?: number
+  ): void {
+    try {
+      this.opts.onEvent({
+        type: 'engine_event_gap',
+        reason,
+        expected_event_seq: expectedEventSeq,
+        received_event_seq: receivedEventSeq,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.error('[EngineStateClient] onEvent listener threw', err);
+    }
+  }
 
   private handleMessage(msg: ServerMessage): void {
     /**
@@ -781,6 +976,7 @@ export class EngineStateClient {
     ) {
       this.inbox = [];
       this.lastEventSeq = 0;
+      this.eventGapReportedForSeq = 0;
       this.seq = 0;
       this.snapshot = null;
       this.pendingSnapshotSince ??= Date.now();
@@ -870,6 +1066,23 @@ export class EngineStateClient {
         const seq = (msg as { seq?: number }).seq;
         if (typeof seq === 'number' && seq > 0) {
           if (seq <= this.lastEventSeq) continue;
+          if (
+            this.lastEventSeq > 0 &&
+            seq > this.lastEventSeq + 1 &&
+            this.eventGapReportedForSeq !== seq
+          ) {
+            // EVENTs are transient and are not restored by a state snapshot.
+            // Surface the hole as its own render, request authoritative state,
+            // then deliver the real event on the following macrotask. This
+            // preserves the one-event-per-render contract above.
+            this.eventGapReportedForSeq = seq;
+            this.requestResync();
+            this.inbox.unshift(msg);
+            this.reportEventGap('event_sequence_gap', this.lastEventSeq + 1, seq);
+            this.scheduleDrain();
+            return;
+          }
+          this.eventGapReportedForSeq = 0;
           this.lastEventSeq = seq;
         }
         try {
@@ -900,6 +1113,7 @@ export class EngineStateClient {
       this.snapshot = msg.state;
       this.seq = msg.seq;
       this.pendingSnapshotSince = null;
+      this.clearForegroundStateProbe();
       this.unansweredSnapshotResyncs = 0;
       this.opts.onSnapshot(this.snapshot, this.seq);
       return;
@@ -935,8 +1149,10 @@ export class EngineStateClient {
    * first snapshot must not sit behind a dead socket's events.
    */
   private resetInbox(): void {
+    this.clearForegroundStateProbe();
     this.inbox = [];
     this.lastEventSeq = 0;
+    this.eventGapReportedForSeq = 0;
     /**
      * EPOCH RESET 2026-08-27 (security/realtime audit): the table froze
      * permanently after ANY engine restart.
@@ -970,6 +1186,59 @@ export class EngineStateClient {
     this.snapshot = null;
     this.pendingSnapshotSince = null;
     this.unansweredSnapshotResyncs = 0;
+  }
+
+  private clearForegroundStateProbe(): void {
+    if (this.foregroundProbeTimer !== null) {
+      window.clearTimeout(this.foregroundProbeTimer);
+      this.foregroundProbeTimer = null;
+    }
+  }
+
+  /** Wake recovery must fit inside the player's existing reconnect allowance. */
+  private beginForegroundStateProbe(): void {
+    if (
+      this.intentionalClose ||
+      this.status !== 'connected' ||
+      document.visibilityState !== 'visible' ||
+      this.inAnnouncedRestart() ||
+      this.foregroundProbeTimer !== null
+    )
+      return;
+    const socket = this.ws;
+    if (!socket || socket.readyState !== 1) return;
+    const startedAt = Date.now();
+    // Arm before sending: even a synchronous test/adapter response may cancel
+    // it. Repeated wake events never move the first request's deadline.
+    this.foregroundProbeTimer = window.setTimeout(() => {
+      this.foregroundProbeTimer = null;
+      if (
+        this.ws !== socket ||
+        this.intentionalClose ||
+        this.status !== 'connected' ||
+        document.visibilityState !== 'visible' ||
+        this.inAnnouncedRestart()
+      )
+        return;
+      this.opts.onError({ reason: 'table state did not answer the foreground recovery probe' });
+      beacon('stale');
+      this.setStatus('reconnecting');
+      this.ws = null;
+      try {
+        if (socket instanceof MuxTableSocket) socket.recoverAfterUnansweredProbe(startedAt);
+        else socket.close(4001, 'no table state after foreground probe');
+      } catch {
+        // The old generation is already detached; its close cannot own recovery.
+      }
+      this.retryCount = 0;
+      this.scheduleReconnect();
+    }, EngineStateClient.FOREGROUND_STATE_BUDGET_MS);
+    this.requestResync();
+  }
+
+  /** Refresh authoritative state after a confirmed server purchase. */
+  requestSnapshot(): void {
+    this.requestResync();
   }
 
   private requestResync(): void {
@@ -1077,13 +1346,17 @@ export class EngineStateClient {
             Date.now() - EngineStateClient.STALE_SOFT_MS
           );
         }
-        if (this.status === 'connected') this.requestResync();
+        if (this.status === 'connected') {
+          if (this.inAnnouncedRestart()) this.requestResync();
+          else this.beginForegroundStateProbe();
+        }
       };
       document.addEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private stopWatchdog(): void {
+    this.clearForegroundStateProbe();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
@@ -1103,10 +1376,14 @@ export class EngineStateClient {
    * a player whose session is fine and whose link is not.
    */
   private checkSessionThenReconnect(source: string): void {
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
-        if (this.intentionalClose) return;
+        // A recovery that already replaced this socket owns its own status.
+        if (this.intentionalClose || generation !== this.connectionGeneration || socket !== this.ws)
+          return;
         if (verdict === 'revoked') {
           this.setStatus('auth_failed');
           return;
@@ -1161,6 +1438,7 @@ export class EngineStateClient {
   }
 
   private scheduleReconnect(): void {
+    if (reloadingForNewBundle) return;
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
     /* ═══ A SCHEDULED RESTART IS NOT A FAILURE (Phase 4, 2026-09-05) ═══════
@@ -1318,6 +1596,12 @@ export interface FinancialUpdateMessage {
   total: number;
   ledgerEntry?: unknown;
 }
+/** The server refused a subscribe (ChannelHub ChannelErrorMsg). */
+export interface ChannelErrorMessage {
+  type: 'CHANNEL_ERROR';
+  code: string;
+  message: string;
+}
 
 export type ChannelServerMessage =
   | ChannelPingMessage
@@ -1328,7 +1612,8 @@ export type ChannelServerMessage =
   | LobbyUpdateMessage
   | HandReplayEventMessage
   | TableMetaUpdateMessage
-  | FinancialUpdateMessage;
+  | FinancialUpdateMessage
+  | ChannelErrorMessage;
 
 // ─── Client → Server message types ───────────────────────────────────────────
 
@@ -1389,6 +1674,7 @@ export class EngineChannelClient {
   private handshakeFailures = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
+  private sessionBlocked = false;
   private handshakeTimer: number | null = null;
   private static readonly HANDSHAKE_TIMEOUT_MS = 15_000;
 
@@ -1482,8 +1768,11 @@ export class EngineChannelClient {
   // network silently killed club presence, lobby, tournament events and
   // FINANCIAL_UPDATE (wallet!) for the rest of the page's life.
   private lastInboundAt = 0;
+  private foregroundProbeTimer: number | null = null;
+  private static readonly FOREGROUND_CHANNEL_BUDGET_MS = 5_000;
   private watchdogTimer: number | null = null;
   private onOnline: (() => void) | null = null;
+  private onResume: ((event: Event) => void) | null = null;
   /** 2026-08-22: bounded wake grace — see startWatchdog. */
   private onVisibility: (() => void) | null = null;
   private static readonly WATCHDOG_TICK_MS = 10_000;
@@ -1532,13 +1821,18 @@ export class EngineChannelClient {
 
   /** Open the channel connection. Safe to call multiple times (no-op if already connected). */
   async connect(): Promise<void> {
+    if (reloadingForNewBundle) return;
+    if (this.sessionBlocked) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
     this.retryCount = 0;
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        if (this.ws !== null && this.ws.readyState === 1) return;
+        if (this.ws !== null && this.ws.readyState === 1) {
+          this.beginForegroundChannelProbe();
+          return;
+        }
         if (this.ws !== null && this.ws.readyState === 0) {
           try {
             this.ws.close();
@@ -1556,17 +1850,42 @@ export class EngineChannelClient {
       };
       window.addEventListener('online', this.onOnline);
     }
+    if (this.onResume === null && typeof window !== 'undefined') {
+      this.onResume = (event) => {
+        if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        if (this.status === 'connected') {
+          // pageshow can be the only wake event after Home Screen/BFCache
+          // restoration. A healthy link keeps its existing bounded resync.
+          if (event.type === 'pageshow') this.onVisibility?.();
+          return;
+        }
+        // Browser wake does not necessarily produce an online event. Do not
+        // leave a foreground table behind a 30-second retry scheduled asleep.
+        // Reuse the existing single-flight, authenticated recovery path.
+        this.onOnline?.();
+      };
+      window.addEventListener('pageshow', this.onResume);
+      document.addEventListener('visibilitychange', this.onResume);
+    }
     await this.openOnce();
   }
 
   /** Close the channel connection permanently. */
   disconnect(): void {
+    this.connectionGeneration++;
     this.intentionalClose = true;
+    this.tokenWait?.abort();
+    this.tokenWait = null;
     this.clearHandshakeTimer();
     this.stopWatchdog();
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
+    }
+    if (this.onResume !== null && typeof window !== 'undefined') {
+      window.removeEventListener('pageshow', this.onResume);
+      document.removeEventListener('visibilitychange', this.onResume);
+      this.onResume = null;
     }
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
@@ -1583,6 +1902,19 @@ export class EngineChannelClient {
     this.setStatus('idle');
   }
 
+  /** Account changes discard intent; an ordinary disconnect retains it. */
+  resetSession(allowReconnect: boolean): void {
+    this.sessionBlocked = !allowReconnect;
+    this.disconnect();
+    this.sendQueue = [];
+    this.desiredClubs.clear();
+    this.desiredTournaments.clear();
+    this.desiredLobby = false;
+    this.lastPresence.clear();
+    for (const listeners of Object.values(this.listeners)) listeners.clear();
+    this.handshakeFailures = 0;
+  }
+
   /** Current connection status. */
   getStatus(): EngineConnectionStatus {
     return this.status;
@@ -1595,6 +1927,7 @@ export class EngineChannelClient {
    * If the socket isn't open yet, the message is queued and sent on connect.
    */
   send(msg: ChannelClientMessage): void {
+    if (this.sessionBlocked) return;
     // 2026-08-24: record the net desired subscription state FIRST, whether or
     // not the socket is currently open — this is what reconnect replays.
     const stateful = this.recordDesiredState(msg);
@@ -1684,36 +2017,48 @@ export class EngineChannelClient {
 
   // ─── Internal ─────────────────────────────────────────────────────────────
 
-  private opening = false;
+  private connectionGeneration = 0;
+  private openingGeneration: number | null = null;
+  private tokenWait: AbortController | null = null;
 
   private async openOnce(): Promise<void> {
+    if (reloadingForNewBundle) return;
     // Single-flight + live-socket guard — same race as EngineStateClient:
     // openOnce awaits getToken before assigning this.ws, so overlapping
     // invocations would create a second socket and orphan one.
-    if (this.opening) return;
+    const generation = this.connectionGeneration;
+    if (this.openingGeneration === generation) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
-    this.opening = true;
+    this.openingGeneration = generation;
     try {
-      await this.openOnceInner();
+      await this.openOnceInner(generation);
     } finally {
-      this.opening = false;
+      // A disconnected attempt must not release its replacement's guard.
+      if (this.openingGeneration === generation) this.openingGeneration = null;
     }
   }
 
-  private async openOnceInner(): Promise<void> {
+  private async openOnceInner(generation: number): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     // 2026-08-22: a getToken rejection must be a retry, not the permanent end
     // of the reconnect ladder (same fix as EngineStateClient.openOnce).
     let token: string | null = null;
+    const tokenWait = new AbortController();
+    this.tokenWait = tokenWait;
     try {
-      token = await this.opts.getToken();
+      token = await tokenForConnection(() => this.opts.getToken(), tokenWait.signal);
     } catch {
-      if (!this.intentionalClose) this.scheduleReconnect();
+      if (!this.intentionalClose && generation === this.connectionGeneration) {
+        this.scheduleReconnect();
+      }
       return;
+    } finally {
+      if (this.tokenWait === tokenWait) this.tokenWait = null;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight. Abort
     // before creating the socket to avoid leaking a zombie channel connection.
-    if (this.intentionalClose) return;
+    if (reloadingForNewBundle || this.intentionalClose || generation !== this.connectionGeneration)
+      return;
     if (!token) {
       this.scheduleReconnect();
       return;
@@ -1781,17 +2126,29 @@ export class EngineChannelClient {
         return;
       }
       if (!msg || typeof (msg as { type?: string }).type !== 'string') return;
+      this.clearForegroundChannelProbe();
       this.handleMessage(msg);
     };
 
     ws.onclose = (e) => {
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.clearForegroundChannelProbe();
       if (this.intentionalClose) return;
       if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
         // 2026-09-04: see EngineStateClient.checkSessionThenReconnect.
         this.checkSessionThenReconnect('channel:4401');
+        return;
+      }
+      if (e.code === CLOSE_UPGRADE_REQUIRED) {
+        this.disconnect();
+        void reloadForNewBundle();
+        return;
+      }
+      if (e.code === CLOSE_RATE_LIMITED) {
+        this.retryCount = Math.max(this.retryCount, 4);
+        this.scheduleReconnect();
         return;
       }
       this.handshakeFailures++;
@@ -1856,6 +2213,14 @@ export class EngineChannelClient {
         this.emit('onFinancialUpdate', msg);
         return;
       }
+      case 'CHANNEL_ERROR': {
+        /* The server sends this when it refuses a subscribe. It fell through
+           this switch unread (final sweep 2026-09-08): a subscribe rejection
+           produced no log, no status change and no UI. It is at least on the
+           record now. */
+        console.warn(`[EngineChannelClient] CHANNEL_ERROR ${msg.code}: ${msg.message}`);
+        return;
+      }
     }
   }
 
@@ -1866,7 +2231,11 @@ export class EngineChannelClient {
     // Use setTimeout(0) for same reason as EngineStateClient EVENT handler:
     // prevent React 18 batching from dropping rapid sequential messages
     // (e.g. FINANCIAL_UPDATE arriving back-to-back for wallet + ledger).
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     setTimeout(() => {
+      if (generation !== this.connectionGeneration || socket !== this.ws || this.intentionalClose)
+        return;
       (this.listeners[key] as Set<Listener<typeof msg>>).forEach((listener) => {
         try {
           listener(msg);
@@ -1882,6 +2251,53 @@ export class EngineChannelClient {
    * minute of silence on an OPEN socket is a half-open link that will never
    * fire onclose on its own. Tear it down into the backoff ladder.
    */
+  private clearForegroundChannelProbe(): void {
+    if (this.foregroundProbeTimer !== null) {
+      window.clearTimeout(this.foregroundProbeTimer);
+      this.foregroundProbeTimer = null;
+    }
+  }
+
+  private beginForegroundChannelProbe(): void {
+    if (
+      this.intentionalClose ||
+      this.status !== 'connected' ||
+      document.visibilityState !== 'visible' ||
+      this.foregroundProbeTimer !== null
+    )
+      return;
+    const socket = this.ws;
+    if (!socket || socket.readyState !== 1) return;
+    this.foregroundProbeTimer = window.setTimeout(() => {
+      this.foregroundProbeTimer = null;
+      if (
+        this.ws !== socket ||
+        this.intentionalClose ||
+        this.status !== 'connected' ||
+        document.visibilityState !== 'visible'
+      )
+        return;
+      this.setStatus('reconnecting');
+      this.ws = null;
+      try {
+        socket.close(4001, 'channel did not answer foreground probe');
+      } catch {
+        /* Detached generation cannot drive a second recovery. */
+      }
+      this.retryCount = 0;
+      this.scheduleReconnect();
+    }, EngineChannelClient.FOREGROUND_CHANNEL_BUDGET_MS);
+    try {
+      // Already implemented by the running channel server. A quiet lobby has
+      // a deterministic response; it need not wait for the next 25-second ping.
+      socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
+      this.lastReassertAt = Date.now();
+      this.replayDesiredState(socket);
+    } catch {
+      // The bounded probe owns recovery even if send does not emit onclose.
+    }
+  }
+
   private startWatchdog(): void {
     this.lastInboundAt = Date.now();
     if (this.watchdogTimer !== null) return;
@@ -1924,12 +2340,14 @@ export class EngineChannelClient {
           this.lastInboundAt,
           Date.now() - EngineChannelClient.WAKE_GRACE_MS
         );
+        this.beginForegroundChannelProbe();
       };
       document.addEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private stopWatchdog(): void {
+    this.clearForegroundChannelProbe();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
@@ -1945,10 +2363,14 @@ export class EngineChannelClient {
 
   /** 2026-09-04: see EngineStateClient.checkSessionThenReconnect. */
   private checkSessionThenReconnect(source: string): void {
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
-        if (this.intentionalClose) return;
+        // A recovery that already replaced this socket owns its own status.
+        if (this.intentionalClose || generation !== this.connectionGeneration || socket !== this.ws)
+          return;
         if (verdict === 'revoked') {
           this.setStatus('auth_failed');
           return;
@@ -1964,6 +2386,7 @@ export class EngineChannelClient {
   }
 
   private scheduleReconnect(): void {
+    if (reloadingForNewBundle) return;
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
     // 2026-08-22: NEVER stop trying (same contract as EngineStateClient).

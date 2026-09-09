@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/the-health-report-gets-a-reader",
+  "_comment": "fn_ca_diamond_health gains a scheduled reader (20260908162611); the dead fn_ca_normalise_claim_loop is dropped.",
+  "tables": [],
+  "functions": ["fn_ca_diamond_health_watch"],
+  "columns": {}
+}

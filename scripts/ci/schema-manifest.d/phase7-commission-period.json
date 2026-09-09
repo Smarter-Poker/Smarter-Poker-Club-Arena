@@ -1,0 +1,21 @@
+{
+  "_owner": "fix/phase7-commission-period-recovery",
+  "_comment": "Phase 7 of 8 (union accounting). Round 2 stopped stamping settled_at on every paid row and now records the period it paid in agent_commission_settlements; 'settled' is derived from that. These objects were applied to production between 02:56 and 04:06 UTC on 2026-09-08 (migrations 20260908025653, 031445, 032512, 033445, 035653, 040743, 042554) and all 13 were verified present in the live schema before this fragment was written. The base snapshot predates them, which is the only reason the applied-migrations gate could not see them.",
+  "tables": [
+    "agent_commission_settlements",
+    "agent_commission_unsettled_rollup",
+    "agent_commissions_unsettled",
+    "v_agent_commissions"
+  ],
+  "functions": [
+    "fn_agent_claim_commission",
+    "fn_agent_commission_paid_by_period",
+    "fn_agent_commission_rollup_recompute",
+    "fn_agent_unsettled_commission",
+    "fn_club_unclaimable_commission",
+    "fn_rebuild_agent_commission_rollup",
+    "fn_settle_round2_club_to_agents",
+    "trg_agent_commission_rollup_change",
+    "trg_agent_commission_rollup_insert"
+  ]
+}

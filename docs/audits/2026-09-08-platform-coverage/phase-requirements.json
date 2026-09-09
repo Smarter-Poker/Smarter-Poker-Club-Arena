@@ -1,0 +1,1951 @@
+{
+  "source_document": "Smarter-Poker-Club-Arena-Audit.docx",
+  "source_version": "22",
+  "source_sha256": "478c431345ba7a33724f69a462838f9fbc9499de3a1dbecb375cf13b373b2e7b",
+  "requirements": [
+    {
+      "id": "L01",
+      "priority": "P0",
+      "requirement": "Declare one exact chip unit; reject every API value that cannot be represented. Test sub-cent antes, maximum amounts and overflow.",
+      "historical_evidence": "V; roadmap scale risk",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L02",
+      "priority": "P0",
+      "requirement": "Balance each committed posting with named source, destination, currency and estate. Reject a missing or unequal leg.",
+      "historical_evidence": "F11; L gap",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L03",
+      "priority": "P0",
+      "requirement": "Inventory every money writer across engine, browser APIs, World Hub, SQL and admin tools. Map each to the canonical operation.",
+      "historical_evidence": "F14; V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena writers now; World Hub writer inventory deferred to separate program."
+    },
+    {
+      "id": "L04",
+      "priority": "P0",
+      "requirement": "Persist business idempotency keys and payload identity. Identical retries reuse results; changed payloads on the same key are rejected.",
+      "historical_evidence": "S partial",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L05",
+      "priority": "P0",
+      "requirement": "Commit balance change, journal and obligation state atomically. Inject failure between each statement and prove all-or-nothing results.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L06",
+      "priority": "P0",
+      "requirement": "Separate cash, diamonds, tournament scores and display counters. Prove no scoring stack can enter a cash withdrawal.",
+      "historical_evidence": "S partial; Cashout",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L07",
+      "priority": "P0",
+      "requirement": "Constrain negative balances and unauthorized issuance. Test racing debits, refunds and direct writes under every execution role.",
+      "historical_evidence": "H controls; V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L08",
+      "priority": "P0",
+      "requirement": "Reconstruct each account from its opening balance and postings. Verify per-account equality, not only a net-zero global sum.",
+      "historical_evidence": "F11; L gap",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L09",
+      "priority": "P1",
+      "requirement": "Preserve immutable settlement history and explicit correction provenance. Link reason, evidence, approver and original transaction.",
+      "historical_evidence": "S partial",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L10",
+      "priority": "P1",
+      "requirement": "Keep permanent journal retention under the approved policy. Partitioning must preserve global idempotency across time boundaries.",
+      "historical_evidence": "H; V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "L11",
+      "priority": "P0",
+      "requirement": "Recover from uncertain commit results using the original operation record. Never issue a new payout merely because a request timed out.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 verifies departure outcome propagation only; full locking, occupancy, money and retry requirements remain phase 4."
+    },
+    {
+      "id": "L12",
+      "priority": "P1",
+      "requirement": "Provide player, agent, club and union statements from the same ledger definitions, with opening and closing balances.",
+      "historical_evidence": "F08/F10; gaps",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W01",
+      "priority": "P0",
+      "requirement": "Reserve a cash buy-in once, then fund exactly one occupancy. Race two tables against the same available wallet.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W02",
+      "priority": "P0",
+      "requirement": "Cancel an unconsumed reservation once on failure or expiry. Reconnect must retain an already-funded seat.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W03",
+      "priority": "P0",
+      "requirement": "Top-ups enter between hands with explicit target-stack semantics. Duplicate auto-top-up and manual requests must not double debit.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W04",
+      "priority": "P0",
+      "requirement": "Cash out the latest committed seat stack under game/seat locks. Race leave, all-in settlement and jackpot credit.",
+      "historical_evidence": "S control; verify",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 verifies departure outcome propagation only; full locking, occupancy, money and retry requirements remain phase 4."
+    },
+    {
+      "id": "W05",
+      "priority": "P0",
+      "requirement": "Use a new occupancy identity when reseated. A replay from a previous visit cannot pay or close the new seat.",
+      "historical_evidence": "S control; verify",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 verifies departure outcome propagation only; full locking, occupancy, money and retry requirements remain phase 4."
+    },
+    {
+      "id": "W06",
+      "priority": "P0",
+      "requirement": "Route union-table cashout to the actual funding club wallet. Test multi-club membership and changed affiliation.",
+      "historical_evidence": "V; related F02",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W07",
+      "priority": "P1",
+      "requirement": "Define sit-out, missed-blind, waiting-for-BB and removal behavior. Test that only eligible players pay required forced bets.",
+      "historical_evidence": "V",
+      "primary_phase": 8,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W08",
+      "priority": "P0",
+      "requirement": "Handle partial antes/blinds without negative stacks or lost pot eligibility. Test several differently short stacks together.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W09",
+      "priority": "P0",
+      "requirement": "Agent cashiers may transfer only within authorized scope and spendable/credit limits. Test cross-club and forged-user requests.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W10",
+      "priority": "P0",
+      "requirement": "Record credit draws, repayments and limits separately. No borrowing means no debt invoice; repayment reduces debt once.",
+      "historical_evidence": "H fix; verify",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W11",
+      "priority": "P1",
+      "requirement": "Expose pending, committed, failed and refunded states accurately on desktop/mobile. Refresh must not replay an intent.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "W12",
+      "priority": "P0",
+      "requirement": "External payment settlement, if supported, reconciles processor evidence to cash ledgers. No invoice-status toggle fabricates received money.",
+      "historical_evidence": "V; conditional",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Assess applicability in Club Arena; World Hub/payment-provider implementation deferred where outside repository."
+    },
+    {
+      "id": "C01",
+      "priority": "P0",
+      "requirement": "Validate legal actions and acting player on the server with hand/action versions. Reject stale, duplicated and out-of-turn actions.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C02",
+      "priority": "P0",
+      "requirement": "Certify Holdem and each Omaha hand evaluator against an independent oracle, including exactly two Omaha hole cards.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C03",
+      "priority": "P0",
+      "requirement": "Certify minimum raises, cumulative short-all-in reopening and unacted players. Cover no-limit, pot-limit and fixed-limit separately.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C04",
+      "priority": "P0",
+      "requirement": "Compute pot-limit maximum from the pot, outstanding bets and call. Compare server acceptance with displayed maximum.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C05",
+      "priority": "P0",
+      "requirement": "Return unmatched bets before rake and award calculations. Uncalled chips never become contributed rake or a side pot.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C06",
+      "priority": "P0",
+      "requirement": "Construct main/side pots from contribution caps, retaining folded dead money but excluding folded players from winning.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C07",
+      "priority": "P0",
+      "requirement": "Apply exact tie/odd-chip rules independently to each pot. Test three-way ties, fractional splits and heads-up transitions.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C08",
+      "priority": "P1",
+      "requirement": "Define show/muck order and winning-hand display. All shown best-five cards must match the evaluator and hand record.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C09",
+      "priority": "P1",
+      "requirement": "Apply the correct dealer/blind convention after departures and heads-up transition. Verify it is the published cash rule.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C10",
+      "priority": "P0",
+      "requirement": "Separate showdown evaluation from payout presentation. A cancelled browser animation cannot cancel or repeat a financial award.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C11",
+      "priority": "P1",
+      "requirement": "Define cash disconnect time bank, automatic check/fold and reconnection behavior. Measure server deadlines under latency.",
+      "historical_evidence": "V",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "C12",
+      "priority": "P1",
+      "requirement": "Validate anti-rathole, buy-in bounds, waiting list, table closure and seat moves through their full cash funding lifecycle.",
+      "historical_evidence": "V",
+      "primary_phase": 8,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R01",
+      "priority": "P0",
+      "requirement": "Snapshot rake percentage, caps, heads-up adjustments and no-flop-no-drop policy for every hand. Configuration changes affect future hands.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R02",
+      "priority": "P0",
+      "requirement": "Calculate rake from eligible matched pots exactly once. Test several side pots without repeating a hand-level cap.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R03",
+      "priority": "P0",
+      "requirement": "Allocate collected rake using approved weighted contributions; preserve per-player inputs and exact allocated total.",
+      "historical_evidence": "H weighted; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R04",
+      "priority": "P0",
+      "requirement": "Define treatment of antes, blinds, straddles and bomb contributions. Keep forced money distinct from voluntary VPIP activity.",
+      "historical_evidence": "V; product rule",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R05",
+      "priority": "P0",
+      "requirement": "Separate rake collection, rake attribution, rakeback entitlement and actual payment. A credit statistic must not mint chips.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R06",
+      "priority": "P0",
+      "requirement": "Attribute union activity to the club/agent relationship at play time across cash, MTT, Spins and SNGs.",
+      "historical_evidence": "F06; L gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R07",
+      "priority": "P0",
+      "requirement": "Version hierarchy contracts and one common percentage basis. Prove downstream allocations fit the parent allocation.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R08",
+      "priority": "P0",
+      "requirement": "Enforce the approved minimum upline margin and rate ranges, including direct players under super agents. Test invalid trees.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R09",
+      "priority": "P0",
+      "requirement": "Pay each earning once from its designated treasury. Distinguish accrued, payable, paid and forfeiture/correction states.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R10",
+      "priority": "P1",
+      "requirement": "Test rate changes and transfers of players mid-period. Previously earned attribution must remain with its historical beneficiary.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R11",
+      "priority": "P0",
+      "requirement": "Keep BBJ/promo drops outside rake credit unless explicitly contracted. Changing attribution never changes the total drop.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "R12",
+      "priority": "P1",
+      "requirement": "Reconcile hand-level rake totals to player, agent, club, union, invoice and export totals without pagination loss.",
+      "historical_evidence": "F08; S gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J01",
+      "priority": "P0",
+      "requirement": "Version game-specific qualifying hands, card-use rules, minimum pot/player count and board eligibility. Test every exclusion.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J02",
+      "priority": "P0",
+      "requirement": "Collect each eligible drop once; allocate main, backup, promo and other approved shares to exactly the collected amount.",
+      "historical_evidence": "H control; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J03",
+      "priority": "P0",
+      "requirement": "Persist funded qualification and payout identity before completion. A transient error cannot become an ineligible hand.",
+      "historical_evidence": "F03; S gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J04",
+      "priority": "P0",
+      "requirement": "Calculate every recipient and odd unit before crediting. Sum actual allocations exactly to the award debit.",
+      "historical_evidence": "F01; SQL corrected; broader proof open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J05",
+      "priority": "P0",
+      "requirement": "Deduplicate recipient lists and validate winner/loser roles against the hand result. Reject malformed or mismatched identities.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J06",
+      "priority": "P0",
+      "requirement": "Pay departed recipients using immutable funding affiliation. Removed membership must not erase a valid award.",
+      "historical_evidence": "F02; L gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J07",
+      "priority": "P0",
+      "requirement": "Preserve a funded obligation through unresolved recipient delivery. Replaying any stage must never refund or credit twice.",
+      "historical_evidence": "F02; L defect",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J08",
+      "priority": "P0",
+      "requirement": "Record main/backup reseeds as transfers. Mini reserve exceptions must preserve the original bank in every failure path.",
+      "historical_evidence": "F02; L gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J09",
+      "priority": "P0",
+      "requirement": "Serialize simultaneous jackpots against the pool and published reset policy. Test concurrency across different tables.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J10",
+      "priority": "P1",
+      "requirement": "Show actual credited amount and destination per recipient. An owed/parked share must not receive a paid notice.",
+      "historical_evidence": "F05; S gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J11",
+      "priority": "P0",
+      "requirement": "Keep displayed pool, funded banks, awards and lifetime counters reconcilable without counting the display as another asset.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "J12",
+      "priority": "P1",
+      "requirement": "Verify jackpot replay, management notice, recipient history and backup balances on mobile, reconnect and server restart.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T01",
+      "priority": "P0",
+      "requirement": "Atomic registration binds one funded entry to one player/event. Race duplicate requests, last seat and registration closure.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T02",
+      "priority": "P0",
+      "requirement": "Split total entry into disclosed prize, bounty and fee components. Verify all supported prices and promotional entries.",
+      "historical_evidence": "F04; S gap",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T03",
+      "priority": "P0",
+      "requirement": "Fund guarantees/overlays from an approved bank. Total committed prizes must fit actual funding before obligations mature.",
+      "historical_evidence": "F04; gap",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T04",
+      "priority": "P0",
+      "requirement": "Give each re-entry a distinct identity; enforce eliminated status, limits and deadline. Never mistake retries for another entry.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T05",
+      "priority": "P0",
+      "requirement": "Process rebuy/add-on eligibility and funding atomically, with tournament chips separate from spendable cash.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T06",
+      "priority": "P0",
+      "requirement": "Unregister/refund according to entry provenance and policy. Race refund with tournament start and satellite transfer.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T07",
+      "priority": "P0",
+      "requirement": "Freeze the final payout ladder at the disclosed cutoff; distribute residual units once and store the resulting amounts.",
+      "historical_evidence": "S math; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T08",
+      "priority": "P0",
+      "requirement": "Persist elimination rank from authoritative hands. Test same-hand ties, simultaneous tables and final-table transitions.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T09",
+      "priority": "P0",
+      "requirement": "Create unique finishing obligations and pay cumulative deltas once. Test early payouts and final incremental awards.",
+      "historical_evidence": "L control; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T10",
+      "priority": "P0",
+      "requirement": "Fund extra bubble protection separately or include its disclosed reserve before binding the ladder. Never overcommit the pool.",
+      "historical_evidence": "F04; gap",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T11",
+      "priority": "P0",
+      "requirement": "Drain correct prize/bounty/fee sub-balances at completion; leave display history intact and preserve unpaid debt.",
+      "historical_evidence": "H escrow; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "T12",
+      "priority": "P1",
+      "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
+      "historical_evidence": "F05; gap",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K01",
+      "priority": "P1",
+      "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K02",
+      "priority": "P1",
+      "requirement": "Snapshot level/blinds at hand creation; advance only the next eligible hand when a level boundary occurs mid-hand.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K03",
+      "priority": "P1",
+      "requirement": "Define registration wall time separately from blind time and maintenance extensions. Test daylight saving and UTC conversion.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K04",
+      "priority": "P1",
+      "requirement": "Publish break cadence, duration and exceptions. Track requested, draining, on-break and resumed states explicitly.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K05",
+      "priority": "P1",
+      "requirement": "Finish active hands before a tournament break begins; release participating tables using one authoritative deadline.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K06",
+      "priority": "P1",
+      "requirement": "Keep maintenance, hand-for-hand, deal discussion and operator pauses independently owned. One resume cannot clear another.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K07",
+      "priority": "P1",
+      "requirement": "Transfer all applicable deadlines across the approved maintenance freeze. No hidden time-bank, rebuy or offer expiry.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K08",
+      "priority": "P1",
+      "requirement": "Balance tables with the published seat-selection rule. Transfer scoring stacks once and preserve in-progress hands.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K09",
+      "priority": "P1",
+      "requirement": "Break tables and form the final table without missing/duplicating players. Test moves alongside elimination and reconnect.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K10",
+      "priority": "P1",
+      "requirement": "Hand-for-hand uses a shared hand epoch and barrier. Compare simultaneous eliminations under the chosen rank policy.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K11",
+      "priority": "P1",
+      "requirement": "Tournament sit-outs still follow tournament blinds/antes policy. Cash sit-out rules must not remove tournament obligations.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "K12",
+      "priority": "P1",
+      "requirement": "Test missed scheduler ticks, engine failover and long-running hands at :53/:55/:00 without restarting active settlement.",
+      "historical_evidence": "H drain fix; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S01",
+      "priority": "P0",
+      "requirement": "Start a full SNG once under concurrent final-seat joins. All entrants must be funded before the start commits.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S02",
+      "priority": "P0",
+      "requirement": "Resolve last-seat join versus unregister atomically. Never start with a refunded entrant or strand an unseated buy-in.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S03",
+      "priority": "P1",
+      "requirement": "Define seating, blinds, time banks and payouts for each SNG size, including heads-up and special payout formats.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S04",
+      "priority": "P0",
+      "requirement": "Use the same escrow/obligation contract as MTTs, with separate format rules rather than duplicate payment implementations.",
+      "historical_evidence": "L/S partial",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S05",
+      "priority": "P0",
+      "requirement": "Close SNG/heads-up fee escrow correctly and retain prize display history. Completed events must have explained residuals.",
+      "historical_evidence": "H issue; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S06",
+      "priority": "P0",
+      "requirement": "Persist one Spin draw, probability table version and entrants before reveal. Replay and failover cannot reroll.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S07",
+      "priority": "P0",
+      "requirement": "Fund the selected Spin payout with net entries plus reserve transfer. Fees cannot be counted as prize funding twice.",
+      "historical_evidence": "F04; gap",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S08",
+      "priority": "P1",
+      "requirement": "Reveal multiplier/prize before the first deal and action timer. All participants must receive the same stored result.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S09",
+      "priority": "P0",
+      "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S10",
+      "priority": "P0",
+      "requirement": "Audit reserve contributions, draws, odds and expected cost. Verify peak payout exposure against approved funding policy.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S11",
+      "priority": "P0",
+      "requirement": "Define Spin/SNG cancellation before draw, after reveal and after play begins. Avoid double refunds or reserve releases.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "S12",
+      "priority": "P1",
+      "requirement": "Implement heads-up button/action order and simultaneous-bustout rules consistently across engine, history and displayed payouts.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B01",
+      "priority": "P0",
+      "requirement": "Keep bounty funding separate from finishing prizes and rake. Reconcile entry splits, carried bounties and paid rewards.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B02",
+      "priority": "P0",
+      "requirement": "Award eliminations by relevant-pot eligibility, including side pots, tied winners and split-pot variants.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B03",
+      "priority": "P0",
+      "requirement": "PKO cash portion plus carried portion equals the eliminated bounty. Resolve final winner own-bounty treatment explicitly.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B04",
+      "priority": "P0",
+      "requirement": "Mystery activation follows the approved rebuy/add-on cutoff. A break alone must not enable early awards.",
+      "historical_evidence": "V; product rule",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B05",
+      "priority": "P0",
+      "requirement": "Generate and fund the complete mystery reward inventory. Draw without replacement with one key per entitlement.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B06",
+      "priority": "P1",
+      "requirement": "Update remaining mystery rewards and public winners once. Animation replay must not redraw, reorder or repay.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B07",
+      "priority": "P0",
+      "requirement": "Transfer satellite seat value from its funded pool into target escrow exactly once; retain both event identities.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B08",
+      "priority": "P0",
+      "requirement": "Apply Smarter cash treatment for duplicate seats, valid unregisters and cancelled targets. Do not introduce unapproved tickets.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B09",
+      "priority": "P0",
+      "requirement": "Resolve target registration closure and concurrent target entries atomically with seat award or approved cash alternative.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B10",
+      "priority": "P0",
+      "requirement": "Fund satellite seat guarantees and leftover awards explicitly. Test fields smaller than advertised seat count.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B11",
+      "priority": "P1",
+      "requirement": "Publish and enforce deals, shootouts, phased events and equal-prize stopping rules only where those formats are offered.",
+      "historical_evidence": "V; conditional",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "B12",
+      "priority": "P0",
+      "requirement": "Version cancellation treatment for already-paid bounties, guarantees and seat transfers. Preserve prior legitimate awards.",
+      "historical_evidence": "V",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U01",
+      "priority": "P0",
+      "requirement": "Use one immutable period identity with [start,end) boundaries in the approved timezone. Test both daylight-saving transitions.",
+      "historical_evidence": "L week helpers; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U02",
+      "priority": "P0",
+      "requirement": "Allocate activity to membership and contract versions effective at play time. Reconcile invoice basis to paid attribution.",
+      "historical_evidence": "F06; L gap",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U03",
+      "priority": "P0",
+      "requirement": "Choose gross or net player result basis and disclose it. Prove rake/BBJ/fees and club returns appear exactly once.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U04",
+      "priority": "P0",
+      "requirement": "Record opening debt/credit, current charges, approved adjustments and payments. Ending position must carry across periods.",
+      "historical_evidence": "F10; SQL corrected; summary completeness open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U05",
+      "priority": "P0",
+      "requirement": "Run union-to-club, club-to-agent and agent-to-player stages with actual success contracts and exact funded transfers.",
+      "historical_evidence": "F07/F11; gaps",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U06",
+      "priority": "P0",
+      "requirement": "Mark a close complete only after every required stage reaches its intended terminal state. Retry retains unfinished stage identity.",
+      "historical_evidence": "F07; L defect",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U07",
+      "priority": "P1",
+      "requirement": "Generate one versioned invoice per intended document identity; delivered documents stay immutable with traceable credit notes.",
+      "historical_evidence": "L/S controls; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U08",
+      "priority": "P0",
+      "requirement": "Reconcile enabling weekly invoices with correct attribution. Skipped statement issuance cannot display as fully invoiced.",
+      "historical_evidence": "F06; L disabled",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U09",
+      "priority": "P1",
+      "requirement": "Support due dates, partial payments, overpayments, unapplied receipts and disputes with independently correct balances.",
+      "historical_evidence": "F09/F10; gaps",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U10",
+      "priority": "P1",
+      "requirement": "Aggregate complete server-side data without row caps, current-rate inference or errors becoming zero. Test over 2,000 postings.",
+      "historical_evidence": "F08; S defect",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U11",
+      "priority": "P1",
+      "requirement": "Reconcile exports, dashboard, statement, invoice and wallet movements to one period manifest and recorded snapshot.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "U12",
+      "priority": "P0",
+      "requirement": "Authorize invoice/credit/settlement actions by union and club scope; verify roles, revoked staff and direct RPC access.",
+      "historical_evidence": "S fixes; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P01",
+      "priority": "P0",
+      "requirement": "Send union promo to the club Promo Wallet under current policy. Subsequent player receipt is ordinary spendable chips.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P02",
+      "priority": "P0",
+      "requirement": "Manual owner disbursements debit the named promo source once. Test duplicate sends and cross-estate recipients.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P03",
+      "priority": "P0",
+      "requirement": "Leaderboard rewards have funded budgets and unique award keys. Recompute rankings without paying awards twice.",
+      "historical_evidence": "V",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P04",
+      "priority": "P1",
+      "requirement": "Keep unbuilt splash-pot behavior unavailable until rules are approved; no hidden generic giveaway path.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P05",
+      "priority": "P0",
+      "requirement": "Price insurance from immutable eligible exposure and rule version. Payment acceptance must close before outcome disclosure.",
+      "historical_evidence": "V; conditional",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P06",
+      "priority": "P0",
+      "requirement": "Premium, maximum covered loss, payout and reserve changes reconcile independently of the pot, rake and BBJ.",
+      "historical_evidence": "V; conditional",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P07",
+      "priority": "P0",
+      "requirement": "Cancel/expire insurance offers under deterministic deadlines and maintenance thaw rules. Retry cannot accept a stale quote.",
+      "historical_evidence": "V; conditional",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P08",
+      "priority": "P0",
+      "requirement": "Record diamonds in their own supply and transaction ledger. Chip conversion uses an explicit approved rate and two linked legs.",
+      "historical_evidence": "V",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P09",
+      "priority": "P0",
+      "requirement": "Journal accrued rakeback, agent commissions and other redeemable liabilities so duplicate attribution cannot create hidden debt.",
+      "historical_evidence": "H gap; verify",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P10",
+      "priority": "P1",
+      "requirement": "Separate noncash VIP points and entitlements from cash liabilities while preserving their issuance and redemption histories.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P11",
+      "priority": "P1",
+      "requirement": "Show denomination and conversion clearly in every store, wallet and game entry flow. Avoid an unexplained currency symbol.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "P12",
+      "priority": "P0",
+      "requirement": "Keep giveaways, fixtures, horse funding and owner grants within approved issuance/transfer rules and budget caps.",
+      "historical_evidence": "H Mint; verify",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Shared issuance and transfer correctness included; horse feature/strategy work excluded."
+    },
+    {
+      "id": "A01",
+      "priority": "P1",
+      "requirement": "Maintain an event manifest with order, trigger, duration, sound and speed profile for every approved animation family.",
+      "historical_evidence": "H law; verify",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A02",
+      "priority": "P0",
+      "requirement": "Emit financial result events from committed state. Client rendering and animation completion never create financial authority.",
+      "historical_evidence": "V",
+      "primary_phase": 1,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 departure event ordering only; remaining financial animation events remain phase 11."
+    },
+    {
+      "id": "A03",
+      "priority": "P1",
+      "requirement": "Order forced bets, deal, legal action, street collection and board reveal without overlapping incompatible states.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A04",
+      "priority": "P1",
+      "requirement": "Showdown reveals, hand label, card highlights and pot pushes match each pot/board allocation in order.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A05",
+      "priority": "P1",
+      "requirement": "Animate split awards and total won without multiplying the total across boards or replayed events.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A06",
+      "priority": "P1",
+      "requirement": "Preserve bomb opening cue, bounty reveal, jackpot award and next-hand sequencing across all configured game families.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A07",
+      "priority": "P1",
+      "requirement": "Replay delivered events idempotently and handle gaps with authoritative snapshots. Never accept an action against a stale hand.",
+      "historical_evidence": "V",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A08",
+      "priority": "P1",
+      "requirement": "Reconnect recovers current balance, turn, board and deadline while preserving the approved owed-animation behavior.",
+      "historical_evidence": "V",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A09",
+      "priority": "P1",
+      "requirement": "Honor approved animation speed, reduced-motion meaning and sound rules. Do not add an unapproved skip-all shortcut.",
+      "historical_evidence": "H law; verify",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A10",
+      "priority": "P1",
+      "requirement": "Keep multiple tables isolated by event/hand identity. Alerts may draw attention; never switch the active table automatically.",
+      "historical_evidence": "H law; verify",
+      "primary_phase": 8,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A11",
+      "priority": "P2",
+      "requirement": "Verify mobile touch, orientation, safe areas, contrast, labels and keyboard controls without changing approved matte UI artwork.",
+      "historical_evidence": "V",
+      "primary_phase": 11,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "A12",
+      "priority": "P1",
+      "requirement": "Hand history and replay reconstruct contributions, returned bets, pots, rake, BBJ and actual payouts without leaking private cards.",
+      "historical_evidence": "V",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G01",
+      "priority": "P0",
+      "requirement": "Protect deck entropy, RNG state and unrevealed cards from clients, observers, staff tools and logs. Test recipient-level payloads.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G02",
+      "priority": "P0",
+      "requirement": "Validate shuffle uniformity and unpredictability with appropriate independent testing. Never use predictable game-outcome randomness.",
+      "historical_evidence": "V",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G03",
+      "priority": "P0",
+      "requirement": "Authenticate every socket action and authorize table/club/union membership server-side. Revalidate revoked sessions and staff scope.",
+      "historical_evidence": "V",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G04",
+      "priority": "P0",
+      "requirement": "Audit RLS, definer grants, fixed search paths and service credentials across all money functions and readable financial tables.",
+      "historical_evidence": "V",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G05",
+      "priority": "P1",
+      "requirement": "Separate staff roles for access, configuration, transfers, corrections and settlement. Record privileged actions with evidence.",
+      "historical_evidence": "V",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G06",
+      "priority": "P1",
+      "requirement": "Detect and investigate collusion, chip dumping, shared control and prohibited assistance with preserved, access-controlled evidence.",
+      "historical_evidence": "V",
+      "primary_phase": 10,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Collusion, chip dumping and evidence workflows included; real-time assistance workstream excluded by user."
+    },
+    {
+      "id": "G07",
+      "priority": "P1",
+      "requirement": "Define horse/operator-controlled participation and disclosure policies against the intended product and licensing model. Avoid secret information advantage.",
+      "historical_evidence": "V",
+      "primary_phase": null,
+      "status": "excluded_by_user",
+      "scope_note": "Bots, Horses And Real-Time Assistance workstream excluded by user. Preserve original text as historical scope, do not implement."
+    },
+    {
+      "id": "G08",
+      "priority": "P1",
+      "requirement": "Review account verification, age/location restrictions and responsible-play controls for actual operating jurisdictions and money model.",
+      "historical_evidence": "V; conditional",
+      "primary_phase": 10,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G09",
+      "priority": "P1",
+      "requirement": "Apply published complaint, outage and dispute policies consistently; support can trace a disputed hand through to its postings.",
+      "historical_evidence": "V",
+      "primary_phase": 10,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G10",
+      "priority": "P1",
+      "requirement": "Rate-limit dangerous endpoints and test replay, forged IDs, denial-of-service and unauthorized balance mutation.",
+      "historical_evidence": "V",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G11",
+      "priority": "P1",
+      "requirement": "Retain approved privacy and card-history restrictions; separate public replay from restricted fairness/audit evidence.",
+      "historical_evidence": "H rule; verify",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "G12",
+      "priority": "P0",
+      "requirement": "Protect shared-union tables and liabilities when clubs leave, merge or change owners. Membership edits cannot orphan money.",
+      "historical_evidence": "V",
+      "primary_phase": 10,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O01",
+      "priority": "P0",
+      "requirement": "Inventory running client/engine SHA, database definitions and grants. Prove source-to-deployment parity for every repaired money path.",
+      "historical_evidence": "V; partial catalog",
+      "primary_phase": 1,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 release baseline only; repeat source/runtime proof for each later phase."
+    },
+    {
+      "id": "O02",
+      "priority": "P0",
+      "requirement": "Reproduce source defects on an isolated database copy, including triggers. Do not mistake static arithmetic proof for runtime certification.",
+      "historical_evidence": "V",
+      "primary_phase": 1,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 receipt/caller fixtures only; real database triggers require their own operation-specific evidence."
+    },
+    {
+      "id": "O03",
+      "priority": "P0",
+      "requirement": "Inject crash, timeout, deadlock and lost acknowledgement at each commit boundary. Prove one effect and recoverable obligations.",
+      "historical_evidence": "V",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O04",
+      "priority": "P0",
+      "requirement": "Fence table ownership across workers and restarts. Two engines must never accept actions or settle the same hand concurrently.",
+      "historical_evidence": "V",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O05",
+      "priority": "P1",
+      "requirement": "Test representative peak and failover load with all game variants and horse activity; measure tail latency and timer lateness.",
+      "historical_evidence": "F13; H risk",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Representative permitted workloads included; no excluded horse feature or strategy enhancement."
+    },
+    {
+      "id": "O06",
+      "priority": "P0",
+      "requirement": "Drain all in-flight financial work before approved maintenance/restart. Readiness cannot become true while money still commits.",
+      "historical_evidence": "H fix; verify",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O07",
+      "priority": "P0",
+      "requirement": "Prove clean schema installation and upgrade from supported snapshots. Separate production-specific repairs from reusable schema changes.",
+      "historical_evidence": "F12; S risk",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O08",
+      "priority": "P0",
+      "requirement": "Restore an isolated backup/PITR snapshot, replay to a known boundary and reconcile money. A backup setting alone is insufficient.",
+      "historical_evidence": "H partial; verify",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O09",
+      "priority": "P1",
+      "requirement": "Send actionable management push notices with exact incident and affected operation. Existing alerts verify fixes, never replace them.",
+      "historical_evidence": "V",
+      "primary_phase": 10,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O10",
+      "priority": "P0",
+      "requirement": "Retire each repair job only after its live root fix and replay test pass. Any repeated repair for one cause means unresolved defect.",
+      "historical_evidence": "H binding policy",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O11",
+      "priority": "P1",
+      "requirement": "Define measured latency, availability and recovery targets with workload and geography. Avoid unsupported \u201cbetter than every room\u201d claims.",
+      "historical_evidence": "V",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "O12",
+      "priority": "P0",
+      "requirement": "Release evidence names requirement, source diff, DB change, tests, deployed version and residual risk. No checklist item passes on existence alone.",
+      "historical_evidence": "V",
+      "primary_phase": 1,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Phase 1 evidence format and release proof only; every later phase must supply its own evidence."
+    },
+    {
+      "id": "AX01",
+      "priority": "P0",
+      "requirement": "For each supported Mini amount and recipient count, actual recipient claims sum to the reserve debit; signed residual is assigned before the single credit.",
+      "historical_evidence": "54 isolated SQL cases pass; helper stubbed",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX02",
+      "priority": "P0",
+      "requirement": "Duplicate or null dealt-in IDs cannot change jackpot allocation; winner and loser must be distinct.",
+      "historical_evidence": "Mini SQL cases pass",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX03",
+      "priority": "P0",
+      "requirement": "Replay an accepted Mini after its tier is disabled: return the same award and per-player amount, with no second debit.",
+      "historical_evidence": "Mini SQL replay passes",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX04",
+      "priority": "P0",
+      "requirement": "Two simultaneous Mini calls for one hand observe one locked payout decision; another hand cannot overdraw the same reserve.",
+      "historical_evidence": "Lock ordering corrected; multi-session test open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX05",
+      "priority": "P0",
+      "requirement": "Crash before and after a parked BBJ share is reserved, released or paid. Each transition changes its named funding bank once.",
+      "historical_evidence": "Funding fixed in reviewed paths; full recovery open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX06",
+      "priority": "P0",
+      "requirement": "A settled jackpot recipient appears once in the seat or wallet, obligation record and player history; do not treat a claim row alone as proof of credit.",
+      "historical_evidence": "Full trigger and wallet proof open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX07",
+      "priority": "P0",
+      "requirement": "Replay tournament cancellation after some minimum-cash awards have posted. Each player receives only the remaining contractual entitlement.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX08",
+      "priority": "P0",
+      "requirement": "Concurrent final SNG registrations and an unregister select one entrant set, one startup and exactly funded entries.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX09",
+      "priority": "P0",
+      "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX10",
+      "priority": "P0",
+      "requirement": "Cancellation races a persisted Spin draw. Apply the approved pre-draw/post-draw policy without silently discarding a funded high multiplier.",
+      "historical_evidence": "Policy and execution proof required",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX11",
+      "priority": "P0",
+      "requirement": "Test paid places plus bubble refund, fee, bounty and guarantee against independently funded escrow before publishing the prize ladder.",
+      "historical_evidence": "F04 remains a source risk",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX12",
+      "priority": "P0",
+      "requirement": "With an 80 opening balance and movements +50,-10,-30, the date-filtered statement ends at 90 rather than 10.",
+      "historical_evidence": "Deployed SQL fixture passes",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX13",
+      "priority": "P1",
+      "requirement": "Equal timestamps and reused references produce deterministic statement order using immutable row identity.",
+      "historical_evidence": "Ordering corrected; collision fixture open",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX14",
+      "priority": "P1",
+      "requirement": "A date range with no entries still offers an explicit opening/current balance through account summary, without inventing activity.",
+      "historical_evidence": "Existing RPC remains empty; summary work open",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX15",
+      "priority": "P0",
+      "requirement": "Collect all report pages beyond 2,000 rows and compare with an independent full-period aggregate using a fixed cutoff.",
+      "historical_evidence": "F08 remains open",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "AX16",
+      "priority": "P0",
+      "requirement": "Retry each union round after failure: completion requires committed results for every required eligible round, not merely a Round 1 row.",
+      "historical_evidence": "Installed completion probe passes; malformed/older stages open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX01",
+      "priority": "P0",
+      "requirement": "Hand fixture A100, B250, C400 folded, D500 creates pots 400/450/300 and a 100 uncalled return; if A wins then B, awards are A400/B450/D300 before deductions.",
+      "historical_evidence": "Independent expected fixture; not executed",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX02",
+      "priority": "P0",
+      "requirement": "Top-up during a hand followed by disconnect and cashout never increases current-hand table stakes or duplicates the deferred funds.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX03",
+      "priority": "P0",
+      "requirement": "Test short all-ins below, at and above reopening thresholds separately for previously acted and unacted seats.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX04",
+      "priority": "P0",
+      "requirement": "Run multiple boards with several side pots and indivisible units: fixed eligibility, deterministic residuals and exact contribution conservation.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX05",
+      "priority": "P0",
+      "requirement": "Late RIT consent cannot change the run count after any additional card is disclosed.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX06",
+      "priority": "P0",
+      "requirement": "Action and timeout at the same deadline resolve one turn once. A delayed action cannot act for the next player or hand.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX07",
+      "priority": "P0",
+      "requirement": "An accepted all-in survives disconnect and reconnect during showdown with its original commitment and eligibility.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX08",
+      "priority": "P0",
+      "requirement": "Blind expiry, registration closure, :53 drain and :55 maintenance overlap a long hand: assigned forced bets stay fixed; each clock follows its documented policy.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX09",
+      "priority": "P1",
+      "requirement": "Distinguish a tournament drain-then-countdown break from Smarter scheduled platform maintenance. Do not replace the approved :55 to :00 policy with a competitor cadence.",
+      "historical_evidence": "Required policy mapping",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX10",
+      "priority": "P0",
+      "requirement": "Restart the scheduler during a break and simulate wall-clock skew: no double break, skipped blind level or negative deadline.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX11",
+      "priority": "P0",
+      "requirement": "Hand-for-hand completion arrives twice or late while a table breaks. One batch completes against the correct authoritative table set.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX12",
+      "priority": "P0",
+      "requirement": "Reverse delivery order for simultaneous bubble bustouts; rank from the versioned synchronized-hand rule, never arrival order.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX13",
+      "priority": "P0",
+      "requirement": "Bustout, re-entry cutoff and prize finalization race: all three agree on one accepted entry count and funded pool.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX14",
+      "priority": "P0",
+      "requirement": "Table balancing races blind posting and disconnect: player occupies one seat, stack transfers once, and forced bets are not duplicated.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 3,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX15",
+      "priority": "P1",
+      "requirement": "Suspend or close the app during deal, showdown, pot delivery, BBJ, bounty and Spin presentation. Committed money remains identical; reconnect presentation follows event IDs and approved animation timing.",
+      "historical_evidence": "Not executed; no animation-disable control added",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "BX16",
+      "priority": "P1",
+      "requirement": "Rebuild hand history after recovery and table movement; cards, actions, pots, deductions, returns and final stacks reproduce the same authoritative outcome.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX01",
+      "priority": "P0",
+      "requirement": "An authenticated caller without club-finance, union-overseer or platform-admin rights receives no statement rows, including direct RPC calls with guessed IDs.",
+      "historical_evidence": "Gate corrected; isolated helper branches pass",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX02",
+      "priority": "P0",
+      "requirement": "Exercise the real role matrix through authenticated sessions: active, suspended, revoked, wrong club, wrong union, co-owner, agent and service role.",
+      "historical_evidence": "Live ACL/helpers inspected; full session matrix open",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX03",
+      "priority": "P0",
+      "requirement": "Inventory every privileged money and reporting RPC with EXECUTE grants, caller checks, ownership, search path, triggers and all API callers.",
+      "historical_evidence": "643 authenticated security-definer functions across shared public schema; inventory open",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX04",
+      "priority": "P0",
+      "requirement": "Attempt a club or union change between authorization and financial commit; transaction validates the same actor and destination at its write boundary.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 6,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX05",
+      "priority": "P1",
+      "requirement": "Verify player self-service and requested transaction-history windows against the applicable jurisdiction; financial history retention is distinct from raw hand-history retention.",
+      "historical_evidence": "Benchmark defined; implementation not certified",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX06",
+      "priority": "P0",
+      "requirement": "Reconstruct wallet opening balance plus every debit/credit into closing balance, including cross-product reservations and released amounts.",
+      "historical_evidence": "Not executed across all writers",
+      "primary_phase": 4,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena balances and dependencies only; World Hub internals deferred."
+    },
+    {
+      "id": "CX07",
+      "priority": "P0",
+      "requirement": "Report inclusion flags for tournament and BBJ P&L never alter underlying money; parent totals reconcile without duplicate downline attribution.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 9,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX08",
+      "priority": "P0",
+      "requirement": "An event-time rake contract remains immutable for historical statements after rate or agent membership changes.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX09",
+      "priority": "P0",
+      "requirement": "Attribute only the defined allocatable rake; attribution totals equal collected fees after documented exclusions, with no effect on BBJ collection.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX10",
+      "priority": "P0",
+      "requirement": "Each invoice line links to immutable source events, period boundaries, formula version and actual settlement receipts. Invoice generation alone is not payment.",
+      "historical_evidence": "Existing paths reviewed partially; open",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX11",
+      "priority": "P0",
+      "requirement": "Map test/certification evidence to exact deployed RNG, evaluator, payout, platform and client versions; fairness-affecting changes receive required external review where applicable.",
+      "historical_evidence": "No certification claim",
+      "primary_phase": 2,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX12",
+      "priority": "P0",
+      "requirement": "Restore a production-representative isolated backup and prove balances, liabilities, cards and pending operations agree at the recovery boundary.",
+      "historical_evidence": "Restore drill not performed",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX13",
+      "priority": "P1",
+      "requirement": "Verify significant clock skew, expired credentials and dependency outage behavior using recorded failure injection, without synthetic probes using a personal account.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 7,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX14",
+      "priority": "P0",
+      "requirement": "Ensure jackpot retirement, ceiling overflow, reseeding and simultaneous wins follow the disclosed funding policy and leave every player-funded unit accounted for.",
+      "historical_evidence": "Not executed",
+      "primary_phase": 5,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX15",
+      "priority": "P0",
+      "requirement": "Separate game-disable capability, activation policy and automatic drift lockdown. Record applicable benchmark conflicts without silently changing Smarter policy.",
+      "historical_evidence": "Scope decision required for certification",
+      "primary_phase": 10,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    },
+    {
+      "id": "CX16",
+      "priority": "P0",
+      "requirement": "Close an audit item only with the failing fixture, fixed original path, passing regression, actual deployment and verified prior-damage disposition.",
+      "historical_evidence": "Nine SQL migrations deployed; full product sign-off open",
+      "primary_phase": 12,
+      "status": "pending_full_requirement_verification",
+      "scope_note": "Club Arena only. Historical evidence is not a current pass."
+    }
+  ]
+}

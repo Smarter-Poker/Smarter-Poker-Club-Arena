@@ -435,13 +435,9 @@ export function describeHand(hand: EvaluatedHand): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function evaluateOmahaHand(holeCards: Card[], communityCards: Card[]): EvaluatedHand {
-  if (holeCards.length < 4) {
-    if (holeCards.length >= 2 && communityCards.length >= 3) {
-      return evaluateHand(holeCards.slice(0, 2), communityCards.slice(0, 5));
-    }
-    return { ranking: 1, name: 'High Card', cards: [...holeCards, ...communityCards], kickers: [] };
-  }
-
+  // This selection utility can receive a subset of known hole cards. Even
+  // then Omaha always selects exactly two holes and three board cards; it
+  // must never fall back to Holdem or discard the third available hole.
   const holeCombos = getCombinations(holeCards, 2);
   const boardCombos = getCombinations(communityCards, 3);
   let bestHand: EvaluatedHand | null = null;
@@ -466,7 +462,7 @@ export function evaluateOmahaLowHand(
   holeCards: Card[],
   communityCards: Card[]
 ): EvaluatedHand | null {
-  if (holeCards.length < 4) return null;
+  if (holeCards.length < 2 || communityCards.length < 3) return null;
 
   const holeCombos = getCombinations(holeCards, 2);
   const boardCombos = getCombinations(communityCards, 3);
@@ -516,25 +512,25 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   const activePlayers = players.filter((p) => !p.is_folded);
   if (activePlayers.length === 0) return [];
 
-  // Side-pot levels are defined by LIVE invested only. Dead money (antes, a Big
-  // Blind Ante the BB fronts for the table, dead small blinds) belongs in the
-  // pot but must not create a private side pot for whoever posted it — it is
-  // summed and added to the main (first) pot, contested by all eligible players.
-  // 2026-08-20: snapped to cents. Side-pot LEVELS are the distinct values of
-  // this expression, and `totalInvested - deadInvested` is a float subtraction —
-  // snapChips() rounds stack, bet, totalInvested and pot at every mutation
-  // choke point (Bible V8 §2.6) but NOT deadInvested, so two players who are
-  // equal to the cent could differ by ~1e-17 and be split into two levels. That
-  // produced a spurious extra side pot of amount ~0 with a NARROWER eligible
-  // set, handed to determineWinners as if it were a real contest. Found by the
-  // chip-conservation property test's independent side-pot oracle (INV-10):
-  // engine ["0.50|u1,u3", "0|u3"] against the correct ["0.50|u1,u3"].
-  // No chips were misallocated — the amount is a rounding artefact — but the
-  // pot COUNT and its eligibility are what the client renders and what odd-chip
-  // allocation walks, and a level that does not exist should not be in either.
+  // Individual antes are matched contributions for pot eligibility, although
+  // they are dead for the live betting price and uncalled-bet calculation.
+  // Shared BBA and dead small blinds remain pooled table money. In particular,
+  // a short individual ante cannot win the unmatched part of a full ante.
+  // Snap levels to cents so floating-point drift cannot create phantom pots.
   const getInvestment = (p: SeatPlayer) =>
-    Math.max(0, Math.round(((p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0)) * 100) / 100);
-  const deadTotal = Math.round(players.reduce((s, p) => s + (p.deadInvested ?? 0), 0) * 100) / 100;
+    Math.max(
+      0,
+      Math.round(
+        ((p.totalInvested ?? p.bet ?? 0) -
+          (p.deadInvested ?? 0) +
+          (p.individualAnteInvested ?? 0)) *
+          100
+      ) / 100
+    );
+  const deadTotal =
+    Math.round(
+      players.reduce((s, p) => s + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0) * 100
+    ) / 100;
   const allContributors = players.filter((p) => getInvestment(p) > 0);
 
   // No live money at all (e.g. everyone folded to dead antes): the dead money
@@ -663,22 +659,20 @@ export function calculateBettingState(
    * flop, the big bet on turn and river (BettingStructure.fixedLimitBetSize).
    * `capped` is true once the street has taken a bet and three raises.
    *
-   * When present it overrides both bounds: min and max are BOTH `betSize`, so
-   * the only legal wager is exactly that size. That is the whole of fixed
-   * limit — there is no sizing decision to make, which is why this reuses the
-   * pot-limit ceiling machinery rather than adding a parallel one.
+   * Both bounds are the legal increment. Normally this is betSize; a short
+   * wager below half the street bet can instead be completed by raiseSize.
    */
-  fixedLimit?: { betSize: number; capped: boolean }
+  fixedLimit?: { betSize: number; capped: boolean; raiseSize?: number }
 ): BettingState {
   const toCall = currentBet - playerBet;
 
   if (fixedLimit) {
     return {
       currentBet,
-      minRaise: fixedLimit.betSize,
+      minRaise: fixedLimit.raiseSize ?? fixedLimit.betSize,
       pot,
       toCall,
-      maxRaise: fixedLimit.betSize,
+      maxRaise: fixedLimit.raiseSize ?? fixedLimit.betSize,
       wagersCapped: fixedLimit.capped,
       structure: 'fixed_limit',
     };
@@ -714,6 +708,21 @@ export function validateAction(
   bettingState: BettingState
 ): { valid: boolean; error?: string } {
   const { currentBet, minRaise, toCall } = bettingState;
+
+  // Money enters the hand only as finite whole cents. Comparing an arbitrary
+  // fraction against cent-tolerant limits and rounding AFTER mutation can
+  // round the debit and pot independently. Strings also must not coerce into
+  // legal-looking wagers. Allow only IEEE representation noise, not sub-cents.
+  if (action === 'bet' || action === 'raise') {
+    if (
+      typeof amount !== 'number' ||
+      !Number.isFinite(amount) ||
+      !Number.isSafeInteger(Math.round(amount * 100)) ||
+      Math.abs(amount - Math.round(amount * 100) / 100) > 1e-9
+    ) {
+      return { valid: false, error: 'Wager must be a finite whole-cent amount' };
+    }
+  }
   // 2026-08-23: "Pot-limit max ..." was hardcoded into every ceiling message,
   // which would have read as a lie on a fixed-limit table. Name the structure
   // that actually produced the bound.
@@ -945,7 +954,12 @@ export function determineWinners(
    * still in the hand were used instead. The award still happens; this exists
    * so a bad snapshot is visible rather than silent.
    */
-  onEligibilityFallback?: EligibilityFallback
+  onEligibilityFallback?: EligibilityFallback,
+  /**
+   * The indivisible chip unit for this hand: 0.01 for cash, 1 for a tournament.
+   * Defaults to a cent so existing callers are unchanged.
+   */
+  chipUnit: number = 0.01
 ): Winner[] {
   const winners: Winner[] = [];
   const activePlayers = players.filter((p) => !p.is_folded);
@@ -1035,7 +1049,12 @@ export function determineWinners(
       // FIX 179: Use Math.round to avoid IEEE 754 floating-point truncation errors
       // e.g. Math.trunc(0.51 * 100) = 50 (wrong), Math.round(0.51 * 100) = 51 (correct)
       const potCents = Math.round(pot.amount * 100);
-      const loCents = Math.trunc(potCents / 2);
+      // Split high/low in the same indivisible unit used for tied winners.
+      // Splitting into cents first creates half-chip tournament awards even
+      // when distributePot correctly preserves whole chips within each half.
+      // The odd unit (and any pre-existing sub-unit residue) belongs to high.
+      const unitCents = Math.max(1, Math.round(chipUnit * 100));
+      const loCents = Math.floor(potCents / (2 * unitCents)) * unitCents;
       loPotAmount = loCents / 100;
       hiPotAmount = (potCents - loCents) / 100;
     }
@@ -1051,7 +1070,7 @@ export function determineWinners(
     );
     // Bible V8 §2.7: Pass potIndex so Winner objects know which pot they won from
     // FIX 226: Pass dealerSeat so odd chip goes clockwise from dealer (not seat 0)
-    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat, perPotOut);
+    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat, perPotOut, chipUnit);
 
     // Low half
     if (loPotAmount > 0) {
@@ -1060,7 +1079,16 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat, perPotOut);
+      distributePot(
+        winners,
+        loWinners,
+        loPotAmount,
+        'Low',
+        potIdx,
+        dealerSeat,
+        perPotOut,
+        chipUnit
+      );
     }
   }
 
@@ -1079,12 +1107,37 @@ function distributePot(
   half: 'High' | 'Low',
   potIndex: number = 0,
   dealerSeat: number = 0,
-  perPotOut?: PerPotAward[]
+  perPotOut?: PerPotAward[],
+  /**
+   * The indivisible unit this pot is paid in, in chips. Cash chips divide to
+   * the cent (0.01); TOURNAMENT CHIPS DO NOT DIVIDE AT ALL (1). Defaults to a
+   * cent, so every caller that does not pass it keeps its exact behaviour.
+   */
+  chipUnit: number = 0.01
 ): void {
   // FIX 179: Math.round prevents IEEE 754 truncation (e.g. 0.51*100 = 50.999... → 51)
   const totalCents = Math.round(amount * 100);
-  const shareCents = Math.trunc(totalCents / roundWinners.length);
-  const remainderCents = totalCents % roundWinners.length;
+  // A TOURNAMENT CHIP DOES NOT DIVIDE (2026-09-08). This split was always done
+  // in cents, so a 959-chip tournament pot chopped two ways paid 479.50 each -
+  // a stack a tournament cannot represent. Downstream that fraction was floored
+  // away in services/supabase/tables.ts, destroying chips, and the settlement
+  // guard refused the hand outright, which stalled the table for good because
+  // every retry was identical. Measured 17:35 UTC: 7 tournaments carried a
+  // fractional seat and exactly those 7 were stalled.
+  //
+  // The pot is now divided into INDIVISIBLE UNITS: cents for cash, whole chips
+  // for a tournament. unitCents is 1 in the cash case, which makes wholeUnits
+  // === totalCents and subUnitCents === 0, so the cash arithmetic below is
+  // identical to what it has always been - by construction, not by inspection.
+  const unitCents = Math.max(1, Math.round(chipUnit * 100));
+  const wholeUnits = Math.floor(totalCents / unitCents);
+  // Anything finer than one unit cannot be split, so it rides with the first
+  // winner clockwise of the button rather than being created or destroyed. It
+  // is zero for cash, and for a tournament only a legacy fractional stack going
+  // all-in can produce it. The awards therefore always re-sum to totalCents.
+  const subUnitCents = totalCents - wholeUnits * unitCents;
+  const shareUnits = Math.trunc(wholeUnits / roundWinners.length);
+  const remainderUnits = wholeUnits % roundWinners.length;
 
   // FIX 169: Sort by clockwise distance from dealer button for odd-chip allocation.
   // The player closest clockwise to the dealer gets the first odd chip.
@@ -1108,7 +1161,9 @@ function distributePot(
 
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);
-    const winAmt = (shareCents + (i < remainderCents ? 1 : 0)) / 100;
+    const winAmt =
+      ((shareUnits + (i < remainderUnits ? 1 : 0)) * unitCents + (i === 0 ? subUnitCents : 0)) /
+      100;
     // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) record. For the
     // low half the winning "hand" is the qualifying low, whose name is its
     // own description ("Low: 8-6-4-3-2").

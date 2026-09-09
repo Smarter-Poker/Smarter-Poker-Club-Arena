@@ -126,7 +126,7 @@ const BASELINE = new Map<string, number>([
   // with its reads, and the server fleet is the one seat creator for horses.
   ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 2],
-  ['src/services/BonusService.ts', 1],
+  // BonusService.ts was deleted 2026-09-07 with the chip daily-bonus ladder.
   /* 0 since 2026-09-05: the last unbound read here was the player_stats
      lookup in updateUserStats, which is now `const { data, error }` and
      reports. See the note in that function - it was also asking a per-club
@@ -135,7 +135,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/UnionGamesPage.tsx', 2],
   ['src/pages/RateAuditPage.tsx', 2],
   ['src/pages/MultiTablePage.tsx', 2],
-  ['src/pages/FlashPoolPage.tsx', 2],
+  ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 2],
   ['src/pages/ClubAnnouncementsPage.tsx', 1],
   ['src/components/tournament/TournamentStartingTicker.tsx', 2],
@@ -165,7 +165,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/AdService.ts', 1],
   ['src/services/AchievementService.ts', 1],
   ['src/pages/admin/AnalyticsDashboard.tsx', 0],
-  ['src/pages/XMTTPage.tsx', 1],
+  ['src/pages/XMTTPage.tsx', 0],
   ['src/pages/UnionStatementsPage.tsx', 1],
   ['src/pages/TournamentPage.tsx', 1],
   ['src/pages/TableConfigPage.tsx', 1],

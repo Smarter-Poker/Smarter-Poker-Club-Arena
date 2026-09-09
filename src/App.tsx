@@ -57,6 +57,13 @@ import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
 import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
+/* THE APP ONLY (store readiness, phase 3). Both load through a dynamic import
+   behind the compile-time constant, so the web bundle carries neither the age
+   gate, the consent sheet nor their stylesheets. They render as OVERLAYS
+   beside the app (not wrappers around it) so the route tree below keeps its
+   shape: a wrapper here re-indents 1,500 lines and every text pin on them. */
+const AgeGate = lazyWithRetry(() => import('./components/legal/AgeGate'));
+const ConsentPrompt = lazyWithRetry(() => import('./components/legal/ConsentPrompt'));
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Pages (lazy loaded for performance)
@@ -123,6 +130,7 @@ const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
 const PlayerStatsPage = lazyWithRetry(() => import('./pages/PlayerStatsPage'));
 const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
+const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
@@ -135,9 +143,9 @@ const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubIns
 const ClubBombPotReportPage = lazyWithRetry(() => import('./pages/club/ClubBombPotReportPage'));
 const TableBombSettingsPage = lazyWithRetry(() => import('./pages/club/TableBombSettingsPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
+const ClubAdvertisePage = lazyWithRetry(() => import('./pages/ClubAdvertisePage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
-const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
@@ -257,6 +265,8 @@ function TableRouteSurface() {
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
+import RouterBridge from './components/common/RouterBridge';
+import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount() {
   return <ClubBottomNav />;
@@ -428,7 +438,12 @@ function FullApp() {
     // that header is ever absent the registration rejects with a SecurityError
     // — we fall back to the default scope so behaviour is never worse than it
     // was, rather than ending up with no service worker at all.
-    if ('serviceWorker' in navigator) {
+    // NATIVE: no service worker. Inside the Capacitor shell the bundle is
+    // already on disk, so sw-bus.js's cache-first layer is redundant, and on
+    // iOS a worker under capacitor://localhost is not reliably installed at
+    // all. Its message-driven notifications become native ones (Phase 4).
+    // Compile-time constant: this branch does not exist in the web bundle.
+    if (!IS_NATIVE_BUILD && 'serviceWorker' in navigator) {
       const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
           ? import.meta.env.BASE_URL
@@ -539,6 +554,12 @@ function FullApp() {
         )}
 
         <TOSGuard>
+          {IS_NATIVE_BUILD && (
+            <Suspense fallback={null}>
+              <AgeGate />
+              <ConsentPrompt />
+            </Suspense>
+          )}
           <GlobalWaitlistListener />
           <WaitlistBanner />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.
@@ -581,6 +602,9 @@ function FullApp() {
             }
           >
             <SlugEnforcer />
+            {/* Hands navigate() to src/lib/routerBridge for deep links and
+                plugin listeners (native). Renders nothing. */}
+            <RouterBridge />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -1670,6 +1694,20 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* A club owner buys a picture on a surface, in diamonds
+                    (2026-09-03). Staff-only inside the page, fail-closed. */}
+                <Route
+                  path="clubs/:clubId/advertise"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Advertise">
+                          <ClubAdvertisePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="vip"
                   element={
@@ -1833,12 +1871,14 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* /bonuses: the Daily Club Arena Bonus sheet as a page. The
+                    chip ladder that lived here was retired on 2026-09-07. */}
                 <Route
                   path="bonuses"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Bonuses">
-                        <BonusPage />
+                      <PageErrorBoundary pageName="Daily Bonus">
+                        <DailyBonusPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

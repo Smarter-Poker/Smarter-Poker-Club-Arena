@@ -155,7 +155,13 @@ describe('the bottom-left HUD slot', () => {
     // The guard immediately above it is the slot decision, and the slot's
     // 'timebank' branch is the turn context — not seat occupancy.
     expect(TABLE_PAGE.slice(at - 400, at)).toMatch(/\{hudSlotControl === 'timebank' && \(/);
-    expect(strip(TABLE_PAGE)).toMatch(/isHeroTurnContext\s*\n?\s*\?\s*'timebank'/);
+    // 2026-09-04: `heroPromptedToAct` is isHeroTurnContext minus the turns
+    // the engine is taking for the player (armed pre-action) - still the
+    // turn context, never seat occupancy.
+    expect(strip(TABLE_PAGE)).toMatch(/heroPromptedToAct\s*\n?\s*\?\s*'timebank'/);
+    expect(strip(TABLE_PAGE)).toMatch(
+      /const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;/
+    );
   });
 
   it('puts Rabbit Hunt in that same slot once the hand is over', () => {

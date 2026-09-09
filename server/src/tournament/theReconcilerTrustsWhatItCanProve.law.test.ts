@@ -1,135 +1,84 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE RECONCILER TRUSTS WHAT IT CAN PROVE (2026-08-31)
- * ═══════════════════════════════════════════════════════════════════════════
+ * THE ROLLING ENGINE CANNOT DISPATCH A DEFERRED RECONCILER.
  *
- * fn_tournament_payout_reconcile answers one question per finishing place:
- * "what has this player already been paid?" It used to answer it by summing
- * `wallet_transactions`. That is a LOG — written after the money moves, by a
- * separate statement — and it can be missing, or present for a credit that
- * never moved.
- *
- * Mid-Morning Turbo (6-Max NLH) 88a6aced, 2026-08-22, measured:
- *
- *   14:14:06  the credit MOVED (idempotency key `...:prize:{user}:4`, 36.90)
- *             and no wallet_transactions row was written for it
- *   14:29:55  the reconciler read 0.00 already paid and paid 36.90 AGAIN
- *
- * 73.80 for a place worth 36.90; the event disbursed 110% of its pool.
- * Morning Grinder (PLO) b687e4aa did the same on place 1 for 96.00 vs 48.00.
- *
- * `tournament_payouts.idempotency_key` is UNIQUE and its row is written inside
- * fn_credit_and_log only after the credit returned true, so one row exists if
- * and only if money moved once. These pins keep the reconciler pointed at it.
+ * Stage A must leave the old database signatures intact until every previous
+ * engine process has drained. The new engine already owns completion through
+ * atomic settlement, so no executable runtime or operator path may dispatch
+ * the historical reconciler graph during that compatibility window.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
-const MIGRATIONS = join(__dirname, '..', '..', '..', 'supabase', 'migrations');
+const ROOT = join(__dirname, '..', '..', '..');
+const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
+const file = readdirSync(MIGRATIONS)
+  .filter((name) => name.endsWith('_tournament_places_settle_and_complete_atomically.sql'))
+  .sort()
+  .at(-1);
+if (!file) throw new Error('rolling atomic tournament settlement migration is missing');
 
-const migration = (needle: string): string => {
-  const file = readdirSync(MIGRATIONS).find((f) => f.includes(needle));
-  if (!file) throw new Error(`no migration matching "${needle}" - was it renamed?`);
-  return readFileSync(join(MIGRATIONS, file), 'utf8');
-};
+const SQL = readFileSync(join(MIGRATIONS, file), 'utf8')
+  .replace(/^\s*--.*$/gm, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '');
 
-/** Executable SQL only — `--` comment lines stripped. */
-const executable = (sql: string): string =>
-  sql
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('--'))
-    .join('\n');
+const ROUTINES = [
+  'fn_tournament_payout_reconcile',
+  'fn_pay_backed_payout_shortfalls',
+  'fn_ca_backpay_guarantee_shortfalls',
+  'fn_tournament_payout_sweep',
+  'sp_ca_reconcile_backpaid_events',
+  'fn_backpay_hu_winner_shortfalls',
+] as const;
 
-const RECONCILER = () => executable(migration('the_reconciler_counts_payouts_not_ledger_rows'));
-
-/**
- * Money the PRIZE POOL is meant to fund. Bounty money carries
- * `category = 'prize'` in the ledger while being funded from the bounty pool,
- * which is why the old ledger sum counted it and could call a player square
- * when the structure still owed them.
- */
-const PRIZE_POOL_SOURCES = [
-  'structure',
-  'reconcile',
-  'hu_shortfall',
-  'late_reg_adjustment',
-  'clawback',
-  'final_table_deal',
-  'spin_backpay',
-];
-
-const BOUNTY_POOL_SOURCES = ['bounty', 'own_bounty', 'mystery_bounty', 'mystery_bounty_residual'];
-
-describe('the reconciler asks the authoritative record, not the log', () => {
-  it('reads already-paid from tournament_payouts', () => {
-    const sql = RECONCILER();
-    expect(sql).toMatch(/FROM public\.tournament_payouts tpo/);
-    expect(sql).toMatch(/INTO v_paid[\s\S]{0,400}FROM public\.tournament_payouts tpo/);
+function activeSourceFiles(path: string): string[] {
+  if (/[/\\]fixtures[/\\]/.test(path) || /[/\\]probe-[^/\\]*\.sql$/.test(path)) return [];
+  if (statSync(path).isFile()) return [path];
+  return readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
+    const child = join(path, entry.name);
+    if (/[/\\]fixtures[/\\]/.test(child) || /[/\\]probe-[^/\\]*\.sql$/.test(child)) return [];
+    if (entry.isDirectory()) return activeSourceFiles(child);
+    if (!entry.isFile() || !/\.(?:[cm]?[jt]sx?|sql|sh)$/.test(entry.name)) return [];
+    if (/\.(?:test|spec)\./.test(entry.name)) return [];
+    return [child];
   });
+}
 
-  it('counts only money the prize pool funds', () => {
-    const sql = RECONCILER();
-    for (const s of PRIZE_POOL_SOURCES) {
-      expect(sql, `${s} counts toward the structure`).toContain(`'${s}'`);
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*(?:--|#).*$/gm, '')
+    .replace(/\/\/.*$/gm, '');
+}
+
+describe('Stage A preserves old-engine RPC compatibility without a second current payer', () => {
+  it('keeps the compatibility graph installed and the atomic guards dormant', () => {
+    for (const name of ROUTINES) {
+      expect(SQL).not.toMatch(new RegExp(`DROP (?:FUNCTION|PROCEDURE) IF EXISTS public\\.${name}`));
     }
-  });
-
-  it('never counts bounty money as structure money already paid', () => {
-    // The whole point of the source filter. If one of these appears in the
-    // reconciler's IN list, a PKO player's bounty winnings start paying down
-    // what the prize pool owes them.
-    const inList = (RECONCILER().match(/AND tpo\.source IN \(([\s\S]*?)\)/) ?? [])[1] ?? '';
-    expect(inList.length, 'the source filter must exist at all').toBeGreaterThan(0);
-    for (const s of BOUNTY_POOL_SOURCES) {
-      expect(inList, `${s} must NOT count as structure money`).not.toContain(`'${s}'`);
-    }
-  });
-});
-
-describe('a missing record is not read as "nothing was paid"', () => {
-  it('keeps the ledger arm as an explicit fallback', () => {
-    const sql = RECONCILER();
-    expect(sql).toContain('v_has_record');
-    expect(sql).toMatch(/IF v_has_record THEN/);
-    expect(sql).toMatch(/ELSE[\s\S]{0,600}FROM wallet_transactions wt/);
-  });
-
-  it('says which source answered, so a reader can tell', () => {
-    const sql = RECONCILER();
-    expect(sql).toContain("'paid_from'");
-    expect(sql).toContain("'payout_record'");
-    expect(sql).toContain("'ledger_fallback'");
-  });
-});
-
-describe('the stance on money is unchanged', () => {
-  const sql = () => RECONCILER();
-
-  it('still reports an overpayment rather than clawing it back', () => {
-    expect(sql()).toContain("'issue', 'overpaid'");
-    expect(sql()).toContain('automatic clawback is deliberately not done');
-  });
-
-  it('still refuses to guess when a place has no single finisher', () => {
-    expect(sql()).toContain("'no_finisher_recorded'");
-    expect(sql()).toContain("'duplicate_finishers'");
-  });
-
-  it('still tops up under the place-scoped reconcile key, which bounds it to once', () => {
-    // This is why the one measured case where the record reads LOWER than the
-    // ledger (0.31 chips) cannot double-pay: that place's reconcile key is
-    // already consumed, so fn_credit_and_log returns false and the shortfall
-    // is reported instead of paid.
-    expect(sql()).toMatch(/':reconcile'/);
-    expect(sql()).toContain("'top_up_refused_by_idempotency'");
-  });
-
-  it('is not executable by a browser role', () => {
-    expect(sql()).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_tournament_payout_reconcile(uuid, boolean)'
+    expect(SQL).toMatch(
+      /fn_tournament_payout_reconcile\(uuid,boolean\)[\s\S]*?fn_pay_backed_payout_shortfalls\(boolean,integer\)[\s\S]*?fn_tournament_payout_sweep\(integer,boolean,integer\)[\s\S]*?fn_backpay_hu_winner_shortfalls\(integer\)[\s\S]*?Stage-A old-engine tournament payout RPC compatibility is incomplete/
     );
-    expect(sql()).toContain('FROM PUBLIC, anon, authenticated');
-    expect(sql()).toContain('TO service_role');
+    expect(SQL).toMatch(
+      /CREATE TRIGGER zzzz_tournaments_atomic_place_completion_guard[\s\S]*?DISABLE TRIGGER zzzz_tournaments_atomic_place_completion_guard/
+    );
+  });
+
+  it('has no executable engine, client or operator caller', () => {
+    const files = [
+      ...activeSourceFiles(join(ROOT, 'server', 'src')),
+      ...activeSourceFiles(join(ROOT, 'src')),
+      ...activeSourceFiles(join(ROOT, 'scripts', 'dev')),
+      join(ROOT, 'scripts', 'verify-tournaments.mjs'),
+    ];
+
+    for (const path of files) {
+      const executable = withoutComments(readFileSync(path, 'utf8'));
+      for (const routine of ROUTINES) {
+        expect(executable, `${routine} remains callable from ${path}`).not.toMatch(
+          new RegExp(`['\"]${routine}['\"]`)
+        );
+      }
+    }
   });
 });

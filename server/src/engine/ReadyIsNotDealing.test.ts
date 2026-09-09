@@ -73,7 +73,7 @@ function startable() {
   engine.resolveOrphanedAddOns = async () => {};
   engine.broadcastCurrentState = async () => {};
   engine.scheduleHeartbeatCheck = () => {};
-  engine.dealingLoop = async () => {};
+  engine.dealingLoop = vi.fn(async () => {});
   return engine;
 }
 
@@ -99,6 +99,63 @@ describe('engine.ready', () => {
 
     await engine.stop();
     await started; // the loop exits on running=false; start() resolves without dealing
+    expect(engine.dealingLoop).not.toHaveBeenCalled();
+    expect(engine.tableFSM.state).toBe('closed');
+  });
+
+  it.each([null, '11111111-1111-1111-1111-111111111111'])(
+    'records completed one-player waiting work without starting a hand (%s)',
+    async (tournamentId) => {
+      let now = Date.now();
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      loadTable.mockResolvedValue({ ...TABLE_ROW, tournament_id: tournamentId });
+      loadSeatedPlayers.mockResolvedValue([seat(1)]);
+      const engine = startable();
+      const progress = vi.spyOn(engine, 'markProgress');
+      let passes = 0;
+      engine.sleep = async () => {
+        expect(engine.msSinceProgress()).toBe(0);
+        expect(engine.dealingLoop).not.toHaveBeenCalled();
+        passes++;
+        now += 181_000;
+        if (passes === 2) engine.running = false;
+      };
+      try {
+        await engine.start();
+        expect(passes).toBe(2);
+        expect(progress).toHaveBeenCalledTimes(2);
+      } finally {
+        await engine.stop();
+      }
+    }
+  );
+
+  it('does not refresh progress while the waiting roster read is unresolved', async () => {
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    loadTable.mockResolvedValue({
+      ...TABLE_ROW,
+      tournament_id: '11111111-1111-1111-1111-111111111111',
+    });
+    let release!: (value: ReturnType<typeof seat>[]) => void;
+    const held = new Promise<ReturnType<typeof seat>[]>((resolve) => {
+      release = resolve;
+    });
+    loadSeatedPlayers.mockResolvedValueOnce([seat(1)]).mockReturnValue(held);
+    const engine = startable();
+    const progress = vi.spyOn(engine, 'markProgress');
+    const started = engine.start();
+    try {
+      expect(await engine.ready).toBe(true);
+      now += 181_000;
+      expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
+      expect(progress).not.toHaveBeenCalled();
+    } finally {
+      engine.running = false;
+      release([seat(1)]);
+      await started;
+      await engine.stop();
+    }
   });
 
   it('resolves false when start() fails before `waiting`', async () => {
@@ -107,8 +164,9 @@ describe('engine.ready', () => {
     engine.killForRestart = () => {
       engine.running = false;
     };
-    await engine.start();
+    await expect(engine.start()).rejects.toThrow('row is gone');
     expect(await engine.ready).toBe(false);
+    await engine.stop();
   });
 
   it('resolves false when the engine is stopped before it got there', async () => {
@@ -129,21 +187,53 @@ describe('engine.ready', () => {
     expect(await engine.ready).toBe(true);
     engine.killForRestart('drill');
     expect(await engine.ready).toBe(true);
+    await engine.stop();
+    expect(engine.dealingLoop).not.toHaveBeenCalled();
   });
 });
 
 describe('the on-demand door hands out `ready`, not `start()`', () => {
   it('ensureCashTableEngine returns engine.ready and keeps the start chain for its failure handling', () => {
     const src = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'GameServer.ts'), 'utf8');
-    const fn = src.slice(src.indexOf('async ensureCashTableEngine('));
-    const body = fn.slice(0, fn.indexOf('\n  }\n'));
-    expect(body).toContain('const readyPromise: Promise<boolean> = engine.ready.finally(');
-    expect(body).toContain('this.tableEngineStartPromises.set(tableId, readyPromise);');
-    expect(body).toContain('return readyPromise;');
+    const start = src.indexOf('private async performCashTableEngineAdmission(');
+    const end = src.indexOf('\n  /**\n   * Get a table engine by ID', start);
+    const body = src.slice(start, end);
+    expect(body).toContain(
+      'const readyPromise = this.trackDirectTableEngineReadiness(tableId, engine)'
+    );
+    expect(body).toContain('const readiness = await readyPromise;');
+    expect(body).toContain(
+      "return this.dealerAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';"
+    );
     expect(body).not.toContain('return startPromise;');
-    // The failure handling on the start chain stays: a failed start still
-    // frees the map slot, the hub room and the lease.
-    expect(body).toContain("reportError(startError, 'GameServer.on_demand_table_start_failed')");
-    expect(body).toContain('await releaseTables([tableId]);');
+    // The failure handling on the start chain stays: a failed start retires
+    // that exact generation and retains one causal admission obligation.
+    expect(body).toContain("reportError(startError, 'GameServer.direct_table_start_failed')");
+    expect(body).toContain(
+      "await this.recoverDirectTableEngine(tableId, engine, 'direct_start_failed', true)"
+    );
+  });
+});
+
+describe('a refusal to start settles ready (final sweep 2026-09-08)', () => {
+  /* start()'s three refusals throw BEFORE the try whose catch settles
+     `ready` false, so a refused engine left `ready` pending for ever - and
+     GameServer's readiness tracker, GET /state, GET /actions and the cluster
+     controller's wake job await it with no deadline. */
+  it('a terminal engine refuses, and ready resolves false at once', async () => {
+    const engine = startable();
+    engine.terminal = true;
+    await expect(engine.start()).rejects.toThrow(/terminal/);
+    const r = await settled(engine.ready as Promise<boolean>);
+    expect(r).toEqual({ done: true, value: false });
+  });
+
+  it('a second process-local generation refuses, and ready resolves false at once', async () => {
+    const engine = startable();
+    engine.engineLeaseAuthorityIsCurrent = () => true;
+    engine.claimProcessOwnership = () => false;
+    await expect(engine.start()).rejects.toThrow(/process-local generation/);
+    const r = await settled(engine.ready as Promise<boolean>);
+    expect(r).toEqual({ done: true, value: false });
   });
 });

@@ -821,6 +821,32 @@ class ThrowableSoundServiceClass {
     this.cueDrops[reason] += 1;
   }
 
+  /** Bound both response headers and body reads so a stalled CDN request
+   * cannot pin a cue cache entry forever or prevent the alternate container. */
+  private async fetchCueBytes(url: string): Promise<ArrayBuffer | null> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, 10_000);
+    });
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await fetch(url, { signal: controller.signal });
+          return response.ok ? await response.arrayBuffer() : null;
+        })(),
+        deadline,
+      ]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Start fetching the bytes for these cues now (rig modules call this at
    *  import time). Safe to call repeatedly; safe without an AudioContext. */
   preloadCues(names: readonly string[], urlFor: (name: string, ext: 'webm' | 'm4a') => string) {
@@ -830,8 +856,8 @@ class ThrowableSoundServiceClass {
       const p = (async () => {
         for (const ext of ['webm', 'm4a'] as const) {
           try {
-            const res = await fetch(urlFor(name, ext));
-            if (res.ok) return { bytes: await res.arrayBuffer(), ext };
+            const bytes = await this.fetchCueBytes(urlFor(name, ext));
+            if (bytes) return { bytes, ext };
           } catch {
             /* try the other container */
           }
@@ -839,6 +865,9 @@ class ThrowableSoundServiceClass {
         return null;
       })();
       this.cueBytes.set(name, p);
+      void p.then((loaded) => {
+        if (!loaded && this.cueBytes.get(name) === p) this.cueBytes.delete(name);
+      });
     }
   }
 
@@ -849,8 +878,9 @@ class ThrowableSoundServiceClass {
     const cached = this.cueBuffers.get(name);
     if (cached) return cached;
     if (!this.cueBytes.has(name)) this.preloadCues([name], urlFor);
+    const byteRequest = this.cueBytes.get(name);
     const p = (async () => {
-      const loaded = await this.cueBytes.get(name)!;
+      const loaded = await byteRequest;
       if (!loaded || !this.ctx) return null;
       try {
         // Decoding detaches its input; retain cached bytes for later use.
@@ -859,9 +889,8 @@ class ThrowableSoundServiceClass {
         // A successful HTTP response does not imply codec support (Safari).
         if (loaded.ext === 'webm') {
           try {
-            const res = await fetch(urlFor(name, 'm4a'));
-            if (res.ok) {
-              const bytes = await res.arrayBuffer();
+            const bytes = await this.fetchCueBytes(urlFor(name, 'm4a'));
+            if (bytes) {
               const decoded = await this.ctx.decodeAudioData(bytes.slice(0));
               this.cueBytes.set(name, Promise.resolve({ bytes, ext: 'm4a' }));
               return decoded;
@@ -877,7 +906,7 @@ class ThrowableSoundServiceClass {
     void p.then((buffer) => {
       if (!buffer && this.cueBuffers.get(name) === p) {
         this.cueBuffers.delete(name);
-        this.cueBytes.delete(name);
+        if (this.cueBytes.get(name) === byteRequest) this.cueBytes.delete(name);
       }
     });
     return p;

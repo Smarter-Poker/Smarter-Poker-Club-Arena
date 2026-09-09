@@ -1,6 +1,8 @@
 import { supabase } from './supabase.js';
+import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
 
 export type TableViewerAccessReason =
+  | 'diamond_member'
   | 'seated'
   | 'club_member'
   | 'membership_required'
@@ -27,7 +29,13 @@ export async function authorizeTableViewer(
   // A verified current seat is already sufficient access; membership matters
   // only for observers and must not delay or reject a seated reconnect.
   const [{ data: table, error: tableError }, seatResult] = await Promise.all([
-    supabase.from('tables').select('club_id, restrict_observers').eq('id', tableId).maybeSingle(),
+    supabase
+      .from('tables')
+      .select(
+        'club_id, union_id, restrict_observers, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+      )
+      .eq('id', tableId)
+      .maybeSingle(),
     supabase
       .from('table_seats')
       .select('id')
@@ -42,23 +50,56 @@ export async function authorizeTableViewer(
   if (!table) return { allowed: false, reason: 'table_not_found', clubId: null };
 
   const clubId = typeof table.club_id === 'string' ? table.club_id : null;
-  if (!clubId) return { allowed: false, reason: 'check_failed', clubId: null };
-  if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId };
-  if (seatResult.data) return { allowed: true, reason: 'seated', clubId };
-
-  const memberResult = await supabase
-    .from('club_members')
-    .select('user_id')
-    .eq('club_id', clubId)
-    .eq('user_id', userId)
-    .in('status', ['active', 'approved'])
-    .limit(1)
-    .maybeSingle();
-
-  if (memberResult.error) return { allowed: false, reason: 'check_failed', clubId };
-  if (memberResult.data && table.restrict_observers === true) {
-    return { allowed: false, reason: 'observers_restricted', clubId };
+  const unionId = typeof table.union_id === 'string' ? table.union_id : null;
+  const accessScopeId = unionId || clubId;
+  if (!accessScopeId) return { allowed: false, reason: 'check_failed', clubId: null };
+  let arena;
+  try {
+    arena = parseTableArenaIdentity(table);
+    if (!userId) throw new Error('Authentication Required');
+  } catch {
+    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
   }
-  if (memberResult.data) return { allowed: true, reason: 'club_member', clubId };
-  return { allowed: false, reason: 'membership_required', clubId };
+  if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+  if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
+
+  if (arena.kind === 'diamond_arena') {
+    return table.restrict_observers === true
+      ? { allowed: false, reason: 'observers_restricted', clubId }
+      : { allowed: true, reason: 'diamond_member', clubId };
+  }
+
+  /*
+   * The lobby's ownership rule is union-aware: a member of Shark can see a
+   * Midway-owned table even though that durable row names Midway's shell club
+   * as club_id. Resolve the table owner's authoritative scope and the viewer's
+   * complete active membership set only after proving the viewer is not
+   * seated. That keeps a seated reconnect independent from both observer
+   * lookups while retaining fail-closed, uncached authorization for observers.
+   */
+  const [membershipsResult, scopeResult] = await Promise.all([
+    supabase
+      .from('club_members')
+      .select('club_id')
+      .eq('user_id', userId)
+      .in('status', ['active', 'approved']),
+    supabase.rpc('fn_club_scope_ids', { p_club_id: accessScopeId }),
+  ]);
+
+  if (membershipsResult.error || scopeResult.error) {
+    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+  }
+  const scopeIds = new Set(
+    Array.isArray(scopeResult.data)
+      ? scopeResult.data.filter((id): id is string => typeof id === 'string')
+      : []
+  );
+  const isMember = (membershipsResult.data ?? []).some(
+    (membership) => typeof membership.club_id === 'string' && scopeIds.has(membership.club_id)
+  );
+  if (isMember && table.restrict_observers === true) {
+    return { allowed: false, reason: 'observers_restricted', clubId: accessScopeId };
+  }
+  if (isMember) return { allowed: true, reason: 'club_member', clubId: accessScopeId };
+  return { allowed: false, reason: 'membership_required', clubId: accessScopeId };
 }

@@ -26,10 +26,9 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
-import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 // The VARIANT'S OWN seat ceiling, which is a house rule and not deck
 // arithmetic — PLO6 is 6-max and PLO5 is 7-max by Dan's ruling, both tighter
@@ -52,6 +51,9 @@ import {
   handCompletionHoldMs,
   boardClearMs,
 } from '../config/handCompletionSpec.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { nextHandGap } from './nextHandGapRecorder.js';
+import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -84,14 +86,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
         // This ensures DB stacks are synced before the next hand starts.
-        // BOUNDED (2026-08-22): postHandTasks performs a chain of Supabase
-        // calls, each individually capped at 15s but with no cap on the SUM —
-        // and it never calls markProgress(), so a degraded DB could hold this
-        // await past the 90s idle watchdog and get the engine killed (across
-        // every table at once, since DB degradation is correlated). Cap the
-        // wait at 45s; on timeout the remaining tasks keep running in the
-        // background (their .catch already reports) and the loop proceeds —
-        // stack sync is idempotent and the next hand's settlement re-syncs.
+        // There is no time-based escape from settlement. Retry slices preserve
+        // process liveness; settlementAgeMs independently exposes a blocked hand.
         /* THE BARRIER IS RE-READ AFTER EVERY WAIT (chip standard 2026-09-04).
            handleHandCompleteEvent assigns the barrier and settleCompletedHand
            later REASSIGNS it to include the postHandTasks chain (sync_stacks,
@@ -119,13 +115,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
              slices instead, and simply do not deal the next hand until this
              hand's money and record are done. A table on a database too sick
              to settle for five full minutes has no business dealing anyway;
-             at that point proceed as before, but say - durably - which hand's
-             record is now at risk. */
+             keep waiting and expose its age in the settlement health signal. */
           const sliceMs = 15_000;
-          const maxWaitMs = 300_000;
           let waited = 0;
           let settled = false;
-          while (!settled && waited < maxWaitMs && this.running) {
+          while (!settled && this.running) {
             settled = await Promise.race([
               pending.then(() => true),
               new Promise<boolean>((r) => {
@@ -138,25 +132,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               this.markProgress();
             }
           }
-          /* THREE WAYS OUT OF THAT LOOP, AND ONLY ONE OF THEM IS AN INCIDENT.
-             Until 2026-09-06 this branch treated all of them as the same
-             thing and said so in a critical financial alert: "settlement
-             for hand #N exceeded 300s; dealing resumed while it ran".
-
-             Every one of the fifteen alerts on the board said that, and
-             every one of them carried waitedMs: 30000. THIRTY SECONDS, in
-             a message claiming three hundred, on a loop whose own
-             condition (waited < maxWaitMs) was still true - so the loop
-             had not timed out at all. It exited on the OTHER condition,
-             `this.running`, which goes false when the engine is stopping.
-
-             They were shutdowns. Three of them (2026-09-05 16:07, 17:50,
-             2026-09-06 04:10), five tables each, every table in one
-             second - a single SIGTERM fanned out five ways, filed as five
-             independent money-integrity incidents. Nothing had exceeded
-             anything and dealing had not resumed, because the process was
-             on its way down. A guard that cries about the wrong thing gets
-             ignored, and this one was drowning the real ones. */
+          /* There is no elapsed-time escape from an authoritative settlement.
+             A slow database may park one table, but time cannot turn an
+             uncommitted hand into permission to deal another one.  The only
+             non-success exit is an explicit engine stop, whose drain owns the
+             still-in-flight promise. */
           if (!settled && !this.running) {
             /* The engine is stopping with this hand's settlement still in
                flight. That is NOT this loop's problem to report - it is the
@@ -168,31 +148,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               `[ServerTableEngine ${this.tableId}] stopping with hand #${this.handCount} ` +
                 `settlement in flight after ${waited / 1000}s - the drain owns it from here`
             );
-          } else if (!settled) {
-            reportError(
-              new Error(
-                `postHandTasks still running after ${maxWaitMs / 1000}s - dealing resumes; ` +
-                  "the previous hand's history/rake record may be written from reset fields"
-              ),
-              'ServerTableEngine.' + this.tableId + '.postHandTasks_timeout'
-            );
-            void raiseFinancialAlert(
-              'critical',
-              'ServerTableEngine.settlement_barrier_abandoned',
-              `Table ${this.tableId}: settlement for hand #${this.handCount} ran ${waited / 1000}s ` +
-                `(cap ${maxWaitMs / 1000}s); dealing resumed while it ran`,
-              {
-                tableId: this.tableId,
-                handNumber: this.handCount,
-                waitedMs: waited,
-                capMs: maxWaitMs,
-                reason: 'barrier_timeout',
-              }
-            );
-            this.markProgress();
+            // Do not erase either ownership marker. stop() captured this loop
+            // before publishing the terminal fence and will join the exact
+            // settlement before releasing the table to another generation.
+            return;
           }
           if (this.postHandTasksPromise === pending) this.postHandTasksPromise = null;
-          if (this.postHandTasksPromise === null) this.trackSettlementInFlight(null);
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -230,7 +191,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // last-hand call, against 161 / 5 / 0 on the last build that parked
         // via hand-for-hand. Same shape as the start-up loop gate on the base
         // class, on purpose.
-        if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
+        if (
+          this.maintenancePaused ||
+          this.finalTableDealPaused ||
+          (this.handForHandPaused && this.holdBeforeNextHand)
+        ) {
           this.setLoopPhase('parked_for_pause');
           // 2026-09-04 (audit item 2): the last word on presence before the
           // process dies. Awaited, budgeted by the write itself (one upsert),
@@ -252,11 +217,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await this.withStepBudget(
-          'load_seats',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          loadSeatedPlayers(this.tableId)
-        );
+        this.seatedPlayers = await this.prepareNextHand();
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -269,20 +230,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // ServerTableEngineBase.adoptMovedPresence.
         this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
-        await this.withStepBudget(
-          'refresh_blinds',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.refreshBlinds()
-        );
-        // 2026-08-18: cash tables re-read their rake settings here (throttled
-        // to once a minute inside the method). tableInfo is otherwise loaded
-        // once per engine lifetime, so before this an owner changing the rake
-        // saw nothing until the table restarted.
-        await this.withStepBudget(
-          'refresh_rake',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.refreshRakeConfig()
-        );
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -640,13 +587,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             'leave_pending',
             ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
             (async () => {
-              const cashedOutIds = await processLeavePending(
-                this.tableId,
-                this.tableInfo?.club_id || '',
-                (lockedUserId, stayRemainingMs) =>
-                  this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
-                this.forcedLeaves
-              );
+              const cashedOutIds = await this.takePreparedLeavePending();
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
               for (const leftUserId of cashedOutIds) {
@@ -669,7 +610,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // THE TOURNAMENT COUNTERPART — see releaseDeadTournamentSeats().
           // A cash table has swept its own dead seats on every idle tick since
           // 2026-08-15; a tournament table had nothing of its own and relied
-          // entirely on the 5-second sweep in TournamentManager reaching it.
+          // entirely on the former manager polling sweep reaching it.
           //
           // Placed HERE, above the active-player filter, for the same reason
           // the add-on sweep is: a chair freed this tick has to be free for
@@ -781,7 +722,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
              player is no longer in `activePlayers` to be noticed. The top of the
              loop is AFTER `await postHandTasksPromise` and after
              loadSeatedPlayers, so `this.seatedPlayers` is freshly authoritative.
-             The five-second rebuy window has already happened by then, at the
+             The rebuy decision window has already opened by then, at the
              end of the previous hand. */
           await this.withStepBudget(
             'stand_up_busted_players',
@@ -815,7 +756,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
             this.stopIfClusterTableClosed()
           );
-          if (!this.running) break;
+          if (!this.lifecycleCanMutate()) return;
+          // A completed short-handed sweep is real progress just like the
+          // startup waiting sweep. Stamp after all awaited idle work so a
+          // hung read or move remains visible to the existing watchdog.
+          this.markProgress();
           await this.sleep(3000);
           continue;
         }
@@ -863,6 +808,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.announcePendingSeatMoves()
         );
 
+        // THE REST ENDS HERE (Dan 2026-09-07). Everything above this line
+        // since the hand-free broadcast - the settlement barrier, the roster
+        // read, the sweeps, the seat-move notice - ran under the armed rest;
+        // this waits out whatever of it is left, records how long the felt
+        // actually waited, and only then deals.
+        await this.awaitNextHandRest();
+
+        /* The event loop may have resumed after the local lease deadline but
+           before its raw timeout callback got CPU. Re-prove authority at the
+           sole new-hand edge; a stale dealer cannot allocate a hand number,
+           move the button, post blinds, or deal one more card. */
+        if (!this.lifecycleCanMutate()) return;
+
         // Deal hand (self-transition: running → running for next hand)
         this.setLoopPhase('dealing');
         await this.dealHand(activePlayers);
@@ -873,7 +831,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // is what makes areAllTablesParked() go true promptly, which is what
         // starts the five minutes. Same gate as the top of the loop — see
         // awaitPauseGate on the base class.
-        if ((this.handForHandPaused || this.maintenancePaused) && this.running) {
+        if (
+          (this.handForHandPaused || this.maintenancePaused || this.finalTableDealPaused) &&
+          this.running
+        ) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
         }
@@ -957,34 +918,43 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             potAwardGroups: countAwardGroups(this.currentHandPerPotAwards),
           });
 
-          // Phase 1: the completion sequence actually plays out.
+          // Phase 1: the completion sequence actually plays out. When this
+          // sleep ends the hand IS completed in Dan's 2026-08-21 sense: the
+          // winning hand shown, the pot pushed with its total, the cards
+          // mucked.
           this.setLoopPhase('post_hand_hold');
           await this.sleep(resultDisplayMs);
-          // Phase 2: board clear (clients animate the card/chip sweep).
+          // Phase 2: the hand-free broadcast. Clients animate the board clear
+          // from it, and it is what makes the Rabbit Hunt button visible.
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
-          await this.sleep(boardClearMs(wentToShowdown));
-          // Phase 3: the hand RESTS (Dan 2026-09-05, "1.75 ... ON ALL HANDS
-          // UPON COMPLETION, GIVE USERS A CHANCE TO USE THE RABBIT HUNT").
+          // Phase 3: THE REST (Dan 2026-09-07: "THE NEXT HAND 2 SECONDS AFTER
+          // THE HAND IS COMPLETED"). One number, HAND_COMPLETION.NEXT_HAND_REST_MS,
+          // between completion and the next deal. The board clear
+          // (boardClearMs, ~0.4-0.6s), the Rabbit Hunt window (Dan 2026-09-05,
+          // RABBIT_HUNT_WINDOW_MS, the same number) and every piece of
+          // next-hand bookkeeping live INSIDE it.
           //
-          // It sits HERE, after the broadcast above has told every client the
-          // hand is over, and not inside handCompletionHoldMs, for two
-          // reasons that are really one reason. The client renders the Rabbit
-          // Hunt button behind `!tableState.isHandInProgress`, so the offer
-          // it received at settlement is invisible until that clean state
-          // lands. (Until 2026-09-05 a reveal also froze the client's
-          // snapshot for three seconds, which was only safe with no live hand
-          // to starve; the reveal now paints on a retained copy of the board
-          // and freezes nothing - TablePage P1.) Before this beat existed the
-          // button's whole visible life was boardClearMs - half a second on a
-          // fold.
+          // It is ARMED here and AWAITED immediately before dealHand
+          // (awaitNextHandRest), not slept here. Before 2026-09-07 the engine
+          // slept the clear and the window at this point and only THEN went to
+          // the top of the loop to wait for settlement, reload the roster, run
+          // the seat sweeps and allocate a hand number - a chain of PostgREST
+          // round trips at the 250-700ms each really costs from the engine
+          // box. Measured on production that evening: p50 11.2s, p90 20.6s
+          // from one hand's end to the next hand's start, against a designed
+          // 2.25-2.65s. Arming the deadline first lets all of that run under
+          // the rest, and the felt waits for whichever finishes last.
           //
-          // Unconditional. A rest that happened only when a rabbit hunt was
-          // purchasable would tell the whole table, from the rhythm alone,
-          // that the deck still had cards in it (CLAUDE.md 10.5: timing is
-          // part of the treatment). The per-user setting hides the BUTTON and
-          // never touches this sleep.
-          this.setLoopPhase('post_hand_rabbit_window');
-          await this.sleep(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS);
+          // Unconditional, on every hand, with nothing to branch on between
+          // the broadcast and the arming - a rest that varied with the deck
+          // would tell the table what the deck still held (CLAUDE.md 10.5:
+          // timing is part of the treatment). The per-user "hide the button"
+          // setting does not shorten it. boardClearMs is the floor, so the
+          // clear animation can never outlive the rest whatever the constants
+          // are set to.
+          this.armNextHandRest(
+            Math.max(HAND_COMPLETION.NEXT_HAND_REST_MS, boardClearMs(wentToShowdown))
+          );
 
           // ── Dan's Rebuy Pause (2026-08-24) ──
           // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.
@@ -1129,8 +1099,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                  * and headsUpSpec declare neither, and a freezeout MTT declares
                  * neither by definition - so a busted Spin, Heads-Up or
                  * freezeout seat was NEVER vacated here. It sat on the felt
-                 * until the elimination sweep noticed it up to five seconds
-                 * later (ELIMINATION_SWEEP_MS), which is exactly the lingering
+                 * until the former polling sweep noticed it later, which is
+                 * exactly the lingering
                  * this block was written to end.
                  *
                  * The rebuy arithmetic has not moved and is still gated, because
@@ -1228,6 +1198,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                   }
                 } catch (vacateThrew) {
                   reportError(vacateThrew, 'ServerTableEngine.busted_seat_vacate_threw');
+                }
+
+                // The settlement hint can race ahead of the fallback
+                // tournament_players zero above when a mirror/history write
+                // failed. Emit a second coalesced hint only after the direct
+                // zero/vacate attempt, so a sweep that ran early is not the
+                // player's last wake. This callback remains fire-and-forget;
+                // the manager independently proves durable knockout evidence.
+                if (this.handCompleteCallback && justBustedPlayers.length > 0) {
+                  try {
+                    this.handCompleteCallback(
+                      this.tableId,
+                      justBustedPlayers
+                        .filter((player) => !!player.user_id)
+                        .map((player) => ({ user_id: player.user_id!, stack: 0 }))
+                    );
+                  } catch (wakeErr) {
+                    reportError(wakeErr, 'ServerTableEngine.busted_fallback_wake_failed', {
+                      tableId: this.tableId,
+                    });
+                  }
                 }
               } catch (err) {
                 /* FAIL OPEN, not closed (2026-08-27). This read decides whether
@@ -1338,6 +1329,218 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
+  /** Read fresh hand inputs only after the settlement and pause gates. */
+  /**
+   * THE REST (Dan 2026-09-07). Armed at the hand-free broadcast, awaited
+   * immediately before the next deal. See the note where it is armed.
+   */
+  protected armNextHandRest(restMs: number): void {
+    const now = Date.now();
+    this.nextHandNotBeforeMs = now + restMs;
+    this.lastCompletionAtMs = now;
+    this.gapPhaseMs = {};
+    this.gapPhaseName = this.loopPhase;
+    this.gapPhaseSinceMs = now;
+    this.gapHadRebuyPause = false;
+    this.gapSawIdle = false;
+  }
+
+  protected async awaitNextHandRest(): Promise<void> {
+    await this.settlePreparedHandNumber();
+    if (this.nextHandNotBeforeMs === null) return;
+    const remaining = this.nextHandNotBeforeMs - Date.now();
+    if (remaining > 0) {
+      this.setLoopPhase('next_hand_rest');
+      await this.sleep(remaining);
+    }
+    this.nextHandNotBeforeMs = null;
+    if (this.lastCompletionAtMs !== null && !this.gapSawIdle) {
+      const now = Date.now();
+      this.accrueGapPhase(now);
+      nextHandGap.record({
+        tableId: this.tableId,
+        gapMs: now - this.lastCompletionAtMs,
+        phases: this.gapPhaseMs,
+        rebuyPaused: this.gapHadRebuyPause,
+        at: now,
+      });
+    }
+    // A table that idled between the two hands (short-handed, parked, held
+    // for a spin reveal) is not a sample of the rest; it waited on people.
+    this.lastCompletionAtMs = null;
+    this.gapPhaseMs = {};
+  }
+
+  /** Loop phases that mean the table was waiting on something other than bookkeeping. */
+  private static readonly IDLE_LOOP_PHASES = new Set([
+    'idle_not_enough_players',
+    'start_wait_for_players',
+    'parked_for_pause',
+    'spin_reveal_hold',
+    'mystery_bounty_hold',
+    'admin_pause_lock',
+    'maintenance_lock',
+    'idle_cluster_closed',
+    'idle_seat_moves',
+  ]);
+
+  /** Per-phase share of the current gap; called from setLoopPhase while a rest is armed. */
+  protected accrueGapPhase(now: number): void {
+    // `== null` on purpose: the base constructor sets a loop phase before this
+    // class's field initialisers have run, and undefined must read as "no rest armed".
+    if (this.lastCompletionAtMs == null) return;
+    const dt = now - this.gapPhaseSinceMs;
+    if (dt > 0) this.gapPhaseMs[this.gapPhaseName] = (this.gapPhaseMs[this.gapPhaseName] ?? 0) + dt;
+    this.gapPhaseName = this.loopPhase;
+    this.gapPhaseSinceMs = now;
+    if (this.loopPhase === 'rebuy_pause') this.gapHadRebuyPause = true;
+    if (ServerTableEngineDealing.IDLE_LOOP_PHASES.has(this.loopPhase)) this.gapSawIdle = true;
+  }
+
+  protected override setLoopPhase(phase: string): void {
+    super.setLoopPhase(phase);
+    this.accrueGapPhase(Date.now());
+  }
+
+  private nextHandNotBeforeMs: number | null = null;
+  private lastCompletionAtMs: number | null = null;
+  private gapPhaseMs: Record<string, number> = {};
+  private gapPhaseName = '';
+  private gapPhaseSinceMs = 0;
+  private gapHadRebuyPause = false;
+  private gapSawIdle = false;
+
+  /**
+   * EVERYTHING THE NEXT HAND NEEDS FROM THE DATABASE, IN ONE ROUND (2026-09-07).
+   *
+   * Three independent reads and one allocation used to run one after another
+   * at the top of the iteration: the roster (itself two round trips), the
+   * leave-pending sweep, and - inside dealHand - the global hand number. At
+   * the 250-700ms a PostgREST call costs from the engine box that was two to
+   * three seconds on the felt, every hand, AFTER the rest had already been
+   * slept. They now start together, under the rest.
+   *
+   * Independence, stated so it can be checked:
+   * - readNextHandInputs reads seats, blinds and rake; nothing here writes them.
+   * - processLeavePending marks leaving seats left and cashes them out. It is
+   *   raced with the roster read ONLY when no add-on is pending (an add-on
+   *   must credit a seat before that seat can leave, so the serial order
+   *   pending_addons -> leave_pending is kept whenever one exists). The
+   *   roster is filtered by the sweep's result afterwards in either order, so
+   *   a seat that left during the read never deals.
+   * - allocateGlobalHandNumber takes the next value of a sequence. It is
+   *   consumed by dealHand a few seconds later or discarded (see
+   *   takePreparedHandNumber), never reused.
+   * The roster read failing still throws exactly as before; the other two
+   * settle on their own and are consumed where they always were.
+   */
+  protected async prepareNextHand(): Promise<SeatedPlayer[]> {
+    const leaveSweepCanRace =
+      !this.isTournamentTable() &&
+      !this.pendingAddOnSweepNeeded &&
+      this.pendingAddOns.size === 0 &&
+      this.preparedLeavePending === null;
+    if (leaveSweepCanRace) {
+      const sweep = this.withStepBudget(
+        'leave_pending',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        processLeavePending(
+          this.tableId,
+          this.tableInfo?.club_id || '',
+          (lockedUserId, stayRemainingMs) =>
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+          this.forcedLeaves
+        )
+      );
+      // Consumed by takePreparedLeavePending, which surfaces a rejection in
+      // the step that always owned it; this only keeps it from being unhandled.
+      sweep.catch(() => undefined);
+      this.preparedLeavePending = sweep;
+    }
+    if (this.preparedHandNumber === null) {
+      this.preparedHandNumber = this.allocateGlobalHandNumber()
+        .then((n) => ({ n, at: Date.now() }))
+        .catch((err: unknown) => {
+          // dealHand allocates again itself; this only loses the overlap.
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] hand number pre-allocation failed; dealHand will retry:`,
+            err instanceof Error ? err.message : err
+          );
+          return null;
+        });
+    }
+    return this.readNextHandInputs();
+  }
+
+  private preparedLeavePending: Promise<string[]> | null = null;
+  private preparedHandNumber: Promise<{ n: number; at: number } | null> | null = null;
+  private preparedHandNumberValue: { n: number; at: number } | null = null;
+  /** A pre-allocated hand number older than this is discarded rather than dealt. */
+  protected static readonly PREPARED_HAND_NUMBER_MAX_AGE_MS = 15_000;
+
+  protected async takePreparedLeavePending(): Promise<string[]> {
+    const prepared = this.preparedLeavePending;
+    this.preparedLeavePending = null;
+    if (prepared) return prepared;
+    return processLeavePending(
+      this.tableId,
+      this.tableInfo?.club_id || '',
+      (lockedUserId, stayRemainingMs) =>
+        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+      this.forcedLeaves
+    );
+  }
+
+  /** Resolves the pre-allocation (if any) into a value dealHand can take synchronously. */
+  protected async settlePreparedHandNumber(): Promise<void> {
+    const pending = this.preparedHandNumber;
+    this.preparedHandNumber = null;
+    if (!pending) return;
+    this.preparedHandNumberValue = await pending;
+  }
+
+  protected takePreparedHandNumber(): number | null {
+    const prepared = this.preparedHandNumberValue;
+    this.preparedHandNumberValue = null;
+    if (!prepared) return null;
+    if (Date.now() - prepared.at > ServerTableEngineDealing.PREPARED_HAND_NUMBER_MAX_AGE_MS) {
+      return null;
+    }
+    return prepared.n;
+  }
+
+  protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
+    // These reads have no dependency on each other. Blinds update tournament
+    // settings; rake refresh updates cash settings; neither uses the roster.
+    // Keep every existing query and budget, but pay the slowest read instead
+    // of adding their round trips to the gap between hands.
+    const reads = [
+      this.withStepBudget(
+        'load_seats',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        loadSeatedPlayers(this.tableId)
+      ),
+      this.withStepBudget(
+        'refresh_blinds',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshBlinds()
+      ),
+      this.withStepBudget(
+        'refresh_rake',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshRakeConfig()
+      ),
+    ] as const;
+    this.setLoopPhase('load_next_hand_inputs');
+    // Do not fail fast and start another iteration while a sibling read is
+    // still in its budget. The old roster is retained if any input fails.
+    const [seats, blinds, rake] = await Promise.allSettled(reads);
+    if (seats.status === 'rejected') throw seats.reason;
+    if (blinds.status === 'rejected') throw blinds.reason;
+    if (rake.status === 'rejected') throw rake.reason;
+    return seats.value;
+  }
+
   protected async refreshBlinds(): Promise<void> {
     if (!this.tableInfo || !this.isTournamentTable()) return;
     // BUG-SENTRY-7463185461 FIX: retry up to 3x on transient fetch failures.
@@ -1350,9 +1553,36 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       try {
         const data = await loadTable(this.tableId);
         if (data) {
+          /* AND TELL THE FELT (2026-09-09). `TABLE_META_UPDATE` - the message
+             `TableService.subscribeToTable` has consumed since the 2026-05-18
+             migration off `postgres_changes` - is CONSTRUCTED NOWHERE in this
+             engine, and `ChannelHub` has no table subscription to deliver it
+             on, so live blind-level changes and table renames have been
+             silent for every seated player since that migration. The table's
+             own socket is already subscribed and already carries every other
+             discrete fact about this table, so the meta change goes out the
+             same way, as `table_meta_update`. (`useTableStore`'s copy of the
+             subscription still goes through the channel client and is still
+             dead; the FELT is the surface a player is looking at.) */
+          const changed =
+            Number(this.tableInfo.small_blind) !== Number(data.small_blind) ||
+            Number(this.tableInfo.big_blind) !== Number(data.big_blind) ||
+            Number(this.tableInfo.ante ?? 0) !== Number(data.ante ?? 0);
           this.tableInfo.small_blind = data.small_blind;
           this.tableInfo.big_blind = data.big_blind;
           this.tableInfo.ante = data.ante;
+          if (changed) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'table_meta_update',
+              table_id: this.tableId,
+              name: this.tableInfo.name ?? null,
+              game_variant: this.tableInfo.game_variant ?? null,
+              small_blind: data.small_blind,
+              big_blind: data.big_blind,
+              ante: data.ante ?? 0,
+              timestamp: Date.now(),
+            });
+          }
         }
         return; // success
       } catch (err: any) {
@@ -1379,7 +1609,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // every table, club, union, cash game and tournament, and can never repeat.
     // Was `this.handCount++` — a per-table counter that reset on every engine
     // restart and produced the same "Hand #196" on dozens of tables at once.
-    this.handCount = await this.allocateGlobalHandNumber();
+    // ALLOCATED UNDER THE REST since 2026-09-07 (prepareNextHand) - the same
+    // sequence, taken at most a few seconds earlier and only for a hand that is
+    // about to be dealt; a number held for longer than that is discarded and a
+    // fresh one taken here, so the ascending-by-deal-order property holds.
+    this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());
     this.handsDealtThisSession++;
     const handNumber = this.handCount;
     const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
@@ -1606,25 +1840,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         });
     }
-    // THE BUTTON MUST ALWAYS MOVE. getNextSeat over a ONE-seat roster returns
-    // that same seat from both of its branches, so when exactly one player is
-    // button-eligible and already holds the button, the button stands still and
-    // the same two players post the small and big blind twice running. That is
-    // reachable any time several players arrive at once around one incumbent.
-    //
-    // Heads-up is deliberately excluded: with two players the button IS the
-    // small blind, so parking it on the veteran is what makes the newcomer the
-    // big blind and gets them dealt in free. Forcing it across would put them in
-    // the small blind, which the hold-out then refuses, leaving one active
-    // player and no hand — a table that never deals again.
-    if (
-      !drawnIsSeated &&
-      prevButtonSeat > 0 &&
-      dealerSeat === prevButtonSeat &&
-      players.length > 2
-    ) {
-      dealerSeat = this.getNextSeat(prevButtonSeat, players);
-    }
+    // A sole eligible incumbent can keep the button for one entry hand.
+    // Giving it to a newcomer breaks cash entry rules and disagrees with the
+    // blind predictor. Once dealt, the newcomers join the eligible rotation.
     /**
      * THE DEAD BUTTON, AND THE BIG BLIND THAT WAS PAID TWICE
      * (2026-08-31, Phase 2.2. TDA Rule 33.)
@@ -2491,7 +2709,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dbConsumedSeconds: 0,
         });
       }
-      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+      this.disconnectEngine.registerPlayer(
+        this.tableId,
+        p.user_id,
+        this.seatedPlayers.find((seat) => seat.user_id === p.user_id)?.reconnect_membership
+      );
     }
 
     // Step 5: Wire disconnect auto-action callback into HandController
@@ -2533,6 +2755,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
     // Wait for hand to complete
     return new Promise<void>((resolve) => {
+      const controllerForHand = this.handController!;
       // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
       // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.
       // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
@@ -2540,8 +2763,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
       // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
       let unsub: () => void = () => {};
+      let handWaitReleased = false;
+      const releaseHandWait = (reason: string): void => {
+        if (handWaitReleased) return;
+        handWaitReleased = true;
+        try {
+          clearTimeout(handTimeout);
+          if (this.handSafetyTimer === handTimeout) this.handSafetyTimer = null;
+          unsub();
+        } catch (error) {
+          reportError(error, 'ServerTableEngine.' + this.tableId + '.hand_wait_release_failed', {
+            reason,
+            handNumber,
+          });
+        } finally {
+          if (this.activeHandWaitRelease?.controller === controllerForHand) {
+            this.activeHandWaitRelease = null;
+          }
+          if (this.handController === controllerForHand) this.handController = null;
+          this.runoutRevealActive = false;
+          resolve();
+        }
+      };
       const handTimeout = setTimeout(() => {
-        this.handSafetyTimer = null;
         // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
         // or superseded while the void timer was armed, the shared timers now
         // belong to the replacement engine — clearing them here would wipe the
@@ -2553,10 +2797,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // dealingLoop deal the next hand from a superseded instance — two
           // engines dealing one table. Local teardown only; never the shared
           // timers (they belong to the successor).
-          unsub();
-          this.handController = null;
-          this.runoutRevealActive = false;
-          resolve();
+          releaseHandWait('engine_stopped_or_superseded');
           return;
         }
         console.warn(
@@ -2567,7 +2808,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // late completion (e.g. a pending horse think-timer) could then fire the
         // HAND_COMPLETE branch and null the NEXT live hand's controller. Detach
         // the listener and cancel this table's action timers on timeout.
-        unsub();
         this.preciseTimer.clearTable(this.tableId);
         this.actionValidator.clearTable(this.tableId);
         /**
@@ -2597,14 +2837,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.bomb_completed_on_void')
           );
         }
-        this.handController = null;
-        this.runoutRevealActive = false;
-        resolve();
+        releaseHandWait('hand_safety_timeout');
       }, HAND_SAFETY_TIMEOUT_MS);
       // Track on the instance so stop()/killForRestart() can clear it.
       this.handSafetyTimer = handTimeout;
 
-      unsub = this.handController!.onEvent((event: HandEvent) => {
+      unsub = controllerForHand.onEvent((event: HandEvent) => {
         // 2026-08-15: handleHandEvent is async and its promise was discarded,
         // so ANY rejection inside it (broadcast, hub publish, settlement DB
         // write) vanished into index.ts's unhandled-rejection swallow while the
@@ -2618,10 +2856,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
 
         if (event.type === 'HAND_COMPLETE') {
-          clearTimeout(handTimeout);
-          this.handSafetyTimer = null;
-          unsub();
-
           // GUARD (2026-08-22): everything between here and resolve() used to
           // run unprotected inside HandController.emit's listener loop. A
           // throw from recordHandTiming or clearTurnTimer escaped back into
@@ -2633,36 +2867,30 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             const handElapsedMs = Date.now() - handStartMs;
             this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
 
-            // Fire hand-complete callback for tournament chip sync
+            // Clear the action clock here. Tournament hand-complete callbacks
+            // intentionally do NOT fire here: handleHandEvent has only queued
+            // postHandTasks at this point, so table_seats still carries the
+            // pre-hand stacks and the knockout hand is not queryable yet.
+            // ServerTableEngineSettlement fires it after both writes succeed.
             this.clearTurnTimer();
-            if (this.handCompleteCallback) {
-              const finalStacks = players.map((p) => ({
-                user_id: p.user_id,
-                stack: p.stack,
-              }));
-              try {
-                this.handCompleteCallback(this.tableId, finalStacks);
-              } catch (e) {
-                reportError(e, 'ServerTableEnginethistableId.handCompleteCallback_error');
-              }
-            }
           } catch (e) {
             reportError(e, 'ServerTableEngine.' + this.tableId + '.hand_complete_listener_threw');
           }
 
-          this.handController = null;
-          // ANIMATION AUDIT 2026-08-19: end of the all-in reveal window.
-          this.runoutRevealActive = false;
-          resolve();
+          releaseHandWait('hand_complete');
         }
       });
+      this.activeHandWaitRelease = {
+        controller: controllerForHand,
+        release: releaseHandWait,
+      };
 
       // Start the hand!
       try {
         // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
         // inherit a stale all-in reveal flag from an abnormal exit.
         this.runoutRevealActive = false;
-        this.handController!.start();
+        controllerForHand.start();
 
         // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.
         // C15: deliberately NOT coalesced. The hand-start snapshot is the anchor
@@ -2671,11 +2899,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         void this.flushSnapshot();
       } catch (err) {
         reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
-        clearTimeout(handTimeout);
-        this.handSafetyTimer = null;
-        unsub();
-        this.handController = null;
-        resolve();
+        releaseHandWait('hand_start_failed');
       }
     });
   }
@@ -2738,28 +2962,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
+  private holeCardWriteBatches?: Map<
+    string,
+    {
+      rows: Array<{ userId: string; seat: number; json: string }>;
+      promise: Promise<void>;
+    }
+  >;
+
   protected async persistHoleCardsWithRetry(
     userId: string,
     seat: number,
     cards: unknown
   ): Promise<void> {
-    const payload = JSON.stringify([{ user_id: userId, seat_number: seat, cards }]);
-    // 2026-08-31: captured ONCE. this.handCount is reallocated when the next
-    // hand deals; the retry loop below awaits between attempts, so re-reading
-    // it per attempt could stamp THIS hand's cards with the NEXT hand's
-    // number on a slow attempt. Same class as the settlement snapshot fix.
+    if (!this.lifecycleCanMutate()) return;
+    // Freeze the payload now: a later draw may replace or mutate these cards.
+    const row = {
+      userId,
+      seat,
+      json: JSON.stringify({ user_id: userId, seat_number: seat, cards }),
+    };
     const handNumberAtDeal = this.handCount;
-    /* 2026-09-04 (disconnect audit item 12): THE CARDS GO DOWN THE SOCKET
-       TOO. The database row below is still written - it is the durable copy
-       and the client's poll reads it - but the hero's cards used to reach
-       the screen only through a Supabase Realtime subscription on that row
-       (a second transport, with its own reconnect, its own INSERT-only
-       history, and the bounded poll behind it). The engine socket the felt
-       is already drawn from now carries them privately to this player's
-       sockets, in the same row shape the Realtime handler accepts, so every
-       guard on that path (heroHoleCardsAreForThisHand) applies unchanged.
-       Sent before the write so a slow database does not delay the deal on
-       screen. */
+    // Private socket delivery stays synchronous and never waits for PostgREST.
     this.hub?.sendToUser(this.tableId, userId, {
       kind: 'hole_cards',
       row: {
@@ -2770,7 +2994,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         cards,
       },
     });
+
+    // HandController emits the whole deal synchronously. One microtask groups
+    // those rows into the existing array RPC, without an added timer or cache.
+    // Each engine owns its queue. Service work and manager generations cannot
+    // share it, and the flush inherits the first caller's async authority.
+    const authority = currentTournamentDataAuthority();
+    const key = JSON.stringify([
+      handNumberAtDeal,
+      authority?.tournamentId,
+      authority?.leaseGeneration,
+    ]);
+    const batches = (this.holeCardWriteBatches ??= new Map());
+    const pending = batches.get(key);
+    if (pending) {
+      pending.rows.push(row);
+      return pending.promise;
+    }
+    const batch = {
+      rows: [row],
+      promise: Promise.resolve().then(async () => {
+        // Retire the queue BEFORE awaiting HTTP. A later reconnect/draw must
+        // get its own write, even while this batch is still in flight.
+        if (batches.get(key) === batch) batches.delete(key);
+        await this.persistHoleCardBatchWithRetry(handNumberAtDeal, batch.rows);
+      }),
+    };
+    batches.set(key, batch);
+    return batch.promise;
+  }
+
+  private async persistHoleCardBatchWithRetry(
+    handNumberAtDeal: number,
+    rows: ReadonlyArray<{ userId: string; seat: number; json: string }>
+  ): Promise<void> {
+    const payload = '[' + rows.map((row) => row.json).join(',') + ']';
+    const isCurrent = () => this.handCount === handNumberAtDeal && this.lifecycleCanMutate();
     for (let attempt = 1; attempt <= 3; attempt++) {
+      if (!isCurrent()) return;
       try {
         const { error } = await supabase.rpc('insert_hole_cards', {
           p_table_id: this.tableId,
@@ -2779,12 +3040,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         });
         if (!error) return;
         console.warn(
-          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for seat ${seat}:`,
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for ${rows.length} seats:`,
           error.message
         );
       } catch (err) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for seat ${seat}:`,
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for ${rows.length} seats:`,
           err
         );
       }
@@ -2792,21 +3053,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         await new Promise((r) => setTimeout(r, 150 * attempt));
       }
     }
-    // All retries exhausted — tell the client its cards are missing so it can
-    // re-query table_hole_cards instead of sitting blind until the auto-fold.
+    if (!isCurrent()) return;
     reportError(
       new Error('insert_hole_cards failed after 3 attempts'),
       `ServerTableEngine.${this.tableId}.insert_hole_cards_failed`,
-      { userId, seat, handNumber: handNumberAtDeal }
+      { seats: rows.map((row) => row.seat), handNumber: handNumberAtDeal }
     );
-    this.hub?.emitEvent(this.tableId, {
-      type: 'hole_cards_unavailable',
-      table_id: this.tableId,
-      hand_number: handNumberAtDeal,
-      user_id: userId,
-      seat,
-      timestamp: Date.now(),
-    });
+    // The recovery event carries identities only, never another player's cards.
+    for (const row of rows) {
+      this.hub?.emitEvent(this.tableId, {
+        type: 'hole_cards_unavailable',
+        table_id: this.tableId,
+        hand_number: handNumberAtDeal,
+        user_id: row.userId,
+        seat: row.seat,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   /**
@@ -2935,6 +3198,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
+    // THE FREEZE (CLAUDE.md 13.5): the horse twin below checks it twice; this
+    // one stood humans up through the break. Same gate, same place.
+    if (isMaintenanceFrozen()) return;
 
     // Horses have their own recovery pass with its own stop-loss and treasury
     // accounting; removing them here too would double-handle the same seat.
@@ -2995,47 +3261,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const inHand = liveHand?.players.find((p) => p.user_id === player.user_id);
       if (inHand?.is_all_in && !inHand.is_folded) continue;
 
-      this.hub?.emitEvent(this.tableId, {
-        type: 'seat_left',
-        table_id: this.tableId,
-        seat: player.seat_number,
-        user_id: player.user_id,
-        mid_hand: false,
-        reason: 'busted_no_rebuy',
-        timestamp: Date.now(),
-      });
-
-      try {
-        /* atomicCashout, not markSeatAsLeft-by-hand: it takes the seat lock,
-           credits any residual stack through atomic_credit_wallet_and_log under
-           an idempotency key, and stamps left_at — all in one RPC. The stack is
-           zero here by definition, so no chips actually move, but going through
-           the money path anyway is what keeps this seat exit OFF
-           fn_unaccounted_seat_exits (CLAUDE.md 11.5). */
-        await atomicCashout(player.user_id, this.tableId, player.seat_number);
-        this.chipContinuity.forget(player.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
-        this.straddleEngine.removePlayer(this.tableId, player.user_id);
-        this.preActionEngine.removePlayer(this.tableId, player.user_id);
-        this.bustedSince.delete(player.user_id);
-        this.rebuyPromptOpenAt.delete(player.user_id);
-        removed.push(player.user_id);
-        console.log(
-          `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
-        );
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
-        /* If the FALLBACK also fails, say so. Swallowing it left the worst
-           outcome invisible: `seat_left` has already been broadcast above, so
-           every client has cleared the seat while the row is still occupied —
-           a ghost seat that blocks a paying player and that nothing anywhere
-           reports. A cleanup that cannot complete is exactly the case worth
-           knowing about. */
-        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number).catch((err2) =>
-          reportError(err2, 'ServerTableEngine.' + this.tableId + '.busted_standup_mark_left')
-        );
-      }
+      /* One door out for a busted seat (releaseBustedSeat): the money path,
+         then the event, then the trackers - and on a failed write nothing at
+         all, so the roster and grace tracking wait for a later sweep to ask
+         the same cashout again. An unknown outcome is not a leave. */
+      const released = await this.releaseBustedSeat(player, 'busted_no_rebuy');
+      if (!released) continue;
+      this.bustedSince.delete(player.user_id);
+      this.rebuyPromptOpenAt.delete(player.user_id);
+      removed.push(player.user_id);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
+      );
     }
 
     if (removed.length > 0) {
@@ -3044,49 +3281,30 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async recoverBustedSeatedHorses(): Promise<void> {
+    if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
     if (bustHorses.length === 0) return;
 
     const now = Date.now();
     for (const horse of bustHorses) {
+      if (isMaintenanceFrozen()) return;
       const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
       if (now - lastAttempt < 30000) continue;
       this.bustRecoveryLastAttempt.set(horse.user_id, now);
 
       const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-      // Stop-Loss Bankroll logic (same rule as Settlement step 5): after two
-      // rebuys (3 buy-ins lost) the horse leaves instead of rebuying again.
-      if (currentRebuys >= 2) {
-        /* ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ────────────────────────────
-           This branch used to release the seat SILENTLY: no `seat_left` event,
-           where the human path immediately above emits one. Both stand a busted
-           player up for the same reason — out of chips, not coming back — but a
-           busted human's seat cleared on every client the instant the event
-           arrived, and a busted horse's seat cleared only when a client next
-           happened to diff a snapshot.
-
-           That is a TELL, and it is the one this file's own comment warns
-           about in the other direction: "a felt that clears a busted horse's
-           seat promptly and leaves a busted human's sitting there is a tell
-           either way round." Timing is part of the treatment (Dan 2026-08-27) —
-           the rhythm of the table is what gives the fleet away, not any one
-           hand. Same event, same reason, same moment. */
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: horse.seat_number,
-          user_id: horse.user_id,
-          mid_hand: false,
-          reason: 'busted_no_rebuy',
-          timestamp: Date.now(),
-        });
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        this.chipContinuity.forget(horse.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+      // Stop-loss: the SAME rule Settlement step 5 applies (HorseRebuyPolicy,
+      // the temperament's own figure). This site used to hard-code `>= 2`
+      // while Settlement had moved on, which is the "two sites reloading on
+      // two different rules" the comment below warns about.
+      if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
+        /* HORSES ARE PLAYERS (CLAUDE.md 10.5): the same door the busted human
+           leaves through - money path, then `seat_left`, then the trackers -
+           so a busted horse's seat clears on every client at the same moment
+           a human's does. Timing is part of the treatment (Dan 2026-08-27). */
+        const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
+        if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -3106,28 +3324,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
         rebuysTaken: currentRebuys,
       });
-      const success =
-        rebuyAmount > 0 &&
-        (await autoRebuyHorse(
-          this.tableId,
-          horse.user_id,
-          rebuyAmount,
-          this.tableInfo?.club_id || ''
-        ));
-      if (success) {
-        horse.stack = rebuyAmount;
+      if (isMaintenanceFrozen()) return;
+      const funding =
+        rebuyAmount > 0
+          ? await autoRebuyHorse(
+              this.tableId,
+              horse.user_id,
+              rebuyAmount,
+              this.tableInfo?.club_id || '',
+              this.handCount
+            )
+          : { status: 'declined' as const };
+      // An unreadable response may follow a committed transfer. Preserve the seat.
+      if (funding.status === 'unknown') return;
+      if (funding.status === 'funded') {
+        horse.stack = funding.stack;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: rebought ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
         );
       } else {
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        this.chipContinuity.forget(horse.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+        const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
+        if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(

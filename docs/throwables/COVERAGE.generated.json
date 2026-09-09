@@ -1,0 +1,652 @@
+{
+  "total": 80,
+  "original": 48,
+  "additional": 32,
+  "enabledPicker": 80,
+  "premiumStills": 79,
+  "integratedAtlasRigs": 79,
+  "note": "Source inventory only. Glove uses a separate player. No row is fully accepted by file presence; sound, gates, multiplayer, device and publication need separate evidence.",
+  "missingAtlasRigs": [],
+  "rows": [
+    {
+      "id": "thumbs_up",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "thumbs_down",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "laughing_emoji",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "crying_emoji",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "angry_emoji",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "cool_sunglasses_emoji",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "heart",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "star",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "tomato",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "cracked_egg",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "banana_peel",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "pizza_slice",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "cake",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "poop",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "water_gun",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "boxing_glove",
+      "picker": true,
+      "still": false,
+      "animation": false,
+      "separateGlovePlayer": true,
+      "acceptance": "pending"
+    },
+    {
+      "id": "anvil",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "trash_can",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "snowman",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "magnet",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "basketball",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "football",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "tennis_ball",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "bowling_ball",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "horseshoe",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "dice",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "magic_8_ball",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "beer",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "champagne",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "coffee",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "cash_stack",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "diamond",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "rose",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "trophy",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "fireworks",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "bomb",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "rocket",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "ufo",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "alien",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "robot",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "ghost",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "skull",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "lightning_bolt",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "doge",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "shark",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "bear",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "chicken",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "rubber_duck",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "rat_card",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "donkey",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "fish",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "party_face",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "loser_hand",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "thinking",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "blush",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "ok_smug",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "sleeping",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "facepalm",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "screaming",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "vomit_rainbow",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "surrender",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "energy_ball",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "sloth",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "crown",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "chip_rain",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "diamond_shower",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "velvet_rope",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "champagne_tower",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "standing_ovation",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "whale",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "to_the_moon",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "missile",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "tilt_meter",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "bad_beat_bandage",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "bubble_boy",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "slot_machine",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "pumpkin",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "snowball",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "party_popper",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    },
+    {
+      "id": "heart_arrow",
+      "picker": true,
+      "still": true,
+      "animation": true,
+      "separateGlovePlayer": false,
+      "acceptance": "pending"
+    }
+  ]
+}

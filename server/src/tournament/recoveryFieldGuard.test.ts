@@ -23,9 +23,9 @@ describe('a field larger than the payout structure is not a finish', () => {
     expect(fieldIsStillLive({ livePlayers: 90, paidPlaces: 18 })).toBe(true);
   });
 
-  it('still rescues the case this path exists for: 8 stranded rows, 10 paid places', () => {
-    // The COMPLETED bounty MTT with 8 players left 'playing' and $60 of a $100
-    // pool never paid — the defect that put this rescue here in the first place.
+  it('leaves an inside-payout-depth field to the stricter result-evidence gate', () => {
+    // This helper detects only an oversized live field. Normal recovery now
+    // independently refuses every multi-survivor snapshot, including this one.
     expect(fieldIsStillLive({ livePlayers: 8, paidPlaces: 10 })).toBe(false);
   });
 
@@ -37,9 +37,9 @@ describe('a field larger than the payout structure is not a finish', () => {
     expect(fieldIsStillLive({ livePlayers: 0, paidPlaces: 9 })).toBe(false);
   });
 
-  it('treats exactly-as-many-survivors-as-places as a finish, not a live field', () => {
-    // The boundary belongs on the permissive side: a heads-up finish paying two
-    // is a real ending, and refusing it would strand money this path must pay.
+  it('treats exactly-as-many-survivors-as-places as not oversized', () => {
+    // The recovery's independent result-evidence gate still refuses 2+ alive;
+    // this pure helper remains the stale RUNNING sweep's oversized-field test.
     expect(fieldIsStillLive({ livePlayers: 9, paidPlaces: 9 })).toBe(false);
     expect(fieldIsStillLive({ livePlayers: 10, paidPlaces: 9 })).toBe(true);
   });
@@ -81,11 +81,24 @@ describe('the guard is actually wired into the rescue', () => {
   });
 
   it('decides BEFORE any credit is issued', () => {
-    const guard = RECOVERY.indexOf('fieldIsStillLive');
-    // 2026-09-02: the credit is settleTournamentObligation (one settle path).
-    const credit = RECOVERY.indexOf('settleTournamentObligation(supabase');
+    const guard = RECOVERY.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })');
+    const credit = RECOVERY.indexOf('settleTournamentPlacesAtomically(', guard);
     expect(guard).toBeGreaterThan(-1);
     expect(credit).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(credit);
+  });
+
+  it('also refuses every field with two or more survivors before funding or stamping results', () => {
+    expect(RECOVERY).toMatch(/if \(alive\.length > 1\)/);
+    const window = sliceEnclosingBlock(RECOVERY, 'if (alive.length > 1)');
+    expect(window).toMatch(/recoverStuckCompleting_multiple_survivors_unresolved/);
+    expect(window).toMatch(/continue;/);
+
+    const guard = RECOVERY.indexOf('if (alive.length > 1)');
+    const funding = RECOVERY.indexOf("'fn_apply_prize_guarantee'");
+    const stamp = RECOVERY.indexOf('const owed = prizeFor(place)');
+    expect(guard).toBeGreaterThan(-1);
+    expect(funding).toBeGreaterThan(guard);
+    expect(stamp).toBeGreaterThan(funding);
   });
 });

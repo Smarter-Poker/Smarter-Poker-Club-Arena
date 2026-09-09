@@ -1,0 +1,568 @@
+[
+  {
+    "id": "tomato",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a580aa82-69b3-4fe8-842f-57d4aff8edce.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/tomato.png"
+  },
+  {
+    "id": "cracked_egg",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-8fe24ff7-d472-494e-98c9-4474da6e6be0.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cracked_egg.png"
+  },
+  {
+    "id": "banana_peel",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-93f80790-bd17-4ebe-a5ee-35deb0c6c084.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/banana_peel.png"
+  },
+  {
+    "id": "pizza_slice",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-41fc72f2-b469-4034-9c80-948caf50366d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/pizza_slice.png"
+  },
+  {
+    "id": "cake",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-9b95282d-dcc9-4700-a48d-14e97685628d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cake.png"
+  },
+  {
+    "id": "poop",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-fb374ec3-5f5c-4ad4-890c-e0b08cc5baa4.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/poop.png"
+  },
+  {
+    "id": "water_gun",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-4e953905-b307-488f-bb5e-f3e6f9206460.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/water_gun.png"
+  },
+  {
+    "id": "anvil",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-6a43c2d8-747d-4aaa-8f86-5435a400914a.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/anvil.png"
+  },
+  {
+    "id": "trash_can",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-c634c561-aad2-4f38-8de5-7c9e4632251b.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/trash_can.png"
+  },
+  {
+    "id": "snowman",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-183e9ba2-dfb2-4e41-aa10-f167e4569235.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/snowman.png"
+  },
+  {
+    "id": "magnet",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-74500f2a-ace4-49cc-bc55-0dd350766133.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/magnet.png"
+  },
+  {
+    "id": "basketball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-7a5b9197-9cc8-4624-a42a-e3916d230cec.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/basketball.png"
+  },
+  {
+    "id": "football",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-24dd60f7-460e-4d3a-a90e-e5bad020e2ae.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/football.png"
+  },
+  {
+    "id": "tennis_ball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-346675f8-082e-4745-9ef9-1955e10497cf.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/tennis_ball.png"
+  },
+  {
+    "id": "bowling_ball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-31eddd38-6c18-44d1-8254-b7f83ef5bcfe.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/bowling_ball.png"
+  },
+  {
+    "id": "horseshoe",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-fe61334b-54a0-4afc-981d-5566ee0456be.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/horseshoe.png"
+  },
+  {
+    "id": "dice",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-136557f8-66cb-499b-b865-dc60bc736f5d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/dice.png"
+  },
+  {
+    "id": "magic_8_ball",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-e78d1231-b758-4370-9261-e2463fa3adfe.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/magic_8_ball.png"
+  },
+  {
+    "id": "beer",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a22592b3-843b-402e-88dd-bc4ee932fa08.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/beer.png"
+  },
+  {
+    "id": "champagne",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a84f7559-37ea-4ec9-a334-300deaab52b0.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/champagne.png"
+  },
+  {
+    "id": "coffee",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-62081703-403a-4883-9361-2a0615d2bd4d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/coffee.png"
+  },
+  {
+    "id": "cash_stack",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-2b8f896b-16cd-4f4a-b15f-8922ab39096a.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cash_stack.png"
+  },
+  {
+    "id": "diamond",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-6e72cb65-8c81-4acd-9c1d-4fa30eab6886.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/diamond.png"
+  },
+  {
+    "id": "rose",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-b8e6c64a-8941-4b1d-bd59-7ffa2187308f.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/rose.png"
+  },
+  {
+    "id": "trophy",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-f05f1d67-1b8a-4fd2-98b9-91d6b2ab6b89.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/trophy.png"
+  },
+  {
+    "id": "fireworks",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-cece36de-6596-44e4-bacf-9969dd621bc2.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/fireworks.png"
+  },
+  {
+    "id": "bomb",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-0188b111-3ce6-4398-a91d-45d1c9fe204a.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/bomb.png"
+  },
+  {
+    "id": "rocket",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-ef0f7141-dd4b-430c-a357-19dc2e4a0805.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/rocket.png"
+  },
+  {
+    "id": "ufo",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-d07cc3df-3294-47c5-bad6-d9262178118b.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/ufo.png"
+  },
+  {
+    "id": "alien",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-a2289811-34eb-413c-88a3-f6de5c62be2e.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/alien.png"
+  },
+  {
+    "id": "robot",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-773900a1-ca76-490a-8372-b3fc29576294.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/robot.png"
+  },
+  {
+    "id": "ghost",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-8eecc82d-eb48-4886-9887-bd7f934c5b9e.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/ghost.png"
+  },
+  {
+    "id": "skull",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-29d76020-4d97-4631-88ae-d9bad32cf920.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/skull.png"
+  },
+  {
+    "id": "lightning_bolt",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-b395abd7-1884-4e6f-9e4b-f33bcadfec4c.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/lightning_bolt.png"
+  },
+  {
+    "id": "doge",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-566081a9-85b7-45cd-9566-f3fbe229f427.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/doge.png"
+  },
+  {
+    "id": "shark",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-e5740ecb-38cc-4ecd-ba10-31de767833eb.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/shark.png"
+  },
+  {
+    "id": "chicken",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-d0dff48d-ae6a-489d-a395-b18dd056da43.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/chicken.png"
+  },
+  {
+    "id": "rubber_duck",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-474dcd1b-cea2-4a05-b1d5-e5663ba1906c.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/rubber_duck.png"
+  },
+  {
+    "id": "bear",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-b827322c-3314-46e3-986d-02f9e2ec8318.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/bear.png"
+  },
+  {
+    "id": "thumbs_up",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-4b414706-ab52-459c-bc45-8c9081337e44.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/thumbs_up.png"
+  },
+  {
+    "id": "thumbs_down",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-4e801d27-e80c-4806-b97e-6d712d7eb2f4.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/thumbs_down.png"
+  },
+  {
+    "id": "laughing_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-849c83d9-6349-4c78-a00f-11901edccfca.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/laughing_emoji.png"
+  },
+  {
+    "id": "crying_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-622d6632-9a1f-4a81-a2bf-68625ba16e77.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/crying_emoji.png"
+  },
+  {
+    "id": "angry_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-95d4f9df-a899-4b43-bb75-49f51eb0514d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/angry_emoji.png"
+  },
+  {
+    "id": "cool_sunglasses_emoji",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-e99e0995-a418-4780-b0b1-f295c80fb18d.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/cool_sunglasses_emoji.png"
+  },
+  {
+    "id": "heart",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-68eda044-495d-4cf6-a433-44ea06b50771.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/heart.png"
+  },
+  {
+    "id": "star",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-9ea41a05-30bb-4f49-9415-80d220e56a44.png",
+    "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
+    "checkpointSource": "art-source/static/star.png"
+  },
+  {
+    "id": "fish",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-2b81416c-d4a9-4c1b-9a0b-56eb2fb7231f.png",
+    "status": "RGBA source visually reviewed, three delivery sizes verified locally; publication pending.",
+    "checkpointSource": "art-source/static/fish.png",
+    "sha256": "10137651102a72ee0183ebff761740b1e230a997c90eb82402a49a9979821350"
+  },
+  {
+    "id": "rat_card",
+    "integrated": false,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-bfb64b10-4fbe-451f-9731-2dfb9dd8b5ad.png",
+    "status": "RGBA source and delivery art reviewed; premium catalogue activation awaits ownership/purchase gates.",
+    "checkpointSource": "art-source/static/rat_card.png"
+  },
+  {
+    "id": "party_face",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-29eeba04-b81f-4a38-80ef-67dccd4c576f.png",
+    "checkpointSource": "art-source/static/party_face.png",
+    "sha256": "7064770d4de9a78b0b61923e4cb1c597556450e6739de45509ca273558350f55",
+    "status": "Transparent matching still and choreographed atlas integrated. Dedicated audio and end-to-end acceptance pending."
+  },
+  {
+    "id": "thinking",
+    "integrated": true,
+    "source": "art-source/animated/thinking.png",
+    "checkpointSource": "art-source/static/thinking.png",
+    "sha256": "72b76ff485c9c543c74c3782e8ee9c9201f225697bf235d4df98ac5e99bcd783",
+    "status": "Generated transparent artwork integrated with a separate animated hand and three expressions. Dedicated hmm audio and full end-to-end acceptance pending."
+  },
+  {
+    "id": "loser_hand",
+    "integrated": true,
+    "source": "art-source/animated/loser_hand.png",
+    "checkpointSource": "art-source/static/loser_hand.png",
+    "sha256": "4d1c7fbc3c55c5e8c5389d5f6ee243019cc1109384cf25bfe794d34ced1a7778",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "blush",
+    "integrated": true,
+    "source": "art-source/animated/blush.png",
+    "checkpointSource": "art-source/static/blush.png",
+    "sha256": "71ec1db5434bd7f1b20ebfed21a80a24961f7a772f16385633e09abf5bf52e26",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "ok_smug",
+    "integrated": true,
+    "source": "art-source/animated/ok_smug.png",
+    "checkpointSource": "art-source/static/ok_smug.png",
+    "sha256": "286df8f06065ea9566e320fb8b99d93e8309533c26d204e0cbd0bc72c02b6c9c",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "sleeping",
+    "integrated": true,
+    "source": "art-source/animated/sleeping.png",
+    "checkpointSource": "art-source/static/sleeping.png",
+    "sha256": "a6fbf9686eb1051e1a90566264c2e194b69d9df11bae8a9d225b23329f61c451",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "facepalm",
+    "integrated": true,
+    "source": "art-source/animated/facepalm.png",
+    "checkpointSource": "art-source/static/facepalm.png",
+    "sha256": "e80588b519b138e16c25d2a2b1da8e1bfdaaab7ffb87caf50c2e4e1ade9dc451",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "screaming",
+    "integrated": true,
+    "source": "art-source/animated/screaming.png",
+    "checkpointSource": "art-source/static/screaming.png",
+    "sha256": "d7a3425ebb5ca373f2e0f6b5a585dae6cbad90ab41957967b08ee300730296c4",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "vomit_rainbow",
+    "integrated": true,
+    "source": "art-source/animated/vomit_rainbow.png",
+    "checkpointSource": "art-source/static/vomit_rainbow.png",
+    "sha256": "62ce4841d6d27723fa7cc2cb8bda365006f6b865aad86d386670471bb06fa987",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "surrender",
+    "integrated": true,
+    "source": "art-source/animated/surrender.png",
+    "checkpointSource": "art-source/static/surrender.png",
+    "sha256": "0b8a4407783758ef6ae07a25234602f650236541f29c7608895cd99a12b5e0a9",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "energy_ball",
+    "integrated": true,
+    "source": "art-source/animated/energy_ball.png",
+    "checkpointSource": "art-source/static/energy_ball.png",
+    "sha256": "1b0f85c1a204289105c0c7fa73dafc3bd91946396faeb07dd60cc73bd208f111",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "sloth",
+    "integrated": true,
+    "source": "art-source/animated/sloth.png",
+    "checkpointSource": "art-source/static/sloth.png",
+    "sha256": "cf9150ad33281a8188322939325e063b223d5d578e1aa78b9c39596dbb586198",
+    "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "crown",
+    "integrated": true,
+    "source": "art-source/animated/crown.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/crown.png"
+  },
+  {
+    "id": "chip_rain",
+    "integrated": true,
+    "source": "art-source/animated/chip_rain.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/chip_rain.png"
+  },
+  {
+    "id": "diamond_shower",
+    "integrated": true,
+    "source": "art-source/animated/diamond_shower.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/diamond_shower.png"
+  },
+  {
+    "id": "velvet_rope",
+    "integrated": true,
+    "source": "art-source/animated/velvet_rope.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/velvet_rope.png"
+  },
+  {
+    "id": "champagne_tower",
+    "integrated": true,
+    "source": "art-source/animated/champagne_tower.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/champagne_tower.png"
+  },
+  {
+    "id": "standing_ovation",
+    "integrated": true,
+    "source": "art-source/animated/standing_ovation.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/standing_ovation.png"
+  },
+  {
+    "id": "whale",
+    "integrated": true,
+    "source": "art-source/animated/whale.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/whale.png"
+  },
+  {
+    "id": "to_the_moon",
+    "integrated": true,
+    "source": "art-source/animated/to_the_moon.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/to_the_moon.png"
+  },
+  {
+    "id": "missile",
+    "integrated": true,
+    "source": "art-source/animated/rocket.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/missile.png"
+  },
+  {
+    "id": "donkey",
+    "integrated": true,
+    "source": "art-source/animated/donkey.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/donkey.png"
+  },
+  {
+    "id": "tilt_meter",
+    "integrated": true,
+    "source": "art-source/animated/tilt_meter.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/tilt_meter.png"
+  },
+  {
+    "id": "bad_beat_bandage",
+    "integrated": true,
+    "source": "art-source/animated/bad_beat_bandage.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/bad_beat_bandage.png"
+  },
+  {
+    "id": "bubble_boy",
+    "integrated": true,
+    "source": "art-source/animated/bubble_boy.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/bubble_boy.png"
+  },
+  {
+    "id": "slot_machine",
+    "integrated": true,
+    "source": "art-source/animated/slot_machine.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/slot_machine.png"
+  },
+  {
+    "id": "pumpkin",
+    "integrated": true,
+    "source": "art-source/animated/pumpkin.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/pumpkin.png"
+  },
+  {
+    "id": "snowball",
+    "integrated": true,
+    "source": "art-source/animated/snowball.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/snowball.png"
+  },
+  {
+    "id": "party_popper",
+    "integrated": true,
+    "source": "art-source/animated/party_popper.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/party_popper.png"
+  },
+  {
+    "id": "heart_arrow",
+    "integrated": true,
+    "source": "art-source/animated/heart_arrow.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/heart_arrow.png"
+  }
+]

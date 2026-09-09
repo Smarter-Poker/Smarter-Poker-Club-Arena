@@ -8,13 +8,11 @@
  * one of them carrying `started_at` NULL - and not one `running_flip_failed`
  * report between them. 47 of the 53 landed on 2026-09-01 alone.
  *
- * The flip is guarded `.eq('status', 'REGISTERING')`, and `start()` has no
- * status gate at the top: it reads the row and proceeds. So it genuinely runs
- * against rows that are already RUNNING - a second engine winning the race, a
- * recovery driver, a restart re-entering start(). PostgREST then updates ZERO
- * rows and returns NO ERROR, and the confirmation only ever asked about
- * `status`. An already-RUNNING row answers "not REGISTERING", the flip is
- * declared a success, and nobody ever writes the start.
+ * The old client-side flip was guarded `.eq('status', 'REGISTERING')` and then
+ * confirmed in separate statements. A zero-row update could look successful,
+ * and the confirmation could observe a status written by somebody else. The
+ * launch receipt boundary now owns the RUNNING transition and returns the
+ * exact status and timestamp from the same atomic completion.
  *
  * A null start is not cosmetic:
  *   - `late_reg_mins` is arithmetic ON this column, in the footer countdown
@@ -31,36 +29,34 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BASE = fs.readFileSync(path.join(HERE, 'TournamentManagerBase.ts'), 'utf8');
 
-/** The flip loop, bounded by the block that encloses it. */
-const flipLoop = () => sliceEnclosingBlock(BASE, "'status', 'REGISTERING'", 0, 2);
-
-describe('the RUNNING flip confirms that a start was actually written', () => {
-  it('the confirmation reads started_at, not only status', () => {
-    // `select('status')` alone is what made a lost race look like a win.
-    expect(flipLoop()).toMatch(/\.select\(\s*'status,\s*started_at'\s*\)/);
+describe('the RUNNING transition proves the exact durable start', () => {
+  it('requires one atomic completion response to prove status and started_at', () => {
+    const complete = sliceMethod(BASE, 'private async completeTournamentLaunch(');
+    expect(complete).toContain("result.status === 'RUNNING'");
+    expect(complete).toContain('this.launchTimestampMatches(result.started_at, startedAtIso)');
+    expect(complete).toContain('result.completed === true');
+    expect(complete).toContain('fn_complete_tournament_launch_atomic');
   });
 
-  it('a live row with no start gets one, guarded so it cannot overwrite', () => {
-    const loop = flipLoop();
-    expect(loop).toContain('if (!confirmRow?.started_at)');
-    expect(loop).toMatch(/\.is\(\s*'started_at',\s*null\s*\)/);
+  it('does not perform a second client-side RUNNING update', () => {
+    const start = sliceMethod(BASE, 'private async startLifecycle(');
+    expect(start).not.toMatch(/\.update\(\{\s*status:\s*'RUNNING'/);
+    expect(start).toContain('await this.completeTournamentLaunch(');
   });
 
-  it('losing the flip is reported rather than swallowed', () => {
-    // The whole failure mode was silence: 53 rows, zero reports.
-    expect(flipLoop()).toContain('Tournament.started_at_stamped_after_lost_flip');
-  });
-
-  it('a finished row is never given an invented start', () => {
-    // CLAUDE.md 10.9: correct forward, never write an inferred value onto a
-    // settled record to tidy a column.
-    const loop = flipLoop();
-    expect(loop).toContain("if (confirmed === 'RUNNING')");
-    expect(loop).toContain('Tournament.started_at_missing_on_finished_row');
+  it('admits no dealer when completion cannot be proven', () => {
+    const start = sliceMethod(BASE, 'private async startLifecycle(');
+    const completion = start.indexOf('await this.completeTournamentLaunch(');
+    const refusal = start.indexOf('if (!launchCompleted)', completion);
+    const dealer = start.indexOf('this.startManagedTableEngine(', completion);
+    expect(completion).toBeGreaterThan(-1);
+    expect(refusal).toBeGreaterThan(completion);
+    expect(start.slice(refusal, dealer)).toMatch(/this\.running\s*=\s*false;[\s\S]*?return;/);
+    expect(dealer).toBeGreaterThan(refusal);
   });
 });

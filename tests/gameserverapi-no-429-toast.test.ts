@@ -11,7 +11,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 't' } } }) } },
+  supabase: {
+    auth: {
+      getSession: async () => ({
+        data: {
+          session: {
+            access_token: JSON.parse(localStorage.getItem('smarter-poker-auth')!).access_token,
+          },
+        },
+      }),
+    },
+  },
   getAuthUser: async () => ({ id: 'u1' }),
 }));
 vi.mock('../src/services/errorReporter', () => ({ reportError: vi.fn() }));
@@ -20,11 +30,17 @@ vi.mock('../src/lib/errorReporter', () => ({ reportError: vi.fn() }));
 const ok = () => ({ ok: true, status: 200, json: async () => ({ success: true }) });
 const tooMany = () => ({ ok: false, status: 429, json: async () => ({ success: false }) });
 
-let submitAction: typeof import('../src/services/GameServerAPI')['submitAction'];
+let submitAction: (typeof import('../src/services/GameServerAPI'))['submitAction'];
 let reset: () => void;
 
 beforeEach(async () => {
   vi.resetModules();
+  localStorage.setItem(
+    'smarter-poker-auth',
+    JSON.stringify({
+      access_token: `e30.${btoa(JSON.stringify({ sub: 'u1', session_id: 'login-1', exp: 4102444800 }))}.sig`,
+    })
+  );
   const mod = await import('../src/services/GameServerAPI');
   submitAction = mod.submitAction;
   reset = mod.__resetActionSpacingForTests;
@@ -56,7 +72,10 @@ describe('submitAction — a 429 never reaches the player', () => {
   }, 15000);
 
   it('still reports other server errors plainly', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    );
     const res = await submitAction('table-1', 'u1', 'fold');
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/500/);

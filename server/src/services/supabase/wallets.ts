@@ -9,56 +9,83 @@
  * so no import anywhere else in the codebase changed.
  */
 
+import { v5 as uuidv5 } from 'uuid';
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
-/**
- * Auto-rebuy a horse from their Player Wallet atomically.
- * ROUND 34 FIX: Direct UPDATE on public.wallets is rejected by the
- * Phase 4.1.6a wallet guard. All balance changes must flow through
- * whitelisted SECURITY DEFINER RPCs that log to chip_ledger. Replaced
- * the manual 4-step sequence (select + update wallet + update seat +
- * insert audit row) with the atomic_table_rebuy RPC, which performs
- * all 4 atomically and is whitelisted.
- *
- * Caller signature kept stable; clubId is passed but not consumed —
- * the RPC resolves it from tables(id) transitively.
- */
+export type HorseRebuyResult =
+  | { status: 'funded'; stack: number }
+  | { status: 'declined' }
+  | { status: 'unknown' };
+
+/** One bust is one funding operation, including a retry through the idle path. */
 export async function autoRebuyHorse(
   tableId: string,
   userId: string,
   rebuyAmount: number,
-  clubId: string
-): Promise<boolean> {
-  void clubId;
-  try {
-    // Fund the horse rebuy from the TABLE's club treasury (fn_horse_fund_from
-    // _treasury derives the club from the table). Horses no longer draw on a
-    // globally-minted wallet — the chips come from the club's real bankroll and
-    // the rebuy fails cleanly if the treasury is short (the horse busts, correct
-    // conservation behavior). Real-player rebuys still use atomic_table_rebuy.
-    const { data, error } = await supabase.rpc('fn_horse_fund_from_treasury', {
-      p_table_id: tableId,
-      p_user_id: userId,
-      p_amount: rebuyAmount,
-    });
-
-    if (error || !data?.success) {
-      const msg = error?.message || data?.error || '';
-      if (!msg.includes('insufficient') && !msg.includes('no active seat')) {
-        reportError(
-          new Error(msg || 'horse treasury rebuy failed'),
-          'DB.horse_treasury_rebuy_failed'
-        );
-      }
-      return false;
-    }
-
-    return true;
-  } catch (err: any) {
-    reportError(err, 'DB.Unexpected_horse_treasury_rebuy');
-    return false;
+  clubId: string,
+  handNumber: number
+): Promise<HorseRebuyResult> {
+  if (isMaintenanceFrozen()) return { status: 'unknown' };
+  if (
+    !Number.isSafeInteger(handNumber) ||
+    handNumber < 0 ||
+    !Number.isFinite(rebuyAmount) ||
+    rebuyAmount <= 0 ||
+    Math.round(rebuyAmount * 100) / 100 !== rebuyAmount
+  ) {
+    reportError(
+      new Error('Invalid horse rebuy identity or amount'),
+      'DB.horse_treasury_rebuy_failed'
+    );
+    return { status: 'unknown' };
   }
+  const opId = uuidv5('horse-rebuy:' + tableId + ':' + userId + ':' + handNumber, uuidv5.URL);
+  const payload = { p_table_id: tableId, p_user_id: userId, p_amount: rebuyAmount, p_op_id: opId };
+  let lastError = 'missing or mismatched funding receipt';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (isMaintenanceFrozen()) return { status: 'unknown' };
+    try {
+      const { data, error } = await supabase.rpc('fn_horse_fund_from_treasury', payload);
+      if (
+        !error &&
+        data?.success === true &&
+        data.op_id === opId &&
+        data.table_id === tableId &&
+        data.user_id === userId &&
+        data.club_id === clubId &&
+        Number(data.amount) === rebuyAmount &&
+        typeof data.new_stack === 'number' &&
+        Number.isFinite(data.new_stack) &&
+        data.new_stack >= rebuyAmount
+      ) {
+        return { status: 'funded', stack: data.new_stack };
+      }
+      const message = String(error?.message || data?.error || '');
+      if (
+        data?.deferred === true ||
+        /PLATFORM_FROZEN|scheduled maintenance/i.test(message) ||
+        isMaintenanceFrozen()
+      ) {
+        return { status: 'unknown' };
+      }
+      if (
+        !error &&
+        data?.success === false &&
+        ['insufficient club treasury', 'no active seat for user at table'].includes(data.error)
+      ) {
+        return { status: 'declined' };
+      }
+      lastError = message || 'missing or mismatched funding receipt';
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    if (isMaintenanceFrozen()) return { status: 'unknown' };
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+  }
+  reportError(new Error(lastError), 'DB.horse_treasury_rebuy_unknown');
+  return { status: 'unknown' };
 }
 
 /**

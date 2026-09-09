@@ -1,0 +1,12 @@
+{
+  "_owner": "fix/reading-a-report-changed-it",
+  "_comment": "Health reads the stored snapshot and isolates each area (20260908161327); the claim sweep gains the freeze gate and an xact lock; the flip gate reads would_refuse; a new area watches rewards lost to expiry; Ruling 3's write-off is recorded as an incident.",
+  "tables": [],
+  "functions": [
+    "fn_ca_diamond_health",
+    "fn_ca_horse_claim_due",
+    "fn_ca_diamond_rule_flip_due",
+    "fn_ca_diamond_flip_forecast"
+  ],
+  "columns": {}
+}

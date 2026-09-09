@@ -1,0 +1,4 @@
+{
+  "_owner": "Phase 2 cashout amount boundary; existing signature and grants preserved.",
+  "functions": ["atomic_seat_cashout_locked"]
+}

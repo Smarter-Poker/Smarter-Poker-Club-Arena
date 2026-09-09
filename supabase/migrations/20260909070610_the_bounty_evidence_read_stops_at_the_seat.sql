@@ -1,0 +1,86 @@
+-- 20260909070610_the_bounty_evidence_read_stops_at_the_seat.sql
+--
+-- Version reserved by scripts/new-migration.mjs against origin/main and every
+-- remote branch, so it cannot collide with another agent's in-flight work.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  THE READ THAT COULD NOT FINISH INSIDE ITS OWN TIMEOUT
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- `loadPersistedBountyEvidence` proves a bust before a bounty elimination is
+-- allowed to mutate anything. It asks:
+--
+--     table_id = ?  AND status = 'succeeded'
+--     AND result @> '{"written":{"<user>":0}}'
+--     ORDER BY completed_at DESC LIMIT 1
+--
+-- `settlement_idempotency_keys` is 4,409,643 rows / 3,172 MB and carried only
+-- its primary key `(table_id, hand_id)` plus a partial index on in-flight rows.
+-- So `table_id` was indexable and NOTHING else was: every settlement that table
+-- had ever written was read off disk, JSONB-matched, and sorted.
+--
+-- Measured on production 2026-09-09, table bd52ccec (5,617 settlements):
+--
+--     Index Scan using settlement_idempotency_keys_pkey
+--       Index Cond: (table_id = ...)
+--       Filter: (result @> ...) AND (status = 'succeeded')
+--       Rows Removed by Filter: 5613
+--       Buffers: shared hit=2599 read=3156
+--     Execution Time: 8523.518 ms
+--
+-- `service_role`'s statement timeout is 8s. So that read did not return slowly,
+-- it ERRORED - every time, for ever. The caller defers on an unreadable answer
+-- and re-arms, the next sweep runs the same query, and it errors again. Any
+-- bust in a bounty event on a long-running table was in that loop.
+--
+-- What it cost, read at 06:58 the same morning: sixteen RUNNING tournaments had
+-- dealt no hand for over an hour, TEN of them bounty events, each carrying
+-- between 2 and 13 players sitting at zero chips who could not be eliminated.
+-- With the busted still occupying seats no table could reach two live players,
+-- so no hand could be dealt, so nothing progressed. The oldest had been silent
+-- for 973 minutes.
+--
+-- ── THE INDEX ──────────────────────────────────────────────────────────────
+-- `(table_id, completed_at DESC) WHERE status = 'succeeded'` - the exact shape
+-- of the query, so both equality and the range bound become an Index Cond and
+-- the sort disappears. It pairs with the engine change of the same date, which
+-- adds `completed_at >= seat_joined_at`: that bound is not new behaviour, it is
+-- the guard the caller ALREADY applied twenty lines later ("accepted zero-stack
+-- settlement predates this seat generation"), so every row before the seat was
+-- being read and then thrown away.
+--
+-- Measured after, same table, same user:
+--
+--     Index Scan using idx_settlement_idem_table_completed_succeeded
+--       Index Cond: ((table_id = ...) AND (completed_at >= ...))
+--       Rows Removed by Filter: 1156
+--       Buffers: shared hit=69 read=1093
+--     Execution Time: 88.536 ms
+--
+-- 8,523 ms -> 88.5 ms, a factor of 96, and comfortably inside the timeout with
+-- room for a table an order of magnitude older.
+--
+-- ── HOW IT REACHED PRODUCTION ──────────────────────────────────────────────
+-- With CREATE INDEX CONCURRENTLY, so no settlement write was blocked on a live
+-- 3.2 GB table. It is recorded here WITHOUT CONCURRENTLY because a rebuild from
+-- these files has no concurrent traffic to protect, and CONCURRENTLY cannot run
+-- inside a migration's transaction. IF NOT EXISTS makes this a no-op against the
+-- database that already has it. Same pattern as
+-- 20260903152934_the_guarantee_exposure_scan_reads_140_rows_not_25851.sql.
+--
+-- A NOTE FOR THE NEXT PERSON WHO BUILDS AN INDEX THROUGH THE SUPABASE MCP: its
+-- session statement_timeout is 2 minutes and does NOT survive between calls
+-- (`SET statement_timeout` then `SHOW` in the next call reads `2min` again), and
+-- CREATE INDEX CONCURRENTLY cannot be combined with a SET in one call because
+-- multi-statement calls are wrapped in a transaction. The first attempt here
+-- timed out and left the index `indisvalid = false` at 168 MB - invalid indexes
+-- are not used by the planner but ARE maintained on every write, so that state
+-- is strictly worse than no index. Check `pg_index.indisvalid`, DROP INDEX
+-- CONCURRENTLY, and retry.
+
+CREATE INDEX IF NOT EXISTS idx_settlement_idem_table_completed_succeeded
+  ON public.settlement_idempotency_keys (table_id, completed_at DESC)
+  WHERE status = 'succeeded';
+
+COMMENT ON INDEX public.idx_settlement_idem_table_completed_succeeded IS
+  'Bounty-evidence lookup: (table_id, completed_at DESC) WHERE status = succeeded. Took loadPersistedBountyEvidence from 8,523 ms - past the 8s service_role statement timeout, so it errored rather than returned - to 88.5 ms. 2026-09-09.';

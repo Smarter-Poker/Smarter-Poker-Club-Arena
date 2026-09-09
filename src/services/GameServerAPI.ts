@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { AUTH_STORAGE_KEY, parseJwtPayload, readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -27,14 +28,64 @@ const GAME_SERVER_URL =
   import.meta.env.VITE_GAME_SERVER_URL ||
   (import.meta.env.PROD ? 'https://engine.smarter.poker' : 'http://localhost:8080');
 
+/** An outage must not leave an HTTP action waiting forever before fetch starts. */
+const ENGINE_AUTH_WAIT_MS = 15_000;
+async function waitForEngineAuth<T>(work: (stillWaiting: () => boolean) => Promise<T>): Promise<T> {
+  let waiting = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(() => waiting),
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          waiting = false;
+          reject(new Error('Engine authentication wait timed out'));
+        }, ENGINE_AUTH_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    waiting = false;
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** Identity survives token expiry, but never a sign-out or a new login. */
+function loginIdentity(token: string | null | undefined): string | null {
+  const claims = token ? parseJwtPayload(token) : null;
+  return typeof claims?.sub === 'string' &&
+    claims.sub &&
+    typeof claims.session_id === 'string' &&
+    claims.session_id
+    ? JSON.stringify([claims.sub, claims.session_id])
+    : null;
+}
+function storedLoginIdentity(): string | null {
+  try {
+    return loginIdentity(
+      JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) ?? 'null')?.access_token
+    );
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get JWT auth headers for server requests.
  * Bible V8 §1.3: All game server endpoints require Supabase JWT auth.
  * The server extracts userId from the token — prevents spoofing.
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  try {
-    /* 2026-09-04: THE TOKEN CACHE FIRST. This used to call
+  const owner = storedLoginIdentity();
+  const assertOwner = (token?: string | null) => {
+    if (!owner || storedLoginIdentity() !== owner || (token && loginIdentity(token) !== owner)) {
+      throw new Error('Engine request login changed');
+    }
+  };
+  assertOwner();
+  return waitForEngineAuth<Record<string, string>>(
+    async (stillWaiting): Promise<Record<string, string>> => {
+      try {
+        /* 2026-09-04: THE TOKEN CACHE FIRST. This used to call
        supabase.auth.getSession() and fall straight through to a request with
        NO Authorization header when that came back empty - which it does for
        the whole of a token refresh, and for the first moments after a page
@@ -51,23 +102,32 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
        gate (scripts/ci/entry-chunk-delta.mjs) refused it. The call is on an
        async path, so the import costs nothing the request was not already
        waiting on, and the module is cached after the first. */
-    const { getFreshAccessToken } = await import('../lib/authToken');
-    let token = await getFreshAccessToken();
-    if (!token) {
-      const refreshed = await supabase.auth.refreshSession();
-      token = refreshed.data.session?.access_token ?? null;
+        const { getFreshAccessToken } = await import('../lib/authToken');
+        if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+        assertOwner();
+        let token = await getFreshAccessToken();
+        if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+        assertOwner(token);
+        if (!token) {
+          const refreshed = await supabase.auth.refreshSession();
+          token = refreshed.data.session?.access_token ?? null;
+          if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+          assertOwner(token);
+        }
+        if (token) {
+          return {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          };
+        }
+      } catch (e) {
+        reportError(e, 'GameServerAPI.getAuthHeaders');
+        assertOwner();
+        throw e;
+      }
+      return { 'Content-Type': 'application/json' };
     }
-    if (token) {
-      return {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      };
-    }
-  } catch (e) {
-    reportError(e, 'GameServerAPI.getAuthHeaders');
-    // Silent — fall through to no-auth headers
-  }
-  return { 'Content-Type': 'application/json' };
+  );
 }
 
 /**
@@ -80,11 +140,39 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
  * surfaces it as before. Every engine call in this file goes through it.
  */
 async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const suppliedToken = new Headers(init.headers).get('Authorization')?.replace(/^Bearer\s+/i, '');
+  if (
+    suppliedToken &&
+    (!loginIdentity(suppliedToken) || loginIdentity(suppliedToken) !== storedLoginIdentity())
+  ) {
+    throw new Error('Engine request login changed');
+  }
   const resp = await fetch(url, init);
   if (resp.status !== 401) return resp;
+  // A refusal belongs to the login that sent it. The SDK's current session
+  // may have changed while fetch or refresh was pending. Never turn an old
+  // player's intent into an action for the newly signed-in player.
+  const originalToken = new Headers(init.headers).get('Authorization')?.replace(/^Bearer\s+/i, '');
+  const original = originalToken ? parseJwtPayload(originalToken) : null;
+  const ownsRequest = (token: string | null | undefined): boolean => {
+    if (
+      !token ||
+      typeof original?.sub !== 'string' ||
+      typeof original.session_id !== 'string' ||
+      !original.sub ||
+      !original.session_id
+    ) {
+      return false;
+    }
+    const candidate = parseJwtPayload(token);
+    return candidate?.sub === original.sub && candidate.session_id === original.session_id;
+  };
+  const stillOwnsRequest = () => ownsRequest(readLocalSession()?.accessToken);
+  if (!stillOwnsRequest()) return resp;
   try {
-    const refreshed = await supabase.auth.refreshSession();
+    const refreshed = await waitForEngineAuth(() => supabase.auth.refreshSession());
     const token = refreshed.data.session?.access_token ?? null;
+    if (!stillOwnsRequest()) return resp;
     if (!token) {
       // 2026-09-05: the engine refused us and the refresh could not produce a
       // token either. That is the 2026-09-03 shape - a session revoked out
@@ -95,12 +183,13 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
       // Lazy: this module is only needed once a request has already been
       // refused, and a static import puts it in the entry chunk (CI, 2026-09-05).
       void import('../lib/sessionRevoked')
-        .then((m) => m.handleEngineAuthRejection('http:401'))
+        .then((m) => (stillOwnsRequest() ? m.handleEngineAuthRejection('http:401') : 'unknown'))
         .catch(() => {
           /* a chunk that will not load must never sign anyone out */
         });
       return resp;
     }
+    if (!ownsRequest(token)) return resp;
     const headers = {
       ...((init.headers as Record<string, string> | undefined) ?? {}),
       Authorization: `Bearer ${token}`,
@@ -357,7 +446,8 @@ export async function submitAction(
   tableId: string,
   _userId: string,
   action: string,
-  amount?: number
+  amount?: number,
+  actionContext?: string
 ): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
@@ -378,7 +468,7 @@ export async function submitAction(
       const response = await engineFetch(`${GAME_SERVER_URL}/action`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ tableId, action, amount, idempotencyKey }),
+        body: JSON.stringify({ tableId, action, amount, idempotencyKey, actionContext }),
       });
 
       if (response.ok) {
@@ -394,6 +484,16 @@ export async function submitAction(
       if (response.status === 429) {
         // Every retry exhausted. Never show the number.
         return { success: false, error: 'The table is busy - please try again' };
+      }
+
+      if (response.status === 400) {
+        const rejected = await response.json();
+        return {
+          success: false,
+          error: typeof rejected.error === 'string' ? rejected.error : 'Action rejected',
+          code: rejected.code,
+          hint: rejected.hint,
+        };
       }
 
       if (response.status === 409) {

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLES INTEGRITY GUARD — the 49-item dynamic system must stay whole
+ *  THROWABLES INTEGRITY GUARD — the 80-item dynamic system must stay whole
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * On 2026-08-21 production REGRESSED to the pre-rebuild throwables: a deploy
@@ -9,7 +9,7 @@
  * the World Hub's assets. The source in THIS repo was never broken — the
  * regression happened a layer above it. Two guards came out of that incident:
  *
- *   1. THIS TEST (source level): the 49-item catalog, its per-item sound
+ *   1. THIS TEST (source level): the 80-item catalog, its per-item sound
  *      recipes, and the per-item signature CSS must stay complete and wired.
  *      Any future edit that guts the catalog, drops a recipe, orphans a
  *      signature, or unwires the imports fails the suite — and the client
@@ -55,15 +55,19 @@ function parseCatalog(): Array<{ id: string; sound: string }> {
 }
 
 const catalog = parseCatalog();
+const rigManifest: { rigs: Record<string, string[]> } = JSON.parse(
+  read('src/throwables/artwork.generated.json')
+);
+const registry = read('src/throwables/registry.ts');
 
-describe('throwables integrity — 49-item dynamic system', () => {
-  it('the catalog holds exactly the 48 storage-backed items', () => {
+describe('throwables integrity — 80-item dynamic system', () => {
+  it('the catalog holds the 80 enabled items with local or storage artwork', () => {
     // 49 -> 48 on 2026-08-21: Dan removed 'Card Shark' (mouse_card). Its
     // storage render still exists; the CATALOG is what decides what ships, and
     // this count is the ratchet that makes any further loss deliberate.
-    expect(catalog.length).toBe(48);
+    expect(catalog.length).toBe(80);
     const ids = catalog.map((r) => r.id);
-    expect(new Set(ids).size).toBe(48);
+    expect(new Set(ids).size).toBe(80);
     // Spot anchors across every category — these ids ARE the storage
     // filenames (throwables/<id>.jpg); renaming one breaks the images.
     for (const anchor of [
@@ -81,9 +85,12 @@ describe('throwables integrity — 49-item dynamic system', () => {
   it('every item has its own sound recipe, and no recipe is orphaned', () => {
     const recipes = new Set([...sound.matchAll(/^\s{4}(\w+):\s*\(\)\s*=>/gm)].map((m) => m[1]));
     const sounds = catalog.map((r) => r.sound);
-    expect(new Set(sounds).size).toBe(48); // one UNIQUE key per item
+    expect(new Set(sounds).size).toBe(80); // one UNIQUE key per item
     for (const r of catalog) {
-      expect(recipes.has(r.sound), `item '${r.id}' has no recipe '${r.sound}'`).toBe(true);
+      if (rigManifest.rigs[r.id]) {
+        expect(registry).toContain(`${r.id}:`);
+        expect(read(`src/throwables/rigs/${r.id}.tsx`)).toContain('audio:');
+      } else expect(recipes.has(r.sound), `item '${r.id}' has no recipe '${r.sound}'`).toBe(true);
     }
     for (const key of recipes) {
       expect(sounds.includes(key), `recipe '${key}' belongs to no item`).toBe(true);
@@ -92,6 +99,11 @@ describe('throwables integrity — 49-item dynamic system', () => {
 
   it('every item has a per-item signature block in ThrowableSignatures.css', () => {
     for (const r of catalog) {
+      if (rigManifest.rigs[r.id]) {
+        expect(registry).toContain(`${r.id}:`);
+        expect(read(`src/throwables/rigs/${r.id}.css`)).toContain('@keyframes');
+        continue;
+      }
       expect(
         signatures.includes(`data-throwable='${r.id}'`),
         `item '${r.id}' lost its signature CSS`

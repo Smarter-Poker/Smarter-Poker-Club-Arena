@@ -32,6 +32,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { routerBasenameFrom } from '../../src/lib/appBase';
 
 const root = join(__dirname, '..', '..');
 const RAW = readFileSync(join(root, 'src', 'pages', 'TablePage.tsx'), 'utf8');
@@ -42,7 +43,10 @@ const CODE = RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, ''
 
 describe('the duplicate buy-in timer is gone from executable code', () => {
   it('no longer navigates to a path that double-includes the basename', () => {
-    expect(MAIN).toContain('basename="/hub/club-arena"');
+    // 2026-09-07: the basename is derived (src/lib/appBase.ts) so the same
+    // tree can boot at the native root; on the web it is still '/hub/club-arena'.
+    expect(MAIN).toContain('basename={ROUTER_BASENAME}');
+    expect(routerBasenameFrom('/hub/club-arena/')).toBe('/hub/club-arena');
     expect(CODE).not.toMatch(/navigate\(\s*['"`]\/hub\/club-arena['"`]\s*\)/);
   });
 
@@ -79,8 +83,8 @@ describe('the surviving timer governs the seat-first sheet too', () => {
    * behaviour and the pin together, and say so.
    */
   it('arms only while the sheet is a DECISION - not while money is moving', () => {
-    expect(CODE).toContain(
-      'const commitInFlight = seatFirstPending || seatFirstPendingRef.current'
+    expect(CODE.replace(/\s+/g, ' ')).toContain(
+      'const commitInFlight = buyInProcessingRef.current || seatFirstPending || seatFirstPendingRef.current'
     );
     expect(CODE).toContain(
       'const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0'
@@ -110,15 +114,18 @@ describe('the surviving timer governs the seat-first sheet too', () => {
     /* The guards above are only guards if the effect re-runs when they
        change: pressing Buy In flips `seatFirstPending` and must tear the
        interval down in that same commit. Round 16 added both. */
-    expect(CODE).toContain(
-      '[showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]'
+    expect(CODE).toMatch(
+      /\[\s*showBuyInModal,\s*seatFirstConfirm,\s*tableId,\s*seatFirstPending,\s*tableState\.heroSeat,\s*cashBuyInRecovery,?\s*\]/
     );
+    expect(expiry).toContain('if (cashBuyInPendingRef.current) return;');
   });
 
   it('and checks once more in the instant it would eject', () => {
     /* A whole second separates the guard from the fire. The RPC can land
        inside it - which is exactly the race that cost Dan his seat. */
-    expect(expiry).toContain('if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;');
+    expect(expiry.replace(/\s+/g, ' ')).toContain(
+      'if (buyInProcessingRef.current || seatFirstPendingRef.current || heroSeatRef.current > 0) return;'
+    );
   });
 
   it('exits to the real lobby, never a hard-coded path', () => {

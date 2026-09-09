@@ -53,6 +53,7 @@ import {
   isFixedLimitVariant,
   isFixedLimitCapped,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
 } from './BettingStructure.js';
 
 import type { ActionType, GameVariant, HandConfig, SeatPlayer } from '../types.js';
@@ -345,8 +346,8 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
  * NOT caught at all: zero invariant failures over 10,000 hands.
  *
  * This rebuilds the partition from the stated rules:
- *   - side-pot LEVELS come from LIVE investment only (totalInvested minus dead
- *     money: antes, a Big Blind Ante the BB fronts, dead small blinds)
+ *   - side-pot LEVELS include live investment and individual antes, while
+ *     shared BBA and dead-small-blind money stay outside contribution caps
  *   - a level's amount is (level - previousLevel) x everyone who reached it,
  *     folded contributors included — their chips stay in the pot
  *   - only NON-FOLDED players may be eligible to win it
@@ -358,11 +359,19 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
  */
 function expectedPots(players: SeatPlayer[]): { amount: number; eligiblePlayers: string[] }[] {
   const r = (n: number) => Math.round(n * 100) / 100;
-  const live = (p: SeatPlayer) => Math.max(0, r((p.totalInvested ?? 0) - (p.deadInvested ?? 0)));
+  // Reference model counts the FULL individual ante in contribution levels.
+  // Matched-contribution cap tests independently bound each player's maximum.
+  const live = (p: SeatPlayer) =>
+    Math.max(
+      0,
+      r((p.totalInvested ?? 0) - (p.deadInvested ?? 0) + (p.individualAnteInvested ?? 0))
+    );
   const active = players.filter((p) => !p.is_folded);
   if (active.length === 0) return [];
 
-  const deadTotal = r(players.reduce((sum, p) => sum + (p.deadInvested ?? 0), 0));
+  const deadTotal = r(
+    players.reduce((sum, p) => sum + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0)
+  );
   const contributors = players.filter((p) => live(p) > 0);
   if (contributors.length === 0) {
     return deadTotal > 0
@@ -532,8 +541,14 @@ function amountFor(
   // cover the fixed bet; the caller then picks a different action, which is the
   // same escape it already uses for a pot-limit cap below a full raise.
   if (isFixedLimitVariant(cfg.gameVariant)) {
-    if (isFixedLimitCapped(st.actionHistory, st.stage)) return null;
-    const betSize = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    const streetBet = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    if (isFixedLimitCapped(st.actionHistory, st.stage, streetBet)) return null;
+    const betSize = fixedLimitStreetBounds(
+      st.actionHistory,
+      st.stage,
+      streetBet,
+      st.currentBet
+    ).raiseSize;
     if (action === 'bet') {
       return player.stack + EPS < betSize ? null : cents(betSize);
     }
@@ -656,6 +671,22 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
 
     if (runoutPending) {
       runoutPending = false;
+      // Production all-in Pineapple runouts obtain these choices from the
+      // live horse-decision worker before HandController is allowed to cross
+      // the flop. This synchronous property harness deliberately has no
+      // worker/runtime, so install a complete seeded result set through the
+      // same public hand/fence boundary. Choosing an arbitrary legal discard
+      // is enough here: the property under test is chip conservation, while
+      // worker strategy and ownership are covered by their focused suites.
+      const pineappleSnapshot = hc.getPineappleRunoutDiscardSnapshot();
+      if (pineappleSnapshot) {
+        const decisions = new Map(
+          pineappleSnapshot.players.map((player) => [player.seat, Math.floor(rnd() * 3)])
+        );
+        if (!hc.preparePineappleRunoutDiscards(pineappleSnapshot.flop, decisions)) {
+          fail(ctx, 'LIVENESS', 'worker-equivalent Pineapple discard preparation was rejected');
+        }
+      }
       ctx.log.push('continueRunout()');
       hc.continueRunout();
       // completeHand() runs inside; conservation is checked below on exit.

@@ -102,11 +102,10 @@ describe('the controller is wired on the leader, beside the fleet', () => {
 
   it('starts right after the fleet on the leader path and stops with it', () => {
     const start = GAME_SERVER.indexOf('this.clusterController.start();');
-    const fleetStart = GAME_SERVER.indexOf(
-      "reportError(err, 'GameServer.horse_fleet_start_failed')"
-    );
+    const fleetStart = GAME_SERVER.indexOf("'GameServer.horse_fleet_start_failed'");
     expect(start).toBeGreaterThan(fleetStart);
-    expect(GAME_SERVER).toMatch(/this\.horseFleet\.stop\(\);\s*this\.clusterController\.stop\(\);/);
+    expect(GAME_SERVER).toContain("['HorseFleetManager', () => this.horseFleet.stop()]");
+    expect(GAME_SERVER).toContain("['ClusterController', () => this.clusterController.stop()]");
   });
 
   /* PIN MOVED 2026-09-05, WITH ITS MECHANISM. This read
@@ -266,9 +265,11 @@ describe('the engine executes at the hand boundary and announces at the start', 
       SETTLEMENT.indexOf("runStep('leave_pending'"),
       SETTLEMENT.indexOf("runStep('table_unlock'")
     );
-    expect(step).toMatch(/await processLeavePending\(/);
-    expect(step).toMatch(/await this\.executePendingSeatMoves\(\{ announcedOnly: true \}\);/);
-    expect(step.indexOf('processLeavePending(')).toBeLessThan(
+    expect(step).toMatch(/await this\.readCashHandDepartures\(\)/);
+    expect(step).toMatch(
+      /await this\.executePendingSeatMoves\(\{ announcedOnly: true \}, pendingMoves\);/
+    );
+    expect(step.indexOf('readCashHandDepartures(')).toBeLessThan(
       step.indexOf('executePendingSeatMoves(')
     );
   });
@@ -500,8 +501,20 @@ describe('the fleet keeps its hands off cluster tables', () => {
   });
 
   it('discovery re-checks the map after its awaits, so a controller wake cannot double an engine', () => {
-    expect(GAME_SERVER).toMatch(
-      /if \(!\(await claimTable\(row\.table_id\)\)\) continue;[\s\S]{0,1200}this\.tableEngines\.has\(row\.table_id\) \|\|\s*this\.tableEngineStartPromises\.has\(row\.table_id\)/
+    const admission = GAME_SERVER.slice(
+      GAME_SERVER.indexOf('private async performCashTableEngineAdmission('),
+      GAME_SERVER.indexOf(
+        '/**\n   * Get a table engine by ID',
+        GAME_SERVER.indexOf('private async performCashTableEngineAdmission(')
+      )
+    );
+    expect(admission).toContain(
+      'const lease = await claimTableLease(tableId, requestedLeaseGeneration);'
+    );
+    expect(admission).toContain('const racedStart = this.tableEngineStartPromises.get(tableId);');
+    expect(admission).toContain('const racedEngine = this.tableEngines.get(tableId);');
+    expect(admission.indexOf('const racedStart')).toBeGreaterThan(
+      admission.indexOf('await claimTableLease(tableId, requestedLeaseGeneration)')
     );
   });
 });
@@ -588,9 +601,12 @@ describe('the controller cannot go silent', () => {
      when the table can deal). The pass never ended, the inTick latch held,
      and every tick after it returned early - eleven minutes with no error
      and no log line, found only from cash_games.last_tick_at. */
-  it('the wake is never awaited - the engine map is the proof of the wake', () => {
-    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+  it('the wake never blocks a pass, but shutdown owns and joins its promise', () => {
+    expect(CONTROLLER).toMatch(
+      /this\.launchLifecycleJob\([\s\S]{0,180}this\.deps\.ensureEngine\(tableId\)\.then/
+    );
     expect(CONTROLLER).not.toMatch(/await this\.deps\.ensureEngine\(/);
+    expect(CONTROLLER).toMatch(/await Promise\.allSettled\(\[\.\.\.this\.lifecycleJobs\]\)/);
   });
 
   it('a stuck pass is reported and the latch released, not honoured forever', () => {
@@ -1056,14 +1072,16 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
     expect(loop).not.toMatch(/await rpc\(/);
   });
 
-  it('the 18.4 dealer wake is unchanged: read from the result, never awaited', () => {
+  it('the 18.4 dealer wake is unchanged: read from the result, detached from the pass', () => {
     expect(CONTROLLER).toMatch(
       /Number\(result\.seated_total \?\? 0\) > 0 &&\s*!this\.deps\.hasEngine\(g\.main1_table_id\)/
     );
     expect(CONTROLLER).toMatch(
       /const seated = await this\.deps\.seatedCount\(g\.main1_table_id\);/
     );
-    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+    expect(CONTROLLER).toMatch(
+      /this\.launchLifecycleJob\([\s\S]{0,180}this\.deps\.ensureEngine\(tableId\)\.then/
+    );
   });
 
   it('a wake is debounced per game, leader-only, and cannot throw into the engine', () => {

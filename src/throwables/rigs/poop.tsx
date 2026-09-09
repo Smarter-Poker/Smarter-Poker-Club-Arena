@@ -56,6 +56,7 @@ import type { ThrowableSpec } from '../spec';
 import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import { preloadThrowableCues } from '../cues';
 import './poop.css';
+import { AtlasSprite } from '../AtlasSprite';
 
 export const poopSpec: ThrowableSpec = {
   id: 'poop',
@@ -83,13 +84,6 @@ export const poopSpec: ThrowableSpec = {
 preloadThrowableCues(poopSpec.audio.map((c) => c.sample));
 
 /** The measured browns: the intact swirl and the settled splash. */
-const SWIRL_BROWN = '#764632';
-const SWIRL_BROWN_LIGHT = '#9c6a4e';
-const SWIRL_BROWN_DARK = '#4a2a1c';
-const SPLASH_BROWN = '#815b36';
-const SPLASH_BROWN_LIGHT = '#a67a4a';
-const SPLASH_BROWN_DARK = '#5c3d20';
-const DROPLET_BROWN = '#6b4426';
 
 /**
  * The classic three-tier swirl: a wide base lobe, a mid lobe, a narrower top
@@ -101,75 +95,9 @@ const DROPLET_BROWN = '#6b4426';
  * residue glyph inside the splash ring - `k` keeps the two copies' gradients
  * apart since a multi-table view can mount several throws at once.
  */
-function Swirl({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-poop-${n}-${uid}-${k}`;
+function Swirl(_: { uid: string; k: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('body')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={SWIRL_BROWN_LIGHT} />
-          <stop offset="55%" stopColor={SWIRL_BROWN} />
-          <stop offset="100%" stopColor={SWIRL_BROWN_DARK} />
-        </linearGradient>
-      </defs>
-      <ellipse cx="1" cy="22" rx="18" ry="4.5" fill="#27190f" opacity="0.38" />
-      {/* bottom lobe, widest - sits on the face */}
-      <path
-        d="M -16 9 C -20 12 -19 21 -11 24 C -2 28 14 25 18 19 C 22 11 13 7 5 7 C -3 5 -11 5 -16 9 Z"
-        fill={`url(#${g('body')})`}
-      />
-      {/* mid lobe, offset right */}
-      <path
-        d="M -10 -5 C -15 -1 -12 7 -5 9 C 4 12 16 6 15 -1 C 15 -7 8 -10 2 -9 C -4 -10 -8 -8 -10 -5 Z"
-        fill={`url(#${g('body')})`}
-      />
-      {/* top lobe, offset left, tapering */}
-      <path
-        d="M -7 -18 C -12 -12 -8 -6 -2 -6 C 5 -5 10 -10 7 -16 C 5 -21 -3 -22 -7 -18 Z"
-        fill={`url(#${g('body')})`}
-      />
-      <path
-        d="M -14 11 C -7 6 6 13 13 7 M -8 -1 Q -2 3 8 -1 M -5 -15 Q 0 -12 4 -15"
-        fill="none"
-        stroke="#c0936e"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-        opacity="0.75"
-      />
-      {/* the curled tip */}
-      <path
-        d="M -1 -20 C 2 -24.5, 7.5 -23, 6 -18.7 C 5 -16, 1 -16.8, -1 -20 Z"
-        fill={`url(#${g('body')})`}
-      />
-      {/* creases marking the coil between the lobes */}
-      <path
-        d="M -14 6 Q 0 10 14 6"
-        fill="none"
-        stroke={SWIRL_BROWN_DARK}
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        opacity="0.28"
-      />
-      <path
-        d="M -10 -7 Q 0 -4 9 -7"
-        fill="none"
-        stroke={SWIRL_BROWN_DARK}
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        opacity="0.24"
-      />
-      {/* soft highlights */}
-      <ellipse
-        cx="-6"
-        cy="-3"
-        rx="4.6"
-        ry="6.8"
-        transform="rotate(-20 -6 -3)"
-        fill="#ffffff"
-        opacity="0.32"
-      />
-      <ellipse cx="-7" cy="11" rx="5.5" ry="3" fill="#ffffff" opacity="0.22" />
-    </g>
+    <AtlasSprite src="poop" rect={[25, 40, 575, 560]} x={-33} y={-44} width={66} height={64} />
   );
 }
 
@@ -186,15 +114,6 @@ function Projectile({ uid }: RigProps) {
  * across (0.84 u, close to the measured 34 px = 0.85 u). Hand-authored,
  * fixed, never random.
  */
-const SPLASH_PATH =
-  'M 0 -42 L 9.2 -22.2 Q 20 -26 29.7 -29.7 ' +
-  'L 22.2 -9.2 Q 36 -4 42 0 ' +
-  'L 22.2 9.2 Q 36 4 29.7 29.7 ' +
-  'L 9.2 22.2 Q 20 26 0 42 ' +
-  'L -9.2 22.2 Q -20 26 -29.7 29.7 ' +
-  'L -22.2 9.2 Q -36 4 -42 0 ' +
-  'L -22.2 -9.2 Q -36 -4 -29.7 -29.7 ' +
-  'L -9.2 -22.2 Q -20 -26 0 -42 Z';
 
 /** Four droplets: [dx, dy, r, delaySeconds, durationSeconds] - the FINAL
  *  offset from the splash's centre, in units, plus each one's own timing so
@@ -213,14 +132,6 @@ function Payload({ uid }: RigProps) {
   const g = (n: string) => `thr-poop-${n}-${uid}`;
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <defs>
-        <radialGradient id={g('splash')} cx="0.4" cy="0.35" r="0.7">
-          <stop offset="0%" stopColor={SPLASH_BROWN_LIGHT} />
-          <stop offset="55%" stopColor={SPLASH_BROWN} />
-          <stop offset="100%" stopColor={SPLASH_BROWN_DARK} />
-        </radialGradient>
-      </defs>
-
       {/* 333-400 (+0..+67): the swirl, intact, arrives at the bottom of the
           avatar and settles centred on the face before the splat replaces
           it. */}
@@ -231,60 +142,21 @@ function Payload({ uid }: RigProps) {
       {/* 400 (+67): the splash ring, with the residue swirl already sitting
           at its centre - the two appear and pop together, one splat event. */}
       <g className="thr-poop__splat">
-        <path
-          d={SPLASH_PATH}
-          fill={`url(#${g('splash')})`}
-          stroke={SPLASH_BROWN_DARK}
-          strokeWidth="1.2"
-          strokeLinejoin="round"
+        <AtlasSprite
+          src="poop"
+          rect={[12, 683, 656, 527]}
+          x={-54}
+          y={-54}
+          width={108}
+          height={87}
         />
-        {/* pooled shading and a couple of pale flecks, static */}
-        <path
-          d="M -25 -7 Q -21 -17 -12 -18 M 12 -20 Q 22 -16 25 -10 M -28 12 Q -22 17 -18 15 M 17 22 Q 25 19 27 15"
-          fill="none"
-          stroke="#cba06a"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-          opacity="0.65"
-        />
-        <circle cx="-8" cy="-8" r="6" fill={SPLASH_BROWN_DARK} opacity="0.18" />
-        <circle cx="12" cy="10" r="5" fill={SPLASH_BROWN_DARK} opacity="0.16" />
-        <ellipse
-          cx="-16"
-          cy="6"
-          rx="2.2"
-          ry="1.3"
-          transform="rotate(-20 -16 6)"
-          fill="#f2d9ae"
-          opacity="0.55"
-        />
-        <ellipse
-          cx="14"
-          cy="-14"
-          rx="2"
-          ry="1.2"
-          transform="rotate(25 14 -14)"
-          fill="#f2d9ae"
-          opacity="0.5"
-        />
-        {/* the residue glyph: the same swirl, a hair larger, sitting on the
-            face at the ring's centre. */}
-        <g transform="translate(0 -3) scale(1.05)">
-          <Swirl uid={uid} k="res" />
-        </g>
       </g>
 
       {/* 400 / 433 (+67 / +100): the droplets, each frozen by 867 (+534). */}
       {DROPLETS.map(([dx, dy, r, delayS, durS], i) => (
-        <circle
+        <g
           key={i}
           className="thr-poop__droplet"
-          cx="0"
-          cy="-16"
-          r={r}
-          fill={DROPLET_BROWN}
-          stroke={SPLASH_BROWN_DARK}
-          strokeWidth="0.6"
           style={
             {
               '--dx': `${dx}px`,
@@ -293,7 +165,16 @@ function Payload({ uid }: RigProps) {
               animationDuration: `calc(${durS}s * var(--animation-speed, 1))`,
             } as React.CSSProperties
           }
-        />
+        >
+          <AtlasSprite
+            src="poop"
+            rect={[789, 700, 362, 489]}
+            x={-r}
+            y={-16 - r}
+            width={r * 2}
+            height={r * 2.5}
+          />
+        </g>
       ))}
     </svg>
   );

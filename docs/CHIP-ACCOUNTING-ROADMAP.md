@@ -242,6 +242,37 @@ Dan asked what else belongs here. These are not leftovers from phases 1-8; they
 are things the standard has never covered. Each one is grounded in something
 measured today rather than proposed from general principle.
 
+**Phase 9 status - 2026-09-08 (measured, not intended).** Four of the eight were
+already closed by earlier phases: **9.2** by phase 6 (the attestation restates
+itself and is anchored), **9.5** and **9.6** by phase 7 (the player chip
+statement; the second writer audited across the whole World Hub, not one
+directory), **9.7** by phase 8 (VIP points, rakeback and agent commissions get
+append-only journals, a balance that moves only with a leg, and a nightly
+meter). The remaining four are this cut.
+
+**9.1 DONE.** 236 money columns measured: 137 `numeric(_,2)`, 11 `numeric(_,4)`,
+86 unconstrained. The leak had already opened three times and closed itself -
+`union_rake_paid_daily_user.rake_amount` (6,881 rows, +0.2799),
+`rakeback_period_payouts.payout_amount` (933 rows, -0.2385) and
+`wallet_transactions.balance_after` (243 rows, 0.000000, they cancel); 8,057
+rows, **net +0.0414 chips**, none in a week. A `CHECK (col = round(col,2))` on
+**33 columns across 28 tables**, added `NOT VALID` (18ms) then validated
+(agent_commissions 6.28s, chip_ledger 4.43s) rather than `ALTER COLUMN TYPE`,
+which would rewrite 2.36M rows under ACCESS EXCLUSIVE. The three residue columns
+stay `NOT VALID` with a `COMMENT ON CONSTRAINT` naming the rows and the drift -
+rounding settled rows is what 10.9 forbids. Applied inside the :55 freeze after
+deadlocking twice against live writers, the second time even with all 28 locks
+taken in one statement. `docs/changelog/2026-09-08-phase-9-one-definition-of-a-chip.md`.
+
+**9.3, 9.4 and 9.8 WRITTEN** - `docs/CHIP-RESTATEMENT-POLICY.md`,
+`docs/CHIP-JOURNAL-RETENTION-POLICY.md`, `docs/CHIP-EPOCH-RESET-CONTRACT.md`.
+Documents rather than code because what was missing was the decision, not the
+mechanism. 9.4's numbers moved while it was being written: the journal is
+2,356,797 legs / 1,995 MB and now takes **353,008 legs a day**, up from the
+232k below, and it is still not partitioned - so 8.4 should now be built to
+9.4's shape (an epoch boundary and a manifest check) rather than to a storage
+target.
+
 ### 9.1 ONE DEFINITION OF A CHIP (do this before the reset)
 
 A chip has three different definitions in this schema right now:
@@ -330,7 +361,7 @@ own money routes under `pages/api/club-arena/`, in another repo, and nothing has
 ever been checked against that register. A door is only closed if both repos
 agree it is closed.
 
-**Phase 7 status, 2026-09-07 22:35 UTC (built; deep dive pending before phase 8).**
+**Phase 7 status, 2026-09-07 23:05 UTC (built, deep dive done - `docs/changelog/2026-09-07-the-second-writer-is-the-whole-world-hub.md` - phase closed).**
 `docs/changelog/2026-09-07-phase-7-the-player-and-the-second-writer.md`. 9.5:
 `fn_ca_chip_statement` and `ChipStatement` on the wallet page and the club
 financials page - both directions, balance by club, and the nightly reading the
@@ -350,6 +381,21 @@ they are liabilities the platform owes, tracked only as counters. That is
 precisely why 9.3's 16,426.46 was invisible for five months: rake attribution
 has nothing to reconcile against. The chip standard should either extend to
 them or say plainly that it does not, and why.
+
+**Phase 8 status, 2026-09-08 (built; deep dive pending before phase 9).**
+`docs/changelog/2026-09-08-phase-8-the-other-currencies.md`. Read first: two of
+the three currencies already had a journal (vip_points_ledger 5.75M legs,
+agent_commissions 3.96M rows) and their identities held exactly - by luck,
+with no guard on either side. Phase 8, in two migrations (20260908030358 the meter, 20260908030657 the
+guards - split because the meter's 10 s proof cannot run while a trigger holds
+ACCESS EXCLUSIVE against an engine with an 8 s statement timeout), attaches
+the chip journals' append-only guard to vip_points_ledger, agent_commissions and rakeback_period_payouts,
+makes vip_points move only through a writer that declares itself, rewrites
+fn_award_vip_credit to write its leg once (it used to insert 0 and update),
+and adds ca_currency_meter / fn_ca_currency_meter() on the nightly replay job.
+Rakeback is read, not enforced: three sources (periods paid 329,180.89,
+payout rows 285,190.25, chip legs since 09-07 231,046.71; 653 paid periods
+with no payout row) belong to a path another lane rewrote the same day.
 
 ### 9.8 THE RESET IS A PHASE, NOT AN EVENT (Dan: Monday)
 

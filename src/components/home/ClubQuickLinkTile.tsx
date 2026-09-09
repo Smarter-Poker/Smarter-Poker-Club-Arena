@@ -185,8 +185,10 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   // Focus it when the balance read fails; Arrow navigation still moves back to
   // the wallet rows through the existing active-index handler.
   useEffect(() => {
-    if (menuOpen && balancesError) retryRef.current?.focus();
-  }, [menuOpen, balancesError]);
+    // The error result can commit before finally clears loading. Retry only
+    // mounts after both states agree; rerun focus when loading completes too.
+    if (menuOpen && !balancesLoading && balancesError) retryRef.current?.focus();
+  }, [menuOpen, balancesLoading, balancesError]);
 
   const handlePointerDown = useCallback(() => {
     if (!hasSwitch) return;

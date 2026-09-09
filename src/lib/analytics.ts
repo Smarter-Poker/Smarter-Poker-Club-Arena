@@ -27,6 +27,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+import { analyticsAllowed } from './consent';
+
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
 let _loaded = false;
@@ -50,7 +52,9 @@ function getKey(): string | undefined {
 }
 
 function isEnabled(): boolean {
-  return isBrowser() && !!getKey();
+  // THE APP (2026-09-08): nothing loads and nothing is captured until the
+  // player has said yes (src/lib/consent.ts). On the web this is true.
+  return isBrowser() && !!getKey() && analyticsAllowed();
 }
 
 /**

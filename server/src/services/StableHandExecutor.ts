@@ -309,6 +309,9 @@ export class StableHandExecutor {
   private handle: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private inFlight = false;
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
+  private readonly inFlightCycles = new Set<Promise<void>>();
   /**
    * `${tableId}:${horseId}` -> the moment this seat may be ordered again.
    *
@@ -341,19 +344,46 @@ export class StableHandExecutor {
    * `settings` is MERGED, never replaced - a table's straddle, auto-extension
    * and every other setting live in the same column.
    */
-  private async setTableFlag(ids: string[], flag: string, budget: number): Promise<number> {
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.running && this.lifecycleGeneration === generation;
+  }
+
+  private launchCycle(): void {
+    const generation = this.lifecycleGeneration;
+    if (!this.lifecycleIsCurrent(generation) || this.inFlightCycles.size > 0) return;
+    let tracked!: Promise<void>;
+    tracked = this.cycle()
+      .then(() => undefined)
+      .finally(() => this.inFlightCycles.delete(tracked));
+    this.inFlightCycles.add(tracked);
+  }
+
+  private async drainCycles(): Promise<void> {
+    while (this.inFlightCycles.size > 0) {
+      await Promise.allSettled([...this.inFlightCycles]);
+    }
+  }
+
+  private async setTableFlag(
+    ids: string[],
+    flag: string,
+    budget: number,
+    generation: number
+  ): Promise<number> {
     if (ids.length === 0 || budget <= 0) return 0;
     const rows = await selectInChunks<{ id: string; settings: unknown; cluster_id: string | null }>(
       ids,
       (batch) => supabase.from('tables').select('id, settings, cluster_id').in('id', batch),
       `StableHand.readSettings.${flag}`
     );
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     // A partial read is not "none of them are flagged": writing on a failed
     // read would re-flag rows every cycle forever. Wait for a clean read.
     if (!rows.complete) return 0;
 
     let written = 0;
     for (const row of rows.rows) {
+      if (!this.lifecycleIsCurrent(generation)) return written;
       if (written >= budget) break;
       const settings =
         row.settings && typeof row.settings === 'object'
@@ -369,6 +399,7 @@ export class StableHandExecutor {
         .from('tables')
         .update({ settings: { ...settings, [flag]: true } })
         .eq('id', row.id);
+      if (!this.lifecycleIsCurrent(generation)) return written;
       if (error) {
         reportError(error, `StableHandExecutor.setTableFlag.${flag}`);
         continue;
@@ -387,19 +418,21 @@ export class StableHandExecutor {
    * that survives an engine restart at 07:59. It is idempotent and costs one
    * indexed read when there is nothing to lift.
    */
-  private async unparkTables(): Promise<number> {
+  private async unparkTables(generation: number = this.lifecycleGeneration): Promise<number> {
     const { data, error } = await supabase
       .from('tables')
       .select('id, status, settings')
       .in('club_id', [MIDWAY_UNION_ID, DSS_CLUB_ID])
       .is('tournament_id', null)
       .eq(`settings->>${NIGHT_PARK_FLAG}`, 'true');
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     if (error) {
       reportError(error, 'StableHandExecutor.unparkTables_read');
       return 0;
     }
     let lifted = 0;
     for (const row of (data ?? []) as Array<{ id: string; status: string; settings: unknown }>) {
+      if (!this.lifecycleIsCurrent(generation)) return lifted;
       const settings =
         row.settings && typeof row.settings === 'object'
           ? { ...(row.settings as Record<string, unknown>) }
@@ -411,6 +444,7 @@ export class StableHandExecutor {
       // Society nothing else could.
       if (String(row.status) === 'closed') patch.status = 'waiting';
       const { error: updErr } = await supabase.from('tables').update(patch).eq('id', row.id);
+      if (!this.lifecycleIsCurrent(generation)) return lifted;
       if (updErr) {
         reportError(updErr, 'StableHandExecutor.unparkTables_write');
         continue;
@@ -436,12 +470,17 @@ export class StableHandExecutor {
    * Alerts ON CHANGE only. A warning re-filed every thirty seconds is a
    * warning somebody mutes, and the row stays open until it is resolved.
    */
-  private async checkBanks(snap: FloorSnapshot, nowMs: number): Promise<void> {
+  private async checkBanks(
+    snap: FloorSnapshot,
+    nowMs: number,
+    generation: number = this.lifecycleGeneration
+  ): Promise<void> {
     if (nowMs - this.lastBankCheckAt < BANK_CHECK_EVERY_MS) return;
     this.lastBankCheckAt = nowMs;
     const daily = dailyGuaranteePerHost();
 
     for (const host of snap.hosts) {
+      if (!this.lifecycleIsCurrent(generation)) return;
       try {
         let bank: number | null = null;
         let store = '';
@@ -451,6 +490,7 @@ export class StableHandExecutor {
             .select('chip_balance')
             .eq('union_id', host.hostId)
             .maybeSingle();
+          if (!this.lifecycleIsCurrent(generation)) return;
           if (data) {
             bank = Number((data as { chip_balance?: unknown }).chip_balance) || 0;
             store = 'union_wallets.chip_balance';
@@ -461,6 +501,7 @@ export class StableHandExecutor {
             .select('chip_treasury')
             .eq('id', host.hostId)
             .maybeSingle();
+          if (!this.lifecycleIsCurrent(generation)) return;
           if (data) {
             bank = Number((data as { chip_treasury?: unknown }).chip_treasury) || 0;
             store = 'clubs.chip_treasury';
@@ -475,6 +516,7 @@ export class StableHandExecutor {
         if (verdict === 'ok' || verdict === previous) continue;
 
         const days = daily > 0 ? (bank / daily).toFixed(1) : 'unbounded';
+        if (!this.lifecycleIsCurrent(generation)) return;
         await supabase.rpc('fn_raise_server_financial_alert', {
           p_severity: verdict === 'critical' ? 'critical' : 'warning',
           p_source: 'StableHandExecutor.checkBanks',
@@ -493,6 +535,7 @@ export class StableHandExecutor {
           },
           p_entity_id: host.hostId,
         });
+        if (!this.lifecycleIsCurrent(generation)) return;
         console.warn(
           `[StableHand] bank ${verdict}: host ${host.hostId.slice(0, 8)} holds ${bank} in ` +
             `${store} - ${days} days of guarantees`
@@ -504,7 +547,11 @@ export class StableHandExecutor {
   }
 
   /** Both table-flag passes for one cycle. */
-  private async applyTableFlags(plan: FloorPlan, night: boolean): Promise<void> {
+  private async applyTableFlags(
+    plan: FloorPlan,
+    night: boolean,
+    generation: number
+  ): Promise<void> {
     let budget = MAX_TABLE_FLAG_WRITES_PER_CYCLE;
 
     /* THE PERMANENT TRIM FIRST. Dan 2026-09-04: "yes close all those tables.
@@ -512,7 +559,8 @@ export class StableHandExecutor {
        fleet stops seeding it and the rotator walks its horses out. Nothing
        here cashes a seat out, and nothing here closes a row - see RETIRE_FLAG
        above for what Gate 7 removed. */
-    const retired = await this.setTableFlag(plan.close, RETIRE_FLAG, budget);
+    const retired = await this.setTableFlag(plan.close, RETIRE_FLAG, budget, generation);
+    if (!this.lifecycleIsCurrent(generation)) return;
     budget -= retired;
     if (retired > 0) {
       console.log(
@@ -522,7 +570,7 @@ export class StableHandExecutor {
     }
 
     if (night) {
-      const parked = await this.setTableFlag(plan.park, NIGHT_PARK_FLAG, budget);
+      const parked = await this.setTableFlag(plan.park, NIGHT_PARK_FLAG, budget, generation);
       if (parked > 0) {
         console.log(
           `[StableHand] parked ${parked} thin table(s) for the night ` +
@@ -541,10 +589,15 @@ export class StableHandExecutor {
    * the wallet through atomic_seat_cashout_locked, and this module never
    * touches a seat row itself.
    */
-  private async stand(order: StandOrder, nowMs: number, why: string): Promise<boolean> {
+  private async stand(
+    order: StandOrder,
+    nowMs: number,
+    why: string,
+    generation: number
+  ): Promise<boolean> {
     /* Re-checked per seat: a break can begin between the snapshot and the last
        order in it. */
-    if (isMaintenanceFrozen()) return false;
+    if (isMaintenanceFrozen() || !this.lifecycleIsCurrent(generation)) return false;
     const engine = this.getEngine(order.tableId);
     if (!engine) {
       this.noEngine++;
@@ -555,6 +608,7 @@ export class StableHandExecutor {
        anybody else - a horse let out of a clock a human cannot escape is the
        "equal outcome by a different mechanism" exemption Dan rejected. */
     const result = await engine.leaveTable(order.horseId);
+    if (!this.lifecycleIsCurrent(generation)) return false;
     const key = yieldKey(order);
 
     if (result?.success) {
@@ -595,21 +649,29 @@ export class StableHandExecutor {
       return;
     }
     this.running = true;
+    this.lifecycleGeneration += 1;
+    this.stopOperation = null;
     this.handle = setInterval(() => {
-      void this.cycle();
+      this.launchCycle();
     }, STABLE_HAND_CYCLE_MS);
+    this.handle.unref?.();
     console.log(
       `[StableHand] Executor running - human yield only, every ${STABLE_HAND_CYCLE_MS / 1000}s`
     );
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
     this.running = false;
+    this.lifecycleGeneration += 1;
     if (this.handle) clearInterval(this.handle);
     this.handle = null;
+    this.stopOperation = this.drainCycles();
+    return this.stopOperation;
   }
 
   async cycle(): Promise<number> {
+    const generation = this.lifecycleGeneration;
     /* THE FREEZE IS TOTAL (Dan 2026-09-01): "HORSES SHOULD NOT STAND UP OR
        ROTATE, EVERYTHING JUST FREEZES." A seat changing hands under a break
        screen is also the loudest possible horse tell. The human keeps their
@@ -617,6 +679,7 @@ export class StableHandExecutor {
        - the wait clock is the list's own created_at, which the break cannot
        move, so nothing is lost by waiting. */
     if (isMaintenanceFrozen()) return 0;
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     // The kill switch stops NEW sits and the wind-down, never a yield: a kill
     // switch that strands a waiting human is not a safety feature, it is a
     // second outage. planFloor runs its yield pass on a killed snapshot and
@@ -627,6 +690,7 @@ export class StableHandExecutor {
     this.inFlight = true;
     try {
       const snap = await buildFloorSnapshot();
+      if (!this.lifecycleIsCurrent(generation)) return 0;
       const orders = standOrdersFor(snap);
       const now = Date.now();
 
@@ -659,7 +723,8 @@ export class StableHandExecutor {
           await this.stand(
             r.order,
             now,
-            `after ${Number.isFinite(waited) ? waited : 0}s of human wait`
+            `after ${Number.isFinite(waited) ? waited : 0}s of human wait`,
+            generation
           )
         ) {
           stood++;
@@ -672,7 +737,8 @@ export class StableHandExecutor {
           await this.stand(
             r.order,
             now,
-            `host ${r.hostId.slice(0, 8)} is above its occupancy curve`
+            `host ${r.hostId.slice(0, 8)} is above its occupancy curve`,
+            generation
           )
         ) {
           stood++;
@@ -691,7 +757,8 @@ export class StableHandExecutor {
          fleet's own drain stops seeding it and its own retirement pass closes
          it once EMPTY. Run after the stands so the plan the flags come from is
          the same one that was just acted on. */
-      await this.applyTableFlags(orders.plan, isNightWindow(chicagoNow().hour));
+      await this.applyTableFlags(orders.plan, isNightWindow(chicagoNow().hour), generation);
+      if (!this.lifecycleIsCurrent(generation)) return stood;
 
       /* ══ THE HEARTBEAT ═══════════════════════════════════════════════════
          Written after the work, so it records what was actually DONE and not
@@ -712,6 +779,7 @@ export class StableHandExecutor {
         }),
         now
       );
+      if (!this.lifecycleIsCurrent(generation)) return stood;
       this.executedYields.clear();
       this.executedWindDowns.clear();
 

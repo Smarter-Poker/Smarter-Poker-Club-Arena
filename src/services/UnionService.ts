@@ -627,7 +627,11 @@ class UnionServiceClass {
     if (!!periodStart !== !!periodEnd) throw new Error('Both statement period dates are required');
     const start = periodStart ? new Date(periodStart) : null;
     const end = periodEnd ? new Date(periodEnd) : null;
-    if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
+    if (
+      start &&
+      end &&
+      (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)
+    ) {
       throw new Error('Invalid statement period');
     }
     const { data, error } = await supabase.rpc('ca_union_statement_board', {
@@ -645,8 +649,12 @@ class UnionServiceClass {
   }
 
   async getSettlementReportForPeriod(unionId: string, periodId: string): Promise<UnionSettlement> {
-    const { data, error } = await supabase.from('settlement_periods')
-      .select('start_at, end_at').eq('id', periodId).eq('union_id', unionId).maybeSingle();
+    const { data, error } = await supabase
+      .from('settlement_periods')
+      .select('start_at, end_at')
+      .eq('id', periodId)
+      .eq('union_id', unionId)
+      .maybeSingle();
     if (error) throw error;
     if (!data?.start_at || !data?.end_at) throw new Error('Union settlement period is unavailable');
     return this.getSettlementReport(unionId, data.start_at, data.end_at);

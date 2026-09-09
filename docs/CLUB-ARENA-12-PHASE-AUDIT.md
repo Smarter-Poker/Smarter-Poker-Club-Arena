@@ -1,0 +1,68 @@
+# Club Arena Twelve-Phase Audit And Build Programme
+
+Authorized September 8, 2026. Bots, Horses And Real-Time Assistance is excluded as a feature/policy workstream. Shared financial correctness still applies to all accounts. No horse strategy, automation capability, bot policy or real-time assistance enhancement is included.
+
+## Scope And Evidence
+
+All 7,038 entries in docs/audits/2026-09-08-platform-coverage/source-inventory.csv are in the coverage register, within the Club Arena repository only. The 69 discovered World Hub API files are deferred to a separate future build phase; do not read, edit or deploy World Hub as part of this programme. Inventory entries, lexical scans, existing tests and historical completion notes do not establish audit completion. Classify test, archive, generated, development-only and excluded-workstream files explicitly; never silently omit them. Re-pin the Club Arena repository before each phase and review new files added since the baseline. Include assets, configurations, runtime functions, triggers, policies, scheduled jobs, external routes and integrations that were outside the initial lexical inventory.
+
+Each phase must name its exact surfaces, trace callers and effects, compare applicable dated primary-source benchmarks, fix confirmed defects, execute relevant negative/concurrency/recovery tests, and verify merged source and deployed behavior. Preserve the original 216-requirement register and reconcile it to this programme. Absence of a named competitor feature is a comparison item, not automatically a requirement. External fairness certification and jurisdiction-specific assessment require actual independent evidence, never a software-generated certificate.
+
+## Build Order
+
+| Phase | Scope                                                                                | Exit Evidence                                                                                                                                                                                                                                                              |
+| ----- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Cashout outcome propagation and departure correctness; coverage and release baseline | Valid receipts required by both shared cashout helpers; failure reaches callers; eviction events and roster removal follow confirmation; all-in skipped players remain; regression tests and deployed engine source verified                                               |
+| 2     | Poker rules and fairness for every supported variant                                 | Legal actions, short all-ins/reopening, heads-up blinds, side pots, odd chips, ties, split boards, muck/show, RNG/shuffle/deck integrity and hidden-card access reviewed; independent certification status explicit                                                        |
+| 3     | MTT, SNG, Spins and satellites                                                       | Entry/re-entry/rebuy/add-on, blind clocks, breaks, seating/balancing, payout ladders, multipliers/reserves, guarantees, bounties/PKO/mystery, final-table deals, cancellation and outage behavior tested per format                                                        |
+| 4     | Cashier, wallets, tickets and every chip movement                                    | Club Arena client and database financial paths traced; external API dependencies recorded as deferred World Hub verification; authorized source/destination, asset precision, escrow, approvals, reversal/refund, payload-bound retries and balanced receipts verified     |
+| 5     | Rake, hierarchy, BBJ, backup BBJ and promotions                                      | Weighted attribution separate from payment; caps and rounding; union/club/super-agent/agent/sub-agent/player flows; main BBJ receives 50 percent, remaining split verified from approved configuration; all reserves and payout legs reconcile                             |
+| 6     | Identity, authorization and account security                                         | Login/recovery, session expiry/revocation, device/account switch, club/union isolation, privileges, RLS, definer functions, secrets handling and API authorization tested                                                                                                  |
+| 7     | Reconnect, outage recovery and real-time transport                                   | Installed home-screen shell, background/resume, Wi-Fi/cellular changes, dropped/duplicated/out-of-order events, stale auth, durable commands, maintenance thaw and interrupted-hand recovery tested                                                                        |
+| 8     | Lobby, seating and multi-table play                                                  | Occupancy, discovery/filtering, observer access, waits/reservations, simultaneous seat claims, buy-in feedback, warm tables, correct table/hand targeting, focus and notification behavior tested                                                                          |
+| 9     | History, statistics, reporting and configuration                                     | Hand replay/export, sessions, player stats, transaction histories, dashboards, financial reports; every hardcoded cap/rate/timer/default assigned to its authority and checked against UI/engine/DB behavior                                                               |
+| 10    | Integrity, player protection, support and club operations                            | Collusion/chip dumping/multi-accounting review and evidence workflow, disputes/appeals, responsible-play tools, access eligibility assessment, management alerts; club membership/admin, unions, agent workspaces, messaging/moderation and notifications audited          |
+| 11    | Every page, feature and visual interaction                                           | Route and component coverage, desktop/mobile/accessibility, navigation, loading/error/empty states, touch targets, reduced motion/audio, cards/animations, inventory/store/VIP/rewards/promotions/social features and assets verified                                      |
+| 12    | Performance, resilience and final integration                                        | Measured action/connection/hand-gap latency, load and memory, DB/index/WAL behavior, backups through restore drills, monitoring, publishing/rollback, dependency/security review and full cross-phase regression; remaining unreviewed rows resolved or explicitly blocked |
+
+## Repository Boundary
+
+User clarification: Club Arena only for now. World Hub is a separate future build phase. The cross-repository API inventory is retained as historical discovery, not current authorization. When an end-to-end acceptance item requires World Hub changes or inspection, record that dependency and leave the cross-repository claim unverified. Do not touch the World Hub repository.
+
+## Binding Product Rules
+
+Tournament unregistration only before start; return chips to the originating wallet through the common refund path. Separate cancellation payouts from voluntary unregistration. Do not invent a satellite refund subsystem. BBJ main allocation is 50 percent; do not guess the backup/promo division. Weighted rake attribution is a statistic, not another spendable payment. Preserve approved hierarchy margin and rate rules after verifying their configuration. Financial discrepancies are surfaced to management without blanket table/club lockdowns. Do not perform historical backpay, manual wallet changes or forced engine restarts. F30's no-new-band-aids source gate remains in force.
+
+## Phase 1 Verification Status
+
+Complete for the Phase 1 scope defined in the build-order table. The final outstanding probe/evidence PR #3840 merged on September 8 at 18:10:48 UTC as eeb5ced46bfe41396c0624c1960e133cfc5ceadf. Its required CI run 34260688307 passed, including server TypeScript, 7,621 server tests and all four client shards. The six PostgreSQL cases skipped in ordinary CI were executed separately; the current expanded probe passed all 18 cases during the September 9 recovery check.
+
+The production engine observed September 9 at 00:37:47 UTC reports version 276faa64, resolves to 276faa64d658f966202f8ba4425041f9fb0d74d1, and contains #3809, #3818, #3823, #3837 and #3840. The observed source retains receipt validation, failure propagation, confirmed-departure filtering and all-in protection. Health was ok, maintenance idle, with zero stalled tables and zero blocked settlements. Both frontend build stamps agreed. See docs/audits/2026-09-08-phase1-departure-evidence.md and docs/audits/2026-09-09-phase1-closeout.json for exact evidence and boundaries.
+
+This continuation also passed server TypeScript, 80 focused receipt/departure/rebuy tests and 18 isolated PostgreSQL tests on source 078dbd26861f33f0f49492c61c52ac4637aa230b. Later changes in that source are not all claimed deployed by the older engine observation. The closure applies to the named Phase 1 corrections. It does not certify the entire financial system or the 216-requirement programme.
+
+Historical baseline: 16 failures and 28 passing tests before correction; 73 focused tests passed after the first correction. Subsequent follow-up and runtime gates are resolved by the evidence above. Phase 2 is poker rules and fairness for supported variants; its scoped completion evidence is recorded below.
+
+## Phase 2 Verification Status
+
+Phase 2 Of 12 Is Done for the defined internal poker-rule and fairness scope. The 18 original Phase 2 controls are reconciled in docs/audits/2026-09-09-phase2-final-boundaries.md and docs/audits/2026-09-09-phase2-release-status.json. Final correction PR #3934 merged as 993798a5052879b34e198001558344800ab064af with required CI passing 8023 server tests and 17382 client tests, both TypeScript projects, production build and CSS Beat checks. Eighteen opt-in database cases were skipped, not passed.
+
+Scheduled engine run 34320141403 passed 8044 server tests and shipped df5e82a68b90c91bd31bc5ed5a2e3e7253ada042; health and the engine-written database heartbeat match. At 2026-09-09T07:00:58.751085+00:00, normal maintenance resume was complete, with zero stalled tables and blocked settlements. Both frontend stamps reported 53b0284585d5f254f472ec99fae142aaa8f36e28. All three deployed versions contain the final merge, and all nine audited implementation blobs match the verified source.
+
+External fairness certification was not located and is not claimed. The separate failed production E2E run is documented for later-phase follow-up; no all-platform E2E pass is claimed. The original 216-control register remains unchanged. Phase 3, covering MTT, SNG, Spins and satellites, is the next phase.
+
+## Required Phase Summary
+
+Only after all exit evidence is satisfied: Phase N Of 12 Is Done, followed by concrete changes, tests and deployment evidence, remaining limitations outside that phase, then Ready To Start Phase N+1 Of 12. If a gate is pending, say Phase N Of 12 Is Not Complete and identify the missing evidence. Never use a partial pass to advance the phase counter.
+
+### Phase 1 Follow-up: Zero-stack Departure
+
+The zero-stack no-rebuy sweep also emitted departure before cashout confirmation and attempted a different fallback after failure. Two behavioral tests reproduced premature events. The sweep now waits for the same atomic cashout receipt before its event and cleanup, retaining seat and grace tracking for retry on failure. Pending-ledger rebuy, prompt grace and live all-in protections remain in place.
+
+September 8 verification: 74 focused tests across receipt, eviction, rebuy-ledger and sit-out safeguards passed; server TypeScript passed. PR #3818 merged as ab0f53926ac53c7b8b3d0d7be1278e9fd08e7500. That checkpoint was superseded by #3823, which passed its required checks and merged; the containing engine deployment and final evidence merge are verified above.
+
+## Original Requirement Register Reconciliation
+
+The original 216 requirement IDs and control text are preserved in docs/audits/2026-09-08-platform-coverage/phase-requirements.json, extracted from Smarter-Poker-Club-Arena-Audit.docx version 22 (SHA256 recorded in the JSON). Extraction verified 216 rows and 216 unique IDs. Every original requirement has a primary phase or explicit user exclusion; cross-phase scope notes prevent partial evidence being mistaken for a full requirement pass. G07 is retained as excluded, G06 excludes the real-time assistance clause, and World Hub portions of cross-repository requirements remain deferred. All included rows remain pending full requirement verification. This is a scope reconciliation, not 216 completed audits.
+
+Primary-phase assignment counts: 1:4, 2:18, 3:58, 4:26, 5:52, 6:9, 7:13, 8:3, 9:9, 10:6, 11:10, 12:7; one excluded row. The 7,038-file inventory adds implementation coverage beyond these controls. Phase 1's engine/service integration adds eight passing tests with isolated database transport. The separate PostgreSQL recovery and scoped engine adoption gates are now verified; the wider requirements retain their later-phase verification obligations.

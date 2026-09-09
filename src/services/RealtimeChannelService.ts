@@ -6,7 +6,7 @@
  * Phase 2 (2026-05-18): Migrated from Supabase Realtime to the Hetzner
  * engine WebSocket at wss://engine.smarter.poker/ws/channel.
  *
- * Public interface is IDENTICAL to the previous Supabase-backed version:
+ * The active subscription and broadcast surface remains transport-compatible:
  *   subscribeToClub / unsubscribeFromClub
  *   subscribeToTournament / unsubscribeFromTournament
  *   subscribeToLobby / unsubscribeFromLobby
@@ -37,9 +37,10 @@ import type {
   HandReplayEventMessage,
 } from './EngineStateClient';
 import { reportError } from '../utils/errorReporter';
+import { readLocalSession } from '../lib/authUtils';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TYPES  (unchanged public API)
+// TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type ChannelType = 'club' | 'tournament' | 'table' | 'hand' | 'lobby';
@@ -80,10 +81,10 @@ export interface TournamentEvent {
        eliminatePlayer is never called with place 1 anyway — the bust sweep
        reserves it for the winner. See TournamentManagerEliminations. */
     | 'tournament_winner'
+    | 'final_table_deal'
     | 'level_up'
     | 'final_table'
     | 'heads_up'
-    | 'winner'
     | 'payout'
     | 'hand_for_hand'
     | 'prize_pool_finalized'
@@ -135,6 +136,25 @@ function authHeader(): Record<string, string> {
 class RealtimeChannelService {
   private subscriptions: Map<string, SubscriptionRecord> = new Map();
   private presenceState: Map<string, ClubPresence[]> = new Map();
+  private authUserId = readLocalSession()?.userId ?? null;
+
+  /** Called synchronously by the existing MasterBus auth boundary. */
+  handleIdentityChange(userId: string | null): void {
+    if (userId === this.authUserId) return; // token refresh keeps the live subscription
+    this.authUserId = userId;
+    for (const [name, record] of this.subscriptions) {
+      for (const unlisten of record.unlisteners) {
+        try {
+          unlisten();
+        } catch (error) {
+          reportError(error, 'RealtimeChannelService.identity.' + name);
+        }
+      }
+    }
+    this.subscriptions.clear();
+    this.presenceState.clear();
+    engineChannelClient.resetSession(userId !== null);
+  }
 
   /** One server subscription can serve several independently mounted consumers. */
   private retainSubscription(
@@ -269,7 +289,6 @@ class RealtimeChannelService {
       onPlayerRegistered?: (player: unknown) => void;
       onPlayerEliminated?: (elimination: unknown) => void;
       onLevelUp?: (level: unknown) => void;
-      onWinner?: (winner: unknown) => void;
     }
   ): () => void {
     const channelName = `tournament:${tournamentId}`;
@@ -290,9 +309,6 @@ class RealtimeChannelService {
           break;
         case 'level_up':
           callbacks.onLevelUp?.(event.payload);
-          break;
-        case 'winner':
-          callbacks.onWinner?.(event.payload);
           break;
       }
     });
@@ -321,7 +337,12 @@ class RealtimeChannelService {
 
   /**
    * Broadcast a tournament event.
-   * Server-side / admin only — POSTs to engine HTTP API.
+   * INTERNAL_API_KEY holders only: the engine's /channels/tournament/:id/event
+   * route refuses a player JWT with 401 (server/src/router.ts). A browser has
+   * no such key, so the four browser call sites that used to reach this
+   * (rebuy, add-on, final table, level-up) were removed in the final sweep of
+   * 2026-09-08 - each was a guaranteed 401 reported to Sentry after a
+   * successful money action. Kept for a server-side caller that holds the key.
    */
   async broadcastTournamentEvent(
     tournamentId: string,

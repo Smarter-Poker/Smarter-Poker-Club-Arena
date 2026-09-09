@@ -26,7 +26,10 @@
  * NEVER refer to the horses as "bots" — they are HORSES only.
  */
 
-import { scoreSolverAgreement } from './HorseSolverAgreement.js';
+import {
+  HorseLeagueComputeWorkerClient,
+  type HorseLeagueCompute,
+} from './HorseLeagueComputeWorkerClient.js';
 import type { Card, SeatPlayer, HandStage, ActionRecord } from '../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind, type HorseMindSandbox } from '../engine/HorseMind.js';
@@ -76,6 +79,27 @@ export interface LeagueResult {
   illegalActions: number;
   /** streets cut short by the action cap (must be 0; see runStreet) */
   truncatedStreets: number;
+  /** Candidate-policy decisions actually consumed during an offline gate. */
+  candidatePolicyHits: number;
+  /** Solver samples that legalization changed into a different action family. */
+  candidateExecutionMismatches: number;
+  /** Exact solver node roles reached by those decisions. */
+  candidateNodeRoles: string[];
+  /** Per-scenario evidence retained when several utility contexts are gated. */
+  benchmarkComponents: LeagueBenchmarkComponent[];
+}
+
+export interface LeagueBenchmarkComponent {
+  scenario: string;
+  hands: number;
+  bb100: number;
+  stderr: number;
+  durationMs: number;
+  illegalActions: number;
+  truncatedStreets: number;
+  candidatePolicyHits: number;
+  candidateExecutionMismatches: number;
+  candidateNodeRoles: string[];
 }
 
 export interface LeagueMatchup {
@@ -89,6 +113,8 @@ export interface LeagueMatchup {
   /** V16: starting stack in big blinds (default 100). 40 exercises the
    *  short-stack push/fold and reshove tiers the 100bb card never touches. */
   stackBB?: number;
+  /** Exact format/utility context used by Phase 4 promotion matchups. */
+  context?: LeagueGameContext;
   /** V16: duplicate pairs for this matchup (default PAIRS_PER_MATCHUP).
    *  Newer exploratory matchups run fewer pairs so the whole card still
    *  fits the wall-clock budget; stderr scales as 1/sqrt(pairs). */
@@ -104,6 +130,19 @@ export interface LeagueMatchup {
    *  config object still type-checks. */
   mind?: 'sandbox';
 }
+
+export interface LeagueGameContext {
+  gameMode: 'cash' | 'tournament';
+  format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  ante?: number;
+  tournament?: HorseGameStateV2['tournament'];
+}
+
+const CASH_LEAGUE_CONTEXT: LeagueGameContext = {
+  gameMode: 'cash',
+  format: 'cash',
+  ante: 0,
+};
 
 const DEFAULT_SEATS = 6;
 const BB = 2;
@@ -157,7 +196,9 @@ export function playHand(
   /** V16: seats at the table (default 6; 2 = heads-up). */
   numSeats: number = 6,
   /** V16: starting stack in big blinds (default 100). */
-  stackBB: number = 100
+  stackBB: number = 100,
+  /** Phase 4: exact cash/tournament utility family. */
+  gameContext: LeagueGameContext = CASH_LEAGUE_CONTEXT
 ): number[] {
   const SEATS = numSeats;
   const START_STACK = stackBB * BB;
@@ -279,9 +320,10 @@ export function playHand(
         bigBlind: BB,
         dealerSeat,
         actionHistory: history,
-        gameMode: 'cash',
-        ante: 0,
-        format: 'cash',
+        gameMode: gameContext.gameMode,
+        ante: gameContext.ante ?? 0,
+        format: gameContext.format,
+        ...(gameContext.tournament ? { tournament: structuredClone(gameContext.tournament) } : {}),
       } as HorseGameStateV2;
 
       const d = sandbox
@@ -540,16 +582,20 @@ export function playHand(
 export async function runMatchup(
   matchup: LeagueMatchup,
   pairs: number,
-  runSeed: number
+  runSeed: number,
+  shouldContinue: () => boolean = () => true
 ): Promise<LeagueResult> {
   const SEATS = matchup.seats ?? DEFAULT_SEATS;
   const t0 = Date.now();
   const counters = { illegal: 0, truncated: 0 };
+  let candidatePolicyHits = 0;
+  let candidateExecutionMismatches = 0;
+  const candidateNodeRoles = new Set<string>();
   const perPairDiff: number[] = [];
-  // V12.3: the league runs INSIDE the live engine process. `rngState` in
-  // HorseEval is a module global shared with every live decision, and
-  // playHand reseeds it once per synthetic hand. Bracket the whole matchup so
-  // the live stream resumes exactly where it was.
+  // V12.3: before compute isolation this ran inside the dealer process, where
+  // HorseEval's module-global RNG was shared with every live decision.
+  // Production now calls this only in its worker; the bracket remains part of
+  // the simulator's deterministic contract and protects direct test callers.
   const rngBefore = saveFastRandom();
   // V12.2: one sandbox PER PASS, alive for the whole matchup. Pass 1 always
   // plays sandbox 1 and pass 2 always plays sandbox 2, so each accumulates a
@@ -560,18 +606,30 @@ export async function runMatchup(
   const sb2 = HorseMind.createSandbox();
 
   for (let p = 0; p < pairs; p++) {
-    // V12.3: YIELD THE EVENT LOOP. This loop used to run all 1500 pairs (3000
-    // hands, measured at 7-10 seconds) without a single yield, inside the
-    // process serving live poker. DeadlineScheduler ticks every 100ms and its
-    // deadlines are absolute wall-clock, so a multi-second freeze means every
-    // action clock, timebank grant and disconnect grace across the fleet is
-    // already past due when the loop resumes — a fleet-wide auto-fold storm.
-    // 16 hands is well under one scheduler tick budget.
+    if (!shouldContinue()) break;
+    // V12.3: retain a worker yield every 16 pairs. Production no longer shares
+    // this event loop with live poker, but the yield is where CANCEL messages
+    // are observed and where the worker sends its liveness heartbeat.
     if (p > 0 && (p & 0x0f) === 0) await new Promise((res) => setImmediate(res));
     const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
     const dealerSeat = (p % SEATS) + 1;
-    const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
-    const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
+    const withEvidence = (opts: HorseDecideOpts): HorseDecideOpts => {
+      if (!opts.gtoV31DatasetChecksum) return opts;
+      return {
+        ...opts,
+        onGtoV31Decision: (receipt) => {
+          if (receipt.executedAsIntended) {
+            candidatePolicyHits++;
+            candidateNodeRoles.add(receipt.nodeRole);
+          } else {
+            candidateExecutionMismatches++;
+          }
+          opts.onGtoV31Decision?.(receipt);
+        },
+      };
+    };
+    const evenIsA = (s: number) => withEvidence(s % 2 === 0 ? matchup.a : matchup.b);
+    const evenIsB = (s: number) => withEvidence(s % 2 === 0 ? matchup.b : matchup.a);
 
     const net1 = playHand(
       handSeed,
@@ -581,7 +639,8 @@ export async function runMatchup(
       sb1,
       matchup.variant ?? 'nlh',
       SEATS,
-      matchup.stackBB ?? 100
+      matchup.stackBB ?? 100,
+      matchup.context ?? CASH_LEAGUE_CONTEXT
     );
     const net2 = playHand(
       handSeed,
@@ -591,7 +650,8 @@ export async function runMatchup(
       sb2,
       matchup.variant ?? 'nlh',
       SEATS,
-      matchup.stackBB ?? 100
+      matchup.stackBB ?? 100,
+      matchup.context ?? CASH_LEAGUE_CONTEXT
     );
 
     let aNet = 0;
@@ -624,6 +684,10 @@ export async function runMatchup(
     durationMs: Date.now() - t0,
     illegalActions: counters.illegal,
     truncatedStreets: counters.truncated,
+    candidatePolicyHits,
+    candidateExecutionMismatches,
+    candidateNodeRoles: [...candidateNodeRoles].sort(),
+    benchmarkComponents: [],
   };
 }
 
@@ -850,8 +914,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
 // V12.3: the old comment here claimed hour 4 was "the quietest hour on the
 // engine host". Measured over 24h of hand_history it is the SECOND BUSIEST
 // (5354 hands vs 6239 at hour 3) — the fleet plays around the clock and there
-// is no quiet hour. The league is safe here only because runMatchup now
-// yields the event loop every 16 hands; do not remove that yield.
+// is no quiet hour. The league is safe here only because production dispatches
+// every matchup and solver-agreement scan to HorseLeagueComputeWorker. The
+// yield inside runMatchup remains the worker's cancellation/heartbeat edge;
+// it is not permission to put this CPU loop back on the dealer thread.
 const LEAGUE_HOUR_UTC = 4;
 // V13: was 30 minutes against a ONE-HOUR window, so any engine restart in the
 // back half of the window pushed the next tick past it and the league silently
@@ -877,9 +943,8 @@ const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 // while real strategy-layer edges are single-digit bb/100 — the instrument
 // could only ever detect catastrophic regressions, and its own header claimed
 // it would catch a sign flip "within days". 10000 pairs puts the error near
-// 2.8 bb/100. The cost is wall clock, not responsiveness: runMatchup yields
-// every 16 hands, so this is ~70s of shared CPU per matchup rather than 70s
-// of frozen tables.
+// 2.8 bb/100. The cost is worker wall clock, not dealer responsiveness:
+// production never executes runMatchup on the live engine event loop.
 // 2026-08-27 (measured, not guessed): the 23-matchup card completed FOUR
 // matchups in its 90-minute budget - roughly 22 minutes each at 10,000 pairs -
 // so every V15/V16/V17/V18 layer went unmeasured while the four oldest
@@ -918,8 +983,16 @@ export function msLeftInRunWindow(now: Date = new Date()): number {
 }
 
 let leagueTimer: NodeJS.Timeout | null = null;
+let leagueBootTimer: NodeJS.Timeout | null = null;
 let lastLeagueDate: string | null = null;
 let leagueRunning = false;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightRuns = new Set<Promise<void>>();
+
+const lifecycleIsCurrent = (generation: number): boolean =>
+  lifecycleActive && lifecycleGeneration === generation;
 
 /**
  * V13.1 — WHY THIS CHECKS AT BOOT, NOT ONLY ON A TIMER.
@@ -1225,7 +1298,8 @@ async function alreadyRanToday(date: string): Promise<boolean> {
 
 let lastLeaguePmDate: string | null = null;
 
-async function maybeRunLeague(): Promise<void> {
+async function maybeRunLeague(generation: number): Promise<void> {
+  if (!lifecycleIsCurrent(generation)) return;
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
@@ -1234,7 +1308,9 @@ async function maybeRunLeague(): Promise<void> {
   if (leagueRunning) return;
 
   if (inWindow && lastLeagueDate !== today) {
-    if (await alreadyRanToday(today)) {
+    const alreadyRan = await alreadyRanToday(today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (alreadyRan) {
       lastLeagueDate = today; // remember for the rest of this process's life
       return;
     }
@@ -1244,7 +1320,9 @@ async function maybeRunLeague(): Promise<void> {
 
     // V13.1: leader/standby means TWO containers boot the full engine path and
     // both reach this line within seconds. Claim the night before working it.
-    if (!(await claimNightlyJob('league', today))) {
+    const claimed = await claimNightlyJob('league', today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (!claimed) {
       /*
        * DO NOT LATCH lastLeagueDate HERE (2026-09-01, measured).
        *
@@ -1287,8 +1365,11 @@ async function maybeRunLeague(): Promise<void> {
      * resume it. With a partial card now resumable, latching here would undo
      * the entire fix above.
      */
-    await runLeague(today);
-    if (await alreadyRanToday(today)) lastLeagueDate = today;
+    await runLeague(today, () => lifecycleIsCurrent(generation));
+    if (!lifecycleIsCurrent(generation)) return;
+    const completed = await alreadyRanToday(today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (completed) lastLeagueDate = today;
     return;
   }
 
@@ -1297,7 +1378,9 @@ async function maybeRunLeague(): Promise<void> {
   // the staleness-first card ordering serves the matchups the night window
   // left unmeasured.
   if (inPmWindow && lastLeaguePmDate !== today) {
-    if (!(await claimNightlyJob('league_pm', today))) {
+    const claimed = await claimNightlyJob('league_pm', today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (!claimed) {
       // Same reasoning as the AM window above: standing down is not settling
       // the day, so the flag stays unset and the next tick re-checks.
       console.log(
@@ -1315,40 +1398,70 @@ async function maybeRunLeague(): Promise<void> {
      * runLeague returned rather than dying mid-card, and rows mean it did
      * real work; a run that produced nothing leaves the day open to retry.
      */
-    const pmResults = await runLeague(today);
+    const pmResults = await runLeague(today, () => lifecycleIsCurrent(generation));
+    if (!lifecycleIsCurrent(generation)) return;
     if (pmResults.length > 0) lastLeaguePmDate = today;
   }
 }
 
-export function startHorseLeague(): void {
-  if (leagueTimer) return;
-  leagueTimer = setInterval(() => void maybeRunLeague(), LEAGUE_CHECK_MS);
-  leagueTimer.unref?.();
-  // Boot check, after a short settle so it never competes with table startup.
-  const boot = setTimeout(() => void maybeRunLeague(), LEAGUE_BOOT_DELAY_MS);
-  boot.unref?.();
+function launchMaybeRunLeague(): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightRuns.size > 0) return;
+  const tracked = maybeRunLeague(generation)
+    .catch((err) => reportError(err, 'HorseLeague.tick'))
+    .finally(() => inFlightRuns.delete(tracked));
+  inFlightRuns.add(tracked);
 }
 
-export function stopHorseLeague(): void {
+async function drainRuns(): Promise<void> {
+  while (inFlightRuns.size > 0) await Promise.allSettled([...inFlightRuns]);
+}
+
+export function startHorseLeague(): void {
+  if (leagueTimer) return;
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
+  leagueTimer = setInterval(launchMaybeRunLeague, LEAGUE_CHECK_MS);
+  leagueTimer.unref?.();
+  // Boot check, after a short settle so it never competes with table startup.
+  leagueBootTimer = setTimeout(() => {
+    leagueBootTimer = null;
+    launchMaybeRunLeague();
+  }, LEAGUE_BOOT_DELAY_MS);
+  leagueBootTimer.unref?.();
+}
+
+export function stopHorseLeague(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (leagueTimer) {
     clearInterval(leagueTimer);
     leagueTimer = null;
   }
+  if (leagueBootTimer) clearTimeout(leagueBootTimer);
+  leagueBootTimer = null;
+  stopOperation = drainRuns();
+  return stopOperation;
 }
 
-export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
+export async function runLeague(
+  runDate?: string,
+  shouldContinue: () => boolean = () => true,
+  computeFactory: () => HorseLeagueCompute = () => new HorseLeagueComputeWorkerClient()
+): Promise<LeagueResult[]> {
   if (leagueRunning) return [];
   leagueRunning = true;
+  let compute: HorseLeagueCompute | null = null;
   const date = runDate ?? new Date().toISOString().slice(0, 10);
   const results: LeagueResult[] = [];
   const startedAt = Date.now();
   // Whichever runs out first: this attempt's own budget, or the window.
   const runBudgetMs = Math.min(MAX_RUN_MS, msLeftInRunWindow());
-  // V13: SAY THAT IT STARTED. Rows are only written as each matchup finishes,
-  // and a matchup yields the event loop every 16 hands on a host that is also
-  // dealing live poker — so a run in progress and a run that never began were
-  // indistinguishable from outside. That is exactly the state this whole audit
-  // keeps finding: a job that looks identical whether or not it is working.
+  // V13: SAY THAT IT STARTED. Rows are only written as each worker matchup
+  // finishes, so a run in progress and a run that never began would otherwise
+  // remain indistinguishable from outside.
   // DAILY ROTATION (2026-08-27): start the card at a different index each
   // day so the budget cannot permanently starve the tail. Deterministic from
   // the run date, so a re-run of the same date repeats the same order.
@@ -1394,12 +1507,26 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
   try {
+    if (!shouldContinue()) return results;
+    // CAPACITY ROOT FIX (2026-09-08): this is the only compute lane the
+    // production league may use. The old path executed 32 complete synthetic
+    // hands between yields on the same event loop as table clocks, WebSockets
+    // and lease heartbeats. At the first 10-minute tick after the 03:55 engine
+    // restart, production moved from scale=1 / p50=20ms to scale=0.2 /
+    // p50=640ms while ~300 tables were live. The tick and the cliff were the
+    // same second. A dedicated worker keeps the exact seeded simulator and
+    // its HorseMind sandbox intact on another core. There is deliberately no
+    // sync fallback: failed analysis is retried from its durable claim;
+    // delaying live poker to finish a benchmark is never an allowed fallback.
+    compute = computeFactory();
+    await compute.ready();
+    if (!shouldContinue()) return results;
     // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
     // The matchups below measure a DIFFERENCE between two configs. This is
     // the absolute score, against the only reference in the building: the
-    // hold'em push/fold charts. It costs a few hundred synchronous decisions
-    // once a night, and it is the one number that can say the brain got
-    // WORSE without another config to compare it to.
+    // hold'em push/fold charts. It costs a few hundred worker decisions once a
+    // night, and it is the one number that can say the brain got WORSE without
+    // another config to compare it to.
     //
     // IT RUNS FIRST (2026-09-06). It used to run after the card, and the
     // card never ends: the engine restarts at :55 of every hour, a matchup
@@ -1407,13 +1534,13 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
     // on every attempt that does not run out of budget first. Measured by
     // the 2026-09-05 daily analysis: horse_solver_agreement had ZERO rows,
     // ever - the audit's `data_stale` and `solver_agreement_missing` findings
-    // were both this ordering. A few hundred synchronous decisions cost
-    // seconds; putting them before the hours-long part means the one number
+    // were both this ordering. Putting them before the hours-long part means
+    // the one number
     // that needs no second config exists on every night the league is even
     // attempted. fn_horse_solver_agreement_add upserts on (run_date,
     // reference), so a resumed card re-scores the same day harmlessly.
     try {
-      const agreement = scoreSolverAgreement();
+      const agreement = await compute.scoreSolverAgreement();
       if (agreement.reference) {
         const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
           p_rows: [
@@ -1423,9 +1550,54 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
               spots: agreement.spots,
               agreement: round4(agreement.agreement),
               pure_misses: agreement.pureMisses,
+              eligible_spots: agreement.eligibleSpots,
+              reconciled_spots: agreement.reconciledSpots,
+              action_regret_bb: agreement.actionRegretBb,
+              regret_eligible_spots: agreement.regretEligibleSpots,
+              decision_checksum: agreement.decisionChecksum,
+              decisions: agreement.decisions.map((decision) => ({
+                state_key: decision.stateKey,
+                decision_state: {
+                  schema_version: decision.decisionState.schemaVersion,
+                  stage: decision.decisionState.stage,
+                  game_variant: decision.decisionState.gameVariant,
+                  game_type: decision.decisionState.gameType,
+                  format: decision.decisionState.format,
+                  kind: decision.decisionState.kind,
+                  position: decision.decisionState.position,
+                  stack_bb: decision.decisionState.stackBb,
+                  hand: decision.decisionState.hand,
+                  chart: decision.decisionState.chart,
+                  villain_action: decision.decisionState.villainAction,
+                  legal_actions: decision.decisionState.legalActions,
+                },
+                kind: decision.kind,
+                game_type: decision.gameType,
+                position: decision.position,
+                stack_bb: decision.stackBb,
+                hand: decision.hand,
+                final_action: decision.finalAction,
+                reference_distribution: decision.referenceDistribution,
+                chosen_probability: decision.chosenProbability,
+                action_regret_bb: decision.actionRegretBb,
+                regret_eligible: decision.regretEligible,
+                pure_miss: decision.pureMiss,
+                source_seal: {
+                  quality_seal: decision.sourceSeal.qualitySeal,
+                  policy_version: decision.sourceSeal.policyVersion,
+                  policy_checksum: decision.sourceSeal.policyChecksum,
+                  system: decision.sourceSeal.system,
+                  artifact_id: decision.sourceSeal.artifactId,
+                  scenario_hash: decision.sourceSeal.scenarioHash,
+                  source_artifact_checksum: decision.sourceSeal.sourceArtifactChecksum,
+                  provenance_complete: decision.sourceSeal.provenanceComplete,
+                  audited_at: decision.sourceSeal.auditedAt,
+                },
+              })),
             },
           ],
         });
+        if (!shouldContinue()) return results;
         if (error) throw new Error(error.message);
         console.log(
           `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
@@ -1440,11 +1612,10 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
 
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
-      // V13: a wall-clock budget. The league shares the event loop with live
-      // tables by design, so its duration depends on how busy the fleet is,
-      // not on its own CPU cost — an unbounded run could still be going when
-      // the next night's window opens. Stop cleanly and keep what completed;
-      // partial results are still valid measurements.
+      if (!shouldContinue()) break;
+      // V13: a wall-clock budget. Even isolated analysis must not consume a
+      // host core across the next run window. Stop cleanly and keep what
+      // completed; partial results are still valid measurements.
       if (Date.now() - startedAt > runBudgetMs) {
         console.warn(
           `[HorseLeague] run ${date} hit its ${Math.round(runBudgetMs / 60000)}-minute budget ` +
@@ -1456,7 +1627,13 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
         );
         break;
       }
-      const r = await runMatchup(m, m.pairs ?? PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
+      const r = await compute.runMatchup(
+        m,
+        m.pairs ?? PAIRS_PER_MATCHUP,
+        runSeed ^ hash32(m.name),
+        shouldContinue
+      );
+      if (!shouldContinue()) break;
       results.push(r);
       try {
         const { error } = await supabase.from('horse_league_results').upsert(
@@ -1470,9 +1647,15 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
             config_b: m.b as never,
             duration_ms: r.durationMs,
             illegal_actions: r.illegalActions + r.truncatedStreets,
+            truncated_streets: r.truncatedStreets,
+            candidate_policy_hits: r.candidatePolicyHits,
+            candidate_execution_mismatches: r.candidateExecutionMismatches,
+            candidate_node_roles: r.candidateNodeRoles,
+            candidate_benchmark_components: r.benchmarkComponents,
           },
           { onConflict: 'run_date,matchup' }
         );
+        if (!shouldContinue()) break;
         if (error) throw new Error(error.message);
       } catch (err) {
         reportError(err, 'HorseLeague.write');
@@ -1495,6 +1678,13 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
     reportError(err, 'HorseLeague.run');
     lastLeagueDate = null;
   } finally {
+    if (compute) {
+      try {
+        await compute.shutdown();
+      } catch (err) {
+        reportError(err, 'HorseLeague.compute_worker_shutdown');
+      }
+    }
     leagueRunning = false;
   }
   return results;

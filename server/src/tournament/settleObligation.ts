@@ -3,13 +3,19 @@
  *  ONE SETTLE PATH FOR TOURNAMENT MONEY (chip accounting standard, Lane A2)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Every chip a tournament pays to a player - a place, a refund, a bubble
- * protection, a late-registration top-up, a final-table chop share, a satellite
- * remainder - leaves through THIS module and through ONE database function,
- * `fn_settle_tournament_obligation`. Nothing else in the engine may call
- * `fn_credit_and_log`, `credit_player_wallet` or `fn_credit_player_wallet_once`
- * for a tournament outcome. `OneSettlePathForTournamentMoney.law.test.ts` pins
- * it at the source level.
+ * Every independent non-pool tournament obligation, including refunds and
+ * bounties, leaves through THIS module and the public classification gate
+ * `fn_settle_tournament_obligation`. Every prize-pool kind is deliberately
+ * refused by that public function: structure places, late-registration
+ * adjustments, Bubble Protection, final-table deals, satellite cash remainder
+ * and satellite seats. Their atomic helpers submit the complete plan. Private
+ * obligation cores move obligation-backed pool money, while the satellite
+ * ticket helper proves its fully funded seat transfer inside the same atomic
+ * finish transaction. Nothing in the engine may call `fn_credit_and_log`,
+ * `credit_player_wallet` or `fn_credit_player_wallet_once` for a tournament
+ * outcome.
+ * `OneSettlePathForTournamentMoney.law.test.ts` pins the primitive boundary;
+ * the two atomic-settlement laws pin the complete-batch boundary.
  *
  * WHY (docs/CHIP-ACCOUNTING-STANDARD.md, 2.2 and 3.2 step 5). Measured on
  * 2026-09-02: the four MTT variants were overpaid by 5,330 chips in 36 hours
@@ -28,13 +34,14 @@
  *   UNIQUE (tournament_id, kind, place)    WHERE place IS NOT NULL
  *   UNIQUE (tournament_id, kind, user_id)  WHERE place IS NULL
  *
- * `fn_settle_tournament_obligation` upserts the obligation (owed only ever
- * RISES to `max(owed, amount)`), pays `min(amount, owed - paid)` from the
- * tournament's escrow to the player's club wallet, writes `tournament_payouts`
- * and `wallet_transactions` under a key it derives from the obligation row,
- * and stamps `app.money_path` so the R3 trigger lets the credit through.
- * A replay is `ok: true, paid: 0` - never an error. A second payment of the
- * same place is impossible whatever the caller believes.
+ * For an allowed single-obligation class, the private core upserts the
+ * obligation (owed only ever RISES to `max(owed, amount)`), pays
+ * `min(amount, owed - paid)` from the tournament's escrow to the player's club
+ * wallet, writes `tournament_payouts` and `wallet_transactions` under a key it
+ * derives from the obligation row, and stamps `app.money_path` so the R3
+ * trigger lets the credit through. A replay is `ok: true, paid: 0` - never an
+ * error. Prize-pool obligations receive the same primitive only from their
+ * all-or-none database batch.
  *
  * THE CONTRACT THIS MODULE KEEPS WITH ITS CALLERS:
  *
@@ -85,7 +92,7 @@ export interface SettleTournamentObligationInput {
    * top-up passes the NEW correct prize and the database works out the delta.
    */
   amount: number;
-  /** Which engine path is asking, e.g. 'engine.eliminatePlayer'. Recorded on the obligation. */
+  /** Which allowed engine path is asking, e.g. 'engine.processSatelliteAwards'. Recorded on the obligation. */
   source: string;
   /**
    * The `wallet_transactions.description` the player reads, passed through as
@@ -149,34 +156,66 @@ function parseResult(data: unknown): Partial<SettleTournamentObligationResult> {
       raw = null;
     }
   }
-  if (!raw || typeof raw !== 'object') return {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, refused_reason: 'invalid_response' };
+  }
   const r = raw as Record<string, unknown>;
+  if (r.ok !== true && r.ok !== false) {
+    return { ok: false, refused_reason: 'invalid_response' };
+  }
   // A successful partial credit is still money owed. Do not derive completion
   // from the requested amount: a replay may name an older, smaller total.
   const money = (value: unknown): number | null => {
-    if ((typeof value !== 'number' && typeof value !== 'string') || value === '') return null;
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(value)) return null;
     const n = Number(value);
-    return Number.isFinite(n) && n >= 0 && Number.isSafeInteger(Math.round(n * 100)) &&
-      Math.round(n * 100) / 100 === n ? n : null;
+    return Number.isFinite(n) &&
+      n >= 0 &&
+      Number.isSafeInteger(Math.round(n * 100)) &&
+      Math.round(n * 100) / 100 === n
+      ? n
+      : null;
   };
   const owed = money(r.amount_owed);
   const totalPaid = money(r.amount_paid);
   const remaining = money(r.remaining);
   const moved = money(r.paid);
   const prior = money(r.already_paid);
-  const totalsAgree = owed !== null && totalPaid !== null && remaining !== null &&
-    moved !== null && prior !== null &&
+  const totalsAgree =
+    owed !== null &&
+    totalPaid !== null &&
+    remaining !== null &&
+    moved !== null &&
+    prior !== null &&
+    totalPaid <= owed &&
     Math.round(totalPaid * 100) === Math.round(moved * 100) + Math.round(prior * 100) &&
-    Math.round(remaining * 100) === Math.max(0, Math.round(owed * 100) - Math.round(totalPaid * 100));
+    Math.round(remaining * 100) ===
+      Math.max(0, Math.round(owed * 100) - Math.round(totalPaid * 100));
+  const hasTotals = ['amount_owed', 'amount_paid', 'remaining'].some((key) => key in r);
+  const invalidSuccess =
+    r.ok === true &&
+    (moved === null ||
+      prior === null ||
+      (hasTotals && !totalsAgree) ||
+      (r.fully_settled === true && (!totalsAgree || remaining !== 0)));
   return {
-    fully_settled: r.ok === true && r.fully_settled === true && totalsAgree && remaining === 0,
+    fully_settled:
+      !invalidSuccess &&
+      r.ok === true &&
+      r.fully_settled === true &&
+      totalsAgree &&
+      remaining === 0,
     remaining: totalsAgree ? remaining : null,
     amount_owed: totalsAgree ? owed : null,
     amount_paid: totalsAgree ? totalPaid : null,
-    ok: r.ok === true,
-    paid: Number(r.paid ?? 0) || 0,
-    already_paid: Number(r.already_paid ?? 0) || 0,
-    refused_reason: typeof r.refused_reason === 'string' ? r.refused_reason : null,
+    ok: r.ok === true && !invalidSuccess,
+    paid: moved ?? 0,
+    already_paid: prior ?? 0,
+    refused_reason: invalidSuccess
+      ? 'invalid_response'
+      : typeof r.refused_reason === 'string'
+        ? r.refused_reason
+        : null,
     obligation_id: typeof r.obligation_id === 'string' ? r.obligation_id : null,
     idempotency_key: typeof r.idempotency_key === 'string' ? r.idempotency_key : null,
   };
@@ -201,12 +240,6 @@ export async function settleTournamentObligation(
   const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 3));
   const delayFor = options.retryDelayMs ?? ((attempt: number) => attempt * 1000);
 
-  const place =
-    input.place === undefined || input.place === null || !Number.isFinite(Number(input.place))
-      ? null
-      : Math.trunc(Number(input.place));
-  const amount = Math.round((Number(input.amount) || 0) * 100) / 100;
-
   const base: SettleTournamentObligationResult = {
     ok: false,
     fully_settled: false,
@@ -219,6 +252,33 @@ export async function settleTournamentObligation(
     obligation_id: null,
     idempotency_key: null,
   };
+
+  // Reject malformed input before coercion can turn it into a zero payment
+  // or a different finishing place. Keep existing positive-amount rounding.
+  const amountIsValid =
+    typeof input.amount === 'number' &&
+    Number.isFinite(input.amount) &&
+    input.amount >= 0 &&
+    Number.isSafeInteger(Math.round(input.amount * 100));
+  const placeIsRequired = input.kind === 'place' || input.kind === 'late_reg_adjustment';
+  const placeIsValid =
+    input.place === undefined || input.place === null
+      ? !placeIsRequired
+      : typeof input.place === 'number' &&
+        Number.isInteger(input.place) &&
+        input.place > 0 &&
+        input.place <= 2147483647;
+  if (!amountIsValid || !placeIsValid) {
+    reportError(
+      new Error(
+        'Tournament settlement input has an invalid amount or finishing place; no payment RPC was sent.'
+      ),
+      'Tournament.settle_obligation_invalid_input'
+    );
+    return { ...base, refused_reason: 'invalid_input' };
+  }
+  const place = input.place ?? null;
+  const amount = Math.round(input.amount * 100) / 100;
 
   // Nothing is owed. Not an error and not a call: the RPC would only record a
   // zero obligation, and every caller already guards `amount > 0`.
@@ -251,7 +311,43 @@ export async function settleTournamentObligation(
 
     if (!error) {
       const result: SettleTournamentObligationResult = { ...base, ...parseResult(data) };
-      if (result.ok) return result;
+      if (result.ok) {
+        // A successful transfer may leave recorded debt. Surface that exact remainder
+        // through the existing financial incident path without retrying the payment.
+        if (typeof result.remaining === 'number' && result.remaining > 0) {
+          const keyed = place !== null ? `place:${place}` : `user:${input.userId}`;
+          await raiseFinancialAlert(
+            'critical',
+            'Tournament.obligation_partial',
+            `Tournament settlement confirmed ${result.amount_paid} chips paid and ${result.remaining} chips still owed to ${input.userId}.`,
+            {
+              dedupe_key: `partial:${input.tournamentId}:${input.kind}:${keyed}`,
+              tournament_id: input.tournamentId,
+              kind: input.kind,
+              place,
+              user_id: input.userId,
+              amount_owed: result.amount_owed,
+              amount_paid: result.amount_paid,
+              remaining: result.remaining,
+              obligation_id: result.obligation_id,
+              source: input.source,
+            }
+          );
+        }
+        return result;
+      }
+
+      if (result.refused_reason === 'invalid_response') {
+        // The RPC may have committed. An invalid receipt proves neither payment
+        // nor nonpayment; never emit the ordinary "was NOT paid" refusal alert.
+        reportError(
+          new Error(
+            'Tournament settlement returned an invalid payment receipt; reconcile the recorded obligation before reporting completion.'
+          ),
+          'Tournament.settle_obligation_invalid_response'
+        );
+        return result;
+      }
 
       // The database answered and said NO. Never retried: the answer will not
       // change within this retry loop. A later recovery uses the same obligation.

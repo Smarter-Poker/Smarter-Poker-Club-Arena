@@ -17,6 +17,7 @@ import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 /* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
    INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
    /tournaments/:id destination must render in the tab rather than change the
@@ -108,6 +109,7 @@ import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
 import HouseAdCard from '../components/ads/HouseAdCard';
+import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
 import { playerDisplayName } from '../utils/playerDisplayName';
@@ -611,11 +613,21 @@ function tournamentOpenFirst(
  * club lobby the player came from.
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
+import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
+import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  // Routed entry is checked by ClubMemberGuard. Embedded table lobbies need
+  // the same boundary because they do not mount that route guard.
   return (
     <PageErrorBoundary pageName="ClubHomePage">
-      <ClubHomePageContent clubIdOverride={clubIdOverride} />
+      {clubIdOverride ? (
+        <ArenaAccessBoundary clubKey={clubIdOverride}>
+          <ClubHomePageContent clubIdOverride={clubIdOverride} />
+        </ArenaAccessBoundary>
+      ) : (
+        <ClubHomePageContent />
+      )}
     </PageErrorBoundary>
   );
 }
@@ -1508,6 +1520,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
         if (tableId) {
           if (spinJoinCancelRef.current) return;
+          warmTable(tableId);
           setSpinJoin(null);
           navigate(`/table/${tableId}`);
           return;
@@ -1581,6 +1594,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           const sibTableId = await tableService.resolveTournamentLiveTable(sibId);
           if (spinJoinCancelRef.current) return;
           if (sibTableId) {
+            warmTable(sibTableId);
             setSpinJoin(null);
             navigate(`/table/${sibTableId}`);
             return;
@@ -3508,9 +3522,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          cash game the panel's id IS the table id, so the roster read and the
          engine SUBSCRIBE go out now, while the player reads the buy-in sheet -
          so the felt mounts with players and avatars already on it. Spin / SNG
-         resolve their live table later (spinQuickJoin), so they are warmed at
-         the join tap instead, below. */
+         ids name tournaments: resolve their actual live table while the panel
+         is open. The entry tap still re-elects it because games can recycle. */
       if (entry.kind === 'cash') warmTable(entry.id);
+      else {
+        void tableService
+          .resolveTournamentLiveTable(entry.id)
+          .then((tableId) => warmTable(tableId))
+          .catch(() => undefined); // best-effort preparation; entry reports failures
+      }
     },
     [openTournamentLobby]
   );
@@ -4473,7 +4493,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               } catch (err) {
                 reportError(err, 'ClubHomePage.share_ref_lookup_failed');
               }
-              const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
+              const shareUrl = `${publicOrigin()}/hub/club-arena/invite/${club.id}${refQuery}`;
               /* The same leak as the card, and further out: this string is
                  handed to the OS share sheet, so `display_name` was carrying a
                  player's legal name into WhatsApp, SMS and anywhere else the
@@ -4721,7 +4741,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       <DiamondWalletModal
         isOpen={showDiamondWallet}
         onClose={() => setShowDiamondWallet(false)}
-        onBuyClick={() => navigate('/vip')}
+        onBuyClick={() => navigate(withClubContext('/vip', clubId))}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}
@@ -5004,8 +5024,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-          CLUB / UNION AD STRIP — directly under the action bar
+          AD STRIP - directly under the action bar. THREE ROTATING PICTURES.
+          (Dan 2026-09-03.) The text strip that lived here was dropped by the
+          lobby rebuild in #1759 and nothing noticed for five days: this mount
+          is now pinned by tests/unit/houseAds.test.ts. The rotator renders
+          nothing at all when no creative has a picture, so it never takes
+          space it cannot fill.
       ═══════════════════════════════════════════════════════════════════ */}
+        <HouseAdRotator
+          slot="lobby_strip"
+          clubId={resolvedClubId || club.id}
+          onNavigate={(path) => {
+            haptic.selection();
+            navigate(path);
+          }}
+        />
+
         {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always
           present, while resolvedClubId stays null forever if the slug lookup

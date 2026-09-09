@@ -10,8 +10,10 @@
  */
 
 import { supabase } from './client.js';
+import { parseTableArenaIdentity, assertChipFundingArena } from '../../domain/ArenaContext.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
+import { drainPendingWrites, enqueuePendingWrite } from './pendingWrites.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -27,7 +29,7 @@ export async function loadTable(tableId: string) {
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
       // tableInfo.bbj_percent, but this select never fetched it, so the gate
       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle'
+      'id, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -37,132 +39,145 @@ export async function loadTable(tableId: string) {
     throw new Error(`Failed to load table ${tableId}: ${msg}`);
   }
   if (!data) throw new Error(`Table ${tableId} not found`);
-  return data;
+  const arena = parseTableArenaIdentity(data);
+  // This engine currently settles through chip RPCs. Never open a Diamond
+  // table on that financial path; dedicated custody is the next build phase.
+  assertChipFundingArena(arena);
+  return { ...data, arena };
 }
 
 /**
  * Load seated players with profiles for a table
  */
 export async function loadSeatedPlayers(tableId: string) {
-  const { data: seats, error } = await supabase
+  /* ONE ROUND TRIP, NOT TWO (2026-09-07). This was a seats read followed by a
+     profiles read keyed on the seats' user_ids - two PostgREST calls in
+     series, at the 250-700ms each costs from the engine box, on the critical
+     path of every deal (it is the roster the next hand is dealt from, read
+     under the rest - see prepareNextHand). `fk_table_seats_user_id_profiles`
+     lets PostgREST embed the profile in the seat row, so the same two
+     queries are one request. The columns, the alias and the filters are the
+     old ones; SEATED_PROFILE_SELECT is shared with the two-step path below,
+     which is kept as the fallback for a PostgREST that cannot resolve the
+     embedding (a schema-cache reload mid-flight answers PGRST200), so a
+     roster read degrades to slower, never to empty. */
+  const embedded = await supabase
     .from('table_seats')
-    // is_sitting_out added 2026-08-25 for restart fidelity. The engine WRITES
-    // this column on every sit-out and sit-back and never read it back, so an
-    // engine restart between hands dealt cards to players who had sat out —
-    // while the column, and therefore every client, still said they were out.
-    //
-    // sit_out_at added 2026-08-28, and it is the half that makes the eviction
-    // actually fire. The boolean survived a restart; the CLOCK did not, because
-    // it was a field on an in-memory Map. restoreSitOutsFromSeats() re-stamped
-    // it to Date.now() on every boot, so on a table whose engine recycled more
-    // often than every five minutes the 5-minute limit could never mature and
-    // the seat was held forever. Dan 2026-08-28: "FOR SOME REASON THIS NEVER
-    // KICKS THE USER OFF THE CASH GAME AFTER THE 5 MIN."
-    // entry_hold / entry_post_agreed added 2026-08-30, and they are the THIRD
-    // instance of the same lesson on this one query: the engine wrote a fact
-    // and never read it back. is_sitting_out (2026-08-25) dealt cards to
-    // players who had sat out; sit_out_at (2026-08-28) handed every sat-out
-    // seat a fresh five minutes on every restart so the eviction never fired.
-    // These two are the cash entry hold — without them a deploy releases every
-    // held player free, button-eligible, and re-prompts anyone who had already
-    // agreed to post.
     .select(
-      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed'
+      `${SEAT_SELECT}, profile:profiles!fk_table_seats_user_id_profiles(${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at)`
     )
     .eq('table_id', tableId)
     .is('left_at', null)
     .order('seat_number', { ascending: true });
-
-  // 2026-08-15: returning [] on ERROR made a transient DB failure
-  // indistinguishable from "the table is empty". The engine then assigned []
-  // to seatedPlayers, which (a) stopped the synthetic horse heartbeats so every
-  // horse went stale and disconnected 30s later, (b) made the table watchdog
-  // read the table as idle-by-design so it never tripped, and (c) reported
-  // seated_count: 0 to clients. Throwing keeps the engine's last-known-good
-  // roster and routes into the dealing loop's transient-error backoff, which
-  // already classifies fetch/timeout failures correctly.
+  if (!embedded.error) {
+    // supabase-js types an embedded relation as an array because it cannot
+    // see the FK's cardinality; PostgREST returns an object for a to-one FK.
+    // Read whichever shape arrives, and drop a seat whose profile is missing
+    // exactly as the two-step path drops one the profiles read did not return.
+    const rows = (embedded.data ?? []) as unknown as Array<
+      SeatRow & { profile: SeatedProfileRow | SeatedProfileRow[] | null }
+    >;
+    const out: ReturnType<typeof seatedPlayerFrom>[] = [];
+    for (const seat of rows) {
+      const profile = Array.isArray(seat.profile) ? (seat.profile[0] ?? null) : seat.profile;
+      if (profile) out.push(seatedPlayerFrom(seat, profile));
+    }
+    return out;
+  }
+  reportError(
+    new Error(
+      `loadSeatedPlayers: embedded roster read failed for ${tableId} (${embedded.error.message}); using the two-step read`
+    ),
+    'DB.load_seated_players_embed_fallback'
+  );
+  const { data: seats, error } = await supabase
+    .from('table_seats')
+    .select(SEAT_SELECT)
+    .eq('table_id', tableId)
+    .is('left_at', null)
+    .order('seat_number', { ascending: true });
   if (error) {
     throw new Error('loadSeatedPlayers failed for ' + tableId + ': ' + error.message);
   }
   if (!seats || seats.length === 0) return [];
-
   const userIds = seats.map((d) => d.user_id);
   const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
-    /* Dan 2026-08-21: the felt shows the CLUB ARENA avatar, never the social
-       media photo. `arena_avatar_url` is library art only; `avatar_url` is the
-       player's (or horse's) social profile picture and is not ours to read.
-
-       Aliased rather than renamed: the returned key stays `avatar_url`, so the
-       engine types, the snapshot mapper and every seat component downstream are
-       untouched. Only the source column moves.
-
-       Highest-leverage avatar read in the app - it feeds every seat at every
-       table. If it regresses, the felt shows photographs again.
-
-       2026-09-07: the projection lives in `./tableAvatar.ts`, the engine
-       mirror of `src/lib/tableAvatar.ts`, so this read and the client's live
-       profile sync name the SAME column by construction - a law test imports
-       both and fails if they drift. */
-    .select(SEATED_PROFILE_SELECT)
+    .select(`${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at`)
     .in('id', userIds);
   if (profileErr) {
-    // The filter below drops every seat whose profile is missing, so a silent
-    // profiles failure emptied the table just as thoroughly as a seats failure.
     throw new Error('loadSeatedPlayers profiles failed for ' + tableId + ': ' + profileErr.message);
   }
-
-  const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
-
-  return seats
+  const profileMap = new Map<string, SeatedProfileRow>(
+    (profiles ?? []).map((p) => [p.id, p as SeatedProfileRow])
+  );
+  return (seats as SeatRow[])
     .filter((seat) => profileMap.has(seat.user_id))
-    .map((seat) => {
-      const profile = profileMap.get(seat.user_id)!;
-      return {
-        user_id: seat.user_id,
-        /* Dan 2026-08-18: horses are IDENTITIES, not accounts — their
-           `username` is only an internal handle that a DB trigger forces to
-           lowercase, so shipping it printed "gatecityethan" / "steven
-           ferrara" on the felt. display_name holds the real, properly-cased
-           name (half real "First Last", half styled poker alias), so horses
-           always resolve through it. Humans keep the use_real_name
-           preference exactly as before. */
-        username: profile.is_horse
-          ? profile.display_name || profile.username || 'Player'
-          : profile.use_real_name
-            ? profile.display_name || profile.username || 'Player'
-            : profile.username || profile.display_name || 'Player',
-        stack: seat.stack,
-        seat_number: seat.seat_number || 1,
-        is_horse: profile.is_horse || false,
-        // AUDIT V2 (2026-07-23): pass the raw jsonb value through — it can be a
-        // string OR an object ({"style":"tag",...}). resolveHorseStyle() in
-        // HorseLogic handles both plus a deterministic per-horse fallback.
-        horse_profile: profile.horse_profile ?? undefined,
-        time_bank_remaining: seat.time_bank_remaining || 0,
-        time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
-        is_sitting_out: seat.is_sitting_out === true,
-        /* The persisted sit-out clock. Null whenever is_sitting_out is false —
-           a database trigger (trg_stamp_sit_out_at) owns both, so the pair can
-           never disagree regardless of which writer touched the row. */
-        sit_out_at: (seat as { sit_out_at?: string | null }).sit_out_at ?? null,
-        /* The persisted cash entry hold, read by restoreEntryHoldsFromSeats()
-           once per process on boot. Mapped through here rather than queried
-           separately so the restore has no round trip of its own — it reads
-           the roster the engine already loaded. */
-        entry_hold: (seat as { entry_hold?: string | null }).entry_hold ?? null,
-        entry_post_agreed:
-          (seat as { entry_post_agreed?: boolean | null }).entry_post_agreed === true,
-        avatar_url: profile.avatar_url || '',
-        /* Cosmetics ride the avatar's pipeline rather than getting one of their
-           own: same query, same snapshot field group, same client mapper. They
-           are re-read here once per hand alongside the avatar, so a player who
-           equips a frame mid-session is wearing it on everyone's felt by the
-           next deal even if their realtime subscription dropped. */
-        equipped_frame: profile.equipped_frame || '',
-        equipped_aura: profile.equipped_aura || '',
-      };
-    });
+    .map((seat) => seatedPlayerFrom(seat, profileMap.get(seat.user_id)!));
+}
+
+const SEAT_SELECT =
+  'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
+
+interface SeatRow {
+  user_id: string;
+  stack: number;
+  seat_number: number | null;
+  time_bank_remaining: number | null;
+  time_bank_uses_remaining: number | null;
+  is_sitting_out: boolean | null;
+  sit_out_at?: string | null;
+  entry_hold?: string | null;
+  entry_post_agreed?: boolean | null;
+}
+
+interface SeatedProfileRow {
+  id: string;
+  display_name: string | null;
+  username: string | null;
+  is_horse: boolean | null;
+  horse_profile: unknown;
+  avatar_url: string | null;
+  use_real_name: boolean | null;
+  equipped_frame: string | null;
+  equipped_aura: string | null;
+  is_vip?: boolean | null;
+  vip_tier?: string | null;
+  vip_expires_at?: string | null;
+}
+
+/** One seat + its profile -> the SeatedPlayer shape the engine deals from. Shared by both read paths. */
+function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
+  return {
+    user_id: seat.user_id,
+    username: profile.is_horse
+      ? profile.display_name || profile.username || 'Player'
+      : profile.use_real_name
+        ? profile.display_name || profile.username || 'Player'
+        : profile.username || profile.display_name || 'Player',
+    stack: seat.stack,
+    seat_number: seat.seat_number || 1,
+    is_horse: profile.is_horse || false,
+    reconnect_membership: {
+      is_vip: profile.is_vip,
+      vip_tier: profile.vip_tier,
+      vip_expires_at: profile.vip_expires_at,
+    },
+    horse_profile: (profile.horse_profile ?? undefined) as string | undefined,
+    time_bank_remaining: seat.time_bank_remaining || 0,
+    time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
+    persisted_time_bank: {
+      remainingSeconds: seat.time_bank_remaining,
+      usesRemaining: seat.time_bank_uses_remaining,
+    },
+    is_sitting_out: seat.is_sitting_out === true,
+    sit_out_at: seat.sit_out_at ?? null,
+    entry_hold: seat.entry_hold ?? null,
+    entry_post_agreed: seat.entry_post_agreed === true,
+    avatar_url: profile.avatar_url || '',
+    equipped_frame: profile.equipped_frame || '',
+    equipped_aura: profile.equipped_aura || '',
+  };
 }
 
 /**
@@ -207,8 +222,26 @@ export interface StackWriteOptions {
   inflow?: number | null;
 }
 
+/**
+ * The INLINE ladder, and it is deliberately short.
+ *
+ * The dealing loop awaits postHandTasks (and so this write) before dealing the
+ * next hand, under a 20s DEAL_STEP_BUDGET_MS. Five attempts over ~11.5s is what
+ * fits there. It survives a blip; it CANNOT survive a PostgREST schema-cache
+ * reload, which takes ~28s on this database and happens on every migration -
+ * measured, and the reason eighteen hands were lost on 2026-09-08.
+ *
+ * The patience for that lives off this path, in pendingWrites.ts. Do not grow
+ * these two numbers to cover a reload: that parks the table for the length of
+ * the reload. `tests/a-reload-window-cannot-lose-a-hand.law.test.ts` pins both
+ * halves - this ladder stays inside the dealing budget, and the off-path budget
+ * stays longer than a reload.
+ */
 const STACK_WRITE_ATTEMPTS = 5;
 const STACK_WRITE_BACKOFF_MS = (attempt: number): number => 200 * 2 ** (attempt - 1);
+/** Key prefix for this table's off-path pending stack writes. */
+const stackWriteKey = (tableId: string, handNumber: number): string =>
+  `stack:${tableId}:${handNumber}`;
 
 export async function syncStacks(
   tableId: string,
@@ -228,11 +261,12 @@ export async function syncStacks(
     stack_before?: number;
     time_bank_uses_remaining?: number;
     time_bank_remaining?: number;
+    persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
-): Promise<void> {
-  if (players.length === 0) return;
+): Promise<boolean> {
+  if (players.length === 0) return true;
   if (handNumber === undefined || handNumber === null) {
     /* Every hand result names its hand (settlement step 8 reads the snapshot).
        A write with no hand number used to take the unchecked per-seat loop -
@@ -243,7 +277,7 @@ export async function syncStacks(
       new Error(`[DB] syncStacks called for table ${tableId} without a hand number - refused`),
       'DB.sync_stacks_without_hand'
     );
-    return;
+    return false;
   }
 
   /* ZERO-DRIFT phase 5 (2026-08-31) + chip standard (2026-09-04): the stack
@@ -262,6 +296,15 @@ export async function syncStacks(
      is final; a transport failure is retried, bounded, and then reported with
      the whole payload so the hand can be re-driven by hand. Time banks are
      not money and keep their own writes. */
+  /* THE NEXT WRITE FOR THIS TABLE IS THE BEST MOMENT TO RETRY THE LAST ONE.
+     Reaching here means the dealing loop is running again, so any hand this
+     table still owes is retried now, ahead of this one, while the database has
+     just shown it is answering. Deltas commute, so the order is cosmetic; what
+     matters is that a quiet table's lost hand does not sit waiting on a timer
+     tick. Failures inside are swallowed by the queue - this never blocks the
+     hand in hand. */
+  await drainPendingWrites(`stack:${tableId}:`);
+
   const rounded = (n: number): number => Math.round(n * 100) / 100;
   const deltaMode = players.every(
     (p) => typeof p.stack_before === 'number' && Number.isFinite(p.stack_before)
@@ -300,8 +343,17 @@ export async function syncStacks(
     error?: unknown;
     rebased?: Record<string, number>;
   };
-  let lastError = '';
-  for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
+  /* ONE ATTEMPT, SHARED BY BOTH LADDERS. The inline loop below runs it inside
+     the dealing budget; pendingWrites.ts runs the very same closure off the
+     dealing path afterwards, for as long as a schema reload can last. Returning
+     a verdict rather than a boolean is what lets the off-path retry tell a
+     refusal (final - stop) from an unreachable database (keep trying). */
+  type Verdict =
+    | { kind: 'landed' }
+    | { kind: 'refused'; detail: string }
+    | { kind: 'unreachable'; error: string };
+
+  const attemptStackWrite = async (): Promise<Verdict> => {
     let data: SettleResult | null = null;
     let error: { message?: string } | null = null;
     try {
@@ -328,7 +380,7 @@ export async function syncStacks(
         );
       }
       await persistTimeBanks(tableId, players);
-      return;
+      return { kind: 'landed' };
     }
 
     /* chip-std Lane F (2026-09-02) + 2026-09-04: a refusal is not a transport
@@ -357,112 +409,165 @@ export async function syncStacks(
           'DB.settle_hand_stacks_declined'
         );
       }
-      return;
+      return { kind: 'refused', detail: refusal || String(data.reason ?? 'unknown') };
     }
 
-    lastError = error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`;
+    return {
+      kind: 'unreachable',
+      error: error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`,
+    };
+  };
+
+  let lastError = '';
+  for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
+    const verdict = await attemptStackWrite();
+    if (verdict.kind === 'landed') return true;
+    if (verdict.kind === 'refused') return false;
+    lastError = verdict.error;
     if (attempt < STACK_WRITE_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, STACK_WRITE_BACKOFF_MS(attempt)));
     }
   }
 
-  // The database could not be reached for this hand at all. The correct
-  // stacks exist only in this process; say so with the whole payload, so the
-  // write can be re-driven by hand (the RPC is idempotent on table + hand).
-  reportError(
-    new Error(
-      `[DB] hand-stack write UNREACHABLE for table ${tableId} hand ${handNumber} after ${STACK_WRITE_ATTEMPTS} attempts ` +
-        `- ${lastError} - payload ${JSON.stringify(payload)}`
-    ),
-    'DB.settle_hand_stacks_unreachable'
-  );
-  try {
-    const { raiseFinancialAlert } = await import('../financialAlerts.js');
-    await raiseFinancialAlert(
-      'critical',
-      'DB.settle_hand_stacks_unreachable',
-      `Hand #${handNumber} at table ${tableId}: stack write unreachable after ${STACK_WRITE_ATTEMPTS} attempts; re-drive fn_ca_settle_hand_stacks_absolute with the attached payload`,
-      { table_id: tableId, hand_number: handNumber, last_error: lastError, payload }
+  /* THE DEALING PATH IS OUT OF BUDGET; THE HAND IS NOT LOST (2026-09-08).
+     This used to alarm here and stop, and the alarm's own words - "recoverable
+     only by hand" - were true: eighteen hands died exactly this way when two
+     migrations made PostgREST reload its schema cache for ~28s while this
+     ladder could only wait ~11.5s.
+
+     The next hand at this table cannot wait for a reload, but nothing else has
+     to stop for it either. Hand the payload to the off-path retry, which owns a
+     budget six reloads long, and let the loop deal on. The RPC is idempotent on
+     (table, hand), so a retry that arrives after a silent commit writes nothing,
+     and the write applies DIFFERENCES, so landing late is still landing right. */
+  const enqueued = enqueuePendingWrite({
+    key: stackWriteKey(tableId, handNumber),
+    describedAs: `hand-stack write for table ${tableId} hand ${handNumber}`,
+    attempt: async () => {
+      const verdict = await attemptStackWrite();
+      // A refusal is the database's final word, not a transport failure: it has
+      // already been reported above. Stop retrying it.
+      if (verdict.kind === 'landed') return { done: true };
+      if (verdict.kind === 'refused') return { done: true, refused: true };
+      return { done: false, error: verdict.error };
+    },
+    onGiveUp: async (finalError, elapsedMs, attempts) => {
+      reportError(
+        new Error(
+          `[DB] hand-stack write UNREACHABLE for table ${tableId} hand ${handNumber} after ` +
+            `${STACK_WRITE_ATTEMPTS} inline + ${attempts} off-path attempts over ` +
+            `${Math.round(elapsedMs / 1000)}s - ${finalError} - payload ${JSON.stringify(payload)}`
+        ),
+        'DB.settle_hand_stacks_unreachable'
+      );
+      try {
+        const { raiseFinancialAlert } = await import('../financialAlerts.js');
+        await raiseFinancialAlert(
+          'critical',
+          'DB.settle_hand_stacks_unreachable',
+          `Hand #${handNumber} at table ${tableId}: stack write unreachable after ${STACK_WRITE_ATTEMPTS} inline and ${attempts} off-path attempts over ${Math.round(elapsedMs / 1000)}s; re-drive fn_ca_settle_hand_stacks_absolute with the attached payload`,
+          {
+            table_id: tableId,
+            hand_number: handNumber,
+            last_error: finalError,
+            off_path_attempts: attempts,
+            elapsed_ms: elapsedMs,
+            payload,
+          }
+        );
+      } catch (err) {
+        reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
+      }
+    },
+  });
+  if (!enqueued) {
+    // Already owed for this exact hand; the queued entry is still trying.
+    console.warn(
+      `[DB] hand-stack write for table ${tableId} hand ${handNumber} is already queued off-path`
     );
-  } catch (err) {
-    reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
   }
+  return false;
 }
 
-async function persistTimeBanks(
+/**
+ * Compare against this hand's raw roster read, not a process-wide cache or an
+ * assumed successful write. Unchanged banks need no HTTP request. Unknown and
+ * null baselines still write, including a real zero; the database filter below
+ * remains the final no-op/WAL guard. Do not mark a failed write as persisted.
+ */
+function timeBankWritePayload(p: {
+  time_bank_uses_remaining?: number;
+  time_bank_remaining?: number;
+  persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
+}): { time_bank_uses_remaining?: number; time_bank_remaining?: number } {
+  const payload: { time_bank_uses_remaining?: number; time_bank_remaining?: number } = {};
+  if (
+    p.time_bank_uses_remaining !== undefined &&
+    p.time_bank_uses_remaining !== p.persisted_time_bank?.usesRemaining
+  )
+    payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
+  if (
+    p.time_bank_remaining !== undefined &&
+    p.time_bank_remaining !== p.persisted_time_bank?.remainingSeconds
+  )
+    payload.time_bank_remaining = p.time_bank_remaining;
+  return payload;
+}
+
+export async function persistTimeBanks(
   tableId: string,
-  players: { user_id: string; time_bank_uses_remaining?: number; time_bank_remaining?: number }[]
+  players: {
+    user_id: string;
+    time_bank_uses_remaining?: number;
+    time_bank_remaining?: number;
+    persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
+  }[]
 ): Promise<void> {
-  // Stacks are settled atomically; persist the non-money seat fields.
+  // Stacks are already settled atomically. Keep genuine bank changes inside
+  // the settlement barrier, but do not pay a round trip for every idle bank.
   await Promise.all(
-    players
-      .filter(
-        (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
-      )
-      .map(async (p) => {
-        const payload: Record<string, unknown> = {};
-        if (p.time_bank_uses_remaining !== undefined)
-          payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
-        if (p.time_bank_remaining !== undefined)
-          payload.time_bank_remaining = p.time_bank_remaining;
-        await supabase
-          .from('table_seats')
-          .update(payload)
-          .eq('table_id', tableId)
-          .eq('user_id', p.user_id)
-          .is('left_at', null)
-          // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
-          //
-          // This ran for EVERY seated player after EVERY hand, and a
-          // time bank almost never moves - it only changes on the hands
-          // where somebody actually burns it. So the overwhelming
-          // majority of these were an UPDATE that set a column to the
-          // value it already held.
-          //
-          // Postgres does not care much; Realtime does. `table_seats` is
-          // in the `supabase_realtime` publication, so every one of these
-          // no-op writes produced a WAL record that `realtime.apply_rls`
-          // then decoded and RLS-filtered for every subscriber on the
-          // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
-          // all table_seats writes, on a table that is 36% of everything
-          // Realtime decodes - and `realtime.list_changes` was the single
-          // largest consumer of the whole database at 17.5% of total time
-          // with a 460 ms mean, which is felt at the table as lag.
-          //
-          // The guard is a FILTER, not a diff we track in memory: if
-          // neither column differs from what is stored, zero rows match,
-          // Postgres writes nothing, and no WAL record is produced. There
-          // is no cache to go stale, it is correct across an engine
-          // restart and against any concurrent writer, and a genuine
-          // change still writes exactly as before.
-          //
-          // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
-          // three-valued logic, so a NULL column would NOT match `neq`
-          // and the row would be filtered out - silently skipping a write
-          // that IS needed. Both columns are NOT NULL with defaults today
-          // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
-          // clause is what keeps the guard correct if that ever changes.
-          .or(
-            timeBankChangedFilter({
-              time_bank_remaining: p.time_bank_remaining,
-              time_bank_uses_remaining: p.time_bank_uses_remaining,
-            })
-          );
-      })
+    players.map(async (p) => {
+      const payload = timeBankWritePayload(p);
+      if (Object.keys(payload).length === 0) return;
+      const { error } = await supabase
+        .from('table_seats')
+        .update(payload)
+        .eq('table_id', tableId)
+        .eq('user_id', p.user_id)
+        .is('left_at', null)
+        .or(timeBankChangedFilter(payload));
+      // PostgREST resolves SQL failures; they must not masquerade as success.
+      // The next fresh roster still differs and retries the remaining change.
+      if (error) reportError(error, 'DB.persist_time_banks_failed');
+    })
   );
 }
 
 /**
  * Sync tournament player chips from table_seats to tournament_players
  */
-export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<void> {
-  const { data: seats } = await supabase
+export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<boolean> {
+  const { data: seats, error: seatsError } = await supabase
     .from('table_seats')
     .select('user_id, stack')
     .eq('table_id', tableId)
     .is('left_at', null);
 
-  if (!seats || seats.length === 0) return;
+  /* This result gates the tournament elimination wake. Unknown input must not
+     be reported as a successful mirror: otherwise a sweep can run while
+     tournament_players still carries the pre-hand positive chip count and
+     miss a bust until the safety pass. */
+  if (seatsError) {
+    reportError(seatsError, 'supabase.syncTournamentChips.seats_read');
+    return false;
+  }
+  if (!seats || seats.length === 0) {
+    reportError(
+      new Error(`[DB] tournament chip sync for ${tournamentId}/${tableId} found no active seats`),
+      'supabase.syncTournamentChips.empty_seats'
+    );
+    return false;
+  }
 
   // ONE bulk statement, not one UPDATE per seat.
   //
@@ -498,7 +603,11 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
     p_tournament_id: tournamentId,
     p_updates: chipUpdates,
   });
-  if (error) reportError(error, 'supabase.syncTournamentChips');
+  if (error) {
+    reportError(error, 'supabase.syncTournamentChips');
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -577,4 +686,47 @@ export async function updateTableStatus(
     .update({ current_players: playerCount, status })
     .eq('id', tableId)
     .or(tableCountChangedFilter({ current_players: playerCount, status }));
+}
+
+/**
+ * Read the active seats and stored summary in one database snapshot. A stable
+ * table needs no second HTTP request. Changed summaries still use the database
+ * comparison filter; missing/failed reads never manufacture an empty table.
+ */
+export async function reconcileTableSeatCount(
+  tableId: string,
+  canMutate: () => boolean = () => true
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('current_players,status,seats:table_seats!table_seats_table_id_fkey(user_id)')
+    .eq('id', tableId)
+    .is('seats.left_at', null)
+    .maybeSingle();
+  if (error || !data || !Array.isArray(data.seats)) {
+    reportError(
+      new Error(
+        `table_unlock: seat count unavailable (${error?.message ?? 'missing seat relation'}); table status left unchanged`
+      ),
+      'ServerTableEngine.table_unlock_count_unavailable'
+    );
+    return null;
+  }
+  const count = data.seats.length;
+  const status = count >= 2 ? 'running' : 'waiting';
+  if (data.current_players !== count || data.status !== status) {
+    if (!canMutate()) return null;
+    const { error: updateError } = await supabase
+      .from('tables')
+      .update({ current_players: count, status })
+      .eq('id', tableId)
+      .or(tableCountChangedFilter({ current_players: count, status }));
+    if (updateError) {
+      reportError(
+        new Error(`table_unlock: summary update failed (${updateError.message})`),
+        'ServerTableEngine.table_unlock_update_failed'
+      );
+    }
+  }
+  return count;
 }

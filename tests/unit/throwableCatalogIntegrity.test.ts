@@ -27,6 +27,8 @@
  * the manifest is a second pair of eyes, not a chore.
  */
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import stillManifest from '../../src/throwables/stills.generated.json';
 import { throwableService } from '../../src/services/ThrowableService';
 
 /** Every `throwables/<stem>.jpg` present in the `images` bucket. */
@@ -85,8 +87,17 @@ const STORAGE_RENDERS = [
 describe('throwable catalog integrity', () => {
   const catalog = throwableService.getThrowables();
 
-  it('every catalog id has a real render in the images bucket', () => {
-    const orphanIds = catalog.map((t) => t.id).filter((id) => !STORAGE_RENDERS.includes(id));
+  it('every catalog id has a local delivery render or a verified storage render', () => {
+    const local: Record<string, Record<string, string>> = stillManifest;
+    const orphanIds = catalog
+      .map((t) => t.id)
+      .filter(
+        (id) =>
+          !STORAGE_RENDERS.includes(id) &&
+          ![192, 320, 640].every(
+            (size) => local[id]?.[size] && existsSync(`public/${local[id][size]}`)
+          )
+      );
 
     expect(
       orphanIds,
@@ -94,9 +105,9 @@ describe('throwable catalog integrity', () => {
     ).toEqual([]);
   });
 
-  it('the catalog holds 48 items and no duplicate ids', () => {
-    expect(catalog).toHaveLength(48);
-    expect(new Set(catalog.map((t) => t.id)).size).toBe(48);
+  it('the catalog holds 80 items and no duplicate ids', () => {
+    expect(catalog).toHaveLength(80);
+    expect(new Set(catalog.map((t) => t.id)).size).toBe(80);
   });
 
   it('ids are storage-safe stems, because the id IS the filename', () => {

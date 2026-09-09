@@ -68,10 +68,21 @@ interface WarmEntry {
   /** The roster read rejected; TablePage's prefetch makes its own. */
   seatsFailed: boolean;
   facade: MuxTableSocket | null;
+  socketPending: boolean;
   ttl: ReturnType<typeof setTimeout> | null;
 }
 
 const entries = new Map<string, WarmEntry>();
+
+/** A speculative read must never strand the real table's shared prefetch. */
+function withWarmDeadline<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('Table preparation timed out')), timeoutMs);
+    // Observe both eventual outcomes without cancelling the shared auth SDK.
+    request.then(resolve, reject);
+  }).finally(() => clearTimeout(timer));
+}
 
 /** Engine URL resolution shared with useEngineTableState (same env contract). */
 function engineBaseUrl(): string {
@@ -95,27 +106,46 @@ function dropEntry(tableId: string, entry: WarmEntry, closeFacade: boolean): voi
 }
 
 async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
-  if (!isMuxEnabled()) return;
-  if (engineSocketMux.isSubscribed(tableId)) return; // a live table owns it
-  let token: string | null = null;
-  try {
-    token = await getFreshAccessToken();
-  } catch {
+  if (!isMuxEnabled() || entry.socketPending) return;
+  if (entry.facade && entry.facade.readyState !== 3) {
+    entry.facade.probeWarmState();
     return;
   }
-  if (!token) return;
-  // The entry may have expired or been claimed while the token resolved.
-  if (entries.get(tableId) !== entry) return;
-  if (engineSocketMux.isSubscribed(tableId)) return;
-  const facade = engineSocketMux.acquireWarm(engineBaseUrl(), tableId, token);
-  if (!facade) return;
-  entry.facade = facade;
-  // The facade retains a bounded snapshot/delta stream for the real client.
-  // No historical animations or private events are replayed on entry.
-  facade.onmessage = null;
-  facade.onclose = () => {
-    if (entry.facade === facade) entry.facade = null;
-  };
+  if (engineSocketMux.isSubscribed(tableId)) return; // a live table owns it
+  entry.socketPending = true;
+  try {
+    const token = await withWarmDeadline(getFreshAccessToken(), 15_000);
+    if (!token) return;
+    // The entry may have expired or been claimed while the token resolved.
+    if (entries.get(tableId) !== entry) return;
+    if (engineSocketMux.isSubscribed(tableId)) return;
+    const facade = engineSocketMux.acquireWarm(engineBaseUrl(), tableId, token);
+    if (!facade) return;
+    entry.facade = facade;
+    // Retain bounded public state. Historical/private events are not replayed.
+    facade.onmessage = null;
+    facade.onclose = ({ code, reason }) => {
+      if (entry.facade !== facade) return;
+      entry.facade = null;
+      // A failed state probe should repair the warm-up now, while the player
+      // is still in the lobby. Release, supersession and refusal never retry.
+      if (
+        code === 4001 &&
+        (reason === 'no traffic after foreground state probe' ||
+          reason === 'no table state after foreground probe')
+      ) {
+        queueMicrotask(() => {
+          if (entries.get(tableId) === entry && document.visibilityState !== 'hidden') {
+            void warmSocket(tableId, entry);
+          }
+        });
+      }
+    };
+  } catch {
+    // Preparation is best-effort; a later intent may retry the connection.
+  } finally {
+    entry.socketPending = false;
+  }
 }
 
 /**
@@ -126,7 +156,12 @@ export function warmTable(tableId: string | null | undefined): void {
   if (!tableId) return;
   preloadRoute(`/table/${tableId}`);
   const existing = entries.get(tableId);
-  if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) return;
+  if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) {
+    // Fresh seats do not imply a live stream: actual entry may have reclaimed
+    // this speculative slot, or all slots may have been occupied earlier.
+    void warmSocket(tableId, existing);
+    return;
+  }
   // Refresh roster data without tearing down a healthy speculative stream.
   // Otherwise every refresh pays another SUBSCRIBE just as the user enters.
   const entry: WarmEntry = existing ?? {
@@ -136,14 +171,14 @@ export function warmTable(tableId: string | null | undefined): void {
     promise: Promise.resolve([]),
     seatsFailed: false,
     facade: null,
+    socketPending: false,
     ttl: null,
   };
   if (entry.ttl !== null) clearTimeout(entry.ttl);
   entry.startedAt = Date.now();
   entry.seatsFailed = false;
   entry.ttl = setTimeout(() => dropEntry(tableId, entry, true), WARM_TTL_MS);
-  const request = tableService
-    .getSeatedPlayers(tableId)
+  const request = withWarmDeadline(tableService.getSeatedPlayers(tableId), 5_000)
     .then((seats) => {
       if (entries.get(tableId) === entry && entry.promise === request) {
         entry.seats = seats;
@@ -205,7 +240,7 @@ export function observeLobbyTableWarmups(roots: HTMLElement[]): () => void {
   const visible = new Set<Element>();
   const recent = new Map<string, number>();
   preloadRoute('/table/lobby-preview');
-  void getFreshAccessToken()
+  void withWarmDeadline(getFreshAccessToken(), 15_000)
     .then((token) => {
       if (!disposed && token && isMuxEnabled()) engineSocketMux.prewarm(engineBaseUrl(), token);
     })
@@ -241,10 +276,25 @@ export function observeLobbyTableWarmups(roots: HTMLElement[]): () => void {
   for (const root of roots) {
     for (const node of root.querySelectorAll('[data-warm-table]')) observer?.observe(node);
   }
+  // Safari can resume without another intersection or online event. The
+  // visible rows are still known, but their speculative sockets may have
+  // expired while hidden. Retry immediately, including slots previously
+  // unavailable; warmTable itself preserves fresh rows and healthy owners.
+  const resume = () => {
+    if (disposed || document.visibilityState === 'hidden') return;
+    recent.clear();
+    warmVisible();
+  };
+  document.addEventListener('visibilitychange', resume);
+  window.addEventListener('pageshow', resume);
+  window.addEventListener('online', resume);
   const refresh = setInterval(warmVisible, SEATS_FRESH_MS);
   return () => {
     disposed = true;
     observer?.disconnect();
+    document.removeEventListener('visibilitychange', resume);
+    window.removeEventListener('pageshow', resume);
+    window.removeEventListener('online', resume);
     if (timer !== null) clearTimeout(timer);
     clearInterval(refresh);
   };

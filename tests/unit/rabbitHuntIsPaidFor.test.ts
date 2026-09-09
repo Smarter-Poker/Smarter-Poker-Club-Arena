@@ -341,10 +341,16 @@ describe('who is offered a hunt, and for how many cards', () => {
     // liveRabbitCards, which borrows the retained copy's for one render at
     // the hand boundary); the retained path paints the copy. Both are the
     // reveal as its own prop, never appended into `cards`.
+    // 2026-09-07 ("display and move on"): the ghost cards also ride the next
+    // hand's empty preflop slots while the board itself yields at once.
     expect(SQUASHED_TABLE_PAGE).toContain(
-      squash('rabbitCards={showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards}')
+      squash(
+        'rabbitCards={showRetainedRabbitBoard || showRetainedRabbitGhosts ? retainedRabbitCards : liveRabbitCards}'
+      )
     );
-    expect(TABLE_PAGE).toMatch(/: rabbitRevealedCards;/);
+    expect(SQUASHED_TABLE_PAGE).toContain(
+      squash('rabbitRevealedHandNumber === (tableState.handNumber ?? 0) ? rabbitRevealedCards : []')
+    );
     // The old shape must not come back: appending the reveal into `cards`
     // hides it behind the stage-derived count.
     expect(TABLE_PAGE).not.toMatch(/\.\.\.rabbitRevealedCards/);

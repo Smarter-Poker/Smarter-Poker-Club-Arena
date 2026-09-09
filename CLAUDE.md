@@ -69,8 +69,9 @@ platform plan wins.
 
 ## 1. DEPLOYMENT PIPELINE
 
-Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
-It deploys through the World Hub repo, NOT directly.
+Club Arena is a Vite + React SPA published to its own Hetzner static origin.
+The World Hub serves `/hub/club-arena/*` through a rewrite to that origin;
+Club Arena releases do not deploy through the World Hub repo. See section 1.1.
 
 ### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
 
@@ -94,7 +95,13 @@ automatic. Your job ends at step 2.
    swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
    `/hub/club-arena/*` -> that origin, so the player is still on
    `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
-   A publish takes seconds. Nothing is committed to the World Hub repo any
+   The rsync and the symlink swap take seconds. The PUBLISH does not:
+   measured 2026-09-08, merge to bundle-stamped was 3m54s, and the whole
+   pipeline is a four-job DAG with a full `npm run build` in the middle. The
+   old wording said "a publish takes seconds" and it is the first number an
+   agent reads here, so it was routinely mistaken for the end-to-end figure -
+   see `.agent/audits/2026-09-08-publish-pipeline-improvements.md` for the
+   stage-by-stage breakdown. Nothing is committed to the World Hub repo any
    more, and Vercel does not rebuild the World Hub for a Club Arena merge.
    Rollback is re-pointing the symlink; ten releases are kept.
 6. **Verify** by reading, never by assuming:
@@ -120,8 +127,13 @@ existed to prevent.
 
 **Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
 cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
-times, then raises an in-app notification), and the orphan sweep in
-`agent-autopilot.yml`. If production is behind `main` for more than ~25
+times, then raises an in-app notification), and the orphan sweep - which lives
+in `publish-watchdog.yml` too, at its "Find work that nothing will ever
+publish" step running `.github/scripts/orphan-work-watchdog.sh`. It was
+attributed to `agent-autopilot.yml` here until 2026-09-08; autopilot's only
+orphan-shaped step reaps stuck workflow RUNS, which is a different thing, and
+an agent sent to the wrong file finds nothing and concludes the net does not
+exist. If production is behind `main` for more than ~25
 minutes, something is genuinely broken - read the watchdog issue it filed.
 
 **There is no second publisher.** `tests/no-commit-left-behind.law.test.ts`
@@ -447,6 +459,22 @@ Rules for every agent working this project:
    pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
    "extend" them to retry other 5xx — replaying an executed write is a
    money-integrity hazard.
+7. **A PROBE NEVER CARRIES DDL, AND A CURSOR TABLE NEVER CARRIES A FOREIGN
+   KEY TO A HOT TABLE (2026-09-08, after a 4-minute production outage).** An
+   agent probed a migration by running it inside a transaction - `CREATE
+TABLE ... REFERENCES public.tournaments(id)` followed by ~10 s of function
+   work - then the client hung. Adding a foreign key takes SHARE ROW EXCLUSIVE
+   on the referenced table for the rest of the transaction, so every writer to
+   `tournaments` (the engine, the per-minute reconcile crons) queued behind it,
+   and Postgres was hard-killed at 22:53:36 UTC and came back at 22:57:05 with
+   "not properly shut down; automatic recovery". Rule 3 already said no DDL
+   probes; this is what it costs. So: probe a function by timing its QUERY, or
+   build its fixture in `pg_temp`; apply DDL in its own short transaction with
+   `lock_timeout` set, detached from any tool that can time out and kill the
+   client; and a scan/cache/cursor table that references a hot relation gets
+   NO foreign key - an orphan row in a scan log is harmless, a lock on
+   `tournaments` is not.
+   `docs/changelog/2026-09-08-deep-sweep-two-and-the-probe-that-took-the-database-down.md`.
 
 ---
 
@@ -837,6 +865,34 @@ replacement names (`command-center-v1`, `CommandGridIcon`) by name.
 Do not "resolve" the conflict by writing a third law. Two laws demanding
 opposite artwork is not a stricter repo, it is a coin flip decided by whichever
 test the next agent notices first.
+
+---
+
+## 10.7b THE HEADER PORTRAIT FRAME IS A HAIRLINE; THE RING IS MASKED (added 2026-09-07, binding)
+
+Dan, 2026-09-07, with a screenshot of the artwork's chrome ring showing
+around his photo: "the profile pic is supposed to be a .5 pixel black frame
+that 'appears invisible' instead of this thick broken frame that exists now."
+Fourth time he has said it (08-31, 09-03, 09-05, 09-07).
+
+The approved header artwork bakes a silver ring with a blue glow around the
+profile slot. **That ring is never shown.** `.profileBtn` in
+`GlobalHeader.module.css` paints an opaque black disc over the whole ornament
+at every width, and the photo's only frame is the 0.5px hairline on
+`.profileAvatarSlot`, declared once. The ruling and its history are in
+`docs/LAWS.md` (resolved conflicts); the law is
+`tests/the-header-portrait-frame-is-a-hairline.law.test.ts` (geometry, by
+arithmetic) and `tests/e2e/header-portrait-frame.spec.ts` (rendered pixels).
+
+**How it regressed, so you do not do it again:** "the profile image needs to
+be fixed" was read on 2026-09-01 as "show the ring". The disc was removed,
+the photo was seated in the ring's aperture, and tests were written calling
+the disc "a shape drawn over approved artwork". Every later agent obeyed those
+tests and restored only the hairline. If a request about the profile image
+seems to call for showing the ring, it does not - ask Dan before touching the
+disc. "NO BOXES OVER HEADER ICONS" is about focus rings on icons; the disc is
+its one deliberate exception. The World Hub and Club Commander headers carry
+the identical rule (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in that repo).
 
 ---
 

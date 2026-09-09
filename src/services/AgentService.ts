@@ -697,28 +697,37 @@ class AgentServiceClass {
    * a browser can establish and the reason bug 2 was possible at all.
    */
   async transferToPlayer(playerId: string, clubId: string, amount: number): Promise<boolean> {
-    if (amount <= 0) throw new Error('Transfer amount must be positive');
-
+    const { assertChipAmount, runAgentWalletOperation, confirmedAgentWalletReceipt } =
+      await import('./AgentWalletIntent');
+    assertChipAmount(amount);
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user) throw new Error('Sign In Before Transferring Chips');
     const resolvedId = (await resolveClubUUID(clubId)) || clubId;
-    const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
-      p_club_id: resolvedId,
-      p_to_user_id: playerId,
-      p_amount: amount,
-      p_destination: 'player_wallet',
-      p_reason: 'Agent Transfer To Player',
-      // Every send carries a retry key, so a lost response and the obvious
-      // retry replay instead of debiting a second time.
-      p_op_id: uuid(),
-    });
-    if (error) throw error;
-
-    const res = (Array.isArray(data) ? data[0] : data) as {
-      success?: boolean;
-      error?: string;
-    } | null;
-    if (!res?.success) throw new Error(res?.error || 'The Cashier Refused That Transfer');
-
-    return true;
+    return runAgentWalletOperation(
+      {
+        userId: auth.user.id,
+        clubId: resolvedId,
+        targetId: playerId,
+        kind: 'agent_send',
+        amount,
+      },
+      async (operation) => {
+        const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
+          p_club_id: resolvedId,
+          p_to_user_id: playerId,
+          p_amount: amount,
+          p_destination: 'player_wallet',
+          p_reason: 'Agent Transfer To Player',
+          p_op_id: operation.operationId,
+        });
+        if (error) throw error;
+        if (!confirmedAgentWalletReceipt(data, amount, 'agent_send')) {
+          throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
+        }
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_sent', userId: auth.user.id });
+        masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer_received', userId: playerId });
+      }
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

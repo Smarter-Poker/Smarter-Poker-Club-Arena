@@ -58,11 +58,12 @@ describe('levelDurationMs applies the halving conditionally (source pin)', () =>
     expect(body).toMatch(/acceleratedLevelMs\(/);
   });
 
-  it('isLateRegClosed uses the same cap the finalization gate uses', () => {
+  it('isLateRegClosed follows the durable database-owned entry-window state', () => {
     const at = BASE.indexOf('protected isLateRegClosed');
     expect(at).toBeGreaterThan(-1);
     const body = sliceMethod(BASE, 'protected isLateRegClosed');
     expect(body).toMatch(/prizePoolFinalized/);
-    expect(body).toMatch(/late_reg_levels/);
+    expect(body).toMatch(/tournamentEntryWindowClosed/);
+    expect(body).not.toMatch(/late_reg_levels|late_reg_mins|Date\.now/);
   });
 });

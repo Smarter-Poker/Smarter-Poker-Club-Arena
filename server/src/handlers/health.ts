@@ -58,23 +58,35 @@ export interface WsMetricsDeps {
 
 /** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
 export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
-  const status = deps.gameServer.getStatus() as { liveness?: string };
+  const status = deps.gameServer.getStatus() as {
+    liveness?: string;
+    status?: string;
+    dealerPrerequisitesReady?: boolean;
+    liveHorseDecision?: { phase?: string };
+  };
   /**
-   * A STANDBY ANSWERS 503, ON PURPOSE (2026-08-23).
+   * ONLY A DEALER-READY LEADER ANSWERS 200 (2026-09-08).
    *
-   * Two different consumers read this endpoint and need different answers:
+   * Caddy uses this HTTP code to choose the process that receives table and
+   * socket traffic. The listener opens before leadership, worker hydration and
+   * table discovery complete. Advertising 200 during that interval routed a
+   * browser to a leader whose SUBSCRIBE was waiting on the unpublished dealer
+   * gate, so the browser's handshake expired and displayed a reconnect loop.
    *
-   *   Caddy   an active health check expects 2xx. 503 marks this upstream
-   *           down, so every request goes to the leader. That is the whole
-   *           failover mechanism -- no routing table, no proxy.
-   *   Docker  the container HEALTHCHECK exits non-zero only when liveness is
-   *           'dead'. 'standby' is not 'dead', so the container stays healthy
-   *           and alive, which it must be in order to take over.
+   * Docker reads the JSON body rather than the HTTP code and deliberately
+   * keeps a standby alive. Its separate 300-second startup grace also keeps a
+   * hydrating leader alive. This code therefore expresses routing readiness,
+   * while `liveness` remains the process-survival verdict.
    *
    * The body is unchanged either way, so anything reading the payload (the
    * deploy verifier, /metrics scrapers, an operator) sees the same fields.
    */
-  sendJSON(res, status?.liveness === 'standby' ? 503 : 200, status);
+  const dealerReady =
+    status?.liveness === 'ok' &&
+    status?.status === 'ok' &&
+    status?.dealerPrerequisitesReady === true &&
+    status?.liveHorseDecision?.phase === 'ready';
+  sendJSON(res, dealerReady ? 200 : 503, status);
 }
 
 /**
@@ -122,7 +134,34 @@ export function handleMetrics(res: ServerResponse, deps: HealthDeps): void {
   // registry's exposition text. Default OFF keeps the response byte-for-byte
   // identical to the pre-wiring behavior.
   if (ENGINE_METRICS_ENABLED) {
-    body += '\n' + metricsRegistry.renderPrometheus();
+    /* Drop any family the always-on text already carries (2026-09-09). Some
+       instruments moved to `alwaysOnRegistry` because an alert reads them,
+       and the default registry still declares its own of the same name -
+       emitting both would give Prometheus one metric name with two HELP/TYPE
+       headers, which it rejects for the whole scrape. */
+    const already = new Set(
+      body
+        .split('\n')
+        .filter((l) => l.startsWith('# TYPE '))
+        .map((l) => l.split(' ')[2])
+    );
+    const gated = metricsRegistry
+      .renderPrometheus()
+      .split('\n')
+      .reduce<{ out: string[]; skip: boolean }>(
+        (acc, line) => {
+          if (line.startsWith('# HELP ') || line.startsWith('# TYPE ')) {
+            acc.skip = already.has(line.split(' ')[2]);
+          } else if (line && !line.startsWith('#')) {
+            const name = line.split(/[{ ]/)[0];
+            if (already.has(name)) acc.skip = true;
+          }
+          if (!acc.skip) acc.out.push(line);
+          return acc;
+        },
+        { out: [], skip: false }
+      ).out;
+    body += '\n' + gated.join('\n');
   }
   // Note: original index.ts does NOT attach CORS_HEADERS to /metrics — keep it
   // that way for byte-identical behavior. Prometheus scrapers don't need CORS.

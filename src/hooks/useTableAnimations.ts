@@ -8,14 +8,47 @@
  * and confetti trigger state.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { roomService } from '../services/RoomService';
 import type { ChipAnimationEvent } from '../components/table/ChipAnimation';
 import { preloadThrowableImages } from '../components/table/ThrowableImage';
+import { isThrowableEventId } from '../throwables/identity';
 
-/** Minimum gap between outgoing throws (ms) — prevents spam + diamond drain. */
-const THROW_RATE_LIMIT_MS = 1500;
+interface ThrowPlaybackState {
+  scope: object;
+  events: ThrowEvent[];
+  pending: ThrowEvent[];
+  receipts: string[];
+}
+
+const MAX_ACTIVE_THROWS = 12;
+
+// Receipt identity only deduplicates delivery; it does not authorize a throw.
+// Keep the history after animation completion, and bound it for long-lived tables.
+function appendThrow(
+  state: ThrowPlaybackState,
+  event: ThrowEvent,
+  receipt?: string
+): ThrowPlaybackState {
+  const key = isThrowableEventId(receipt) ? receipt.toLowerCase() : undefined;
+  if (
+    key &&
+    (state.receipts.includes(key) ||
+      state.events.some((queued) => queued.id.toLowerCase() === key) ||
+      state.pending.some((queued) => queued.id.toLowerCase() === key))
+  )
+    return state;
+  // Rendering capacity must not discard a delivered throw. Pending events
+  // mount only after a slot opens, so their animation and sound start together.
+  const canPlay = state.events.length < MAX_ACTIVE_THROWS;
+  return {
+    ...state,
+    events: canPlay ? [...state.events, event] : state.events,
+    pending: canPlay ? state.pending : [...state.pending, event],
+    receipts: state.receipts,
+  };
+}
 
 export interface UseTableAnimationsReturn {
   // Throwables
@@ -24,9 +57,9 @@ export interface UseTableAnimationsReturn {
   throwTargetSeat: number | null;
   setThrowTargetSeat: React.Dispatch<React.SetStateAction<number | null>>;
   activeThrows: ThrowEvent[];
-  handleThrowableSelect: (throwable: Throwable) => void;
+  handleThrowableSelect: (throwable: Throwable, requestId?: string) => void;
   handleThrowComplete: (eventId: string) => void;
-  receiveThrow: (fromSeat: number, toSeat: number, throwableId: string) => void;
+  receiveThrow: (fromSeat: number, toSeat: number, throwableId: string, eventId?: string) => void;
   // Chip animations
   chipAnimations: ChipAnimationEvent[];
   setChipAnimations: React.Dispatch<React.SetStateAction<ChipAnimationEvent[]>>;
@@ -48,11 +81,26 @@ export function useTableAnimations(
     preloadThrowableImages();
   }, []);
 
+  // A distinct identity for every table/account visit also rejects callbacks
+  // retained from an earlier visit to the same table.
+  const playbackScope = useMemo(() => ({ tableId, userId }), [tableId, userId]);
+
   // Throwable state
-  const lastThrowAtRef = useRef(0);
   const [showThrowableSelector, setShowThrowableSelector] = useState(false);
   const [throwTargetSeat, setThrowTargetSeat] = useState<number | null>(null);
-  const [activeThrows, setActiveThrows] = useState<ThrowEvent[]>([]);
+  const [throwPlayback, setThrowPlayback] = useState<ThrowPlaybackState>({
+    scope: playbackScope,
+    events: [],
+    pending: [],
+    receipts: [],
+  });
+  const activeThrows = throwPlayback.scope === playbackScope ? throwPlayback.events : [];
+
+  useEffect(() => {
+    setThrowPlayback({ scope: playbackScope, events: [], pending: [], receipts: [] });
+    setShowThrowableSelector(false);
+    setThrowTargetSeat(null);
+  }, [playbackScope]);
 
   // Chip animation state
   const [chipAnimations, setChipAnimations] = useState<ChipAnimationEvent[]>([]);
@@ -61,30 +109,41 @@ export function useTableAnimations(
   const [showConfetti, setShowConfetti] = useState(false);
 
   const handleThrowableSelect = useCallback(
-    async (throwable: Throwable) => {
+    async (throwable: Throwable, requestId?: string) => {
       if (!tableId || !userId || throwTargetSeat === null) return;
 
-      // Rate limit: this path bypassed the chat limiter entirely, so a held
-      // tap could emit unbounded broadcasts (and diamond charges).
-      const now = Date.now();
-      if (now - lastThrowAtRef.current < THROW_RATE_LIMIT_MS) return;
-      lastThrowAtRef.current = now;
+      // The selector has already consumed inventory through the server RPC,
+      // which enforces the account cooldown under a lock. A second timer
+      // here measures response arrival, not charge time: variable latency
+      // could discard an already-paid throw. Every approved selection plays.
 
-      const event = throwableService.createThrowEvent(heroSeat, throwTargetSeat, throwable.id);
+      const event = throwableService.createThrowEvent(
+        heroSeat,
+        throwTargetSeat,
+        throwable.id,
+        requestId
+      );
 
       if (event) {
-        setActiveThrows((prev) => [...prev, event]);
+        setThrowPlayback((prev) =>
+          prev.scope === playbackScope ? appendThrow(prev, event, requestId) : prev
+        );
         // 2026-08-20: impact audio moved INTO ThrowAnimation, which now plays a
         // launch whoosh at flight start and the item-specific SFX exactly on
         // landing (both sender and receivers). Playing the old generic thud
         // here fired at SEND time, before anything had hit.
-        roomService.sendChat(tableId, userId, `[THROW:${throwable.id}:${throwTargetSeat}]`);
+        roomService.sendChat(
+          tableId,
+          userId,
+          `[THROW:${throwable.id}:${throwTargetSeat}]`,
+          event.id
+        );
       }
 
       setShowThrowableSelector(false);
       setThrowTargetSeat(null);
     },
-    [tableId, userId, heroSeat, throwTargetSeat]
+    [tableId, userId, heroSeat, throwTargetSeat, playbackScope]
   );
 
   /**
@@ -92,16 +151,41 @@ export function useTableAnimations(
    * parses the `[THROW:id:seat]` broadcast. Without this the receiving client
    * dropped the message and showed nothing.
    */
-  const receiveThrow = useCallback((fromSeat: number, toSeat: number, throwableId: string) => {
-    const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId);
-    if (!event) return;
-    setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
-    // Audio handled by ThrowAnimation (launch + per-item impact), see above.
-  }, []);
+  const receiveThrow = useCallback(
+    (fromSeat: number, toSeat: number, throwableId: string, eventId?: string) => {
+      const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId, eventId);
+      if (!event) return;
+      setThrowPlayback((prev) =>
+        prev.scope === playbackScope ? appendThrow(prev, event, eventId) : prev
+      );
+      // Audio handled by ThrowAnimation (launch + per-item impact), see above.
+    },
+    [playbackScope]
+  );
 
-  const handleThrowComplete = useCallback((eventId: string) => {
-    setActiveThrows((prev) => prev.filter((e) => e.id !== eventId));
-  }, []);
+  const handleThrowComplete = useCallback(
+    (eventId: string) => {
+      setThrowPlayback((prev) => {
+        if (prev.scope !== playbackScope) return prev;
+        const events = prev.events.filter((event) => event.id !== eventId);
+        // Duplicate/stale completion callbacks must not advance the queue.
+        if (events.length === prev.events.length) return prev;
+        const available = MAX_ACTIVE_THROWS - events.length;
+        return {
+          ...prev,
+          receipts: isThrowableEventId(eventId)
+            ? [
+                ...prev.receipts.filter((key) => key !== eventId.toLowerCase()).slice(-511),
+                eventId.toLowerCase(),
+              ]
+            : prev.receipts,
+          events: [...events, ...prev.pending.slice(0, available)],
+          pending: prev.pending.slice(available),
+        };
+      });
+    },
+    [playbackScope]
+  );
 
   /* `getSeatPositions` is GONE (2026-08-28). It was deprecated on 2026-08-15
      — it invented an 800x500 landscape ellipse corresponding to nothing on

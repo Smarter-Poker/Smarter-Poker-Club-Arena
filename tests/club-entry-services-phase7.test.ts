@@ -43,6 +43,14 @@ describe('Phase 7 Club Entry service interactions', () => {
   it('passes one stable Join request to the RPC, clears recovery, and emits once', async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: {
+        arena: { id: 'club-uuid', asset: 'chips', is_platform: false, union_id: null },
+        member: false,
+        role: null,
+      },
+      error: null,
+    });
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
         success: true,
         status: 'active',
         club: { id: 'club-uuid', club_id: 25450, name: 'River Room' },
@@ -66,6 +74,14 @@ describe('Phase 7 Club Entry service interactions', () => {
   });
 
   it('keeps the original Join request available after an ambiguous failure', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        arena: { id: 'club-uuid', asset: 'chips', is_platform: false, union_id: null },
+        member: false,
+        role: null,
+      },
+      error: null,
+    });
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'Network unavailable' } });
     await expect(
       ClubJoinService.join({

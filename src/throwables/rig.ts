@@ -34,8 +34,10 @@
  * built from the `uid` the player passes (`useId()`), never written literally.
  * The knockout learned this; a test pins it here.
  *
- * ART. Hand-authored paths and gradients, like the knockout's star and stamp.
- * No raster, no `<image>`, no emoji glyphs, no text except a spec'd caption.
+ * ART. Approved premium stylized 3D atlases may be drawn through AtlasSprite.
+ * Effect art uses local versioned assets. AvatarCopy may reuse only the target's
+ * already-visible avatar for the specified copy gags. No emoji substitutes;
+ * text is limited to specified captions and an item's own answer/display.
  * Everything animates `transform` and `opacity` (a `filter` only where a
  * bloom is the point, and never animated), and no `will-change` anywhere:
  * eight simultaneous throws is the budget and a promoted layer each is a GPU
@@ -43,13 +45,20 @@
  */
 
 import type React from 'react';
+import type { AvatarSnapshot } from './avatarSnapshot';
 
 export interface RigProps {
   /** Instance-unique, safe for id attributes. Build every def id from it. */
   uid: string;
+  /** Shared identity, separate from the instance-local SVG prefix. */
+  throwId?: string;
+  /** Read-only copy of the target from this table, when visible. */
+  targetAvatar?: AvatarSnapshot;
 }
 
 export interface ThrowableRig {
+  /** Only copy-based gags request avatar readback. */
+  needsTargetAvatar?: boolean;
   Projectile: React.FC<RigProps>;
   Payload: React.FC<RigProps>;
 }

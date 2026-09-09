@@ -176,6 +176,9 @@
   display: flex;
   gap: 12px;
   padding: 20px 24px;
+  /* Home indicator (2026-09-08): 0 where there is no inset, so the web is
+     unchanged; on a notched phone the buttons lift clear of it. */
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
@@ -268,6 +271,7 @@
   left: 0;
   right: 0;
   border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Sizes for left/right */

@@ -457,7 +457,7 @@ export async function joinClub(
   if (role !== 'owner') {
     const { count, error: countError } = await supabase
       .from('club_members')
-      .select('*', { count: 'exact', head: true })
+      .select('user_id', { count: 'exact', head: true })
       .eq('user_id', user.user.id)
       .in('status', ['active', 'approved']);
 
@@ -761,7 +761,7 @@ async function _getUserMembershipsUncached(
         .select(
           `
       club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, lifecycle_status, retired_at, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
+      club:clubs(id, asset, is_platform, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, lifecycle_status, retired_at, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
         )
         .eq('user_id', userId)
@@ -787,7 +787,9 @@ async function _getUserMembershipsUncached(
   // Membership/history rows survive retirement by design. They must not put a
   // retired estate back into the active lobby carousel.
   const memberships = ((data || []) as unknown as (ClubMember & { club: Club })[]).filter(
-    (membership) => (membership.club as Club | null)?.lifecycle_status !== 'retired'
+    (membership) =>
+      (membership.club as Club | null)?.lifecycle_status !== 'retired' &&
+      (membership.club as (Club & { asset?: string }) | null)?.asset === 'chips'
   );
 
   // Enrich with LIVE member counts via grouped-count RPC
@@ -1220,9 +1222,11 @@ export async function canJoinMoreClubs(): Promise<{
   const { data: user } = await getAuthUser();
   if (!user.user) return { canJoin: false, currentCount: 0, maxClubs: MAX_CLUBS };
 
+  // `user_id`, not `*` (club_members has no `id`): a count needs one column, and `*` asks for every column
+  // including the ones a player is not granted (see tableSeatsCountNamesAColumn).
   const { count, error } = await supabase
     .from('club_members')
-    .select('*', { count: 'exact', head: true })
+    .select('user_id', { count: 'exact', head: true })
     .eq('user_id', user.user.id)
     .in('status', ['active', 'approved']);
 

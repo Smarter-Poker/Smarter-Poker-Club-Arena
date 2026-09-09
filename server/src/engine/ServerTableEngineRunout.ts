@@ -9,12 +9,10 @@
  */
 
 import { HandController, scaleWinnerCentsForRake } from './HandController.js';
-import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { InsuranceEngine } from './InsuranceEngine.js';
-import { monteCarloEquity } from './MonteCarloEquity.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
-import { insuranceEquity, leaderOuts } from './InsuranceEquity.js';
+import { leaderOuts } from './InsuranceEquity.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import {
   evaluateHand,
@@ -24,10 +22,12 @@ import {
   describeHand,
 } from './PokerEngine.js';
 import { deckSizeFor, isOmahaVariant, isShortDeckVariant } from './VariantRules.js';
-import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
+import type { Card, SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
+import type { EngineRecoveryEventClass } from './ServerTableEngineBase.js';
+import { getLiveHorseDecisionWorker, HorseDecisionAbortedError } from './horseDecision/index.js';
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
@@ -88,6 +88,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * paints; the next seat is simply live while it happens.
    */
   protected actionSettleMs = 0;
+
+  /** One cancellable ownership generation for every Pineapple worker batch. */
+  private pineappleDecisionGeneration = 0;
+  /** Humanlike-delay timers that have not submitted their worker job yet. */
+  private readonly pineappleDecisionDelayTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  /** Submitted jobs, keyed by seat so a human action can cancel its exact job. */
+  private readonly pineappleDecisionAbortControllers = new Map<number, AbortController>();
+  /** Deadline aborts for normal discard rounds; all-in jobs use the hand fence. */
+  private readonly pineappleDecisionDeadlineTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >();
 
   /**
    * Dan 2026-08-20: the beat a freshly dealt board gets before the first
@@ -160,6 +172,63 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected ritOfferDeadlineTs = 0;
 
+  /** The exact controller currently owned by the RIT terminal boundary. */
+  private ritResolutionOwner: HandController | null = null;
+
+  /**
+   * The resolver for dealHand's currently-owned completion wait. Dealing binds
+   * it to the exact controller before start and clears it on every ordinary
+   * exit. A terminal RIT failure uses this edge before teardown so stop can
+   * join the dealing loop instead of waiting on a timer teardown just cleared.
+   */
+  protected activeHandWaitRelease: {
+    controller: HandController;
+    release: (reason: string) => void;
+  } | null = null;
+
+  protected releaseActiveHandWaitForTerminalRecovery(
+    controller: HandController,
+    reason: string
+  ): boolean {
+    const owned = this.activeHandWaitRelease;
+    if (!owned || owned.controller !== controller) {
+      reportError(
+        new Error('terminal hand-wait release did not match the active controller'),
+        'ServerTableEngine.' + this.tableId + '.terminal_hand_wait_release_mismatch',
+        { reason, handNumber: this.handCount, hasOwnedWait: !!owned }
+      );
+      return false;
+    }
+    this.activeHandWaitRelease = null;
+    owned.release(reason);
+    return true;
+  }
+
+  /**
+   * Every restart kill must release dealHand's exact controller-owned wait
+   * before Base clears its timer and controller. Otherwise performStop joins a
+   * dealing loop whose only remaining resolve edges were just destroyed.
+   */
+  protected override killForRestart(
+    reason: string,
+    notifyOwner = true,
+    recoveryEventClass?: EngineRecoveryEventClass
+  ): void {
+    const activeController = this.activeHandWaitRelease?.controller;
+    if (activeController) {
+      try {
+        this.releaseActiveHandWaitForTerminalRecovery(activeController, 'restart:' + reason);
+      } catch (error) {
+        reportError(
+          error,
+          'ServerTableEngine.' + this.tableId + '.terminal_hand_wait_release_failed',
+          { reason, handNumber: this.handCount }
+        );
+      }
+    }
+    super.killForRestart(reason, notifyOwner, recoveryEventClass);
+  }
+
   /**
    * Announce unanimous consent (reference behavior: the panel closes for
    * everyone and a "players have accepted running multi-times" banner shows
@@ -218,6 +287,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return { success: false, error: 'No RIT state found' };
     }
 
+    // Only participants in this offer can decide how their pot runs. Once
+    // consent is final, late requests must not publish a different decision.
+    if (!state.allPlayerIds.includes(userId)) {
+      return { success: false, error: 'Player is not part of this Run It Twice offer' };
+    }
+    if (state.status !== 'offered') {
+      return { success: false, error: 'Run It Twice decision is already final' };
+    }
+
     /**
      * ── THE CHOOSER CANNOT "ACCEPT" (2026-08-27) ─────────────────────────
      *
@@ -272,7 +350,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         type: 'rit_chooser_decided',
         table_id: this.tableId,
         chooserPlayerId: userId,
-        chosenRuns: runs,
+        chosenRuns: state.chosenRuns,
         waitingFor: state.allPlayerIds.filter((pid) => !state.acceptedBy.has(pid)),
         accepted_ids: [...state.acceptedBy],
         deadline_ts: this.ritOfferDeadlineTs,
@@ -414,6 +492,206 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * 3. If RIT is enabled and exactly 2 players: offer RIT (handled separately via respondToRIT)
    * 4. After all offers resolved → resume with handController.continueRunout()
    */
+  private pineappleCardsKey(cards: readonly Card[]): string {
+    return cards.map((card) => `${card.rank}:${card.suit}`).join('|');
+  }
+
+  private cancelPineappleSeatDecision(seat: number): void {
+    const delayed = this.pineappleDecisionDelayTimers.get(seat);
+    if (delayed) clearTimeout(delayed);
+    this.pineappleDecisionDelayTimers.delete(seat);
+
+    const deadline = this.pineappleDecisionDeadlineTimers.get(seat);
+    if (deadline) clearTimeout(deadline);
+    this.pineappleDecisionDeadlineTimers.delete(seat);
+
+    this.pineappleDecisionAbortControllers.get(seat)?.abort();
+    this.pineappleDecisionAbortControllers.delete(seat);
+  }
+
+  private cancelPineappleDecisionWork(): void {
+    this.pineappleDecisionGeneration += 1;
+    const seats = new Set([
+      ...this.pineappleDecisionDelayTimers.keys(),
+      ...this.pineappleDecisionDeadlineTimers.keys(),
+      ...this.pineappleDecisionAbortControllers.keys(),
+    ]);
+    for (const seat of seats) this.cancelPineappleSeatDecision(seat);
+  }
+
+  /** Hand teardown owns worker cancellation just as it owns every raw timer. */
+  protected override clearLooseHandTimers(): void {
+    this.cancelPineappleDecisionWork();
+    super.clearLooseHandTimers();
+  }
+
+  private pineappleDecisionFenceIsCurrent(
+    controller: HandController,
+    handNumber: number,
+    generation: number,
+    leaseGeneration: string | null
+  ): boolean {
+    if (
+      this.pineappleDecisionGeneration !== generation ||
+      this.handController !== controller ||
+      this.handCount !== handNumber ||
+      !this.lifecycleCanMutate()
+    ) {
+      return false;
+    }
+    const currentLease = this.getEngineLeaseAuthority();
+    if (leaseGeneration === null) return currentLease === null;
+    return currentLease?.verified === true && currentLease.generation === leaseGeneration;
+  }
+
+  private async requestPineappleDiscard(
+    controller: HandController,
+    handNumber: number,
+    generation: number,
+    leaseGeneration: string | null,
+    seat: number,
+    cards: readonly Card[],
+    communityCards: readonly Card[],
+    gameVariant: string,
+    deadlineMs?: number
+  ): Promise<number> {
+    if (
+      !this.pineappleDecisionFenceIsCurrent(controller, handNumber, generation, leaseGeneration)
+    ) {
+      throw new HorseDecisionAbortedError('pineapple discard lifecycle fence moved');
+    }
+
+    this.cancelPineappleSeatDecision(seat);
+    const abortController = new AbortController();
+    this.pineappleDecisionAbortControllers.set(seat, abortController);
+    if (deadlineMs !== undefined) {
+      const deadlineTimer = setTimeout(
+        () => abortController.abort(),
+        Math.max(0, deadlineMs - Date.now())
+      );
+      deadlineTimer.unref?.();
+      this.pineappleDecisionDeadlineTimers.set(seat, deadlineTimer);
+    }
+
+    const cardsKey = this.pineappleCardsKey(cards);
+    const boardKey = this.pineappleCardsKey(communityCards);
+    const fence = [
+      this.tableId,
+      handNumber,
+      'pineapple-discard',
+      seat,
+      leaseGeneration ?? 'isolated',
+      generation,
+      cardsKey,
+      boardKey,
+    ].join(':');
+
+    try {
+      const result = await getLiveHorseDecisionWorker().decideDiscard(
+        {
+          generation,
+          fence,
+          cards: [...cards],
+          communityCards: [...communityCards],
+          gameVariant,
+        },
+        abortController.signal
+      );
+      if (
+        result.generation !== generation ||
+        result.fence !== fence ||
+        !this.pineappleDecisionFenceIsCurrent(
+          controller,
+          handNumber,
+          generation,
+          leaseGeneration
+        ) ||
+        !Number.isInteger(result.cardIndex) ||
+        result.cardIndex < 0 ||
+        result.cardIndex >= cards.length
+      ) {
+        throw new HorseDecisionAbortedError('pineapple discard result crossed its fence');
+      }
+      return result.cardIndex;
+    } finally {
+      if (this.pineappleDecisionAbortControllers.get(seat) === abortController) {
+        this.pineappleDecisionAbortControllers.delete(seat);
+        const deadlineTimer = this.pineappleDecisionDeadlineTimers.get(seat);
+        if (deadlineTimer) clearTimeout(deadlineTimer);
+        this.pineappleDecisionDeadlineTimers.delete(seat);
+      }
+    }
+  }
+
+  /**
+   * Price every all-in Pineapple discard on the sole live worker before the
+   * synchronous controller call deals that exact flop. The final controller
+   * install is atomic, so settlement never observes a partial result set.
+   */
+  private async preparePineappleRunoutDiscards(controller: HandController): Promise<boolean> {
+    const snapshot = controller.getPineappleRunoutDiscardSnapshot?.();
+    if (!snapshot) return true;
+
+    this.cancelPineappleDecisionWork();
+    const generation = this.pineappleDecisionGeneration;
+    const handNumber = this.handCount;
+    const lease = this.getEngineLeaseAuthority();
+    const leaseGeneration = lease?.verified === true ? lease.generation : null;
+    if (lease !== null && lease.verified !== true) return false;
+    const gameVariant = (this.activeHandVariant() || 'pineapple') as string;
+    const decisions = new Map<number, number>();
+
+    for (const player of snapshot.players) {
+      const cardIndex = await this.requestPineappleDiscard(
+        controller,
+        handNumber,
+        generation,
+        leaseGeneration,
+        player.seat,
+        player.cards,
+        snapshot.flop,
+        gameVariant
+      );
+      decisions.set(player.seat, cardIndex);
+    }
+
+    if (
+      !this.pineappleDecisionFenceIsCurrent(controller, handNumber, generation, leaseGeneration)
+    ) {
+      return false;
+    }
+    const current = controller.getPineappleRunoutDiscardSnapshot?.();
+    if (
+      !current ||
+      this.pineappleCardsKey(current.flop) !== this.pineappleCardsKey(snapshot.flop) ||
+      current.players.length !== snapshot.players.length ||
+      current.players.some((player, index) => {
+        const original = snapshot.players[index];
+        return (
+          !original ||
+          player.seat !== original.seat ||
+          this.pineappleCardsKey(player.cards) !== this.pineappleCardsKey(original.cards)
+        );
+      })
+    ) {
+      return false;
+    }
+    return controller.preparePineappleRunoutDiscards(snapshot.flop, decisions);
+  }
+
+  private refreshAllInPlayersFromController(
+    players: readonly SeatPlayer[],
+    controller: HandController
+  ): SeatPlayer[] {
+    // Narrow compatibility seam for legacy test/fault-injection controllers.
+    // Every production HandController has getState().
+    if (typeof controller.getState !== 'function') return [...players];
+    const currentBySeat = new Map(
+      controller.getState().players.map((player) => [player.seat, player] as const)
+    );
+    return players.map((player) => currentBySeat.get(player.seat) ?? player);
+  }
+
   /**
    * FIX 120: Crazy Pineapple — start a discard timer for all active players.
    * Each player has action_time_seconds to pick which card to discard.
@@ -424,38 +702,100 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     const seats = (event as any).seats as number[];
     const timeoutMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
+    const deadline = Date.now() + timeoutMs;
 
     // AUDIT V2 (2026-07-23): horses used to rely on the expiry auto-discard,
     // which always throws away the LAST card — effectively a random discard.
-    // Now each horse picks the equity-maximizing discard with a humanlike delay.
+    // Each horse still picks the equity-maximizing discard with a humanlike
+    // delay, but the Monte Carlo work belongs to the one live worker FIFO.
     const handControllerRef = this.handController;
     const hcState = handControllerRef.getState();
+    this.cancelPineappleDecisionWork();
+    const generation = this.pineappleDecisionGeneration;
+    const handNumber = this.handCount;
+    const lease = this.getEngineLeaseAuthority();
+    const leaseGeneration = lease?.verified === true ? lease.generation : null;
     for (const seat of seats) {
       const seated = this.seatedPlayers.find((p) => p.seat_number === seat);
       if (!seated?.is_horse) continue;
       const enginePlayer = hcState.players.find((p) => p.seat === seat);
       if (!enginePlayer || enginePlayer.is_folded || enginePlayer.cards.length !== 3) continue;
       const delay = 1200 + Math.random() * Math.min(4000, Math.max(1500, timeoutMs * 0.3));
-      setTimeout(() => {
-        if (!this.handController || this.handController !== handControllerRef) return;
-        try {
-          const current = this.handController.getState();
-          const p = current.players.find((pl) => pl.seat === seat);
-          if (!p || p.is_folded || p.cards.length !== 3) return;
-          // 2026-08-29: the HAND's variant. Pineapple discard logic is chosen
-          // per hand, and a bomb-pot variant override changes what the three
-          // cards in front of this horse actually are. Same seam as everywhere
-          // else that asks "what game is this hand".
-          const idx = HorseLogic.decideDiscard(
-            p.cards,
-            current.communityCards,
-            (this.activeHandVariant() || 'pineapple') as string
-          );
-          this.handController.performDiscard(seat, idx);
-        } catch {
-          /* expiry auto-discard remains the safety net */
+      const delayTimer = setTimeout(() => {
+        this.pineappleDecisionDelayTimers.delete(seat);
+        if (lease !== null && lease.verified !== true) {
+          return;
         }
+        if (
+          !this.pineappleDecisionFenceIsCurrent(
+            handControllerRef,
+            handNumber,
+            generation,
+            leaseGeneration
+          ) ||
+          !handControllerRef.owesPineappleDiscard(seat)
+        ) {
+          return;
+        }
+        const current = handControllerRef.getState();
+        const player = current.players.find((candidate) => candidate.seat === seat);
+        if (!player || player.is_folded || player.cards.length !== 3) return;
+        const cards = [...player.cards];
+        const communityCards = [...current.communityCards];
+        const gameVariant = (this.activeHandVariant() || 'pineapple') as string;
+
+        void this.requestPineappleDiscard(
+          handControllerRef,
+          handNumber,
+          generation,
+          leaseGeneration,
+          seat,
+          cards,
+          communityCards,
+          gameVariant,
+          deadline
+        )
+          .then((cardIndex) => {
+            if (
+              !this.pineappleDecisionFenceIsCurrent(
+                handControllerRef,
+                handNumber,
+                generation,
+                leaseGeneration
+              ) ||
+              !handControllerRef.owesPineappleDiscard(seat)
+            ) {
+              return;
+            }
+            const latest = handControllerRef.getState();
+            const latestPlayer = latest.players.find((candidate) => candidate.seat === seat);
+            if (
+              !latestPlayer ||
+              latestPlayer.is_folded ||
+              this.pineappleCardsKey(latestPlayer.cards) !== this.pineappleCardsKey(cards) ||
+              this.pineappleCardsKey(latest.communityCards) !==
+                this.pineappleCardsKey(communityCards)
+            ) {
+              return;
+            }
+            handControllerRef.performDiscard(seat, cardIndex);
+            if (handControllerRef.allPineappleDiscardsIn()) {
+              this.cancelPineappleDecisionWork();
+            }
+          })
+          .catch((error) => {
+            if (error instanceof HorseDecisionAbortedError) return;
+            reportError(
+              error,
+              'ServerTableEngine.' + this.tableId + '.pineapple_discard_worker_failed',
+              { seat, handNumber }
+            );
+            // The authoritative discard deadline remains the legal safety net:
+            // a seat that never produces an action folds when its clock expires.
+          });
       }, delay);
+      delayTimer.unref?.();
+      this.pineappleDecisionDelayTimers.set(seat, delayTimer);
     }
 
     // Start a single discard timer — when it expires, auto-discard for anyone remaining.
@@ -466,7 +806,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // aborted the loop: the remaining seats never discarded,
     // pineappleDiscardsRemaining never emptied, and the hand was parked at
     // pineapple_discard forever. Three pineapple tables run in production.
-    const deadline = Date.now() + timeoutMs;
     this.pineappleDiscardBaseDeadlineMs = deadline;
     this.pineappleDiscardDurationMs = timeoutMs;
     this.pineappleDiscardDeadlines.clear();
@@ -499,6 +838,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (!result) {
       return { success: false, error: 'Discard rejected' };
     }
+    // A human action owns the seat now. Cancel a delayed or queued horse job
+    // for that exact seat rather than letting it consume FIFO capacity only to
+    // be stale-discarded later.
+    this.cancelPineappleSeatDecision(player.seat_number);
 
     // If all discards are complete, the HandController will advance the game
     // and emit events that trigger broadcasting. Clear the discard timer.
@@ -521,6 +864,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
        seat had already acted, and folded them all when it fired. Ask the
        question the engine actually means. */
     if (this.handController.allPineappleDiscardsIn()) {
+      this.cancelPineappleDecisionWork();
       // Everyone is in - the beat, then the flop
       if (this.pineappleDiscardTimer) {
         clearTimeout(this.pineappleDiscardTimer);
@@ -593,6 +937,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // Optional call: RIT test harnesses inject minimal HandController mocks
     // that predate this method — absent method means single board.
     const doubleBoardHand = this.handController.isDoubleBoardActive?.() ?? false;
+    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
+    const insuranceCanPriceStandingBoard =
+      insuranceEnabled && board.length < 5 && allInPlayers.length >= 2;
+    let standaloneEquityRequested = false;
+    const requestStandaloneEquity = () => {
+      if (standaloneEquityRequested || allInPlayers.length < 2) return;
+      standaloneEquityRequested = true;
+      void this.broadcastAllInEquity(allInPlayers, board, pot, this.liveExtraBoards());
+    };
 
     // ═══════════════════════════════════════════════════════════════════════
     // EQUITY DISPLAY: Calculate and broadcast equity for ALL all-in players
@@ -604,10 +957,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // per-board equity IS the player's true share of the money. The most
     // dramatic runouts on the platform get their percentages back.
     // ═══════════════════════════════════════════════════════════════════════
-    if (allInPlayers.length >= 2) {
-      void this.broadcastAllInEquity(allInPlayers, board, pot, this.liveExtraBoards());
-    }
-    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
+    // A live single-board insurance street emits these percentages from its
+    // mandatory structured-pricing pass. Everything else retains the optional
+    // cosmetic worker path.
+    if (!insuranceCanPriceStandingBoard) requestStandaloneEquity();
     // SEQUENCING 2026-08-26 (Dan's leader-seat recording): when BOTH features
     // are on, the run-it-multi-times question comes FIRST and insurance
     // engages only if the hand resolves to a single run ("THE INSURANCE PART
@@ -769,6 +1122,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             pot,
             runs: forcedRuns,
           });
+          requestStandaloneEquity();
           void this.dealAndResolveRIT(allInPlayers);
           return;
         }
@@ -821,7 +1175,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             // Each pot is split across boards (half/half or third/third/third).
             // Each board is evaluated independently for each pot.
             // ═══════════════════════════════════════════════════════════════
-            this.dealAndResolveRIT(allInPlayers);
+            requestStandaloneEquity();
+            void this.dealAndResolveRIT(allInPlayers);
           } else if (this.handController) {
             // Declined or unanswered — the hand runs ONCE.
             this.emitRitSingleRun('no_agreement');
@@ -908,7 +1263,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         streetsLeft-- > 0
       ) {
         const before = controller.getCommunityCards().length;
+        if (controller.getPineappleRunoutDiscardSnapshot?.()) {
+          try {
+            if (!(await this.preparePineappleRunoutDiscards(controller))) return;
+          } catch (error) {
+            if (error instanceof HorseDecisionAbortedError) return;
+            reportError(
+              error,
+              'ServerTableEngine.' + this.tableId + '.pineapple_runout_worker_failed'
+            );
+            // No main-thread fallback: settlement remains parked behind the
+            // two-card invariant and the worker lifecycle failure is visible.
+            return;
+          }
+        }
         const result = controller.dealNextStreet();
+        // The worker-backed flop commit changes the authoritative hole cards
+        // from three to two. Never price later equity from the stale copies
+        // captured by ALL_IN_RUNOUT before that commit.
+        allInPlayers = this.refreshAllInPlayersFromController(allInPlayers, controller);
         this.broadcastCurrentState();
 
         if (controller.getCommunityCards().length === before) {
@@ -983,6 +1356,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * criticals, 32 live hands. A stale continuation is dropped, loudly.
    */
   protected safeContinueRunout(reason: string, controller: HandController | null): void {
+    if (this.runoutPayoutMutationUnsafe) {
+      reportError(
+        new Error('refused runout continuation after an external payout may have mutated stacks'),
+        'ServerTableEngine.' + this.tableId + '.unsafe_runout_continuation_refused',
+        { reason, handNumber: this.handCount }
+      );
+      this.killForRestart('unsafe_runout_continuation_after_payout');
+      return;
+    }
     if (!controller || this.handController !== controller) {
       reportError(
         new Error('stale runout continuation dropped (' + reason + ')'),
@@ -990,10 +1372,41 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       );
       return;
     }
+    if (controller.getPineappleRunoutDiscardSnapshot?.()) {
+      void this.preparePineappleRunoutDiscards(controller)
+        .then((prepared) => {
+          if (!prepared || this.handController !== controller) return;
+          if (this.runoutPayoutMutationUnsafe) {
+            this.killForRestart('unsafe_pineapple_runout_continuation_after_payout');
+            return;
+          }
+          try {
+            controller.continueRunout();
+          } catch (error) {
+            reportError(error, 'ServerTableEngine.' + this.tableId + '.forced_runout_failed', {
+              reason,
+            });
+            this.killForRestart('forced_runout_failed');
+          }
+        })
+        .catch((error) => {
+          if (error instanceof HorseDecisionAbortedError) return;
+          reportError(
+            error,
+            'ServerTableEngine.' + this.tableId + '.pineapple_forced_runout_worker_failed',
+            { reason }
+          );
+          if (this.handController === controller) {
+            this.killForRestart('pineapple_forced_runout_worker_failed');
+          }
+        });
+      return;
+    }
     try {
       controller.continueRunout();
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.forced_runout_failed', { reason });
+      this.killForRestart('forced_runout_failed');
     }
   }
 
@@ -1252,9 +1665,117 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    *
    * Bible V8 §4.20: Rake applies ONCE (not per board).
    */
-  protected dealAndResolveRIT(allInPlayers: import('../types.js').SeatPlayer[]): void {
-    if (!this.handController) return;
+  protected async dealAndResolveRIT(
+    allInPlayers: import('../types.js').SeatPlayer[]
+  ): Promise<void> {
+    const controller = this.handController;
+    if (!controller) return;
+    const captureRollbackState = () => ({
+      ritBoards: this.currentHandRitBoards,
+      ritBaseBoardCount: this.currentHandRitBaseBoardCount,
+      ritExtraBoards: this.currentHandRitExtraBoards.map((board) => [...board]),
+      communityCards: [...this.currentHandCommunityCards],
+      actions: [...this.currentHandActions],
+      pots: this.currentHandPots.map((pot) => ({ ...pot, eligible: [...pot.eligible] })),
+      perPotAwards: this.currentHandPerPotAwards.map((award) => ({ ...award })),
+      winnersByBoard: this.currentHandWinnersByBoard.map((winner) => ({ ...winner })),
+    });
+    let before: ReturnType<typeof captureRollbackState> | null = null;
+    let handCompleteObserved = false;
+    let unsubscribeCompletionProof: () => void = () => {};
 
+    try {
+      if (this.ritResolutionOwner) {
+        reportError(
+          new Error(
+            'duplicate RIT resolution refused while the prior resolution still owns the hand'
+          ),
+          'ServerTableEngine.' + this.tableId + '.duplicate_rit_resolution_refused',
+          { handNumber: this.handCount, payoutMutationUnsafe: this.runoutPayoutMutationUnsafe }
+        );
+        if (this.runoutPayoutMutationUnsafe) {
+          this.killForRestart('duplicate_rit_resolution_after_payout_mutation');
+        }
+        return;
+      }
+      this.ritResolutionOwner = controller;
+
+      // This wrapper is the sole terminal boundary for every asynchronous RIT
+      // resolver phase, including setup. Once creditRunoutWinnings starts there
+      // is no legal fallback to the ordinary path: that path pays the pot again.
+      before = captureRollbackState();
+      this.runoutPayoutMutationUnsafe = false;
+      unsubscribeCompletionProof = controller.onEvent((event) => {
+        if (
+          event.type === 'HAND_COMPLETE' &&
+          event.handNumber === this.handCount &&
+          this.runoutPayoutMutationUnsafe &&
+          this.ritResolutionOwner === controller
+        ) {
+          handCompleteObserved = true;
+        }
+      });
+      await this.dealAndResolveRITUnchecked(allInPlayers, controller);
+      if (this.runoutPayoutMutationUnsafe && !handCompleteObserved) {
+        throw new Error('RIT payout mutation completed without HAND_COMPLETE proof');
+      }
+      if (this.ritResolutionOwner === controller) {
+        this.runoutPayoutMutationUnsafe = false;
+        this.ritResolutionOwner = null;
+      }
+    } catch (error) {
+      const phase = this.runoutPayoutMutationUnsafe ? 'post_credit' : 'pre_credit';
+      reportError(error, 'ServerTableEngine.' + this.tableId + '.rit_resolution_failed', {
+        phase,
+        handNumber: this.handCount,
+      });
+
+      if (this.runoutPayoutMutationUnsafe) {
+        // Stack credit may be partial or complete, and HAND_COMPLETE has not
+        // been proved. Quarantine this generation so authoritative crash
+        // recovery decides the hand exactly once. Never call continueRunout.
+        this.killForRestart('rit_resolution_failed_after_payout_mutation');
+        return;
+      }
+
+      if (this.ritResolutionOwner === controller) this.ritResolutionOwner = null;
+      if (this.handController !== controller) return;
+
+      // No payout mutation started. Restore every RIT-only capture before the
+      // normal single-board path writes its own board, pots, and action trail.
+      if (before) {
+        this.currentHandRitBoards = before.ritBoards;
+        this.currentHandRitBaseBoardCount = before.ritBaseBoardCount;
+        this.currentHandRitExtraBoards = before.ritExtraBoards;
+        this.currentHandCommunityCards = before.communityCards;
+        this.currentHandActions = before.actions;
+        this.currentHandPots = before.pots;
+        this.currentHandPerPotAwards = before.perPotAwards;
+        this.currentHandWinnersByBoard = before.winnersByBoard;
+      }
+      this.safeContinueRunout('rit_resolution_failed_before_payout', controller);
+    } finally {
+      try {
+        unsubscribeCompletionProof();
+      } catch (error) {
+        reportError(
+          error,
+          'ServerTableEngine.' + this.tableId + '.rit_completion_proof_unsubscribe_failed',
+          { handNumber: this.handCount }
+        );
+      }
+    }
+  }
+
+  /**
+   * The RIT calculation itself. All callers go through dealAndResolveRIT so a
+   * rejected worker job or synchronous settlement throw cannot escape without
+   * being classified against the payout mutation fence.
+   */
+  private async dealAndResolveRITUnchecked(
+    allInPlayers: import('../types.js').SeatPlayer[],
+    controller: HandController
+  ): Promise<void> {
     const runs = this.runItTwiceEngine.getChosenRuns(this.tableId);
     // RIT VERIFIER FIX 2026-08-21: the verifier needs to know this hand
     // resolved across multiple boards (see currentHandRitBoards).
@@ -1276,12 +1797,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // flop, turn and river all land in one tick with no equity updates. A
       // hand that ends up running ONCE must still be watchable, exactly like
       // the ordinary all-in path. Pace it.
-      void this.pacedAllInRunout(allInPlayers, this.handController.getState().pot);
+      void this.pacedAllInRunout(allInPlayers, controller.getState().pot);
       return;
     }
 
-    const existingBoard = this.handController.getCommunityCards();
-    const remainingDeck = this.handController.getRemainingDeck();
+    const existingBoard = controller.getCommunityCards();
+    const remainingDeck = controller.getRemainingDeck();
     const cardsNeeded = 5 - existingBoard.length;
     // POKERBROS PARITY 2026-08-26: the hand-completion hold sizes itself from
     // this — the client reveals each board street by street from here.
@@ -1311,7 +1832,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       this.currentHandRitBoards = 0;
       this.currentHandRitBaseBoardCount = 0;
       this.emitRitSingleRun('deck_too_short');
-      void this.pacedAllInRunout(allInPlayers, this.handController.getState().pot);
+      void this.pacedAllInRunout(allInPlayers, controller.getState().pot);
       return;
     }
 
@@ -1320,6 +1841,28 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     for (let r = 0; r < runs; r++) {
       const runCards = remainingDeck.slice(r * cardsNeeded, (r + 1) * cardsNeeded);
       boards.push([...existingBoard, ...runCards]);
+    }
+
+    // RIT builds its boards outside HandController, so it never reaches the
+    // normal flop-deal hook. Resolve the same all-in two-card invariant here,
+    // on the canonical first run, before any pot is evaluated or credited.
+    if (controller.getPineappleRunoutDiscardSnapshot?.()) {
+      try {
+        if (!(await this.preparePineappleRunoutDiscards(controller))) return;
+      } catch (error) {
+        if (error instanceof HorseDecisionAbortedError) return;
+        throw error;
+      }
+      if (
+        this.handController !== controller ||
+        !controller.commitPreparedPineappleRunoutDiscards(boards[0].slice(0, 3))
+      ) {
+        throw new Error('Pineapple RIT discard result did not match the canonical first flop');
+      }
+      const currentPlayers = controller.getState().players;
+      allInPlayers = allInPlayers.map(
+        (player) => currentPlayers.find((current) => current.seat === player.seat) ?? player
+      );
     }
 
     // HAND HISTORY 2026-08-18: these boards are built OUTSIDE HandController,
@@ -1360,9 +1903,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // circuit), while the identical hand run once... also leaked, fixed the
     // same day in runOutCommunityCards. Idempotent when the all-in came
     // postflop.
-    this.handController.markFlopSeen();
-    this.handController.settleUncalledBet();
-    const pots = this.handController.computeLivePots();
+    controller.markFlopSeen();
+    controller.settleUncalledBet();
+    const pots = controller.computeLivePots();
 
     /**
      * ── THE POT BREAKDOWN EXISTS ONLY HERE ON A RIT HAND (2026-09-05) ──
@@ -1392,9 +1935,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
         : [],
     }));
-    const variant = this.handController.getVariant();
-    const dealerSeat = this.handController.getDealerSeat();
-    const state = this.handController.getState();
+    const variant = controller.getVariant();
+    const dealerSeat = controller.getDealerSeat();
+    const state = controller.getState();
 
     // Distribution: playerId → total chips won across all boards (pre-rake).
     const rawDistribution = new Map<string, number>();
@@ -1488,7 +2031,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     // Deduct rake + BBJ once, scaling every winner proportionally (integer cents).
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
-    const { rake, bbjFee } = this.handController.computeRakeAndBBJ();
+    const { rake, bbjFee } = controller.computeRakeAndBBJ();
     const netPot = Math.max(0, totalPot - rake - bbjFee);
 
     // Scale every winner's pre-rake share down to the post-rake total.
@@ -1623,7 +2166,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         const key = `${a.board ?? 1}|${a.userId}|${low ? 'lo' : 'hi'}`;
         const existing = byRunWinner.get(key);
         if (existing) {
-          existing.amount += a.amount;
+          // To the cent, as the single-board sibling does
+          // (HandController, currentHandWinners): this accumulator is
+          // written verbatim into hand_history.winners_by_board (jsonb,
+          // no scale).
+          existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
         } else {
           byRunWinner.set(key, {
             board: a.board ?? 1,
@@ -1649,7 +2196,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // seatedPlayers are deliberately NOT credited here: the WINNERS sync is
     // the single path that copies engine stacks outward, and doing it twice
     // would double-count if the two ever drift.
-    this.handController.creditRunoutWinnings(totalDistribution);
+    // Arm before entering the mutator: a fault-injected or future mutator can
+    // throw after applying only part of the map. From this instruction until
+    // finalizeRunout returns, ordinary continuation is financially unsafe.
+    this.runoutPayoutMutationUnsafe = true;
+    controller.creditRunoutWinnings(totalDistribution);
 
     // ── Showdown reveal (review fix 2026-08-25: emitted BEFORE rit_result) ──
     // The client's presentation order is reveal-then-boards-then-pots; when
@@ -1746,6 +2297,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         amount: a.amount,
         low: a.low === true,
         hand_name: a.hand?.name ?? null,
+        cards: a.hand?.cards ?? [],
       })),
       // What is actually paid out across every run, after rake and drops.
       // The felt's per-board share labels divide THIS, not the gross pot.
@@ -1823,7 +2375,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     // FIX 117: skipDistribution=true — RIT already distributed pots per-board above.
     // Without this, completeHand() re-distributes ALL pots → double money.
-    this.handController.finalizeRunout(true);
+    controller.finalizeRunout(true);
   }
 
   /**
@@ -1880,25 +2432,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }
   }
 
-  protected computeInsurancePricing(
-    leaderId: string,
-    allInForOffer: Array<{
-      playerId: string;
-      holeCards: import('../types.js').Card[];
-      atRisk: number;
-    }>,
-    board: import('../types.js').Card[],
-    variant: string,
-    shortDeck: boolean
-  ): { equity: number; strictLossPct: number; pushPct: number } | undefined {
-    const leader = allInForOffer.find((p) => p.playerId === leaderId);
-    if (!leader) return undefined;
-    const opponents = allInForOffer.filter((p) => p.playerId !== leaderId).map((p) => p.holeCards);
-    if (opponents.length === 0) return undefined;
-    const r = insuranceEquity(leader.holeCards, opponents, board, variant, shortDeck);
-    return { equity: r.equity, strictLossPct: r.strictLossPct, pushPct: r.pushPct };
-  }
-
   /**
    * BOARDS 2..N AS THEY STAND RIGHT NOW (2026-08-29).
    *
@@ -1930,6 +2463,30 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     return extras.length > 0 ? extras : undefined;
   }
 
+  /** Emit the canonical public payload from values already computed off-thread. */
+  protected emitAllInEquityPayload(
+    players: import('../types.js').SeatPlayer[],
+    percentages: number[],
+    board: import('../types.js').Card[],
+    pot: number,
+    boardCount: number
+  ): void {
+    this.hub?.emitEvent(this.tableId, {
+      type: 'all_in_equity',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      board: board.map((card) => `${card.rank}${card.suit}`),
+      board_count: boardCount,
+      pot,
+      equities: players.map((player, index) => ({
+        userId: player.user_id,
+        username: player.username || 'Unknown',
+        equity: Math.round((percentages[index] ?? 0) * 10) / 10,
+        seat: player.seat,
+      })),
+    });
+  }
+
   protected async broadcastAllInEquity(
     allInPlayers: import('../types.js').SeatPlayer[],
     board: import('../types.js').Card[],
@@ -1942,13 +2499,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     extraBoards?: import('../types.js').Card[][]
   ): Promise<void> {
-    // PERF FIX (2026-07-24): equity now runs on the EquityWorkerPool (worker
-    // threads) instead of a synchronous monteCarloEquity(...,5000) with a crypto
-    // syscall per shuffle swap — which froze EVERY table for hundreds of ms on
-    // each all-in. In an all-in every player's cards are known, so we price each
-    // hand against the KNOWN others in ONE simulation (the true all-in equity),
-    // off the main event loop. Degrades to a synchronous compute only if the pool
-    // is unavailable.
+    // Equity runs only on EquityWorkerPool worker threads. If the pool cannot
+    // answer inside its bounded deadline, percentages are omitted; the runout
+    // keeps its normal pace and the authoritative event loop never computes a
+    // fallback.
     // VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant — a
     // PLO bomb hand at an NLH table must be priced with the Omaha evaluator.
     const equityVariant = this.activeHandVariant() || this.tableInfo?.game_variant || 'nlh';
@@ -1980,6 +2534,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
     // MULTI-BOARD EQUITY 2026-08-28: all live boards, board 1 first.
     const allBoards = [board, ...(extraBoards ?? [])];
+    const equityController = this.handController;
+    if (!equityController) return;
+    const equityHandNumber = this.handCount;
+    const requestedBoardKey = allBoards
+      .map((liveBoard) => liveBoard.map((card) => `${card.rank}${card.suit}`).join(','))
+      .join('|');
     // ── ADDITIVE observability (#5): time the all-in equity computation ──
     const equityComputeStartMs = Date.now();
 
@@ -2005,6 +2565,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           })
         )
       );
+      if (
+        !this.lifecycleCanMutate() ||
+        this.handController !== equityController ||
+        this.handCount !== equityHandNumber
+      ) {
+        return;
+      }
+      // Hand identity alone is not enough for this fire-and-forget display
+      // job. A fast runout can advance to the next street while the worker is
+      // still pricing the previous board. Rebuild the exact live board tuple
+      // after the await and drop a result whose visual generation has moved.
+      const liveState = equityController.getState();
+      const currentBoards = [
+        liveState.communityCards,
+        ...[liveState.communityCards2, liveState.communityCards3].filter(
+          (liveBoard): liveBoard is import('../types.js').Card[] =>
+            Array.isArray(liveBoard) && liveBoard.length > 0
+        ),
+      ];
+      const currentBoardKey = currentBoards
+        .map((liveBoard) => liveBoard.map((card) => `${card.rank}${card.suit}`).join(','))
+        .join('|');
+      if (currentBoardKey !== requestedBoardKey) return;
       const fractions = hands.map(
         (_, i) => perBoard.reduce((s, f) => s + (f[i] ?? 0), 0) / allBoards.length
       );
@@ -2016,56 +2599,19 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           seat: valid[i].seat,
         });
       }
-    } catch {
-      // Degraded fallback (pool unavailable).
-      // ANIMATION AUDIT 2026-08-19: this used to call monteCarloEquity, which
-      // simulates RANDOM opponents instead of the KNOWN all-in hands and has
-      // no Omaha branch — its numbers were wrong for PLO and noisy everywhere.
-      // insuranceEquity is exact vs the known hands and variant-aware
-      // (flop/turn enumerate <=990 boards; preflop samples 6,000 seeded).
-      const variantName = equityVariant;
-      for (const player of valid) {
-        try {
-          const opponents = valid
-            .filter((o) => o.user_id !== player.user_id)
-            .map((o) => o.cards || []);
-          // MULTI-BOARD 2026-08-28: exact per-board equity, averaged.
-          let sum = 0;
-          for (const b of allBoards) {
-            sum += insuranceEquity(
-              player.cards || [],
-              opponents,
-              b,
-              variantName,
-              isShortDeck
-            ).equity;
-          }
-          equities.push({
-            userId: player.user_id,
-            username: player.username || 'Unknown',
-            equity: Math.round((sum / allBoards.length) * 10) / 10,
-            seat: player.seat,
-          });
-        } catch {
-          // Last resort for this one player: NLH-only Monte-Carlo, but never
-          // for Omaha (no evaluator — better to omit than to lie).
-          if (!isOmaha) {
-            const equity = monteCarloEquity(
-              player.cards || [],
-              board,
-              valid.length - 1,
-              1000,
-              isShortDeck
-            );
-            equities.push({
-              userId: player.user_id,
-              username: player.username || 'Unknown',
-              equity: Math.round(equity * 10) / 10,
-              seat: player.seat,
-            });
-          }
-        }
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.' + this.tableId + '.all_in_equity_worker_failed', {
+        handNumber: this.handCount,
+        boardCount: allBoards.length,
+      });
+      try {
+        EngineMetrics.allInEquityDuration.observe(Date.now() - equityComputeStartMs, {
+          table_id: this.tableId,
+        });
+      } catch {
+        /* metrics must never affect gameplay */
       }
+      return;
     }
 
     // ── ADDITIVE observability (#5): observe all-in equity compute duration ──
@@ -2076,18 +2622,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     } catch {
       /* metrics must never affect gameplay */
     }
-    // Broadcast to all clients — this is public information during all-in
-    this.hub?.emitEvent(this.tableId, {
-      type: 'all_in_equity',
-      table_id: this.tableId,
-      hand_number: this.handCount,
-      board: board.map((c) => `${c.rank}${c.suit}`),
-      // MULTI-BOARD 2026-08-28: how many boards the percentages average over
-      // (1 on normal hands) — clients may caption "avg across N boards".
-      board_count: allBoards.length,
+    this.emitAllInEquityPayload(
+      valid,
+      equities.map((entry) => entry.equity),
+      board,
       pot,
-      equities,
-    });
+      allBoards.length
+    );
   }
 
   /**
@@ -2123,9 +2664,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // 20-second offer windows; the live hand can die and be replaced while it
     // does. Every resumption checks identity against this - a bare null-check
     // on this.handController happily walks into the NEXT hand.
-    controller: HandController
+    controller: HandController,
+    offerRevealPauseMs = 0
   ): Promise<void> {
-    if (this.handController !== controller) return;
+    if (!this.lifecycleCanMutate() || this.handController !== controller) return;
+    const pricingHandNumber = this.handCount;
 
     const offerTimeout = 25; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
     const result = { board, complete: board.length >= 5 };
@@ -2202,27 +2745,110 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     const variant = this.activeHandVariant();
     const isOmaha = isOmahaVariant(variant);
-    const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
     const isShortDeckPreflop = isShortDeckVariant(variant);
+    const handEvaluator = isOmaha
+      ? evaluateOmahaHand
+      : (holeCards: import('../types.js').Card[], liveBoard: import('../types.js').Card[]) =>
+          evaluateHand(holeCards, liveBoard, isShortDeckPreflop);
+
+    // One worker operation prices the complete known all-in field. It replaces
+    // the former per-player preflop loop plus a second leader-only pricing
+    // pass. No unavailable/error/timeout path is allowed to compute here.
+    const allInForOffer = allInPlayers.map((player) => ({
+      playerId: player.user_id,
+      holeCards: player.cards || [],
+      atRisk: player.totalInvested ?? 0,
+    }));
+    const pricingStartedAt = Date.now();
+    let allPricing: Awaited<ReturnType<ReturnType<typeof getEquityPool>['estimateInsurance']>>;
+    try {
+      allPricing = await getEquityPool().estimateInsurance(
+        allInForOffer.map((player) => player.holeCards),
+        result.board,
+        variant,
+        isShortDeckPreflop
+      );
+      // Crossing a worker await is an authority boundary. Re-prove process,
+      // distributed lease, exact controller, and exact hand before mutation.
+      if (
+        !this.lifecycleCanMutate() ||
+        this.handController !== controller ||
+        this.handCount !== pricingHandNumber
+      ) {
+        return;
+      }
+      if (
+        allPricing.length !== allInForOffer.length ||
+        allPricing.some(
+          (pricing) =>
+            !Number.isFinite(pricing?.equity) ||
+            !Number.isFinite(pricing?.strictLossPct) ||
+            !Number.isFinite(pricing?.pushPct)
+        )
+      ) {
+        throw new Error('Insurance worker returned incomplete structured pricing');
+      }
+      try {
+        EngineMetrics.allInEquityDuration.observe(Date.now() - pricingStartedAt, {
+          table_id: this.tableId,
+        });
+      } catch {
+        /* metrics must never affect gameplay */
+      }
+    } catch (error) {
+      try {
+        EngineMetrics.allInEquityDuration.observe(Date.now() - pricingStartedAt, {
+          table_id: this.tableId,
+        });
+      } catch {
+        /* metrics must never affect gameplay */
+      }
+      reportError(error, 'ServerTableEngine.' + this.tableId + '.insurance_pricing_worker_failed', {
+        handNumber: pricingHandNumber,
+      });
+      if (
+        this.lifecycleCanMutate() &&
+        this.handController === controller &&
+        this.handCount === pricingHandNumber
+      ) {
+        await this.pacedAllInRunout(allInPlayers, pot);
+      }
+      return;
+    }
+    const pricingByPlayer = new Map(
+      allInForOffer.map((player, index) => [player.playerId, allPricing[index]] as const)
+    );
+    this.emitAllInEquityPayload(
+      allInPlayers,
+      allPricing.map((pricing) => pricing.equity),
+      result.board,
+      pot,
+      1
+    );
+    if (offerRevealPauseMs > 0) {
+      await this.sleep(offerRevealPauseMs);
+      if (
+        !this.lifecycleCanMutate() ||
+        this.handController !== controller ||
+        this.handCount !== pricingHandNumber
+      ) {
+        return;
+      }
+    }
 
     let bestHandPlayer: { playerId: string; holeCards: import('../types.js').Card[] } | null = null;
     let isTied = false;
     if (board.length < 3) {
       let bestEq = -1;
       for (const p of offerPlayers) {
-        const opps = offerPlayers.filter((o) => o.playerId !== p.playerId).map((o) => o.holeCards);
-        if (opps.length === 0 || p.holeCards.length < 2) continue;
-        try {
-          const r = insuranceEquity(p.holeCards, opps, result.board, variant, isShortDeckPreflop);
-          if (Math.abs(r.equity - bestEq) < 0.05) {
-            isTied = true;
-          } else if (r.equity > bestEq) {
-            bestEq = r.equity;
-            bestHandPlayer = p;
-            isTied = false;
-          }
-        } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.preflop_leader_equity');
+        const equity = pricingByPlayer.get(p.playerId)?.equity;
+        if (!Number.isFinite(equity) || p.holeCards.length < 2) continue;
+        if (Math.abs(equity! - bestEq) < 0.05) {
+          isTied = true;
+        } else if (equity! > bestEq) {
+          bestEq = equity!;
+          bestHandPlayer = p;
+          isTied = false;
         }
       }
       if (isTied) bestHandPlayer = null;
@@ -2250,26 +2876,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // deck.
     const isShortDeckInsurance = isShortDeckVariant(variant);
 
-    // FIX-A12: full all-in set with each player's at-risk (their own committed
-    // chips) so the engine prices the leader against the KNOWN opponent hands.
-    const allInForOffer = allInPlayers.map((p) => ({
-      playerId: p.user_id,
-      holeCards: p.cards || [],
-      atRisk: p.totalInvested ?? 0,
-    }));
-
-    // PERF FIX (2026-07-24): precompute the leader's insurance equity OFF the
-    // event loop (EquityWorkerPool), once per street, then hand it to
-    // createOffers so the heavy board enumeration never blocks the main loop.
-    let leaderPricing: { equity: number; strictLossPct: number; pushPct: number } | undefined;
-    if (bestHandPlayer) {
-      leaderPricing = this.computeInsurancePricing(
-        bestHandPlayer.playerId,
-        allInForOffer,
-        result.board,
-        variant,
-        isShortDeckInsurance
+    const leaderPricing = bestHandPlayer ? pricingByPlayer.get(bestHandPlayer.playerId) : undefined;
+    if (bestHandPlayer && !leaderPricing) {
+      reportError(
+        new Error('Insurance worker omitted pricing for the elected leader'),
+        'ServerTableEngine.' + this.tableId + '.insurance_leader_pricing_missing',
+        { handNumber: pricingHandNumber, leaderId: bestHandPlayer.playerId }
       );
+      await this.pacedAllInRunout(allInPlayers, pot);
+      return;
     }
 
     // INSURABLE POT 2026-08-28: the offer prices what the leader can actually
@@ -2294,7 +2909,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           insurablePot,
           variant,
           isShortDeckInsurance,
-          leaderPricing
+          leaderPricing!
         );
 
         if (offers.length > 0) {
@@ -2341,7 +2956,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             insurablePot,
             variant,
             isShortDeckInsurance,
-            leaderPricing
+            leaderPricing!
           );
 
           if (offers.length > 0) {
@@ -2395,7 +3010,26 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     await this.sleep(this.allInStreetPauseMs);
     if (this.handController !== controller) return;
 
+    if (controller.getPineappleRunoutDiscardSnapshot?.()) {
+      try {
+        if (!(await this.preparePineappleRunoutDiscards(controller))) return;
+      } catch (error) {
+        if (error instanceof HorseDecisionAbortedError) return;
+        reportError(
+          error,
+          'ServerTableEngine.' + this.tableId + '.pineapple_insurance_runout_worker_failed'
+        );
+        return;
+      }
+    }
+
     const result = controller.dealNextStreet();
+    allInPlayers = this.refreshAllInPlayersFromController(allInPlayers, controller);
+    const currentById = new Map(allInPlayers.map((player) => [player.user_id, player] as const));
+    offerPlayers = offerPlayers.map((player) => ({
+      ...player,
+      holeCards: currentById.get(player.playerId)?.cards ?? player.holeCards,
+    }));
     this.broadcastCurrentState();
 
     // RE-BROADCAST EQUITY: all players and observers see updated percentages
@@ -2405,34 +3039,26 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // card that is still turning over (Dan 2026-08-28).
     await this.sleep(this.allInStreetRevealMs);
     if (this.handController !== controller) return;
-    // liveExtraBoards 2026-08-29: same reason as the paced runout — the street
-    // result carries board 1 only. Harmless on this path today (insurance is
-    // suppressed on multi-board hands) but it is the same call in the same
-    // shape, and leaving one broadcast reading a different truth is how the
-    // first one came to be wrong.
-    await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
-
     if (result.complete) {
+      // No contract is priced once the river is complete, so its final public
+      // percentage remains a standalone cosmetic worker operation.
+      await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
+      if (!this.lifecycleCanMutate() || this.handController !== controller) return;
       // River is down — settle (insurance included) via the normal finalize.
       controller.finalizeRunout();
       return;
     }
 
-    // STREET REVEAL PAUSE (Dan 2026-08-28: "IT MUST ACTUALLY SHOW THE FLOP
-    // FIRST, WAIT 1 SECONDS AFTER FLOP BEFORE THE OFFER POPS UP. USERS NEED
-    // TO SEE THE FLOPS, TURNS AND RIVERS"): the card just landed in the
-    // broadcast above — hold a full beat so every seat SEES the street
-    // before the next dialog covers the table.
-    await this.sleep(1000);
-
-    // More cards to come — re-enter the flow on the new board (fresh leader
-    // evaluation, fresh offer). The catch mirrors handleAllInRunout's: an
-    // unhandled rejection must never leave the hand parked without a clock.
-    this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot, result.board, controller).catch(
-      (err) => {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
-        this.safeContinueRunout('insurance_flow_rejected', controller);
-      }
+    // More cards to come: one structured worker pass supplies both the public
+    // percentages and the real-money offer. The flow emits the percentages
+    // immediately, then preserves the full one-second reveal-to-dialog beat.
+    await this.runInsurancePerStreetFlow(
+      offerPlayers,
+      allInPlayers,
+      pot,
+      result.board,
+      controller,
+      1000
     );
   }
 

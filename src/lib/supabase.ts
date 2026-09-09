@@ -13,6 +13,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { readLocalSession as readLocalSessionShared, AUTH_STORAGE_KEY } from './authUtils';
 import { reportError } from '../utils/errorReporter';
+import { IS_NATIVE_BUILD } from './appBase';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -84,6 +85,14 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // retryable 503, so the entry bundle only pays for this shim (Track
     // Bundle Size sits within ~1kB of its 320kB budget).
     fetch: async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith(`${supabaseUrl?.replace(/\/+$/, '')}/auth/v1/`)) {
+        // A timed-out socket waiter does not release auth-js's lock. Bound
+        // the actual auth network/body operation, preserving the SDK as the
+        // only refresher and its retryable-error session retention.
+        const { fetchAuthWithDeadline } = await import('./authFetchDeadline');
+        return fetchAuthWithDeadline(input, init);
+      }
       const resp = await globalThis.fetch(input, init);
       if (resp.status !== 503) return resp;
       let code: unknown;
@@ -192,7 +201,9 @@ export type SupabaseClient = typeof supabase;
 // Since Club Arena is now served at smarter.poker/hub/club-arena (same origin),
 // it automatically shares the 'smarter-poker-auth' localStorage key with the Hub.
 // No postMessage or iframe handshake needed - just use the same storageKey above.
-if (typeof window !== 'undefined') {
+// NATIVE: skipped. No player ever signed in to the app under the old default
+// key, and the reload below would restart the app for nothing.
+if (typeof window !== 'undefined' && !IS_NATIVE_BUILD) {
   // ══════════════════════════════════════════════════════════════════════════
   // SESSION MIGRATION — Move sessions from old default key to shared key
   // ══════════════════════════════════════════════════════════════════════════

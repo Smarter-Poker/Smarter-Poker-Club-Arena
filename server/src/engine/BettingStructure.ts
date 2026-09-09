@@ -29,11 +29,11 @@
  *    rule but is deliberately NOT implemented — a cap that changes when a third
  *    player folds is the kind of rule the fuzzer catches and players dispute.
  *  • A player who cannot cover a full bet may still go all in for less; that
- *    short all-in does not reopen betting (same rule as no-limit, enforced by
- *    HandController.canReopenBetting).
+ *    short all-in reopens betting when a previously acted player faces at
+ *    least half the street bet (HandController.canReopenBetting, TDA 47B).
  */
 
-import type { HandStage, ActionRecord, ActionType } from '../types.js';
+import type { GameState, HandStage, ActionRecord, ActionType } from '../types.js';
 
 export type BettingStructure = 'no_limit' | 'pot_limit' | 'fixed_limit';
 
@@ -67,6 +67,21 @@ export function isPotLimitVariant(variant?: string | null): boolean {
 }
 
 /**
+ * TDA 54B-C: preflop pot-limit sizing assumes full SB/BB posts, even when
+ * either blind is short all-in. Later streets use only the actual pot.
+ * Keep this separate from state.pot so accounting never invents blind chips.
+ */
+export function potLimitBettingPot(
+  state: Pick<GameState, 'pot' | 'stage' | 'potLimitBlindAdjustment'>
+): number {
+  return (
+    Math.round(
+      (state.pot + (state.stage === 'preflop' ? (state.potLimitBlindAdjustment ?? 0) : 0)) * 100
+    ) / 100
+  );
+}
+
+/**
  * THE POT-LIMIT RAISE-TO CEILING (Bible V8 4.14).
  *
  * The maximum raise SIZE under pot limit is the pot AFTER calling, so the
@@ -82,8 +97,8 @@ export function isPotLimitVariant(variant?: string | null): boolean {
  * with one limper - the standard Omaha opening sizes, derived rather than
  * guessed.
  *
- * `pot` must include the chips already wagered on the current street, which is
- * the convention every caller in the engine already uses.
+ * `pot` includes current-street wagers. For a live pot-limit hand pass
+ * potLimitBettingPot(state), which includes nominal short blinds preflop.
  */
 export function potLimitRaiseTo(pot: number, currentBet: number, toCall: number): number {
   const p = Number.isFinite(pot) ? Math.max(0, pot) : 0;
@@ -114,6 +129,30 @@ export function fixedLimitBetSize(bigBlind: number, stage: HandStage): number {
   }
 }
 
+/** Resolve completions and counted wagers from this street's actual raise-to levels.
+ * WSOP 2026 rule 133: below half a wager completes; half or more is a wager.
+ * Calls record chips added, so only aggressive actions carry a raise-to level.
+ */
+export function fixedLimitStreetBounds(
+  actions: ActionRecord[],
+  stage: HandStage,
+  betSize: number,
+  currentBet: number
+): { raiseSize: number; wagers: number } {
+  let level = stage === 'preflop' ? betSize : 0;
+  let wagers = stage === 'preflop' ? 1 : 0;
+  for (const action of actions) {
+    if (action.stage !== stage || !['bet', 'raise', 'all_in'].includes(action.action)) continue;
+    if (action.amount - level >= betSize / 2 - 0.005) {
+      level = action.amount;
+      wagers++;
+    }
+  }
+  const short = currentBet - level;
+  const raiseSize = short > 0.005 && short < betSize / 2 - 0.005 ? betSize - short : betSize;
+  return { raiseSize: Math.round(raiseSize * 100) / 100, wagers };
+}
+
 /**
  * How many wagers have already gone in on this street.
  *
@@ -127,7 +166,10 @@ export function fixedLimitWagerCount(actions: ActionRecord[], stage: HandStage):
   let n = 0;
   for (const a of actions) {
     if (a.stage !== stage) continue;
-    if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise)) {
+    if (
+      ((a.action === 'bet' || a.action === 'raise') && a.isFullRaise !== false) ||
+      (a.action === 'all_in' && a.isFullRaise)
+    ) {
       n++;
     }
   }
@@ -135,8 +177,16 @@ export function fixedLimitWagerCount(actions: ActionRecord[], stage: HandStage):
 }
 
 /** True once the street has taken a bet and three raises. */
-export function isFixedLimitCapped(actions: ActionRecord[], stage: HandStage): boolean {
-  return fixedLimitWagerCount(actions, stage) >= FIXED_LIMIT_MAX_WAGERS;
+export function isFixedLimitCapped(
+  actions: ActionRecord[],
+  stage: HandStage,
+  betSize?: number
+): boolean {
+  const wagers =
+    betSize === undefined
+      ? fixedLimitWagerCount(actions, stage)
+      : fixedLimitStreetBounds(actions, stage, betSize, 0).wagers;
+  return wagers >= FIXED_LIMIT_MAX_WAGERS;
 }
 
 /**

@@ -2,6 +2,60 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Spin Reveals Follow The Booked Result
+
+The engine could announce a locally drawn 2x outcome before an idempotent reserve receipt restored a booked 10x outcome, or announce before settlement failed. The early reveal now follows successful settlement and booked-multiplier validation, retaining the existing hold and reconnect window and preceding table work. Five production-fragment cases cover unresolved, replayed, failed, malformed and matching receipts. The complete tournament/maintenance/pause suite passes 1348 tests in 127 files; server TypeScript and build pass. Re-read: yes. No migration or financial repair. Phase 3 publication is explicitly authorized in the audit chat; refreshed verification and publication are in progress; see docs/audits/2026-09-09-phase3-tournament-lifecycle.md.
+
+## 2026-09-09: Phase 2 Release And Resume Verified
+
+Final poker consent, evaluator-card selection, cash-button and published-rule corrections merged in #3934. Required CI passed; engine release 34320141403 shipped df5e82a6 after 8044 passing server tests. Matching engine health/database heartbeat, both frontend stamps, all nine source blobs and normal maintenance resume are recorded in docs/audits/2026-09-09-phase2-release-status.json. The 18 Phase 2 controls are internally reconciled. Database skips, unrelated production E2E failures and unavailable external certification remain explicit. Re-read: yes. Documentation-only closeout; no new runtime or financial change.
+
+## 2026-09-09: Poker Consent, Card Selection And Published Rules
+
+RIT decisions require offer participation and remain final; events carry the stored run count and evaluator-selected winning cards. Omaha subsets retain exact two-plus-three selection. Cash button prediction/dealing agree through newcomers and heads-up transitions. Rules show all live variants, limits, low qualifiers and the cash blind convention. Re-read: yes. Both TypeScript projects pass; focused rules, money, privacy, independent evaluator and display tests pass. No database migration or financial repair. See docs/audits/2026-09-09-phase2-final-boundaries.md for coverage and completed ordinary release gates.
+
+## 2026-09-09: Pot-Limit Sizing Includes Full Preflop Blinds
+
+A short blind reduced the preflop ceiling in both engine and client. Shared wagering math now includes the normal blind shortfall until the flop. Real pot accounting, eligibility and pot odds still use actual chips. Snapshots, HTTP actions, tile bounds and the POT preset agree on the maximum.
+
+Evidence: docs/audits/2026-09-09-phase2-pot-limit-short-blinds.md. 25 failing regressions reproduced the defect; 81 focused/property server tests and 41 client tests pass, including chip conservation. Re-read: yes. TypeScript: both projects pass. Ordinary merge and scheduled runtime adoption remain required.
+
+## 2026-09-08: HTTP Actions Belong To The Displayed Decision
+
+Before: handlers/action.ts forwarded only user/action/amount; ServerTableEngineTurns.ts:1389 checked the live seat but had no original hand/turn identity. A delayed raise could apply to a later decision.
+After: server snapshots and turn_change carry a controller-incarnation/action-state context; TablePage and MultiTablePage return the displayed context unchanged through HTTP retries. The engine rejects stale/missing context before mutation and the replay fingerprint includes context. Old clients receive a readable success:false reload envelope. Structured rejection details reach current clients; late optimistic rollback is fenced to its original decision.
+Re-read: yes. TypeScript: both projects passed. Regression history and remaining build/publication gates: docs/audits/2026-09-08-phase2-poker-rules.md. Real-time law: context travels on the discrete turn_change event; snapshots provide reconciliation, no polling added.
+
+## 2026-09-08: Voluntary Card Reveals Survive Resync
+
+HTTP table state now retains selected card reveals after the hand ends, matching live snapshots while hiding unselected cards. 49 tests and server TypeScript pass; stored-card RLS read checks pass in production. Normal CI and adoption pending. Evidence: docs/audits/2026-09-08-phase2-card-visibility.md.
+
+## 2026-09-08: Individual Ante Caps And Inactive Blind Seats
+
+Individual antes now precede live blinds and retain matched-contribution pot caps. Heads-up skips an inactive old button; stale queued dead blinds cannot debit sitting-out seats. BBA remains shared and BB-first. The forced-bet event has an explicit type. 211 related tests and server TypeScript pass; CI and engine adoption remain pending. Evidence: docs/audits/2026-09-08-phase2-partial-antes.md.
+
+## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
+
+Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.
+
+## 2026-09-08: Agent Wallet Ledger Context Is Scoped
+
+Agent sends and take-backs now restore the surrounding transaction ledger settings.
+82 isolated database cases pass after reproducing the original context leak.
+See docs/changelog/2026-09-08-agent-wallet-ledger-context-is-scoped.md.
+
+## 2026-09-08: Ticket Escrow Keeps Its Identity
+
+New ticket funding and release now share the ticket escrow ID and restore ledger context.
+67 isolated database cases passed, including rollback and competing release requests.
+See docs/changelog/2026-09-08-ticket-escrow-keeps-its-identity.md.
+
+## 2026-09-08: Cashouts Await The Complete Settlement Chain
+
+Voluntary and forced leave now follow appended settlement promises before cashout,
+and propagate a rejected barrier. Two races were reproduced before the fix.
+See docs/changelog/2026-09-08-cashouts-await-the-complete-settlement-chain.md.
+
 ## Cowork session 2026-09-01 - ONE UNPAYABLE PLAYER STOPPED EVERY PAYOUT IN THE PASS
 
 `fn_tournament_payout_sweep` loops over completed tournaments calling
@@ -17014,3 +17068,71 @@ both sides, ui-text gate green.
 **Why:** Cashier history latency should scale with one club and one wallet, not the global ledger.
 **Verified:** YES — both ledger indexes and the roster index are live, ready, and valid in production.
 **TypeScript:** PASS — no runtime TypeScript surface.
+
+## Change: Chip Journal Errors Roll Back The Movement (2026-09-08)
+
+**Files:** supabase/migrations/20260908024909_chip_journal_failure_rolls_back_movement.sql; scripts/ci/probes/chip-journal-atomicity; .github/workflows/ci.yml.
+**Before:** Production fn_ca_autoledger lines 69-98, fn_club_members_ledger_writer lines 48-92, fn_ca_post_leg lines 17-30, plus direct treasury/rake/seat journals swallowed journal INSERT failures.
+**Change:** Eight posting handlers rethrow the original SQLSTATE, so the enclosing movement rolls back. CI executes the real function bodies with injected failures against isolated PostgreSQL in the existing required TypeScript Check.
+**Why:** Production failures 871 (BBJ 0.25, lock timeout) and 867 (rake 0.68, lock timeout) demonstrate balances accepted without accounting records.
+**Verified:** Production migration applied; all eight live definitions re-read with swallowed ledger logging absent. Isolated PostgreSQL: 45 original defect reproductions, 57 fixed checks including successful balance assertions and replay.
+**TypeScript:** Initial local check lacked installed native packages; clean lockfile installation performed; subsequent TypeScript check passed.
+**Limits:** This fixes shared journal failure atomicity, not separate hand stack/rake/BBJ transactions or every historical incident. Existing repair dependencies remain open work, not a claimed solution.
+
+## 20260908032050 Satellite Award Atomicity
+
+Applied to production: satellite seat creation, source transfer, target counters and payout receipt now roll back together on failure. Missing/insufficient source funding and inconsistent idempotency keys cannot commit a new award. 15 original reproductions; 17 corrected PostgreSQL cases plus 57 existing checks passed. See docs/changelog/2026-09-08-satellite-award-atomicity.md.
+
+## 2026-09-08: Cashout Escrow And Receipt Atomicity
+
+Applied 20260908035339_cashout_escrow_ledger_atomicity.sql to production. Request, approve and release declare the actual escrow journal counterparty, serialize caller retries, validate replay payloads, and propagate receipt failures so the whole movement rolls back. 64 isolated PostgreSQL cases pass, including four concurrent sessions tests. Authenticated and service_role grants preserved; no historical balance changes. See docs/changelog/2026-09-08-cashout-escrow-atomicity.md.
+
+## 2026-09-08: Hand Settlement Roster And Replay Identity
+
+Applied 20260908042156_hand_settlement_roster_and_replay_identity.sql. Reproduced a duplicate-player request minting 5 chips while returning success; duplicate/malformed/mixed rosters now fail before writes. Seat locking uses UUID order and new successful receipts bind the economic payload. 17 new PostgreSQL cases and 34 existing source guard tests pass. Service-only grants preserved. See docs/changelog/2026-09-08-hand-settlement-roster.md.
+
+## 2026-09-08: Union Close Period Boundaries
+
+Applied 20260908044150_union_close_period_boundaries_are_disjoint.sql. The weekly cursor aligns after the reset floor, uses Pacific calendar boundaries across DST, and the direct close refuses future/misaligned or overlapping periods. Eleven PostgreSQL boundary/concurrency cases pass. Rates, funding, reset floor and historical records remain unchanged. See docs/changelog/2026-09-08-union-close-period-boundaries.md.
+
+## 20260908045746: BBJ Contribution Identity
+
+Applied: serialize hand/table-hand retries before receipt and allocation; bind replay payload; preserve journal context. Original NULL-hand race reproduced, 32 new PostgreSQL cases pass. See docs/changelog/2026-09-08-bbj-contribution-identity.md.
+
+## 20260908051016: BBJ Table Routing And Receipt
+
+Applied: service-only table-scoped pool resolution and contribution commit; registered money RPC. Seven PostgreSQL route/rollback cases and fourteen engine receipt tests pass. See docs/changelog/2026-09-08-bbj-table-routing.md.
+
+## 20260908052322: Insurance Payment Scope And Journal Identity
+
+Applied: game-scoped insurance bank, canonical cents, bound replay, explicit journal, service-only access. Forty-one PostgreSQL cases pass; see docs/changelog/2026-09-08-insurance-payment-identity.md.
+
+## 2026-09-08: Rebuy Shared Receipt Validation
+
+Rebuy amounts and keys are validated before the shared receipt claim; the private core restores ledger context. The browser requires a confirmed numeric result. 46 isolated database cases pass against the shared path, with 395 earlier cases passing. Details: docs/changelog/2026-09-08-rebuy-shared-receipt-validation.md.
+
+The audited private rebuy core is registered by migration 20260908133232 with exact-definition and owner-only permission guards. Linked BBJ evidence and remaining audit boundaries are recorded in docs/audits/2026-09-08-chip-audit-checkpoint.md.
+
+## 2026-09-08: Hand settlement retries retain their accepted facts
+
+The shared hand commit caller snapshots its entire request before awaiting and verifies a receipt against the requested hand UUID. Two reproduced failures now pass; 40 hand-history cases and server TypeScript pass. Details: docs/changelog/2026-09-08-hand-settlement-retries-retain-their-facts.md.
+
+## 2026-09-08: Wallet Transfer Receipts And Single History
+
+Transfers require finite amounts and positive matching receipts. Internal transfer history stays in the database transaction; the browser no longer duplicates it. The legacy unkeyed user transfer does not retry automatically. Thirty wallet/store tests and TypeScript pass. Details: docs/changelog/2026-09-08-wallet-transfer-receipts-and-single-history.md.
+
+## 2026-09-08: Agent Self-Stake Ledger Context
+
+Migration 20260908151800 applied and live definition/permissions verified. Self-stake restores surrounding ledger settings after success or insufficient funds. Thirty new PostgreSQL cases pass, with 493 combined scenarios passing. Details: docs/changelog/2026-09-08-agent-self-stake-ledger-context.md.
+
+## 2026-09-08: BBJ Main Leg Source Correction
+
+Migration 20260908160032 appends one proven missing 0.25 main BBJ journal entry without changing any balance. It preserves the correct 0.25/0.12/0.13 split and the prior incident explanation. Twenty-four isolated PostgreSQL cases pass; live hand total, correction receipt and incident were read-verified. Details: docs/changelog/2026-09-08-bbj-main-leg-source-correction.md.
+
+## 2026-09-08: Phase 2 fixed-limit completion
+
+Correct below-half wager completion and counted-wager caps across engine validation, action bounds and snapshot/client wiring. Add fixed-limit and pot-limit regression evidence in docs/audits/2026-09-08-phase2-limit-completion.md. No database migration. Merge and runtime adoption remain separate gates.
+
+## 2026-09-09: Phase 3 Tournament Break Ownership
+
+Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets and resumes from the final break end. Nine behavioral cases and the 1343-test tournament/maintenance/pause suite pass; no database migration. See docs/audits/2026-09-09-phase3-tournament-lifecycle.md. Phase 3 remains in progress.

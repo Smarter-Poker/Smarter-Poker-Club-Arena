@@ -352,8 +352,9 @@ export interface TableModalsLayerProps {
    * if they do not finish. TablePage owns the clock; this only displays it.
    */
   buyInSecondsLeft?: number | null;
+  cashBuyInRecovery?: { p_amount: number; p_seat_number: number } | null;
   onCloseBuyInModal: () => void;
-  onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
+  onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<boolean | void>;
 
   // Rabbit Hunt
   /**
@@ -430,6 +431,7 @@ export interface TableModalsLayerProps {
     addOnFee?: number;
     addOnChips: number;
     walletBalance: number;
+    endsAtMs: number | null;
     timeRemaining: number;
   };
   rebuyProcessing: boolean;
@@ -629,6 +631,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Buy-In
     showBuyInModal,
     buyInSecondsLeft,
+    cashBuyInRecovery,
     selectedSeat,
     heroAvatarUrl,
     onCloseBuyInModal,
@@ -1121,6 +1124,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isOpen={showBuyInModal}
         onClose={onCloseBuyInModal}
         onConfirm={onConfirmBuyIn}
+        recovery={
+          cashBuyInRecovery
+            ? { amount: cashBuyInRecovery.p_amount, seat: cashBuyInRecovery.p_seat_number }
+            : null
+        }
         tableName={tableName}
         minBuyIn={(() => {
           return cashoutMinBuyIn > minBuyIn ? cashoutMinBuyIn : minBuyIn;
@@ -1243,6 +1251,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           addOnFee={addOnPeriod.addOnFee ?? 0}
           addOnChips={addOnPeriod.addOnChips}
           walletBalance={addOnPeriod.walletBalance}
+          endsAtMs={addOnPeriod.endsAtMs}
           timeRemaining={addOnPeriod.timeRemaining}
           onAccept={onAddOnAccept}
           onDecline={onAddOnDecline}
@@ -1263,24 +1272,21 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         />
       )}
 
-      {/* Tournament Break Screen */}
+      {/* Tournament Break Screen. The screen reads the level, the pool, the
+          field, the leaders and the hero's line from the tournament's own rows
+          (final sweep 2026-09-08). It used to be handed `currentLevel={0}`,
+          `topPlayers={[]}`, `prizePool={0}` and this ONE table's seats as
+          "players remaining" - four falsehoods on every break. */}
       {isTournament && (
         <TournamentBreakScreen
           isVisible={tournamentBreak.active}
           breakTimeRemaining={tournamentBreak.timeRemaining}
           tournamentName={tableName}
-          currentLevel={0}
+          tournamentId={tournamentId ?? null}
+          heroUserId={userId ?? null}
           nextLevel={
             tournamentBreak.nextLevel || { level: 1, smallBlind: 0, bigBlind: 0, duration: 0 }
           }
-          playersRemaining={players.filter(Boolean).length}
-          totalPlayers={maxPlayers}
-          averageStack={
-            players.filter(Boolean).reduce((s, p) => s + (p?.stack || 0), 0) /
-            Math.max(players.filter(Boolean).length, 1)
-          }
-          topPlayers={[]}
-          prizePool={0}
         />
       )}
 

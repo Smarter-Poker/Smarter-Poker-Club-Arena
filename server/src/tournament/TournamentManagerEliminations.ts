@@ -1028,6 +1028,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (winner) {
               await this.finishTournament(winner.user_id);
               if (sweepStopped()) return;
+              this.rearmIfTheFinishWasRefused();
             } else if ((remainingCount || 0) === 0) {
               // All players busted simultaneously — pick the last eliminated as winner
               const { data: lastEliminated, error: lastEliminatedErr } = await supabase
@@ -1054,6 +1055,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 );
                 await this.finishTournament(lastEliminated.user_id);
                 if (sweepStopped()) return;
+                this.rearmIfTheFinishWasRefused();
               }
             }
           } catch (finishErr) {
@@ -3359,6 +3361,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
   protected tournamentFinished = false;
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A REFUSED FINISH ASKS FOR ANOTHER PASS. SOMEBODY HAS TO HEAR IT.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `finishTournament` has about thirty-five fail-closed exits and every one of
+   * them ends `this.tournamentFinished = false`, under a comment that says the
+   * flag is released "so the next elimination sweep can resume the durable
+   * COMPLETING claim and prepared obligations."
+   *
+   * THERE IS NO NEXT SWEEP. A sweep is woken by an elimination, and this method
+   * is only ever reached once the field is down to its last player - so there
+   * is no hand left to deal, nobody left to bust, and nothing left to wake it.
+   * The release was a request that nothing was listening for, and the refusal
+   * was therefore terminal: whatever the reason (the maintenance freeze, a
+   * refused claim, an unreadable row, a transport blip) the event simply stopped
+   * where it stood, with its winner unpaid and its status still RUNNING.
+   *
+   * This was found by reading the control flow, and no production incident is
+   * attributed to it: a first pass DID read ten tournaments sitting at one
+   * player and called them wedged, and a re-read seven minutes later found nine
+   * of the ten already finished. That sample is retracted in the changelog. The
+   * defect is the missing listener, which is visible without it.
+   *
+   * So the flag is read where the call was made. It is not a repair job (10.12)
+   * and nothing here back-fills or compensates anything: the finish has not
+   * happened yet, and this is the same work being asked for again the moment it
+   * can succeed. The scheduler keeps one pending wake per tournament, so an
+   * exit that already re-armed (the freeze branch does) coalesces with this.
+   */
+  private rearmIfTheFinishWasRefused(): void {
+    if (this.tournamentFinished) return;
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+  }
+
   // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────
   protected finalTableDealHandled = false;
   /**
@@ -3911,7 +3948,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       await this.cleanupCommittedSatellite(this.committedSatelliteReceipt);
       return;
     }
-    if (isMaintenanceFrozen() || this.tournamentFinished) return;
+    // This manager holds service_role, which the database maintenance trigger
+    // intentionally exempts. Do not enter the only terminal settlement RPC
+    // while the platform freeze is active. A decided event has no later hand
+    // or elimination to wake it, so make the deferral visible and explicitly
+    // re-arm the same bounded manager work after the thaw.
+    if (isMaintenanceFrozen()) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] finish deferred: the platform is frozen for the maintenance break; resuming after the thaw`
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return;
+    }
+    if (this.tournamentFinished) return;
 
     const tournament = this.tournamentCache as {
       variant?: string;

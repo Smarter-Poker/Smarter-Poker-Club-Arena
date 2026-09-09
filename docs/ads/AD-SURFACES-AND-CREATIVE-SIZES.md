@@ -1,7 +1,7 @@
 # House Ads — every surface, what runs on it, and the size a dynamic creative needs
 
 Written 2026-08-29 for Dan, who asked for the inventory before providing
-guidance and creative. Nothing here is built yet — the proposed column is a
+guidance and creative. UPDATE 2026-09-03: `lobby_strip` and `session_summary` are BUILT as three rotating pictures (`src/components/ads/HouseAdRotator.tsx`, PR agent/cowork-ads3/feat/image-ad-rotator); the creative lives on `ad_placement.image_url` per surface. The other rows are still proposals - the proposed column is a
 proposal.
 
 Two standing rules this document is written under:
@@ -58,12 +58,12 @@ Design width is 375px (mobile-first, house rule). "Display" is CSS pixels;
 
 ### 3.1 `lobby_strip` — Club Arena lobby
 
-|                    |                                                                                                                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Current**        | One text line. **No image support at all** — the component has no `<img>`. 343 x 44px at 375px, full width, 12px headline, 8px source tag. Rotates every 7s.                          |
-| **Proposed**       | Wide banner, **6:1**. Display **343 x 57** at 375px; **704 x 117** at desktop. Deliver **1200 x 200**.                                                                                |
-| **Why this shape** | It is a horizontal band between the action bar and the table list. Anything squarer pushes the table list below the fold on a phone, which is the one thing this surface must not do. |
-| **Work needed**    | New — the strip must learn to render an image. Text stays as the fallback and as the accessible name.                                                                                 |
+|                    |                                                                                                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Current**        | One text line. **No image support at all** — the component has no `<img>`. 343 x 44px at 375px, full width, 12px headline, 8px source tag. Rotates every 7s.                                                                   |
+| **Proposed**       | Wide banner, **6:1**. Display **343 x 57** at 375px; **704 x 117** at desktop. Deliver **1200 x 200**.                                                                                                                         |
+| **Why this shape** | It is a horizontal band between the action bar and the table list. Anything squarer pushes the table list below the fold on a phone, which is the one thing this surface must not do.                                          |
+| **Work needed**    | DONE 2026-09-03: `HouseAdRotator` renders the 6:1 creative full-bleed (`aspect-ratio: 6 / 1`, `object-fit: contain`), three rotating, headline as the accessible name. Creatives in `public/assets/ads/*-lobby-strip-v1.webp`. |
 
 ### 3.2 `hub_promotions` — World Hub promotions rail
 

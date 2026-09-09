@@ -393,6 +393,7 @@ import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage'
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
 import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
+import { ritAwardHighlights } from '../utils/ritAwardHighlights';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -5620,54 +5621,13 @@ export default function TablePage({
         ? Math.round(awardsHere.reduce((sum, a) => sum + a.amount, 0) * 100) / 100
         : undefined;
 
-      let winnerHandName: string | undefined;
-      let highlightedIndices: number[] = [];
-      // MULTI-BOARD PARITY 2026-08-26: this board winner's OWN hole cards
-      // that participate in its winning five, keyed by ORIGINAL holeCards
-      // position (SeatSlot indexes into the unfiltered row) — a board that
-      // is won with different hole cards than board 1 must light its own.
-      let winnerHoleIndices: Record<string, number[]> = {};
-
-      // Evaluate the winning hand for the winner(s) on this board
-      for (const wid of winnerIds) {
-        const winnerPlayer = tableState.players.find((p) => p?.id === wid);
-        const rawHole = winnerPlayer?.holeCards ?? [];
-        const hole = rawHole.filter((c): c is Card => c != null);
-        if (hole.length > 0) {
-          const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
-          if (evalResult) {
-            winnerHandName = evalResult.name;
-            const playedKeySet = new Set(evalResult.cards.map(cardKey));
-            highlightedIndices = cards
-              .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
-              .filter((idx) => idx >= 0);
-            winnerHoleIndices = {
-              [wid]: rawHole
-                .map((c, hi) => (c && playedKeySet.has(cardKey(c)) ? hi : -1))
-                .filter((hi) => hi >= 0),
-            };
-            break;
-          }
-        }
-      }
-
-      // Fallback: evaluate best hand among any players with visible hole cards
-      if (!winnerHandName) {
-        for (const p of tableState.players) {
-          const hole = (p?.holeCards ?? []).filter((c): c is Card => c != null);
-          if (hole.length > 0) {
-            const evalResult = bestFive(hole, cards, tableState.handVariant || tableState.gameType);
-            if (evalResult) {
-              winnerHandName = evalResult.name;
-              const playedKeySet = new Set(evalResult.cards.map(cardKey));
-              highlightedIndices = cards
-                .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
-                .filter((idx) => idx >= 0);
-              break;
-            }
-          }
-        }
-      }
+      // The recorded award carries the five that won THIS board and half.
+      // Re-evaluating here substituted high cards for lows and stopped at
+      // the first winner, dropping tied and side-pot winners' highlights.
+      const winnerHandName =
+        awardsHere.find((a) => !a.low)?.handName ?? awardsHere[0]?.handName ?? undefined;
+      const { boardIndices: highlightedIndices, holeIndices: winnerHoleIndices } =
+        ritAwardHighlights(cards, awardsHere, tableState.players);
 
       // POKERBROS PARITY 2026-08-26: the reveal timeline gates presentation.
       // While the boards are still dealing, each run shows only the cards the
@@ -10840,6 +10800,7 @@ export default function TablePage({
                     amount: Number(a.amount) || 0,
                     low: a.low === true,
                     handName: typeof a.hand_name === 'string' ? a.hand_name : null,
+                    cards: Array.isArray(a.cards) ? (normalizeCards(a.cards) as Card[]) : undefined,
                   }))
               : undefined,
             netPot:

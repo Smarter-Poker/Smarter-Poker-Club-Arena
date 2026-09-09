@@ -375,11 +375,19 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
 
   it('gates a normal finish before attempting the terminal receipt', () => {
     const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
-    const firstFreeze = finish.indexOf(
-      'if (isMaintenanceFrozen() || this.tournamentFinished) return;'
+    // The entry gate is still first and still refuses; on 2026-09-09 it stopped
+    // being a BARE return. It now logs and re-arms the sweep, because the break
+    // holds the platform five minutes an hour and a decided event that is
+    // dropped inside one has no hands left to trigger another attempt
+    // (CLAUDE.md 13 rule 4 - a deadline is thawed, not burned).
+    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen())');
+    const frozenRefusal = sliceEnclosingBlock(
+      finish,
+      'finish deferred: the platform is frozen for the maintenance break'
     );
     const terminal = finish.indexOf('requestTournamentTerminalReceipt(');
     expect(firstFreeze).toBeGreaterThanOrEqual(0);
+    expect(frozenRefusal).toContain('this.requestUrgentEliminationSweepAfter(');
     expect(terminal).toBeGreaterThan(firstFreeze);
     expect(finish).not.toMatch(/\.from\('tournaments'\)\s*\.update\(\{[\s\S]*?status:/);
     expect(finish.slice(0, terminal)).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);

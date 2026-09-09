@@ -5,7 +5,7 @@ SET LOCAL search_path TO public,pg_temp;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='30s';
 DO $guard$ BEGIN
- IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_cash_seat_move_execute(uuid)'::regprocedure) NOT IN ('a2cae91d3bb885233f006bb34ff2fdb5','d5d6623c05d085f76faeb8f3f95a8e3e') THEN RAISE EXCEPTION 'Unreviewed fn_cash_seat_move_execute baseline'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_cash_seat_move_execute(uuid)'::regprocedure) NOT IN ('a2cae91d3bb885233f006bb34ff2fdb5','d23c0c9ad3166df5ac8bde4ed8ab08ac') THEN RAISE EXCEPTION 'Unreviewed fn_cash_seat_move_execute baseline'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_cash_seat_swap_execute(uuid)'::regprocedure) NOT IN ('52fe5d514028bfe8414d60f5cfe4e8b0','09991eef2a1baa4597a211e035b1f8e9') THEN RAISE EXCEPTION 'Unreviewed fn_cash_seat_swap_execute baseline'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_cash_seat_move_execute_before_maintenance_gate(uuid)'::regprocedure) NOT IN ('6055ba8953646538bd866f2f9294366e') THEN RAISE EXCEPTION 'Unreviewed fn_cash_seat_move_execute_before_maintenance_gate baseline'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_cash_seat_swap_execute_before_maintenance_gate(uuid)'::regprocedure) NOT IN ('463bb7b45dfbce09e1c837143be3c6ab') THEN RAISE EXCEPTION 'Unreviewed fn_cash_seat_swap_execute_before_maintenance_gate baseline'; END IF;
@@ -152,8 +152,12 @@ BEGIN
    RETURN jsonb_build_object('ok',false,'reason','original_occupancy_gone');
   END IF;
  END IF;
- IF NOT EXISTS(SELECT 1 FROM public.tables WHERE id=m.from_table_id AND cluster_id=m.game_id AND seat_admission_key='cash')
-  OR NOT EXISTS(SELECT 1 FROM public.tables WHERE id=m.to_table_id AND cluster_id=m.game_id AND seat_admission_key='cash') THEN
+ -- A legacy empty cash destination initializes its derived key inside the
+ -- native admission trigger. That trigger still rejects every terminal parent.
+ IF NOT EXISTS(SELECT 1 FROM public.tables WHERE id=m.from_table_id AND cluster_id=m.game_id AND tournament_id IS NULL
+    AND coalesce(seat_admission_key,'cash')='cash')
+  OR NOT EXISTS(SELECT 1 FROM public.tables WHERE id=m.to_table_id AND cluster_id=m.game_id AND tournament_id IS NULL
+    AND coalesce(seat_admission_key,'cash')='cash') THEN
   RAISE EXCEPTION 'SEAT_MOVE_GAME_SCOPE_MISMATCH' USING ERRCODE='23514';
  END IF;
  IF pm.id IS NULL THEN

@@ -136,6 +136,32 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     expect(move()).toEqual(result);
     expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
   });
+  it.each(['waiting', 'closed'])(
+    'handles a legacy empty %s destination without inventing its admission key',
+    (status) => {
+      seedMove();
+      // Fixture only: represent an empty parent created before the additive keys.
+      sql(`BEGIN;
+      ALTER TABLE tables DISABLE TRIGGER zzzz_stamp_table_seat_admission;
+      UPDATE tables SET status='${status}',seat_admission_key=NULL WHERE id='${OTHER_TABLE}';
+      ALTER TABLE tables ENABLE TRIGGER zzzz_stamp_table_seat_admission;
+      COMMIT;`);
+      if (status === 'closed') {
+        expect(move()).toMatchObject({ ok: false });
+        expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+        expect(
+          sql(`SELECT sum(stack) FROM table_seats WHERE table_id='${TABLE}' AND left_at IS NULL`)
+        ).toBe(25);
+      } else {
+        expect(move()).toMatchObject({ ok: true, stack: 25, to_table_id: OTHER_TABLE });
+        expect(sql('SELECT sum(amount) FROM cash_seat_move_ledger')).toBe(0);
+        expect(
+          sql(`SELECT to_json(seat_admission_key) FROM tables WHERE id='${OTHER_TABLE}'`)
+        ).toBe('cash');
+      }
+    }
+  );
+
   it('retains the original move outcome after seat and table deletion', () => {
     seedMove();
     const result = move();

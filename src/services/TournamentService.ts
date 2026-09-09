@@ -1305,6 +1305,10 @@ class TournamentService {
     username: string,
     tournamentTicketId?: string | null
   ): Promise<TournamentPlayer> {
+    const { data: auth, error: authError } = await getAuthUser();
+    if (authError || !auth.user || auth.user.id !== userId) {
+      throw new Error('Sign In To The Correct Account Before Registering For A Tournament.');
+    }
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
 
@@ -1331,144 +1335,147 @@ class TournamentService {
     // the entry FEE to the rake_records fee ledger (what the finalize
     // settlement actually credits to the club/union), and bumps
     // current_players + prize_pool.
-    /* Wallet registration is not safe to replay without an idempotency key,
-       so its lost response is reconciled by reading the roster. Ticket
-       admission is keyed by one immutable ticket and has an exact replay
-       receipt, so the same request can safely resolve an ambiguous response. */
-    const invokeTicketAdmission = async () => {
+    const invokeAdmission = async (requestId?: string) => {
       try {
-        return await supabase.rpc('fn_register_for_tournament_with_ticket', {
-          p_tournament_id: tournamentId,
-          p_ticket_id: tournamentTicketId,
-        });
+        return usesTournamentTicket
+          ? await supabase.rpc('fn_register_for_tournament_with_ticket', {
+              p_tournament_id: tournamentId,
+              p_ticket_id: tournamentTicketId,
+            })
+          : await supabase.rpc('fn_register_for_tournament_request', {
+              p_tournament_id: tournamentId,
+              p_request_id: requestId,
+            });
       } catch (error) {
-        // A rejected fetch and Supabase's resolved `{ error }` both leave the
-        // commit outcome unknown. Normalize them so the only retry is the
-        // same immutable ticket, never a wallet fallback or a new request.
         return { data: null, error };
       }
     };
-    let rpcCall = usesTournamentTicket
-      ? await invokeTicketAdmission()
-      : await supabase.rpc('fn_register_for_tournament', {
-          p_tournament_id: tournamentId,
-        });
-    if (usesTournamentTicket && rpcCall.error) {
-      rpcCall = await invokeTicketAdmission();
-    }
-    const { data: rpcResult, error: rpcError } = rpcCall;
-    const res = rpcResult as {
-      ok: boolean;
-      reason?: string;
-      registration_id?: string;
-      ticket_id?: string;
-      cost?: number;
-      mystery_bounty?: number | null;
-    } | null;
-    let registrationId = res?.registration_id;
-    if (rpcError) {
-      if (usesTournamentTicket) {
-        reportError(rpcError, 'TournamentService.ticket_registration_result_unconfirmed', {
+    const performRegistration = async (requestId?: string): Promise<TournamentPlayer> => {
+      let rpcCall = await invokeAdmission(requestId);
+      if (rpcCall.error) rpcCall = await invokeAdmission(requestId);
+      const { data: rpcResult, error: rpcError } = rpcCall;
+      const res = rpcResult as {
+        ok: boolean;
+        reason?: string;
+        registration_id?: string;
+        request_id?: string;
+        tournament_id?: string;
+        user_id?: string;
+        ticket_id?: string;
+        cost?: number;
+        mystery_bounty?: number | null;
+      } | null;
+      const registrationId = res?.registration_id;
+      if (rpcError) {
+        reportError(rpcError, 'TournamentService.registration_result_unconfirmed', {
           tournamentId,
           userId,
           tournamentTicketId,
+          requestId,
         });
+        throw new Error(
+          usesTournamentTicket
+            ? 'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+            : 'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
+        );
+      }
+      if (res?.ok === false) throw new Error(registerReasonText(res.reason));
+      if (
+        res?.ok !== true ||
+        typeof registrationId !== 'string' ||
+        !registrationId ||
+        (!usesTournamentTicket &&
+          (res.request_id !== requestId ||
+            res.tournament_id !== tournamentId ||
+            res.user_id !== userId))
+      ) {
+        throw new Error(
+          usesTournamentTicket
+            ? 'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+            : 'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
+        );
+      }
+      if (usesTournamentTicket && res?.ticket_id !== tournamentTicketId) {
+        reportError(
+          new Error('Tournament ticket admission returned a mismatched receipt'),
+          'TournamentService.ticket_registration_receipt_mismatch',
+          { tournamentId, userId, tournamentTicketId, receiptTicketId: res?.ticket_id }
+        );
         throw new Error(
           'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
         );
       }
-      const { data: reconciled, error: reconcileError } = await supabase
+
+      // Re-fetch the player row the server created (the RPC returns only ids)
+      const { data, error } = await supabase
         .from('tournament_players')
-        .select('id')
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', userId)
+        .select(
+          'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
+        )
+        .eq('id', registrationId)
         .maybeSingle();
-      if (reconcileError || !reconciled?.id) {
-        reportError(rpcError, 'TournamentService.registration_result_unconfirmed', {
-          tournamentId,
-          userId,
-          reconcileError: reconcileError?.message,
-        });
-        throw new Error(
-          'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
-        );
+      if (error || !data) {
+        reportError(error, 'TournamentService.Could_not_refetch_registered_player');
+        throw new Error('Registration succeeded but player data could not be retrieved');
       }
-      registrationId = String(reconciled.id);
-    } else if (!res?.ok || !registrationId) {
-      throw new Error(registerReasonText(res?.reason));
-    }
-    if (usesTournamentTicket && res?.ticket_id !== tournamentTicketId) {
-      reportError(
-        new Error('Tournament ticket admission returned a mismatched receipt'),
-        'TournamentService.ticket_registration_receipt_mismatch',
-        { tournamentId, userId, tournamentTicketId, receiptTicketId: res?.ticket_id }
-      );
-      throw new Error(
-        'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
-      );
-    }
 
-    // Re-fetch the player row the server created (the RPC returns only ids)
-    const { data, error } = await supabase
-      .from('tournament_players')
-      .select(
-        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
-      )
-      .eq('id', registrationId)
-      .maybeSingle();
-    if (error || !data) {
-      reportError(error, 'TournamentService.Could_not_refetch_registered_player');
-      throw new Error('Registration succeeded but player data could not be retrieved');
-    }
+      // Entry-only tickets move escrow into tournament liability; they do not
+      // debit or credit the player's Club Arena wallet.
+      if (!usesTournamentTicket) {
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+      }
+      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
+      masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
 
-    // Entry-only tickets move escrow into tournament liability; they do not
-    // debit or credit the player's Club Arena wallet.
-    if (!usesTournamentTicket) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
-    }
-    masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
-    masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
-
-    // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
-    // start_time to now so the server discovery loop starts it immediately.
-    const { data: freshTournament, error: freshErr } = await supabase
-      .from('tournaments')
-      .select('current_players, max_players, variant')
-      .eq('id', tournamentId)
-      .maybeSingle();
-    // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
-    // and the server discovery loop still starts a full game on its own
-    // schedule. But a silently skipped nudge is a slower start with no trace.
-    if (freshErr) {
-      reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
-        tournamentId,
-      });
-    }
-    if (
-      freshTournament?.max_players &&
-      (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
-      (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
-    ) {
-      // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
-      // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
-      // catch could only ever have caught a transport failure - an RLS denial
-      // on this client-side write (the likely outcome, since `tournaments` is
-      // not player-writable) resolved normally and was discarded. The nudge
-      // silently did nothing and the SNG/Spin sat waiting for a start that the
-      // discovery loop had not been told to bring forward.
-      const { error: autoStartError } = await supabase
+      // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
+      // start_time to now so the server discovery loop starts it immediately.
+      const { data: freshTournament, error: freshErr } = await supabase
         .from('tournaments')
-        .update({ start_time: new Date().toISOString() })
-        .eq('id', tournamentId);
-      if (autoStartError) {
-        // Reported, not thrown: the player IS registered and paid, and the
-        // server discovery loop still starts the game on its own schedule.
-        // Failing the registration here would be a worse lie than the old one.
-        reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
+        .select('current_players, max_players, variant')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
+      // and the server discovery loop still starts a full game on its own
+      // schedule. But a silently skipped nudge is a slower start with no trace.
+      if (freshErr) {
+        reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
+          tournamentId,
+        });
       }
-    }
+      if (
+        freshTournament?.max_players &&
+        (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
+        (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
+      ) {
+        // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
+        // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
+        // catch could only ever have caught a transport failure - an RLS denial
+        // on this client-side write (the likely outcome, since `tournaments` is
+        // not player-writable) resolved normally and was discarded. The nudge
+        // silently did nothing and the SNG/Spin sat waiting for a start that the
+        // discovery loop had not been told to bring forward.
+        const { error: autoStartError } = await supabase
+          .from('tournaments')
+          .update({ start_time: new Date().toISOString() })
+          .eq('id', tournamentId);
+        if (autoStartError) {
+          // Reported, not thrown: the player IS registered and paid, and the
+          // server discovery loop still starts the game on its own schedule.
+          // Failing the registration here would be a worse lie than the old one.
+          reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
+        }
+      }
 
-    return data;
+      return data;
+    };
+    // Keep the original operation pending until its receipt and roster are both
+    // confirmed. A failed read after commit must not permit a new paid request.
+    if (usesTournamentTicket) return performRegistration();
+    return withTournamentUnregistrationIntent(
+      userId,
+      'registration:' + tournamentId,
+      performRegistration
+    );
   }
 
   /**

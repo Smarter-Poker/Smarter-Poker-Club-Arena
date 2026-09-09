@@ -10,17 +10,16 @@ Club Arena `build-info.json` showing the sha), and verified on production by
 reading, not assuming. The list below is the order; each phase records its
 verification when it lands.
 
-| Phase | Name                       | Delivers                                                                                                                                                                                  | Status |
-| ----- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| 1     | Measure                    | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules                          | done   |
-| 2     | See the client             | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done   |
-| 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done   |
-| 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done   |
-| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done   |
-| 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done   |
-| 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done   |
-
-| 8 | Connection ownership and refusal recovery | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets | code verified; publication pending |
+| Phase | Name                                      | Delivers                                                                                                                                                                                  | Status                             |
+| ----- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1     | Measure                                   | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules                          | done                               |
+| 2     | See the client                            | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done                               |
+| 3     | Do no harm                                | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done                               |
+| 4     | Restart handoff + protocol                | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done                               |
+| 5     | Trust and limits                          | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done                               |
+| 6     | Prove it from outside                     | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done                               |
+| 7     | Guardrails                                | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done                               |
+| 8     | Connection ownership and refusal recovery | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets                                                                     | code verified; publication pending |
 
 Phase 8 (2026-09-09) extends the programme after the callback ownership and
 loaded-fleet repairs. Scope and reproducible evidence:

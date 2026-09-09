@@ -367,6 +367,18 @@
   object-fit: contain;
 }
 
+/* The text half of a campaign row. `min-width: 0` is the load-bearing
+   declaration, not the gap: on desktop this is the second track of a grid
+   whose first track is the picture, and a grid item defaults to
+   `min-width: auto`, so one long headline or a long destination path would
+   push the track wider than its share and take the picture with it. */
+.club-advertise__item-body {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
 .club-advertise__item-top {
   display: flex;
   align-items: center;

@@ -39,6 +39,7 @@ const terminalOrphanCutover = taggedBody('terminal_orphan_cutover');
 const cutoverPlayerLockPrefix = taggedBody('cutover_player_lock_prefix');
 const cutoverReceiptsAppendOnly = taggedBody('cutover_receipts_append_only');
 const atomicMove = taggedBody('atomic_tournament_move');
+const spinExpiry = taggedBody('expire_unfilled_without_reconciler');
 const cancellation = taggedBody('cancel_with_seat_authority');
 const elimination = taggedBody('elimination_with_seat_authority');
 const bountyElimination = taggedBody('bounty_elimination_with_seat_authority');
@@ -371,6 +372,23 @@ describe('tournament seat exits have one hard authority', () => {
       expect(body).toContain('fn_ca_close_tournament_seat_exit_authority');
       expect(body).toMatch(/EXCEPTION WHEN OTHERS[\s\S]*?RAISE;/);
     }
+  });
+
+  it('rechecks an unfilled Spin only after locking its current parent row', () => {
+    const parentLock = spinExpiry.indexOf('FOR UPDATE SKIP LOCKED');
+    const freshRead = spinExpiry.indexOf('INTO v_current', parentLock);
+    const cancel = spinExpiry.indexOf('atomic_cancel_tournament', freshRead);
+
+    expect(parentLock).toBeGreaterThan(-1);
+    expect(freshRead).toBeGreaterThan(parentLock);
+    expect(cancel).toBeGreaterThan(freshRead);
+    expect(spinExpiry).toContain('v_current.live_seats>=v_current.max_players');
+    expect(spinExpiry).toContain('v_current.spin_multiplier IS NOT NULL');
+    expect(spinExpiry).toContain('v_current.has_booked_draw');
+    expect(spinExpiry).toContain("(v_result->>'total_refunded')::numeric");
+    expect(spinExpiry).toContain("'skipped_raced',v_skipped");
+    expect(spinExpiry).not.toContain('fn_sync_seat_first_player_count');
+    expect(spinExpiry).not.toContain('chips_refunded_estimate');
   });
 
   it('wraps both rolling-window elimination owners in the same capability', () => {

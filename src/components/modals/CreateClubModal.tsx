@@ -24,6 +24,7 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { optimizeClubLogo } from '../../utils/clubLogoImage';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+import { uuid } from '../../utils/uuid';
 
 const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
 
@@ -82,7 +83,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const trapRef = useFocusTrap(isOpen);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const creationRequestIdRef = useRef<string>(crypto.randomUUID());
+  const creationRequestIdRef = useRef<string>(uuid());
   const eligibilitySequenceRef = useRef(0);
 
   useEffect(() => {
@@ -275,7 +276,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       setHasAgreed(false);
       setDraftRestored(false);
       window.localStorage.removeItem(CREATE_DRAFT_KEY);
-      creationRequestIdRef.current = crypto.randomUUID();
+      creationRequestIdRef.current = uuid();
       ClubEntryTrustService.track('create', 'completed', {
         outcome: 'succeeded',
         durationMs: Math.round(performance.now() - startedAt),

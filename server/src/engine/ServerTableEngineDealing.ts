@@ -53,6 +53,7 @@ import {
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
+import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -2950,28 +2951,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
+  private holeCardWriteBatches?: Map<
+    string,
+    {
+      rows: Array<{ userId: string; seat: number; json: string }>;
+      promise: Promise<void>;
+    }
+  >;
+
   protected async persistHoleCardsWithRetry(
     userId: string,
     seat: number,
     cards: unknown
   ): Promise<void> {
-    const payload = JSON.stringify([{ user_id: userId, seat_number: seat, cards }]);
-    // 2026-08-31: captured ONCE. this.handCount is reallocated when the next
-    // hand deals; the retry loop below awaits between attempts, so re-reading
-    // it per attempt could stamp THIS hand's cards with the NEXT hand's
-    // number on a slow attempt. Same class as the settlement snapshot fix.
+    if (!this.lifecycleCanMutate()) return;
+    // Freeze the payload now: a later draw may replace or mutate these cards.
+    const row = {
+      userId,
+      seat,
+      json: JSON.stringify({ user_id: userId, seat_number: seat, cards }),
+    };
     const handNumberAtDeal = this.handCount;
-    /* 2026-09-04 (disconnect audit item 12): THE CARDS GO DOWN THE SOCKET
-       TOO. The database row below is still written - it is the durable copy
-       and the client's poll reads it - but the hero's cards used to reach
-       the screen only through a Supabase Realtime subscription on that row
-       (a second transport, with its own reconnect, its own INSERT-only
-       history, and the bounded poll behind it). The engine socket the felt
-       is already drawn from now carries them privately to this player's
-       sockets, in the same row shape the Realtime handler accepts, so every
-       guard on that path (heroHoleCardsAreForThisHand) applies unchanged.
-       Sent before the write so a slow database does not delay the deal on
-       screen. */
+    // Private socket delivery stays synchronous and never waits for PostgREST.
     this.hub?.sendToUser(this.tableId, userId, {
       kind: 'hole_cards',
       row: {
@@ -2982,7 +2983,44 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         cards,
       },
     });
+
+    // HandController emits the whole deal synchronously. One microtask groups
+    // those rows into the existing array RPC, without an added timer or cache.
+    // Each engine owns its queue. Service work and manager generations cannot
+    // share it, and the flush inherits the first caller's async authority.
+    const authority = currentTournamentDataAuthority();
+    const key = JSON.stringify([
+      handNumberAtDeal,
+      authority?.tournamentId,
+      authority?.leaseGeneration,
+    ]);
+    const batches = (this.holeCardWriteBatches ??= new Map());
+    const pending = batches.get(key);
+    if (pending) {
+      pending.rows.push(row);
+      return pending.promise;
+    }
+    const batch = {
+      rows: [row],
+      promise: Promise.resolve().then(async () => {
+        // Retire the queue BEFORE awaiting HTTP. A later reconnect/draw must
+        // get its own write, even while this batch is still in flight.
+        if (batches.get(key) === batch) batches.delete(key);
+        await this.persistHoleCardBatchWithRetry(handNumberAtDeal, batch.rows);
+      }),
+    };
+    batches.set(key, batch);
+    return batch.promise;
+  }
+
+  private async persistHoleCardBatchWithRetry(
+    handNumberAtDeal: number,
+    rows: ReadonlyArray<{ userId: string; seat: number; json: string }>
+  ): Promise<void> {
+    const payload = '[' + rows.map((row) => row.json).join(',') + ']';
+    const isCurrent = () => this.handCount === handNumberAtDeal && this.lifecycleCanMutate();
     for (let attempt = 1; attempt <= 3; attempt++) {
+      if (!isCurrent()) return;
       try {
         const { error } = await supabase.rpc('insert_hole_cards', {
           p_table_id: this.tableId,
@@ -2991,12 +3029,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         });
         if (!error) return;
         console.warn(
-          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for seat ${seat}:`,
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for ${rows.length} seats:`,
           error.message
         );
       } catch (err) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for seat ${seat}:`,
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for ${rows.length} seats:`,
           err
         );
       }
@@ -3004,21 +3042,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         await new Promise((r) => setTimeout(r, 150 * attempt));
       }
     }
-    // All retries exhausted — tell the client its cards are missing so it can
-    // re-query table_hole_cards instead of sitting blind until the auto-fold.
+    if (!isCurrent()) return;
     reportError(
       new Error('insert_hole_cards failed after 3 attempts'),
       `ServerTableEngine.${this.tableId}.insert_hole_cards_failed`,
-      { userId, seat, handNumber: handNumberAtDeal }
+      { seats: rows.map((row) => row.seat), handNumber: handNumberAtDeal }
     );
-    this.hub?.emitEvent(this.tableId, {
-      type: 'hole_cards_unavailable',
-      table_id: this.tableId,
-      hand_number: handNumberAtDeal,
-      user_id: userId,
-      seat,
-      timestamp: Date.now(),
-    });
+    // The recovery event carries identities only, never another player's cards.
+    for (const row of rows) {
+      this.hub?.emitEvent(this.tableId, {
+        type: 'hole_cards_unavailable',
+        table_id: this.tableId,
+        hand_number: handNumberAtDeal,
+        user_id: row.userId,
+        seat: row.seat,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   /**

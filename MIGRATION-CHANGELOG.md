@@ -2,10 +2,6 @@
 
 ## Every Change, Documented. No Exceptions.
 
-## 2026-09-09: Reminder Receipts Do Not Lock Players
-
-The former reminder generator updates player rows after enqueueing pushes. The replacement commits versioned notification receipts with the outbox and never updates a player row. An isolated PostgreSQL 17 execution reproduced the old lock timeout and verified the replacement through 40 checks, including legacy overlap, bounded batches, rollback, cancellation, rescheduling and abandoned claims. Source re-read: yes. No gameplay timing or accounting changes. The workers service is the intended primary caller; the compatibility cron remains active. Application and publication evidence: docs/audits/2026-09-09-tournament-reminder-execution.md.
-
 ## 2026-09-09: Durable Tournament Seat Refund Identity
 
 TablePage seat exits now retain the original request across later retries through the existing durable refund helper, with a distinct table key and authenticated-account check. Canonical server receipt and ticket parsing remain unchanged. Two regressions reproduced the gap; 108 focused tests, TypeScript and the production build pass. Re-read: yes. No database migration. Publication and overall accounting Phase 3 acceptance remain pending. See docs/changelog/2026-09-09-durable-tournament-seat-refund.md.

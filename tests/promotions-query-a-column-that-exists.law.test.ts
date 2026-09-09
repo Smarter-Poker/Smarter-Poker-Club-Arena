@@ -124,11 +124,18 @@ describe('the money-path migrations that guard the bounty chests', () => {
       'RETURN public.fn_mystery_bounty_pay_unguarded_20260907(p_award_id)'
     );
 
-    // The latest terminal lock wrapper must still delegate only to that
-    // hardened payer after it owns the tournament and payout-visible rows.
-    expect(latest).toMatch(
-      /PERFORM 1 FROM public\.tournaments[\s\S]*?FOR UPDATE;[\s\S]*?RETURN public\.fn_mystery_bounty_pay_unguarded_20260907\(p_award_id\)/
+    // The terminal authority must now own the tournament and keep the
+    // exact-credit check in its self-contained root. Stage two removes the
+    // temporary rolling-deployment helper, so delegating to it here would
+    // reopen the money path after cleanup.
+    const latestPayer = latest.match(
+      /CREATE OR REPLACE FUNCTION public\.fn_mystery_bounty_pay\(p_award_id uuid\)[\s\S]*?\$function\$;/
+    )?.[0];
+    expect(latestPayer, 'the latest migration has no complete mystery payer root').toBeDefined();
+    expect(latestPayer).toMatch(
+      /PERFORM 1 FROM public\.tournaments t WHERE t\.id=v_tournament_id FOR UPDATE;[\s\S]*?IF COALESCE\(v_credited, false\)[\s\S]*?AND round\(COALESCE\(\(v_settle->>'paid'\)::numeric,0\),2\)[\s\S]*?UPDATE public\.tournament_bounty_award_recipients[\s\S]*?SET paid_at = now\(\)/
     );
+    expect(latestPayer).not.toContain('fn_mystery_bounty_pay_unguarded_20260907');
   });
 });
 

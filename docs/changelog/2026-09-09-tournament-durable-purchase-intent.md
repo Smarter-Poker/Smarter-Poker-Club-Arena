@@ -8,12 +8,14 @@ Both tournament modal callbacks now pass the exact confirmed stack, including ze
 
 ## Verification
 
-110 focused tests across four files and TypeScript passed locally. These cover service-level rebuy, reentry and add-on retries after eligibility changes; competing independently loaded modules; reloads; original payload retention; old-tab isolation; malformed saved state; storage failure; and modal zero-stack callbacks. Browser-native and production adoption acceptance remain pending.
+110 focused tests across four files and TypeScript passed locally. These cover service-level rebuy, reentry and add-on retries after eligibility changes; competing independently loaded modules; reloads; original payload retention; old-tab isolation; malformed saved state; storage failure; and modal zero-stack callbacks. Six isolated native Chromium scenarios now pass using real Web Locks and storage across two tabs and reloads for rebuy, reentry and add-on. The fixture never calls production transaction endpoints. Production adoption remains pending.
 
 PR3991 CI34389715780 shard4 failed an unrelated asynchronous wallet assertion: the test observed the RPC invocation before the response updated the displayed balance. It now awaits the same exact 70,000.00 result; no production wallet code or expected balance changed. Shard3 log reported all317 files passed.
 
-The initial local production build compiled, but provenance reported newer main commits. A normal main merge and rebuilt release evidence are required before publication. No claim of phase completion, deployed adoption, or production transaction testing is made.
+The initial local production build compiled, but provenance reported newer main commits. Main was merged normally as 4b163e08. Integrated TypeScript and the production build pass with behind-main=0. Automatic approval review rejected the integrated build with Sentry upload; the successful local build omitted SENTRY_AUTH_TOKEN only from its child environment, leaving repository release configuration intact. This local artifact is not publication proof. No claim of phase completion, deployed adoption, or production transaction testing is made.
 
 ## Remaining Phase Scope
 
 All12 CA-03 controls remain open for complete acceptance. Registration, funded prize and bounty commitments, payouts, guarantees, Spin treasury allocation, satellite tickets, cancellation, seating and all related UI paths still require the original programme's evidence. No runtime chip watcher, reconciler or compensating balance patch was added.
+
+The expanded focused run including the wallet assertion passed131 tests across five files. The first full-client run passed17690 tests with7 repository-scan timeouts at the unchanged5000ms limit. A four-worker run is recorded separately; no timeout or assertion was weakened.

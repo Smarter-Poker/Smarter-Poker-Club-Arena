@@ -163,9 +163,24 @@
   "shared_work": "Existing docs/audits/2026-09-09-phase3-progress.json tracks a separate 58-control tournament audit. Reuse verified changes and inspect latest source before duplicating work.",
   "durable_purchase_intent": {
     "status": "implemented_local_focused_tests_passed_release_pending",
-    "focused_tests": 110,
+    "focused_tests": 131,
     "typescript": "passed",
     "sources": ["src/services/TournamentPurchaseIntent.ts", "src/services/TournamentService.ts"],
-    "evidence": "docs/changelog/2026-09-09-tournament-durable-purchase-intent.md"
+    "evidence": "docs/changelog/2026-09-09-tournament-durable-purchase-intent.md",
+    "native_browser_scenarios": 6,
+    "native_browser_script": "scripts/dev/probe-tournament-purchase-browser.mjs",
+    "integrated_typescript": "passed",
+    "integrated_build": "passed locally without Sentry upload; behind-main=0",
+    "release": "not published; automatic approval review rejected Sentry source-map export"
+  },
+  "registration_trace": {
+    "verified": "read-only live function catalog on 2026-09-09",
+    "core": "fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)",
+    "core_body_md5": "797c1eac824f1cff55279c53f4094bce",
+    "findings": [
+      "Registration locks the tournament and atomically debits, creates the roster row, books fees and pool funding. Unique insert failure raises40001 to roll back the debit. Late seating failure rolls back before capacity retry.",
+      "Public initial registration has no request-id overload in the inspected catalog. Existing-row lookup cannot prove original operation identity after registration lifecycle changes. A complete retained registration receipt and client request binding remain unimplemented.",
+      "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it."
+    ]
   }
 }

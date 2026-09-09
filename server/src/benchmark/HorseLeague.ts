@@ -81,6 +81,8 @@ export interface LeagueResult {
   truncatedStreets: number;
   /** Candidate-policy decisions actually consumed during an offline gate. */
   candidatePolicyHits: number;
+  /** Solver samples that legalization changed into a different action family. */
+  candidateExecutionMismatches: number;
   /** Exact solver node roles reached by those decisions. */
   candidateNodeRoles: string[];
   /** Per-scenario evidence retained when several utility contexts are gated. */
@@ -96,6 +98,7 @@ export interface LeagueBenchmarkComponent {
   illegalActions: number;
   truncatedStreets: number;
   candidatePolicyHits: number;
+  candidateExecutionMismatches: number;
   candidateNodeRoles: string[];
 }
 
@@ -586,6 +589,7 @@ export async function runMatchup(
   const t0 = Date.now();
   const counters = { illegal: 0, truncated: 0 };
   let candidatePolicyHits = 0;
+  let candidateExecutionMismatches = 0;
   const candidateNodeRoles = new Set<string>();
   const perPairDiff: number[] = [];
   // V12.3: before compute isolation this ran inside the dealer process, where
@@ -614,8 +618,12 @@ export async function runMatchup(
       return {
         ...opts,
         onGtoV31Decision: (receipt) => {
-          candidatePolicyHits++;
-          candidateNodeRoles.add(receipt.nodeRole);
+          if (receipt.executedAsIntended) {
+            candidatePolicyHits++;
+            candidateNodeRoles.add(receipt.nodeRole);
+          } else {
+            candidateExecutionMismatches++;
+          }
           opts.onGtoV31Decision?.(receipt);
         },
       };
@@ -677,6 +685,7 @@ export async function runMatchup(
     illegalActions: counters.illegal,
     truncatedStreets: counters.truncated,
     candidatePolicyHits,
+    candidateExecutionMismatches,
     candidateNodeRoles: [...candidateNodeRoles].sort(),
     benchmarkComponents: [],
   };
@@ -1398,8 +1407,7 @@ async function maybeRunLeague(generation: number): Promise<void> {
 function launchMaybeRunLeague(): void {
   const generation = lifecycleGeneration;
   if (!lifecycleIsCurrent(generation) || inFlightRuns.size > 0) return;
-  let tracked!: Promise<void>;
-  tracked = maybeRunLeague(generation)
+  const tracked = maybeRunLeague(generation)
     .catch((err) => reportError(err, 'HorseLeague.tick'))
     .finally(() => inFlightRuns.delete(tracked));
   inFlightRuns.add(tracked);
@@ -1641,6 +1649,7 @@ export async function runLeague(
             illegal_actions: r.illegalActions + r.truncatedStreets,
             truncated_streets: r.truncatedStreets,
             candidate_policy_hits: r.candidatePolicyHits,
+            candidate_execution_mismatches: r.candidateExecutionMismatches,
             candidate_node_roles: r.candidateNodeRoles,
             candidate_benchmark_components: r.benchmarkComponents,
           },

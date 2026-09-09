@@ -160,3 +160,43 @@ describe('the engine side of the sweep', () => {
     expect(BASE).toMatch(/new TableBreakEngine\(\(event\) => bridgeToHub\('TableBreak', event\)\)/);
   });
 });
+
+describe('deep sweep two (2026-09-08): the wiring across the boundaries', () => {
+  it('no browser call site broadcasts a tournament event to the INTERNAL_API_KEY route', () => {
+    const svc = read('src/services/TournamentService.ts');
+    expect(svc).not.toMatch(/broadcastTournamentEvent\(/);
+    const rcs = read('src/services/RealtimeChannelService.ts');
+    expect(rcs).toMatch(/INTERNAL_API_KEY holders only/);
+  });
+
+  it('POY posts nothing into routes that do not exist', () => {
+    const poy = read('src/services/POYService.ts');
+    expect(poy).toMatch(/const POY_ROUTES_EXIST = false;/);
+    expect((poy.match(/if \(!POY_ROUTES_EXIST\) return/g) ?? []).length).toBe(4);
+  });
+
+  it('no money or creation path calls crypto.randomUUID() bare', () => {
+    for (const p of [
+      'src/services/WalletService.ts',
+      'src/services/SpinActivationService.ts',
+      'src/components/modals/CreateClubModal.tsx',
+      'src/components/wallet/ChipMintModal.tsx',
+      'src/components/wallet/DepositWithdrawModal.tsx',
+    ]) {
+      const src = read(p);
+      expect(src, p).not.toMatch(/crypto\.randomUUID\(\)/);
+      expect(src, p).toMatch(/utils\/uuid'/);
+    }
+  });
+
+  it('CHANNEL_ERROR is read, and FINANCIAL_UPDATE has a producer', () => {
+    const client = read('src/services/EngineStateClient.ts');
+    expect(client).toMatch(/case 'CHANNEL_ERROR': \{/);
+    const seats = read('server/src/services/supabase/seats.ts');
+    expect(seats).toMatch(/pushFinancialUpdate\(userId, \{\s*tableId,/);
+    const seating = read('server/src/engine/ServerTableEngineSeating.ts');
+    expect(seating).toMatch(/pushFinancialUpdate\(row\.user_id, \{/);
+    const push = read('server/src/services/financialPush.ts');
+    expect(push).toMatch(/type: 'FINANCIAL_UPDATE'/);
+  });
+});

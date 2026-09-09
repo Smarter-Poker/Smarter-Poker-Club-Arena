@@ -598,7 +598,7 @@
       "executed": "Stage-A legacy and canonical authority and capacity receipts",
       "not_executed": "Stage-B cutover-only retirement, because that migration is absent"
     },
-    "production_database_activity": "read_only_catalog_and_operational_metadata",
+    "production_database_activity": "Read-only review plus one bounded migration creating three foreign-key indexes; no financial mutation.",
     "resumed_after_merge": {
       "main_commit": "7dd926c9d87a67371b33df63ecc0f65c199288bc",
       "tests_passed": 1384,
@@ -606,20 +606,35 @@
       "server_typescript_exit": 0,
       "server_build_exit": 0,
       "new_code_stub_markers": []
+    },
+    "refund_club_fk_indexes": {
+      "migration": "20260909171744_tournament_refund_club_foreign_keys_are_indexed.sql",
+      "production_applied": true,
+      "valid_ready_full_indexes": 3,
+      "isolated_postgres17": "applied twice and all three query plans used the indexes with sequential scan disabled",
+      "production_gate": "check-club-fk-indexes.mjs exited 0; every single-column foreign key into public.clubs covered",
+      "manifest_generator": "exited 0; 1231 tables, 3023 functions, 1076 required-column tables",
+      "advisors": "No remaining unindexed club foreign key on these three refund tables. Separate existing satellite/tournament foreign-key suggestions remain outside this narrow gate correction."
     }
   },
   "publication": {
-    "status": "explicitly_authorized_local_verification_passed",
-    "source_pushed": false,
+    "status": "pushed_ci_database_gate_corrected",
+    "source_pushed": true,
     "authorization": "User explicitly authorized pushing and publishing Phase 3 changes to Smarter-Poker/Smarter-Poker-Club-Arena in this chat.",
     "recovered_local_commit": "165ec0ce03012ce8b3f548b4b6895a415e73f4a9",
-    "reconnection_verified_date_utc": "2026-09-09"
+    "reconnection_verified_date_utc": "2026-09-09",
+    "pushed_commit": "d82be94d9083ff1fef9345215e287474ea5c07d7",
+    "pull_request": 3971,
+    "initial_ci_run": 34381252398,
+    "initial_ci_failure": "Supabase Invariants: A Club Stays Deletable, three unindexed refund-table club foreign keys",
+    "initial_ci_server_and_client_suites": "passed",
+    "live_engine_adoption": "pending"
   },
   "open_source_findings": [
     {
       "controls": ["S07"],
       "status": "requires_concurrent_funding_and_authority_proof",
-      "finding": "Draw and settle use separate transactions. Draw does not persist a reservation; settle can record a shortfall note without a bank debit in its body. Installed obligation payment is escrow-capped. Full transitive trigger/funding and concurrency proof remains pending."
+      "finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending."
     },
     {
       "controls": ["AX07", "AX10"],

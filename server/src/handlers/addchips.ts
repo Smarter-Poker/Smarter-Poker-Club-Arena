@@ -58,6 +58,21 @@ export async function handleAddchips(
     if (!tableId || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid amount' });
     }
+    /* AND IT IS A CHIP AMOUNT, TO THE CENT (2026-09-09). The client computes
+       this as `Math.min(maxBuyIn - stack, balance)` in three places, which is
+       a float subtraction (200 - 133.33 = 66.66999999999999). It reached
+       `atomic_table_addon`, which stores it verbatim in
+       `table_pending_addons.amount`, and `resolve_pending_addon` can then
+       never produce a receipt where applied + refunded equals it - which the
+       post-commit obligation refuses, deterministically, so the table stops
+       dealing. The engine rounds too; this is the boundary, where a bad
+       amount is a 400 the caller can see rather than a silent correction. */
+    if (Math.round(amount * 100) / 100 !== amount) {
+      return sendJSON(res, 400, {
+        success: false,
+        error: 'Chip amounts are limited to two decimal places',
+      });
+    }
 
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {

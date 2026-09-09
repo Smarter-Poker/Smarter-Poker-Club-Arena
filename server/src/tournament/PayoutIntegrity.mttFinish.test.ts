@@ -247,19 +247,18 @@ describe('every payout site shares the one rounding rule', () => {
 });
 
 describe('a failed query must never read as "nobody is left" - the money paths', () => {
-  it('a cancelled tournament with an unreadable registration list refunds nobody AND closes nobody', () => {
-    // Defect: `openRows ?? []` made an unreadable list an empty one. The
-    // refund loop found nothing, then the code below closed every
-    // 'playing'/'registered' row and the tables — destroying every entrant's
-    // buy-in, rebuys and add-ons, and leaving no candidates for a retry.
-    expect(code(RECOVERY)).toMatch(/cancel_refund_open_rows_unreadable/);
-    expect(code(RECOVERY)).not.toMatch(/const\s*\{\s*data:\s*openRows\s*\}\s*=/);
-    // The branch must be REACHED, not merely present: an early sabotage run
-    // replaced `if (openRowsErr)` with `if (false)` and every string-matching
-    // assertion above still passed.
-    expect(code(RECOVERY)).toMatch(
-      /if\s*\(\s*openRowsError\s*\|\|\s*!Array\.isArray\(openRows\)\s*\)\s*\{[\s\S]{0,700}?\n\s*return;/
-    );
+  it('the engine has no cancellation refund or close fallback to misread a list', () => {
+    // Cancellation moved completely into the database transaction authority.
+    // Keeping the former TypeScript helper, even unused, would preserve a
+    // second partial refund/close implementation that a future caller could
+    // reconnect. Recovery may resolve COMPLETING receipts only; it never
+    // cancels a tournament or writes cancellation money/state itself.
+    const recovery = code(RECOVERY);
+    expect(recovery).not.toMatch(/refundAndCloseCancelledTournament/);
+    expect(recovery).not.toMatch(/atomic_cancel_tournament/);
+    expect(recovery).not.toMatch(/cancel_refund_/);
+    expect(recovery).not.toMatch(/\.update\(\{\s*status:\s*['"]CANCELLED['"]/);
+    expect(recovery).not.toMatch(/\.from\(['"]tournament_players['"]\)[\s\S]{0,180}?\.delete\(/);
   });
 
   it('the stuck-COMPLETING rescue refuses to complete a field it could not read', () => {

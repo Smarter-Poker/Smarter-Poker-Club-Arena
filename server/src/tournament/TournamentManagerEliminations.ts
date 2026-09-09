@@ -115,23 +115,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
-   * How many consecutive times each player has been REFUSED by
-   * `eliminatePlayer`, so a permanently un-eliminable one stops holding the
-   * queue (2026-09-09).
-   *
-   * The assignment loop aborts the whole pass on a refusal, and it must: a
-   * refusal can mean the CAS missed because another generation took the place,
-   * which makes `takenPositions` stale, and handing out a stale place is how
-   * two players get paid for one finish. But the batch is ordered by chips and
-   * every candidate holds ZERO, so the order is stable - the same refused
-   * player was first on every five-second sweep, for ever, and the nineteen
-   * behind him were never even attempted.
-   *
-   * Keeping the abort and rotating the ORDER fixes the deadlock without
-   * touching the ladder safety: whoever refuses goes to the back, so the next
-   * pass attempts somebody who has not just failed. An entry is dropped as
-   * soon as that player is eliminated, and the map only ever holds members of
-   * the current busted set.
+   * Retry order for an exact tie only: same accepted hand and same starting
+   * stack. Hand number and hand-start stack always sort before this map, so a
+   * refusal can never advance a PKO watermark past an earlier bust or change a
+   * standings tie that the accepted hand can distinguish.
    */
   private readonly bustRefusalStreak = new Map<string, number>();
 
@@ -575,10 +562,69 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * keeps the whole-field comparison below honest, and
            * `bustBatchHasMore` re-arms the sweep exactly as it did before.
            */
+          // The global hand order must be known BEFORE taking the bounded
+          // mutation batch. Slicing the zero-chip rows first would choose an
+          // arbitrary twenty-player subset, then allow a later hand in that
+          // subset to advance the PKO watermark past an earlier hand left for
+          // the next pass. Chunk the id predicate so a backlog cannot exceed
+          // an HTTP request-line limit; any unreadable chunk fails the whole
+          // pass closed because partial order evidence is not an order.
+          const bustHandNumbers = new Map<string, number>();
+          const bustStartingStacks = new Map<string, number>();
+          const bustOrderLookupSize = 40;
+          for (let offset = 0; offset < busted.length; offset += bustOrderLookupSize) {
+            const userIds = busted
+              .slice(offset, offset + bustOrderLookupSize)
+              .map((player) => player.user_id);
+            const { data: bustHands, error: bustHandsErr } = await supabase
+              .from('tournament_knockout_candidates')
+              .select('eliminated_user_id, hand_number, stack_before')
+              .eq('tournament_id', this.tournamentId)
+              .eq('state', 'pending')
+              .in('eliminated_user_id', userIds);
+            if (sweepStopped()) return;
+            if (bustHandsErr) {
+              reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+              return;
+            }
+            for (const row of bustHands ?? []) {
+              const uid = String((row as { eliminated_user_id?: unknown }).eliminated_user_id);
+              const hand = Number((row as { hand_number?: unknown }).hand_number);
+              const stackBefore = Number((row as { stack_before?: unknown }).stack_before);
+              if (!uid || !Number.isFinite(hand) || !Number.isFinite(stackBefore)) continue;
+              const seen = bustHandNumbers.get(uid);
+              if (
+                seen === undefined ||
+                hand < seen ||
+                (hand === seen && stackBefore < (bustStartingStacks.get(uid) ?? Number.MAX_VALUE))
+              ) {
+                bustHandNumbers.set(uid, hand);
+                bustStartingStacks.set(uid, stackBefore);
+              }
+            }
+          }
+
+          // UNKNOWN sorts LAST. A missing candidate must never claim it busted
+          // first and take a place that belongs to somebody the engine watched.
+          const bustRank = (userId: string): number =>
+            bustHandNumbers.get(userId) ?? Number.MAX_SAFE_INTEGER;
+          const bustStartingStack = (userId: string): number =>
+            bustStartingStacks.get(userId) ?? Number.MAX_SAFE_INTEGER;
+          type BustedPlayer = NonNullable<typeof busted>[number];
+          const compareBusted = (a: BustedPlayer, b: BustedPlayer): number =>
+            bustRank(a.user_id) - bustRank(b.user_id) ||
+            bustStartingStack(a.user_id) - bustStartingStack(b.user_id) ||
+            (this.bustRefusalStreak.get(a.user_id) ?? 0) -
+              (this.bustRefusalStreak.get(b.user_id) ?? 0) ||
+            a.user_id.localeCompare(b.user_id);
+
           const bustedTotal = busted.length;
           if (busted.length > TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {
             busted = [...busted]
-              .sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0))
+              .sort(compareBusted)
               .slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
             bustBatchHasMore = true;
           }
@@ -685,54 +731,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * live PKO events - 49 players who could never be eliminated and whose
            * bounties could never be paid.
            *
-           * Ordering by the hand the bust actually happened in makes the
-           * watermark advance monotonically, so it cannot overtake a claim that
-           * has not been made yet.
-           *
-           * The refusal streak still wins, because it is the deadlock breaker: a
-           * player who cannot be eliminated at all must not hold the queue.
-           * Chips remain the last resort, for a candidate with no recorded hand.
+           * The whole zero-stack field is ordered BEFORE the bounded batch is
+           * cut. Hand number comes first, then the accepted hand's starting
+           * stack for a same-hand tie. That makes the watermark monotonic and
+           * gives the smaller starting stack the worse finishing place. A
+           * refusal may rotate only an otherwise exact tie; it can never let a
+           * later hand pass an earlier one. Missing evidence sorts last.
            */
-          const bustHandNumbers = new Map<string, number>();
-          {
-            const { data: bustHands, error: bustHandsErr } = await supabase
-              .from('tournament_knockout_candidates')
-              .select('eliminated_user_id, hand_number')
-              .eq('tournament_id', this.tournamentId)
-              .eq('state', 'pending')
-              .in(
-                'eliminated_user_id',
-                busted.map((b) => b.user_id)
-              );
-            if (sweepStopped()) return;
-            // A read we could not make is UNKNOWN, not "no order": fall back to
-            // the chip tiebreak rather than inventing one. The watermark still
-            // refuses anything genuinely out of order, so this stays safe.
-            if (bustHandsErr) {
-              reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
-            } else {
-              for (const row of bustHands ?? []) {
-                const uid = String((row as { eliminated_user_id?: unknown }).eliminated_user_id);
-                const hand = Number((row as { hand_number?: unknown }).hand_number);
-                if (!uid || !Number.isFinite(hand)) continue;
-                const seen = bustHandNumbers.get(uid);
-                if (seen === undefined || hand < seen) bustHandNumbers.set(uid, hand);
-              }
-            }
-          }
-
-          // UNKNOWN sorts LAST. A missing hand number must never claim it busted
-          // first and take a place that belongs to somebody the engine watched.
-          const bustRank = (userId: string): number =>
-            bustHandNumbers.get(userId) ?? Number.MAX_SAFE_INTEGER;
-
-          let bustedOrdered = [...busted].sort(
-            (a, b) =>
-              (this.bustRefusalStreak.get(a.user_id) ?? 0) -
-                (this.bustRefusalStreak.get(b.user_id) ?? 0) ||
-              bustRank(a.user_id) - bustRank(b.user_id) ||
-              (a.chips ?? 0) - (b.chips ?? 0)
-          );
+          let bustedOrdered = [...busted].sort(compareBusted);
 
           // TOURNEY-AUDIT 2026-07-24 [double-pay guard]: if EVERY remaining
           // player busted in the same sweep, the old loop handed position 1 to
@@ -914,10 +920,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             // the already-armed unresolved-bust retry rebuilds the ladder
             // from persisted positions before it writes anybody else.
             if (!eliminated) {
-              // Remember WHO refused, so the next pass tries somebody else
-              // first. Without this the batch order is fixed (every candidate
-              // holds zero chips, so the sort is a tie) and one permanently
-              // refused player starves the rest for ever.
+              // Remember WHO refused only as the last tiebreak for the same
+              // hand and same starting stack. Hand order must never be skipped:
+              // doing so would advance a PKO watermark past unpaid money.
               const refusedId = bustedOrdered[i].user_id;
               this.bustRefusalStreak.set(
                 refusedId,

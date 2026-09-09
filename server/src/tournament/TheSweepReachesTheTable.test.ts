@@ -71,16 +71,16 @@ describe('the busted batch is taken before the RPC that caps its input', () => {
   });
 });
 
-describe('one un-eliminable player does not hold the queue for ever', () => {
+describe('a refusal cannot corrupt the global bust order', () => {
   /**
    * The assignment loop aborts the pass on a refusal, and it must - a refusal
    * can mean the CAS missed because another generation took the place, and
    * handing out a stale place is how two players get paid for one finish. But
-   * every candidate holds ZERO chips, so the chip sort is a tie and the order
-   * was stable: the same refused player was first on every five-second sweep,
-   * for ever, and the nineteen behind him were never attempted.
+   * every candidate holds ZERO chips, so the old chip sort was a tie. The
+   * accepted hand now supplies the exact order; retry rotation is permitted
+   * only after hand number and hand-start stack are both tied.
    */
-  it('records who refused so the next pass tries somebody else first', () => {
+  it('records who refused without allowing a later hand to pass it', () => {
     expect(ELIM).toMatch(/private readonly bustRefusalStreak = new Map<string, number>\(\)/);
     const loop = ELIM.slice(
       ELIM.indexOf('const eliminated = await this.eliminatePlayer('),
@@ -94,28 +94,46 @@ describe('one un-eliminable player does not hold the queue for ever', () => {
     expect(ELIM).toMatch(/this\.bustRefusalStreak\.delete\(bustedOrdered\[i\]\.user_id\)/);
   });
 
-  it('orders refused players last, then by the hand the bust happened in', () => {
+  it('orders by hand and starting stack before its exact-tie refusal streak', () => {
     // The chip tiebreak became the LAST resort on 2026-09-09: every candidate
     // here holds zero, so chips decided nothing, and the resulting arbitrary
     // order stranded 49 PKO bounties behind the settlement watermark. The
-    // refusal streak still wins - it is the deadlock breaker - then the hand
-    // number, which is the witness to who actually busted first.
+    // Hand number is the primary witness, then the accepted hand's starting
+    // stack resolves simultaneous busts. Refusal rotation is only a final
+    // exact-tie mechanism and cannot advance the PKO watermark.
     const order = ELIM.slice(
-      ELIM.indexOf('let bustedOrdered = [...busted].sort'),
-      ELIM.indexOf('TOURNEY-AUDIT 2026-07-24')
+      ELIM.indexOf('const compareBusted ='),
+      ELIM.indexOf('const bustedTotal = busted.length')
     );
-    expect(order).toMatch(/this\.bustRefusalStreak\.get\(a\.user_id\) \?\? 0/);
     expect(order).toMatch(/bustRank\(a\.user_id\) - bustRank\(b\.user_id\)/);
-    expect(order).toMatch(/\(a\.chips \?\? 0\) - \(b\.chips \?\? 0\)/);
-    expect(order.indexOf('bustRefusalStreak')).toBeLessThan(order.indexOf('bustRank(a.user_id)'));
+    expect(order).toMatch(/bustStartingStack\(a\.user_id\) - bustStartingStack\(b\.user_id\)/);
+    expect(order).toMatch(/this\.bustRefusalStreak\.get\(a\.user_id\) \?\? 0/);
+    expect(order.indexOf('bustRank(a.user_id)')).toBeLessThan(
+      order.indexOf('bustStartingStack(a.user_id)')
+    );
+    expect(order.indexOf('bustStartingStack(a.user_id)')).toBeLessThan(
+      order.indexOf('bustRefusalStreak')
+    );
+    expect(order).toContain('a.user_id.localeCompare(b.user_id)');
+    expect(ELIM).toContain('let bustedOrdered = [...busted].sort(compareBusted)');
   });
 
-  it('reads the bust order from the knockout candidates, and treats a failed read as unknown', () => {
+  it('reads the complete bust order before slicing and fails closed on a partial read', () => {
     expect(ELIM).toMatch(
-      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number'\)/
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number, stack_before'\)/
     );
-    expect(ELIM).toMatch(/'Tournament\.bust_order_unreadable'/);
-    // UNKNOWN must not sort to the front and claim a place it cannot prove.
+    const orderReadAt = ELIM.indexOf('const bustHandNumbers = new Map<string, number>()');
+    const sliceAt = ELIM.indexOf('const bustedTotal = busted.length');
+    expect(orderReadAt).toBeGreaterThan(0);
+    expect(orderReadAt).toBeLessThan(sliceAt);
+    const readFailure = ELIM.slice(
+      ELIM.indexOf('if (bustHandsErr)'),
+      ELIM.indexOf('const bustRank =')
+    );
+    expect(readFailure).toMatch(/'Tournament\.bust_order_unreadable'/);
+    expect(readFailure).toContain('requestUrgentEliminationSweepAfter');
+    expect(readFailure).toMatch(/\breturn;/);
+    // A genuinely missing row is still UNKNOWN and must not sort to the front.
     expect(ELIM).toMatch(/bustHandNumbers\.get\(userId\) \?\? Number\.MAX_SAFE_INTEGER/);
   });
 });

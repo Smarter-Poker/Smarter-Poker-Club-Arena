@@ -29,6 +29,7 @@ import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
 
 /** A transport success alone does not confirm a tournament chip purchase. */
 function confirmedTournamentPurchaseStack(
@@ -1832,90 +1833,62 @@ class TournamentService {
     tournamentId: string,
     userId: string,
     clientToken?: string
-  ): Promise<{ success: boolean; newStack?: number }> {
-    const canRebuyResult = await this.canRebuy(tournamentId, userId);
-    if (!canRebuyResult.allowed) {
-      throw new Error(canRebuyResult.reason || 'Rebuy not allowed');
-    }
+  ): Promise<{ success: true; newStack: number }> {
+    const newStack = await withTournamentPurchaseIntent(
+      { tournamentId, userId, kind: 'rebuy', token: clientToken },
+      async () => {
+        const canRebuyResult = await this.canRebuy(tournamentId, userId);
+        if (!canRebuyResult.allowed) {
+          throw new Error(canRebuyResult.reason || 'Rebuy not allowed');
+        }
 
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
 
-    const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
-    // Whole chips only (Dan 2026-08-20) - no decimal rebuy prices.
-    const rebuyCost = Math.max(
-      0,
-      Math.round(Number(tournament.rebuy_cost || tournament.buy_in_amount || 0))
-    );
-    // RAKE-AUDIT 2026-07-24: rebuys were fee-free — 100% of rebuy money went to
-    // the prize pool and 0% to the house, breaking Dan's "10% on any and all
-    // tournament/SNG buy-ins" rule. The atomic RPC now splits the advertised
-    // price into fee, bounty head (when applicable), and prize contribution.
-    // Dan 2026-08-21 (binding): the 10% comes OUT of the rebuy price, exactly
-    // as it does out of an entry. The advertised price IS the total charged and
-    // the remainder feeds the prize pool. Until this, a 20 rebuy charged 22
-    // while a 20 entry charged 20 - two prices for one rule.
-    const rebuyTotalCost = rebuyCost;
+        const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
+        // Whole chips only (Dan 2026-08-20) - no decimal rebuy prices.
+        const rebuyCost = Math.max(
+          0,
+          Math.round(Number(tournament.rebuy_cost || tournament.buy_in_amount || 0))
+        );
+        // RAKE-AUDIT 2026-07-24: rebuys were fee-free — 100% of rebuy money went to
+        // the prize pool and 0% to the house, breaking Dan's "10% on any and all
+        // tournament/SNG buy-ins" rule. The atomic RPC now splits the advertised
+        // price into fee, bounty head (when applicable), and prize contribution.
+        // Dan 2026-08-21 (binding): the 10% comes OUT of the rebuy price, exactly
+        // as it does out of an entry. The advertised price IS the total charged and
+        // the remainder feeds the prize pool. Until this, a 20 rebuy charged 22
+        // while a 20 entry charged 20 - two prices for one rule.
+        const rebuyTotalCost = rebuyCost;
 
-    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
-    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
-    // player with plenty of live chips could be refused before the atomic RPC
-    // (the real authority, which checks the LIVE pool and produces its own
-    // insufficient-funds error) ever ran. A "better error message" computed
-    // from a dead table was a false refusal gate on a money action.
-    // Process rebuy via ATOMIC RPC
-    // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
-    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-      p_tournament_id: tournamentId,
-      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-      p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
-      p_cost: rebuyTotalCost,
-      p_chips: rebuyChips,
-      p_current_level: this.getCurrentLevelState(tournament).levelIndex,
-      /**
-       * IDEMPOTENCY, EXACTLY (2026-08-27).
-       *
-       * With a token the server keys the purchase on it, so every click of ONE
-       * prompt collapses to one charge and a SECOND, genuine bust in the same
-       * tournament is a different purchase.
-       *
-       * Without one it falls back to a rebuy-ordinal key plus a 1.5s
-       * double-submit collapse — and before that fallback existed, ANY second
-       * rebuy inside 30 seconds was swallowed and reported as success. In a
-       * turbo that meant a player who really did bust twice was charged
-       * nothing, granted nothing, shown "Rebuy Successful", and left sitting at
-       * 0 chips.
-       *
-       * The token is minted per PROMPT, never per click — see the callers in
-       * TablePage (`beginRebuyPrompt` / `endRebuyPrompt`).
-       */
-      p_client_token: clientToken ?? null,
-    });
-
-    if (error) {
-      reportError(error, 'TournamentService.Rebuy_RPC_outcome_unconfirmed');
-      throw error;
-    }
-
-    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
-    // same transaction as the chip deduction. This used to ALSO insert a
-    // rake_records row and increment total_rake here, so every fee was
-    // counted twice in union rake revenue and in rakeback.
-
-    // Emit AFTER confirmed success — never optimistically before RPC
-    const newStack = confirmedTournamentPurchaseStack(
-      data,
-      tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy'
+        // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+        // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+        // player with plenty of live chips could be refused before the atomic RPC
+        // (the real authority, which checks the LIVE pool and produces its own
+        // insufficient-funds error) ever ran. A "better error message" computed
+        // from a dead table was a false refusal gate on a money action.
+        // Process rebuy via ATOMIC RPC
+        // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
+        return {
+          p_tournament_id: tournamentId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+          p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
+          p_cost: rebuyTotalCost,
+          p_chips: rebuyChips,
+          p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+          p_client_token: clientToken ?? null,
+        };
+      },
+      async (request) => {
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', request);
+        if (error) {
+          reportError(error, 'TournamentService.Rebuy_RPC_outcome_unconfirmed');
+          throw error;
+        }
+        return confirmedTournamentPurchaseStack(data, request.p_rebuy_type);
+      }
     );
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
-
-    /* The browser-side "broadcast rebuy event" that used to sit here was
-       removed in the final sweep of 2026-09-08: /channels/tournament/:id/event
-       accepts only INTERNAL_API_KEY, the browser sent a player JWT, and every
-       rebuy ended with a guaranteed 401 reported to Sentry. Nothing consumed
-       the event. The engine's own tournament manager announces what a table
-       needs to know. */
-
     return { success: true, newStack };
   }
 
@@ -1952,83 +1925,79 @@ class TournamentService {
   async processAddOn(
     tournamentId: string,
     userId: string
-  ): Promise<{ success: boolean; newStack?: number }> {
-    const canAddOnResult = await this.canAddOn(tournamentId);
-    if (!canAddOnResult.allowed) {
-      throw new Error(canAddOnResult.reason || 'Add-on not allowed');
-    }
+  ): Promise<{ success: true; newStack: number }> {
+    const newStack = await withTournamentPurchaseIntent(
+      { tournamentId, userId, kind: 'addon' },
+      async () => {
+        const canAddOnResult = await this.canAddOn(tournamentId);
+        if (!canAddOnResult.allowed) {
+          throw new Error(canAddOnResult.reason || 'Add-on not allowed');
+        }
 
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
 
-    const addonChips = tournament.addon_chips || tournament.starting_chips;
-    // Whole chips only (Dan 2026-08-20) - no decimal add-on prices.
-    const addonCost = Math.max(
-      0,
-      Math.round(Number(tournament.addon_cost || tournament.buy_in_amount || 0))
+        const addonChips = tournament.addon_chips || tournament.starting_chips;
+        // Whole chips only (Dan 2026-08-20) - no decimal add-on prices.
+        const addonCost = Math.max(
+          0,
+          Math.round(Number(tournament.addon_cost || tournament.buy_in_amount || 0))
+        );
+        // Dan 2026-08-20 (binding): "ADD ON'S AREN'T RAKED. ONLY REBUYS."
+        // This reverses the 2026-07-24 change that put a 10% house fee on add-ons.
+        // process_tournament_rebuy now charges an add-on at face value and books
+        // no rake for it; the whole add-on goes to the prize pool.
+        const addonTotalCost = addonCost;
+
+        // Check if player already used their add-on (each player gets max 1 add-on)
+        const { data: existingAddon, error: addonCheckErr } = await supabase
+          .from('wallet_transactions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('category', 'addon')
+          .eq('related_entity_id', tournamentId)
+          .limit(1);
+        // ROUND 8 (2026-08-29): a failed read used to pass the duplicate gate on a
+        // MONEY action - the one-add-on-per-player rule waved through anyone whose
+        // check query timed out. Fails closed and retryable instead.
+        if (addonCheckErr) {
+          reportError(addonCheckErr, 'TournamentService.addon_duplicate_check_read_failed', {
+            tournamentId,
+          });
+          throw new Error('Could not verify your add-on status. Please try again.');
+        }
+        if (existingAddon && existingAddon.length > 0) {
+          throw new Error('You have already used your add-on for this tournament');
+        }
+
+        // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
+        // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
+        // player with plenty of live chips could be refused before the atomic RPC
+        // (the real authority, which checks the LIVE pool and produces its own
+        // insufficient-funds error) ever ran. A "better error message" computed
+        // from a dead table was a false refusal gate on a money action.
+        // Process addon via ATOMIC RPC
+        // (This handles wallet deduction, logging, and rollback natively)
+        return {
+          p_tournament_id: tournamentId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
+          p_rebuy_type: 'addon',
+          p_cost: addonTotalCost,
+          p_chips: addonChips,
+          p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+          p_client_token: null,
+        };
+      },
+      async (request) => {
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', request);
+        if (error) {
+          reportError(error, 'TournamentService.Addon_RPC_outcome_unconfirmed');
+          throw error;
+        }
+        return confirmedTournamentPurchaseStack(data, 'addon');
+      }
     );
-    // Dan 2026-08-20 (binding): "ADD ON'S AREN'T RAKED. ONLY REBUYS."
-    // This reverses the 2026-07-24 change that put a 10% house fee on add-ons.
-    // process_tournament_rebuy now charges an add-on at face value and books
-    // no rake for it; the whole add-on goes to the prize pool.
-    const addonTotalCost = addonCost;
-
-    // Check if player already used their add-on (each player gets max 1 add-on)
-    const { data: existingAddon, error: addonCheckErr } = await supabase
-      .from('wallet_transactions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('category', 'addon')
-      .eq('related_entity_id', tournamentId)
-      .limit(1);
-    // ROUND 8 (2026-08-29): a failed read used to pass the duplicate gate on a
-    // MONEY action - the one-add-on-per-player rule waved through anyone whose
-    // check query timed out. Fails closed and retryable instead.
-    if (addonCheckErr) {
-      reportError(addonCheckErr, 'TournamentService.addon_duplicate_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your add-on status. Please try again.');
-    }
-    if (existingAddon && existingAddon.length > 0) {
-      throw new Error('You have already used your add-on for this tournament');
-    }
-
-    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
-    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
-    // player with plenty of live chips could be refused before the atomic RPC
-    // (the real authority, which checks the LIVE pool and produces its own
-    // insufficient-funds error) ever ran. A "better error message" computed
-    // from a dead table was a false refusal gate on a money action.
-    // Process addon via ATOMIC RPC
-    // (This handles wallet deduction, logging, and rollback natively)
-    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-      p_tournament_id: tournamentId,
-      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-      p_rebuy_type: 'addon',
-      p_cost: addonTotalCost,
-      p_chips: addonChips,
-      p_current_level: this.getCurrentLevelState(tournament).levelIndex,
-    });
-
-    if (error) {
-      reportError(error, 'TournamentService.Addon_RPC_outcome_unconfirmed');
-      throw error;
-    }
-
-    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
-    // same transaction as the chip deduction. This used to ALSO insert a
-    // rake_records row and increment total_rake here, so every fee was
-    // counted twice in union rake revenue and in rakeback.
-
-    // Emit AFTER confirmed success — never optimistically before RPC
-    const newStack = confirmedTournamentPurchaseStack(data, 'addon');
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
-
-    /* The browser-side add-on broadcast was removed with the rebuy one
-       (final sweep 2026-09-08): an INTERNAL_API_KEY route called with a player
-       JWT, a 401 on every add-on, no consumer. */
-
     return { success: true, newStack };
   }
 

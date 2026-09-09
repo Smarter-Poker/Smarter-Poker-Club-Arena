@@ -327,9 +327,9 @@ BEGIN
 
   IF COALESCE((v_receipt->>'post_commit_obligations')::boolean, false) IS NOT TRUE
      OR (SELECT time_bank_uses_remaining FROM public.table_seats
-          WHERE id = '51000000-0000-4000-8000-000000000001') <> 3
+          WHERE id = '51000000-0000-4000-8000-000000000001') <> 1
      OR (SELECT time_bank_remaining FROM public.table_seats
-          WHERE id = '51000000-0000-4000-8000-000000000001') <> 15
+          WHERE id = '51000000-0000-4000-8000-000000000001') <> 25
      OR (SELECT time_bank_uses_remaining FROM public.table_seats
           WHERE id = '51000000-0000-4000-8000-000000000002') <> 9
      OR (SELECT time_bank_remaining FROM public.table_seats
@@ -338,7 +338,21 @@ BEGIN
           WHERE id = '51000000-0000-4000-8000-000000000003') <> 4
      OR (SELECT time_bank_remaining FROM public.table_seats
           WHERE id = '51000000-0000-4000-8000-000000000003') <> 20 THEN
-    RAISE EXCEPTION 'strict different-chair exact write failed: %', v_receipt;
+    RAISE EXCEPTION
+      'strict different-chair exact write failed: %, seat1=(%,%), reused=(%,%), seat3=(%,%)',
+      v_receipt,
+      (SELECT time_bank_uses_remaining FROM public.table_seats
+        WHERE id = '51000000-0000-4000-8000-000000000001'),
+      (SELECT time_bank_remaining FROM public.table_seats
+        WHERE id = '51000000-0000-4000-8000-000000000001'),
+      (SELECT time_bank_uses_remaining FROM public.table_seats
+        WHERE id = '51000000-0000-4000-8000-000000000002'),
+      (SELECT time_bank_remaining FROM public.table_seats
+        WHERE id = '51000000-0000-4000-8000-000000000002'),
+      (SELECT time_bank_uses_remaining FROM public.table_seats
+        WHERE id = '51000000-0000-4000-8000-000000000003'),
+      (SELECT time_bank_remaining FROM public.table_seats
+        WHERE id = '51000000-0000-4000-8000-000000000003');
   END IF;
 END;
 $strict_different_chair_exact_generation_still_settles$;

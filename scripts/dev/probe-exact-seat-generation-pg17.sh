@@ -26,6 +26,7 @@ zero_delta_migration="$(resolve_migration settling_nothing_needs_no_wallet_and_l
 obligations_migration="$(resolve_migration post_commit_obligations_are_atomic_and_resumable.sql)"
 exact_generation_migration="$(resolve_migration hand_settlement_targets_exact_seat_generation.sql)"
 departed_time_bank_migration="$(resolve_migration a_seat_that_has_left_cannot_hold_a_time_bank.sql)"
+terminal_receipt_migration="$(resolve_migration non_satellite_terminal_settlement_commits_one_stored_receipt.sql)"
 strict_generation_migration="$(resolve_migration hand_settlement_requires_exact_seat_generation.sql)"
 
 pg17_bin="${PG17_BINDIR:-}"
@@ -149,6 +150,41 @@ assert_md5 \
 assert_md5 \
   'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)' \
   'f3351779acce66a8d6c5350a8e8f2a6b'
+
+# Preserve the actual live chronology. The later atomic terminal-receipt
+# migration replaced both hand-settlement bodies from an older source snapshot,
+# accidentally removing the rolling exact-seat expansion and its departed-seat
+# time-bank safeguard. Install those two complete receipt-aware definitions in
+# isolation so the strict cutover is rehearsed against the exact production
+# preimage without pulling the unrelated 10k-line terminal surface into this
+# focused fixture.
+extract_function() {
+  local function_name="$1"
+  awk -v function_name="$function_name" '
+    !capture && index($0, "CREATE OR REPLACE FUNCTION public." function_name "(") == 1 {
+      capture = 1
+    }
+    capture { print }
+    capture && /^\$function\$;$/ { exit }
+    capture && /^END \$function\$$/ { split_end = 1; next }
+    capture && split_end && /^;$/ { exit }
+  ' "$terminal_receipt_migration"
+}
+
+extract_function fn_ca_settle_hand_stacks_absolute | "${psql_cmd[@]}" >/dev/null
+extract_function fn_ca_commit_hand_settlement | "${psql_cmd[@]}" >/dev/null
+"${psql_cmd[@]}" -c '
+  REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute(
+    uuid,bigint,jsonb,numeric,numeric,text,numeric
+  ) FROM PUBLIC, anon, authenticated, service_role;
+' >/dev/null
+
+assert_md5 \
+  'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)' \
+  '2e322bc7dfee3cf5cb6548ed3a587095'
+assert_md5 \
+  'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)' \
+  '8ddb91f5f7bb5f27b609ec83cb69fa66'
 
 # Model the preceding Stage-B authority contraction without copying its large,
 # independently probed tournament surface into this focused fixture. The strict

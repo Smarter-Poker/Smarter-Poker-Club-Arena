@@ -136,9 +136,23 @@ describe('fractional tournament stacks are normalized once at a stopped exact-bu
       ]) {
         expect(values.get(key)).toMatch(/^[0-9a-f]{64}$/);
       }
-      expect(values.get('CUTOVER_PREIMAGE_SHA256')).not.toBe(
-        values.get('CUTOVER_POSTIMAGE_SHA256')
-      );
+      const zeroCohort = [
+        'CUTOVER_TOURNAMENT_COUNT',
+        'CUTOVER_TABLE_COUNT',
+        'CUTOVER_ACTIVE_SEAT_COUNT',
+        'CUTOVER_FRACTIONAL_SEAT_COUNT',
+      ].every((key) => values.get(key) === '0');
+      if (zeroCohort) {
+        const emptySha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+        expect(values.get('CUTOVER_TOURNAMENT_IDS_CSV')).toBe('');
+        expect(values.get('CUTOVER_TOTAL_CHIPS')).toMatch(/^0+(?:\.0+)?$/);
+        expect(values.get('CUTOVER_PREIMAGE_SHA256')).toBe(emptySha);
+        expect(values.get('CUTOVER_POSTIMAGE_SHA256')).toBe(emptySha);
+      } else {
+        expect(values.get('CUTOVER_PREIMAGE_SHA256')).not.toBe(
+          values.get('CUTOVER_POSTIMAGE_SHA256')
+        );
+      }
       expect(createHash('sha256').update(migration).digest('hex')).toBe(
         values.get('RENDERED_MIGRATION_SHA256')
       );

@@ -72,6 +72,8 @@ $require_seat_first_retirement$;
 DO $require_stage_a_request_authority$
 DECLARE
   v_source text;
+  v_settlement_core text;
+  v_settlement_door text;
 BEGIN
   IF to_regprocedure(
        'smarter_private.fn_smarter_data_api_pre_request()'
@@ -138,23 +140,32 @@ BEGIN
       'Stage-B manager request fencing requires every tournament and table protocol-2 authority door';
   END IF;
 
-  /* This contraction deletes the rolling 11-argument hand door below. The
-     exact-seat expansion is intentionally versioned before Stage B and must
-     already have hardened the surviving 12-argument door. Without this pin,
-     an accidentally reordered migration set can destroy the compatibility
-     door before the expansion has inspected it. */
-  IF position(
-       'seat_joined_at' IN pg_get_functiondef(
-         'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
-       )
-     ) = 0
-     OR position(
-       'time_bank_seat_generation_mismatch' IN pg_get_functiondef(
-         'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
-       )
-     ) = 0 THEN
-    RAISE EXCEPTION
-      'Stage-B manager fencing requires 20260908161534 exact-seat expansion first';
+  /* This contraction deletes the rolling 11-argument hand door below. A later
+     terminal-receipt migration (20260909014534) was applied after the original
+     exact-seat expansion and replaced both settlement bodies from an older
+     generation-blind snapshot. Permit only that byte-exact, receipt-aware live
+     preimage here; the immediately following 20260908230003 boundary restores
+     the strict exact-seat contract before the stopped engine may restart.
+     Any other generation-blind body still aborts this transaction. */
+  SELECT pg_get_functiondef(
+           'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
+         )
+    INTO STRICT v_settlement_door;
+
+  IF position('seat_joined_at' IN v_settlement_door) = 0
+     OR position('time_bank_seat_generation_mismatch' IN v_settlement_door) = 0 THEN
+    SELECT pg_get_functiondef(
+             'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+           )
+      INTO STRICT v_settlement_core;
+    IF md5(v_settlement_core) <> '2e322bc7dfee3cf5cb6548ed3a587095'
+       OR md5(v_settlement_door) <> '8ddb91f5f7bb5f27b609ec83cb69fa66'
+       OR position('tournament_zero_stack_seat_generations' IN v_settlement_core) = 0
+       OR position('post_commit_request_hash' IN v_settlement_door) = 0
+       OR position('ca:tournament-terminal-settlement:v1' IN v_settlement_door) = 0 THEN
+      RAISE EXCEPTION
+        'Stage-B manager fencing found an unknown hand-settlement source';
+    END IF;
   END IF;
 END;
 $require_stage_a_request_authority$;

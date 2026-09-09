@@ -440,64 +440,12 @@ class TableService {
     }
   }
 
-  /**
-   * Kick a player from a table — refunds their stack and vacates the seat.
-   *
-   * AUDIT M17: the old version read the seat, credited `seat.stack` through
-   * `atomic_credit_wallet_and_log`, then marked the seat left — three round
-   * trips, of which the credit was always 42501 (wallets has no UPDATE policy)
-   * and the seat UPDATE always matched zero rows (table_seats is service-role
-   * write-only). It returned false when the credit failed, but
-   * TableOperationsPanel discarded that boolean, so an admin saw no error at
-   * all while nothing whatsoever happened.
-   *
-   * `fn_admin_kick_player` does the whole thing in one transaction and derives
-   * the refund from the seat row itself, so a kick can never pay out more than
-   * the player actually had. It is idempotent on the occupancy row id — the
-   * same key shape the engine's markSeatAsLeft uses — so the two paths cannot
-   * double-pay each other if they race.
-   */
+  /** Admin removals enter the engine's hand and cashout boundary. */
   async kickPlayer(tableId: string, userId: string, reason?: string): Promise<boolean> {
-    const { data, error } = await supabase.rpc('fn_admin_kick_player', {
-      p_table_id: tableId,
-      p_user_id: userId,
-      p_reason: reason ?? null,
-    });
-
-    if (error) {
-      reportError(error, 'TableService.kickPlayer', { tableId, userId });
-      throw new Error('Could not kick the player');
-    }
-
-    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
-
-    // Throw rather than return false. The previous signature let the one caller
-    // ignore the outcome; an exception cannot be ignored by accident.
-    if (!res?.ok) {
-      throw new Error(adminActionReasonText(res?.reason));
-    }
-
-    if ((res.refunded ?? 0) > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'table_kick_cashout', userId });
-    }
-
-    // The seat count is recomputed here rather than in the RPC: it is display
-    // state, and a stale count is a cosmetic problem, not a money one.
-    const { count, error: countErr } = await supabase
-      .from('table_seats')
-      .select('id', { count: 'exact', head: true })
-      .eq('table_id', tableId)
-      .is('left_at', null);
-
-    if (!countErr) {
-      await supabase
-        .from('tables')
-        .update({ current_players: count ?? 0 })
-        .eq('id', tableId);
-    } else {
-      reportError(countErr, 'TableService.recountAfterKick');
-    }
-
+    const { adminRemovePlayerFromTable } = await import('./IntegrityActionService');
+    const outcome = await adminRemovePlayerFromTable(tableId, userId, reason ?? 'admin kick');
+    if (!outcome.ok) throw new Error(outcome.error || 'Could Not Kick The Player');
+    masterBus.emit('BALANCE_UPDATED', { source: 'table_kick_cashout', userId });
     return true;
   }
 

@@ -19,9 +19,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const cashout = vi.fn();
+const departure = vi.fn();
 const cashoutVoluntary = vi.fn();
 const evaluate = vi.fn(async () => []);
 
+vi.mock('../services/supabase/seats.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/supabase/seats.js')>();
+  return { ...actual, requestSeatDeparture: (...args: unknown[]) => departure(...args) };
+});
 vi.mock('../services/supabase.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/supabase.js')>();
   return {
@@ -103,6 +108,7 @@ function makeEngine() {
 
 beforeEach(() => {
   cashout.mockReset();
+  departure.mockReset().mockResolvedValue(undefined);
   cashoutVoluntary.mockReset();
   evaluate.mockReset();
 });
@@ -214,7 +220,7 @@ describe('a kick is a system exit', () => {
     try {
       const res = await e.leaveTable(HUMAN, { forced: true });
       expect(res).toMatchObject({ success: true, immediate: false });
-      expect(e.forcedLeaves.has(HUMAN)).toBe(true);
+      expect(departure).toHaveBeenCalledWith(HUMAN, TABLE, 1, occupancyId, 'forced');
     } finally {
       from.mockRestore();
     }
@@ -224,7 +230,7 @@ describe('a kick is a system exit', () => {
 describe('a leave refused at settlement is held by the clock, then released', () => {
   it('counts as active for the clock, and the heartbeat opens the door at zero', async () => {
     const e = makeEngine();
-    e.onLeaveRefusedAtSettlement(HORSE, 500);
+    e.onLeaveRefusedAtSettlement(HORSE, 500, occupancyId);
     expect(e.leaveHeldByClock.has(HORSE)).toBe(true);
     expect(e.isContinuityActive(HORSE)).toBe(true);
     // Clock still running: not released.
@@ -246,7 +252,7 @@ describe('a leave refused at settlement is held by the clock, then released', ()
   it('sitting back in withdraws the held leave', () => {
     const e = makeEngine();
     e.dealtInUserIds.add(HUMAN);
-    e.onLeaveRefusedAtSettlement(HUMAN, 500);
+    e.onLeaveRefusedAtSettlement(HUMAN, 500, occupancyId);
     e.sitOut(HUMAN, false);
     expect(e.leaveHeldByClock.has(HUMAN)).toBe(false);
   });
@@ -350,7 +356,13 @@ describe('a folded player still has an unsettled hand contribution', () => {
         expect(result).toMatchObject({ success: true, immediate: false });
         expect(cashoutVoluntary).not.toHaveBeenCalled();
         expect(cashout).not.toHaveBeenCalled();
-        expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ leave_pending: true }));
+        expect(departure).toHaveBeenCalledWith(
+          HUMAN,
+          TABLE,
+          1,
+          occupancyId,
+          forced ? 'forced' : 'voluntary'
+        );
         expect(e.handController.performAction).not.toHaveBeenCalled();
       } finally {
         from.mockRestore();
@@ -462,6 +474,7 @@ describe('deferred leave acknowledgement requires a durable scoped request', () 
     'does not acknowledge a failed departure write: forced=%s',
     async (forced) => {
       const e = makeEngine();
+      departure.mockRejectedValue(new Error('write rejected'));
       e.handController = {
         getState: () => ({
           players: [{ user_id: HUMAN, seat: 1, is_folded: true, is_all_in: false }],
@@ -475,7 +488,13 @@ describe('deferred leave acknowledgement requires a durable scoped request', () 
       try {
         const result = await e.leaveTable(HUMAN, { forced, occupancyId, seatNumber: 1 });
         expect(result.success).toBe(false);
-        expect(chain.eq).toHaveBeenCalledWith('occupancy_id', occupancyId);
+        expect(departure).toHaveBeenCalledWith(
+          HUMAN,
+          TABLE,
+          1,
+          occupancyId,
+          forced ? 'forced' : 'voluntary'
+        );
         expect(e.hub.emitEvent).not.toHaveBeenCalled();
         expect(e.handController.performAction).not.toHaveBeenCalled();
         expect(cashout).not.toHaveBeenCalled();
@@ -538,6 +557,7 @@ describe('hand preparation and cashout share the seat boundary', () => {
 describe('tournament departure confirms durable sit-out without moving chips', () => {
   it.each([false, true])('database rejection=%s', async (rejected) => {
     const e = makeEngine();
+    if (rejected) departure.mockRejectedValue(new Error('write rejected'));
     e.tableInfo.tournament_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     const chain: any = {};
     for (const method of ['update', 'eq', 'is', 'select']) chain[method] = vi.fn(() => chain);
@@ -551,13 +571,50 @@ describe('tournament departure confirms durable sit-out without moving chips', (
       const result = await e.leaveTable(HUMAN, { occupancyId, seatNumber: 1 });
       expect(result.success).toBe(!rejected);
       if (!rejected) expect(result).toMatchObject({ tournament: true, immediate: true });
-      expect(chain.eq).toHaveBeenCalledWith('occupancy_id', occupancyId);
-      expect(chain.update).toHaveBeenCalledWith({ status: 'sitting_out', is_sitting_out: true });
+      expect(departure).toHaveBeenCalledWith(HUMAN, TABLE, 1, occupancyId, 'voluntary');
+
       expect(cashout).not.toHaveBeenCalled();
       expect(cashoutVoluntary).not.toHaveBeenCalled();
       expect(e.seatedPlayers).toHaveLength(2);
     } finally {
       from.mockRestore();
     }
+  });
+});
+
+describe('clock-held departure remains tied to its original hand and occupancy', () => {
+  it('does not cash out a folded participant before settlement', async () => {
+    const e = makeEngine();
+    e.onLeaveRefusedAtSettlement(HUMAN, 0, occupancyId);
+    e.handController = {
+      getState: () => ({
+        players: [{ user_id: HUMAN, is_folded: true, is_all_in: false }],
+      }),
+    };
+    await e.releaseLeavesHeldByClock();
+    expect(cashoutVoluntary).not.toHaveBeenCalled();
+  });
+  it('does not apply an old refusal to a new occupancy', () => {
+    const e = makeEngine();
+    e.seatedPlayers[0].occupancy_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    e.onLeaveRefusedAtSettlement(HUMAN, 500, occupancyId);
+    expect(e.leaveHeldByClock.has(HUMAN)).toBe(false);
+    expect(e.hub.emitEvent).not.toHaveBeenCalled();
+  });
+  it('does not target a rejoined seat from a prior clock-held request', async () => {
+    const e = makeEngine();
+    e.leaveHeldByClock.set(HUMAN, occupancyId);
+    e.seatedPlayers[0].occupancy_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await e.releaseLeavesHeldByClock();
+    expect(cashoutVoluntary).not.toHaveBeenCalled();
+    expect(e.leaveHeldByClock.has(HUMAN)).toBe(false);
+  });
+  it('removes only the confirmed occupancy from the engine roster', async () => {
+    const e = makeEngine();
+    e.leaveHeldByClock.set(HUMAN, occupancyId);
+    cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
+    await e.releaseLeavesHeldByClock();
+    expect(e.seatedPlayers.some((p: any) => p.user_id === HUMAN)).toBe(false);
+    expect(e.seatedPlayers.some((p: any) => p.user_id === HORSE)).toBe(true);
   });
 });

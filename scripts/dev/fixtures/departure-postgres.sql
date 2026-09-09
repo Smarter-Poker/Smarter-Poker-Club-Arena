@@ -7,7 +7,7 @@ CREATE SCHEMA extensions;
 CREATE TABLE tables(id uuid PRIMARY KEY,tournament_id uuid,current_players integer);
 CREATE TABLE tournaments(id uuid PRIMARY KEY);
 CREATE TABLE table_seats(id uuid PRIMARY KEY,table_id uuid,user_id uuid,seat_number integer,
- stack numeric,joined_at timestamptz,left_at timestamptz,leave_pending boolean,club_id uuid);
+ stack numeric,joined_at timestamptz,left_at timestamptz,leave_pending boolean,club_id uuid,status text,is_sitting_out boolean);
 CREATE TABLE wallet_credit_idempotency(key text PRIMARY KEY,user_id uuid,amount numeric);
 CREATE TABLE club_members(user_id uuid,club_id uuid,chip_balance numeric,updated_at timestamptz);
 CREATE TABLE wallets(user_id uuid,wallet_type text,balance numeric,locked_balance numeric,

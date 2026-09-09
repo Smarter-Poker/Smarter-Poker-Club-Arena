@@ -1670,9 +1670,8 @@ export abstract class ServerTableEngineBase {
    * Sitting back in withdraws the request. Not persisted: after a restart the
    * seat is an ordinary sat-out seat and the sit-out eviction handles it.
    */
-  protected leaveHeldByClock: Set<string> = new Set();
+  protected leaveHeldByClock: Map<string, string> = new Map();
   /** CHIP CONTINUITY: mid-hand leaves that are system exits (admin kick). */
-  protected forcedLeaves: Set<string> = new Set();
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -1776,12 +1775,17 @@ export abstract class ServerTableEngineBase {
       // fire-and-forget, the UI write must never affect gameplay.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
+        const occupancyId = this.seatedPlayers.find(
+          (p) => p.user_id === event.playerId
+        )?.occupancy_id;
+        if (!occupancyId) return;
         void Promise.resolve(
           supabase
             .from('table_seats')
             .update({ is_sitting_out: sittingOut })
             .eq('table_id', this.tableId)
             .eq('user_id', event.playerId)
+            .eq('occupancy_id', occupancyId)
             .is('left_at', null)
         )
           .then(({ error }) => {
@@ -2787,46 +2791,61 @@ export abstract class ServerTableEngineBase {
   protected async releaseLeavesHeldByClock(): Promise<void> {
     if (this.leaveHeldByClock.size === 0 || this.isTournamentTable()) return;
     if (isMaintenanceFrozen()) return;
-    for (const userId of [...this.leaveHeldByClock]) {
-      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seated) {
-        // Gone by another path (eviction, kick): nothing to release.
-        this.leaveHeldByClock.delete(userId);
-        continue;
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      while (this.postHandTasksPromise) {
+        const pending = this.postHandTasksPromise;
+        await pending;
+        if (this.postHandTasksPromise === pending) break;
       }
-      if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
-      if (this.handController) {
-        const live = this.handController.getState().players.find((p) => p.user_id === userId);
-        if (live && !live.is_folded) continue; // dealt in after all: wait for the boundary
-      }
-      const res = await atomicCashoutVoluntary(
-        userId,
-        this.tableId,
-        seated.seat_number,
-        seated.occupancy_id
-      );
-      if (res.ok) {
-        this.leaveHeldByClock.delete(userId);
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.chipContinuity.forget(userId);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: seated.seat_number,
-          user_id: userId,
-          mid_hand: false,
-          timestamp: Date.now(),
-        });
-        console.log(
-          `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+      for (const [userId, occupancyId] of [...this.leaveHeldByClock]) {
+        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+        if (!seated || seated.occupancy_id !== occupancyId) {
+          // Gone by another path (eviction, kick): nothing to release.
+          this.leaveHeldByClock.delete(userId);
+          continue;
+        }
+        if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
+        if (this.handController) {
+          const live = this.handController.getState().players.find((p) => p.user_id === userId);
+          if (live) continue; // dealt in after all: wait for the boundary
+        }
+        const res = await atomicCashoutVoluntary(
+          userId,
+          this.tableId,
+          seated.seat_number,
+          seated.occupancy_id
         );
-        void this.broadcastCurrentState();
-      } else if (res.code === 'LEAVE_LOCKED') {
-        this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+        if (this.seatedPlayers.some((p) => p.user_id === userId && p.occupancy_id !== occupancyId))
+          continue;
+        if (res.ok) {
+          this.seatedPlayers = this.seatedPlayers.filter(
+            (p) => p.user_id !== userId || p.occupancy_id !== occupancyId
+          );
+          this.leaveHeldByClock.delete(userId);
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.chipContinuity.forget(userId);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'seat_left',
+            table_id: this.tableId,
+            seat: seated.seat_number,
+            user_id: userId,
+            mid_hand: false,
+            timestamp: Date.now(),
+          });
+          console.log(
+            `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+          );
+          void this.broadcastCurrentState();
+        } else if (res.code === 'LEAVE_LOCKED') {
+          this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+        }
       }
+    } finally {
+      releaseSeatBoundary();
     }
   }
 
@@ -2842,8 +2861,15 @@ export abstract class ServerTableEngineBase {
    * left). They are still seated - sat out by their own request - and are
    * told the countdown. Nothing is torn down.
    */
-  protected onLeaveRefusedAtSettlement(userId: string, stayRemainingMs: number): void {
-    this.leaveHeldByClock.add(userId);
+  protected onLeaveRefusedAtSettlement(
+    userId: string,
+    stayRemainingMs: number,
+    occupancyId: string
+  ): void {
+    const current = this.seatedPlayers.find((p) => p.user_id === userId);
+    const original = occupancyId;
+    if (!original || current?.occupancy_id !== original) return;
+    this.leaveHeldByClock.set(userId, original);
     this.chipContinuity.noteRefusal(userId, stayRemainingMs);
     console.log(
       `[ServerTableEngine:${this.tableId}] leave_pending refused at settlement for ${userId} - stay clock ${stayRemainingMs}ms remaining`
@@ -3002,7 +3028,6 @@ export abstract class ServerTableEngineBase {
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
       this.preActionEngine.removePlayer(this.tableId, m.player_id);
-      this.forcedLeaves.delete(m.player_id);
       this.leaveHeldByClock.delete(m.player_id);
       // The session row followed the player; only this engine's mirror of
       // it is dropped. The destination engine rebuilds its mirror from rows.

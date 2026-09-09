@@ -99,7 +99,8 @@ describe('seat-open push — the engine side', () => {
     );
     expect(cashout).toContain('void notifyWaitlistSeatOpen(tableId)');
     const pending = src.slice(src.indexOf('export async function processLeavePending('));
-    expect(pending).toContain('void notifyWaitlistSeatOpen(tableId)');
+    expect(pending).toContain('await atomicCashout(');
+    expect(pending).not.toContain('void notifyWaitlistSeatOpen(tableId)');
   });
 });
 

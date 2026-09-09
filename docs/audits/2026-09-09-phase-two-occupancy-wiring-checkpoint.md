@@ -40,3 +40,33 @@ Status: IN PROGRESS. This is a local checkpoint, not phase acceptance or publica
 8. Merge current main and preserve other active work before release; rerun required combined gates.
 9. Short-lock-timeout migration application, CI/Hetzner publication and actual engine adoption evidence.
 10. Close Phase 2 only with transaction-level and deployed acceptance evidence; Phase 3 has not started.
+
+## Durable authority follow-up checkpoint
+
+Still IN PROGRESS and unpublished.
+
+Implemented after the first checkpoint:
+
+- Engine-only fn_request_seat_departure records occupancy-bound authority and seat flags in one transaction. Forced authority is retained across retries and fresh connections; ordinary retries cannot downgrade it.
+- Removed the user-keyed forcedLeaves memory set. Pending cashout gets effective forced authority from the durable occupancy record.
+- Clock-held departures use an occupancy map, reject stale refusal callbacks, wait for settlement, exclude all live-hand participants including folded players, and share the hand-start boundary.
+- Confirmed held departures remove the exact occupancy from the engine roster. Sit-out visibility writes include captured occupancy.
+- Pending enumeration/read and refusal-write errors are checked. Removed its second unlocked count write and duplicate seat-open notification; canonical cashout owns those outcomes.
+- TableService administrative kicks use the existing engine endpoint instead of directly cashing out in SQL. Malformed success responses are refused. The browser no longer writes a separate recount after kicking.
+- Changed the legacy-credit transition guard to an aggregate to avoid the live EXISTS row-goal plan's repeated nested scan.
+
+Verification of the combined formatted source:
+
+- Full client suite: 17,302 passed in 1,250 files.
+- Full server suite: 7,806 passed; 52 opt-in PostgreSQL tests skipped there, one file skipped.
+- Isolated PostgreSQL suite: all 52 passed, rerun after the transition-guard change.
+- Browser and server type checks passed.
+- Focused durable service/engine checks: 126 passed before the final combined run.
+- Admin browser-to-service boundary: six tests passed, included in full client count.
+- Read-only live preflight: zero active legacy-credit conflicts at observation time.
+- Live table-level SELECT grants permit authenticated/service-role occupancy reads after migration.
+- Live direct canonical cashout and fn_admin_kick_player still grant authenticated execution. Retirement remains REQUIRED after replacement engine/client adoption.
+- Live wrapper definitions inventoried: atomic_table_cashout MD5 7727f35b5aef8797fb0332ddcf002419; admin kick 513389f0cac8712718f2e620cfc4cf28; closing cashout 8d4ff093b7dd4f305322f75e76a5b999; cluster tick 91ab73af90af13767d5782407286cd5b; player_leave_table cbab2d426b0ec091b5b09f3e76eec640.
+- Engine health still advertised 9ef973e9; inspecting that revision confirms its leave predicate still excludes folded participants. Do not mark the previously merged folded correction as engine-adopted.
+
+Remaining mandatory work includes admin retry identity and immutable administrative outcome, all indirect SQL callers and their outer lock ownership, legacy privilege retirement, held-request restart semantics, browser/native/multi-tab/live HTTP verification, current-main integration, migration application and scheduled engine adoption, and the remaining Phase 2 rule/lifecycle acceptance matrix. No Phase 3 work has started.

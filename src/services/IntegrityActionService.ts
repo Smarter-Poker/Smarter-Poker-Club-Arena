@@ -64,7 +64,7 @@ export async function adminRemovePlayerFromTable(
       success?: boolean;
       error?: string;
     };
-    if (!response.ok || result.success === false) {
+    if (!response.ok || result.success !== true) {
       return {
         ok: false,
         error: result.error || `The engine refused this removal (${response.status}).`,

@@ -58,7 +58,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
   const seedOccupancy = (stack = 25) => {
@@ -70,6 +70,124 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   };
   const boundCashout = (occupancy: string) =>
     sql(`SELECT fn_cashout_seat_occupancy('${USER}','${TABLE}',2,'${occupancy}',NULL)`);
+
+  const requestDeparture = (occupancy: string, mode = 'voluntary') =>
+    sql(
+      "SELECT fn_request_seat_departure('" +
+        USER +
+        "','" +
+        TABLE +
+        "',2,'" +
+        occupancy +
+        "','" +
+        mode +
+        "')"
+    );
+  it('persists forced authority and the pending flag atomically without moving chips', () => {
+    const occupancy = seedOccupancy();
+    expect(requestDeparture(occupancy, 'forced')).toMatchObject({
+      accepted: true,
+      occupancy_id: occupancy,
+      leave_mode: 'forced',
+      tournament_table: false,
+    });
+    expect(sql('SELECT to_json(leave_pending) FROM table_seats')).toBe(true);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    // A fresh connection has no engine-memory forced set. The ordinary
+    // voluntary pending processor must still honor the stored forced request.
+    sql(
+      "SELECT fn_cashout_seat_occupancy('" +
+        USER +
+        "','" +
+        TABLE +
+        "',2,'" +
+        occupancy +
+        "','voluntary')"
+    );
+    expect(sql('SELECT to_json(reason) FROM session_closes')).toBe('system');
+  });
+
+  it('a forced request does not leak onto a later occupancy for the same player', () => {
+    const original = seedOccupancy();
+    requestDeparture(original, 'forced');
+    boundCashout(original);
+    sql('UPDATE table_seats SET left_at=NULL,stack=40; UPDATE tables SET current_players=1');
+    const next = sql('SELECT to_json(occupancy_id) FROM table_seats') as string;
+    expect(next).not.toBe(original);
+    requestDeparture(next);
+    sql(
+      "SELECT fn_cashout_seat_occupancy('" +
+        USER +
+        "','" +
+        TABLE +
+        "',2,'" +
+        next +
+        "','voluntary')"
+    );
+    expect(sql("SELECT count(*) FROM session_closes WHERE reason='voluntary'")).toBe(1);
+  });
+  it('a voluntary retry cannot downgrade durable forced authority', () => {
+    const occupancy = seedOccupancy();
+    requestDeparture(occupancy);
+    requestDeparture(occupancy, 'forced');
+    expect(requestDeparture(occupancy).leave_mode).toBe('forced');
+    expect(sql('SELECT count(*) FROM seat_departure_requests')).toBe(1);
+  });
+  it('rolls back departure authority if its seat flag cannot be written', () => {
+    const occupancy = seedOccupancy();
+    expect(() =>
+      sql(
+        "BEGIN; SET LOCAL test.reject_exit='on'; SELECT fn_request_seat_departure('" +
+          USER +
+          "','" +
+          TABLE +
+          "',2,'" +
+          occupancy +
+          "','forced'); COMMIT;"
+      )
+    ).toThrow(/injected seat exit failure/);
+    expect(sql('SELECT count(*) FROM seat_departure_requests')).toBe(0);
+    expect(sql('SELECT to_json(leave_pending) FROM table_seats')).toBe(false);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('cannot attach departure authority to a stale occupancy', () => {
+    seedOccupancy();
+    expect(() => requestDeparture('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'forced')).toThrow(
+      /CASHOUT_STALE_OCCUPANCY/
+    );
+    expect(sql('SELECT count(*) FROM seat_departure_requests')).toBe(0);
+  });
+  it('does not let an authenticated owner manufacture forced authority', () => {
+    const occupancy = seedOccupancy();
+    expect(() =>
+      sql(
+        "BEGIN; SET LOCAL test.is_engine='false'; SET LOCAL test.auth_uid='" +
+          USER +
+          "'; SELECT fn_request_seat_departure('" +
+          USER +
+          "','" +
+          TABLE +
+          "',2,'" +
+          occupancy +
+          "','forced'); COMMIT;"
+      )
+    ).toThrow(/Engine authority required/);
+    expect(sql('SELECT count(*) FROM seat_departure_requests')).toBe(0);
+  });
+  it('retains tournament chips and avoids cash leave_pending while persisting sit-out', () => {
+    const occupancy = seedOccupancy();
+    sql(
+      "INSERT INTO tournaments VALUES('" +
+        CLUB +
+        "'); UPDATE tables SET tournament_id='" +
+        CLUB +
+        "'"
+    );
+    expect(requestDeparture(occupancy)).toMatchObject({ accepted: true, tournament_table: true });
+    expect(sql('SELECT to_json(leave_pending) FROM table_seats')).toBe(false);
+    expect(sql('SELECT to_json(is_sitting_out) FROM table_seats')).toBe(true);
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
   it.each([0, 25])('replays the original %s cashout after deletion and a new buy-in', (stack) => {
     const original = seedOccupancy(stack);
     const receipt = boundCashout(original);

@@ -113,6 +113,38 @@ export async function getSeatCashoutReceipt(
     : confirmedCashout(data, { userId, tableId, seatNumber, occupancyId });
 }
 
+export async function requestSeatDeparture(
+  userId: string,
+  tableId: string,
+  seatNumber: number,
+  occupancyId: string,
+  leaveMode: 'voluntary' | 'forced'
+): Promise<void> {
+  const { data, error } = await supabase.rpc('fn_request_seat_departure', {
+    p_user_id: userId,
+    p_table_id: tableId,
+    p_seat_number: seatNumber,
+    p_occupancy_id: occupancyId,
+    p_leave_mode: leaveMode,
+  });
+  if (error) throw new Error(error.message || 'Departure Request Failed');
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    data.accepted !== true ||
+    data.user_id !== userId ||
+    data.table_id !== tableId ||
+    data.seat_number !== seatNumber ||
+    data.occupancy_id !== occupancyId ||
+    !['voluntary', 'forced'].includes(data.leave_mode) ||
+    (leaveMode === 'forced' && data.leave_mode !== 'forced') ||
+    typeof data.tournament_table !== 'boolean'
+  ) {
+    throw new Error('Departure Request Was Not Confirmed');
+  }
+}
+
 export async function markSeatAsLeft(
   tableId: string,
   userId: string,
@@ -294,9 +326,7 @@ export async function processLeavePending(
    * cleared so this sweep does not re-ask every tick, and the caller is told
    * so it can show the player the countdown instead of an empty seat.
    */
-  onLocked?: (userId: string, stayRemainingMs: number) => void,
-  /** Seats whose leave is a system exit (admin kick): the clock does not block them. */
-  forcedUserIds?: ReadonlySet<string>
+  onLocked?: (userId: string, stayRemainingMs: number, occupancyId: string) => void
 ): Promise<Array<{ userId: string; occupancyId: string }>> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
@@ -304,13 +334,15 @@ export async function processLeavePending(
      is precisely the shape that invites someone to "save a round-trip" by
      passing it along - and an unlocked stack read handed to a credit is the
      2026-08-27 race. Do not add it back. */
-  const { data: pendingSeats } = await supabase
+  const { data: pendingSeats, error: pendingReadError } = await supabase
     .from('table_seats')
     .select('user_id, seat_number, occupancy_id')
     .eq('table_id', tableId)
     .eq('leave_pending', true)
     .is('left_at', null);
 
+  if (pendingReadError)
+    throw new Error(pendingReadError.message || 'Pending Departure Read Failed');
   if (!pendingSeats || pendingSeats.length === 0) return [];
 
   const cashedOut: Array<{ userId: string; occupancyId: string }> = [];
@@ -318,7 +350,8 @@ export async function processLeavePending(
     const out: { lockedMs: number | null; failed: boolean } = { lockedMs: null, failed: false };
     await atomicCashout(seat.user_id, tableId, seat.seat_number, {
       occupancyId: seat.occupancy_id,
-      leaveMode: forcedUserIds?.has(seat.user_id) ? 'forced' : 'voluntary',
+      // The database applies durable forced authority for this exact occupancy.
+      leaveMode: 'voluntary',
       onLocked: (ms) => {
         out.lockedMs = ms;
       },
@@ -327,14 +360,16 @@ export async function processLeavePending(
       },
     });
     if (out.lockedMs !== null) {
-      await supabase
+      const { error: clearError } = await supabase
         .from('table_seats')
         .update({ leave_pending: false })
         .eq('table_id', tableId)
         .eq('user_id', seat.user_id)
         .eq('occupancy_id', seat.occupancy_id)
         .is('left_at', null);
-      onLocked?.(seat.user_id, out.lockedMs);
+      if (clearError)
+        throw new Error(clearError.message || 'Pending Departure Refusal Write Failed');
+      onLocked?.(seat.user_id, out.lockedMs, seat.occupancy_id);
       continue;
     }
     // Any other failure: the seat is untouched (one transaction) and the next
@@ -343,45 +378,9 @@ export async function processLeavePending(
     cashedOut.push({ userId: seat.user_id, occupancyId: seat.occupancy_id });
   }
 
-  // Authoritative recount after all departures.
-  //
-  // 2026-09-06, two fixes in one place:
-  //
-  // 1. THE ERROR WAS NEVER READ. `count || 0` on an undestructured error is the
-  //    same shape as the settlement bug fixed on 2026-08-28: a single failed
-  //    read wrote `current_players = 0` on a live table. A count we could not
-  //    read is UNKNOWN, not zero — leave the row alone and let the next hand's
-  //    recount settle it.
-  // 2. AGREEING IS NOT A WRITE. `tables` is the widest published table on the
-  //    platform (154 columns) and the most expensive thing Realtime decodes;
-  //    see the note on updateTableStatus. Same filter, same reasoning.
-  const { count, error: countErr } = await supabase
-    .from('table_seats')
-    .select('*', { count: 'exact', head: true })
-    .eq('table_id', tableId)
-    .is('left_at', null);
-
-  if (countErr || count === null || count === undefined) {
-    reportError(
-      new Error(
-        `[Seats] processLeavePending: seat recount unavailable for ${tableId.slice(0, 8)} ` +
-          `(${countErr?.message ?? 'null count'}) - current_players left unchanged`
-      ),
-      'supabase.process_leave_pending_count_unavailable'
-    );
-  } else {
-    await supabase
-      .from('tables')
-      .update({ current_players: count })
-      .eq('id', tableId)
-      .or(tableCountChangedFilter({ current_players: count }));
-  }
-
-  // TOURNEY-AUDIT 2026-07-24 (sweep 6): a seat opened — offer it to the
-  // longest-waiting waitlisted player (cash tables only; no-op otherwise).
-  if (cashedOut.length > 0) {
-    void notifyWaitlistSeatOpen(tableId);
-  }
+  // Each confirmed atomicCashout already updates the player count in its
+  // transaction and offers the seat. A second unlocked recount can overwrite
+  // a concurrent join's count and must not be issued here.
 
   // Round 57: callers use this list to unregister disconnect tracking for
   // players who cashed out. Without this, DisconnectEngine.playerStates leaks.

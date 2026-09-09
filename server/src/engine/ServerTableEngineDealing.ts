@@ -596,7 +596,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 this.timeBankEngine.removePlayer(this.tableId, leftUserId);
                 this.straddleEngine.removePlayer(this.tableId, leftUserId);
                 this.preActionEngine.removePlayer(this.tableId, leftUserId);
-                this.forcedLeaves.delete(leftUserId);
                 this.leaveHeldByClock.delete(leftUserId);
                 this.chipContinuity.forget(leftUserId);
               }
@@ -1451,9 +1450,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         processLeavePending(
           this.tableId,
           this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs) =>
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
-          this.forcedLeaves
+          (lockedUserId, stayRemainingMs, occupancyId) =>
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
         )
       );
       // Consumed by takePreparedLeavePending, which surfaces a rejection in
@@ -1489,9 +1487,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return processLeavePending(
       this.tableId,
       this.tableInfo?.club_id || '',
-      (lockedUserId, stayRemainingMs) =>
-        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
-      this.forcedLeaves
+      (lockedUserId, stayRemainingMs, occupancyId) =>
+        this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId)
     );
   }
 

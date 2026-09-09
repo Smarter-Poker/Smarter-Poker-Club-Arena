@@ -1,3 +1,4 @@
+import { requestSeatDeparture } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
  *
@@ -859,22 +860,21 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
             immediate: false,
             error: 'Your Seat Identity Could Not Be Verified.',
           };
-        const { data: sittingSeat, error: sittingError } = await supabase
-          .from('table_seats')
-          .update({ status: 'sitting_out', is_sitting_out: true })
-          .eq('table_id', this.tableId)
-          .eq('user_id', userId)
-          .eq('seat_number', player.seat_number)
-          .eq('occupancy_id', player.occupancy_id)
-          .is('left_at', null)
-          .select('occupancy_id')
-          .maybeSingle();
-        if (sittingError || sittingSeat?.occupancy_id !== player.occupancy_id)
+        try {
+          await requestSeatDeparture(
+            userId,
+            this.tableId,
+            player.seat_number,
+            player.occupancy_id,
+            opts.forced ? 'forced' : 'voluntary'
+          );
+        } catch {
           return {
             success: false,
             immediate: false,
             error: 'Could Not Confirm Your Leave Request. Please Try Again.',
           };
+        }
         if (
           this.seatedPlayers.some(
             (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
@@ -1008,22 +1008,21 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
             immediate: false,
             error: 'Your Seat Identity Could Not Be Verified.',
           };
-        const { data: pendingSeat, error: pendingError } = await supabase
-          .from('table_seats')
-          .update({ leave_pending: true, status: 'sitting_out', is_sitting_out: true })
-          .eq('table_id', this.tableId)
-          .eq('user_id', userId)
-          .eq('seat_number', player.seat_number)
-          .eq('occupancy_id', player.occupancy_id)
-          .is('left_at', null)
-          .select('occupancy_id')
-          .maybeSingle();
-        if (pendingError || pendingSeat?.occupancy_id !== player.occupancy_id)
+        try {
+          await requestSeatDeparture(
+            userId,
+            this.tableId,
+            player.seat_number,
+            player.occupancy_id,
+            opts.forced ? 'forced' : 'voluntary'
+          );
+        } catch {
           return {
             success: false,
             immediate: false,
             error: 'Could Not Confirm Your Leave Request. Please Try Again.',
           };
+        }
         if (
           this.seatedPlayers.some(
             (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
@@ -1065,8 +1064,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         emitSeatLeft();
         // CHIP CONTINUITY: a forced (kick) exit must not be judged by the clock
         // when settlement processes the leave_pending seat.
-        if (opts.forced) this.forcedLeaves.add(userId);
-        else this.forcedLeaves.delete(userId);
 
         // Also mark in disconnect engine so they don't get dealt next hand
         this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
@@ -1124,7 +1121,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.leaveHeldByClock.delete(userId);
-          this.forcedLeaves.delete(userId);
           this.chipContinuity.forget(userId);
           this.seatedPlayers = this.seatedPlayers.filter(
             (p) => p.user_id !== userId || p.occupancy_id !== player.occupancy_id

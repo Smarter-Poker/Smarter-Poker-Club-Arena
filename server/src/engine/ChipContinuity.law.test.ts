@@ -201,7 +201,7 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
 
   it('a leave refused at settlement is held by the clock and released by the heartbeat', () => {
     expect(sliceMethod(BASE, 'protected onLeaveRefusedAtSettlement(')).toContain(
-      'this.leaveHeldByClock.add(userId)'
+      'this.leaveHeldByClock.set(userId, original)'
     );
     expect(sliceMethod(BASE, 'protected isContinuityActive(userId: string)')).toContain(
       'if (this.leaveHeldByClock.has(userId)) return true;'
@@ -267,7 +267,8 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
 
   it('a leave_pending seat is cashed out through the guarded door and a refusal keeps the seat', () => {
     const body = sliceMethod(SEATS, 'export async function processLeavePending(');
-    expect(body).toContain("forcedUserIds?.has(seat.user_id) ? 'forced' : 'voluntary'");
+    expect(body).toContain("leaveMode: 'voluntary'");
+    expect(body).not.toContain('forcedUserIds');
     expect(body).toContain('leave_pending: false');
     expect(body).toContain('onLocked?.(');
   });

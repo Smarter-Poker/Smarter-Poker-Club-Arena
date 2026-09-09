@@ -3207,12 +3207,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const cashedOutIds = await processLeavePending(
           this.tableId,
           this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs) => {
+          (lockedUserId, stayRemainingMs, occupancyId) => {
             if (this.lifecycleCanMutate()) {
-              this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
+              this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
             }
-          },
-          this.forcedLeaves
+          }
         );
         if (!this.lifecycleCanMutate()) return;
         for (const { userId, occupancyId } of cashedOutIds) {
@@ -3222,7 +3221,6 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
-          this.forcedLeaves.delete(userId);
           this.leaveHeldByClock.delete(userId);
           this.chipContinuity.forget(userId);
         }

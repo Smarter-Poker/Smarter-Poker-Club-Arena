@@ -3,7 +3,12 @@ const mock = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock('./client.js', () => ({ supabase: mock }));
 vi.mock('../errorReporter.js', () => ({ reportError: vi.fn() }));
 vi.mock('./tables.js', () => ({ tableCountChangedFilter: () => 'current_players.neq.1' }));
-import { atomicCashout, markSeatAsLeft, processLeavePending } from './seats.js';
+import {
+  atomicCashout,
+  markSeatAsLeft,
+  processLeavePending,
+  requestSeatDeparture,
+} from './seats.js';
 const occupancyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const receipt = {
   occupancy_id: occupancyId,
@@ -30,13 +35,11 @@ function arrange(data: unknown, error: unknown = null) {
     eq: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     or: vi.fn().mockResolvedValue({ error: null }),
-    is: vi
-      .fn()
-      .mockResolvedValue({
-        data: [{ user_id: 'player', seat_number: 2, occupancy_id: occupancyId }],
-        count: 1,
-        error: null,
-      }),
+    is: vi.fn().mockResolvedValue({
+      data: [{ user_id: 'player', seat_number: 2, occupancy_id: occupancyId }],
+      count: 1,
+      error: null,
+    }),
   };
   mock.from.mockReturnValue(chain);
 }
@@ -114,7 +117,7 @@ describe('cashout departure proof', () => {
     arrange(null, { message: 'LEAVE_LOCKED:1234' });
     const onLocked = vi.fn();
     expect(await processLeavePending('table', 'club', onLocked)).toEqual([]);
-    expect(onLocked).toHaveBeenCalledWith('player', 1234);
+    expect(onLocked).toHaveBeenCalledWith('player', 1234, occupancyId);
   });
 });
 
@@ -129,4 +132,51 @@ describe('cashout request identity', () => {
       expect(mock.rpc).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('durable departure request receipts', () => {
+  const accepted = {
+    accepted: true,
+    user_id: 'player',
+    table_id: 'table',
+    seat_number: 2,
+    occupancy_id: occupancyId,
+    leave_mode: 'forced',
+    tournament_table: false,
+  };
+  it.each([
+    null,
+    {},
+    { ...accepted, accepted: false },
+    { ...accepted, user_id: 'other' },
+    { ...accepted, occupancy_id: 'other' },
+    { ...accepted, seat_number: 3 },
+    { ...accepted, table_id: 'other' },
+    { ...accepted, leave_mode: 'voluntary' },
+    { ...accepted, tournament_table: undefined },
+  ])('rejects unconfirmed forced authority %#', async (data) => {
+    mock.rpc.mockResolvedValue({ data, error: null });
+    await expect(requestSeatDeparture('player', 'table', 2, occupancyId, 'forced')).rejects.toThrow(
+      'Departure Request Was Not Confirmed'
+    );
+  });
+  it('passes the original scope and requires a confirmed durable request', async () => {
+    mock.rpc.mockResolvedValue({ data: accepted, error: null });
+    await expect(
+      requestSeatDeparture('player', 'table', 2, occupancyId, 'forced')
+    ).resolves.toBeUndefined();
+    expect(mock.rpc).toHaveBeenCalledWith('fn_request_seat_departure', {
+      p_user_id: 'player',
+      p_table_id: 'table',
+      p_seat_number: 2,
+      p_occupancy_id: occupancyId,
+      p_leave_mode: 'forced',
+    });
+  });
+  it('propagates database failure instead of acknowledging the request', async () => {
+    mock.rpc.mockResolvedValue({ data: null, error: { message: 'transaction rejected' } });
+    await expect(
+      requestSeatDeparture('player', 'table', 2, occupancyId, 'voluntary')
+    ).rejects.toThrow('transaction rejected');
+  });
 });

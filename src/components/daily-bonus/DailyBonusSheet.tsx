@@ -11,11 +11,17 @@
  * Dan, 2026-09-08, on the first cut (CSS-drawn chrome, line icons): "THIS IS
  * NOT OK ... ALL THE BUTTONS, FRAMES, ICONS ETC NEED THE PREMIUM, HIGH DEF,
  * DYNAMIC LOOK AND FEEL AS THEY ARE INSIDE THE REST OF THE CLUB ARENA PAGES."
- * So the sheet is now cut from the approved shark console, the same art and
- * the same recipe as the selected-table panel under the game cards: chassis
- * rails that repeat to any height, the card's plaque for every readout, day
- * and reward, the console's own button faces, and the kit's painted renders
- * for icons (DailyBonusSheet.css lists each piece).
+ * Dan, 2026-09-09, on that cut: "FIX THE CLUB ARENA DAILY BONUS ... ITS SO
+ * TRASH". The picture said why: a plaque inside every tile inside a grid,
+ * three plaques across the top, seven more for the week, an icon in a well
+ * inside a plaque inside a card. Frames on frames on frames - the one thing
+ * he has ruled against since the first review.
+ *
+ * It is ONE picture now, the spade console (#ClubArenaConsole), and everything
+ * prints on its glass: the three readouts as rows, the week as a single line
+ * of lit numerals, each reward as a row with its own render beside the figure
+ * and CLAIM as a lit word on that row. Nothing is boxed, nothing is nested,
+ * and the only frame on the surface is the master's own.
  *
  * Every figure on the sheet is the server's. The client decides which tile to
  * tap and nothing else (services/DailyBonusService.ts).
@@ -30,6 +36,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { ClubIcon } from '../club-buttons/ClubButtons';
+import { SpadeConsole } from '../console/SpadeConsole';
 import { useToast } from '../common/Toast';
 import { ThrowableImage } from '../table/ThrowableImage';
 import { triggerHaptic } from '../../services/HapticService';
@@ -78,7 +85,7 @@ function TileIcon({
   if (kind === 'throwables') {
     return (
       <span className="dbs-tile__icon">
-        <ThrowableImage throwableId={THROWABLE_ICON_ID} size={96} loading="lazy" />
+        <ThrowableImage throwableId={THROWABLE_ICON_ID} size={64} loading="lazy" />
       </span>
     );
   }
@@ -142,7 +149,10 @@ function BonusTile({ tile, busy, disabled, onClaim, burst, revealed }: TileProps
   const seconds = (granted ? granted.quantity : tile.quantity) * 20;
 
   return (
-    <article
+    /* A ROW, not a card. The render sits beside the figure with nothing drawn
+       around it and CLAIM is a lit word on the same line, so a reward reads as
+       one thing instead of a box inside a box inside a grid. */
+    <li
       className="dbs-tile"
       data-kind={tile.kind}
       data-state={state}
@@ -151,44 +161,42 @@ function BonusTile({ tile, busy, disabled, onClaim, burst, revealed }: TileProps
       data-revealed={revealed || undefined}
       aria-label={`${tile.label}, ${granted ? grantedValue(tile) : value}`}
     >
-      <div className="dbs-plaque">
-        <span className="dbs-plaque__label">{tile.label}</span>
-        <span className="dbs-plaque__well">
-          <TileIcon kind={iconKind} vip={tile.vip_only} seconds={seconds} />
-          <span className="dbs-plaque__value">
-            {granted
-              ? granted.kind === 'diamonds'
-                ? `+${granted.diamonds}`
-                : `×${granted.quantity}`
-              : value}
-          </span>
-          <span className="dbs-tile__sub">
-            {granted
-              ? granted.kind === 'diamonds'
-                ? `${diamondsToCentsLabel(granted.diamonds)} Credited`
-                : KIND_TITLE[granted.kind]
-              : sub}
-          </span>
+      <span className="dbs-plaque">
+        <TileIcon kind={iconKind} vip={tile.vip_only} seconds={seconds} />
+      </span>
+      <span className="dbs-tile__lines">
+        <span className="sc-label sc-ink--blue">{tile.label}</span>
+        <span className="dbs-tile__sub">
+          {granted
+            ? granted.kind === 'diamonds'
+              ? `${diamondsToCentsLabel(granted.diamonds)} Credited`
+              : 'Added To Your Account'
+            : sub}
         </span>
-        {burst && (
-          <span className="dbs-tile__sparks" aria-hidden="true">
-            {Array.from({ length: 8 }, (_, i) => (
-              <i key={i} style={{ '--i': i } as CSSProperties} />
-            ))}
-          </span>
+        {tile.capped && !tile.claimed && (
+          <span className="dbs-tile__note sc-ink--gold">Daily Cap Trims This One</span>
         )}
-      </div>
+      </span>
+      <span className={`dbs-tile__value ${tile.vip_only ? 'sc-ink--gold' : 'sc-ink--silver'}`}>
+        {granted
+          ? granted.kind === 'diamonds'
+            ? `+${granted.diamonds}`
+            : `×${granted.quantity}`
+          : value}
+      </span>
       {tile.claimed ? (
-        <span className="dbs-btn dbs-btn--secondary">
+        <span className="dbs-btn dbs-btn--secondary sc-ink--green">
           <ClubIcon name="spade" />
           Claimed
         </span>
       ) : tile.locked ? (
-        <span className="dbs-btn dbs-btn--secondary dbs-btn--locked">VIP Members Only</span>
+        <span className="dbs-btn dbs-btn--secondary dbs-btn--locked sc-ink--muted">
+          VIP Members Only
+        </span>
       ) : (
         <button
           type="button"
-          className={`dbs-btn${busy ? ' dbs-btn--busy' : ''}`}
+          className={`dbs-btn sc-ink--white${busy ? ' dbs-btn--busy' : ''}`}
           onClick={() => onClaim(tile)}
           disabled={disabled || busy}
           aria-busy={busy || undefined}
@@ -196,10 +204,14 @@ function BonusTile({ tile, busy, disabled, onClaim, burst, revealed }: TileProps
           {busy ? 'Claiming' : tile.capped ? 'Claim What Fits' : 'Claim'}
         </button>
       )}
-      {tile.capped && !tile.claimed && (
-        <span className="dbs-tile__note">Daily Cap Trims This One</span>
+      {burst && (
+        <span className="dbs-tile__sparks" aria-hidden="true">
+          {Array.from({ length: 8 }, (_, i) => (
+            <i key={i} style={{ '--i': i } as CSSProperties} />
+          ))}
+        </span>
       )}
-    </article>
+    </li>
   );
 }
 
@@ -330,45 +342,40 @@ export default function DailyBonusSheet({
       <>
         <dl className="dbs__readouts">
           <div className="dbs-plaque" aria-label={`Day ${status.streak} Streak`}>
-            <dt className="dbs-plaque__label">Streak</dt>
-            <dd className="dbs-plaque__well">
-              <span
-                className={`dbs-plaque__value${status.claimed_today ? ' dbs-plaque__value--lit' : ''}`}
-              >
-                Day {status.streak}
-              </span>
+            <dt className="dbs-plaque__label sc-label sc-ink--blue">Streak</dt>
+            <dd
+              className={`dbs-plaque__value${status.claimed_today ? ' sc-ink--green' : ' sc-ink--silver'}`}
+            >
+              Day {status.streak}
             </dd>
           </div>
           <div className="dbs-plaque">
-            <dt className="dbs-plaque__label">Multiplier</dt>
-            <dd className="dbs-plaque__well">
-              <span className="dbs-plaque__value">×{status.multiplier.toFixed(1)}</span>
-            </dd>
+            <dt className="dbs-plaque__label sc-label sc-ink--blue">Multiplier</dt>
+            <dd className="dbs-plaque__value sc-ink--silver">×{status.multiplier.toFixed(1)}</dd>
           </div>
           <div className="dbs-plaque">
-            <dt className="dbs-plaque__label">Resets In</dt>
-            <dd className="dbs-plaque__well">
-              <span className="dbs-plaque__value dbs__clock">
-                {formatCountdown(secondsToReset)}
-              </span>
+            <dt className="dbs-plaque__label sc-label sc-ink--blue">Resets In</dt>
+            <dd className="dbs-plaque__value dbs__clock sc-ink--silver">
+              {formatCountdown(secondsToReset)}
             </dd>
           </div>
         </dl>
 
+        {/* The week is one line of lit numerals - the day you are on in white,
+            the ones behind you in green, the ones ahead muted. Seven little
+            boxes across a phone is exactly the shape Dan rejected. */}
         <ol className="dbs__week" aria-label="This Week">
           {status.week.map((d) => (
             <li key={d.day} className="dbs__day dbs-plaque" data-state={d.state}>
-              <span className="dbs-plaque__label">Day {d.day}</span>
-              <span className="dbs-plaque__well">
-                <span className="dbs-plaque__value">
-                  {d.diamonds != null ? `+${d.diamonds}` : ''}
-                </span>
+              <span className="dbs-plaque__label">{d.day}</span>
+              <span className="dbs-plaque__value">
+                {d.diamonds != null ? `+${d.diamonds}` : ''}
               </span>
             </li>
           ))}
         </ol>
 
-        <div className="dbs__tiles">
+        <ul className="dbs__tiles">
           {status.tiles.map((tile) => (
             <BonusTile
               key={tile.slot}
@@ -380,7 +387,7 @@ export default function DailyBonusSheet({
               revealed={revealSlot === tile.slot}
             />
           ))}
-        </div>
+        </ul>
 
         <footer className="dbs__foot">
           <p>
@@ -420,26 +427,35 @@ export default function DailyBonusSheet({
       aria-labelledby="dbs-title"
       aria-busy={loading || undefined}
     >
-      <div className="dbs__panel">
-        {mode === 'modal' && (
-          <button
-            ref={closeRef}
-            type="button"
-            className="dbs__close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        )}
-        <header className="dbs__head">
-          <span className="dbs__eyebrow">Club Arena · Every Day You Show Up</span>
-          <h2 id="dbs-title" className="dbs__title">
-            Daily Club Arena Bonus
-          </h2>
-        </header>
-        <div className="dbs__body">{body}</div>
-      </div>
+      <SpadeConsole
+        as="div"
+        className="dbs__panel"
+        eyebrow="Every Day You Show Up"
+        title="Daily Bonus"
+        titleId="dbs-title"
+        pill={status ? `Day ${status.streak}` : undefined}
+        pillInk={status?.claimed_today ? 'green' : 'blue'}
+        foot={mode === 'modal' ? 'plates' : 'foot'}
+        plates={
+          mode === 'modal'
+            ? {
+                secondary: {
+                  label: 'Close',
+                  buttonRef: closeRef,
+                  onClick: onClose,
+                  'aria-label': 'Close',
+                },
+                primary: {
+                  label: 'Done',
+                  ink: 'white',
+                  onClick: onClose,
+                },
+              }
+            : undefined
+        }
+      >
+        {body}
+      </SpadeConsole>
     </section>
   );
 

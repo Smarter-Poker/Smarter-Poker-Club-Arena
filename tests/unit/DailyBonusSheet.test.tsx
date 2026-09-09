@@ -123,7 +123,11 @@ describe('DailyBonusSheet', () => {
     expect(screen.getByText('×1')).toBeTruthy();
     expect(screen.getByText('01:23:45')).toBeTruthy();
     expect(screen.getByLabelText('Day 2 Streak')).toBeTruthy();
-    expect(screen.getAllByRole('listitem')).toHaveLength(7);
+    /* The week is seven days. Scoped, because the rewards are a list now too:
+       each one is a ROW on the console's glass rather than a card in a grid
+       (Dan 2026-09-09 on the previous cut: "ITS SO TRASH" - it was a plaque
+       inside a tile inside a grid). */
+    expect(document.querySelectorAll('.dbs__week > li')).toHaveLength(7);
   });
 
   it('is cut from the console art: painted renders for icons, the console faces for buttons', async () => {

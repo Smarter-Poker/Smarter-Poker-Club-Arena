@@ -1,3 +1,41 @@
+/**
+ * TICKER MANAGEMENT - on the spade console (#ClubArenaConsole)
+ *
+ * WHAT WAS DELETED. A clip-path panel with a chamfered corner, a two-layer
+ * gradient with a repeating scan line and two shadows; a bordered master
+ * toggle box; an amber bordered safety notice with its own button box; eight
+ * bordered 82px source tiles in a four-column grid, one of them a gradient
+ * with an inset rail; five bordered control wells; a bordered composer input
+ * with a filled blue button; one bordered box per saved message with a red
+ * outlined Remove; and a filled Save button.
+ *
+ * It is now Dan's approved spade master: TICKER MANAGEMENT is the eyebrow,
+ * CONTROL THE LIVE MESSAGE RAIL is engraved in the header well, every setting
+ * is a ROW on the black glass (label in the master's lit blue on the left, its
+ * value in engraved silver on the right, an engraved rule between), both
+ * composers are GROOVES cut in the glass, and every action is a lit word. The
+ * foot is the flat closing cap: SAVE TICKER is one action, and the foot never
+ * paints a plate with nothing on it.
+ *
+ * NOTHING IN THE LOGIC MOVED. The load epoch that ignores a late response from
+ * the previous scope, the dirty computation that counts an unsent draft, the
+ * beforeunload warning, the compare-and-swap revision, the confirmDialog before
+ * discarding a draft, the realtime subscription's savingRef guard, the
+ * contrast validation and the deliberate refusal to clear the composers on
+ * save are all exactly as they were. Every aria-label, id and aria-describedby
+ * is unchanged: tests/unit/tableManagementContentPanels.safety.test.tsx finds
+ * these controls by their accessible names.
+ *
+ * WHAT IS STILL DRAWN, and why. The eight source checkboxes, the five colour
+ * and font controls and the scroll-speed range are controls the master paints
+ * nowhere, which is the one exception the standard makes. The ticker PREVIEW
+ * keeps its own border and its own colours because those are the operator's
+ * data - it is a picture of the rail players will see, not our chrome. The
+ * scroll-speed range stays horizontal: Dan's vertical-slider ruling is about
+ * the felt, where a side-to-side drag is the table-switch gesture, and there
+ * is no such gesture on an operator settings page.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import {
@@ -10,6 +48,7 @@ import {
 import { useToast } from '../common/Toast';
 import { isManagementContentConflict } from '../../services/ManagementContentError';
 import { confirmDialog } from '../common/confirmDialog';
+import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './TickerManagementPanel.module.css';
 
 const SOURCE_OPTIONS: Array<{ key: TickerSource; label: string; detail: string }> = [
@@ -196,44 +235,62 @@ export default function TickerManagementPanel({
   };
 
   return (
-    <section
+    <SpadeConsole
+      as="section"
       className={styles.panel}
+      eyebrow="Ticker Management"
+      title="Control The Live Message Rail"
+      titleId="ticker-management-title"
+      pill={scope === 'union' ? 'Union' : 'Club'}
+      foot="foot"
       aria-labelledby="ticker-management-title"
       aria-busy={loading || saving}
     >
-      <div className={styles.heading}>
-        <div>
-          <span>Ticker Management</span>
-          <h2 id="ticker-management-title">Control The Live Message Rail</h2>
-          <p>Choose What Earns The Top Strip, Then Tune Its Pace And Visual Treatment.</p>
-        </div>
-        <label className={styles.master}>
-          <input
-            type="checkbox"
-            aria-label="Ticker Enabled"
-            checked={settings.enabled}
-            onChange={(e) => update('enabled', e.target.checked)}
-            disabled={loading || saving || revision === null || Boolean(loadError)}
-          />
-          <span>{settings.enabled ? 'Ticker On' : 'Ticker Off'}</span>
-        </label>
-      </div>
+      <p className="sc-copy">
+        Choose What Earns The Top Strip, Then Tune Its Pace And Visual Treatment.
+      </p>
+
+      <label className={styles.master}>
+        <input
+          type="checkbox"
+          aria-label="Ticker Enabled"
+          checked={settings.enabled}
+          onChange={(e) => update('enabled', e.target.checked)}
+          disabled={loading || saving || revision === null || Boolean(loadError)}
+        />
+        <span className={`${styles.masterWord} sc-label sc-ink--blue`}>
+          {settings.enabled ? 'Ticker On' : 'Ticker Off'}
+        </span>
+      </label>
+
       {loadError && (
         <div className={styles.safetyNotice} role="alert">
-          <strong>Ticker Editing Is Locked</strong>
-          <span>{loadError} No Defaults Will Be Written Over The Saved Configuration.</span>
-          <button type="button" onClick={() => void load()} disabled={loading}>
+          <strong className="sc-ink--red">Ticker Editing Is Locked</strong>
+          <span className={styles.safetyDetail}>
+            {loadError} No Defaults Will Be Written Over The Saved Configuration.
+          </span>
+          <button
+            type="button"
+            className={styles.word}
+            onClick={() => void load()}
+            disabled={loading}
+          >
             Try Again
           </button>
         </div>
       )}
       {remoteUpdate && (
         <div className={styles.safetyNotice} role="status" aria-live="polite">
-          <strong>Newer Settings Are Available</strong>
-          <span>
+          <strong className="sc-ink--gold">Newer Settings Are Available</strong>
+          <span className={styles.safetyDetail}>
             Your Local Draft Is Still Intact. Reload Only When You Are Ready To Discard It.
           </span>
-          <button type="button" onClick={() => void loadLatest()} disabled={loading || saving}>
+          <button
+            type="button"
+            className={styles.word}
+            onClick={() => void loadLatest()}
+            disabled={loading || saving}
+          >
             Load Latest
           </button>
         </div>
@@ -243,6 +300,8 @@ export default function TickerManagementPanel({
         aria-label="Ticker Settings"
         disabled={loading || saving || revision === null || Boolean(loadError)}
       >
+        {/* The preview keeps the operator's OWN colours and its own rule: it is
+            a picture of the rail players will see, not this panel's chrome. */}
         <div
           className={styles.preview}
           role="img"
@@ -263,7 +322,10 @@ export default function TickerManagementPanel({
         </div>
         <div className={styles.sourceGrid}>
           {SOURCE_OPTIONS.map((source) => (
-            <label key={source.key} className={settings.sources[source.key] ? styles.sourceOn : ''}>
+            <label
+              key={source.key}
+              className={`${styles.source} ${settings.sources[source.key] ? styles.sourceOn : ''}`}
+            >
               <input
                 type="checkbox"
                 aria-label={source.label}
@@ -345,6 +407,7 @@ export default function TickerManagementPanel({
             />
             <button
               type="button"
+              className={styles.word}
               onClick={() => {
                 const message = messageDraft.replace(/\s+/g, ' ').trim();
                 if (!message) return;
@@ -367,6 +430,7 @@ export default function TickerManagementPanel({
                   <span>{message}</span>
                   <button
                     type="button"
+                    className={`${styles.word} ${styles.wordRed}`}
                     onClick={() =>
                       update(
                         'customMessages',
@@ -394,6 +458,7 @@ export default function TickerManagementPanel({
             />
             <button
               type="button"
+              className={styles.word}
               onClick={() => {
                 const message = serviceDraft.replace(/\s+/g, ' ').trim();
                 if (!message) return;
@@ -416,6 +481,7 @@ export default function TickerManagementPanel({
                   <span>{message}</span>
                   <button
                     type="button"
+                    className={`${styles.word} ${styles.wordRed}`}
                     onClick={() =>
                       update(
                         'serviceMessages',
@@ -431,6 +497,7 @@ export default function TickerManagementPanel({
           )}
         </div>
       </fieldset>
+      {/* ONE action, so it is a lit word above the flat closing cap. */}
       <div className={styles.footer}>
         <span role="status" aria-live="polite">
           {loading
@@ -443,12 +510,13 @@ export default function TickerManagementPanel({
         </span>
         <button
           type="button"
+          className={`${styles.word} ${styles.wordSave}`}
           onClick={() => void save()}
           disabled={loading || saving || revision === null || !dirty || Boolean(contrastError)}
         >
           {saving ? 'Saving…' : 'Save Ticker'}
         </button>
       </div>
-    </section>
+    </SpadeConsole>
   );
 }

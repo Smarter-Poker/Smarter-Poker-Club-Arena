@@ -265,6 +265,22 @@ Club Arena has more than one visual authority, and they are all Dan's:
 | #SmarterCasinoRealism cinematic routes | `images/challenges/`, `images/stats/`, `--realism-*` tokens, `data-arena-surface`, `RewardsSurfaceHeader` | `tests/unit/cinematicRouteFamilies.test.ts`, `tests/stats-experience-contract.test.ts`, `tests/e2e/production-daily-missions.spec.ts` |
 | The lobby's card art                   | `ArenaGameCard`, `game-cards/`                                                                            | the layered-card tests                                                                                                                |
 
+### Resolved: the front door keeps its own dress (2026-09-09)
+
+`src/pages/InvitePage.tsx` is generic by every measure the scanner has, and it
+is NOT going on the console. Dan art-directed it against three reference cards
+on 2026-08-28 ("CUSTOM SWAP, CUSTOM MAKE AND DESIGN THEM, BUT THEY SHOULD LOOK
+AND FEEL LIKE THIS"), and it is the one surface a person who is **not a member**
+ever sees - the front door, not a room inside the arena. This standard governs
+the inside. Dan handed the call over on 2026-09-09 ("THAT RULING IS ON YOU TO
+DECIDE") and this is it: black glass and gilt stay.
+
+**A different dress is not an exemption from the house laws**, though. Its gold
+was `#d4af37` over `#8a6d1f`, a ramp that reads brown at the dark end, and
+"NO BROWNS OR PINKS" has no exceptions - it is the brand gold now. Title Case,
+no em dashes, no `:hover` and the figure rules bind it exactly as they bind
+everything else.
+
 **A surface on any of them is finished work, not generic.** Daily Challenges
 and Player Stats scored 193 and 200 on the inventory and are both already
 mastered - their tests pin bevel frames, conic gradients, named animations and

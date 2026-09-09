@@ -55,7 +55,7 @@ export const SPADE_CONSOLE_ZONES = {
   title: { x: 100, y: 166, width: 540, height: 86 },
   /* A long title beside a pill: it stops with air before the pill's slot
      rather than running up against its rim (ANNOUNCEMENTS did). */
-  titleBesidePill: { x: 100, y: 166, width: 486, height: 86 },
+  titleBesidePill: { x: 100, y: 166, width: 470, height: 86 },
   subtitle: { x: 102, y: 262, width: 540, height: 42 },
   pill: { x: 673, y: 190, width: 197, height: 54 },
   /* Relative to bottom-plates.png (master y minus 700). */

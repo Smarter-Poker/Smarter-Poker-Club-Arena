@@ -1,52 +1,93 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CREATE TOURNAMENT - on the spade console (#ClubArenaConsole)
+
+   The chassis, its inks, its type, its head zones and its two painted plates
+   come from SpadeConsole.css. This sheet places the console on the backdrop,
+   switches off the global popup chassis (metallic-popups.css paints a rounded
+   bevelled shell on anything whose class contains `_modal_`, a recessed well
+   on every input inside a dialog and a metal bevel on every button, all with
+   !important), and lays the form out on the black glass between the rails.
+
+   WHAT WAS DELETED. A #1a1a1a sheet with a 1px rim and two shadows; a header
+   bar with its own fill, its own rule and a bare glyph close button; a filled,
+   bordered, 8px-rounded well behind every input and select; a filled bordered
+   box behind every toggle; a tinted violet section box with a 10px radius; a
+   bordered gradient "locked rule" panel; three bordered choice buttons, the
+   selected one a gradient with a 14px glow; a sticky action bar with a
+   gradient, a rule and a 30px shadow; a transparent outlined Cancel; and a
+   solid #646cff Create. Every one of them drew a control the master paints or
+   a card the master already frames.
+
+   Inputs and selects are GROOVES cut in the glass - the same cut as
+   `.rules-textarea` on the Club Rules page: no fill, no rim, a black line with
+   a light lip above and below. Section headings and helper text print on the
+   glass. The two actions are the plates painted into the foot, so the sticky
+   bar is gone with them.
+
+   TWO NUMBERS ARE PINNED by tests/unit/clubMttCreatorContract.test.ts and both
+   are still here: the overlay's z-index, because the persistent club footer
+   used to sit on top of this full-screen work surface and cover its final
+   controls; and the form's `+ 120px` bottom padding, which keeps the last
+   field clear of the painted foot.
+
+   Nothing here restates a brand colour that the console already owns as ink;
+   the eight required markers, the invalid rims and the bounty figures used to
+   be inline `#ef4444` / `#ffd700` literals in the JSX and are classes now.
+   No :hover anywhere. `fadeIn` and `createTournamentModalSlideUp` still play.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .modalOverlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
+  inset: 0;
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   /* The persistent Club footer historically sat above this modal and covered
      its final controls. This full-screen work surface must own the top layer. */
   z-index: 2147483000;
+  background-color: rgb(0 0 0 / 85%);
   backdrop-filter: blur(4px) saturate(1.1);
   -webkit-backdrop-filter: blur(4px) saturate(1.1);
   animation: fadeIn 0.2s ease-out;
 }
 
-.modal {
-  background-color: #1a1a1a;
-  width: min(100%, 1180px);
-  max-width: 1180px;
-  height: 100vh;
-  height: 100dvh;
-  border-radius: 0;
-  padding: 0;
-  border: 1px solid #333;
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: createTournamentModalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  max-height: 100vh;
-  max-height: 100dvh;
-  overflow: hidden;
+/* Doubled class (0,2,0) so it outranks the popup chassis' :where() inventory,
+   which is specificity 0,0,0 and !important. Every longhand that rule sets is
+   restated; a `background` shorthand alone leaves its border and its 16px
+   radius clipping the art. */
+.modal.modal {
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  width: min(100%, 760px);
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  animation: createTournamentModalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 0;
-  padding: 20px 24px;
-  flex: 0 0 auto;
-  border-bottom: 1px solid #333;
-  background: #151922;
+/* The head and the foot keep their painted ratios; the body between them is
+   what scrolls, so the frame never grows past the viewport. */
+.console {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.console :global(.sc__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .form {
@@ -54,286 +95,321 @@
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 24px 24px calc(env(safe-area-inset-bottom, 0px) + 120px);
+  padding: 2cqw 0 calc(env(safe-area-inset-bottom, 0px) + 120px);
 }
 
-.header h2 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.5rem;
-}
-
-.closeParams {
-  background: none;
-  border: none;
-  color: #888;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-}
+/* ── One field, one engraved row ──────────────────────────────────────── */
 
 .formGroup {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2cqw;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .formGroup label {
   display: block;
-  color: #ccc;
-  margin-bottom: 8px;
-  font-size: 0.9rem;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
+
+/* The eight required markers, which were inline hex literals. */
+.required,
+.requiredSpaced {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.requiredSpaced {
+  margin-left: 4px;
+}
+
+/* ── Inputs are grooves cut in the glass, never wells ─────────────────── */
 
 .input,
 .select {
+  display: block;
   width: 100%;
-  padding: 12px;
-  background-color: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 1rem;
-  transition: border-color 0.2s;
-}
-
-.input:focus,
-.select:focus {
+  min-width: 0;
+  /* An operator fills this in on a phone; 44px is the floor. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 1cqw !important;
+  border: 0 !important;
+  border-top: 1px solid #000 !important;
+  border-bottom: 1px solid #000 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
+  color: #e6e9ee !important;
+  -webkit-text-fill-color: #e6e9ee;
+  font:
+    500 3.4cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  caret-color: #5bb8ff;
   outline: none;
-  border-color: #646cff;
 }
 
-.row {
-  display: flex;
-  gap: 16px;
+.select {
+  color-scheme: dark;
 }
 
-.formatAxes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+.input::placeholder {
+  color: #6b7784;
+  -webkit-text-fill-color: #6b7784;
+}
+
+/* A field the form will refuse: the master's red on the lip, no rounded rim. */
+.input[aria-invalid='true'] {
+  border-top-color: #f02849 !important;
+  border-bottom-color: #f02849 !important;
+}
+
+.input:focus-visible,
+.select:focus-visible {
+  outline: 0.6cqw solid #8fd4ff !important;
+  outline-offset: -0.6cqw;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 9%),
+    0 1px 0 rgb(255 255 255 / 9%) !important;
 }
 
 .calendarSelect {
   color-scheme: dark;
   appearance: none;
-  padding-left: 42px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 11h18'/%3E%3C/svg%3E");
-  background-position: 14px 50%;
-  background-size: 20px 20px;
-  background-repeat: no-repeat;
 }
 
-.readOnlyRule,
-.lockedRule {
-  border: 1px solid #3c566e;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #172433, #0e1722);
-  color: #f4f8fc;
-  padding: 12px;
-  min-height: 46px;
-}
+/* ── Layout on the glass ──────────────────────────────────────────────── */
 
-.lockedRule {
+.row,
+.formatAxes {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 4px 0 18px;
-}
-
-.lockedRule span {
-  color: #91a8bb;
+  flex-direction: column;
 }
 
 .col {
   flex: 1;
+  min-width: 0;
 }
 
 .helperText {
   display: block;
-  margin-top: 6px;
-  color: #666;
-  font-size: 0.8rem;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 2.7cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.actions {
+.sectionDivider {
   display: flex;
-  gap: 12px;
-  margin-top: 32px;
-  position: sticky;
-  z-index: 5;
-  bottom: 0;
-  padding: 16px 0 max(16px, env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(21, 25, 34, 0.2), #151922 24%);
-  border-top: 1px solid #3a4657;
-  box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.42);
+  flex-direction: column;
+  padding: 3cqw 0 0;
 }
 
-.choiceGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 10px 0;
+.sectionLabel {
+  display: block;
+  margin-bottom: 1.2cqw;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607;
 }
 
-.choiceGrid button {
-  min-height: 42px;
-  border: 1px solid #40536b;
-  border-radius: 6px;
-  background: #111b29;
-  color: #cbd8e6;
-  cursor: pointer;
+.subSection {
+  padding-top: 3cqw;
+  margin-top: 1.6cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.subLabel {
   font-weight: 800;
 }
 
-.choiceGrid button.selected {
-  border-color: #38bdf8;
-  background: linear-gradient(180deg, #0e496a, #09283d);
-  color: #fff;
-  box-shadow: 0 0 14px rgb(56 189 248 / 28%);
+/* A rule the server owns and the operator cannot change: label left, value
+   right, exactly like every other figure on the glass. */
+.readOnlyRule,
+.lockedRule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font:
+    600 3.2cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
 }
 
-.cancelBtn {
-  flex: 1;
-  padding: 12px;
-  background-color: transparent;
-  border: 1px solid #444;
-  color: #fff;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
+.lockedRule span {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  text-align: right;
 }
 
-.createBtn {
-  flex: 2;
-  padding: 12px;
-  background-color: #646cff;
-  /* Primary Brand Color */
-  border: none;
-  color: #fff;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.createBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* ── Toggles: the box is gone, the switch is not ──────────────────────── */
 
 .toggleLabel {
   display: flex;
+  gap: 2.4cqw;
   align-items: center;
-  gap: 10px;
-  color: #ccc;
-  font-size: 0.9rem;
+  min-height: 44px;
+  padding: 2cqw 0.5cqw;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #d7dee7;
+  -webkit-text-fill-color: #d7dee7;
+  font:
+    600 3.1cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   cursor: pointer;
-  padding: 12px;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 8px;
-  transition: border-color 0.2s;
 }
 
 .checkbox {
   width: 18px;
   height: 18px;
-  accent-color: #646cff;
+  accent-color: #45adff;
   cursor: pointer;
 }
 
-.sectionDivider {
-  margin: 16px 0;
-  padding: 16px;
-  background: rgba(100, 108, 255, 0.06);
-  border: 1px solid rgba(100, 108, 255, 0.15);
-  border-radius: 10px;
+/* ── A choice is a lit word, never a drawn tile ───────────────────────── */
+
+.choiceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  margin: 1.6cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.sectionLabel {
-  display: block;
-  color: #646cff;
-  font-size: 0.8rem;
-  font-weight: 600;
+.choiceGrid button {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 0.4cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-family: inherit;
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 12px;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.payoutPreview {
-  margin: 16px 0;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid #333;
-  border-radius: 8px;
+.choiceGrid button.selected {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.payoutList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+.choiceGrid button:active {
+  filter: brightness(1.25);
+  transform: none;
 }
 
-.payoutItem {
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  color: #aaa;
-  font-weight: 500;
+.choiceGrid button:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
 }
 
-/* ── Mobile ≤480px ── */
-@media (max-width: 480px) {
-  .modal {
-    border-radius: 0;
-  }
-  .header {
-    padding: 14px 16px;
-  }
-  .form {
-    padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 8px);
-  }
-  .header h2 {
-    font-size: 1.2rem;
-  }
+/* ── What the money splits into, and what is wrong with it ────────────── */
+
+.goldFigure {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.badFigure,
+.formError,
+.validationSummary {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.formError {
+  margin-top: 1.2cqw;
+  font:
+    600 2.8cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.validationSummary {
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  font:
+    600 2.8cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.validationSummary p {
+  margin: 0;
+}
+
+/* From 560px up the paired fields sit side by side again; below it they
+   stack, which is what the old 480px breakpoint did. */
+@media (min-width: 560px) {
   .row {
-    flex-direction: column;
-    gap: 0;
+    flex-direction: row;
+    gap: 3cqw;
   }
-  .formatAxes {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-  .input,
-  .select {
-    padding: 10px;
-    font-size: 0.9rem;
-  }
-  .toggleLabel {
-    padding: 10px;
-    font-size: 0.85rem;
-  }
-  .actions {
-    margin-top: 20px;
-  }
-  .cancelBtn,
-  .createBtn {
-    padding: 10px;
-    font-size: 0.9rem;
-  }
-}
 
-@media (max-width: 380px) {
-  .form {
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-  .header h2 {
-    font-size: 1.1rem;
-  }
-  .formGroup {
-    margin-bottom: 14px;
+  .formatAxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3cqw;
   }
 }
 
@@ -356,5 +432,12 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modalOverlay,
+  .modal {
+    animation: none;
   }
 }

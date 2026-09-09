@@ -355,3 +355,46 @@ generic and live.** 34 are done.
   rule anywhere, so the one control that tells an operator a game type is off
   rendered unstyled.
 - Two rebuilt sheets defined a global `slideUp` differently; both are prefixed.
+
+## Round ten (2026-09-09): the daily bonus, the club and agent components, and a ruling
+
+### The daily bonus
+
+Dan: "FIX THE CLUB ARENA DAILY BONUS ... ITS SO TRASH." The screenshot said
+why - a plaque inside every tile inside a grid, three more plaques across the
+top, seven for the week, and an icon in a well inside a plaque inside a card.
+Frames on frames on frames, the one thing ruled against since the first review.
+
+It is one picture now: the console, with the three readouts as rows, the week
+as a single line of lit numerals (behind you in green, today in white, ahead
+muted), and each reward as a row - its own render, the label, the figure, and
+CLAIM as a lit word on the same line. The claim burst still plays.
+
+Two things the render caught: a claimed reward printed its own label twice
+("Rabbit Hunts / Rabbit Hunts"), and the VIP row's figure landed on top of its
+label because `.sc-label` refuses to wrap - right inside a painted zone, wrong
+in a row sharing width with a figure and an action.
+
+### Ruling: the front door keeps its own dress
+
+`InvitePage` is generic by every measure the scanner has, and it is staying off
+the console. Dan art-directed it against three reference cards on 2026-08-28
+and it is the one surface a person who is NOT a member ever sees. This standard
+governs the inside of the arena. Dan handed the call over ("THAT RULING IS ON
+YOU TO DECIDE") and that is it - recorded in the skill so nobody re-opens it.
+
+A different dress is not an exemption from the house laws, though: its gold was
+`#d4af37` over `#8a6d1f`, a ramp that reads brown at the dark end, and "NO
+BROWNS OR PINKS" has no exceptions. It is the brand gold now.
+
+### Club and agent components
+
+Club card, ticker management, create tournament, player invite, commission
+history, agent cashout and chip mint, all on the console; rake snapshot left
+alone (a registered law mandates its multi-column grid) and the club-side
+CashierModal reported dead (nothing imports it; the table's own file of the
+same name is the live one).
+
+Defects fixed: a search button whose label was the empty string, and a stack of
+generic global class names (`.panel-header`, `.count-badge`, `.player-name`,
+`.amount-value`, `.empty-state`) that leaked out of the agent cashout panel.

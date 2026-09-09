@@ -13,7 +13,7 @@
 import { AsyncResource } from 'node:async_hooks';
 import { currentTournamentDataAuthority } from './dataActorContext.js';
 import { supabase } from './client.js';
-import { reportError } from '../errorReporter.js';
+import { reportError, describeError } from '../errorReporter.js';
 
 type ProjectionRow = {
   hand_id: string;
@@ -58,7 +58,11 @@ export async function processHandPostCommitObligations(
     const { data, error } = await supabase.rpc('fn_ca_process_hand_post_commit_obligations', {
       p_hand_id: id,
     });
-    if (error) throw error;
+    // A PostgrestError is a plain object, not an Error. Rethrowing it as-is
+    // made every caller that serialised it with String(err) record
+    // "[object Object]" - see describeError. Carry the detail in a real Error
+    // so the type the callers are annotated for is the type they receive.
+    if (error) throw new Error(`post-commit obligations RPC failed: ${describeError(error)}`);
     return (data ?? {}) as HandPostCommitResult;
   };
   const initial = await apply(handId);
@@ -75,7 +79,8 @@ export async function processHandPostCommitObligations(
     .select('table_id,hand_number')
     .eq('hand_id', handId)
     .maybeSingle();
-  if (targetError) throw targetError;
+  if (targetError)
+    throw new Error(`post-commit predecessor lookup failed: ${describeError(targetError)}`);
   if (!target) return initial;
   const { data: earlier, error: earlierError } = await supabase
     .from('hand_atomic_commits')
@@ -86,7 +91,8 @@ export async function processHandPostCommitObligations(
     .is('post_commit_completed_at', null)
     .order('hand_number', { ascending: true })
     .limit(16);
-  if (earlierError) throw earlierError;
+  if (earlierError)
+    throw new Error(`post-commit predecessor scan failed: ${describeError(earlierError)}`);
   for (const predecessor of earlier ?? []) {
     const result = await apply(predecessor.hand_id);
     // The oldest unresolved dependency still owns the barrier on any doubt.
@@ -129,7 +135,7 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
       .gt('hand_number', cursor)
       .order('hand_number', { ascending: true })
       .limit(Math.min(DRAIN_PAGE, DRAIN_MAX - visited));
-    if (error) throw error;
+    if (error) throw new Error(`projection outbox read failed: ${describeError(error)}`);
 
     const rows = (data ?? []) as ProjectionRow[];
     if (rows.length === 0) break;
@@ -143,7 +149,8 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
           'fn_project_hand_side_effects',
           { p_hand_id: row.hand_id }
         );
-        if (projectError) throw projectError;
+        if (projectError)
+          throw new Error(`fn_project_hand_side_effects failed: ${describeError(projectError)}`);
         const result = (projected ?? {}) as ProjectionResult;
         if (result.ok === true) {
           summary.projected++;

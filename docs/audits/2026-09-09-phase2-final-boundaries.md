@@ -42,3 +42,13 @@ The subsequent RIT winning-card change passed 25 server tests in three files, 68
 Primary comparisons reviewed September 8-9, 2026: Poker TDA 2024 rules 20/21, 34B, 47 and 54B-C, https://www.pokertda.com/view-poker-tda-rules/ ; official four/five/six-card Omaha rules, https://www.pokerstars.com/poker/games/omaha/ . Cash entry/button and fixed-limit cap conventions are Club Arena house rules, not inferred competitor requirements.
 
 No historical balance repair, live-player wager, wallet mutation, forced restart or World Hub change was performed. Ordinary CI's opt-in database skips are not passes; Phase 1's isolated PostgreSQL evidence remains separate. External certification was unavailable and has not been created or implied. Phase 2 remains open until final publication and runtime evidence are recorded.
+
+## Final Local Verification And Publication Block
+
+Verified code commit: 0e57f979775c2664680f09cfcc3c3eb54d1f7c4a. Full server suite: 8015 passed in 599 files; 18 opt-in database cases and one file skipped, not passed. Full client suite: all 17382 tests in 1254 files passed. Both TypeScript projects passed. The final clean production build exited 0 with behind-main=0. The initial full client run found the newly copied rules wrapper's class had no CSS definition; the unused class was removed, without changing the children or scanner threshold, and both the focused checks and full client suite passed on rerun.
+
+At 03:40:42 UTC, engine 5b92dc78722c084b4a04522b40f9a1f7b46f4404 contained both #3879 and #3914, was running/ok, maintenance idle, 385/385 tables resumed, with zero stalled tables and zero blocked settlements. Both frontend stamps were 5940d06d8949954ea92fa62965992b8eacac7df4, publisher34307469118, and contained both corrections. This verifies those earlier releases only; it does not deploy the final local batch.
+
+Automatic approval review rejected the normal branch push twice, citing missing explicit user authorization for the private-source payload and GitHub destination. Read-only verification confirmed the existing canonical SSH push URL and documented publication route, but the second review still required user approval. No alternate route, force push, hook override or direct deployment was attempted. The final source and evidence are committed locally and ready for review. A new PR, required CI, merge and actual production adoption remain unverified and blocked. Phase 2 of 12 is not complete.
+
+Machine-readable evidence, including exact changed-source blob identities and prior release ancestry: docs/audits/2026-09-09-phase2-release-status.json. The 216-requirement register is unchanged.

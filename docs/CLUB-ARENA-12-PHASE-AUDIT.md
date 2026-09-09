@@ -45,7 +45,7 @@ Historical baseline: 16 failures and 28 passing tests before correction; 73 focu
 
 ## Phase 2 Continuation Status
 
-In progress, recovered September 9. The frozen action-context PR #3879 and short-blind pot-limit PR #3914 are merged with passing CI. Final consent, Omaha selection, cash-button, variant-rule and winning-card corrections have local behavioral evidence. The 18 Phase 2 controls are reconciled in docs/audits/2026-09-09-phase2-final-boundaries.md. Final publication, CI and runtime adoption remain required. No external fairness certification is claimed. Phase 2 of 12 is not complete until those gates are recorded.
+In progress, recovered September 9. The frozen action-context PR #3879 and short-blind pot-limit PR #3914 are merged with passing CI. Final consent, Omaha selection, cash-button, variant-rule and winning-card corrections have local behavioral evidence. The 18 Phase 2 controls are reconciled in docs/audits/2026-09-09-phase2-final-boundaries.md. Final local verification passed 8015 server tests (18 opt-in database cases skipped), all 17382 client tests, both TypeScript projects and a clean production build. Automatic approval review requires explicit publication authorization; final CI, merge and runtime adoption remain blocked. See docs/audits/2026-09-09-phase2-release-status.json. No external fairness certification is claimed. Phase 2 of 12 is not complete until those gates are recorded.
 
 ## Required Phase Summary
 

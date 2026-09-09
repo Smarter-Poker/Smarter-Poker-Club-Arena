@@ -34,6 +34,55 @@ BEGIN
     RAISE EXCEPTION 'database input UUID does not match the cross-language fixture';
   END IF;
 
+  BEGIN
+    PERFORM public.fn_gto_v31_input_bundle_checksum(
+      jsonb_set(bundle,'{bundle_version}',to_jsonb(2),false)
+    );
+    RAISE EXCEPTION 'numeric bundle version was coerced into the input identity';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='numeric bundle version was coerced into the input identity' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_gto_v31_input_bundle_checksum(
+      jsonb_set(bundle,'{files,3,path}',to_jsonb(12),false)
+    );
+    RAISE EXCEPTION 'numeric receipt path was coerced into the input identity';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='numeric receipt path was coerced into the input identity' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_gto_v31_input_bundle_checksum(
+      jsonb_set(bundle,'{approval_note}',to_jsonb(123),false)
+    );
+    RAISE EXCEPTION 'numeric approval note was accepted by the input identity';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='numeric approval note was accepted by the input identity' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_gto_v31_input_bundle_checksum(
+      jsonb_set(bundle,'{approval_note}',to_jsonb(E'\t\n'::text),false)
+    );
+    RAISE EXCEPTION 'whitespace-only approval note was accepted';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='whitespace-only approval note was accepted' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_gto_v31_input_bundle_checksum(
+      jsonb_set(bundle,'{files,3,path}',to_jsonb('manifests//phase4.json'::text),false)
+    );
+    RAISE EXCEPTION 'empty receipt path component was accepted';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='empty receipt path component was accepted' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_gto_v31_input_bundle_checksum(
+      jsonb_set(bundle,'{files,3,path}',to_jsonb('manifests/./phase4.json'::text),false)
+    );
+    RAISE EXCEPTION 'dot receipt path component was accepted';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='dot receipt path component was accepted' THEN RAISE; END IF;
+  END;
+
   -- Both manifest inputs are now known before approval. The final manifest
   -- checksum can therefore be inserted into the approval payload without a
   -- fixed-point search or a mutable post-approval update.
@@ -58,6 +107,14 @@ BEGIN
     RAISE EXCEPTION 'uppercase input checksum was accepted';
   EXCEPTION WHEN others THEN
     IF SQLERRM='uppercase input checksum was accepted' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.ca_gto_v31_approve_input_bundle(
+      jsonb_set(bundle,'{bundle_key}',to_jsonb(123),false)
+    );
+    RAISE EXCEPTION 'approval coerced a numeric bundle key';
+  EXCEPTION WHEN others THEN
+    IF SQLERRM='approval coerced a numeric bundle key' THEN RAISE; END IF;
   END;
   BEGIN
     PERFORM public.ca_gto_v31_approve_input_bundle(

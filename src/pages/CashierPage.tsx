@@ -1164,7 +1164,7 @@ export default function CashierPage() {
       'DAILY_REWARD_CLAIMED',
     ],
     () => {
-      if (user?.id) loadBalances(user.id);
+      if (user?.id) loadBalances(user.id, { force: true });
     },
     { debounce: 500 }
   );

@@ -1,128 +1,141 @@
 {
   "phase": 2,
   "total_phases": 12,
-  "status": "final_migration_and_evidence_publication_pending",
+  "status": "acceptance_verified",
   "reviewed_head": "bb4401d5ca32ccfcb92e04c4a41d517f364f78f8",
   "owner": "Club Arena accounting audit",
   "controls": [
     {
       "id": "CA01-01",
       "requirement": "Departure Ordering",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashoutDepartureIntegration.test.ts",
         "server/src/engine/CashoutEvictionOutcome.test.ts",
         "server/src/engine/IdleSeatMoveOwnership.test.ts",
         "server/src/engine/EngineTeardownOwnership.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-01-01"
     },
     {
       "id": "CA01-02",
       "requirement": "Original Cashout Identity",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashoutDeparturePostgres.test.ts",
         "server/src/handlers/OccupancyHttpIntegration.test.ts",
         "server/src/services/supabase/CashoutReceipt.test.ts",
         "scripts/dev/probe-seat-intent-browser.mjs"
-      ]
+      ],
+      "original_backlog_id": "CA-01-02"
     },
     {
       "id": "CA01-03",
       "requirement": "Committed Seat And Chip Ownership",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashoutDeparturePostgres.test.ts",
         "server/src/services/supabase/SeatMoveReceipt.test.ts",
         "server/src/engine/VoluntaryStayOutcome.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-01-03"
     },
     {
       "id": "CA02-01",
       "requirement": "Legal Action Authority",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
-      "evidence": ["server/src/engine/PlayerActionContext.test.ts"]
+      "status": "verified",
+      "evidence": ["server/src/engine/PlayerActionContext.test.ts"],
+      "original_backlog_id": "CA-02-01"
     },
     {
       "id": "CA02-02",
       "requirement": "Reopening And Fixed Limit",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/HandController.reopening.test.ts",
         "server/src/engine/FixedLimit.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-02"
     },
     {
       "id": "CA02-03",
       "requirement": "Side Pots And Uncalled Returns",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
-      "evidence": ["server/src/engine/Phase2SidePotFixture.test.ts"]
+      "status": "verified",
+      "evidence": ["server/src/engine/Phase2SidePotFixture.test.ts"],
+      "original_backlog_id": "CA-02-03"
     },
     {
       "id": "CA02-04",
       "requirement": "Exact Split Awards",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/RunItTwice.money.test.ts",
         "server/src/engine/RunItTwice.parity.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-04"
     },
     {
       "id": "CA02-05",
       "requirement": "Blinds And Position",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CashButtonDecisionBoundary.test.ts",
         "server/src/engine/PartialIndividualAnte.test.ts",
         "server/src/engine/PotLimitShortBlinds.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-05"
     },
     {
       "id": "CA02-06",
       "requirement": "Variant Evaluation",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/VariantRules.test.ts",
         "server/src/engine/Phase2EvaluatorOracle.test.ts",
         "server/src/engine/PineappleThreeCardShowdown.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-06"
     },
     {
       "id": "CA02-07",
       "requirement": "Deck And Hidden Information",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/CryptoRandom.test.ts",
         "server/src/engine/CardVisibilityParity.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-07"
     },
     {
       "id": "CA02-08",
       "requirement": "Showdown And Muck",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/HandController.showdownRules.test.ts",
         "server/src/engine/revealedShowdown.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-08"
     },
     {
       "id": "CA02-09",
       "requirement": "Bomb Pots And Multiple Runouts",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/BombPotScheduler.test.ts",
         "server/src/engine/RunItTwiceDecisionBoundary.test.ts",
         "server/src/engine/RunItTwiceTerminalBoundary.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-09"
     },
     {
       "id": "CA02-10",
       "requirement": "Decision Deadlines",
-      "status": "implementation_tests_and_live_adoption_evidenced_final_publication_pending",
+      "status": "verified",
       "evidence": [
         "server/src/engine/PreciseActionTimer.test.ts",
         "server/src/engine/PlayerActionContext.test.ts"
-      ]
+      ],
+      "original_backlog_id": "CA-02-10"
     }
   ],
   "shared_rules_review": "docs/audits/2026-09-09-phase2-final-boundaries.md",
@@ -134,10 +147,7 @@
     "Distributed process crash/restart durability remains Phase 7 of the original 109-item plan.",
     "Final application-role retirement of unbound cashout RPCs requires compatible engine/client adoption."
   ],
-  "remaining_gates": [
-    "Normal push, required checks, automatic merge and main-file verification for final retirement migration and evidence",
-    "Final acceptance evidence review; do not infer historical incident closure or other phase completion"
-  ],
+  "remaining_gates": [],
   "hosted_postgres_evidence": {
     "run_id": 34385701145,
     "job_id": 102581340897,
@@ -193,5 +203,30 @@
       "bound_function_service_only": true
     },
     "deployment_direction": "Dispatch compatible staged releases promptly through the normal Hetzner workflow with force=false. Continue development during the announced cutover gate. Do not create a duplicate dispatch while a compatible deployment is active."
+  },
+  "final_acceptance": {
+    "verified_at": "2026-09-09T21:33:00Z",
+    "implementation_merge": "bb4401d5ca32ccfcb92e04c4a41d517f364f78f8",
+    "retirement_merge": "ea1fbbdb9217a2b04054b1c3a1dc189c5fdb7ac3",
+    "pr": 4023,
+    "required_checks": "passed",
+    "agent_open_pr": "one redundant run canceled; PR was created and automatically merged, not a test failure",
+    "public_and_origin_sha": "ea1fbbdb9217a2b04054b1c3a1dc189c5fdb7ac3",
+    "built_at": "2026-09-09T21:26:08Z",
+    "publisher_run": 34406655838,
+    "engine": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
+    "maintenance": "idle; 177 of 177 tables resumed in eight completed waves",
+    "read_only_database": {
+      "cashout_receipts": 209,
+      "cashouts_after_retirement": 53,
+      "move_receipts": 3211,
+      "move_ledger_sum": 0,
+      "invalid_move_leg_counts": 0,
+      "active_missing_keys": 0,
+      "pending_unbound_moves": 0,
+      "retired_executable_aliases": 0
+    },
+    "all_13_evidence_paths_present": true,
+    "scope": "The defined Phase 1 cashout carryover and Phase 2 acceptance matrix only; Phase 3 and later phases remain open."
   }
 }

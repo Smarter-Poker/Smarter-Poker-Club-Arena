@@ -194,8 +194,8 @@
     "core_body_md5": "797c1eac824f1cff55279c53f4094bce",
     "findings": [
       "Registration locks the tournament and atomically debits, creates the roster row, books fees and pool funding. Unique insert failure raises40001 to roll back the debit. Late seating failure rolls back before capacity retry.",
-      "Public initial registration has no request-id overload in the inspected catalog. Existing-row lookup cannot prove original operation identity after registration lifecycle changes. A complete retained registration receipt and client request binding remain unimplemented.",
-      "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it."
+      "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it.",
+      "Initial wallet registration now has an applied mandatory-request wrapper and client integration under test. Publication and compatible-client legacy retirement remain pending."
     ]
   },
   "refund_client_contract": {
@@ -232,5 +232,22 @@
     "typescript": "passed",
     "build": "passed",
     "evidence": "docs/changelog/2026-09-09-durable-tournament-seat-refund.md"
+  },
+  "registration_operation_receipt": {
+    "status": "database_applied_client_tested_publication_pending",
+    "function": "fn_register_for_tournament_request(uuid,uuid)",
+    "body_md5": "c80d08529c03284adc51c6cb03764a55",
+    "applied_version": "20260909211745",
+    "client_tests": 115,
+    "postgres_wrapper_assertions": 10,
+    "postgres_harness_exit": 0,
+    "typescript": "passed",
+    "build": "passed_on_24bfeda9_behind_main_0",
+    "evidence": "docs/changelog/2026-09-09-tournament-registration-operation-receipts.md",
+    "limitations": [
+      "Underlying funding core uses an isolated test double in new wrapper tests; full entry economics acceptance remains open.",
+      "Legacy registration alias retirement requires compatible frontend publication."
+    ],
+    "registry_applied_version": "20260909212058"
   }
 }

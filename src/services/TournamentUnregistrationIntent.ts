@@ -8,7 +8,7 @@ function read(raw: string | null): Intent | null {
   if (raw === null) return null;
   const value = JSON.parse(raw) as Intent;
   if (!value || !uuid.test(value.requestId) || !['pending', 'resolved'].includes(value.state))
-    throw new Error('The Saved Tournament Refund Request Could Not Be Verified.');
+    throw new Error('The Saved Tournament Transaction Request Could Not Be Verified.');
   return value;
 }
 
@@ -23,7 +23,7 @@ export function withTournamentUnregistrationIntent<T>(
   if (active) return active as Promise<T>;
   const work = (async () => {
     if (!globalThis.navigator?.locks || !globalThis.crypto?.randomUUID)
-      throw new Error('This Browser Cannot Safely Save The Tournament Refund Request.');
+      throw new Error('This Browser Cannot Safely Save The Tournament Transaction Request.');
     const storage = globalThis.localStorage;
     const session = globalThis.sessionStorage;
     const invokedRaw = storage.getItem(key);
@@ -49,11 +49,11 @@ export function withTournamentUnregistrationIntent<T>(
       const raw = JSON.stringify(intent);
       session.setItem(key, raw);
       if (session.getItem(key) !== raw)
-        throw new Error('The Tournament Refund Request Could Not Be Saved.');
+        throw new Error('The Tournament Transaction Request Could Not Be Saved.');
       if (!current || !original || current.requestId === intent.requestId) {
         storage.setItem(key, raw);
         if (storage.getItem(key) !== raw)
-          throw new Error('The Tournament Refund Request Could Not Be Saved.');
+          throw new Error('The Tournament Transaction Request Could Not Be Saved.');
       }
       const result = await submit(intent.requestId);
       try {

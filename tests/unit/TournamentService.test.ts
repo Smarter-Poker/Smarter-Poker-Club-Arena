@@ -9,8 +9,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRpc, mockEmit, mockUuid } = vi.hoisted(() => ({
+const { mockRpc, mockEmit, mockUuid, mockTournamentRead } = vi.hoisted(() => ({
   mockRpc: vi.fn(),
+  mockTournamentRead: vi.fn(async () => ({ data: null, error: null as unknown })),
   mockEmit: vi.fn(),
   mockUuid: vi.fn(() => '00000000-0000-4000-8000-000000000001'),
 }));
@@ -21,8 +22,7 @@ vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
-        if (prop === 'maybeSingle' || prop === 'single')
-          return () => Promise.resolve({ data: null, error: null });
+        if (prop === 'maybeSingle' || prop === 'single') return mockTournamentRead;
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
         return vi.fn().mockReturnValue(new Proxy({}, handler));
@@ -71,6 +71,7 @@ import {
 describe('TournamentService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTournamentRead.mockReset().mockResolvedValue({ data: null, error: null });
     localStorage.clear();
     sessionStorage.clear();
     vi.stubGlobal('navigator', {
@@ -248,6 +249,18 @@ describe('TournamentService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('getTournament', () => {
+    it('distinguishes an unavailable snapshot from a verified missing tournament', async () => {
+      const error = { message: 'Network Unavailable' };
+      mockTournamentRead.mockResolvedValue({ data: null, error });
+      await expect(tournamentService.getTournament('event', { throwOnError: true })).rejects.toBe(
+        error
+      );
+      mockTournamentRead.mockResolvedValue({ data: null, error: null });
+      await expect(
+        tournamentService.getTournament('missing', { throwOnError: true })
+      ).resolves.toBeNull();
+    });
+
     it('should return null when tournament not found', async () => {
       const result = await tournamentService.getTournament('nonexistent');
       expect(result).toBeNull();

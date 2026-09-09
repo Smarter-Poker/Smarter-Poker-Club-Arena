@@ -248,7 +248,7 @@ export class DailyMissionsPage {
       .poll(async () => {
         const [controlBox, footerBox] = await Promise.all([
           control.boundingBox(),
-          this.page.getByRole('navigation', { name: 'Club Arena' }).boundingBox(),
+          this.page.getByRole('navigation', { name: 'Poker Arena' }).boundingBox(),
         ]);
         if (!controlBox || !footerBox) return false;
         return controlBox.y + controlBox.height <= footerBox.y - 8;

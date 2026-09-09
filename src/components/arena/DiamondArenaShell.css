@@ -1,0 +1,16 @@
+.diamond-arena-shell {
+  --accent-color: #e6c66a;
+  color: #fff7dc;
+  background: radial-gradient(ellipse at top, #263140, #0c1018 65%);
+  border-top: 1px solid #b59a52;
+}
+.diamond-arena-shell h2 {
+  color: #efd889;
+}
+.diamond-arena-shell nav {
+  margin-bottom: 20px;
+}
+.diamond-arena-shell .btn-secondary {
+  border-color: #b59a52;
+  color: #fff7dc;
+}

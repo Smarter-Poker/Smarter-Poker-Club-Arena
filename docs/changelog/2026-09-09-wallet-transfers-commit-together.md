@@ -13,3 +13,5 @@ Verification: 28 isolated PostgreSQL assertions passed, including concurrent del
 Remaining: normal repository gates, both repositories' publication, authenticated live acceptance. Phase 3 engine adoption remains independently open; at 20:00 UTC it was healthy on 5dd902e9, with zero blocked settlements.
 
 Work scope follows Dan's September 9 instruction: concrete Phase 4 requirements only, reuse verified evidence, no duplicate optional suites or speculative hardening.
+
+Dan's deployment instruction: immediately dispatch a staged engine release toward the normal maintenance window when no suitable dispatch is active; keep building while that deployment runs. Do not wait for the window before dispatching and do not force an out-of-window restart. At 20:46 UTC workflow dispatch 34403024485 was already active, so no duplicate dispatch was added.

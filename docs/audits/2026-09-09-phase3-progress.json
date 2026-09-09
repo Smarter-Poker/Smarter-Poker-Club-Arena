@@ -80,7 +80,8 @@
       "id": "K01",
       "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_pending_publication",
+      "evidence": "Break Clock Recovery Correction in the companion report"
     },
     {
       "id": "K02",
@@ -728,13 +729,21 @@
       "contains_atomic_merge": true
     },
     "last_engine_read": {
+      "adoption": "pending",
+      "observed_at": "2026-09-09T20:18:49.962022Z",
       "version": "5dd902e9",
-      "observed_at": "2026-09-09T19:31:17.00018Z",
-      "adoption": "pending"
+      "heartbeat_at": "2026-09-09T20:18:44.018175Z"
+    },
+    "staged_engine": {
+      "run": 34398550383,
+      "attempt": 291,
+      "target": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
+      "shipped": false,
+      "reason": "Image staged; next announced break outside run budget"
     }
   },
   "expiry_correction": {
-    "status": "database_applied_and_verified_awaiting_ci",
+    "status": "database_applied_verified_source_merged",
     "controls": ["S11", "AX10"],
     "migration": "20260909192921_spin_expiry_rechecks_the_locked_board.sql",
     "applied_version": "20260909193534",
@@ -753,11 +762,32 @@
     "financial_fixture_limit": "No paid entries or ledger triggers; verifies expiry/cancellation control flow, not financial refunds",
     "schema_generator": "passed; no changed expiry schema shape; unrelated generated metadata additions discarded",
     "club_foreign_key_gate": "passed",
-    "engine_caller": "GameServer.ts ten-minute fn_spin_expire_unfilled call"
+    "engine_caller": "GameServer.ts ten-minute fn_spin_expire_unfilled call",
+    "pr": 4007,
+    "merge_commit": "926b6cbfba7c37fb473ddf1a19ea845760d00735",
+    "passing_ci_run": 34397322173,
+    "superseded_pr": 4005
   },
   "cancellation_review_clarifications": {
     "generic_refund_planner": "No installed database callers found; the fee mismatch is not by itself proof of active cancellation failure",
     "engine_refund_helper": "refundAndCloseCancelledTournament is exported and imported but no application invocation was found",
     "satellite_unregistration": "Current public unregister RPC delegates to fn_ca_unregister_tournament_player_exact, which returns a ticket for satellite-funded entries; this conflicts with the cash-refund rule still present on origin/main docs/LAWS.md. No policy reversal or historical ticket repair performed."
+  },
+  "break_clock_correction": {
+    "status": "behavior_verified_awaiting_publication",
+    "controls": ["K01", "K06", "K12", "BX08"],
+    "baseline": "Ten-minute level at 12:50, break at 12:55, restart at 12:57 restored 180000ms instead of 300000ms",
+    "behavioral_tests_passed": 8,
+    "affected_suite_tests_passed": 41,
+    "affected_suite_files_passed": 6,
+    "server_types": "passed",
+    "base_commit": "6debd44ecb75318aea3f50f1b939649a10ed201a",
+    "full_controls_closed": false
+  },
+  "execution_scope": {
+    "confirmed_defects_only": true,
+    "unchanged_evidence_reused": true,
+    "optional_duplicate_testing": false,
+    "phase_4_started": false
   }
 }

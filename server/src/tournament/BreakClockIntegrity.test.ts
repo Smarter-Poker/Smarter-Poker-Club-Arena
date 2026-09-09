@@ -55,7 +55,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -118,7 +118,11 @@ describe('DEFECT 2 - a break with no end time yet is still a break', () => {
 
   it('reconstructs the end time from break_started_at plus grace plus break', () => {
     const at = BASE.indexOf('if (tournament.on_break)');
-    const block = sliceBlockAfter(BASE, 'if (tournament.on_break)');
+    const block = sliceBetween(
+      BASE,
+      'const breakStartedAt = tournament.break_started_at',
+      'this.startEliminationChecker();'
+    );
     expect(block).toMatch(/break_started_at/);
     expect(block).toMatch(/LAST_HAND_GRACE_MS/);
     expect(block).toMatch(/BREAK_DURATION_MS/);

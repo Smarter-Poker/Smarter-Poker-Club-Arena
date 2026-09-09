@@ -95,3 +95,17 @@ The isolated PostgreSQL 17 runner passed 21 checks. It executes the real expiry 
 PR #4000 merged as 61796f8f4c0c5f10ffbc0ec253575ff8a970af49 after passing CI 34394618457. Both ca-static.smarter.poker/build-info.json and the Club Arena build-info path on smarter.poker serve 0ed94e26141be46f0d4aa7bf9b0ade9ac025a526, independently proved to contain that merge. The engine still reported 5dd902e9 at 19:31:17 UTC; atomic-engine adoption remains pending.
 
 The cancellation review also corrected the scope of two earlier findings: the generic refund planner has no installed database callers, and the legacy engine refund helper has no application invocation. Their different calculations alone do not prove two active cancellation policies. Separately, the live public unregister RPC now reaches a satellite-ticket return path, while current origin/main docs/LAWS.md still requires satellite entry refunds in cash. That policy discrepancy remains open; no historical tickets were changed. Phase 3 remains in progress and Phase 4 has not started.
+
+## Break Clock Recovery Correction
+
+A production-method regression reproduced a restart charging break time against a level: a ten-minute level started at 12:50, paused at 12:55 and restored at 12:57 returned three minutes instead of five. Recovery now subtracts the recorded break overlap and preserves the original level timestamp while the break remains active. It restores pause ownership before entry reconciliation so an overlapping add-on break cannot overwrite that remainder. The existing break deadline and missing-end fallback remain authoritative.
+
+Eight behavioral cases cover the original failure, consecutive restarts, resuming after the break, the existing last-hand fallback, an expired recorded break, entry reconciliation crossing the break deadline, ordinary non-break recovery, and add-on pause ownership. The eight cases are grouped by distinct boundaries in the regression file. One obsolete source-only restart assertion was replaced by this behavioral coverage; no duplicate copy of production clock arithmetic was added. All 41 tests in the six affected suites and the server TypeScript check passed on the branch based on 6debd44ecb75318aea3f50f1b939649a10ed201a.
+
+K01 and the restart portions of K06/K12/BX08 now have additional behavioral evidence. Their remaining requirements and production adoption remain open. No full Phase 3 completion claim is made.
+
+## Publication Check At 20:18 UTC
+
+The expiry correction merged through PR #4007 as 926b6cbfba7c37fb473ddf1a19ea845760d00735; CI 34397322173 passed. PR #4005 was superseded and closed after moving the single expiry commit onto a fresh main-based branch.
+
+Engine deployment 34398550383 passed its gates and staged image 561eaa523829ef8ecbd6b11fffe946b6e53fd756. Attempt 291 explicitly recorded shipped=false because the next announced break was outside that run's remaining budget. Independent database verification at 20:18:49 UTC still found engine 5dd902e9 with a fresh heartbeat. Atomic Spin engine adoption remains pending the normal maintenance window. The earlier frontend and database verification evidence is retained without rerunning unchanged tests.

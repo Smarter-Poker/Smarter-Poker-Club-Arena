@@ -4151,6 +4151,17 @@ export abstract class TournamentManagerBase {
       // Initialize broadcast channel on resume
       this.broadcastChannel = null;
       this.broadcastReady = false;
+      const breakStartedAt = tournament.break_started_at
+        ? new Date(tournament.break_started_at).getTime()
+        : 0;
+      const breakEndsAt = tournament.break_ends_at
+        ? new Date(tournament.break_ends_at).getTime()
+        : breakStartedAt > 0
+          ? breakStartedAt +
+            TournamentManagerBase.LAST_HAND_GRACE_MS +
+            TournamentManagerBase.BREAK_DURATION_MS
+          : 0;
+      let restoredLevelClockSuspended = false;
       // TOURNEY-AUDIT 2026-07-24: resume the level clock MID-LEVEL using the
       // persisted level_started_at instead of granting a fresh full level on
       // every restart (which nearly froze blind escalation across restarts).
@@ -4174,12 +4185,30 @@ export abstract class TournamentManagerBase {
         const durationMs = this.levelDurationMs(levelData);
         let remainingMs: number | undefined;
         if (tournament.level_started_at) {
-          const elapsed = Date.now() - new Date(tournament.level_started_at).getTime();
+          const levelStartedAt = new Date(tournament.level_started_at).getTime();
+          // This tournament was excluded from maintenance's clock credit while
+          // on_break. Count only the overlap of its recorded break and level.
+          const pausedMs =
+            tournament.on_break && breakStartedAt > 0 && breakEndsAt >= breakStartedAt
+              ? Math.max(
+                  0,
+                  Math.min(Date.now(), breakEndsAt) - Math.max(levelStartedAt, breakStartedAt)
+                )
+              : 0;
+          const elapsed = Date.now() - levelStartedAt - pausedMs;
           if (elapsed >= 0 && elapsed < durationMs * 4) {
             remainingMs = Math.max(1000, durationMs - elapsed);
           }
         }
-        this.startBlindTimer(tournament.blind_structure || [], remainingMs);
+        if (tournament.on_break && breakEndsAt - Date.now() > 1000) {
+          // Arming would rewrite level_started_at. A second restart during
+          // this same break would then count against a different anchor.
+          this.savedBlindTimerRemaining = remainingMs ?? durationMs;
+          this.onBreak = true;
+          restoredLevelClockSuspended = true;
+        } else {
+          this.startBlindTimer(tournament.blind_structure || [], remainingMs);
+        }
       }
       this.startEliminationChecker();
       await this.reconcileTournamentEntryWindow('engine.resume');
@@ -4237,27 +4266,15 @@ export abstract class TournamentManagerBase {
        * the clear branch below, which is how the stale flags above heal.
        */
       if (tournament.on_break) {
-        const breakStartedAt = tournament.break_started_at
-          ? new Date(tournament.break_started_at).getTime()
-          : 0;
-        const breakEndsAt = tournament.break_ends_at
-          ? new Date(tournament.break_ends_at).getTime()
-          : breakStartedAt > 0
-            ? breakStartedAt +
-              TournamentManagerBase.LAST_HAND_GRACE_MS +
-              TournamentManagerBase.BREAK_DURATION_MS
-            : 0;
         const remainingMs = breakEndsAt - Date.now();
         if (remainingMs > 1000) {
           this.onBreak = true;
           // The end time is already fixed for this break — whether it came off
           // the row or was reconstructed above — so nothing may re-stamp it.
           this.breakCountdownStarted = true;
-          // The level clock was armed moments ago, a few lines above. Suspend
-          // it for the rest of the break exactly as the :55 path does —
-          // without this it ran straight through the break and resumeFromBreak
-          // then granted a fresh full level on top. See suspendLevelClock.
-          this.suspendLevelClock();
+          // The persisted remainder was restored without arming a level
+          // timer, so preserve it until resumeFromBreak releases this pause.
+          if (!restoredLevelClockSuspended) this.suspendLevelClock();
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break - re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
           );
@@ -4286,6 +4303,17 @@ export abstract class TournamentManagerBase {
           this.breakCountdownStarted = false;
           await this.clearPersistedBreak();
           this.assertLifecycleCurrent(lifecycle);
+          // Entry-window reconciliation can outlast the remaining break.
+          if (restoredLevelClockSuspended) {
+            if (this.addOnBreakActive) {
+              this.addOnBreakOwnsPause = true;
+              this.addOnBreakOwnsLevelClock = true;
+            } else {
+              const remaining = this.savedBlindTimerRemaining;
+              this.savedBlindTimerRemaining = 0;
+              this.startBlindTimer(tournament.blind_structure || [], remaining);
+            }
+          }
         }
       }
 

@@ -287,6 +287,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return { success: false, error: 'No RIT state found' };
     }
 
+    // Only participants in this offer can decide how their pot runs. Once
+    // consent is final, late requests must not publish a different decision.
+    if (!state.allPlayerIds.includes(userId)) {
+      return { success: false, error: 'Player is not part of this Run It Twice offer' };
+    }
+    if (state.status !== 'offered') {
+      return { success: false, error: 'Run It Twice decision is already final' };
+    }
+
     /**
      * ── THE CHOOSER CANNOT "ACCEPT" (2026-08-27) ─────────────────────────
      *
@@ -341,7 +350,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         type: 'rit_chooser_decided',
         table_id: this.tableId,
         chooserPlayerId: userId,
-        chosenRuns: runs,
+        chosenRuns: state.chosenRuns,
         waitingFor: state.allPlayerIds.filter((pid) => !state.acceptedBy.has(pid)),
         accepted_ids: [...state.acceptedBy],
         deadline_ts: this.ritOfferDeadlineTs,

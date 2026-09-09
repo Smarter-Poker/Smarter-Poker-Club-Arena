@@ -4595,7 +4595,7 @@ export abstract class ServerTableEngineBase {
        * heads-up rule in one of them" the other cannot silently keep billing
        * the wrong seat. Same argument, one layer up.
        */
-      if (sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
+      if (roster.length === 2 && sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
         const headsUp = headsUpButtonSeat(sortedSeats, this.lastBigBlindSeat);
         if (headsUp !== null && headsUp > 0) return headsUp;
       }

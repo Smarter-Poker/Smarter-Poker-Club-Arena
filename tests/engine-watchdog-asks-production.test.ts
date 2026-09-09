@@ -163,10 +163,10 @@ describe('it fixes what it finds, and only then complains', () => {
     // ...and the dispatch is the ELSE branch of finding one. The in-flight run
     // is the fix; a second dispatch would cancel it, not hurry it.
     expect(SH_CODE).toMatch(
-      /if \[ -n "\$\{INFLIGHT:-\}" \]; then[\s\S]{0,600}?elif gh workflow run "\$DEPLOY_WORKFLOW"/,
+      /if \[ -n "\$\{INFLIGHT:-\}" \]; then[\s\S]{0,600}?elif gh workflow run "\$DEPLOY_WORKFLOW"/
     );
     expect(SH_CODE.indexOf('INFLIGHT=$(gh run list')).toBeLessThan(
-      SH_CODE.indexOf('gh workflow run "$DEPLOY_WORKFLOW"'),
+      SH_CODE.indexOf('gh workflow run "$DEPLOY_WORKFLOW"')
     );
   });
 
@@ -175,7 +175,7 @@ describe('it fixes what it finds, and only then complains', () => {
     // says why. The alarm is raised once; progress is reported on a clock.
     expect(SH).toContain('COMMENT_EVERY_MIN=${COMMENT_EVERY_MIN:-30}');
     expect(SH_CODE).toMatch(
-      /if \[ -n "\$\{LAST_COMMENT_AGE_MIN:-\}" \] && \[ "\$LAST_COMMENT_AGE_MIN" -lt "\$COMMENT_EVERY_MIN" \]; then/,
+      /if \[ -n "\$\{LAST_COMMENT_AGE_MIN:-\}" \] && \[ "\$LAST_COMMENT_AGE_MIN" -lt "\$COMMENT_EVERY_MIN" \]; then/
     );
   });
 

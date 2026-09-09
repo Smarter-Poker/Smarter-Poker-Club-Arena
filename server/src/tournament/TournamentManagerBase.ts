@@ -6268,8 +6268,31 @@ export abstract class TournamentManagerBase {
       if (fromStart && !Number.isFinite(advertisedStartMs)) {
         throw new Error('Free Buy add-on window has no readable advertised tournament start');
       }
+      /* A LATE LAUNCH STILL OWES THE WHOLE WINDOW (2026-09-09).
+
+         The window used to be anchored to the ADVERTISED start alone. That is
+         right for the ordinary case - this runs inside the pre-seat minute, so
+         the field sits down a minute early and the break still falls at the
+         advertised clock. It is wrong for a field that sits down LATE. On
+         2026-09-09 the engine could not seat anybody for most of a day (two
+         composite foreign keys made PostgREST refuse the seat-inventory embed),
+         and when it could again, every Free Buy on the board was more than
+         late-reg-plus-break past its advertised start: requestedEnd landed
+         before requestedStart, this threw, start() stood down "before dealer
+         admission", and the next discovery pass did exactly the same thing.
+         Ten events, 1,143 paid entrants, permanently unlaunchable
+         - not for any reason a player could see, but because the promise
+         "add on as soon as they sit down, and also at the break" had been
+         written as a wall-clock instant instead of as a window that starts
+         when they sit down.
+
+         So the anchor is the LATER of the advertised start and the moment the
+         field actually sits down. On time (the ordinary case) that is the
+         advertised start and nothing changes; late, the players get the same
+         late-reg-plus-break window they were promised, counted from the seat. */
+      const windowAnchorMs = fromStart ? Math.max(advertisedStartMs, requestedStartMs) : NaN;
       const requestedEndMs = fromStart
-        ? advertisedStartMs + lateRegMs + this.addOnBreakDurationMs()
+        ? windowAnchorMs + lateRegMs + this.addOnBreakDurationMs()
         : requestedStartMs + 60_000;
       if (!Number.isFinite(requestedEndMs) || requestedEndMs <= requestedStartMs) {
         throw new Error('the requested add-on window does not end after it starts');

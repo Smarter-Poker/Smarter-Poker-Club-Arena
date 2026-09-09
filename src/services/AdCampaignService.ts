@@ -95,7 +95,8 @@ export interface SponsorCampaignInput {
 }
 
 export type SponsorCreateResult =
-  { ok: true; campaignId: string } | { ok: false; reason: string; detail?: string };
+  | { ok: true; campaignId: string }
+  | { ok: false; reason: string; detail?: string };
 
 export interface AdCampaignDay {
   day: string;

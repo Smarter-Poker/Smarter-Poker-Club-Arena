@@ -14,7 +14,6 @@ import { resolve } from 'path';
 import {
   sliceMethod,
   sliceEnclosingBlock,
-  sliceBlockAfter,
   sliceCssRule,
   blankNonCode,
 } from '../helpers/sourceWindow';
@@ -92,6 +91,7 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
   const RUNOUT = read('server/src/engine/ServerTableEngineRunout.ts');
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
+  const HAND_HISTORY = read('server/src/services/supabase/handHistory.ts');
   const HORSE = read('server/src/engine/HorseLogic.ts');
   const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
 
@@ -151,53 +151,29 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   });
 
   it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {
-    // The gate and the write are siblings in one `if` block, so that block is
-    // the window — bounded by structure, never a byte count.
-    //
-    // 2026-08-29: anchored on the `if` itself rather than climbing N levels
-    // out from the upsert. The retry loop added a nesting level between the
-    // two, which silently moved a `levels: 2` window off the gate it was
-    // written to guard — the exact failure mode sourceWindow.ts exists to
-    // stop. An anchor on the condition cannot drift no matter what is nested
-    // inside it.
-    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && snap.bombPot');
-    // Gated on the hand being a BOMB, and on there being awards to record —
-    // never on the board count (2026-08-28: a single-board bomb with side
-    // pots is exactly as hard to rebuild, and a partial ledger cannot tell a
-    // single-board bomb from a hand that never happened).
-    expect(window).toMatch(/snap\.bombPot/);
-    expect(window).toMatch(/snap\.perPotAwards\.length > 0/);
-    expect(window).not.toMatch(/board_count \?\? 1\) >= 2/);
-    expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
-    expect(window).toMatch(/ignoreDuplicates: true/);
+    // Units now travel inside the same immutable request that commits the
+    // hand, stacks, rake link, and projection outbox. There is no second
+    // PostgREST upsert whose success can diverge from the hand receipt.
+    expect(SETTLEMENT).toContain('const bombAwardUnits =');
+    expect(SETTLEMENT).toContain('snap.bombPot && snap.perPotAwards.length > 0');
+    expect(SETTLEMENT).toContain('snap.perPotAwards.map((a) => ({');
+    expect(SETTLEMENT).toContain('bombAwardUnits,');
+    const writer = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(writer).toContain('p_units: bombAwardUnits');
+    expect(writer).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
+    expect(writer).not.toContain("from('bomb_pot_award_units').upsert");
   });
 
-  it('a failed ledger write is retried, and the last failure is REPORTED', () => {
-    // 2026-08-29. The write is fire-and-forget on purpose — logHandHistory has
-    // already recorded the money, and a ledger that only narrates a settlement
-    // must never be able to fail the hand it narrates. But "cannot fail the
-    // hand" had been built as "one attempt, then console.warn on the engine
-    // host", so one transient error lost a hand's award units permanently AND
-    // silently. Hand 3364829 (2026-08-29 02:35:08Z) is the proof: a clean
-    // two-board showdown paid out correctly to the cent, bracketed by hands at
-    // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
-    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && snap.bombPot');
-    expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
-    // 2026-08-29: the backoff is EXPONENTIAL and capped. It was linear
-    // (250/500), which fitted all three attempts inside the first second and
-    // therefore inside the same blip — production measured 2 losses in 457
-    // hands, both having survived all three. A capped doubling covers ~4.75s
-    // and cannot leave retry timers open across a table's later hands.
-    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* \(2 \*\* attempt - 1\)/);
-    expect(window).toMatch(/BOMB_LEDGER_RETRY_MAX_MS/);
-    // reportError, never console.warn — a log line on a host nobody reads is
-    // how this went unnoticed in the first place.
-    expect(window).toMatch(/ServerTableEngine\.bomb_award_ledger_write_failed/);
-    expect(window).not.toMatch(/console\.warn/);
-    // Still fire-and-forget: `void`, and a catch so the retry loop can never
-    // surface as an unhandled rejection (noUnhandledRejections.test.ts).
-    expect(window).toMatch(/void writeAwardUnits\(\)\.catch\(/);
-    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 4;/);
+  it('a transient write failure retries the complete hand and cannot split its ledger', () => {
+    const writer = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(writer).toMatch(
+      /for \(let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS\.length; attempt\+\+\)/
+    );
+    expect(writer.match(/const payload =/g)).toHaveLength(1);
+    expect(writer).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
+    expect(writer).toContain('after ${HAND_COMMIT_RETRY_DELAYS_MS.length + 1} identical attempts');
+    expect(SETTLEMENT).not.toContain('writeAwardUnits');
+    expect(SETTLEMENT).not.toContain('BOMB_LEDGER_WRITE_ATTEMPTS');
   });
 
   it('a gap that still slips through is reported by reconciliation, not lost', () => {

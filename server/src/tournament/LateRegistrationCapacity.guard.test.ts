@@ -329,7 +329,7 @@ describe('late-registration capacity authority', () => {
   it('uses the immutable satellite entitlement depth for hand-for-hand', () => {
     const h4h = ELIMINATIONS.slice(
       ELIMINATIONS.indexOf('handForHandStage:'),
-      ELIMINATIONS.indexOf('if (completedStage(10))')
+      ELIMINATIONS.indexOf('if (completedStage(9))')
     );
     const satelliteBranch = h4h.indexOf('if (isSatellite)');
     const genericPayoutParse = h4h.indexOf(

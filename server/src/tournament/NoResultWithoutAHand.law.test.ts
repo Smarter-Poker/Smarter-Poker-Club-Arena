@@ -99,41 +99,37 @@ describe('and no hand was dealt at all', () => {
 describe('the guards are wired where they can guard something', () => {
   const src = read('./tournamentRecovery.ts');
 
-  it('both tests run before guarantee funding or the atomic place payment', () => {
-    const chipsAt = src.indexOf('if (chipsCannotRank(alive))');
+  it('hand evidence runs before either immutable settlement request', () => {
     const handAt = src.indexOf('noHandWasEverDealt({');
-    const fundAt = src.indexOf("'fn_apply_prize_guarantee'");
-    // The atomic settler is now the only normal place-money marker.
-    const payAt = src.indexOf('settleTournamentPlacesAtomically(');
-    expect(chipsAt).toBeGreaterThan(-1);
+    const satelliteAt = src.indexOf('requestSatelliteSettlementReceipt(');
+    const terminalAt = src.indexOf('requestTournamentTerminalReceipt(');
     expect(handAt).toBeGreaterThan(-1);
-    expect(fundAt).toBeGreaterThan(-1);
-    expect(payAt).toBeGreaterThan(-1);
-    expect(chipsAt).toBeLessThan(fundAt);
-    expect(handAt).toBeLessThan(fundAt);
-    expect(chipsAt).toBeLessThan(payAt);
-    expect(handAt).toBeLessThan(payAt);
+    expect(satelliteAt).toBeGreaterThan(handAt);
+    expect(terminalAt).toBeGreaterThan(handAt);
   });
 
-  it('each refusal is reported under its own name', () => {
-    expect(src).toContain('GameServer.recoverStuckCompleting_chips_cannot_rank');
+  it('each unreadable or absent hand result is reported under its own name', () => {
     expect(src).toContain('GameServer.recoverStuckCompleting_no_hand_ever_dealt');
     expect(src).toContain('GameServer.recoverStuckCompleting_hand_evidence_unreadable');
+    expect(src).toContain('GameServer.recoverStuckCompleting_satellite_no_hand_ever_dealt');
+    expect(src).toContain('GameServer.recoverStuckCompleting_satellite_hand_evidence_unreadable');
   });
 
   it('an unreadable hand list pays nobody rather than reading as no hands', () => {
     const handErrAt = src.indexOf('recoverStuckCompleting_hand_evidence_unreadable');
-    const block = src.slice(Math.max(0, handErrAt - 600), handErrAt);
-    expect(block).toContain('if (handErr)');
+    const block = src.slice(Math.max(0, handErrAt - 500), handErrAt + 250);
+    expect(block).toContain('if (hand.error || !hand.proven)');
+    expect(block).toContain('continue;');
   });
 
   it('started_at is selected, or the hand window cannot be evaluated', () => {
-    expect(src).toMatch(/spin_multiplier, started_at/);
+    expect(src).toMatch(/satellite_target_id, started_at/);
   });
 
-  it('the older guards it backs up are still in place', () => {
-    // Phase 7 adds to these two, it does not replace them.
+  it('never sorts equal chip stacks into a fabricated result', () => {
     expect(src).toContain('GameServer.recoverStuckCompleting_no_dealt_in_survivor');
-    expect(src).toContain('fieldIsStillLive({ livePlayers, paidPlaces })');
+    expect(src).toContain('fieldIsStillLive({ livePlayers, paidPlaces: structure?.length ?? 0 })');
+    expect(src).toContain('GameServer.recoverStuckCompleting_multiple_survivors_unresolved');
+    expect(src).not.toMatch(/\.sort\([^\n]*(?:chips|stack)|(?:chips|stack)[\s\S]{0,120}\.sort\(/);
   });
 });

@@ -23,17 +23,20 @@ import {
   isLiveTournamentStatus,
   MIN_SEATS_TO_REOPEN_RUNNING,
 } from './liveTournamentTableRecovery.js';
-import {
-  canCloseTournamentTable,
-  isTerminalTournamentStatus,
-  tablesASweepMayClose,
-} from './tableCloseGuard.js';
 
 const RECURRING = readFileSync(
   join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
   'utf8'
 );
 const GAME_SERVER = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
+const SEAT_EXIT_MIGRATION = readFileSync(
+  join(
+    process.cwd(),
+    '..',
+    'supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
+  ),
+  'utf8'
+);
 
 describe('a closed table is not a joinable table', () => {
   it('a waiting table is joinable', () => {
@@ -199,53 +202,21 @@ describe('the recovery sweep reopens a table closed under a live tournament', ()
   });
 });
 
-describe('a sweep may not close a table under a live tournament', () => {
-  it('COMPLETED and CANCELLED are the only terminal statuses', () => {
-    expect(isTerminalTournamentStatus('COMPLETED')).toBe(true);
-    expect(isTerminalTournamentStatus('cancelled')).toBe(true);
-    expect(isTerminalTournamentStatus('RUNNING')).toBe(false);
-    expect(isTerminalTournamentStatus('REGISTERING')).toBe(false);
+describe('terminal table closeout belongs to its source transaction', () => {
+  it('removes the process-start orphan writer instead of retrying guarded rows', () => {
+    expect(GAME_SERVER).not.toContain('tablesASweepMayClose');
+    expect(GAME_SERVER).not.toContain('orphanCandidates');
+    expect(GAME_SERVER).not.toContain('GameServer.orphan_table_sweep');
+    expect(GAME_SERVER).not.toContain('orphan_status_reread_failed');
   });
 
-  it('refuses a sweep close on a REGISTERING tournament', () => {
-    expect(canCloseTournamentTable('REGISTERING', 'sweep')).toBe(false);
-  });
-
-  it('refuses a sweep close on a RUNNING tournament', () => {
-    expect(canCloseTournamentTable('RUNNING', 'sweep')).toBe(false);
-  });
-
-  it('refuses a sweep close when the status could not be read', () => {
-    expect(canCloseTournamentTable(undefined, 'sweep')).toBe(false);
-  });
-
-  it('allows a sweep close once the tournament is finished', () => {
-    expect(canCloseTournamentTable('COMPLETED', 'sweep')).toBe(true);
-    expect(canCloseTournamentTable('CANCELLED', 'sweep')).toBe(true);
-  });
-
-  it('never blocks the tournament own lifecycle - break, finish, deal, cancel', () => {
-    expect(canCloseTournamentTable('RUNNING', 'tournament_lifecycle')).toBe(true);
-    expect(canCloseTournamentTable('RUNNING', 'tournament_cancelled')).toBe(true);
-  });
-
-  it('filters a batch down to the tables a sweep may actually close', () => {
-    const kept = tablesASweepMayClose(
-      [
-        { tableId: 'a', tournamentId: 'done' },
-        { tableId: 'b', tournamentId: 'live' },
-        { tableId: 'c', tournamentId: 'unknown' },
-      ],
-      new Map([
-        ['done', 'COMPLETED'],
-        ['live', 'RUNNING'],
-      ])
+  it('moves the exact historical backlog once under the migration write barrier', () => {
+    expect(SEAT_EXIT_MIGRATION).toContain('DO $terminal_orphan_cutover$');
+    expect(SEAT_EXIT_MIGRATION).toContain('repaired_seat_ids uuid[] NOT NULL');
+    expect(SEAT_EXIT_MIGRATION).toContain('repaired_table_ids uuid[] NOT NULL');
+    expect(SEAT_EXIT_MIGRATION).toContain(
+      'a committed terminal receipt disagrees with durable table or seat state'
     );
-    expect(kept).toEqual(['a']);
-  });
-
-  it('the orphan sweep re-reads the status in the same pass as the write', () => {
-    expect(GAME_SERVER).toContain('tablesASweepMayClose(batchRows, statusByTournament)');
-    expect(GAME_SERVER).toContain('GameServer.orphan_status_reread_failed');
+    expect(SEAT_EXIT_MIGRATION).toContain('terminal table and seat backlog did not close exactly');
   });
 });

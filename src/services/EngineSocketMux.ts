@@ -484,7 +484,7 @@ class EngineSocketMuxImpl {
    */
   isSubscribed(tableId: string): boolean {
     const f = this.facades.get(tableId);
-    return !!f && f.readyState !== 3 /* CLOSED */;
+    return !!f && f.readyState !== 3; /* CLOSED */
   }
 
   /** A socket is authenticated at its handshake, not by changing these fields. */

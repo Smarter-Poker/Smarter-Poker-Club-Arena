@@ -48,11 +48,7 @@ const hitOnce = read('../../../src/lib/bbjHitOnce.ts');
  * number here once stopped the whole estate publishing for 39 minutes.
  */
 function bbjPayoutStep(): string {
-  return sliceBetween(
-    settlement,
-    "await runStep('bbj_payout'",
-    "await runStep('tournament_chip_sync'"
-  );
+  return sliceBetween(settlement, "await runStep('bbj_payout'", "await runStep('pending_addons'");
 }
 
 describe('2.1 the intent is durable before the money is attempted', () => {

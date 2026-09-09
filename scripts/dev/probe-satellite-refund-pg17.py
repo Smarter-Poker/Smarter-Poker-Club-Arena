@@ -14,7 +14,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[2]
 fixture = repo / 'scripts/dev/fixtures/satellite-refund'
-migration = repo / 'supabase/migrations/20260909221505_satellite_unregister_returns_its_funded_cash.sql'
+migration = repo / 'supabase/migrations/20260909222303_satellite_unregister_returns_its_funded_cash.sql'
 start_migrations = list((repo / 'supabase/migrations').glob('*_seat_first_unregistration_uses_actual_start_truth.sql'))
 assert len(start_migrations) == 1, 'Expected one recorded actual-start migration'
 pending = start_migrations[0]

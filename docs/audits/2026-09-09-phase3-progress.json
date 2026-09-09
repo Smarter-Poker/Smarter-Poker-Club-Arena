@@ -832,7 +832,7 @@
     "continue_audit_during_deployment": true
   },
   "satellite_cash_correction": {
-    "status": "source_ready_production_database_approval_blocked",
+    "status": "production_database_applied_verified_source_followup_blocked",
     "controls": ["T06", "B08"],
     "policy_source": "docs/LAWS.md and preserved Club Arena audit decision: eligible satellite unregisters use approved cash treatment",
     "baseline_observed": {
@@ -866,7 +866,7 @@
       "updated unapplied start migration plus repeated cash migration retains cash behavior"
     ],
     "fixture_limit": "23 captured table definitions and 19 real payment/escrow/ledger functions with selected actual money triggers; excludes production financial data, unrelated membership triggers and foreign keys. Not full database certification.",
-    "production_database_changed": false,
+    "production_database_changed": true,
     "publish_order": [
       "client accepts verified satellite cash receipt",
       "database correction after frontend adoption"
@@ -877,7 +877,7 @@
       "files": 4,
       "typescript_build_mode": "passed"
     },
-    "migration": "20260909221505_satellite_unregister_returns_its_funded_cash.sql",
+    "migration": "20260909222303_satellite_unregister_returns_its_funded_cash.sql",
     "migration_sha256": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
     "postgres17_scenario_groups_passed": 8,
     "reproducible_probe": "scripts/dev/probe-satellite-refund-pg17.py",
@@ -885,7 +885,7 @@
     "reserved_actual_start_migration_applied": true,
     "reserved_source_cash_compatibility_verified": true,
     "security_advisors_target_function_findings": 0,
-    "production_application_blocker": "Automatic approval review rejected apply_migration: repository publishing/deployment authorization did not explicitly authorize this production financial database mutation. No retry or indirect mutation performed.",
+    "production_application_blocker": null,
     "frontend": {
       "pr": 4029,
       "merge_commit": "6a2724ea096f6f69da8b17e2a789885bc30f896f",
@@ -906,6 +906,33 @@
       "merge_commit": "fb7d568b8b94ca96e7b391157a538eaeae7deb9c",
       "passing_ci": 34410459871,
       "forward_order_followup": "required after concurrent actual-start application"
+    },
+    "applied_version": "20260909222303",
+    "production_authorization": "User explicitly authorized applying the reviewed production cash-refund migration after the direct request in this audit chat, and instructed pushing and publishing without asking again.",
+    "production_verification": {
+      "observed_at": "2026-09-09T22:23:53.687172Z",
+      "all_three_bodies_match_reviewed_source": true,
+      "body_md5": {
+        "unregister": "ae14d16400db9481dd116bd251f7af83",
+        "receipt": "0fa946ec2bf3301db11465cd9b33fb9f",
+        "exact_payer": "0024ca5acfc4e4e12b51a4609349e98d"
+      },
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": false,
+      "new_ticket_issuance_removed": true,
+      "actual_start_rules_preserved": true
+    },
+    "source_followup": {
+      "pr": 4039,
+      "head": "660cb1eae2a37b5f73d2eb4ec74d455523d338cd",
+      "passing_ci": 34411543919,
+      "blocked_check": "Silent Revert Guard",
+      "blocked_files": [
+        "supabase/migrations/20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
+        "tests/seat-first-unregistration-actual-start.guard.test.ts"
+      ],
+      "reason": "Intentional restoration of the now-applied historical migration requires revert-approved. Automatic approval review rejected adding that label because publication authorization did not authorize the specific governance override. No bypass or indirect retry performed."
     }
   },
   "table_move_dependency_review": {
@@ -928,6 +955,16 @@
       "TournamentTableBreakRetirement.test.ts"
     ],
     "source_test_limit": "Manager and transport tests stub database effects; the separate PostgreSQL probe validates preseeded receipt lookup, not execution of a complete live move.",
-    "full_controls_closed": false
+    "full_controls_closed": false,
+    "latest_catalog_read": {
+      "observed_at": "2026-09-09T22:29:42.145802Z",
+      "move_writer_present": false,
+      "move_resolver_present": false,
+      "terminal_writer_present": true,
+      "terminal_writer_body_md5": "589388ad7204fef460a1deebf32ecb69",
+      "terminal_outcome_resolver_present": true,
+      "terminal_resolver_body_md5": "4c151073f56b53e4b0363bdd916b78d4",
+      "terminal_service_only": true
+    }
   }
 }

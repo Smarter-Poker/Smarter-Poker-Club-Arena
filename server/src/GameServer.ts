@@ -4290,10 +4290,10 @@ export class GameServer {
                 continue;
               }
 
-              // Silence is not a terminal result. Completion is now entered
-              // only through fn_claim_tournament_finish, which proves one
-              // canonical survivor and writes the immutable claim in the same
-              // transaction. Leave this contest RUNNING so normal lease-backed
+              // Silence is not a terminal result. Completion is now committed
+              // only through fn_complete_tournament_terminal, which derives the
+              // canonical survivor and stores the complete settlement receipt in
+              // one transaction. Leave this contest RUNNING so normal lease-backed
               // discovery can resume its manager; never rank a live field by a
               // timeout and never manufacture a COMPLETING recovery row.
               reportError(

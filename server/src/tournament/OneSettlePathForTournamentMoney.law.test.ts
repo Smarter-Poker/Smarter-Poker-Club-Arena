@@ -17,6 +17,11 @@ const BANNED_RPCS = [
   'credit_player_wallet',
   'fn_credit_player_wallet_once',
   'fn_settle_tournament_obligation',
+  // Stage 2 retires these database compatibility doors. Runtime already uses
+  // the one DB-first terminal transaction, so keeping a TypeScript caller (or
+  // transport helper) would preserve a second finish path after the cutover.
+  'fn_claim_tournament_finish',
+  'fn_certify_tournament_finish',
 ] as const;
 
 function tsFiles(dir: string): string[] {
@@ -68,7 +73,7 @@ describe('one terminal authority owns each tournament finish', () => {
     ).toBe(true);
   });
 
-  it('runtime TypeScript never calls a credit primitive or generic obligation payer', () => {
+  it('runtime TypeScript never calls a fragment payer or a retired finish door', () => {
     const offenders: string[] = [];
     for (const file of files) {
       for (const line of rpcCallSites(readFileSync(file, 'utf8'), BANNED_RPCS)) {
@@ -118,6 +123,8 @@ describe('one terminal authority owns each tournament finish', () => {
       `s.rpc('fn_credit_and_log', {})`,
       `s.rpc("fn_settle_tournament_obligation", {})`,
       'const PAY = `credit_player_wallet`; s.rpc(PAY, {})',
+      `s.rpc('fn_claim_tournament_finish', {})`,
+      'const FINISH = `fn_certify_tournament_finish`; s.rpc(FINISH, {})',
     ]) {
       expect(rpcCallSites(mutation, BANNED_RPCS).length, mutation).toBeGreaterThan(0);
     }

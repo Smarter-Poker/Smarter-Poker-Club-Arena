@@ -183,6 +183,8 @@ interface TicketRow {
   value: number;
   note: string | null;
   status: string;
+  /** wallet_chips tickets are cashable; tournament_entry_only tickets are not. */
+  redemptionMode: string;
   createdAt: string;
   holderId: string;
   issuedById: string;
@@ -1128,7 +1130,7 @@ export default function CashierTradePage() {
       // on - tickets in their hand and tickets they issued.
       const { data, error } = await supabase
         .from('tournament_tickets')
-        .select('id, holder_id, issued_by, value, note, status, created_at')
+        .select('id, holder_id, issued_by, value, note, status, redemption_mode, created_at')
         .eq('club_id', clubUuid)
         .or(`holder_id.eq.${user.id},issued_by.eq.${user.id}`)
         .order('created_at', { ascending: false })
@@ -1160,6 +1162,7 @@ export default function CashierTradePage() {
             value: Number(t.value) || 0,
             note: (t.note as string) || null,
             status: (t.status as string) || 'issued',
+            redemptionMode: (t.redemption_mode as string) || 'wallet_chips',
             createdAt: t.created_at as string,
             holderId: t.holder_id as string,
             issuedById: t.issued_by as string,
@@ -1199,6 +1202,13 @@ export default function CashierTradePage() {
    * burn an escrow whose refund has nowhere to land.
    */
   const actOnTicket = async (row: TicketRow, action: 'redeem' | 'cancel') => {
+    // Entry-only tickets remain noncash instruments for their full lifetime.
+    // Keep this guard behind the hidden buttons as defense in depth against a
+    // stale render or a future caller invoking this handler directly.
+    if (row.redemptionMode !== 'wallet_chips') {
+      toast?.error?.('Tournament Entry Tickets Can Only Be Used When Registering For An Event.');
+      return;
+    }
     if (!requireOnline()) return;
     if (ticketActingRef.current) return;
     ticketActingRef.current = true;
@@ -3090,7 +3100,7 @@ export default function CashierTradePage() {
             )}
             {!ticketsLoading && !ticketsError && tickets.length === 0 && (
               <div className={styles.empty}>
-                No Tickets Yet. Tickets Sent To You Appear Here, Ready To Redeem.
+                No Tickets Yet. Tickets Sent To You Appear Here, Ready To Use.
               </div>
             )}
             {!ticketsLoading &&
@@ -3099,9 +3109,14 @@ export default function CashierTradePage() {
                 <div key={t.id} className={styles.row}>
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>
-                      {t.held ? `From ${t.otherName}` : `To ${t.otherName}`}
+                      {t.redemptionMode === 'tournament_entry_only'
+                        ? `Tournament Entry Ticket · ${t.held ? 'From' : 'To'} ${t.otherName}`
+                        : t.held
+                          ? `From ${t.otherName}`
+                          : `To ${t.otherName}`}
                     </span>
                     <span className={styles.rowSub}>
+                      {t.redemptionMode === 'tournament_entry_only' && <>Entry Only &middot; </>}
                       {txLabel(t.status)} &middot;{' '}
                       {new Date(t.createdAt).toLocaleString([], {
                         month: 'short',
@@ -3113,11 +3128,10 @@ export default function CashierTradePage() {
                     </span>
                   </div>
                   <span className={styles.rowBalance}>{fmt(t.value)}</span>
-                  {/* A held ticket redeems; a ticket you issued cancels back to
-                    your balance. A self-issued ticket cannot exist - the
-                    server refuses issuing to yourself - so the two buttons
-                    can never collide on one row. */}
-                  {t.status === 'issued' && t.held && (
+                  {/* Only wallet-chip tickets expose cash actions. Entry-only
+                    tickets are consumed by tournament registration and can
+                    never be redeemed or cancelled into a wallet. */}
+                  {t.redemptionMode === 'wallet_chips' && t.status === 'issued' && t.held && (
                     <button
                       className={`${styles.reqBtn} ${styles.reqBtnGo}`}
                       disabled={!isOnline || ticketActingId !== null}
@@ -3126,7 +3140,7 @@ export default function CashierTradePage() {
                       {ticketActingId === t.id ? 'Working...' : 'Redeem'}
                     </button>
                   )}
-                  {t.status === 'issued' && !t.held && (
+                  {t.redemptionMode === 'wallet_chips' && t.status === 'issued' && !t.held && (
                     <button
                       className={styles.reqBtn}
                       disabled={!isOnline || ticketActingId !== null}

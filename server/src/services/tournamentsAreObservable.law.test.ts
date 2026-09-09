@@ -171,14 +171,30 @@ describe('the alert rules are wired and reference only real gauges', () => {
 });
 
 describe('a failed tournament payout escalates as money, not just as an error', () => {
-  it('the all-places atomic failure path raises a critical financial alert', () => {
+  it('every terminal receipt failure path raises an awaited critical financial alert', () => {
     const src = read('../tournament/TournamentManagerEliminations.ts');
     expect(src).toContain("from '../services/financialAlerts.js'");
-    expect(src).toContain('Tournament.atomic_place_settlement_failed');
+    const dealStart = src.indexOf('protected async checkFinalTableDeal(');
+    const dealEnd = src.indexOf('private async completeFinalTableDealAtBoundary(', dealStart);
+    const finishStart = src.indexOf('protected async finishTournament(');
+    const finishEnd = src.indexOf('// ── Implemented by TournamentManager', finishStart);
+    expect(dealStart).toBeGreaterThan(-1);
+    expect(dealEnd).toBeGreaterThan(dealStart);
+    expect(finishStart).toBeGreaterThan(-1);
+    expect(finishEnd).toBeGreaterThan(finishStart);
+    const deal = src.slice(dealStart, dealEnd);
+    const finish = src.slice(finishStart, finishEnd);
 
-    // Awaited, so the alert is on disk before the process can be recycled.
-    expect(src).toMatch(
-      /await raiseFinancialAlert\(\s*'critical',\s*'Tournament\.atomic_place_settlement_failed'/
-    );
+    for (const source of [
+      'Tournament.atomic_finish_outcome_unknown',
+      'Tournament.atomic_satellite_finish_outcome_unknown',
+    ]) {
+      expect(finish, `${source} is named`).toContain(source);
+    }
+    expect(finish.match(/await raiseFinancialAlert\(/g) ?? []).toHaveLength(2);
+
+    expect(deal).toContain('Tournament.final_table_deal_outcome_unknown');
+    expect(deal).toContain('await raiseFinancialAlert(');
+    expect(`${deal}\n${finish}`).not.toContain('void raiseFinancialAlert(');
   });
 });

@@ -51,7 +51,7 @@
  *   - Accessibility: keyboard handlers, focus indicators, aria-live
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { WalletIcon, type WalletIconName } from '../icons/LobbyIcons';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
@@ -1478,7 +1478,16 @@ export default function DynamicWallet({
     hasStandaloneClubBackup && !rows.some((row) => row.key === 'backup_bbj');
   const visibleWalletCount = rows.length + 1 + (rendersSeparateBackup ? 1 : 0);
 
-  useEffect(() => {
+  /* BEFORE PAINT, NOT AFTER (Dan 2026-09-09: the lobby button "shouldn't say
+     LOADING BALANC"). This count does not wait on money: `rows` above is
+     decided by the viewer's role, and it is computed before the loading
+     skeleton returns, so the honest number exists on the very first render.
+     Publishing it from `useEffect` still handed it over AFTER the browser had
+     painted, which gave the trigger one frame with nothing to print and made a
+     placeholder feel necessary. A layout effect runs before that paint, so the
+     parent re-renders with the real count in the same frame and the bay is
+     never empty long enough to see. */
+  useLayoutEffect(() => {
     onVisibleWalletCountChange?.(visibleWalletCount);
   }, [onVisibleWalletCountChange, visibleWalletCount]);
 

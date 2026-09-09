@@ -530,7 +530,9 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         error += String(data);
       });
       child.once('error', reject);
-      child.once('exit', (code) => resolve({ code, error, output }));
+      // `exit` can fire before the child stdio streams finish flushing. Resolve
+      // on `close` so concurrent psql results are complete before JSON parsing.
+      child.once('close', (code) => resolve({ code, error, output }));
     });
 
   it('allows only one concurrent committed admission and rolls back the losing wallet debit', async () => {

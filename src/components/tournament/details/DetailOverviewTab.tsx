@@ -50,12 +50,13 @@ import {
   chips,
   chipsCompact,
   clockText,
+  effectivePlaceLadderPool,
   effectivePrizePool,
   isPlayerLive,
   lastPaidPlace,
   ordinal,
-  parsePayoutStructure,
   placePrize,
+  resolvePayoutStructure,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { supabase } from '../../../lib/supabase';
@@ -370,14 +371,28 @@ export default function DetailOverviewTab({
     return Math.max(0, Math.floor((startAtMs - Date.now()) / 1000));
   }, [startAtMs, tick]);
 
+  const payoutStructure = useMemo(() => resolvePayoutStructure(tournament) ?? [], [tournament]);
+
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
-  const prize = useMemo(
-    () => ({
+  const prize = useMemo(() => {
+    const isSatellite =
+      String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+    return {
       effective: effectivePrizePool(tournament?.prize_pool, tournament?.guaranteed_prize),
+      ladder: effectivePlaceLadderPool(
+        tournament?.prize_pool,
+        tournament?.guaranteed_prize,
+        payoutStructure,
+        field.entries,
+        tournament?.bubble_protection === true,
+        Number(tournament?.buy_in_amount) || 0,
+        isSatellite
+      ),
       guarantee: Number(tournament?.guaranteed_prize) || 0,
-    }),
-    [tournament?.guaranteed_prize, tournament?.prize_pool]
-  );
+    };
+  }, [tournament, field.entries, payoutStructure]);
 
   const lateRegText = useMemo(() => {
     const levels = Number(tournament?.late_reg_levels) || 0;
@@ -590,21 +605,28 @@ export default function DetailOverviewTab({
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
     if (!isCompleted) return [];
-    const structure = parsePayoutStructure(tournament?.payout_structure) ?? [];
     /* The EFFECTIVE pool, not the raw one. Rewards prints first place off the
        guarantee-floored figure; printing the raw `prize_pool` here made the two
        tabs quote different money for the same finish on any overlay event. */
-    const pool = prize.effective;
+    const pool = prize.ladder;
     return (Array.isArray(entries) ? entries : [])
       .filter((e) => typeof e.position === 'number' && (e.position as number) <= 3)
       .sort((a, b) => (a.position || 99) - (b.position || 99))
       .map((player) => {
-        const row = structure.find((p) => p.place === player.position);
+        const row = payoutStructure.find((p) => p.place === player.position);
         // The whole structure, not one percentage: the last paid place absorbs
         // the residual, so a place cannot be priced without the others.
-        return { player, prizeValue: row ? placePrize(pool, structure, row.place) : 0 };
+        const recorded = Number(player.prize);
+        return {
+          player,
+          prizeValue: Number.isFinite(recorded)
+            ? recorded
+            : row && pool !== null
+              ? placePrize(pool, payoutStructure, row.place)
+              : 0,
+        };
       });
-  }, [isCompleted, entries, tournament?.payout_structure, prize.effective]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder]);
 
   /**
    * The runners-up list under the podium.
@@ -644,10 +666,7 @@ export default function DetailOverviewTab({
      types.ts: on a structure whose places do not run contiguously from 1, the
      count is a place that is not in the money, and hand-for-hand would start
      at the wrong point. */
-  const paidPositions = useMemo(
-    () => lastPaidPlace(tournament?.payout_structure),
-    [tournament?.payout_structure]
-  );
+  const paidPositions = useMemo(() => lastPaidPlace(payoutStructure), [payoutStructure]);
 
   if (!tournament) {
     return (

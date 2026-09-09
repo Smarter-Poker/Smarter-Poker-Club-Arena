@@ -108,10 +108,7 @@ describe('one tournament lifecycle generation owns every continuation', () => {
   });
 
   it('does not self-deadlock when a scheduler finish initiates async teardown', () => {
-    const cleanup = sliceMethod(
-      ELIMINATIONS,
-      'cleanupCommittedTablesAndManager(): Promise<boolean>'
-    );
+    const cleanup = sliceMethod(ELIMINATIONS, 'cleanupCommittedTablesAndManager(');
     const enginesReleased = cleanup.indexOf('this.tableEngines.clear()');
     const detachedStop = cleanup.indexOf('void this.stop().catch', enginesReleased);
     expect(cleanup).not.toContain('await this.stop()');

@@ -17,8 +17,6 @@
     { "name": "ca-auto-reconcile-tick", "register": "TIER 2" },
     { "name": "fn_ca_quick_reconcile", "register": "TIER 2" },
     { "name": "ca-quick-reconcile-5m", "register": "TIER 2" },
-    { "name": "fn_reconcile_tournament_denormals", "register": "TIER 2" },
-    { "name": "reconcile-tournament-denormals", "register": "TIER 2" },
     { "name": "fn_reconcile_club_table_counts", "register": "TIER 2" },
     { "name": "reconcile-club-table-counts-nightly", "register": "TIER 2" },
     { "name": "reconcile-club-member-daily-profit", "register": "TIER 2" },

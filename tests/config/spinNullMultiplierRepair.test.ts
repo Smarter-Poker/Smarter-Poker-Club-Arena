@@ -40,7 +40,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { SPIN_TIERS } from '../../server/src/config/spinSpec';
-import { sliceStatement } from '../helpers/sourceWindow';
+import { sliceBlockAfter } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const sqlCode = (src: string) => src.replace(/^[ \t]*--.*$/gm, '');
@@ -129,9 +129,7 @@ describe('v_spin_reserve_health', () => {
     // it, the hook swallowed the error and the Spin badge went dark for real
     // users. Adding is safe; removing is that incident verbatim.
     for (const col of ['can_draw_500x', 'unbooked_24h', 'shortfall_events', 'is_thin']) {
-      expect(migration, `v_spin_reserve_health must keep ${col}`).toMatch(
-        new RegExp(`AS ${col}`)
-      );
+      expect(migration, `v_spin_reserve_health must keep ${col}`).toMatch(new RegExp(`AS ${col}`));
     }
   });
 });
@@ -139,16 +137,32 @@ describe('v_spin_reserve_health', () => {
 describe('the engine no longer starts a Spin on an unchecked write', () => {
   const engine = tsCode(read('server/src/tournament/TournamentManagerBase.ts'));
 
-  it('checks the error on the row that carries the whole draw', () => {
-    expect(engine).toMatch(/const \{ error: spinRowErr \} = await supabase/);
-    expect(engine).toMatch(/spinRowWritten/);
+  it('validates the immutable funded-rule receipt, then reads back presentation separately', () => {
+    const settlementLoop = sliceBlockAfter(
+      engine,
+      'for (let attempt = 1; attempt <= 3 && !fundedSpin; attempt++)'
+    );
+    expect(settlementLoop).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle_atomic'/);
+    expect(settlementLoop).toMatch(/const \{ data, error \}/);
+    expect(settlementLoop).toMatch(/readFundedSpinDraw\(data/);
+
+    const presentationLoop = sliceBlockAfter(
+      engine,
+      'for (let attempt = 1; attempt <= 3 && !spinPresentationWritten; attempt++)'
+    );
+    expect(presentationLoop).toMatch(/error:\s*spinPresentationErr/);
+    expect(presentationLoop).toMatch(/this\.launchRowMatchesPatch/);
+    expect(presentationLoop).toMatch(
+      /if \(attempt === 3\)[\s\S]*Tournament\.spin_presentation_write_failed/
+    );
   });
 
-  it('reports loudly rather than cancelling — tournaments run, they do not cancel', () => {
-    expect(engine).toMatch(/'Tournament\.spin_draw_row_write_failed'/);
-    // No `return` / stand-down was added to this path.
-    const start = engine.indexOf('let spinRowWritten');
-    const block = sliceStatement(engine, 'let spinRowWritten');
-    expect(block).not.toMatch(/this\.running = false/);
+  it('stands down before cards when money or presentation cannot be proven', () => {
+    for (const anchor of ['if (!fundedSpin)', 'if (!spinPresentationWritten)']) {
+      const standDown = sliceBlockAfter(engine, anchor);
+      expect(standDown).toMatch(/this\.running = false/);
+      expect(standDown).toMatch(/return;/);
+      expect(standDown).not.toMatch(/dealHand|startTableEngines/);
+    }
   });
 });

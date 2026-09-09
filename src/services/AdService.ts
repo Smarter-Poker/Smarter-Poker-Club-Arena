@@ -34,11 +34,7 @@ import { reportError } from '../utils/errorReporter';
 
 /** The surfaces an ad can occupy. Mirrors the CHECK on `ad_placement.slot`. */
 export type AdSlot =
-  | 'lobby_strip'
-  | 'session_summary'
-  | 'empty_state'
-  | 'hub_promotions'
-  | 'table_between_hands';
+  'lobby_strip' | 'session_summary' | 'empty_state' | 'hub_promotions' | 'table_between_hands';
 
 export interface HouseAd {
   adId: string;

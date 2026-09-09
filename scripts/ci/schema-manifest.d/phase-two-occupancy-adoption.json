@@ -1,0 +1,59 @@
+{
+  "_owner": "codex/club-arena-phase-two-occupancy-contract",
+  "_comment": "Verified against production public catalogs on 2026-09-09 after the eight additive Phase 2 migrations. Unbound cashout retirement remains pending compatible engine adoption.",
+  "functions": [
+    "fn_bind_cash_seat_move_occupancy",
+    "fn_get_admin_seat_cashout_receipt",
+    "fn_request_admin_seat_departure",
+    "fn_require_live_seat_parent",
+    "fn_stamp_active_seat_game_scope",
+    "fn_stamp_table_game_scope",
+    "fn_stamp_table_seat_admission"
+  ],
+  "tables": [
+    "cash_seat_move_ledger",
+    "cash_seat_move_receipts",
+    "seat_admin_departure_authorizations"
+  ],
+  "columns": {
+    "tables": ["seat_game_scope", "seat_admission_key"],
+    "table_seats": ["active_game_scope", "active_parent_key"],
+    "cash_seat_moves": ["source_occupancy_id", "source_seat_number"],
+    "cash_seat_move_ledger": [
+      "move_id",
+      "player_id",
+      "game_id",
+      "club_id",
+      "table_id",
+      "occupancy_id",
+      "amount",
+      "side",
+      "created_at"
+    ],
+    "cash_seat_move_receipts": [
+      "move_id",
+      "player_id",
+      "game_id",
+      "club_id",
+      "from_table_id",
+      "from_seat_number",
+      "source_occupancy_id",
+      "to_table_id",
+      "to_seat_number",
+      "destination_occupancy_id",
+      "amount",
+      "receipt",
+      "created_at"
+    ],
+    "seat_admin_departure_authorizations": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_number",
+      "actor_id",
+      "club_id",
+      "reason",
+      "created_at"
+    ]
+  }
+}

@@ -197,10 +197,12 @@ describe('Leave Table overrides everything', () => {
     expect(SEATING).toMatch(/if \(this\.handController !== null && playerInLiveHand\)/);
   });
 
-  it('a folded player is not treated as being in the hand', () => {
-    const at = SEATING.indexOf('const playerInLiveHand');
+  it('a folded participant waits for settlement before cashout', () => {
+    // Folding ends winning eligibility, not ownership of the unsettled contribution.
+    // The prior source pin required the early-cashout bug reproduced behaviorally.
     const body = sliceStatement(SEATING, 'const playerInLiveHand');
-    expect(body).toMatch(/!p\.is_folded/);
+    expect(body).toMatch(/p\.user_id === userId/);
+    expect(body).not.toMatch(/!p\.is_folded/);
   });
 
   it('a stranded leave_pending row is swept even if no hand ever completes', () => {

@@ -29,6 +29,7 @@ import {
   bettingStructureFor,
   fixedLimitBetSize,
   fixedLimitStreetBounds,
+  potLimitBettingPot,
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import type { GameState } from '../types.js';
@@ -178,6 +179,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
 
   private bettingStructureFields(state: GameState): {
     betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+    pot_limit_pot?: number;
     fixed_bet_size?: number;
     fixed_raise_size?: number;
     wagers_capped?: boolean;
@@ -187,6 +189,9 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // draws a no-limit slider and has every drag rejected.
     const variant = this.activeHandVariant();
     const structure = bettingStructureFor(variant);
+    if (structure === 'pot_limit') {
+      return { betting_structure: structure, pot_limit_pot: potLimitBettingPot(state) };
+    }
     if (structure !== 'fixed_limit') return { betting_structure: structure };
     const stage = state.stage ?? 'preflop';
     return {
@@ -308,6 +313,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // and action_history is broadcast without its isFullRaise flag.
       ...this.bettingStructureFields(state),
       // Bible V8 §2.4: Timer fields required for client-side countdown
+      action_context: this.getActionContext(),
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
@@ -548,6 +554,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // particular is NOT derivable client-side — the cap counts full raises,
       // and action_history is broadcast without its isFullRaise flag.
       ...this.bettingStructureFields(state),
+      action_context: this.getActionContext(),
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15

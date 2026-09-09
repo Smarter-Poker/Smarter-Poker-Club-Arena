@@ -76,6 +76,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
+  /**
+   * How many consecutive times each player has been REFUSED by
+   * `eliminatePlayer`, so a permanently un-eliminable one stops holding the
+   * queue (2026-09-09).
+   *
+   * The assignment loop aborts the whole pass on a refusal, and it must: a
+   * refusal can mean the CAS missed because another generation took the place,
+   * which makes `takenPositions` stale, and handing out a stale place is how
+   * two players get paid for one finish. But the batch is ordered by chips and
+   * every candidate holds ZERO, so the order is stable - the same refused
+   * player was first on every five-second sweep, for ever, and the nineteen
+   * behind him were never even attempted.
+   *
+   * Keeping the abort and rotating the ORDER fixes the deadlock without
+   * touching the ladder safety: whoever refuses goes to the back, so the next
+   * pass attempts somebody who has not just failed. An entry is dropped as
+   * soon as that player is eliminated, and the map only ever holds members of
+   * the current busted set.
+   */
+  private readonly bustRefusalStreak = new Map<string, number>();
 
   override requestEliminationSweep(
     reason?: string,
@@ -622,6 +642,43 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // 'rebuy' row dated 2026-04-19, while events were being scheduled
           // with rebuy_cost, rebuy_levels 6 and max_rebuys 2 configured and
           // ready. The money path was correct and simply unreachable.
+          /**
+           * ═══════════════════════════════════════════════════════════════════
+           *  THE BATCH IS TAKEN BEFORE THE RPC, NOT FORTY LINES AFTER IT
+           *  (2026-09-09, from 714 knockouts that sat pending for hours)
+           * ═══════════════════════════════════════════════════════════════════
+           *
+           * `fn_open_tournament_rebuy_decisions` REFUSES a candidate set larger
+           * than fifty - `cardinality(p_user_ids)>50` raises
+           * `invalid rebuy-decision candidate set`. The whole `busted` array was
+           * handed to it below, and the `SWEEP_MUTATION_BATCH_SIZE` slice that
+           * was supposed to bound this work did not happen until after the
+           * decision filter. So a tournament that ever accumulated fifty-one
+           * simultaneous zero-chip `playing` players raised inside the RPC, took
+           * the `decisionsErr` return, re-armed the five-second retry, and
+           * arrived at the next sweep with the SAME oversized list.
+           *
+           * It cannot recover on its own, because nothing in that loop
+           * eliminates anybody, so the backlog only grows. Measured on
+           * production 2026-09-09: 907 knockout candidates `pending` for more
+           * than two hours, 714 of them in RUNNING tournaments whose players
+           * still read `playing` at 0 chips, while the engine's own ghost-seat
+           * detector logged "the elimination sweep is not reaching this table"
+           * 433 times in fifteen minutes.
+           *
+           * The batch is the bound on ALL the work in this stage, so it is taken
+           * here, before the first call that has an input cap. `bustedTotal`
+           * keeps the whole-field comparison below honest, and
+           * `bustBatchHasMore` re-arms the sweep exactly as it did before.
+           */
+          const bustedTotal = busted.length;
+          if (busted.length > TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {
+            busted = [...busted]
+              .sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0))
+              .slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+            bustBatchHasMore = true;
+          }
+
           const { rebought, answered } = await this.tryTournamentRebuys(
             busted.map((b) => b.user_id)
           );
@@ -699,7 +756,79 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (busted.length === 0) return;
           }
 
-          let bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
+          /**
+           * ═══════════════════════════════════════════════════════════════════
+           *  BUSTS ARE PROCESSED IN THE ORDER THEY HAPPENED (2026-09-09)
+           * ═══════════════════════════════════════════════════════════════════
+           *
+           * This sorted by chips, and every candidate here holds ZERO, so the
+           * order was whatever the database happened to return. That is wrong
+           * twice over.
+           *
+           * It is wrong for the STANDINGS, because the first entry takes the
+           * worst remaining place, and the player who busted first is the player
+           * who finished last. Chips cannot say who that was; the hand number
+           * can, and it is the witness that was actually there (10.9).
+           *
+           * And it is wrong for PKO MONEY. `fn_claim_bounty_legacy_candidate`
+           * keeps a per-tournament settlement watermark and refuses any claim
+           * for a hand BEFORE it - `pko_order_already_advanced` - because a
+           * progressive bounty's halves must settle in hand order. Out-of-order
+           * processing therefore does not merely reorder: it STRANDS. Measured
+           * on production 2026-09-09, as the elimination backlog from #3912
+           * began draining: 79 refusals in six minutes and 49 knockout
+           * candidates left permanently behind the watermark across ALL THREE
+           * live PKO events - 49 players who could never be eliminated and whose
+           * bounties could never be paid.
+           *
+           * Ordering by the hand the bust actually happened in makes the
+           * watermark advance monotonically, so it cannot overtake a claim that
+           * has not been made yet.
+           *
+           * The refusal streak still wins, because it is the deadlock breaker: a
+           * player who cannot be eliminated at all must not hold the queue.
+           * Chips remain the last resort, for a candidate with no recorded hand.
+           */
+          const bustHandNumbers = new Map<string, number>();
+          {
+            const { data: bustHands, error: bustHandsErr } = await supabase
+              .from('tournament_knockout_candidates')
+              .select('eliminated_user_id, hand_number')
+              .eq('tournament_id', this.tournamentId)
+              .eq('state', 'pending')
+              .in(
+                'eliminated_user_id',
+                busted.map((b) => b.user_id)
+              );
+            if (sweepStopped()) return;
+            // A read we could not make is UNKNOWN, not "no order": fall back to
+            // the chip tiebreak rather than inventing one. The watermark still
+            // refuses anything genuinely out of order, so this stays safe.
+            if (bustHandsErr) {
+              reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
+            } else {
+              for (const row of bustHands ?? []) {
+                const uid = String((row as { eliminated_user_id?: unknown }).eliminated_user_id);
+                const hand = Number((row as { hand_number?: unknown }).hand_number);
+                if (!uid || !Number.isFinite(hand)) continue;
+                const seen = bustHandNumbers.get(uid);
+                if (seen === undefined || hand < seen) bustHandNumbers.set(uid, hand);
+              }
+            }
+          }
+
+          // UNKNOWN sorts LAST. A missing hand number must never claim it busted
+          // first and take a place that belongs to somebody the engine watched.
+          const bustRank = (userId: string): number =>
+            bustHandNumbers.get(userId) ?? Number.MAX_SAFE_INTEGER;
+
+          let bustedOrdered = [...busted].sort(
+            (a, b) =>
+              (this.bustRefusalStreak.get(a.user_id) ?? 0) -
+                (this.bustRefusalStreak.get(b.user_id) ?? 0) ||
+              bustRank(a.user_id) - bustRank(b.user_id) ||
+              (a.chips ?? 0) - (b.chips ?? 0)
+          );
 
           // TOURNEY-AUDIT 2026-07-24 [double-pay guard]: if EVERY remaining
           // player busted in the same sweep, the old loop handed position 1 to
@@ -707,10 +836,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // and then the remainingCount===0 branch ALSO paid the winner via
           // finishTournament — 1st place paid twice. Spare the top stack from
           // elimination; the winner path below then pays them exactly once.
-          if (playingCount === busted.length && bustedOrdered.length > 0) {
+          // `bustedTotal`, not `busted.length`: the batch above may already have
+          // narrowed this pass, and the spare-the-top-stack rule is about the
+          // WHOLE field busting at once, not about the slice we happen to hold.
+          if (playingCount === bustedTotal && bustedOrdered.length > 0) {
             bustedOrdered = bustedOrdered.slice(0, -1);
           }
-          bustBatchHasMore = bustedOrdered.length > TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE;
+          bustBatchHasMore =
+            bustBatchHasMore ||
+            bustedOrdered.length > TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE;
           bustedOrdered = bustedOrdered.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
 
           // PAYOUT-INTEGRITY 2026-08-20: positions MUST be distinct. This was
@@ -875,7 +1009,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             // case takenPositions is now stale. Abort the assignment pass;
             // the already-armed unresolved-bust retry rebuilds the ladder
             // from persisted positions before it writes anybody else.
-            if (!eliminated) return;
+            if (!eliminated) {
+              // Remember WHO refused, so the next pass tries somebody else
+              // first. Without this the batch order is fixed (every candidate
+              // holds zero chips, so the sort is a tie) and one permanently
+              // refused player starves the rest for ever.
+              const refusedId = bustedOrdered[i].user_id;
+              this.bustRefusalStreak.set(
+                refusedId,
+                (this.bustRefusalStreak.get(refusedId) ?? 0) + 1
+              );
+              return;
+            }
+            this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
             takenPositions.add(place);
             nextPosition = Math.min(nextPosition, place) - 1;
           }

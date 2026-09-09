@@ -457,7 +457,8 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
     const multiples = isPotLimit ? potLimited(MULTIPLES, 4) : MULTIPLES;
     const presets = multiples.map((n) => finalizeExact(`${n}X`, base * n));
     if (isPotLimit) {
-      presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
+      // The ceiling includes full nominal blinds when a blind is short.
+      presets.push(finalize('POT', maxRaise));
     }
     return presets;
   }

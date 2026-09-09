@@ -1,8 +1,8 @@
 {
   "phase": 2,
   "of": 12,
-  "status": "blocked_on_publication_approval",
-  "observed_at": "2026-09-09T03:46:06.968882+00:00",
+  "status": "published_pr_ci_and_adoption_pending",
+  "observed_at": "2026-09-09T05:52:30.463627+00:00",
   "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
   "branch": "agent/codex-poker-audit-sep09/fix/phase-two-consent-and-rules",
   "verified_code_commit": "0e57f979775c2664680f09cfcc3c3eb54d1f7c4a",
@@ -41,10 +41,12 @@
     "action": "Normal SSH branch push to existing Club Arena GitHub repository",
     "attempts": 2,
     "reason": "Automatic approval review requires explicit user authorization for the private-source payload and repository destination. Verified canonical remote and documented route were not accepted as sufficient authorization.",
-    "push_completed": false,
-    "final_pr_created": false,
+    "push_completed": true,
+    "final_pr_created": true,
     "final_ci_verified": false,
-    "final_deployment_verified": false
+    "final_deployment_verified": false,
+    "resolved": true,
+    "resolution": "User explicitly authorized pushing and publishing Phase 2 changes to Smarter-Poker/Smarter-Poker-Club-Arena; normal SSH branch push succeeded."
   },
   "prior_release_adoption": {
     "observedAt": "2026-09-09T03:40:42.737674+00:00",
@@ -105,10 +107,17 @@
   },
   "external_certification": "No external RNG/evaluator/fairness certificate located. No external certification claim.",
   "remaining_gates": [
-    "Explicit publication authorization",
-    "Normal push and PR gates",
     "Required CI and automated merge",
     "Frontend origin/rewrite and engine adoption verification",
     "Phase 2 completion evidence after actual rollout"
-  ]
+  ],
+  "publication": {
+    "pr": 3934,
+    "url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3934",
+    "pushed_head": "43cdd6c09d5c12e0fbad1bf82286bc168705cd8f",
+    "prepush_tests_passed": 4406,
+    "prepush_tests_skipped": 18,
+    "main_merge_commit": "b2073f2a730f28d3e04975052b7316308a67c64f",
+    "verified_implementation_blobs_preserved": true
+  }
 }

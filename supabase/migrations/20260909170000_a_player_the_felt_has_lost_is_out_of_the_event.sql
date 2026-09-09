@@ -237,8 +237,14 @@ $fn$;
 COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(integer, integer, boolean) IS
   'Records out of the event every player who has held no chips and no chair for longer than the dwell time. The second door into elimination: it proves absence rather than a knockout, because no hand took these stacks and the knockout door can never reach them. Leaves position NULL for the finish normalizer and never empties a field.';
 
-REVOKE ALL ON FUNCTION public.fn_ca_absent_tournament_players(integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(integer, integer, boolean) FROM PUBLIC;
+/* anon inherits whatever PUBLIC holds, so PUBLIC and the pre-login roles are
+   named together: revoking one of them alone reads as a fix and does nothing.
+   Neither of these is an RLS policy helper - no policy expression on this
+   database mentions either name - so revoking them denies no player a SELECT. */
+REVOKE ALL ON FUNCTION public.fn_ca_absent_tournament_players(integer)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(integer, integer, boolean)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_absent_tournament_players(integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(integer, integer, boolean) TO service_role;
 

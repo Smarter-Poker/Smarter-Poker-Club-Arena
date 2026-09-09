@@ -302,7 +302,8 @@ $fn$;
 COMMENT ON FUNCTION public.fn_settle_tournament_places_by_ruling(uuid, text, text) IS
   'Settles the open places of a tournament whose already-paid places disagree with bust chronology, so fn_normalize_tournament_final_standings refuses to certify it. Unreachable while chronology can certify: it calls the normalizer first and refuses if that succeeds. Proves every obligation settled, the prize pool fully obligated and the escrow closed at zero before writing a batch receipt marked mode=ruling.';
 
-REVOKE ALL ON FUNCTION public.fn_settle_tournament_places_by_ruling(uuid, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_places_by_ruling(uuid, text, text)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_places_by_ruling(uuid, text, text) TO service_role;
 
 DO $assert$

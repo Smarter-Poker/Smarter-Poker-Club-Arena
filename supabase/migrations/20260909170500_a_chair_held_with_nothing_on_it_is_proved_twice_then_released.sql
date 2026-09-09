@@ -197,7 +197,8 @@ $fn$;
 COMMENT ON FUNCTION public.fn_ca_release_broke_seats(integer, integer, boolean) IS
   'Releases a live chair whose stack has read exactly zero on two runs at least the dwell apart, and records its holder out. The two sightings are what tell a broke player apart from an unsettled all-in, which the database cannot otherwise see.';
 
-REVOKE ALL ON FUNCTION public.fn_ca_release_broke_seats(integer, integer, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_ca_release_broke_seats(integer, integer, boolean)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_release_broke_seats(integer, integer, boolean) TO service_role;
 
 SELECT cron.unschedule('ca-release-broke-seats')

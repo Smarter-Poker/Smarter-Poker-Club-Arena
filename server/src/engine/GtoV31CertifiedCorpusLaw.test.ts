@@ -45,7 +45,7 @@ const INPUT_BOOTSTRAP = read(
   'supabase/migrations/20260909063025_the_v31_input_bundle_can_bootstrap.sql'
 );
 const INPUT_CANONICAL_TYPES = read(
-  'supabase/migrations/20260909070217_v31_input_identity_requires_json_strings.sql'
+  'supabase/migrations/20260909071759_v31_input_identity_requires_json_strings.sql'
 );
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
 const LOGIC = read('server/src/engine/HorseLogic.ts');

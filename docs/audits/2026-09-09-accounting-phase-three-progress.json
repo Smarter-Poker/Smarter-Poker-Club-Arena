@@ -171,7 +171,22 @@
     "native_browser_script": "scripts/dev/probe-tournament-purchase-browser.mjs",
     "integrated_typescript": "passed",
     "integrated_build": "passed locally without Sentry upload; behind-main=0",
-    "release": "not published; automatic approval review rejected Sentry source-map export"
+    "release": "not published; automatic approval review rejected Sentry source-map export",
+    "full_client_verification": {
+      "first": {
+        "passed": 17690,
+        "timeouts": 7
+      },
+      "four_workers": {
+        "passed": 17682,
+        "timeouts": 15
+      },
+      "isolated_affected_files": {
+        "files": 14,
+        "result": "passed unchanged; one worker"
+      },
+      "entire_phase": "not complete"
+    }
   },
   "registration_trace": {
     "verified": "read-only live function catalog on 2026-09-09",

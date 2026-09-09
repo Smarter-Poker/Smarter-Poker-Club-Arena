@@ -19,3 +19,7 @@ The initial local production build compiled, but provenance reported newer main 
 All12 CA-03 controls remain open for complete acceptance. Registration, funded prize and bounty commitments, payouts, guarantees, Spin treasury allocation, satellite tickets, cancellation, seating and all related UI paths still require the original programme's evidence. No runtime chip watcher, reconciler or compensating balance patch was added.
 
 The expanded focused run including the wallet assertion passed131 tests across five files. The first full-client run passed17690 tests with7 repository-scan timeouts at the unchanged5000ms limit. A four-worker run is recorded separately; no timeout or assertion was weakened.
+
+The four-worker full-client run completed with17682 passed and15 repository-scan timeouts across14 files. All14 affected files then passed unchanged with one worker. This is isolated failure-resolution evidence, not a claim that either full-suite run was green. Logs remain in /tmp/chip-conservation-evidence/phase-three-integrated-client-four-workers.log and phase-three-scan-failures-isolated.log.
+
+Publication of this batch has not been attempted after the Sentry export rejection. The initial purchase-confirmation PR3991 remains open; the new local branch commits await an authorized release path. No hooks were bypassed.

@@ -285,6 +285,45 @@ describe('the announcement', () => {
 });
 
 describe('the countdown', () => {
+  it('publishes durableConfirmed only for the exact phase that has committed', async () => {
+    const { mb, engines, store } = build(1);
+    expect(mb.snapshot().durableConfirmed).toBe(false);
+
+    await mb.announceLastHand();
+    expect(mb.snapshot()).toMatchObject({
+      active: true,
+      phase: 'last_hand',
+      durableConfirmed: true,
+    });
+
+    parkAll(engines);
+    const savingCountdown = deferred<void>();
+    store.save = async (state) => {
+      await savingCountdown.promise;
+      store.row = { ...state };
+      store.saves++;
+    };
+    const countingDown = mb.beginCountdown();
+    await Promise.resolve();
+
+    // The prior last-hand row is durable, but it cannot certify the new
+    // countdown timestamps while their write is unresolved.
+    expect(mb.snapshot()).toMatchObject({
+      active: true,
+      phase: 'counting_down',
+      durableConfirmed: false,
+      readyForRestart: false,
+    });
+
+    savingCountdown.resolve();
+    await countingDown;
+    expect(mb.snapshot()).toMatchObject({
+      phase: 'counting_down',
+      durableConfirmed: true,
+      readyForRestart: true,
+    });
+  });
+
   it('ends the visible break and resumes play when countdown persistence fails', async () => {
     const { mb, engines, store, emitted } = build(1);
     await mb.announceLastHand();
@@ -1062,6 +1101,7 @@ describe('surviving the restart', () => {
 
     expect(store.row?.ownershipToken).not.toBe('retired-process-token');
     expect(mb.isActive()).toBe(true);
+    expect(mb.snapshot().durableConfirmed).toBe(true);
     expect([...engines.values()][0].paused).toBe(true);
   });
 

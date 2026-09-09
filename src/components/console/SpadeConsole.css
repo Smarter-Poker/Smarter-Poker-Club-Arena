@@ -54,10 +54,10 @@
     center / 100% auto no-repeat;
 }
 
-/* THE DRESS VARIES, THE STRUCTURE DOES NOT. Each of these is the same head
-   slice with a different emblem seated in it - the crest lifted out and the
-   rails bridged, or the approved octagon housing carrying a relevant render.
-   Same box, same ratio, same zones; only the picture changes. */
+/* THE DRESS VARIES, THE STRUCTURE DOES NOT. Each of these is its own painted
+   crest (see spade-console-v1/source/README.md), seated in the master head
+   with the rails re-mitred into it. No two share a housing. Same box, same
+   ratio, same zones; only the picture changes. */
 .sc--crest-flat .sc__head {
   background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top-flat.png');
 }
@@ -66,8 +66,8 @@
   background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top-diamond.png');
 }
 
-.sc--crest-chip .sc__head {
-  background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top-chip.png');
+.sc--crest-club .sc__head {
+  background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top-club.png');
 }
 
 .sc--crest-vip .sc__head {

@@ -579,7 +579,7 @@ export default function MarketplacePage() {
         description="Acquire Table Upgrades, Player Perks, Club Exclusives, Diamond Packages, And VIP Access Through The Existing Server-Priced Storefront."
         art="market"
         status="PLAYER EXCHANGE // LIVE"
-        crest="chip"
+        crest="club"
         metrics={[
           {
             label: 'Diamonds',

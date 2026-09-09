@@ -1011,6 +1011,7 @@ export default function UnionDashboardPage() {
         {success && <div className="admin-success-banner">{success}</div>}
 
         <CasinoSurfaceHeader
+          crest="club"
           eyebrow="Union Network / Operations"
           title={union?.name || 'Union Operations'}
           description="Govern Member Clubs, Agents, Treasury, Applications, Analytics, And Network Controls From One Permission-Backed Command Deck."

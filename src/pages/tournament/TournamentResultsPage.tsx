@@ -676,6 +676,7 @@ export default function TournamentResultsPage() {
       }}
     >
       <CasinoSurfaceHeader
+        crest="vip"
         eyebrow="Play & Review / Results"
         title="Tournament Archive"
         description="Inspect Completed Fields, Standings, Total Payouts, Bounty Awards, Spin Outcomes, And Recorded Hands Without Flattening Format-Specific Results."

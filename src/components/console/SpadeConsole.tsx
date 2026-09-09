@@ -80,21 +80,29 @@ export type ConsoleInk = 'silver' | 'white' | 'blue' | 'green' | 'red' | 'gold' 
  * SHOULD BE FLAT AT THE TOP AND JUST A DYNAMIC FRAME, SOME SHOULD HAVE OTHER
  * ICONS THAT ARE RELEVANT TO THE CARD OR POP UP."
  *
- * Every one of these is the SAME master with a different emblem seated in it,
- * derived by surgery, never assembled:
+ * AND NO ICON BORROWS ANOTHER'S HOUSING (Dan 2026-09-09): "LOOK HOW THE SPADE
+ * HAS A CUSTOM FRAME AROUND IT ... EVERY ICON NEEDS ITS OWN CUSTOM HOLDER LIKE
+ * THE SPADE HAS. ANYTIME YOU USE A CUSTOM ICON, OR ADD A CUSTOM ICON, YOU MUST
+ * BUILD A NEW FRAME HOLDER AND COMPLETELY REDESIGN THE TOP FRAME (NEVER JUST
+ * COPY AND PASTE)."
  *
- *   spade    the master as approved
- *   flat     the crest lifted out and the rails bridged with their own median
- *            cross-section, so the frame closes flat across the top
- *   diamond  the chrome gem plate, for the surfaces that count diamonds
- *   chip     the vault chip, for the surfaces that count value
- *   vip      the VIP crest, for the VIP deck
+ * So the spade's shield is the spade's alone. Every other crest is PAINTED -
+ * by the image model, from the master crest as its style reference, with a
+ * thin clean chrome border (Dan: thick borders are not allowed) - then seated
+ * by scripts/art/seat-console-crest.py, which re-mitres the rails into that
+ * crest row by row so the master's own chrome mitre meets whatever edge the
+ * new crest has. The recipe and the painted sources live in the kit's
+ * source/ folder; outside the crest window every head is the master, pixel
+ * for pixel:
  *
- * The housing the last three sit in is the approved octagon from the spins
- * chassis with its club emblem removed and its face rebuilt, so it belongs to
- * no club and any surface may wear it.
+ *   spade    the master as approved: the pointed shield
+ *   flat     no crest at all - lifted out and the rails bridged with their
+ *            own median cross-section, so the frame closes flat
+ *   diamond  a hexagonal bezel holding a chrome diamond
+ *   vip      a wide keystone holding a chrome crown
+ *   club     a round medallion holding a chrome club
  */
-export type ConsoleCrest = 'spade' | 'flat' | 'diamond' | 'chip' | 'vip';
+export type ConsoleCrest = 'spade' | 'flat' | 'diamond' | 'vip' | 'club';
 
 /** Fitted, single-line text in a zone. */
 export function ZoneText({

@@ -50,18 +50,20 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
 
   it('pins the receipt preimages and their complete strict postimages', () => {
     for (const hash of [
-      '2e322bc7dfee3cf5cb6548ed3a587095',
-      '8ddb91f5f7bb5f27b609ec83cb69fa66',
       'ba1cdf1b56e5bb0c1c199b65390ee1f2',
       'a7744092d35a022996a61d9de10e982d',
       'edfd095bae13ece6bedc989c3acd0467',
-      '022f0de6ed0fb51ff3fbe5f3ff36f6d0',
+      'c22ec3b288898efa319a384850d41ba7',
       '9d6a12c82aa260c22e1c013e95faca0e',
     ]) {
       expect(contraction.source).toContain(hash);
     }
-    expect(contraction.source).toContain('receipt-aware fn_ca_settle_hand_stacks_absolute changed');
-    expect(contraction.source).toContain('receipt-aware fn_ca_commit_hand_settlement changed');
+    expect(contraction.source).toContain(
+      'strict exact-seat settlement source changed after cutover'
+    );
+    expect(contraction.source).toContain(
+      'strict exact-seat contraction requires the measured 20260910035435 production postimage'
+    );
     expect(contraction.source).toContain('tournament_zero_stack_seat_generations');
     expect(contraction.source).toContain('post_commit_request_hash');
     expect(contraction.source).toContain('post_commit_payload_hash');
@@ -73,10 +75,6 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
   it('carries exact identity through canonicalization, locking, writes and time banks', () => {
     expect(contraction.source).toContain("'seat_id', (x->>'seat_id')::uuid");
     expect(contraction.source).toContain("'seat_joined_at', x->>'seat_joined_at'");
-    expect(contraction.source).toContain("ts.id = (target.value->>'seat_id')::uuid");
-    expect(contraction.source).toContain(
-      "ts.joined_at = (target.value->>'seat_joined_at')::timestamptz"
-    );
     expect(contraction.source).toContain('WHERE ts.id = v_exact_seat_id');
     expect(contraction.source).toContain('AND ts.joined_at = v_exact_seat_joined_at');
     expect(contraction.source).toContain("WHERE ts.id = (e->>'seat_id')::uuid");

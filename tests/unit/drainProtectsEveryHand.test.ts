@@ -96,9 +96,9 @@ describe('the deploy gate waits on hands, never on humanity', () => {
     );
     expect(gate).toMatch(/readyForRestart/);
     expect(gate).toMatch(/durableConfirmed/);
-    expect(gate).toMatch(
-      /m\.get\("readyForRestart"\) is True and m\.get\("durableConfirmed"\) is True/
-    );
+    const certificate = gate.match(/STATE=.*?python3 -c '([^']+)'/)?.[1] ?? '';
+    expect(certificate).toContain('m.get("readyForRestart") is True');
+    expect(certificate).toContain('m.get("durableConfirmed") is True');
     expect(gate).not.toMatch(/d\.get\("humansSeatedTotal"\)/);
     expect(gate).not.toMatch(/is_horse|isHorse/);
   });

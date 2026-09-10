@@ -396,6 +396,17 @@ BEGIN
 END;
 $function$;
 
+-- CREATE OR REPLACE preserves production's existing ACL, but a fresh database
+-- would otherwise inherit PostgreSQL's PUBLIC execute default. This is an
+-- engine-only money writer: the pre-request hook fences the manager headers,
+-- and the function ACL independently makes every browser role unreachable.
+REVOKE ALL ON FUNCTION public.fn_spin_draw_and_settle_atomic(
+  uuid, uuid, uuid, jsonb
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_draw_and_settle_atomic(
+  uuid, uuid, uuid, jsonb
+) TO service_role;
+
 COMMIT;
 
 -- PART 3 — ROLLBACK: ORIGINAL definition of fn_spin_draw_and_settle_atomic

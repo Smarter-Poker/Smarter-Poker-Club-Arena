@@ -6,6 +6,8 @@ migration_dir="$repo_dir/supabase/migrations"
 archive_dir="$repo_dir/supabase/retired-unapplied"
 manifest="$archive_dir/MANIFEST.sha256"
 resolver="$repo_dir/scripts/ops/lib/resolve-staged-or-promoted-migration.sh"
+seat_move_hotfix_ledger_version='20260910051447'
+seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 
 usage() {
   cat >&2 <<'USAGE'
@@ -63,6 +65,7 @@ baseline_names=(
   seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in
   spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row
   the_settlement_lane_is_per_tournament_not_platform_wide
+  the_seat_move_door_the_engine_calls_exists
 )
 baseline_files=()
 baseline_versions=()
@@ -85,10 +88,11 @@ for ((index = 1; index < ${#baseline_versions[@]}; index += 1)); do
   fi
 done
 
-newest_baseline="$(basename "${baseline_files[2]}")"
+baseline_last_index=$((${#baseline_files[@]} - 1))
+newest_baseline="$(basename "${baseline_files[$baseline_last_index]}")"
 first_stage_b="$(basename "${chain_files[0]}")"
 first_stage_b_version="${first_stage_b%%_*}"
-if [[ ! "${baseline_versions[2]}" < "$first_stage_b_version" ]]; then
+if [[ ! "${baseline_versions[$baseline_last_index]}" < "$first_stage_b_version" ]]; then
   echo "Stage-B starts at or before the current ledger head: ${first_stage_b} does not follow ${newest_baseline}." >&2
   exit 65
 fi
@@ -176,6 +180,10 @@ psql_cmd=(
   -v "baseline_name_2=${baseline_names[1]}"
   -v "baseline_version_3=${baseline_versions[2]}"
   -v "baseline_name_3=${baseline_names[2]}"
+  -v "baseline_version_4=${baseline_versions[3]}"
+  -v "baseline_name_4=${baseline_names[3]}"
+  -v "seat_move_hotfix_ledger_version=$seat_move_hotfix_ledger_version"
+  -v "seat_move_hotfix_statement_sha256=$seat_move_hotfix_statement_sha256"
 )
 preflight="$({
   "${psql_cmd[@]}" -Atq -F '|' <<'SQL'
@@ -199,6 +207,24 @@ SELECT current_database(),
               (:'baseline_version_2', :'baseline_name_2'),
               (:'baseline_version_3', :'baseline_name_3')
             )
+               OR (
+                 version=:'seat_move_hotfix_ledger_version'
+                 AND name=:'baseline_name_4'
+                 AND cardinality(statements)=1
+                 AND encode(
+                       extensions.digest(statements[1],'sha256'),'hex'
+                     )=:'seat_move_hotfix_statement_sha256'
+               )
+         )
+       END,
+       CASE
+         WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL
+           THEN NULL
+         ELSE (
+           SELECT max(version)
+             FROM supabase_migrations.schema_migrations
+            WHERE version=:'seat_move_hotfix_ledger_version'
+              AND name=:'baseline_name_4'
          )
        END,
        CASE
@@ -272,7 +298,7 @@ SELECT current_database(),
 SQL
 })"
 IFS='|' read -r actual_database major_version server_address locality \
-  baseline_receipts staged_receipts frozen_rows fresh_authorities \
+  baseline_receipts hotfix_ledger_version staged_receipts frozen_rows fresh_authorities \
   immutable_guard_acl contract_document_shape <<<"$preflight"
 
 if [[ "$actual_database" != "$expected_database" ]]; then
@@ -283,8 +309,13 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$baseline_receipts" != '3' ]]; then
-  echo 'The disposable clone is not based on all three current pre-Stage-B ledger boundaries.' >&2
+if [[ "$baseline_receipts" != '4' ]]; then
+  echo 'The disposable clone is not based on all four current pre-Stage-B ledger boundaries.' >&2
+  exit 65
+fi
+if [[ "$hotfix_ledger_version" != "$seat_move_hotfix_ledger_version" ]] \
+   || [[ ! "$hotfix_ledger_version" < "$first_stage_b_version" ]]; then
+  echo "Stage-B ${first_stage_b_version} does not follow the applied seat-move hotfix ${hotfix_ledger_version:-<missing>}." >&2
   exit 65
 fi
 if [[ "$staged_receipts" != '0' ]]; then
@@ -604,6 +635,89 @@ create_scenario_database() {
   printf 'STAGE_B_SCENARIO_DATABASE_CREATED %s\n' "$created_scenario_database"
 }
 
+seed_hotfix_move_receipt() {
+  local database="$1"
+  "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
+SET session_replication_role=replica;
+INSERT INTO auth.users(id)
+VALUES ('71000000-0000-0000-0000-000000000001');
+INSERT INTO public.profiles(id)
+VALUES ('71000000-0000-0000-0000-000000000001');
+INSERT INTO public.tournaments(
+  id,name,description,game_type,buy_in_amount,buy_in_fee,start_time,status,
+  max_players,created_at,updated_at,on_break
+) VALUES (
+  '71000000-0000-0000-0000-000000000011',
+  'Stage-B hotfix receipt preservation',
+  'Disposable PG17 immutable move-receipt fixture',
+  'NLH',0,0,'2026-09-10 00:00:00-05','RUNNING',9,
+  '2026-09-09 23:00:00-05','2026-09-10 00:00:00-05',false
+);
+INSERT INTO public.tables(
+  id,name,tournament_id,game_type,status,lifecycle,current_players,
+  seat_game_scope,seat_admission_key
+) VALUES
+  ('71000000-0000-0000-0000-000000000021','Receipt source',
+   '71000000-0000-0000-0000-000000000011','tournament','active','live',0,
+   'table:71000000-0000-0000-0000-000000000021',
+   'tournament:71000000-0000-0000-0000-000000000011'),
+  ('71000000-0000-0000-0000-000000000022','Receipt destination',
+   '71000000-0000-0000-0000-000000000011','tournament','active','live',1,
+   'table:71000000-0000-0000-0000-000000000022',
+   'tournament:71000000-0000-0000-0000-000000000011');
+INSERT INTO public.table_seats(
+  id,table_id,seat_number,user_id,stack,joined_at,left_at,status,
+  active_game_scope,active_parent_key
+) VALUES
+  ('71000000-0000-0000-0000-000000000031',
+   '71000000-0000-0000-0000-000000000021',1,
+   '71000000-0000-0000-0000-000000000001',0,
+   '2026-09-09 23:55:00-05','2026-09-10 00:00:00-05','left',NULL,NULL),
+  ('71000000-0000-0000-0000-000000000032',
+   '71000000-0000-0000-0000-000000000022',2,
+   '71000000-0000-0000-0000-000000000001',100,
+   '2026-09-10 00:00:00-05',NULL,'active',
+   'table:71000000-0000-0000-0000-000000000022',
+   'tournament:71000000-0000-0000-0000-000000000011');
+INSERT INTO public.tournament_players(
+  id,tournament_id,user_id,chips,chip_count,status,table_id,seat_number
+) VALUES (
+  '71000000-0000-0000-0000-000000000041',
+  '71000000-0000-0000-0000-000000000011',
+  '71000000-0000-0000-0000-000000000001',100,100,'playing',
+  '71000000-0000-0000-0000-000000000022',2
+);
+INSERT INTO public.tournament_seat_move_receipts(
+  request_id,tournament_id,user_id,source_table_id,destination_table_id,
+  source_seat_id,destination_seat_id,source_seat_number,
+  destination_seat_number,source_mode,stack,moved_at
+) VALUES (
+  '71000000-0000-0000-0000-000000000051',
+  '71000000-0000-0000-0000-000000000011',
+  '71000000-0000-0000-0000-000000000001',
+  '71000000-0000-0000-0000-000000000021',
+  '71000000-0000-0000-0000-000000000022',
+  '71000000-0000-0000-0000-000000000031',
+  '71000000-0000-0000-0000-000000000032',1,2,'live_source',100,
+  '2026-09-10 00:00:00-05'
+);
+SET session_replication_role=origin;
+SQL
+}
+
+move_receipt_fingerprint() {
+  local database="$1"
+  "${psql_cmd[@]}" --dbname="$database" -Atq -F '|' <<'SQL'
+SELECT count(*)::bigint,
+       encode(extensions.digest(COALESCE(
+         string_agg(
+           encode(extensions.digest(to_jsonb(r)::text,'sha256'),'hex'),''
+           ORDER BY r.request_id),''
+       ),'sha256'),'hex')
+  FROM public.tournament_seat_move_receipts r;
+SQL
+}
+
 seed_terminal_tournament() {
   local database="$1"
   local tournament_id="$2"
@@ -910,6 +1024,12 @@ if [[ "$probe_mode" == 'apply' ]]; then
   run_late_missing_finish_claim_rollback "$late_finish_claim_database"
 
   echo 'STAGE_B_DEFECT_REPRODUCTIONS_PG17_OK'
+
+  # Reuse the clean six-boundary pass for the new mandatory hotfix preimage.
+  # This avoids a duplicate chain run while proving a nonempty immutable move
+  # receipt survives both #1 and #5 exactly.
+  seed_hotfix_move_receipt "$expected_database"
+  move_receipts_before="$(move_receipt_fingerprint "$expected_database")"
 fi
 
 if [[ "$probe_mode" == 'replay' ]]; then
@@ -917,5 +1037,13 @@ if [[ "$probe_mode" == 'replay' ]]; then
   echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
 else
   run_chain_prefix 6 false
+fi
+if [[ "$probe_mode" == 'apply' ]]; then
+  move_receipts_after="$(move_receipt_fingerprint "$expected_database")"
+  if [[ "$move_receipts_after" != "$move_receipts_before" ]]; then
+    echo 'The clean Stage-B chain changed the immutable hotfix move-receipt ledger.' >&2
+    exit 1
+  fi
+  echo 'STAGE_B_HOTFIX_MOVE_RECEIPT_PRESERVED_PG17_OK'
 fi
 echo 'STAGE_B_FORWARD_CHAIN_PG17_OK'

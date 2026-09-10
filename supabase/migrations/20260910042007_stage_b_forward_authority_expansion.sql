@@ -1,14 +1,17 @@
 -- 20260910042007_stage_b_forward_authority_expansion
 --
 -- Thirteen historical Stage-B migrations are absent from production while
--- production has continued through 20260910035435. Replaying those files
+-- production has continued through the 20260910051447-promoted seat-move hotfix.
+-- Replaying those files
 -- would mix historical repair DML with runtime authority changes and overwrite
 -- newer production definitions. This forward expansion creates only the
--- private receipt and capability schema required by the current postimage.
+-- private receipt and capability schema required by the current postimage,
+-- adopting the exact seat-move receipt/capability schema already installed by
+-- that hotfix. Committed move receipts are durable history, not repair input.
 --
 -- It performs no repair, moves no chips, changes no tournament or seat row,
 -- arms no authority trigger, and does not alter any object installed by
--- 20260910034411, 20260910034412 or 20260910035435. The exact repair
+-- 20260910034411, 20260910034412, 20260910035435 or 20260910051447. The exact repair
 -- migration owns every historical preimage row; the final contraction owns
 -- the scheduler retirement receipt. Explicit version and byte-exact postimage
 -- checks make an out-of-order or stale writer fail at the database edge.
@@ -138,13 +141,177 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
+  -- The incident hotfix is now a required predecessor. Stage B adopts its
+  -- two private tables and immutable receipt history in place; it must never
+  -- drop/recreate them or confuse committed receipts with stale repair data.
+  IF to_regclass('supabase_migrations.schema_migrations') IS NULL
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260910051447'
+            AND m.name='the_seat_move_door_the_engine_calls_exists'
+            AND cardinality(m.statements)=1
+            AND encode(
+                  extensions.digest(m.statements[1],'sha256'),'hex'
+                )='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
+        )<>1
+     OR to_regclass('public.tournament_seat_exit_authorizations') IS NULL
+     OR to_regclass('public.tournament_seat_move_receipts') IS NULL
+     OR to_regprocedure(
+          'public.fn_tournament_seat_move_receipts_append_only()'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_ca_close_tournament_seat_exit_authority(uuid,boolean)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_ca_tournament_seat_move_receipt(uuid)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)'
+        ) IS NULL THEN
+    RAISE EXCEPTION
+      'Stage-B expansion requires the exact 20260910051447 seat-move hotfix ledger and catalog preimage'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT string_agg(
+           required.identity||'='||catalog.fingerprint,', '
+           ORDER BY required.identity)
+    INTO v_relation
+    FROM (VALUES
+      ('public.tournament_seat_exit_authorizations',
+       '556029bd3b99e8bb0ef36db2a28ed862'),
+      ('public.tournament_seat_move_receipts',
+       'd13f29c5d5a781fe2a7f834673ecc820')
+    ) required(identity,expected_fingerprint)
+    JOIN pg_class c ON c.oid=to_regclass(required.identity)
+    CROSS JOIN LATERAL (
+      SELECT md5(jsonb_build_object(
+               'shape',(
+                 SELECT jsonb_agg(
+                          a.attname||':'||
+                          format_type(a.atttypid,a.atttypmod)||':'||
+                          CASE WHEN a.attnotnull
+                            THEN 'not-null' ELSE 'nullable' END
+                          ORDER BY a.attnum)
+                   FROM pg_attribute a
+                  WHERE a.attrelid=c.oid
+                    AND a.attnum>0 AND NOT a.attisdropped),
+               'constraints',(
+                 SELECT jsonb_agg(
+                          jsonb_build_object(
+                            'type',k.contype::text,
+                            'def',pg_get_constraintdef(k.oid,true),
+                            'validated',k.convalidated,
+                            'deferrable',k.condeferrable,
+                            'deferred',k.condeferred,
+                            'no_inherit',k.connoinherit,
+                            'index_valid',i.indisvalid,
+                            'index_ready',i.indisready)
+                          ORDER BY k.contype::text||':'||
+                                   pg_get_constraintdef(k.oid,true))
+                   FROM pg_constraint k
+                   LEFT JOIN pg_index i
+                     ON i.indexrelid=NULLIF(k.conindid,0)
+                  WHERE k.conrelid=c.oid),
+               'rls',c.relrowsecurity,
+               'force_rls',c.relforcerowsecurity,
+               'owner',c.relowner::regrole::text,
+               'acl',c.relacl::text,
+               'policy_count',(
+                 SELECT count(*) FROM pg_policy p WHERE p.polrelid=c.oid)
+             )::text) AS fingerprint
+    ) catalog
+   WHERE catalog.fingerprint<>required.expected_fingerprint;
+
+  IF v_relation IS NOT NULL THEN
+    RAISE EXCEPTION
+      'Stage-B expansion found drift in a 20260910051447 seat-move table: %',
+      v_relation
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM (VALUES
+        ('public.fn_tournament_seat_move_receipts_append_only()',
+         '85534593874dc5d908193ccbfc309719','plpgsql','v','trigger',
+         0,ARRAY['search_path=public']::text[],'{postgres=X/postgres}'),
+        ('public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)',
+         '25cf8792d0d7b4ebf1d383072ca2834c','plpgsql','v','uuid',
+         1,ARRAY['search_path=public, pg_temp']::text[],'{postgres=X/postgres}'),
+        ('public.fn_ca_close_tournament_seat_exit_authority(uuid,boolean)',
+         '0811b7a7795234ed8bc84c606d9a5a62','plpgsql','v','integer',
+         1,ARRAY['search_path=public']::text[],'{postgres=X/postgres}'),
+        ('public.fn_ca_tournament_seat_move_receipt(uuid)',
+         '68813ee03e355e2eec053e15bf40f98d','sql','s','jsonb',
+         0,ARRAY['search_path=public']::text[],'{postgres=X/postgres}'),
+        ('public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
+         '466c39065b59cf7922a5859df9f26bd3','plpgsql','v','jsonb',
+         0,ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
+         '{postgres=X/postgres,service_role=X/postgres}'),
+        ('public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)',
+         '37bc550ccb878c042773d0789c8ef355','plpgsql','v','jsonb',
+         0,ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
+         '{postgres=X/postgres,service_role=X/postgres}')
+      ) required(identity,source_md5,language_name,volatility,return_type,
+                 argument_defaults,configuration,acl)
+      LEFT JOIN pg_proc p ON p.oid=to_regprocedure(required.identity)
+      LEFT JOIN pg_language l ON l.oid=p.prolang
+     WHERE p.oid IS NULL
+        OR md5(p.prosrc)<>required.source_md5
+        OR l.lanname<>required.language_name
+        OR p.provolatile::text<>required.volatility
+        OR p.prorettype::regtype::text<>required.return_type
+        OR p.proowner<>'postgres'::regrole
+        OR NOT p.prosecdef
+        OR p.pronargdefaults<>required.argument_defaults
+        OR p.proconfig IS DISTINCT FROM required.configuration
+        OR p.proacl::text IS DISTINCT FROM required.acl
+  ) THEN
+    RAISE EXCEPTION
+      'Stage-B expansion found drift in a 20260910051447 seat-move function'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (SELECT count(*)
+        FROM pg_trigger t
+       WHERE t.tgrelid='public.tournament_seat_move_receipts'::regclass
+         AND t.tgname='tournament_seat_move_receipts_append_only'
+         AND t.tgfoid=
+               'public.fn_tournament_seat_move_receipts_append_only()'::regprocedure
+         AND NOT t.tgisinternal AND t.tgenabled='O' AND t.tgtype=27
+         AND md5(pg_get_triggerdef(t.oid,true))=
+               '775ad84910c01ea8632d7df1ab5cbb34')<>1
+     OR EXISTS (
+       SELECT 1 FROM pg_trigger t
+        WHERE t.tgname='zy_tournament_live_seat_exit_requires_authority'
+          AND NOT t.tgisinternal)
+     OR to_regprocedure(
+          'public.fn_tournament_live_seat_exit_requires_authority()'
+        ) IS NOT NULL
+     OR (SELECT count(*) FROM pg_trigger t
+          WHERE t.tgrelid=
+                  'public.tournament_seat_exit_authorizations'::regclass
+            AND NOT t.tgisinternal)<>0
+     OR (SELECT count(*) FROM pg_trigger t
+          WHERE t.tgrelid='public.tournament_seat_move_receipts'::regclass
+            AND NOT t.tgisinternal)<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B expansion found an inexact or live 20260910051447 seat-move capability preimage'
+      USING ERRCODE = '55000';
+  END IF;
+
   FOREACH v_relation IN ARRAY ARRAY[
     'public.tournament_seat_exit_authority_cutover',
     'public.tournament_pending_zero_seat_cutover_receipts',
     'public.tournament_paid_candidate_cutover_receipts',
     'public.tournament_positive_orphan_cutover_receipts',
-    'public.tournament_seat_exit_authorizations',
-    'public.tournament_seat_move_receipts',
     'public.tournament_mutator_scheduler_retirement_receipts',
     'public.tournament_terminal_break_normalization_receipts'
   ] LOOP
@@ -159,9 +326,6 @@ BEGIN
        'public.fn_tournament_seat_exit_cutover_receipts_append_only()'
      ) IS NOT NULL
      OR to_regprocedure(
-       'public.fn_tournament_seat_move_receipts_append_only()'
-     ) IS NOT NULL
-     OR to_regprocedure(
        'public.fn_tournament_terminal_break_normalization_receipt_immutable()'
      ) IS NOT NULL THEN
     RAISE EXCEPTION
@@ -170,6 +334,34 @@ BEGIN
   END IF;
 END;
 $require_current_postimage_and_clean_expansion$;
+
+LOCK TABLE public.tournament_seat_exit_authorizations,
+           public.tournament_seat_move_receipts
+  IN SHARE MODE NOWAIT;
+
+DO $require_quiescent_hotfix_capability$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.tournament_seat_exit_authorizations) THEN
+    RAISE EXCEPTION
+      'Stage-B expansion found a live seat-exit authority after taking the hotfix table locks'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$require_quiescent_hotfix_capability$;
+
+-- A transaction-local fingerprint makes receipt preservation executable: the
+-- expansion below may create only new Stage-B relations and cannot delete,
+-- rewrite, or replace any incident-hotfix receipt.
+CREATE TEMP TABLE stage_b_move_receipt_preimage
+ON COMMIT DROP
+AS
+SELECT count(*)::bigint AS receipt_count,
+       encode(extensions.digest(COALESCE(
+         string_agg(
+           encode(extensions.digest(to_jsonb(r)::text,'sha256'),'hex'),''
+           ORDER BY r.request_id),''
+       ),'sha256'),'hex') AS receipt_fingerprint
+  FROM public.tournament_seat_move_receipts r;
 
 CREATE TABLE public.tournament_seat_exit_authority_cutover (
   authority text PRIMARY KEY
@@ -617,66 +809,6 @@ CREATE TRIGGER tournament_pending_zero_seat_cutover_receipts_append_only
   FOR EACH ROW EXECUTE FUNCTION
     public.fn_tournament_seat_exit_cutover_receipts_append_only();
 
-CREATE TABLE public.tournament_seat_exit_authorizations (
-  token uuid NOT NULL,
-  seat_id uuid NOT NULL REFERENCES public.table_seats(id) ON DELETE RESTRICT,
-  tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE RESTRICT,
-  user_id uuid NOT NULL,
-  operation text NOT NULL CHECK (operation IN (
-    'unregister','cancel','satellite_finish','terminal_finish','move',
-    'elimination','hand_settlement')),
-  created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-  PRIMARY KEY (token,seat_id),
-  UNIQUE (token,tournament_id,user_id,seat_id,operation)
-);
-
-ALTER TABLE public.tournament_seat_exit_authorizations ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.tournament_seat_exit_authorizations
-  FROM PUBLIC,anon,authenticated,service_role;
-
-CREATE TABLE public.tournament_seat_move_receipts (
-  request_id uuid PRIMARY KEY,
-  tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE RESTRICT,
-  user_id uuid NOT NULL,
-  source_table_id uuid NOT NULL REFERENCES public.tables(id) ON DELETE RESTRICT,
-  destination_table_id uuid NOT NULL REFERENCES public.tables(id) ON DELETE RESTRICT,
-  source_seat_id uuid NOT NULL REFERENCES public.table_seats(id) ON DELETE RESTRICT,
-  destination_seat_id uuid NOT NULL REFERENCES public.table_seats(id) ON DELETE RESTRICT,
-  source_seat_number integer NOT NULL CHECK (source_seat_number BETWEEN 1 AND 10),
-  destination_seat_number integer NOT NULL CHECK (destination_seat_number BETWEEN 1 AND 10),
-  source_mode text NOT NULL CHECK (source_mode IN ('live_source','closed_orphan')),
-  stack numeric NOT NULL CHECK (
-    stack::text NOT IN ('NaN','Infinity','-Infinity') AND stack > 0),
-  moved_at timestamptz NOT NULL,
-  CHECK (source_table_id <> destination_table_id),
-  CHECK (source_seat_id <> destination_seat_id),
-  UNIQUE (tournament_id,user_id,request_id)
-);
-
-ALTER TABLE public.tournament_seat_move_receipts ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.tournament_seat_move_receipts
-  FROM PUBLIC,anon,authenticated,service_role;
-
-CREATE FUNCTION public.fn_tournament_seat_move_receipts_append_only()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $move_receipt_immutable$
-BEGIN
-  RAISE EXCEPTION 'tournament seat move receipts are append-only'
-    USING ERRCODE='55000';
-END;
-$move_receipt_immutable$;
-
-REVOKE ALL ON FUNCTION public.fn_tournament_seat_move_receipts_append_only()
-  FROM PUBLIC,anon,authenticated,service_role;
-
-CREATE TRIGGER tournament_seat_move_receipts_append_only
-  BEFORE UPDATE OR DELETE ON public.tournament_seat_move_receipts
-  FOR EACH ROW EXECUTE FUNCTION
-    public.fn_tournament_seat_move_receipts_append_only();
-
 CREATE TABLE public.tournament_mutator_scheduler_retirement_receipts (
   migration_version text PRIMARY KEY
     CHECK (migration_version='20260910042112_stage_b_current_postimage_contraction'),
@@ -742,6 +874,10 @@ DECLARE
   v_relation text;
   v_has_rows boolean;
   v_trigger_count integer;
+  v_receipt_count bigint;
+  v_receipt_fingerprint text;
+  v_expected_receipt_count bigint;
+  v_expected_receipt_fingerprint text;
 BEGIN
   SELECT count(*)::integer
     INTO v_trigger_count
@@ -780,13 +916,31 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
+  SELECT p.receipt_count,p.receipt_fingerprint
+    INTO STRICT v_expected_receipt_count,v_expected_receipt_fingerprint
+    FROM pg_temp.stage_b_move_receipt_preimage p;
+  SELECT count(*)::bigint,
+         encode(extensions.digest(COALESCE(
+           string_agg(
+             encode(extensions.digest(to_jsonb(r)::text,'sha256'),'hex'),''
+             ORDER BY r.request_id),''
+         ),'sha256'),'hex')
+    INTO v_receipt_count,v_receipt_fingerprint
+    FROM public.tournament_seat_move_receipts r;
+  IF v_receipt_count IS DISTINCT FROM v_expected_receipt_count
+     OR v_receipt_fingerprint IS DISTINCT FROM
+          v_expected_receipt_fingerprint THEN
+    RAISE EXCEPTION
+      'Stage-B expansion changed an immutable seat-move receipt preimage'
+      USING ERRCODE = '55000';
+  END IF;
+
   FOREACH v_relation IN ARRAY ARRAY[
     'tournament_seat_exit_authority_cutover',
     'tournament_pending_zero_seat_cutover_receipts',
     'tournament_paid_candidate_cutover_receipts',
     'tournament_positive_orphan_cutover_receipts',
     'tournament_seat_exit_authorizations',
-    'tournament_seat_move_receipts',
     'tournament_mutator_scheduler_retirement_receipts',
     'tournament_terminal_break_normalization_receipts'
   ] LOOP

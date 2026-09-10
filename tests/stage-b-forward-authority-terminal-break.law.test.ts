@@ -5,7 +5,7 @@
  * every Stage-B reservation must sort after the 035435 live ledger head.
  */
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -16,9 +16,19 @@ const spinPostimageFile =
   '20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql';
 const settlementLanePostimageFile =
   '20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql';
-const expansionFile = '20260910042007_stage_b_forward_authority_expansion.sql';
-const repairFile = '20260910042020_stage_b_exact_precondition_repairs.sql';
-const invariantFile = '20260910042033_stage_b_terminal_break_invariant.sql';
+const seatMoveHotfixFile = '20260910051125_the_seat_move_door_the_engine_calls_exists.sql';
+
+function stagedMigrationFile(suffix: string): string {
+  const matches = readdirSync(resolve(root, 'supabase', 'migrations')).filter((file) =>
+    file.endsWith(`_${suffix}.sql`)
+  );
+  expect(matches, `${suffix} migration`).toHaveLength(1);
+  return matches[0];
+}
+
+const expansionFile = stagedMigrationFile('stage_b_forward_authority_expansion');
+const repairFile = stagedMigrationFile('stage_b_exact_precondition_repairs');
+const invariantFile = stagedMigrationFile('stage_b_terminal_break_invariant');
 
 function migration(file: string): string {
   return readFileSync(resolve(root, 'supabase', 'migrations', file), 'utf8');
@@ -28,6 +38,7 @@ const productionPostimage = migration(productionPostimageFile);
 const productionCode = productionPostimage.replace(/^\s*--.*$/gm, '');
 const spinPostimage = migration(spinPostimageFile);
 const settlementLanePostimage = migration(settlementLanePostimageFile);
+const seatMoveHotfix = migration(seatMoveHotfixFile);
 const expansion = migration(expansionFile);
 const repair = migration(repairFile);
 const invariant = migration(invariantFile);
@@ -69,6 +80,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       productionPostimageFile,
       spinPostimageFile,
       settlementLanePostimageFile,
+      seatMoveHotfixFile,
       expansionFile,
       repairFile,
       invariantFile,
@@ -81,12 +93,15 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       '-- 20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql'
     );
     expect(settlementLanePostimage).toContain('v_done <> 30');
+    expect(seatMoveHotfix).toContain(
+      '-- 20260910051125_the_seat_move_door_the_engine_calls_exists'
+    );
   });
 
-  it('expands only the private schema and binds repair rows to the exact #2 boundary', () => {
+  it('adopts the exact hotfix tables and expands only the remaining private schema', () => {
     expect(expansion.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(expansion.match(/^COMMIT;$/gm)).toHaveLength(1);
-    expect(occurrences(expansion, /^CREATE TABLE public\./gm)).toBe(8);
+    expect(occurrences(expansion, /^CREATE TABLE public\./gm)).toBe(6);
     expect(expansion).toContain(
       "migration_version='20260910042020_stage_b_exact_precondition_repairs'"
     );
@@ -102,13 +117,49 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       'tournament_pending_zero_seat_cutover_receipts',
       'tournament_paid_candidate_cutover_receipts',
       'tournament_positive_orphan_cutover_receipts',
-      'tournament_seat_exit_authorizations',
-      'tournament_seat_move_receipts',
       'tournament_mutator_scheduler_retirement_receipts',
       'tournament_terminal_break_normalization_receipts',
     ]) {
       expect(expansion).toContain(`CREATE TABLE public.${relation}`);
     }
+
+    for (const adoptedRelation of [
+      'tournament_seat_exit_authorizations',
+      'tournament_seat_move_receipts',
+    ]) {
+      expect(expansion).not.toContain(`CREATE TABLE public.${adoptedRelation}`);
+      expect(expansion).not.toMatch(
+        new RegExp(`(?:DROP|TRUNCATE) TABLE(?: IF EXISTS)? public\\.${adoptedRelation}`)
+      );
+    }
+
+    expect(expansion).toContain("m.name='the_seat_move_door_the_engine_calls_exists'");
+    expect(expansion).toContain("m.version='20260910051447'");
+    expect(expansion).toContain('b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2');
+    expect(expansion).toContain('556029bd3b99e8bb0ef36db2a28ed862');
+    expect(expansion).toContain('d13f29c5d5a781fe2a7f834673ecc820');
+    for (const functionHash of [
+      '85534593874dc5d908193ccbfc309719',
+      '25cf8792d0d7b4ebf1d383072ca2834c',
+      '0811b7a7795234ed8bc84c606d9a5a62',
+      '68813ee03e355e2eec053e15bf40f98d',
+      '466c39065b59cf7922a5859df9f26bd3',
+      '37bc550ccb878c042773d0789c8ef355',
+    ]) {
+      expect(expansion).toContain(functionHash);
+    }
+    expect(expansion).toContain('stage_b_move_receipt_preimage');
+    expect(expansion).toContain(
+      'LOCK TABLE public.tournament_seat_exit_authorizations,\n' +
+        '           public.tournament_seat_move_receipts\n' +
+        '  IN SHARE MODE NOWAIT;'
+    );
+    expect(expansion).toContain(
+      'Stage-B expansion changed an immutable seat-move receipt preimage'
+    );
+    expect(expansion).toContain(
+      'EXISTS (SELECT 1 FROM public.tournament_seat_exit_authorizations)'
+    );
 
     expect(expansion).not.toMatch(/\bINSERT\s+INTO\b/i);
     expect(expansion).not.toMatch(/\bUPDATE\s+public\./i);
@@ -121,6 +172,11 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     );
     expect(expansion).not.toContain('ALTER TABLE public.tournaments');
     expect(expansion).toContain('Stage-B schema expansion unexpectedly wrote relation %');
+    expect(harness).toContain('the_seat_move_door_the_engine_calls_exists');
+    expect(harness).toContain("baseline_receipts\" != '4'");
+    expect(harness).toContain('hotfix_ledger_version');
+    expect(harness).toContain("seat_move_hotfix_ledger_version='20260910051447'");
+    expect(harness).toContain('extensions.digest(statements[1]');
   });
 
   it('admits only the authenticated transaction-local terminal-break normalization', () => {

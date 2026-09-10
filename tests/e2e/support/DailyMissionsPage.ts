@@ -7,6 +7,7 @@ import {
 } from '@playwright/test';
 
 import { ensurePlayableProfile } from './ensurePlayableProfile';
+import { ensureAcceptedTerms } from './ensureAcceptedTerms';
 import type { TemporaryCustomizationAccount } from './temporaryCustomizationAccount';
 
 export const DAILY_MISSIONS_RESPONSE_TIMEOUT = 60_000;
@@ -183,6 +184,7 @@ export class DailyMissionsPage {
         `Daily Missions signed in as ${authenticatedUserId || 'no user'} instead of reserved account ${account.id}.`
       );
     }
+    await ensureAcceptedTerms(page);
     await ensurePlayableProfile(page);
     await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
       timeout: 30_000,

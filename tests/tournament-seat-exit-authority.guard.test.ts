@@ -6,6 +6,9 @@ import { sliceMethod } from './helpers/sourceWindow';
 const root = (path: string) => resolve(__dirname, '..', path);
 const readMigration = (file: string): string =>
   readFileSync(root(`supabase/migrations/${file}`), 'utf8');
+const seatMoveHotfixSql = readMigration(
+  '20260910051125_the_seat_move_door_the_engine_calls_exists.sql'
+);
 const expansionSql = readMigration('20260910042007_stage_b_forward_authority_expansion.sql');
 const repairSql = readMigration('20260910042020_stage_b_exact_precondition_repairs.sql');
 const contractionSql = readMigration('20260910042112_stage_b_current_postimage_contraction.sql');
@@ -578,7 +581,26 @@ describe('tournament seat exits have one hard authority', () => {
     expect(atomicMove).toContain('INSERT INTO public.tournament_seat_move_receipts');
     expect(atomicMove).toContain('fn_ca_open_tournament_seat_exit_authority');
     expect(atomicMove).toContain('fn_ca_close_tournament_seat_exit_authority');
-    expect(sql).toContain('BEFORE UPDATE OR DELETE ON public.tournament_seat_move_receipts');
+    expect(seatMoveHotfixSql).toContain(
+      'BEFORE UPDATE OR DELETE ON public.tournament_seat_move_receipts'
+    );
+    expect(expansionSql).toContain('stage_b_move_receipt_preimage');
+    expect(contractionSql).toContain('stage_b_contraction_move_receipt_preimage');
+    expect(contractionSql).toContain(
+      'Stage-B contraction changed an immutable seat-move receipt preimage'
+    );
+    const receiptLock = contractionSql.indexOf(
+      'LOCK TABLE public.tournament_seat_exit_authorizations,'
+    );
+    const firstMoveReplacement = contractionSql.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_open_tournament_seat_exit_authority('
+    );
+    expect(receiptLock).toBeGreaterThan(-1);
+    expect(receiptLock).toBeLessThan(firstMoveReplacement);
+    expect(contractionSql.slice(receiptLock, firstMoveReplacement)).toContain(
+      'IN SHARE MODE NOWAIT;'
+    );
+    expect(contractionSql).not.toMatch(/receipt_count\s*=\s*(?:44|60)\b/);
   });
 
   it('makes the manager call one retry-safe RPC instead of split writes', () => {

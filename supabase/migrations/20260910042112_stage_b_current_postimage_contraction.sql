@@ -24,6 +24,47 @@ SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '300s';
 SET LOCAL transaction_timeout = '600s';
 
+-- #1's receipt proof ended with #1's transaction. Reacquire a writer-blocking
+-- table lock at this final-authority boundary and snapshot the complete dynamic
+-- preimage before replacing any seat-move function. No production count is
+-- pinned: every receipt that exists when #5 begins must exist byte-for-byte
+-- when #5 commits.
+DO $require_move_receipt_preimage$
+BEGIN
+  IF to_regclass('public.tournament_seat_exit_authorizations') IS NULL
+     OR to_regclass('public.tournament_seat_move_receipts') IS NULL THEN
+    RAISE EXCEPTION
+      'Stage-B contraction requires both adopted seat-move hotfix tables'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$require_move_receipt_preimage$;
+
+LOCK TABLE public.tournament_seat_exit_authorizations,
+           public.tournament_seat_move_receipts
+  IN SHARE MODE NOWAIT;
+
+DO $require_quiescent_move_capability$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.tournament_seat_exit_authorizations) THEN
+    RAISE EXCEPTION
+      'Stage-B contraction found a live seat-exit authority after taking the hotfix table locks'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$require_quiescent_move_capability$;
+
+CREATE TEMP TABLE stage_b_contraction_move_receipt_preimage
+ON COMMIT DROP
+AS
+SELECT count(*)::bigint AS receipt_count,
+       encode(extensions.digest(COALESCE(
+         string_agg(
+           encode(extensions.digest(to_jsonb(r)::text,'sha256'),'hex'),''
+           ORDER BY r.request_id),''
+       ),'sha256'),'hex') AS receipt_fingerprint
+  FROM public.tournament_seat_move_receipts r;
+
 -- This migration is composed over 20260910035435. Authenticate the scoped
 -- settlement-lane primitives before replacing any runtime function: accepting
 -- a missing, privileged, or drifted helper would silently restore the global
@@ -9848,6 +9889,34 @@ BEGIN
   END IF;
 END;
 $verify_current_postimage_contraction$;
+
+DO $prove_move_receipt_preimage_preserved$
+DECLARE
+  v_expected_count bigint;
+  v_expected_fingerprint text;
+  v_current_count bigint;
+  v_current_fingerprint text;
+BEGIN
+  SELECT p.receipt_count,p.receipt_fingerprint
+    INTO STRICT v_expected_count,v_expected_fingerprint
+    FROM pg_temp.stage_b_contraction_move_receipt_preimage p;
+  SELECT count(*)::bigint,
+         encode(extensions.digest(COALESCE(
+           string_agg(
+             encode(extensions.digest(to_jsonb(r)::text,'sha256'),'hex'),''
+             ORDER BY r.request_id),''
+         ),'sha256'),'hex')
+    INTO v_current_count,v_current_fingerprint
+    FROM public.tournament_seat_move_receipts r;
+  IF v_current_count IS DISTINCT FROM v_expected_count
+     OR v_current_fingerprint IS DISTINCT FROM v_expected_fingerprint
+     OR EXISTS (SELECT 1 FROM public.tournament_seat_exit_authorizations) THEN
+    RAISE EXCEPTION
+      'Stage-B contraction changed an immutable seat-move receipt preimage'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$prove_move_receipt_preimage_preserved$;
 
 COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(
   integer,integer,boolean) IS

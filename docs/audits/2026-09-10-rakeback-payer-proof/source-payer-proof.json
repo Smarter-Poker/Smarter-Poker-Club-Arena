@@ -1,7 +1,23 @@
 {
-  "captured_at": "2026-09-10T07:34:28.258Z",
-  "scope": "Prospective primitive only; captured financial guard subset, no production/wrapper/UI completeness claim",
-  "passed": 13,
+  "captured_at": "2026-09-10T13:54:25.226Z",
+  "runtime": {
+    "node": "v24.15.0",
+    "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
+  },
+  "inputs": {
+    "fixture.sql": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d",
+    "money-guards.sql": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958",
+    "source-facts-schema-fixture.sql": "57bbca1a0e9a4c52ab1976c09b72e9e08444c723d5fbdd1a4e08e8940a31cafd",
+    "source-payer-proposal.sql": "7e7fef180dd8b53a07063de5b458f12f7034ca3db05242962d86cfe687a04cce",
+    "source-payer-wrappers.sql": "a02a050c887e171099b19051db0584bdb208170bbde37d77c51f9ee36fada7bf",
+    "union-auth-fixture.sql": "c50147d75c0aa3ab34fc81c88fa048d29ac86dd1f189abc14f6b7d7a4612d1e1",
+    "run-local.sh": "480d9a98e6461609f18112c09353d018c39186629878ec1ba5e492dbbd2ca5b0",
+    "source-payer-probe.mjs": "4a55f5e694aab47b6ccbdc02fa617069f167bc8dc1bbe0cb8028495422f02934",
+    "source-wrapper-probe.mjs": "ba10312096dedd3594864020601bfdf211f6c408c8b10dbce9161e2c4bb99da9",
+    "source-wrapper-review-probe.mjs": "c99596b0d83c68a9abb83b42b4ab85aa8e2527280237e3bd6a36d171abb6fe01"
+  },
+  "scope": "Prospective source payer and direct wrappers; captured financial guard subset, no full owner/Union calendar/funding/cascade/UI or production completeness claim",
+  "passed": 31,
   "results": [
     {
       "name": "mixed captured payers survive current assignment change and preserve treasury",
@@ -40,12 +56,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [64973]
+        "blockers": [91802]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [64974]
+        "blockers": [91803]
       }
     },
     {
@@ -66,6 +82,133 @@
     },
     {
       "name": "API roles cannot mutate source evidence or directly invoke internal payer",
+      "pass": true
+    },
+    {
+      "name": "claim discovers canonical source weeks and read model subtracts immutable cash receipts",
+      "pass": true
+    },
+    {
+      "name": "exact claim request replay returns original result despite later sources and changed scope refuses",
+      "pass": true
+    },
+    {
+      "name": "legacy browser mutation retires at cutover while source claim and close share one receipt",
+      "pass": true
+    },
+    {
+      "evidence": "claim_batch_observed_overlap",
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [91812]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [91813]
+      }
+    },
+    {
+      "name": "observed claim versus batch lock overlap pays only the captured source once",
+      "pass": true
+    },
+    {
+      "name": "captured production union overseer authorizes nested source payer and rejects unrelated actor",
+      "pass": true
+    },
+    {
+      "name": "union full-week selection never expands a partial window into another entitlement",
+      "pass": true
+    },
+    {
+      "name": "claim receipt failure rolls all payments and discovery back together",
+      "pass": true
+    },
+    {
+      "name": "claim receipts reject even owner rewrites and API direct mutation",
+      "pass": true
+    },
+    {
+      "name": "batch attempt ordering skips settled weeks and does not starve a funded player behind a short payer",
+      "pass": true
+    },
+    {
+      "evidence": "round3_close_observed_overlap",
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [91822]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [91823]
+      }
+    },
+    {
+      "name": "observed authenticated Round 3 versus close shares source payment identity",
+      "pass": true
+    },
+    {
+      "name": "one hundred sequential fractional accrual and pay attempts preserve every funded cumulative cent",
+      "pass": true
+    },
+    {
+      "evidence": "same_uuid_request_observed_overlap",
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [91841]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [91842]
+      }
+    },
+    {
+      "name": "same request UUID observed concurrency returns byte-equivalent original receipt",
+      "pass": true
+    },
+    {
+      "evidence": "batch_budget_scope_wait",
+      "wait": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [91849]
+      }
+    },
+    {
+      "name": "batch budget permits its first due attempt after an observed long scope wait",
+      "pass": true
+    },
+    {
+      "name": "expected actor mismatch refuses a stale account claim before payment",
+      "pass": true
+    },
+    {
+      "name": "valid seventy-sixty rate source retains a fractional liability without paying an unearned cent",
+      "pass": true
+    },
+    {
+      "evidence": "all_clubs_before_period_or_wallet",
+      "wait": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [91875]
+      }
+    },
+    {
+      "name": "multi-club multi-week claim admits every club before taking its first period or wallet lock",
+      "pass": true
+    },
+    {
+      "name": "synthetic generation and payload binding excludes unmarked and mismatched sources without a timestamp admission rule",
+      "pass": true
+    },
+    {
+      "name": "early period refusals preserve identity and explicit zero payout for claim validation",
       "pass": true
     }
   ]

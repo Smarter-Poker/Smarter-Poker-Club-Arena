@@ -17,6 +17,8 @@ if [ "$PAYER_MODE" = after ]; then "$PAYER_BIN/psql" -X -v ON_ERROR_STOP=1 -q -f
 if [ "$PAYER_MODE" = source ]; then
  "$PAYER_BIN/psql" -X -v ON_ERROR_STOP=1 -q -f "$HERE/source-facts-schema-fixture.sql"
  "$PAYER_BIN/psql" -X -v ON_ERROR_STOP=1 -q -f "$HERE/source-payer-proposal.sql"
+ "$PAYER_BIN/psql" -X -v ON_ERROR_STOP=1 -q -f "$HERE/source-payer-wrappers.sql"
+ "$PAYER_BIN/psql" -X -v ON_ERROR_STOP=1 -q -f "$HERE/union-auth-fixture.sql"
 fi
 export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"
 if [ "$PAYER_MODE" = source ]; then node "$HERE/source-payer-probe.mjs"; elif [ "$PAYER_MODE" = retirement ]; then node "$HERE/retirement-probe.mjs"; else node "$HERE/probe.mjs" "$PAYER_MODE"; fi

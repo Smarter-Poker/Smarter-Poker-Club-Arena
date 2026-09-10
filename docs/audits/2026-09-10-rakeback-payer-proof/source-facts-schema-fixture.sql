@@ -1,3 +1,4 @@
+CREATE TABLE public.hand_atomic_commits(hand_id uuid PRIMARY KEY,post_commit_payload_hash text NOT NULL,commission_capture_version integer CHECK(commission_capture_version IS NULL OR commission_capture_version=1),committed_at timestamptz NOT NULL);
 -- PROPOSAL ONLY. Prospective immutable cash commission authority; no backfill.
 BEGIN;
 SET LOCAL lock_timeout='250ms';

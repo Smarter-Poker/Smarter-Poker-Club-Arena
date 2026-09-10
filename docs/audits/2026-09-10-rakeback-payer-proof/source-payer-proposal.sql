@@ -1,6 +1,15 @@
 -- Prospective source payer prototype. Not a production migration.
 -- Requires the independently captured cash commission source contract.
 BEGIN;
+CREATE TABLE public.ca_rakeback_source_periods (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid NOT NULL,user_id uuid NOT NULL,
+ period_start date NOT NULL,period_end date NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(club_id,user_id,period_start),
+ CHECK(extract(isodow FROM period_start)=1 AND period_end=period_start+6)
+);
+ALTER TABLE public.ca_rakeback_source_periods ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.ca_rakeback_source_periods FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.ca_rakeback_source_periods TO service_role;
 CREATE TABLE public.ca_rakeback_source_accruals (
  hand_id uuid NOT NULL,player_id uuid NOT NULL,club_id uuid NOT NULL,payer_user_id uuid,
  period_start date NOT NULL,period_end date NOT NULL,source_payload_hash text NOT NULL,
@@ -13,7 +22,7 @@ CREATE TABLE public.ca_rakeback_source_accruals (
  CHECK(exact_entitlement::text NOT IN ('NaN','Infinity','-Infinity'))
 );
 CREATE TABLE public.ca_rakeback_source_payments (
- id uuid PRIMARY KEY,period_id uuid NOT NULL REFERENCES public.rakeback_periods(id),
+ id uuid PRIMARY KEY,period_id uuid NOT NULL REFERENCES public.ca_rakeback_source_periods(id),
  player_id uuid NOT NULL,club_id uuid NOT NULL,payer_user_id uuid NOT NULL,
  period_start date NOT NULL,period_end date NOT NULL,amount numeric NOT NULL,
  cumulative_entitlement numeric NOT NULL,cumulative_paid numeric NOT NULL,
@@ -23,7 +32,7 @@ CREATE TABLE public.ca_rakeback_source_payments (
  created_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(club_id,player_id,payer_user_id,period_start,source_digest),
  CHECK(amount>0 AND amount=round(amount,2)),
- CHECK(cumulative_paid=round(cumulative_entitlement,2)),
+ CHECK(cumulative_paid=floor(cumulative_entitlement*100)/100),
  CHECK(amount::text NOT IN ('NaN','Infinity','-Infinity'))
 );
 ALTER TABLE public.ca_rakeback_source_accruals ENABLE ROW LEVEL SECURITY;
@@ -36,6 +45,8 @@ LANGUAGE plpgsql SET search_path TO public,pg_temp AS $f$
 BEGIN RAISE EXCEPTION 'Captured rakeback evidence is immutable' USING ERRCODE='55000'; END $f$;
 REVOKE ALL ON FUNCTION public.fn_ca_rakeback_source_evidence_immutable()
  FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER rakeback_source_period_immutable BEFORE UPDATE OR DELETE ON public.ca_rakeback_source_periods FOR EACH ROW EXECUTE FUNCTION public.fn_ca_rakeback_source_evidence_immutable();
+CREATE TRIGGER rakeback_source_period_no_truncate BEFORE TRUNCATE ON public.ca_rakeback_source_periods FOR EACH STATEMENT EXECUTE FUNCTION public.fn_ca_rakeback_source_evidence_immutable();
 CREATE TRIGGER rakeback_source_accrual_immutable BEFORE UPDATE OR DELETE
  ON public.ca_rakeback_source_accruals FOR EACH ROW EXECUTE FUNCTION public.fn_ca_rakeback_source_evidence_immutable();
 CREATE TRIGGER rakeback_source_payment_immutable BEFORE UPDATE OR DELETE
@@ -65,12 +76,12 @@ DECLARE
  v_payer_after numeric;v_player_after numeric;v_auto text;v_id uuid;v_tx uuid;v_leg uuid;
  v_receipts jsonb:='[]';v_total numeric:=0;v_accrued integer:=0;v_deferred jsonb:='[]';
 BEGIN
- SELECT club_id INTO v_club FROM public.rakeback_periods WHERE id=p_period_id;
- IF NOT FOUND THEN RETURN jsonb_build_object('success',false,'error','period_not_found'); END IF;
+ SELECT club_id INTO v_club FROM public.ca_rakeback_source_periods WHERE id=p_period_id;
+ IF NOT FOUND THEN RETURN jsonb_build_object('success',false,'error','period_not_found','period_id',p_period_id,'new_payout',0,'source_accruals_added',0,'paid_receipts','[]'::jsonb,'deferred',jsonb_build_array(jsonb_build_object('reason','period_not_found')),'source_final',false); END IF;
  -- Every multi-period wrapper must acquire ALL involved clubs, sorted, before
  -- taking any period or wallet lock. This primitive covers a single-club caller.
  PERFORM public.fn_lock_rakeback_payer_clubs(ARRAY[v_club]);
- SELECT * INTO v_period FROM public.rakeback_periods WHERE id=p_period_id FOR UPDATE;
+ SELECT * INTO v_period FROM public.ca_rakeback_source_periods WHERE id=p_period_id FOR UPDATE;
  IF NOT FOUND OR v_period.club_id IS DISTINCT FROM v_club THEN
   RAISE EXCEPTION 'Rakeback period changed during scope lock' USING ERRCODE='40001';
  END IF;
@@ -81,27 +92,29 @@ BEGIN
    AND public.fn_is_union_overseer(uc.union_id,auth.uid())))) THEN
   RAISE EXCEPTION 'not_authorised' USING ERRCODE='42501';
  END IF;
- IF v_period.user_id IS NULL OR v_period.status NOT IN ('pending','paid') THEN
-  RETURN jsonb_build_object('success',false,'deferred','invalid_period_state');
+ IF v_period.user_id IS NULL THEN
+  RETURN jsonb_build_object('success',false,'period_id',p_period_id,'new_payout',0,'source_accruals_added',0,'paid_receipts','[]'::jsonb,'deferred',jsonb_build_array(jsonb_build_object('reason','invalid_period_state')),'source_final',false);
  END IF;
  IF v_period.period_end>=(now() AT TIME ZONE 'UTC')::date THEN
-  RETURN jsonb_build_object('success',false,'deferred','period_not_closed');
+  RETURN jsonb_build_object('success',false,'period_id',p_period_id,'new_payout',0,'source_accruals_added',0,'paid_receipts','[]'::jsonb,'deferred',jsonb_build_array(jsonb_build_object('reason','period_not_closed')),'source_final',false);
  END IF;
  SELECT * INTO v_authority FROM public.ca_cash_commission_authority WHERE singleton;
- IF NOT FOUND THEN
-  RETURN jsonb_build_object('success',false,'deferred','source_contract_not_active');
+ IF NOT FOUND OR v_authority.contract_version<>1 THEN
+  RETURN jsonb_build_object('success',false,'period_id',p_period_id,'new_payout',0,'source_accruals_added',0,'paid_receipts','[]'::jsonb,'deferred',jsonb_build_array(jsonb_build_object('reason','source_contract_not_active')),'source_final',false);
  END IF;
  IF public.fn_platform_frozen() THEN
-  RETURN jsonb_build_object('success',false,'deferred','platform_frozen');
+  RETURN jsonb_build_object('success',false,'period_id',p_period_id,'new_payout',0,'source_accruals_added',0,'paid_receipts','[]'::jsonb,'deferred',jsonb_build_array(jsonb_build_object('reason','platform_frozen')),'source_final',false);
  END IF;
 
- -- Sources captured before the prospective authority boundary are ineligible.
+ -- Admission is the immutable receipt generation and accepted payload hash, not an inferred timestamp boundary.
  -- Legacy period estimates and current membership rates are never a payer input.
  FOR f IN SELECT facts.*,s.accepted_payload_hash,s.settled_at
   FROM public.ca_cash_commission_facts facts
   JOIN public.ca_cash_commission_sources s USING(hand_id)
+ JOIN public.hand_atomic_commits receipt ON receipt.hand_id=s.hand_id
+ AND receipt.commission_capture_version=1 AND receipt.post_commit_payload_hash=s.accepted_payload_hash
+
   WHERE facts.booked_club_id=v_club AND facts.player_id=v_period.user_id
-   AND s.accepted_at>=v_authority.activated_at
    AND s.settled_at>=(v_period.period_start::timestamp AT TIME ZONE 'UTC')
    AND s.settled_at<((v_period.period_end+1)::timestamp AT TIME ZONE 'UTC')
   ORDER BY facts.hand_id,facts.player_id
@@ -146,7 +159,7 @@ BEGIN
   SELECT coalesce(sum(amount),0) INTO v_paid FROM public.ca_rakeback_source_payments p
    WHERE p.club_id=v_club AND p.player_id=v_period.user_id AND p.payer_user_id=g.payer_user_id
     AND p.period_start=v_period.period_start AND p.period_end=v_period.period_end;
-  v_amount:=round(g.exact_total,2)-v_paid;
+  v_amount:=floor(g.exact_total*100)/100-v_paid;
   IF v_amount<0 THEN RAISE EXCEPTION 'Rakeback receipts exceed exact captured entitlement' USING ERRCODE='23514'; END IF;
   CONTINUE WHEN v_amount=0;
   PERFORM 1 FROM public.club_members WHERE club_id=v_club

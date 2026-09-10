@@ -56,8 +56,10 @@ on:
 # The key is intentionally static because there is one production resource:
 # push and repository_dispatch must serialize even if GitHub gives the two
 # event types different refs.
-# Historical runs from an older key are still harmless: the host lock and
-# compare-and-swap reject any candidate whose observed predecessor changed.
+# One-time adoption rule: every run created from the former ref-scoped key must
+# be terminal before this definition first reaches main. That older definition
+# did not take the host lock. After adoption, every event shares this static key
+# and the host lock plus compare-and-swap provide the second serialization layer.
 concurrency:
   group: publish-club-arena-production
   cancel-in-progress: false
@@ -865,15 +867,16 @@ jobs:
           FINAL="$ROOT/releases/$SHA"
           NEXT="$ROOT/.current.$STAGE_NAME"
           CHECK="$ROOT/incoming/.manifest-check.$STAGE_NAME"
+          LEGACY_MANIFEST="$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"
           FONT_NEXT="$ROOT/pool/fonts/.fonts.css.$STAGE_NAME"
           for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool" "$ROOT/pool/assets" "$ROOT/pool/fonts"; do
             [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
           done
           [ ! -L "$ROOT/.publish.lock" ]
-          for TEMPORARY in "$NEXT" "$CHECK" "$FONT_NEXT"; do
+          for TEMPORARY in "$NEXT" "$CHECK" "$LEGACY_MANIFEST" "$FONT_NEXT"; do
             [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ]
           done
-          trap 'rm -f -- "$NEXT" "$CHECK" "$FONT_NEXT"' EXIT
+          trap 'rm -f -- "$NEXT" "$CHECK" "$LEGACY_MANIFEST" "$FONT_NEXT"' EXIT
           exec 9>"$ROOT/.publish.lock"
           flock -w 45 9
 
@@ -898,6 +901,133 @@ jobs:
           PYTHON_BUILD_INFO
           }
 
+          verify_release_identity() {
+            local release_dir="$1"
+            local expected_sha="$2"
+            local repository="$3"
+            python3 - \
+              "$release_dir/ca-provenance.json" \
+              "$release_dir/build-info.json" \
+              "$expected_sha" \
+              "$repository" <<'PYTHON_RELEASE_IDENTITY'
+          import json
+          import re
+          import sys
+
+          provenance_path, build_info_path, expected_sha, repository = sys.argv[1:]
+          try:
+              with open(provenance_path, encoding='utf-8') as handle:
+                  provenance = json.load(handle)
+              with open(build_info_path, encoding='utf-8') as handle:
+                  build_info = json.load(handle)
+          except (OSError, UnicodeError, json.JSONDecodeError) as error:
+              raise SystemExit(f'release identity is absent or malformed: {error}')
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          require(type(provenance) is dict, 'release provenance is not one JSON object')
+          require(type(build_info) is dict, 'release build-info is not one JSON object')
+          require(type(provenance.get('schema')) is int and provenance['schema'] == 1,
+                  'release provenance schema is invalid')
+          require(provenance.get('commit') == expected_sha,
+                  'release provenance does not match its source SHA')
+          require(provenance.get('builtBy') == 'github-actions',
+                  'release was not built by GitHub Actions')
+          require(provenance.get('dirty') is False,
+                  'release provenance is dirty')
+          require(provenance.get('historyComplete') is True,
+                  'release provenance has incomplete history')
+          require(type(provenance.get('behindMain')) is int and provenance['behindMain'] == 0,
+                  'release provenance was behind protected main')
+          require(type(provenance.get('aheadMain')) is int and provenance['aheadMain'] == 0,
+                  'release provenance was ahead of protected main')
+          require(build_info.get('ca_sha') == expected_sha,
+                  'release build-info does not match its source SHA')
+          require(build_info.get('built_by') == 'publish-club-arena.yml',
+                  'release build-info names the wrong publisher')
+          require(type(build_info.get('built_at')) is str and
+                  re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', build_info['built_at']) is not None,
+                  'release build-info has no UTC build time')
+          require(type(build_info.get('run_id')) is str and
+                  re.fullmatch(r'[0-9]+', build_info['run_id']) is not None,
+                  'release build-info names no exact publisher run')
+          expected_run = f"https://github.com/{repository}/actions/runs/{build_info['run_id']}"
+          require(provenance.get('ciRun') == expected_run,
+                  'release provenance and build-info name different publisher runs')
+          PYTHON_RELEASE_IDENTITY
+          }
+
+          verify_complete_manifest() {
+            local release_dir="$1"
+            local check_path="$2"
+            (
+              cd "$release_dir"
+              find . -type f ! -path './.release-manifest.sha256' -print0 \
+                | LC_ALL=C sort -z \
+                | xargs -0 sha256sum > "$check_path"
+            )
+            cmp -s "$check_path" "$release_dir/.release-manifest.sha256"
+            rm -f -- "$check_path"
+          }
+
+          seal_current_release_for_rollback() {
+            local current_pointer="$1"
+            local release_dir="$2"
+            local expected_sha="$3"
+            local repository="$4"
+            local staged_manifest="$5"
+            local check_path="$6"
+            local manifest="$release_dir/.release-manifest.sha256"
+
+            [ -L "$current_pointer" ] && [ "$(readlink "$current_pointer")" = "$release_dir" ]
+            [ -d "$release_dir" ] && [ ! -L "$release_dir" ]
+            if find "$release_dir" -type l -print -quit | grep -q .; then
+              echo 'current rollback release contains a symlink' >&2
+              return 1
+            fi
+            if find "$release_dir" ! -type d ! -type f -print -quit | grep -q .; then
+              echo 'current rollback release contains a special file' >&2
+              return 1
+            fi
+            verify_release_identity "$release_dir" "$expected_sha" "$repository"
+
+            if [ -e "$manifest" ] || [ -L "$manifest" ]; then
+              [ -f "$manifest" ] && [ ! -L "$manifest" ] && [ -s "$manifest" ] \
+                || { echo 'current rollback release manifest is malformed' >&2; return 1; }
+            else
+              [ ! -e "$staged_manifest" ] && [ ! -L "$staged_manifest" ]
+              python3 - "$release_dir" "$staged_manifest" <<'PYTHON_SAME_FILESYSTEM'
+          import os
+          import sys
+
+          if os.stat(sys.argv[1]).st_dev != os.stat(os.path.dirname(sys.argv[2])).st_dev:
+              raise SystemExit('legacy manifest staging is not on the release filesystem')
+          PYTHON_SAME_FILESYSTEM
+              (
+                cd "$release_dir"
+                find . -type f ! -path './.release-manifest.sha256' -print0 \
+                  | LC_ALL=C sort -z \
+                  | xargs -0 sha256sum > "$staged_manifest"
+                test -s "$staged_manifest"
+                sha256sum --strict -c "$staged_manifest" >/dev/null
+                find . -type f ! -path './.release-manifest.sha256' -print0 \
+                  | LC_ALL=C sort -z \
+                  | xargs -0 sha256sum > "$check_path"
+              )
+              cmp -s "$staged_manifest" "$check_path"
+              rm -f -- "$check_path"
+              sync -f "$staged_manifest"
+              [ "$(readlink "$current_pointer")" = "$release_dir" ]
+              mv -Tf "$staged_manifest" "$manifest"
+              sync -f "$release_dir"
+            fi
+
+            (cd "$release_dir" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+            verify_complete_manifest "$release_dir" "$check_path"
+          }
+
           CURRENT_SHA=$(read_exact_build_info_sha "$ROOT/current/build-info.json")
           [ -L "$ROOT/current" ]
           [ "$(readlink "$ROOT/current")" = "$ROOT/releases/$CURRENT_SHA" ]
@@ -905,6 +1035,14 @@ jobs:
             echo "current changed from ${EXPECTED_SHA:0:7} to ${CURRENT_SHA:0:7}; refusing stale activation" >&2
             exit 75
           fi
+          CURRENT_RELEASE="$ROOT/releases/$CURRENT_SHA"
+          seal_current_release_for_rollback \
+            "$ROOT/current" \
+            "$CURRENT_RELEASE" \
+            "$CURRENT_SHA" \
+            "$REPOSITORY" \
+            "$LEGACY_MANIFEST" \
+            "$CHECK"
 
           test -d "$STAGE"
           test -s "$STAGE/.release-manifest.sha256"
@@ -920,18 +1058,7 @@ jobs:
           STAGED_SHA=$(read_exact_build_info_sha "$STAGE/build-info.json")
           [ "$STAGED_SHA" = "$SHA" ]
 
-          verify_complete_manifest() {
-            local release_dir="$1"
-            (
-              cd "$release_dir"
-              find . -type f ! -path './.release-manifest.sha256' -print0 \
-                | LC_ALL=C sort -z \
-                | xargs -0 sha256sum > "$CHECK"
-            )
-            cmp -s "$CHECK" "$release_dir/.release-manifest.sha256"
-            rm -f -- "$CHECK"
-          }
-          verify_complete_manifest "$STAGE"
+          verify_complete_manifest "$STAGE" "$CHECK"
 
           if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
             [ -d "$FINAL" ] && [ ! -L "$FINAL" ]
@@ -945,54 +1072,13 @@ jobs:
               exit 1
             fi
             (cd "$FINAL" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
-            verify_complete_manifest "$FINAL"
+            verify_complete_manifest "$FINAL" "$CHECK"
             # One source commit deliberately produces different envelope bytes
             # on a later build (build time, run id and service-worker deploy
             # stamp). The first complete releases/<sha> is canonical. A retry
             # must validate and reuse it, not demand that a nondeterministic
             # rebuild have the same manifest or replace immutable bytes.
-            python3 - "$FINAL/ca-provenance.json" "$FINAL/build-info.json" "$SHA" "$REPOSITORY" <<'PYTHON'
-          import json
-          import re
-          import sys
-
-          provenance_path, build_info_path, expected_sha, repository = sys.argv[1:]
-          with open(provenance_path, encoding='utf-8') as handle:
-              provenance = json.load(handle)
-          with open(build_info_path, encoding='utf-8') as handle:
-              build_info = json.load(handle)
-
-          def require(condition, message):
-              if not condition:
-                  raise SystemExit(message)
-
-          require(type(provenance) is dict, 'sealed release provenance is not one JSON object')
-          require(type(build_info) is dict, 'sealed release build-info is not one JSON object')
-          require(type(provenance.get('schema')) is int and provenance['schema'] == 1,
-                  'sealed release provenance schema is invalid')
-          require(provenance.get('commit') == expected_sha,
-                  'sealed release provenance does not match its source SHA')
-          require(provenance.get('builtBy') == 'github-actions',
-                  'sealed release was not built by GitHub Actions')
-          require(provenance.get('dirty') is False,
-                  'sealed release provenance is dirty')
-          require(provenance.get('historyComplete') is True,
-                  'sealed release provenance has incomplete history')
-          require(type(provenance.get('behindMain')) is int and provenance['behindMain'] == 0,
-                  'sealed release provenance was behind protected main')
-          require(type(provenance.get('aheadMain')) is int and provenance['aheadMain'] == 0,
-                  'sealed release provenance was ahead of protected main')
-          require(build_info.get('ca_sha') == expected_sha,
-                  'sealed release build-info does not match its source SHA')
-          require(build_info.get('built_by') == 'publish-club-arena.yml',
-                  'sealed release build-info names the wrong publisher')
-          require(type(build_info.get('run_id')) is str and
-                  re.fullmatch(r'[0-9]+', build_info['run_id']) is not None,
-                  'sealed release build-info names no exact publisher run')
-          expected_run = f"https://github.com/{repository}/actions/runs/{build_info['run_id']}"
-          require(provenance.get('ciRun') == expected_run,
-                  'sealed release provenance and build-info name different publisher runs')
-          PYTHON
+            verify_release_identity "$FINAL" "$SHA" "$REPOSITORY"
             echo "reusing the already sealed immutable release for ${SHA:0:7}"
             rm -rf -- "$STAGE"
           else
@@ -1008,6 +1094,35 @@ jobs:
           # changes in the same atomic rename as the release.
           test -d "$FINAL/assets" && test -d "$FINAL/fonts"
           test -f "$FINAL/fonts/fonts.css"
+
+          adopt_legacy_font_stylesheet_pointer() {
+            local pointer="$1"
+            local current_stylesheet="$2"
+            local staged_pointer="$3"
+
+            # The publisher that preceded this transaction copied fonts.css
+            # into the additive pool as a regular file. Adopt that one known
+            # legacy shape only when its bytes are exactly what `current`
+            # already serves. Every other pre-existing shape fails closed.
+            if [ -L "$pointer" ]; then
+              [ "$(readlink "$pointer")" = "$current_stylesheet" ] \
+                || { echo 'mutable font stylesheet pointer is malformed' >&2; return 1; }
+              return 0
+            fi
+            [ -e "$pointer" ] || return 0
+            [ -f "$pointer" ] && [ ! -L "$pointer" ] \
+              || { echo 'legacy mutable font stylesheet is not a regular file' >&2; return 1; }
+            [ -f "$current_stylesheet" ] && [ ! -L "$current_stylesheet" ] \
+              || { echo 'current release font stylesheet is not a regular file' >&2; return 1; }
+            cmp -s "$pointer" "$current_stylesheet" \
+              || { echo 'legacy mutable font stylesheet differs from current release' >&2; return 1; }
+            [ ! -e "$staged_pointer" ] && [ ! -L "$staged_pointer" ] \
+              || { echo 'font stylesheet staging path already exists' >&2; return 1; }
+            ln -s "$current_stylesheet" "$staged_pointer"
+            mv -Tf "$staged_pointer" "$pointer"
+            [ -L "$pointer" ] && [ "$(readlink "$pointer")" = "$current_stylesheet" ] \
+              || { echo 'legacy font stylesheet adoption did not create the canonical pointer' >&2; return 1; }
+          }
 
           assert_additive_pool_has_no_collision() {
             local source_root="$1"
@@ -1049,11 +1164,10 @@ jobs:
             echo 'additive runtime pool contains a symlink' >&2
             exit 1
           fi
-          if [ -e "$ROOT/pool/fonts/fonts.css" ] || [ -L "$ROOT/pool/fonts/fonts.css" ]; then
-            [ -L "$ROOT/pool/fonts/fonts.css" ] \
-              && [ "$(readlink "$ROOT/pool/fonts/fonts.css")" = "$ROOT/current/fonts/fonts.css" ] \
-              || { echo 'mutable font stylesheet pointer is malformed' >&2; exit 1; }
-          fi
+          adopt_legacy_font_stylesheet_pointer \
+            "$ROOT/pool/fonts/fonts.css" \
+            "$ROOT/current/fonts/fonts.css" \
+            "$FONT_NEXT"
           assert_additive_pool_has_no_collision "$FINAL/assets" "$ROOT/pool/assets"
           assert_additive_pool_has_no_collision "$FINAL/fonts" "$ROOT/pool/fonts" 'fonts.css'
           rsync -a --ignore-existing --fsync "$FINAL/assets/" "$ROOT/pool/assets/"
@@ -1123,6 +1237,7 @@ jobs:
           rm -rf -- "$ROOT/incoming/$STAGE_NAME"
           rm -f -- "$ROOT/.current.$STAGE_NAME"
           rm -f -- "$ROOT/incoming/.manifest-check.$STAGE_NAME"
+          rm -f -- "$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"
           rm -f -- "$ROOT/pool/fonts/.fonts.css.$STAGE_NAME"
           sync -f "$ROOT"
           REMOTE_CLEANUP

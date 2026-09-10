@@ -13,7 +13,8 @@
 #       the World Hub sync used to keep one previous generation for exactly
 #       this reason (runtimeAssetRetention). The pool never overwrites or
 #       age-reuses a URL whose immutable response may still be cached.
-# Rollback: point `current` at an older release. Ten are kept.
+# Recovery: publish a reviewed forward revert. Ten sealed releases are retained
+# so the owning transaction can restore its exact predecessor on failed proof.
 ca-static.smarter.poker {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"

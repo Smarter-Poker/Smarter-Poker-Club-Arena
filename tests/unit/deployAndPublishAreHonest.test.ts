@@ -163,24 +163,40 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
       '(cd "$FINAL" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)'
     );
     expect(existingRelease).toContain('verify_complete_manifest "$FINAL"');
-    expect(existingRelease).toContain(
-      'python3 - "$FINAL/ca-provenance.json" "$FINAL/build-info.json" "$SHA" "$REPOSITORY"'
-    );
-    expect(existingRelease).toContain("provenance.get('schema')");
-    expect(existingRelease).toContain("provenance.get('commit') == expected_sha");
-    expect(existingRelease).toContain("provenance.get('builtBy') == 'github-actions'");
-    expect(existingRelease).toContain("provenance.get('dirty') is False");
-    expect(existingRelease).toContain("provenance.get('historyComplete') is True");
-    expect(existingRelease).toContain("provenance['behindMain'] == 0");
-    expect(existingRelease).toContain("provenance['aheadMain'] == 0");
-    expect(existingRelease).toContain("build_info.get('ca_sha') == expected_sha");
-    expect(existingRelease).toContain("build_info.get('built_by') == 'publish-club-arena.yml'");
-    expect(existingRelease).toContain("re.fullmatch(r'[0-9]+', build_info['run_id'])");
-    expect(existingRelease).toContain(
+    expect(existingRelease).toContain('verify_release_identity "$FINAL" "$SHA" "$REPOSITORY"');
+    expect(origin).toContain("provenance.get('schema')");
+    expect(origin).toContain("provenance.get('commit') == expected_sha");
+    expect(origin).toContain("provenance.get('builtBy') == 'github-actions'");
+    expect(origin).toContain("provenance.get('dirty') is False");
+    expect(origin).toContain("provenance.get('historyComplete') is True");
+    expect(origin).toContain("provenance['behindMain'] == 0");
+    expect(origin).toContain("provenance['aheadMain'] == 0");
+    expect(origin).toContain("build_info.get('ca_sha') == expected_sha");
+    expect(origin).toContain("build_info.get('built_by') == 'publish-club-arena.yml'");
+    expect(origin).toContain("re.fullmatch(r'[0-9]+', build_info['run_id'])");
+    expect(origin).toContain(
       'expected_run = f"https://github.com/{repository}/actions/runs/{build_info[\'run_id\']}"'
     );
-    expect(existingRelease).toContain("provenance.get('ciRun') == expected_run");
+    expect(origin).toContain("provenance.get('ciRun') == expected_run");
     expect(existingRelease).toContain('rm -rf -- "$STAGE"');
+  });
+
+  it('seals the exact pre-manifest current release for first-adoption rollback under the activation lock', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const lock = origin.indexOf('flock -w 45 9');
+    const seal = origin.indexOf('seal_current_release_for_rollback \\');
+    const pool = origin.indexOf('assert_additive_pool_has_no_collision "$FINAL/assets"');
+    const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"');
+    expect(seal).toBeGreaterThan(lock);
+    expect(pool).toBeGreaterThan(seal);
+    expect(swap).toBeGreaterThan(pool);
+    expect(origin).toContain(
+      'verify_release_identity "$release_dir" "$expected_sha" "$repository"'
+    );
+    expect(origin).toContain('legacy manifest staging is not on the release filesystem');
+    expect(origin).toContain('sync -f "$staged_manifest"');
+    expect(origin).toContain('mv -Tf "$staged_manifest" "$manifest"');
+    expect(origin).toContain('rm -f -- "$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"');
   });
 
   it('carries the hidden release seal through the artifact courier', () => {
@@ -276,7 +292,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).toContain('verify_complete_manifest "$STAGE"');
     expect(origin).toContain('verify_complete_manifest "$FINAL"');
     expect(origin).toContain("find . -type f ! -path './.release-manifest.sha256' -print0");
-    expect(origin).toContain('cmp -s "$CHECK" "$release_dir/.release-manifest.sha256"');
+    expect(origin).toContain('cmp -s "$check_path" "$release_dir/.release-manifest.sha256"');
   });
 
   it('bounds every job and every origin transport operation', () => {

@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Hand Settlement Retains Its Dealt Seat Generation
+
+A later terminal writer replaced the earlier exact-seat checks. The forward restoration preserves current terminal behavior and binds stack/time-bank writes to the dealt row and join timestamp. Database expansion applied as 20260909234808 with exact definitions and ACLs verified. Real PostgreSQL regression, rollback, replay and full hand-boundary checks pass. Engine identity capture is built; publication and complete accounting Phase 3 acceptance remain pending. Re-read: yes. See docs/audits/2026-09-09-hand-generation-overwrite-checkpoint.md.
+
 ## 2026-09-09: Initial Registration Retains Its Original Operation
 
 The authenticated wallet registration path now binds a durable request UUID to the caller and tournament through the shared immutable entry receipt protocol. The existing atomic funding core and new receipt commit together. Client lost responses replay that exact request and no longer infer success from a current roster row. Seven regressions reproduced the gap; 115 client tests, TypeScript and the isolated PostgreSQL harness pass, including ten new wrapper assertions. Re-read: yes. The additive function is applied; integrated build, normal publication, legacy alias retirement and full Phase 3 acceptance remain pending. See docs/changelog/2026-09-09-tournament-registration-operation-receipts.md.

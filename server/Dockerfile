@@ -37,6 +37,10 @@ EXPOSE 8080
 # host supervisor — reports the same truthful value.
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+# The release seal reads identity from image metadata, not from the mutable
+# runtime environment.  An env file can override ENV, but it cannot rewrite an
+# OCI label on an already-built image.
+LABEL org.opencontainers.image.revision=$GIT_COMMIT_SHA
 
 # 2026-08-15 SELF-HEALING. Without a HEALTHCHECK, Docker's only restart trigger
 # is process exit — so a process that is up but wedged (every table frozen) was

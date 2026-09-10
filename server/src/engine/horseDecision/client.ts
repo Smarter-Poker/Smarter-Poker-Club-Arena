@@ -71,6 +71,19 @@ export class HorseDecisionAbortedError extends Error {
   }
 }
 
+/**
+ * The request remained queued until its action-clock budget expired. This is
+ * not an authority cancellation: the turn may still be current and must take
+ * the caller's fail-safe action instead of being silently abandoned.
+ */
+export class HorseDecisionExpiredError extends Error {
+  override readonly name = 'TimeoutError';
+
+  constructor(message = 'horse decision expired before worker dispatch') {
+    super(message);
+  }
+}
+
 type JobResult =
   | FastHorseDecisionResult
   | DeepHorseDecisionResult
@@ -665,7 +678,7 @@ export class LiveHorseDecisionWorkerClient {
     job.settled = true;
     this.detachAbort(job);
     job.reject(
-      new HorseDecisionAbortedError(
+      new HorseDecisionExpiredError(
         `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
       )
     );

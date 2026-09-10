@@ -1010,9 +1010,8 @@ export class MaintenanceBreak {
    * minute-by-minute scan through the tz database here or hand-rolled DST
    * arithmetic in the workflow - and on the two days a year the arithmetic is
    * wrong, the platform restarts an hour outside its announced break. Every
-   * hour is a window now, so the only question is "when is the next :53", and
-   * every zone the platform cares about is a whole number of hours off UTC, so
-   * that minute is the same instant everywhere.
+   * hour is a window now. UTC setters keep :53 aligned with the deployment
+   * window during repeated local hours and fractional-hour offsets.
    *
    * Anchored to the wall clock and recomputed after every firing, never
    * accumulated: a slow event loop delays one break instead of skewing all of
@@ -1023,8 +1022,7 @@ export class MaintenanceBreak {
       MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
     const now = this.now();
     const next = new Date(now);
-    next.setSeconds(0, 0);
-    next.setMinutes(announceMinute);
+    next.setUTCMinutes(announceMinute, 0, 0);
     let t = next.getTime();
     // Already past this hour's mark (the common case, since we are usually
     // re-arming a moment after firing): take the next hour's.

@@ -1,6 +1,6 @@
 -- Phase 3: eligible funded satellite unregisters use the approved cash rail.
 -- No historical tickets or balances are changed. Preserve the installed start authority.
--- This migration also accepts the cash-aware reserved actual-start definitions.
+-- Follows the actual-start migration installed as 20260909215545; preserves its rules.
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';

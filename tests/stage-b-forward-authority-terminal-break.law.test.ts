@@ -16,7 +16,7 @@ const spinPostimageFile =
   '20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql';
 const settlementLanePostimageFile =
   '20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql';
-const seatMoveHotfixFile = '20260910051125_the_seat_move_door_the_engine_calls_exists.sql';
+const seatMoveHotfixFile = '20260910051447_the_seat_move_door_the_engine_calls_exists.sql';
 
 function stagedMigrationFile(suffix: string): string {
   const matches = readdirSync(resolve(root, 'supabase', 'migrations')).filter((file) =>

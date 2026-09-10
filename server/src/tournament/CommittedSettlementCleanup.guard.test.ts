@@ -25,13 +25,13 @@ const recovery = code(read('src/tournament/tournamentRecovery.ts'));
 const gameServer = code(read('src/GameServer.ts'));
 const managerBase = code(read('src/tournament/TournamentManagerBase.ts'));
 const seatExitSchema = read(
-  '../supabase/migrations/20260910042007_stage_b_forward_authority_expansion.sql'
+  '../supabase/migrations/20260910055856_stage_b_forward_authority_expansion.sql'
 );
 const seatExitRepair = read(
-  '../supabase/migrations/20260910042020_stage_b_exact_precondition_repairs.sql'
+  '../supabase/migrations/20260910055909_stage_b_exact_precondition_repairs.sql'
 );
 const seatExitMigration = read(
-  '../supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'
+  '../supabase/migrations/20260910055955_stage_b_current_postimage_contraction.sql'
 );
 describe('Bubble Protection has no application-layer prepayment path', () => {
   it('records the elimination and leaves Bubble money to the terminal atomic batch', () => {

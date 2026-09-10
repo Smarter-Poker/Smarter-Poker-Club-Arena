@@ -5,11 +5,11 @@ import { sliceSqlStatement } from './helpers/sourceWindow';
 
 const expansionMigration = resolve(
   process.cwd(),
-  'supabase/migrations/20260910042007_stage_b_forward_authority_expansion.sql'
+  'supabase/migrations/20260910055856_stage_b_forward_authority_expansion.sql'
 );
 const finalMigration = resolve(
   process.cwd(),
-  'supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'
+  'supabase/migrations/20260910055955_stage_b_current_postimage_contraction.sql'
 );
 const expansionSql = readFileSync(expansionMigration, 'utf8');
 const finalSql = readFileSync(finalMigration, 'utf8');

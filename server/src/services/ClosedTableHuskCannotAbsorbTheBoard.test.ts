@@ -33,7 +33,7 @@ const SEAT_EXIT_SCHEMA = readFileSync(
   join(
     process.cwd(),
     '..',
-    'supabase/migrations/20260910042007_stage_b_forward_authority_expansion.sql'
+    'supabase/migrations/20260910055856_stage_b_forward_authority_expansion.sql'
   ),
   'utf8'
 );
@@ -41,7 +41,7 @@ const SEAT_EXIT_REPAIR = readFileSync(
   join(
     process.cwd(),
     '..',
-    'supabase/migrations/20260910042020_stage_b_exact_precondition_repairs.sql'
+    'supabase/migrations/20260910055909_stage_b_exact_precondition_repairs.sql'
   ),
   'utf8'
 );

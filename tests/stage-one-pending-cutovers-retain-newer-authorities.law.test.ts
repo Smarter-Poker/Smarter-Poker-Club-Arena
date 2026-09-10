@@ -9,7 +9,7 @@ const cancellation = read('20260909014444_tournament_cancellation_commits_one_st
 const terminal = read(
   '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 );
-const seatExit = read('20260910042112_stage_b_current_postimage_contraction.sql');
+const seatExit = read('20260910055955_stage_b_current_postimage_contraction.sql');
 const satelliteMoneyPath = read(
   '20260909211115_complete_known_satellite_adoptions_after_freeze.sql'
 );

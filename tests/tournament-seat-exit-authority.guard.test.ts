@@ -7,11 +7,11 @@ const root = (path: string) => resolve(__dirname, '..', path);
 const readMigration = (file: string): string =>
   readFileSync(root(`supabase/migrations/${file}`), 'utf8');
 const seatMoveHotfixSql = readMigration(
-  '20260910051125_the_seat_move_door_the_engine_calls_exists.sql'
+  '20260910051447_the_seat_move_door_the_engine_calls_exists.sql'
 );
-const expansionSql = readMigration('20260910042007_stage_b_forward_authority_expansion.sql');
-const repairSql = readMigration('20260910042020_stage_b_exact_precondition_repairs.sql');
-const contractionSql = readMigration('20260910042112_stage_b_current_postimage_contraction.sql');
+const expansionSql = readMigration('20260910055856_stage_b_forward_authority_expansion.sql');
+const repairSql = readMigration('20260910055909_stage_b_exact_precondition_repairs.sql');
+const contractionSql = readMigration('20260910055955_stage_b_current_postimage_contraction.sql');
 const sql = `${expansionSql}\n${repairSql}\n${contractionSql}`;
 const eliminationProbe = readFileSync(
   root('scripts/ci/probes/tournament-elimination-seat-exit-authority.sql'),

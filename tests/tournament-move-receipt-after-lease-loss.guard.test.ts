@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = (path: string) => resolve(__dirname, '..', path);
 const migration = readFileSync(
-  root('supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'),
+  root('supabase/migrations/20260910055955_stage_b_current_postimage_contraction.sql'),
   'utf8'
 );
 const transport = readFileSync(root('server/src/tournament/tournamentSeatMoveRpc.ts'), 'utf8');

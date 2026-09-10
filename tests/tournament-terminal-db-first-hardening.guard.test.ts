@@ -7,7 +7,7 @@ import { runtimeFilesMatching } from './helpers/runtimeSourceSearch';
 
 const root = resolve(__dirname, '..');
 const migration = readFileSync(
-  resolve(root, 'supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'),
+  resolve(root, 'supabase/migrations/20260910055955_stage_b_current_postimage_contraction.sql'),
   'utf8'
 );
 const terminalBoundaryStart = migration.indexOf(

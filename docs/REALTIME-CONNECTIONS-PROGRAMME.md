@@ -37,6 +37,10 @@ verification when it lands.
 | 11    | Tournament lobby snapshot recovery               | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open                   |
 | 12    | Notification feed recovery and account isolation | Coalesced fresh reads, owned cache and mutations, truthful failure states, safe server feed queries, and restored notification publication                                                | published; natural-event and device acceptance open |
 
+Phase 14: Lobby inventory and waitlist recovery. Scoped source repairs and
+mounted regressions are in progress; release acceptance is not yet complete.
+Scope: `docs/changelog/2026-09-10-realtime-phase14-lobby-inventory.md`.
+
 Phase 13: Club lobby recovery ownership. Eight mounted regressions reproduced
 and repaired; 71 focused tests pass. PR4085 is published; post-release browser,
 natural reconnect and physical-device acceptance remain open.

@@ -1,0 +1,21 @@
+{
+  "_owner": "fix/no-migrations-in-the-break-window. Applied to production as migrations 20260910154446_the_database_refuses_migrations_inside_the_break_window (window + scope functions, override record, event-trigger guard) and 20260910160841_the_break_window_refusal_names_its_rule_and_explains_list_migrations (guard HINT cites CLAUDE.md rule 8 and explains the MCP history bootstrap).",
+  "tables": ["ca_break_window_migration_overrides"],
+  "functions": [
+    "fn_ca_break_window_refuses_migrations",
+    "fn_ca_break_window_governs",
+    "fn_ca_break_window_ddl_guard"
+  ],
+  "columns": {
+    "ca_break_window_migration_overrides": [
+      "id",
+      "occurred_at",
+      "txid",
+      "reason",
+      "session_role",
+      "application_name",
+      "first_command",
+      "query_snippet"
+    ]
+  }
+}

@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 
+import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   cleanupTemporaryCustomizationAccount,
@@ -243,6 +244,7 @@ async function signIn(
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
   });
+  await ensureAcceptedTerms(page);
   await ensurePlayableProfile(page);
   await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
     timeout: 30_000,

@@ -40,8 +40,11 @@ verification when it lands.
 Phase 16: Cashier directory readiness. Five mounted failures reproduced and
 repaired. All eight new cases and 41 existing Cashier/membership contracts pass.
 Pending reads cannot give false Join guidance or trigger competing retries;
-known cached wallets stay usable. Normal publication and device acceptance
-remain open. Scope: `docs/changelog/2026-09-10-realtime-phase16-cashier-directory.md`.
+known cached wallets stay usable. PR4125 is published; exact public/origin bytes
+were verified on September 10 at 07:02:36 UTC. Production UI, natural reconnect,
+and physical-device acceptance remain open.
+Exact evidence: `docs/audits/2026-09-10-realtime-phase16-release.md`.
+Scope: `docs/changelog/2026-09-10-realtime-phase16-cashier-directory.md`.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
 failures reproduced and repaired. All 26 mounted cases and 39 existing scope
@@ -49,6 +52,11 @@ and anti-flicker contracts pass. PR4104 is published; exact public/origin bytes
 were verified on September 10 at 05:26:52 UTC. Natural-event, production UI
 and physical-device acceptance remain open.
 Exact evidence: `docs/audits/2026-09-10-realtime-phase15-release.md`.
+Subsequent production run 34440738779 passed two Cashier and six ClubLobby cases,
+with two ClubLobby skips; the overall run still had nine failures. Three account
+preflight paths omitted the outer Terms gate before profile readiness. Their
+correction is recorded in `docs/changelog/2026-09-10-production-account-terms-preflight.md`;
+a subsequent normal production run must verify it. Full acceptance remains open.
 Scope: `docs/changelog/2026-09-10-realtime-phase15-confirmed-tournament-inventory.md`.
 
 Phase 14: Lobby inventory and waitlist recovery. PR4095 is published and the

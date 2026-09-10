@@ -2,6 +2,12 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+const callClubArenaApiMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../src/services/clubArenaApi', () => ({
+  callClubArenaApi: callClubArenaApiMock,
+}));
+
 vi.mock('../../src/components/common/Toast', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
@@ -33,6 +39,7 @@ function renderStore() {
       loading={false}
       categories={[]}
       onGoManage={vi.fn()}
+      onCatalogStale={vi.fn()}
       onPurchased={vi.fn()}
     />
   );
@@ -51,6 +58,7 @@ function renderStoreWithBalance(balance: number) {
       loading={false}
       categories={[]}
       onGoManage={vi.fn()}
+      onCatalogStale={vi.fn()}
       onPurchased={vi.fn()}
     />
   );
@@ -98,5 +106,44 @@ describe('StoreTab purchase experience', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Close Purchase' })).toHaveFocus()
     );
+  });
+
+  it('binds the confirmed price and refreshes after a stale-price rejection', async () => {
+    const stale = Object.assign(new Error('The price changed'), {
+      status: 409,
+      data: { reason: 'price_changed', currentPrice: 1300, expectedPrice: 1200 },
+    });
+    callClubArenaApiMock.mockRejectedValueOnce(stale);
+    const onCatalogStale = vi.fn();
+
+    render(
+      <StoreTab
+        clubId="club-1"
+        userId="user-1"
+        items={[item]}
+        ownedItemIds={new Set()}
+        balance={5000}
+        onGoDiamonds={vi.fn()}
+        isAdmin={false}
+        loading={false}
+        categories={[]}
+        onGoManage={vi.fn()}
+        onCatalogStale={onCatalogStale}
+        onPurchased={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Purchase' }));
+
+    await waitFor(() =>
+      expect(callClubArenaApiMock).toHaveBeenCalledWith(
+        'marketplace-purchase',
+        { clubId: 'club-1', itemId: item.id, expectedPrice: 1200 },
+        expect.objectContaining({ idempotencyKey: expect.any(String) })
+      )
+    );
+    await waitFor(() => expect(onCatalogStale).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog', { name: 'Confirm Purchase' })).not.toBeInTheDocument();
   });
 });

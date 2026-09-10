@@ -2019,6 +2019,36 @@ export abstract class TournamentManagerBase {
    * declaring one that is not there chops a tournament.
    */
   protected async countLiveTablesWithPlayers(): Promise<number | null> {
+    const ids = await this.liveTournamentTableIdsWithPlayers();
+    return ids === null ? null : ids.length;
+  }
+
+  /**
+   * The live tables of this tournament that still hold at least one seated
+   * player, read from the DATABASE, or `null` when it could not be read.
+   *
+   * ─────────────────────────────────────────────────────────────────────────
+   *  A TABLE WITH ONE PLAYER NEVER GETS AN ENGINE (2026-09-10)
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   * `checkTableBalance` used to take its table list from `this.tableEngines`,
+   * which holds only tables that are DEALING. A table cannot deal to one
+   * player, so a table down to its last player has no engine, so the balancer
+   * never saw it, so nobody ever moved that player to join anybody — and the
+   * table stayed at one player for ever.
+   *
+   * Measured on production 2026-09-10: THIRTY-FIVE running events were in that
+   * state, every live table holding exactly one funded player and no table
+   * holding two. The worst was a $100 Freeroll with 36 players on 36 tables,
+   * frozen since 10:04. They are not slow; they are structurally unable to
+   * deal a hand, and every one of them holds prize money.
+   *
+   * So the balancer reads its tables from here instead. `loadBalancerTables`
+   * already sources everything it needs from the database and only consults
+   * `tableEngines` for a button seat, which defaults to 0 — an engineless
+   * table has always been representable, it was simply never in the list.
+   */
+  protected async liveTournamentTableIdsWithPlayers(): Promise<string[] | null> {
     const { data: liveTables, error: tablesErr } = await supabase
       .from('tables')
       .select('id')
@@ -2026,7 +2056,7 @@ export abstract class TournamentManagerBase {
       .in('status', ['running', 'waiting']);
     if (tablesErr || !liveTables) return null;
     const ids = liveTables.map((t: { id: string }) => t.id).filter(Boolean);
-    if (ids.length === 0) return 0;
+    if (ids.length === 0) return [];
     // The seat query runs even for a single table, deliberately. "One table
     // exists" and "one table holds players" are different statements, and this
     // function is asked the second one — an empty adopted table must not read
@@ -2037,7 +2067,8 @@ export abstract class TournamentManagerBase {
       .in('table_id', ids)
       .is('left_at', null);
     if (seatsErr || !seats) return null;
-    return new Set(seats.map((s: { table_id: string }) => s.table_id)).size;
+    const holding = new Set(seats.map((s: { table_id: string }) => s.table_id));
+    return ids.filter((id) => holding.has(id));
   }
 
   /** Late registration state is owned by fn_close_tournament_entry_window. */

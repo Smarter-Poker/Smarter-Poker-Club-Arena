@@ -81,6 +81,7 @@ with (root / 'results.log').open('w') as log:
         run([str(pg / 'pg_ctl'), '-D', str(cluster), '-o', f'-k {sock} -p {port} -c listen_addresses=', '-w', 'start'])
         started = True
         fixture = repo / 'scripts/dev/fixtures/tournament-payout-amounts'
+        q('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;')
         q((fixture / 'fixture.sql').read_text())
         q("ALTER TABLE tournaments ADD COLUMN prize_pool_finalized boolean; "
           "ALTER TABLE tournament_players ADD COLUMN user_id text,ADD COLUMN status text,ADD COLUMN position integer,ADD COLUMN prize numeric; "
@@ -90,6 +91,7 @@ with (root / 'results.log').open('w') as log:
         q(definition(legacy, 'fn_tournament_place_prize_exact'))
         q((fixture / 'installed.sql').read_text())
         q(definition(legacy, 'fn_complete_tournament_entry_reprice'))
+        q('REVOKE ALL ON FUNCTION fn_complete_tournament_entry_reprice(uuid) FROM PUBLIC; GRANT EXECUTE ON FUNCTION fn_complete_tournament_entry_reprice(uuid) TO service_role;')
         baseline_hash = q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_complete_tournament_entry_reprice(uuid)'::regprocedure;")
         assert baseline_hash == '51c598a2fdb9a805485dec239eb70169', baseline_hash
         amount_hash = q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_tournament_place_amounts(uuid)'::regprocedure;")
@@ -133,6 +135,31 @@ with (root / 'results.log').open('w') as log:
         reset()
         q(change.read_text())
         check('migration is repeatable without changing the result', call()['ok'] is True)
+        q('GRANT EXECUTE ON FUNCTION fn_complete_tournament_entry_reprice(uuid) TO PUBLIC;')
+        q(change.read_text(), error='existing security contract is unexpected')
+        q('REVOKE EXECUTE ON FUNCTION fn_complete_tournament_entry_reprice(uuid) FROM PUBLIC;')
+        check('unsafe public definer ACL cannot be silently accepted', True)
+        q('ALTER FUNCTION fn_complete_tournament_entry_reprice(uuid) RESET search_path;')
+        q(change.read_text(), error='existing security contract is unexpected')
+        q("ALTER FUNCTION fn_complete_tournament_entry_reprice(uuid) SET search_path TO 'public','pg_temp';")
+        check('a missing definer search path is refused', True)
+
+        q(definition(legacy, 'fn_complete_tournament_entry_reprice').replace("'receipt_missing'", "'changed_receipt_missing'"))
+        q(change.read_text(), error='source prerequisite changed')
+        check('a concurrently changed implementation is not overwritten', True)
+        q(definition(legacy, 'fn_complete_tournament_entry_reprice'))
+        q('DROP FUNCTION public.fn_complete_tournament_entry_reprice(uuid);')
+        q(change.read_text(), error='prerequisite function or receipt table is missing')
+        check('missing target never creates a new public definer', q("SELECT to_regprocedure('public.fn_complete_tournament_entry_reprice(uuid)') IS NULL;") == 't')
+        q(definition(legacy, 'fn_complete_tournament_entry_reprice'))
+        q('REVOKE ALL ON FUNCTION fn_complete_tournament_entry_reprice(uuid) FROM PUBLIC; GRANT EXECUTE ON FUNCTION fn_complete_tournament_entry_reprice(uuid) TO service_role;')
+        q('ALTER FUNCTION public.fn_ca_tournament_place_amounts(uuid) RENAME TO absent_amounts;')
+        q(change.read_text(), error='prerequisite function or receipt table is missing')
+        q('ALTER FUNCTION public.absent_amounts(uuid) RENAME TO fn_ca_tournament_place_amounts;')
+        check('missing canonical amount authority refuses before replacement', True)
+        q(change.read_text())
+        check('service-only ACL survives replacement exactly', q("SELECT has_function_privilege('service_role','fn_complete_tournament_entry_reprice(uuid)','EXECUTE') AND NOT has_function_privilege('anon','fn_complete_tournament_entry_reprice(uuid)','EXECUTE') AND NOT has_function_privilege('authenticated','fn_complete_tournament_entry_reprice(uuid)','EXECUTE');") == 't')
+
         after_hash = q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_complete_tournament_entry_reprice(uuid)'::regprocedure;")
     finally:
         if started:

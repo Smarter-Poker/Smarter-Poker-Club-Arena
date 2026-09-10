@@ -4,6 +4,43 @@ BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '10s';
 
+DO $reprice_prerequisites$
+DECLARE
+  v_target regprocedure := to_regprocedure('public.fn_complete_tournament_entry_reprice(uuid)');
+  v_amounts regprocedure := to_regprocedure('public.fn_ca_tournament_place_amounts(uuid)');
+  v_body text;
+BEGIN
+  -- Replacement must never create a fresh PUBLIC-executable definer. Accept
+  -- only the independently observed original or this exact idempotent result.
+  IF v_target IS NULL OR v_amounts IS NULL
+     OR to_regprocedure('public.fn_safe_jsonb_array(text)') IS NULL
+     OR to_regprocedure('public.fn_tournament_place_prize_exact(numeric,text,integer)') IS NULL
+     OR to_regclass('public.tournament_entry_close_receipts') IS NULL THEN
+    RAISE EXCEPTION 'cash entry reprice prerequisite function or receipt table is missing';
+  END IF;
+  SELECT md5(prosrc) INTO v_body FROM pg_proc WHERE oid=v_target;
+  IF v_body NOT IN ('51c598a2fdb9a805485dec239eb70169','784df9021f906ca9e42e43942b692e2f')
+     OR (SELECT md5(prosrc) FROM pg_proc WHERE oid=v_amounts)
+        <> '8f6cde5f5b799949506259f3064568b9' THEN
+    RAISE EXCEPTION 'cash entry reprice source prerequisite changed';
+  END IF;
+  IF NOT COALESCE((SELECT prosecdef AND prorettype='jsonb'::regtype
+                 AND proconfig @> ARRAY['search_path=public, pg_temp']
+            FROM pg_proc WHERE oid=v_target),false)
+     OR has_function_privilege('anon',v_target,'EXECUTE')
+     OR has_function_privilege('authenticated',v_target,'EXECUTE')
+     OR NOT has_function_privilege('service_role',v_target,'EXECUTE')
+     OR EXISTS (
+       SELECT 1 FROM pg_proc p,
+         LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid=v_target AND a.grantee=0 AND a.privilege_type='EXECUTE') THEN
+    RAISE EXCEPTION 'cash entry reprice existing security contract is unexpected';
+  END IF;
+  PERFORM set_config('ca.cash_entry_reprice_acl',
+    (SELECT proacl::text FROM pg_proc WHERE oid=v_target),true);
+END;
+$reprice_prerequisites$;
+
 CREATE OR REPLACE FUNCTION public.fn_complete_tournament_entry_reprice(
   p_tournament_id uuid
 ) RETURNS jsonb
@@ -104,5 +141,23 @@ BEGIN
   RETURN jsonb_build_object('ok',true,'completed',true,'mismatches',0);
 END;
 $function$;
+
+DO $reprice_postconditions$
+DECLARE
+  v_target regprocedure := to_regprocedure('public.fn_complete_tournament_entry_reprice(uuid)');
+BEGIN
+  IF NOT COALESCE((SELECT md5(prosrc)='784df9021f906ca9e42e43942b692e2f'
+                 AND prosecdef AND prorettype='jsonb'::regtype
+                 AND proconfig @> ARRAY['search_path=public, pg_temp']
+                 AND proacl::text IS NOT DISTINCT FROM
+                     current_setting('ca.cash_entry_reprice_acl')
+            FROM pg_proc WHERE oid=v_target),false)
+     OR has_function_privilege('anon',v_target,'EXECUTE')
+     OR has_function_privilege('authenticated',v_target,'EXECUTE')
+     OR NOT has_function_privilege('service_role',v_target,'EXECUTE') THEN
+    RAISE EXCEPTION 'cash entry reprice replacement body or ACL postcondition failed';
+  END IF;
+END;
+$reprice_postconditions$;
 
 COMMIT;

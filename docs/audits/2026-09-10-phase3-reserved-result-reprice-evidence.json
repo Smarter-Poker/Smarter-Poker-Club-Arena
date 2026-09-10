@@ -29,13 +29,20 @@
       "missing closure receipt is reported",
       "invalid canonical ladder leaves receipt pending",
       "satellite acceptance contract is preserved",
-      "migration is repeatable without changing the result"
+      "migration is repeatable without changing the result",
+      "unsafe public definer ACL cannot be silently accepted",
+      "a missing definer search path is refused",
+      "a concurrently changed implementation is not overwritten",
+      "missing target never creates a new public definer",
+      "missing canonical amount authority refuses before replacement",
+      "service-only ACL survives replacement exactly"
     ],
     "baseline_body_md5": "51c598a2fdb9a805485dec239eb70169",
     "corrected_body_md5": "784df9021f906ca9e42e43942b692e2f",
     "amount_authority_body_md5": "8f6cde5f5b799949506259f3064568b9",
     "production_database_used": false,
-    "scope": "Actual entry-close acceptance and amount functions with synthetic input tables; no wallet or terminal settlement certification."
+    "scope": "Actual entry-close acceptance and amount functions with synthetic input tables; no wallet or terminal settlement certification.",
+    "result_path": "/tmp/ca-entry-reprice-pg17-6n80ld7u/results.json"
   },
   "engine_method_baseline": {
     "passed": 3,
@@ -67,5 +74,6 @@
       "exit_code": 0,
       "log": "/tmp/payout-server-build.log"
     }
-  }
+  },
+  "migration_sha256": "81ddd9084960cb4747947a7f223406fbc4db93dd356ebe4e0ede8d8e121eea7d"
 }

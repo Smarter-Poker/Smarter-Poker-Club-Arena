@@ -222,6 +222,23 @@ describe('rebuys and add-ons actually happen', () => {
     expect(code(ELIM)).toMatch(/await this\.tryTournamentRebuys\(/);
   });
 
+  it('re-entry-only events send horses through the executable re-entry product', () => {
+    const rebuys = sliceMethod(code(ELIM), 'private async tryTournamentRebuys(');
+    expect(rebuys).toMatch(/!t\?\.is_rebuy\s*&&\s*!t\?\.is_reentry/);
+    expect(rebuys).toContain("const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry'");
+    expect(rebuys).toMatch(/p_rebuy_type:\s*recoveryType/);
+    expect(rebuys).not.toMatch(/p_rebuy_type:\s*'rebuy'/);
+  });
+
+  it('enforces the deterministic Free Buy horse allowance before the money RPC', () => {
+    const rebuys = sliceMethod(code(ELIM), 'private async tryTournamentRebuys(');
+    const allowance = rebuys.indexOf('horseRebuyAllowance(');
+    const rpc = rebuys.indexOf("supabase.rpc('process_tournament_rebuy'");
+    expect(allowance).toBeGreaterThanOrEqual(0);
+    expect(rpc).toBeGreaterThan(allowance);
+    expect(rebuys.slice(allowance, rpc)).toMatch(/answered\.add\(h\.id\)/);
+  });
+
   it('add-ons are offered when the window opens', () => {
     expect(code(BASE)).toMatch(/protected async tryTournamentAddOns/);
     const stage = sliceEnclosingBlock(

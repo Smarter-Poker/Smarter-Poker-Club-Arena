@@ -6,6 +6,10 @@
 
 `server/src/tournament/playedSpinLaunchRecovery.ts` previously admitted missing or malformed hand evidence through `Number(hand_count) < 1`. The parser now requires a positive safe integer JSON number before the played-game recovery exception. Ten failing adversarial regressions reproduced the hole; 27 parser tests and 170 focused Spin/launch tests pass. The separate compact funding proof passes 42 PostgreSQL checks, with its atomic authority definition verified against production. Full current lower-money-function composition and ordinary engine publication remain open. Re-read: yes. Full server TypeScript: pass. No database or financial mutation. See docs/changelog/2026-09-10-played-spin-recovery-requires-a-real-hand-count.md.
 
+## 2026-09-10: Accounting CI Runs The Mystery Reservation Probe
+
+Before: the compact mystery probe was not called by the existing accounting PostgreSQL CI runner, whose PGUSER also differed from its local initdb default. The runner now invokes it with the existing PostgreSQL binary path, and initdb/psql explicitly share one local test role. Thirteen groups pass under inherited CI connection variables. An unavailable-binary fault proves nonzero propagation with no following command execution. Re-read: yes. Shell syntax and diff checks pass; no TypeScript or runtime source changed.
+
 ## 2026-09-10: Mystery Reservation Replays Its Exact Generation
 
 Before: Phase 3 had source guards and inventory unit tests but no bounded actual-function PostgreSQL seed/reserve/reveal runner. Added the current catalog fixture and thirteen behavior groups proving exact inventory, immutable retry, persisted recipient binding, authorization and observed concurrent reservation. Eight existing satellite origin-wallet refund groups also pass. No application function, financial policy or production database changed. Re-read: yes. Full wallet payout/terminal and pending bounty rebuy acceptance remain open. See docs/changelog/2026-09-10-mystery-generation-reservation-rehearsal.md.

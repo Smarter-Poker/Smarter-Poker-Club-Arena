@@ -10,7 +10,7 @@ root = Path(tempfile.mkdtemp(prefix='ca-mystery-reservation-pg17-'))
 cluster, socket = root/'cluster', root/'socket'
 socket.mkdir()
 port = str(35000 + os.getpid() % 10000)
-args = [str(pg/'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', str(socket), '-p', port, '-d', 'postgres']
+args = [str(pg/'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', str(socket), '-p', port, '-d', 'postgres', '-U', 'mystery_test']
 passed = []
 started = False
 base = """
@@ -55,7 +55,7 @@ with (root/'results.log').open('w') as log:
         return "DO $check$ BEGIN IF NOT ("+condition+") THEN RAISE EXCEPTION '"+message+"'; END IF; END $check$;"
     try:
         assert ' 17.' in cmd([str(pg/'postgres'),'--version'])
-        cmd([str(pg/'initdb'),'-D',str(cluster),'--auth=trust','--no-locale'])
+        cmd([str(pg/'initdb'),'-D',str(cluster),'-U','mystery_test','--auth=trust','--no-locale'])
         started=True
         cmd([str(pg/'pg_ctl'),'-D',str(cluster),'-l',str(root/'postgres.log'),'-o',f'-k {socket} -p {port} -c listen_addresses=', '-w','start'])
         cmd(args+['-f',str(fixture/'fixture.sql')])

@@ -39,6 +39,8 @@ function storedReceiptRow(row: Record<string, unknown> | null, error: unknown = 
 }
 const RECEIPT = { tournamentId: TOURNAMENT_ID, winnerId: WINNER_ID } as any;
 const noWait = async (): Promise<void> => undefined;
+const PROPOSAL = { proposalId: '00000000-0000-4000-8000-000000000003', revision: 'a'.repeat(64) };
+const proposalFields = { proposal_id: PROPOSAL.proposalId, revision: PROPOSAL.revision };
 
 function resolvedOutcome(
   mode: 'places' | 'final_table_deal',
@@ -73,22 +75,34 @@ describe('terminal settlement response recovery', () => {
     async (mode, winnerId) => {
       mocks.rpc
         .mockResolvedValueOnce({ data: null, error: { message: 'response lost after commit' } })
-        .mockResolvedValueOnce({ data: { stored: true }, error: null });
+        .mockResolvedValueOnce({
+          data: { stored: true, ...(mode === 'final_table_deal' ? proposalFields : {}) },
+          error: null,
+        });
 
       await expect(
         requestTournamentTerminalReceipt(TOURNAMENT_ID, mode, winnerId, {
           attempts: 2,
           wait: noWait,
+          dealProposal: mode === 'final_table_deal' ? PROPOSAL : undefined,
         })
       ).resolves.toBe(RECEIPT);
 
       expect(mocks.rpc).toHaveBeenCalledTimes(2);
       expect(mocks.rpc.mock.calls[0]).toEqual(mocks.rpc.mock.calls[1]);
-      expect(mocks.rpc).toHaveBeenCalledWith('fn_complete_tournament_terminal', {
-        p_tournament_id: TOURNAMENT_ID,
-        p_observed_winner_id: winnerId,
-        p_settlement_mode: mode,
-      });
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        mode === 'final_table_deal'
+          ? 'fn_complete_tournament_terminal_proposal'
+          : 'fn_complete_tournament_terminal',
+        {
+          p_tournament_id: TOURNAMENT_ID,
+          p_observed_winner_id: winnerId,
+          p_settlement_mode: mode,
+          ...(mode === 'final_table_deal'
+            ? { p_proposal_id: PROPOSAL.proposalId, p_revision: PROPOSAL.revision }
+            : {}),
+        }
+      );
       expect(mocks.rpc).not.toHaveBeenCalledWith(
         'fn_resolve_tournament_terminal_outcome',
         expect.anything()
@@ -141,6 +155,125 @@ describe('terminal settlement response recovery', () => {
       p_observed_winner_id: WINNER_ID,
       p_settlement_mode: 'places',
     });
+  });
+  it.each([
+    undefined,
+    { proposalId: 'old', revision: PROPOSAL.revision },
+    { proposalId: PROPOSAL.proposalId, revision: 'not-a-revision' },
+  ])(
+    'refuses final-deal requests without an exact proposal before any RPC',
+    async (dealProposal) => {
+      await expect(
+        requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+          attempts: 1,
+          wait: noWait,
+          dealProposal,
+        })
+      ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    }
+  );
+
+  it('uses the same proposal-bound resolver for a lost committed response', async () => {
+    const outcome = resolvedOutcome('final_table_deal', true, 'COMPLETED');
+    Object.assign(outcome.data, proposalFields, { receipt: { stored: true, ...proposalFields } });
+    mocks.rpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+      .mockResolvedValueOnce(outcome);
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+        attempts: 1,
+        wait: noWait,
+        dealProposal: PROPOSAL,
+      })
+    ).resolves.toBe(RECEIPT);
+    expect(mocks.rpc).toHaveBeenLastCalledWith('fn_resolve_tournament_terminal_proposal_outcome', {
+      p_tournament_id: TOURNAMENT_ID,
+      p_observed_winner_id: null,
+      p_settlement_mode: 'final_table_deal',
+      p_proposal_id: PROPOSAL.proposalId,
+      p_revision: PROPOSAL.revision,
+    });
+  });
+
+  it.each(['proposal_id', 'revision'])(
+    'does not accept a direct receipt with a different %s',
+    async (key) => {
+      mocks.rpc
+        .mockResolvedValueOnce({
+          data: { stored: true, ...proposalFields, [key]: 'different' },
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: null, error: { message: 'resolver unavailable' } });
+      await expect(
+        requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+          attempts: 1,
+          wait: noWait,
+          dealProposal: PROPOSAL,
+        })
+      ).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
+    }
+  );
+
+  it.each(['envelope', 'receipt'])(
+    'keeps a mismatched committed %s outcome unknown',
+    async (target) => {
+      const outcome = resolvedOutcome('final_table_deal', true, 'COMPLETED');
+      Object.assign(outcome.data, proposalFields, { receipt: { stored: true, ...proposalFields } });
+      if (target === 'envelope') outcome.data.revision = 'b'.repeat(64);
+      else (outcome.data.receipt as Record<string, unknown>).proposal_id = WINNER_ID;
+      mocks.rpc
+        .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+        .mockResolvedValueOnce(outcome);
+      await expect(
+        requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+          attempts: 1,
+          wait: noWait,
+          dealProposal: PROPOSAL,
+        })
+      ).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
+    }
+  );
+
+  it.each([true, false])(
+    'requires proposal identity on a proved miss (matching=%s)',
+    async (matching) => {
+      const outcome = resolvedOutcome('final_table_deal', false, 'RUNNING');
+      Object.assign(outcome.data, proposalFields, {
+        revision: matching ? PROPOSAL.revision : 'b'.repeat(64),
+      });
+      mocks.rpc
+        .mockResolvedValueOnce({ data: null, error: { message: 'proposal changed' } })
+        .mockResolvedValueOnce(outcome);
+      await expect(
+        requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+          attempts: 1,
+          wait: noWait,
+          dealProposal: PROPOSAL,
+        })
+      ).rejects.toBeInstanceOf(
+        matching ? TerminalSettlementRefusedError : TerminalSettlementOutcomeUnknownError
+      );
+    }
+  );
+
+  it('keeps retry proposal identity immutable when caller options change during transport', async () => {
+    const dealProposal = { ...PROPOSAL };
+    mocks.rpc
+      .mockImplementationOnce(async () => {
+        dealProposal.revision = 'b'.repeat(64);
+        return { data: null, error: { message: 'response lost' } };
+      })
+      .mockResolvedValueOnce({ data: { stored: true, ...proposalFields }, error: null });
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+        attempts: 2,
+        wait: noWait,
+        dealProposal,
+      })
+    ).resolves.toBe(RECEIPT);
+    expect(mocks.rpc.mock.calls[0]).toEqual(mocks.rpc.mock.calls[1]);
+    expect(mocks.rpc.mock.calls[1][1].p_revision).toBe(PROPOSAL.revision);
   });
 });
 
@@ -303,5 +436,92 @@ describe('terminal replay disagreement is not retried forever', () => {
       p_observed_winner_id: WINNER_ID,
       p_settlement_mode: 'places',
     });
+  });
+});
+
+describe('Legacy terminal admission requires explicit inactive authority', () => {
+  const inactive = { data: { ok: false, reason: 'proposal_authority_not_active' }, error: null };
+  const options = {
+    legacyDealAuthority: 'proposal_authority_not_active' as const,
+    attempts: 2,
+    wait: noWait,
+  };
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.verify.mockReturnValue(RECEIPT);
+  });
+  it('rechecks the live authority before sending the existing terminal contract', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({ data: { stored: true }, error: null });
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).resolves.toBe(RECEIPT);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_get_tournament_deal_consensus',
+      'fn_complete_tournament_terminal',
+    ]);
+  });
+  it.each([
+    { data: { ok: true, ready: false }, error: null },
+    { data: inactive.data, error: { message: 'timeout' } },
+    { data: { ok: false, reason: 'review_stale' }, error: null },
+    { data: null, error: null },
+  ])('never sends legacy money on active, invalid or uncertain capability', async (result) => {
+    mocks.rpc.mockResolvedValue(result);
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it('serializes the resolver after activation rejects an already-attempted legacy settlement', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: '23514', message: 'exact proposal required' },
+      })
+      .mockResolvedValueOnce({ data: { ok: true, ready: false }, error: null })
+      .mockResolvedValueOnce(resolvedOutcome('final_table_deal', false, 'RUNNING'));
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_complete_tournament_terminal')
+    ).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenLastCalledWith('fn_resolve_tournament_terminal_outcome', {
+      p_tournament_id: TOURNAMENT_ID,
+      p_observed_winner_id: null,
+      p_settlement_mode: 'final_table_deal',
+    });
+  });
+  it('adopts a committed legacy receipt after a lost response and subsequent activation', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+      .mockResolvedValueOnce({ data: { ok: true, ready: false }, error: null })
+      .mockResolvedValueOnce(resolvedOutcome('final_table_deal', true, 'COMPLETED'));
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).resolves.toBe(RECEIPT);
+  });
+  it('never treats an unavailable post-activation resolver as a failed transaction', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+      .mockResolvedValueOnce({ data: { ok: true, ready: false }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'resolver unavailable' } });
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
+  });
+  it('never accepts legacy opt-in together with an exact proposal', async () => {
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+        ...options,
+        dealProposal: PROPOSAL,
+      })
+    ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

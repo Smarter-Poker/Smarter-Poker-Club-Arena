@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 function boundaryHarness(): any {
@@ -169,24 +170,46 @@ describe('the terminal tournament boundary owns the next deal', () => {
     expect(engine.terminalCloseoutDiscardedPreparedHand).toBe(true);
   });
 
-  it('revalidates stacks and votes after parking and before the terminal RPC', () => {
+  it('revalidates the parked roster and exact review proposal before the terminal RPC', () => {
     const source = readFileSync(
       join(__dirname, '../tournament/TournamentManagerEliminations.ts'),
       'utf8'
     );
-    const start = source.indexOf('private async completeFinalTableDealAtBoundary');
-    const end = source.indexOf('private async settleFinalTableDeal', start);
-    const method = source.slice(start, end);
+    const method = sliceMethod(source, 'completeFinalTableDealAtBoundary(\n    tableId: string,');
     const parkedAt = method.indexOf('parkForTerminalCloseout');
     const rosterAt = method.indexOf(".select('user_id, chips')");
-    const votesAt = method.indexOf(".from('tournament_deal_votes')");
+    const consensusAt = method.indexOf('await this.readFinalTableDealConsensus(alive)');
     const terminalAt = method.indexOf('requestTournamentTerminalReceipt');
 
     expect(parkedAt).toBeGreaterThan(-1);
     expect(rosterAt).toBeGreaterThan(parkedAt);
-    expect(votesAt).toBeGreaterThan(rosterAt);
-    expect(terminalAt).toBeGreaterThan(votesAt);
-    expect(method).toContain('Number(player.chips) <= 0');
+    expect(consensusAt).toBeGreaterThan(rosterAt);
+    expect(terminalAt).toBeGreaterThan(consensusAt);
+    const rosterValidation = method.slice(rosterAt, consensusAt);
+    expect(rosterValidation).toContain(".eq('tournament_id', this.tournamentId)");
+    expect(rosterValidation).toContain(".eq('status', 'playing')");
+    expect(rosterValidation).toContain('Number(player.chips) <= 0');
+    expect(rosterValidation).toContain('throw new TerminalSettlementRefusedError');
+    const consensusValidation = method.slice(consensusAt, terminalAt);
+    for (const rejection of [
+      '!consensus?.ready',
+      "consensus.reviewState !== 'reviewing'",
+      'consensus.reviewId !== expectedConsensus.reviewId',
+      'consensus.stale',
+      'consensus.reviewExpiresAt === null',
+      'Date.now() >= consensus.reviewExpiresAt',
+      '!consensus.proposalId',
+      '!consensus.revision',
+      'consensus.proposalId !== expectedConsensus.proposalId',
+      'consensus.revision !== expectedConsensus.revision',
+      'this.tableEngines.get(tableId) !== engine',
+      'this.gameServer.getTableEngine(tableId) !== engine',
+      '!engine.isRunning()',
+    ]) {
+      expect(consensusValidation, rejection).toContain(rejection);
+    }
+    expect(consensusValidation).toContain('throw new TerminalSettlementRefusedError');
+    expect(method).not.toContain(".from('tournament_deal_votes')");
     expect(method).toContain('receipt.dealShares.length === alive.length');
     expect(method).not.toContain('receipt.payouts.length === alive.length');
     expect(method).toContain('throw new TerminalSettlementCommittedError');

@@ -18,6 +18,7 @@ import {
 import {
   buildTournamentActionCandidates,
   evaluateTournamentUtility,
+  evaluateTournamentUtilityDetailed,
   type TournamentUtilityContext,
   type TournamentUtilityInput,
 } from './HorseTournamentUtility.js';
@@ -479,6 +480,11 @@ describe('Phase 7 action-specific utility', () => {
       })
     );
     expect(aggregateDrift).toBeNull();
+    expect(
+      evaluateTournamentUtilityDetailed(
+        input({ context: context({ fieldStacks: [1_200, 900, 100] }) })
+      ).unavailableReason
+    ).toBe('field_reconciliation');
   });
 
   it('prices a still-unacted player behind before settling an all-in call', () => {
@@ -1107,6 +1113,11 @@ describe('Phase 7 action-specific utility', () => {
     expect(callOf(exhausted).optionEv).toBe(0);
     expect(unknown).toBeNull();
     expect(reloadUnknown).toBeNull();
+    expect(
+      evaluateTournamentUtilityDetailed(
+        headsUpAllIn({ context: { ...recovery, rebuyAffordable: null } })
+      ).unavailableReason
+    ).toBe('recovery_option');
     expect(callOf(unfunded).optionEv).toBe(0);
 
     const bountyRecovery = evaluateTournamentUtility(
@@ -1535,9 +1546,9 @@ describe('Phase 7 live action-clock wiring', () => {
       }
     );
     expect(decision.tournamentUtility).toBeUndefined();
-    expect(new Set(drainFires().map((receipt) => receipt.feature))).toContain(
-      'phase7_utility_unavailable'
-    );
+    const features = new Set(drainFires().map((receipt) => receipt.feature));
+    expect(features).toContain('phase7_utility_unavailable');
+    expect(features).toContain('phase7_unavailable_multi_board');
   });
 
   it('preserves the nested utility receipt across the live worker boundary', async () => {
@@ -1605,7 +1616,7 @@ describe('Phase 7 live action-clock wiring', () => {
     const utility = readFileSync(join(here, 'HorseTournamentUtility.ts'), 'utf8');
     const logic = readFileSync(join(here, 'HorseLogic.ts'), 'utf8');
     const turns = readFileSync(join(here, 'ServerTableEngineTurns.ts'), 'utf8');
-    const arbiter = logic.indexOf('const result = evaluateTournamentUtility({');
+    const arbiter = logic.indexOf('const evaluation = evaluateTournamentUtilityDetailed({');
     const finalThink = logic.indexOf('decision.thinkTime = this.computeThinkTime(', arbiter);
     expect(arbiter).toBeGreaterThan(0);
     expect(finalThink).toBeGreaterThan(arbiter);

@@ -383,7 +383,9 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     // second background read may not stack another full-window scan beside the
     // first.
     expect(load).toContain('if (!showSpinner && backgroundLedgerInFlight.current) return true;');
-    expect(load).toContain('if (!showSpinner) backgroundLedgerInFlight.current = false;');
+    expect(load).toMatch(
+      /if \(!showSpinner && loadVersion\.current === myVersion\)\s*backgroundLedgerInFlight\.current = false;/
+    );
     // One clearer, and the assertion above says what guards it. Two would mean
     // some other path can put the skeleton away again.
     expect(load.match(/setLoading\(false\)/g)).toHaveLength(1);
@@ -449,26 +451,30 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
       expect(body).not.toContain('loadVersion.current !== myVersion');
       expect(body).not.toContain('playersVersion.current !== myVersion');
     }
-    // The epoch moves on a foreground load and on a club change, never on a
-    // background refresh.
+    // Foreground loads and query changes retire pagination; background
+    // refreshes of the same question do not.
     const load = sliceCall(page, 'const load = useCallback(');
     expect(load).toContain('if (!preserveOnError) gamesQueryEpoch.current += 1;');
     const loadPlayers = sliceCall(page, 'const loadPlayers = useCallback(');
     expect(loadPlayers).toContain('if (!preserveOnError) playersQueryEpoch.current += 1;');
-    // Whoever raised a Load More spinner puts it down, superseded or not.
-    expect(sliceCall(page, 'const loadMoreGames = useCallback(')).toContain(
-      'if (!cancelledRef.current) setGamesLoadingMore(false);'
+    // Query changes retire both spinners; stale pages cannot clear successors.
+    expect(sliceCall(page, 'const loadMoreGames = useCallback(')).toMatch(
+      /finally \{\s*if \(!stale\(\)\) \{\s*gamesMoreRef\.current = false;\s*setGamesLoadingMore\(false\);/
     );
-    expect(sliceCall(page, 'const loadMorePlayers = useCallback(')).toContain(
-      'if (!cancelledRef.current) setPlayersLoadingMore(false);'
+    expect(sliceCall(page, 'const loadMorePlayers = useCallback(')).toMatch(
+      /finally \{\s*if \(!stale\(\)\) \{\s*playersMoreRef\.current = false;\s*setPlayersLoadingMore\(false\);/
     );
   });
 
   it('keeps complete browsing server-sorted and DOM-windowed', () => {
     expect(page).toContain("supabase.rpc('ca_club_game_page'");
     expect(page).toContain("supabase.rpc('ca_club_player_page'");
-    expect(page).toContain('p_cursor: gameCursor');
-    expect(page).toContain('p_cursor: playerCursor');
+    const gamesPage = sliceCall(page, 'const loadMoreGames = useCallback(');
+    expect(gamesPage).toContain('const cursor = gameCursorRef.current;');
+    expect(gamesPage).toContain('p_cursor: cursor');
+    const playersPage = sliceCall(page, 'const loadMorePlayers = useCallback(');
+    expect(playersPage).toContain('const cursor = playerCursorRef.current;');
+    expect(playersPage).toContain('p_cursor: cursor');
     expect(page).toContain('useVirtualScroll(gameRows');
     expect(page).toContain('useVirtualScroll(sortedPlayers');
     expect(page).toContain('aria-setsize={snapshot?.row_count}');

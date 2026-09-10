@@ -12,8 +12,6 @@ Declare the existing overview stylesheet used by the standalone deal review. Upd
 
 All eight prepared deal locking entries and the separate activation now acquire the current G then B settlement helper before tournament rows. Exact tracked source reproduces current terminal/resolver/rake hashes. The rollback fixture additionally advances only its cash payer to verified current body 141c723b5225bcec588b8957cf039184; 68 assertions pass for each fixed-tail variant. Six helper-holder assertions pass, and the old G-only statement fails the new shared-hand regression. Whole-terminal composition and production activation remain separate gates.
 
-## Every Change, Documented. No Exceptions.
-
 ## 2026-09-10: Terminal Receipt Law Retains Exact Proposal Checks
 
 The pre-push law still required a receipt-only return and rejected the stronger exact-proposal return guard. Its source assertions now require both receipt validation and matching proposal identity on direct and recovered receipts. No runtime or financial policy changed; the complete law test and existing terminal RPC behavior tests are the verification gate. Re-read: yes. Prepared consent remains draft and Phase3 remains open.
@@ -61,6 +59,8 @@ Final-table deal admission previously counted unversioned tournament vote rows b
 ## 2026-09-10: Final Deal Proposal Records Ordered Rollout Gates
 
 Documentation-only proposal records SQL expansion, compatible engine/client verification, then owner-controlled activation for versioned final-deal consent. It specifies a configurable server-owned 120-second review deadline and requires current M5, lease, native rollback/replay and production identity evidence. No SQL, engine, client or production state changed; Phase 3 remains open. Re-read: yes. See docs/audits/2026-09-10-final-deal-rollout-gates.md.
+
+## Every Change, Documented. No Exceptions.
 
 ## 2026-09-10: Diamond Shared Cash Lifecycle Integration
 

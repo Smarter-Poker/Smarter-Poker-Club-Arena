@@ -489,6 +489,30 @@ still means a live write is wrong.
 | `flag-garbage-tournaments`                          | `fn_flag_garbage_tournaments`        | nightly   | tournaments that should never have been created | refuse to create them                                              |
 | `ca-pgrst-reload-if-stale`, `pgrst-reload-watchdog` | —                                    | 5/15 min  | PostgREST schema cache not reloading            | the DDL policy in CLAUDE.md §2 — one transaction per change        |
 
+Retired 2026-09-10: `ca-eliminate-absent-players` and
+`ca-release-broke-seats`. Both wrote `tournament_players.status = 'eliminated'`
+with **no finishing place** in RUNNING events, ten minutes after an accepted
+hand had already busted the player and while the engine's knockout door was
+still holding that bust. `fn_complete_tournament_entry_reprice` counts a
+placeless eliminated row as an unfinished reprice, so the proof refused for
+ever and `runEliminationSweep` returned before its bust stage: twenty
+tournaments stopped recording eliminations entirely, and the sweep then took
+the next batch of stranded busts. All 1,270 rows it had taken carried a
+`pending` knockout candidate. Both jobs are now INACTIVE (the row is kept, not
+deleted - the unapplied retirement chain 20260910000850 captures exactly two
+and its CHECK demands two), both functions refuse any bust a hand took, and a
+DEFERRED constraint trigger refuses a placeless elimination in a live event
+whoever writes it. Root fix and measurements:
+`docs/changelog/2026-09-10-the-knockout-door-owns-every-bust.md`.
+
+**The lesson this cost:** eight hours earlier
+`docs/changelog/2026-09-10-the-felt-decides-who-busted.md` had fixed this same
+sweep to read the felt rather than a stale mirror. That fix was correct on its
+own terms and it is what made the loop possible - a broken band-aid was
+harmless, a working one raced the live path. When you find a repair job that
+is not repairing anything, do not fix the repair job; ask what the live path
+was doing with those rows.
+
 Retired 2026-09-07: `sweep-seatless-late-registrants`. The registration RPC
 now creates capacity, debits the entrant, writes the roster and claims the seat
 inside one tournament-row-locked transaction. The release migration removes

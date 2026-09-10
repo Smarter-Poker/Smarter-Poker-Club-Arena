@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import styles from './CommissionHistoryModal.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -159,9 +160,12 @@ export default function CommissionHistoryModal({
 
   const filteredEntries = filter === 'all' ? entries : entries.filter((e) => e.type === filter);
 
+  // A payout leaves the wallet, everything else arrives. Two places always:
+  // a bare toLocaleString() gave Intl's default of three, so 12.3456 read
+  // "12.346" and 12.5 read "12.5" with the cent column missing.
   const formatAmount = (amount: number, type: string) => {
     const sign = type === 'payout' ? '-' : '+';
-    return `${sign}${Math.abs(amount).toLocaleString()}`;
+    return `${sign}${formatChips(Math.abs(amount))}`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -190,15 +194,15 @@ export default function CommissionHistoryModal({
         {/* Summary Cards */}
         <div className={styles.summary}>
           <div className={styles.summaryCard}>
-            <span className={styles.summaryValue}>{summary.totalEarned.toLocaleString()}</span>
+            <span className={styles.summaryValue}>{formatChips(summary.totalEarned)}</span>
             <span className={styles.summaryLabel}>Total Earned</span>
           </div>
           <div className={styles.summaryCard}>
-            <span className={styles.summaryValue}>{summary.totalPaid.toLocaleString()}</span>
+            <span className={styles.summaryValue}>{formatChips(summary.totalPaid)}</span>
             <span className={styles.summaryLabel}>Total Paid Out</span>
           </div>
           <div className={`${styles.summaryCard} ${styles.highlight}`}>
-            <span className={styles.summaryValue}>{summary.pending.toLocaleString()}</span>
+            <span className={styles.summaryValue}>{formatChips(summary.pending)}</span>
             <span className={styles.summaryLabel}>Pending</span>
           </div>
         </div>
@@ -207,11 +211,11 @@ export default function CommissionHistoryModal({
         <div className={styles.comparison}>
           <div className={styles.compCard}>
             <span className={styles.compLabel}>This Month</span>
-            <span className={styles.compValue}>{summary.thisMonth.toLocaleString()}</span>
+            <span className={styles.compValue}>{formatChips(summary.thisMonth)}</span>
           </div>
           <div className={styles.compCard}>
             <span className={styles.compLabel}>Last Month</span>
-            <span className={styles.compValue}>{summary.lastMonth.toLocaleString()}</span>
+            <span className={styles.compValue}>{formatChips(summary.lastMonth)}</span>
           </div>
           {summary.thisMonth > summary.lastMonth && (
             <span className={styles.trend}>

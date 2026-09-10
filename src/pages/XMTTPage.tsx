@@ -17,7 +17,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './XMTTPage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
-import { fmt, fmtChips } from '../utils/format';
+import { fmt, formatTableChips } from '../utils/format';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
@@ -546,7 +546,7 @@ export default function XMTTPage() {
                     (detail.registrations || []).map((r, i) => (
                       <div key={r.user_id || i} className={styles.playerRow}>
                         <span>{r.display_name || r.username || 'Player'}</span>
-                        <span className={styles.playerChips}>{fmtChips(r.chips ?? 0)}</span>
+                        <span className={styles.playerChips}>{formatTableChips(r.chips ?? 0)}</span>
                       </div>
                     ))
                   )}

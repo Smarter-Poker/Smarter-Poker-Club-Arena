@@ -1,3 +1,4 @@
+import { formatChips as canonicalFormatChips, formatSignedChips } from './format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB DASHBOARD — pure helpers
@@ -78,10 +79,13 @@ export function rankPlayers<T extends RankablePlayer>(
   return sorted.map((p, i) => ({ ...p, rank: i + 1 }));
 }
 
-/** Chip formatting: two decimals, truncated (never rounds a loss into a win). */
+/**
+ * Chip formatting: the canonical formatter (two decimals, truncated, never
+ * rounds a loss into a win). Re-exported so the dashboard's import path keeps
+ * working; there is no second implementation here.
+ */
 export function formatChips(num: number): string {
-  const v = Math.trunc(num * 100) / 100;
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return canonicalFormatChips(num);
 }
 
 export function formatInt(num: number): string {
@@ -89,14 +93,11 @@ export function formatInt(num: number): string {
 }
 
 /**
- * Signed chip amount. Takes the sign from the value and formats the magnitude,
- * so a tiny negative like -0.004 renders "0.00" rather than the "-0.00" that
- * truncation-then-prefix produced.
+ * Signed chip amount. The sign comes from the truncated cents, so a tiny
+ * negative like -0.004 renders "0.00" rather than "-0.00".
  */
 export function formatSigned(num: number): string {
-  const v = Math.trunc(num * 100) / 100;
-  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
-  return `${sign}${formatChips(Math.abs(v))}`;
+  return formatSignedChips(num);
 }
 
 /** RFC4180-ish CSV escaping: wrap in quotes and double any embedded quote. */

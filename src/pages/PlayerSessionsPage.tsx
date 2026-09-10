@@ -19,7 +19,7 @@ import { exportToCSV } from '../lib/export';
 import './AdminDashboardPage.css'; // reuse admin styles
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, formatChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { EmptyState } from '../components/common/EmptyState';
 
@@ -609,7 +609,7 @@ export default function PlayerSessionsPage() {
         userId: wbTarget.userId,
         amount: amt,
       });
-      setSuccess(`${fmtChips(amt)} welcome-back chips sent to ${wbTarget.name}!`);
+      setSuccess(`${formatChips(amt)} welcome-back chips sent to ${wbTarget.name}!`);
       setWbTarget(null);
       setWbAmount('');
       loadRetention(true);
@@ -1110,7 +1110,7 @@ export default function PlayerSessionsPage() {
                         color: 'var(--text-secondary)',
                       }}
                     >
-                      <span> {fmtChips(p.chipBalance)}</span>
+                      <span> {formatChips(p.chipBalance)}</span>
                       <span> {timeAgo(p.lastActive)}</span>
                       <button
                         onClick={(e) => {
@@ -1208,7 +1208,7 @@ export default function PlayerSessionsPage() {
                             {p.role}
                           </span>
                         </td>
-                        <td>{fmtChips(p.chipBalance)}</td>
+                        <td>{formatChips(p.chipBalance)}</td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {timeAgo(p.lastActive)}
                         </td>
@@ -1281,7 +1281,7 @@ export default function PlayerSessionsPage() {
                           {atRisk.map((p) => (
                             <tr key={p.userId}>
                               <td style={{ fontWeight: 600 }}>{p.name}</td>
-                              <td>{fmtChips(p.chipBalance)}</td>
+                              <td>{formatChips(p.chipBalance)}</td>
                               <td style={{ color: '#F7C52A', fontWeight: 600 }}>
                                 {p.daysSinceActive}d
                               </td>
@@ -1328,7 +1328,7 @@ export default function PlayerSessionsPage() {
                           {churned.map((p) => (
                             <tr key={p.userId}>
                               <td style={{ fontWeight: 600 }}>{p.name}</td>
-                              <td>{fmtChips(p.chipBalance)}</td>
+                              <td>{formatChips(p.chipBalance)}</td>
                               <td style={{ color: '#FA383E', fontWeight: 600 }}>
                                 {p.daysSinceActive}d
                               </td>
@@ -1382,7 +1382,7 @@ export default function PlayerSessionsPage() {
                 <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
                   <div className="admin-stat-card">
                     <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                      {fmtChips(
+                      {formatChips(
                         chipFlowEntries.reduce(
                           (sum: number, e: ChipFlowEntry) => sum + (e.in || 0),
                           0
@@ -1393,7 +1393,7 @@ export default function PlayerSessionsPage() {
                   </div>
                   <div className="admin-stat-card">
                     <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                      {fmtChips(
+                      {formatChips(
                         chipFlowEntries.reduce(
                           (sum: number, e: ChipFlowEntry) => sum + (e.out || 0),
                           0
@@ -1415,7 +1415,7 @@ export default function PlayerSessionsPage() {
                             : '#FA383E',
                       }}
                     >
-                      {fmtChips(
+                      {formatChips(
                         chipFlowEntries.reduce(
                           (sum: number, e: ChipFlowEntry) => sum + (e.net || 0),
                           0
@@ -1447,8 +1447,8 @@ export default function PlayerSessionsPage() {
                       {chipFlowEntries.map((e) => (
                         <tr key={e.userId}>
                           <td style={{ fontWeight: 600 }}>{e.name}</td>
-                          <td style={{ color: '#31A24C' }}>+{fmtChips(e.in)}</td>
-                          <td style={{ color: '#FA383E' }}>-{fmtChips(e.out)}</td>
+                          <td style={{ color: '#31A24C' }}>+{formatChips(e.in)}</td>
+                          <td style={{ color: '#FA383E' }}>-{formatChips(e.out)}</td>
                           <td
                             style={{
                               fontWeight: 700,
@@ -1456,7 +1456,7 @@ export default function PlayerSessionsPage() {
                             }}
                           >
                             {(e.net || 0) >= 0 ? '+' : ''}
-                            {fmtChips(e.net)}
+                            {formatChips(e.net)}
                           </td>
                         </tr>
                       ))}

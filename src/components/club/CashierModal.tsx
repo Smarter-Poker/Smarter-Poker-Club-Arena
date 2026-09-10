@@ -14,6 +14,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { masterBus } from '../../core/MasterBus';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 
 export interface Transaction {
   id: string;
@@ -192,7 +193,7 @@ export function CashierModal({
         {/* Balance Card */}
         <div className="cashier-balance-card">
           <span className="cashier-balance-label">Current Balance</span>
-          <span className="cashier-balance-value">{balance.toLocaleString()}</span>
+          <span className="cashier-balance-value">{formatChips(balance)}</span>
         </div>
 
         {/* Tabs */}
@@ -246,13 +247,15 @@ export function CashierModal({
         >
           {(activeTab === 'deposit' || activeTab === 'withdraw') && (
             <div className="cashier-form">
-              <label className="cashier-label">
+              <label className="cashier-label" htmlFor={`club-cashier-amount-${activeTab}`}>
                 {activeTab === 'deposit' ? 'Purchase Amount' : 'Withdrawal Amount'}
               </label>
               <div className="cashier-input-wrapper">
                 <span className="cashier-currency"></span>
                 <input
+                  id={`club-cashier-amount-${activeTab}`}
                   type="number"
+                  inputMode="decimal"
                   className="cashier-input"
                   placeholder="0.00"
                   value={amount}
@@ -303,7 +306,7 @@ export function CashierModal({
                         className={`tx-amount ${tx.type === 'withdrawal' || tx.type === 'rake' ? 'neg' : 'pos'}`}
                       >
                         {tx.type === 'withdrawal' || tx.type === 'rake' ? '-' : '+'}
-                        {tx.amount.toLocaleString()}
+                        {formatChips(tx.amount)}
                       </span>
                       <span className={`tx-status tx-status--${tx.status}`}>{tx.status}</span>
                     </div>

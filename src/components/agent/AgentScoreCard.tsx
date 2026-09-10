@@ -15,6 +15,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './AgentScoreCard.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 
 interface AgentScoreCardProps {
   userId: string;
@@ -272,11 +273,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
       {/* Stats Footer */}
       <div className="score-stats">
         <div className="score-stat">
-          <span className="score-stat-value">
-            {data.avgDistribution >= 1000
-              ? `${(data.avgDistribution / 1000).toFixed(1)}K`
-              : data.avgDistribution.toFixed(0)}
-          </span>
+          <span className="score-stat-value">{formatChips(data.avgDistribution)}</span>
           <span className="score-stat-label">Avg Distribution</span>
         </div>
         <div className="score-stat">

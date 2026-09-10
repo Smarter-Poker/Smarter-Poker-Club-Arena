@@ -42,6 +42,7 @@ import {
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
 import { supabase } from '../../lib/supabase';
+import { formatChips, formatSignedChips } from '../../utils/format';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
 import './SessionSummaryHost.css';
@@ -93,11 +94,6 @@ function formatDuration(seconds: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m`;
   return `${s}s`;
-}
-
-function formatChips(n: number): string {
-  const v = Math.round(n);
-  return Math.abs(v) >= 1000 ? v.toLocaleString() : String(v);
 }
 
 /**
@@ -312,7 +308,7 @@ export function SessionSummaryHost() {
 
   const share = useCallback(async () => {
     if (!payload) return;
-    const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatChips(Math.abs(payload.profitLoss))}`;
+    const money = formatSignedChips(payload.profitLoss);
     const text =
       `${payload.tableName || 'Table Session'} - ${money} over ` +
       `${payload.handsPlayed} hands on Smarter.Poker`;

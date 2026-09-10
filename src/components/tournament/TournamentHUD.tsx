@@ -38,6 +38,7 @@ import type { Tournament } from '../../types/database.types';
 import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { formatTableChips } from '../../utils/format';
 
 interface TournamentHUDProps {
   tournamentId: string;
@@ -65,11 +66,11 @@ function fmtClock(totalSeconds: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-function fmtChips(n: number): string {
+/** A HUD figure that is not there yet reads "-"; one that is reads exact,
+ *  never "12K" (Dan 2026-08-28: chips are never rounded or shortened). */
+function hudChips(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '-';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 10_000) return `${Math.round(n / 1000)}K`;
-  return Math.trunc(n).toLocaleString();
+  return formatTableChips(n);
 }
 
 export function TournamentHUD({
@@ -427,10 +428,10 @@ export function TournamentHUD({
           Blinds
         </span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>
-          {isBreak ? '-' : `${fmtChips(cur?.smallBlind ?? 0)} / ${fmtChips(cur?.bigBlind ?? 0)}`}
+          {isBreak ? '-' : `${hudChips(cur?.smallBlind ?? 0)} / ${hudChips(cur?.bigBlind ?? 0)}`}
         </span>
         {!isBreak && (cur?.ante ?? 0) > 0 && (
-          <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {fmtChips(cur!.ante)}</span>
+          <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {hudChips(cur!.ante)}</span>
         )}
       </div>
 
@@ -464,7 +465,7 @@ export function TournamentHUD({
         </span>
         {next && !next.isBreak && (
           <span style={{ fontSize: 9, opacity: 0.6 }}>
-            {fmtChips(next.smallBlind)}/{fmtChips(next.bigBlind)}
+            {hudChips(next.smallBlind)}/{hudChips(next.bigBlind)}
           </span>
         )}
         {next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>Break Next</span>}
@@ -530,7 +531,7 @@ export function TournamentHUD({
             {spinPrizePool !== undefined ? 'Prize' : 'Avg'}
           </span>
           <span style={{ fontSize: 15, fontWeight: 700 }}>
-            {fmtChips(spinPrizePool ?? shownAvg ?? 0)}
+            {hudChips(spinPrizePool ?? shownAvg ?? 0)}
           </span>
         </div>
       )}

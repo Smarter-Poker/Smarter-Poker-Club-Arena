@@ -14,7 +14,7 @@ import { confirmDialog } from '../components/common/confirmDialog';
 import { AgentService, type Agent, type ReversibleDistribution } from '@/services/AgentService';
 import { MembershipService, type ClubMembership } from '@/services/MembershipService';
 import { exportToCSV } from '../lib/export';
-import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, formatChips, timeAgo } from '../utils/format';
 import { isAuthzError } from '../utils/clubDashboard';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { supabase } from '@/lib/supabase';
@@ -661,9 +661,9 @@ export default function AgentManagementPage() {
       }
       if (Number(outcome.chips_held) > 0 || Number(outcome.credit_used) > 0) {
         toast.warning(
-          `They Still Hold ${fmtChips(Number(outcome.chips_held) || 0)} Chips` +
+          `They Still Hold ${formatChips(Number(outcome.chips_held) || 0)} Chips` +
             (Number(outcome.credit_used) > 0
-              ? ` And Owe ${fmtChips(Number(outcome.credit_used))} On Credit`
+              ? ` And Owe ${formatChips(Number(outcome.credit_used))} On Credit`
               : '') +
             '. Settle That Before Removing Their Membership.'
         );
@@ -1108,11 +1108,11 @@ export default function AgentManagementPage() {
                     <div key={tx.transaction_id} className={styles.reversibleRow}>
                       <div>
                         <div className={styles.reversibleAmount}>
-                          {fmtChips(tx.remaining)} Chips To {tx.to_name}
+                          {formatChips(tx.remaining)} Chips To {tx.to_name}
                         </div>
                         <div className={styles.reversibleMeta}>
                           {partial
-                            ? `${fmtChips(tx.claimed_back)} Of ${fmtChips(tx.amount)} Already Taken Back - `
+                            ? `${formatChips(tx.claimed_back)} Of ${formatChips(tx.amount)} Already Taken Back - `
                             : ''}
                           <span className={styles.reversibleClock}>
                             {mins}:{String(secs).padStart(2, '0')} Left
@@ -1125,7 +1125,7 @@ export default function AgentManagementPage() {
                           if (
                             !(await confirmDialog({
                               title: 'Take This Send Back',
-                              message: `Take back ${fmtChips(tx.remaining)} chips from ${tx.to_name}? This returns them to your agent wallet.`,
+                              message: `Take back ${formatChips(tx.remaining)} chips from ${tx.to_name}? This returns them to your agent wallet.`,
                               confirmText: 'Take It Back',
                               variant: 'danger',
                             }))
@@ -1141,7 +1141,7 @@ export default function AgentManagementPage() {
                             );
                             if (result.success) {
                               toast.success(
-                                `Took Back ${fmtChips(result.claimedBack || tx.remaining)} Chips.`
+                                `Took Back ${formatChips(result.claimedBack || tx.remaining)} Chips.`
                               );
                               loadRecentDistributions();
                             } else {
@@ -1369,7 +1369,7 @@ export default function AgentManagementPage() {
                 <>
                   <div className={styles.payoutHeadline}>
                     <div>
-                      <div className={styles.payoutTotal}>{fmtChips(payables.total_owed)}</div>
+                      <div className={styles.payoutTotal}>{formatChips(payables.total_owed)}</div>
                       <div className={styles.payoutTotalLabel}>
                         Unsettled Commission Across {fmt(payables.agents)}{' '}
                         {payables.agents === 1 ? 'Agent' : 'Agents'}, From{' '}
@@ -1395,7 +1395,7 @@ export default function AgentManagementPage() {
                           <tr key={row.agent_id}>
                             <td>{row.name}</td>
                             <td>{AGENT_ROLE_LABELS[row.role] || row.role}</td>
-                            <td className={styles.netPayout}>{fmtChips(row.owed)}</td>
+                            <td className={styles.netPayout}>{formatChips(row.owed)}</td>
                             <td>{fmt(row.rows_behind)}</td>
                             <td>
                               {row.oldest_unsettled
@@ -1405,7 +1405,7 @@ export default function AgentManagementPage() {
                             <td>
                               {row.is_prepaid
                                 ? 'Prepaid'
-                                : `${fmtChips(row.credit_used)} Of ${fmtChips(row.credit_limit)} Drawn`}
+                                : `${formatChips(row.credit_used)} Of ${formatChips(row.credit_limit)} Drawn`}
                             </td>
                           </tr>
                         ))}

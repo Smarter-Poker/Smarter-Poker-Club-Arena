@@ -10,6 +10,7 @@ import { AgentService, type Agent } from '../../services/AgentService';
 import styles from './AgentTree.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,10 +63,6 @@ function buildTree(agents: Agent[]): AgentNode[] {
   sortNodes(roots);
 
   return roots;
-}
-
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 0 });
 }
 
 function countNodes(nodes: AgentNode[]): number {
@@ -187,7 +184,7 @@ function TreeNode({
             <span className={styles.statLabel}>Sub-Agents</span>
           </div>
           <div className={styles.statItem}>
-            <span className={styles.statValue}>{formatCurrency(node.businessBalance)}</span>
+            <span className={styles.statValue}>{formatChips(node.businessBalance)}</span>
             <span className={styles.statLabel}>Balance</span>
           </div>
           <div className={styles.statItem}>

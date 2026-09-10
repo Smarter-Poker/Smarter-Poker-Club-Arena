@@ -1,0 +1,3 @@
+# tests/money-is-displayed-one-way.law.test.ts
+
+Every chip amount a player reads is formatted by ONE module, `src/utils/format.ts` (`formatChips` two places / separators / truncated at the cent, `formatSignedChips`, `formatTableChips`, `formatStackChips`, `formatChipAward`); the historical `lib/utils` and `utils/clubDashboard` paths are re-exports of it, no file in `src/` abbreviates to K/M, pads a number, or keeps `fmtChips`, and a ratchet names every file that still carries its own Intl option bag or a bare `.toLocaleString()` on money so the list can only shrink. Also pins the audit's accessibility fixes on the money entry field, the club cashier, the tournament cards and the VIP / report dialogs.

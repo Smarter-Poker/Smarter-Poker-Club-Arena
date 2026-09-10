@@ -7,31 +7,56 @@
  */
 
 /**
- * Format a number with locale-aware separators.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  MONEY IS DISPLAYED ONE WAY (2026-09-10, law: tests/money-is-displayed-one-way.law.test.ts)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The 2026-09-08 audit counted 30+ distinct money formatters in src/: seven
+ * truncating, fourteen rounding, four abbreviating and five with no fraction
+ * options at all, so Intl's default of THREE decimals reached commission
+ * screens and the same wallet balance read a cent apart on two pages. This
+ * file is now the only place a chip amount is turned into text, and every
+ * helper here obeys the same three rulings:
+ *
+ *   * Dan 2026-08-28: "CHIPS SHOULD ALWAYS BE DISPLAYED IN [WHOLE] NUMBERS,
+ *     NEVER ROUNDED OR SHORTENED" - no K/M suffix, anywhere, ever. The
+ *     lobby's `fmtChips` ("1.5K") was the last one and is gone.
+ *   * Dan 2026-08-29: "THERE CAN NEVER BE 'ROUNDING' IT MUST ALWAYS BE DOWN
+ *     TO THE CENT", and 2026-09-04: "ABSOLUTELY ZERO ROUNDING ANYWHERE EVER"
+ *     - money truncates toward zero at the cent; a loss is never shown as
+ *     break-even and a balance never gains a cent it does not hold.
+ *   * CLAUDE.md 5.5: separators come from `toLocaleString`, never `padStart`.
+ *
+ * THE FAMILY, and which one a caller reaches for:
+ *
+ *   formatChips        money off the felt: wallets, cashier, ledger, prizes,
+ *                      commissions, buy-ins. Always exactly two places.
+ *   formatSignedChips  the same, with a leading + or - for a P/L.
+ *   formatTableChips   chips ON the felt and on tournament clocks: integers
+ *                      clean ("1,500"), a real fraction kept ("13.37").
+ *   formatStackChips   a seat's stack: to the penny under 100, whole above.
+ *   formatChipAward    the "+N" that rides with money arriving at a seat.
+ *
+ * Nothing else may call toLocaleString / Intl.NumberFormat / toFixed on a
+ * chip amount. The law pins the set of files that still do (a ratchet that
+ * only shrinks) and refuses any new one.
+ */
+
+/**
+ * Format a number with locale-aware separators. COUNTS ONLY (hands, players,
+ * entries). A chip amount goes through formatChips.
  * @example fmt(12345) → "12,345"
  */
 export const fmt = (n: number | null | undefined): string => Number(n || 0).toLocaleString();
 
 /**
- * Format a chip amount with K/M abbreviation.
- * @example fmtChips(1500) → "1.5K"
- * @example fmtChips(2500000) → "2.5M"
- */
-export const fmtChips = (n: number | null | undefined): string => {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return fmt(v);
-};
-
-/**
  * CHIPS ON THE FELT ARE NEVER ABBREVIATED (Dan 2026-08-28, binding).
  *
- * `fmtChips` above renders 117000 as "117.0K" and 247100 as "247.1K". On a
- * lobby row that is fine — it is a browsing surface and the exact number does
- * not change a decision. On the TABLE it is not: a player sizing a bet, or
- * reading how much is behind, is being shown a number that has been rounded
- * away from the truth. "247K" is not a stack, it is a range 500 chips wide.
+ * The lobby's `fmtChips` rendered 117000 as "117.0K" and 247100 as "247.1K"
+ * (it is gone now - see the header). On the TABLE that was never acceptable:
+ * a player sizing a bet, or reading how much is behind, was being shown a
+ * number that had been rounded away from the truth. "247K" is not a stack,
+ * it is a range 500 chips wide.
  *
  * So: separators, never a K/M suffix, and never a rounded magnitude.
  *
@@ -225,24 +250,50 @@ export const formatSignedPct = (value: unknown, digits = 1): string => {
   return value > 0 ? `+${fixed}%` : `${fixed}%`;
 };
 
-/** "+1,711.50" / "-2,183.70" / "0.00" - chips, signed, thousands separators. */
+/** A chip amount as a number, or null when it is not one. Numeric strings
+ *  (ledger columns that arrive as text) count; "", null, NaN do not. */
+const asMoney = (value: unknown): number | null => {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return finite(n) ? n : null;
+};
+
+/**
+ * "+1,711.50" / "-2,183.70" / "0.00" - formatChips with a leading sign for a
+ * P/L. The sign is taken from the TRUNCATED cents, so a -0.004 result reads
+ * "0.00" and never "-0.00", and a -0.49 loss reads "-0.49", never "0".
+ */
 export const formatSignedChips = (value: unknown, digits = 2): string => {
-  if (!finite(value)) return '0.00';
+  const n = asMoney(value);
+  if (n === null) return (0).toFixed(digits);
   const factor = 10 ** digits;
-  const fixed = (Math.trunc(nudge(Math.abs(value)) * factor) / factor).toLocaleString('en-US', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-  if (value > 0) return `+${fixed}`;
-  if (value < 0) return `-${fixed}`;
+  const cents = Math.trunc(nudge(n) * factor);
+  const fixed = formatChips(Math.abs(cents) / factor, digits);
+  if (cents > 0) return `+${fixed}`;
+  if (cents < 0) return `-${fixed}`;
   return fixed;
 };
 
-/** "1,711.50" - chips, unsigned, truncated. */
+/**
+ * "1,711.50" - THE money formatter. Two places always, thousands separators,
+ * truncated toward zero at the cent (never rounded), and a value that is not
+ * a finite number - null, undefined, NaN, an empty string, a failed read -
+ * prints "0.00" rather than "NaN" or "12.346". A numeric string (a ledger
+ * column that arrives as text) is accepted as the number it spells.
+ *
+ * @example formatChips(1234.5)     → "1,234.50"
+ * @example formatChips(12.3456)    → "12.34"
+ * @example formatChips(1250000)    → "1,250,000.00"
+ * @example formatChips(-0.49)      → "-0.49"
+ * @example formatChips('2183.7')   → "2,183.70"
+ * @example formatChips(NaN)        → "0.00"
+ */
 export const formatChips = (value: unknown, digits = 2): string => {
-  if (!finite(value)) return '0.00';
+  const n = asMoney(value);
+  if (n === null) return (0).toFixed(digits);
   const factor = 10 ** digits;
-  return (Math.trunc(nudge(value) * factor) / factor).toLocaleString('en-US', {
+  const truncated = Math.trunc(nudge(n) * factor) / factor;
+  // Math.trunc(-0.004 * 100) is -0, which toLocaleString prints as "-0.00".
+  return (truncated === 0 ? 0 : truncated).toLocaleString('en-US', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });

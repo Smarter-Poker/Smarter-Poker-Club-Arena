@@ -38,7 +38,7 @@ import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { soundService } from '../../services/SoundService';
 import { visualChipStacks } from '../../lib/chipDenominations';
-import { formatTableChips } from '../../utils/format';
+import { formatChips, formatTableChips } from '../../utils/format';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -120,10 +120,15 @@ export interface PotDisplayProps {
  */
 export const SMALL_STAKES_BB_MAX = 1;
 
+/* A pot that could not be computed (NaN from a failed read, a missing field)
+   is not a pot of zero. `!(amount > 0)` was true for NaN as well as for 0, so
+   the felt showed "POT 0" for a number nobody had. Non-finite reads "-": the
+   pill says it does not know, rather than claiming an amount (CLAUDE.md 10.86). */
 function formatAmount(amount: number, bigBlind: number = 0): string {
+  if (!Number.isFinite(amount)) return '-';
   if (!(amount > 0)) return '0';
   if (bigBlind > 0 && bigBlind <= SMALL_STAKES_BB_MAX) {
-    return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatChips(amount);
   }
   return formatTableChips(amount);
 }
@@ -131,6 +136,7 @@ function formatAmount(amount: number, bigBlind: number = 0): string {
 // Format amount in Big Blinds
 function formatBB(amount: number, bigBlind: number): string {
   if (bigBlind <= 0) return formatAmount(amount, bigBlind);
+  if (!Number.isFinite(amount)) return '-';
   const bbs = amount / bigBlind;
   // Show 1 decimal for fractional BBs, whole number for clean amounts
   if (bbs === Math.floor(bbs)) {

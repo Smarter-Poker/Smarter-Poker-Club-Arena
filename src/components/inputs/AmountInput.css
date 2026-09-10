@@ -39,7 +39,24 @@
   text-align: center;
 }
 
-.amount-input:focus {
+/* Keyboard focus must be visible on a money field. `outline: none` on :focus
+   out-specified the global :focus-visible ring and left it invisible; the
+   ring now sits on the container so it wraps prefix, field and suffix. */
+.amount-input:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.amount-input:focus-visible {
+  outline: none;
+}
+
+.amount-container:focus-within {
+  outline: 2px solid var(--club-blue-light, #58a6ff);
+  outline-offset: 2px;
+  border-color: rgba(88, 166, 255, 0.6);
+}
+
+.amount-container:has(.amount-input:focus:not(:focus-visible)) {
   outline: none;
 }
 

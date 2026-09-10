@@ -20,6 +20,8 @@
  * transaction type the cashier writes.
  */
 
+import { formatChips } from '../../utils/format';
+
 export interface ChipTransactionLike {
   transaction_type?: string | null;
   amount?: number | string | null;
@@ -73,10 +75,10 @@ function walletName(key: unknown, fallback: WalletName): WalletName {
   return DESTINATION_NAMES[k] ?? fallback;
 }
 
+/** The ledger sentence's amount: two places always (1234.50 is "1,234.50",
+ *  never "1,234.5"), through the one money formatter. */
 export function formatChipAmount(amount: number | string | null | undefined): string {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return '0';
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return formatChips(amount);
 }
 
 /**

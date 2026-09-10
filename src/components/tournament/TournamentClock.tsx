@@ -22,6 +22,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './TournamentClock.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -413,12 +414,6 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   useMasterBusSubscription('BREAK_END', handleBreakEnd);
 
   // ── Format chip count with K/M abbreviations ──
-  const formatChips = (n: number): string => {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 10_000) return `${(n / 1000).toFixed(0)}K`;
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-    return n.toString();
-  };
 
   // ── Timer urgency class ──
   const timerClass =
@@ -472,19 +467,21 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           <div className="tc-blinds">
             <div className="tc-blind-group">
               <span className="tc-blind-label">SB</span>
-              <span className="tc-blind-value">{formatChips(clock.smallBlind)}</span>
+              <span className="tc-blind-value">{formatTableChips(clock.smallBlind)}</span>
             </div>
             <span className="tc-blind-separator">/</span>
             <div className="tc-blind-group">
               <span className="tc-blind-label">BB</span>
-              <span className="tc-blind-value">{formatChips(clock.bigBlind)}</span>
+              <span className="tc-blind-value">{formatTableChips(clock.bigBlind)}</span>
             </div>
             {clock.ante > 0 && (
               <>
                 <span className="tc-blind-separator">+</span>
                 <div className="tc-blind-group">
                   <span className="tc-blind-label">ANTE</span>
-                  <span className="tc-blind-value tc-ante-value">{formatChips(clock.ante)}</span>
+                  <span className="tc-blind-value tc-ante-value">
+                    {formatTableChips(clock.ante)}
+                  </span>
                 </div>
               </>
             )}
@@ -500,8 +497,8 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
             <div className="tc-next-level">
               <span className="tc-next-label">NEXT</span>
               <span className="tc-next-blinds">
-                {formatChips(clock.nextSmallBlind)}/{formatChips(clock.nextBigBlind)}
-                {clock.nextAnte > 0 && ` +${formatChips(clock.nextAnte)}`}
+                {formatTableChips(clock.nextSmallBlind)}/{formatTableChips(clock.nextBigBlind)}
+                {clock.nextAnte > 0 && ` +${formatTableChips(clock.nextAnte)}`}
               </span>
             </div>
           )}
@@ -521,12 +518,12 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           </div>
           <div className="tc-stat">
             <span className="tc-stat-icon">▦</span>
-            <span className="tc-stat-value">{formatChips(clock.averageStack)}</span>
+            <span className="tc-stat-value">{formatTableChips(clock.averageStack)}</span>
             <span className="tc-stat-label">Avg Stack</span>
           </div>
           <div className="tc-stat">
             <span className="tc-stat-icon">▦</span>
-            <span className="tc-stat-value">{formatChips(clock.totalChips)}</span>
+            <span className="tc-stat-value">{formatTableChips(clock.totalChips)}</span>
             <span className="tc-stat-label">Total Chips</span>
           </div>
         </div>

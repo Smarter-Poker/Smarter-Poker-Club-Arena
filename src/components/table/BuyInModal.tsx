@@ -14,6 +14,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { haptic, soundService } from '../../services/SoundService';
 import './BuyInModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -50,14 +51,6 @@ export interface BuyInModalProps {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// EXACT precision — no abbreviations, no rounding
-function formatAmount(amount: number, currency: string = ''): string {
-  if (Math.abs(amount - Math.round(amount)) < 0.005) {
-    return Math.round(amount).toLocaleString('en-US');
-  }
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -347,17 +340,12 @@ export function BuyInModal({
          */}
         <div className="buy-in-modal__stage">
           <div className="buy-in-modal__current-amount">
-            <span className="buy-in-modal__amount-value">
-              {displayAmount.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </span>
+            <span className="buy-in-modal__amount-value">{formatChips(displayAmount)}</span>
           </div>
 
           {!recovery && (
             <div className="buy-in-modal__slider-container">
-              <span className="buy-in-modal__slider-cap">{formatAmount(maxBuyIn, currency)}</span>
+              <span className="buy-in-modal__slider-cap">{formatChips(maxBuyIn)}</span>
               <input
                 type="range"
                 className="buy-in-modal__slider"
@@ -374,9 +362,7 @@ export function BuyInModal({
                   } as React.CSSProperties
                 }
               />
-              <span className="buy-in-modal__slider-cap">
-                {formatAmount(effectiveMinBuyIn, currency)}
-              </span>
+              <span className="buy-in-modal__slider-cap">{formatChips(effectiveMinBuyIn)}</span>
             </div>
           )}
         </div>
@@ -435,7 +421,7 @@ export function BuyInModal({
 
         {recovery && !isProcessing && (
           <p role="status">
-            Your {formatAmount(recovery.amount)} Chip Buy-In For Seat {recovery.seat} Needs
+            Your {formatChips(recovery.amount)} Chip Buy-In For Seat {recovery.seat} Needs
             Confirmation. We Will Check It Before Retrying The Same Buy-In.
           </p>
         )}
@@ -446,7 +432,7 @@ export function BuyInModal({
           <span
             className={`buy-in-modal__balance-value ${balanceKnown && !hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
           >
-            {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
+            {balanceKnown ? formatChips(accountBalance) : 'Unavailable'}
           </span>
           <span className="buy-in-modal__balance-label">)</span>
           {!balanceKnown && onRetryBalance && (

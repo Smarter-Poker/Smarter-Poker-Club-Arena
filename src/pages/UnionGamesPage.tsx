@@ -18,7 +18,7 @@ import { tournamentService, tournamentUnregisterSuccessText } from '../services/
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './UnionGamesPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { fmt, fmtChips } from '../utils/format';
+import { fmt, formatChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
@@ -442,7 +442,7 @@ export default function UnionGamesPage() {
         </div>
         {bbjPool && (
           <div className={styles.statCard}>
-            <div className={styles.statValuePurple}>{fmtChips(bbjPool.total_pool)}</div>
+            <div className={styles.statValuePurple}>{formatChips(bbjPool.total_pool)}</div>
             <div className={styles.statLabel}>BBJ Pool</div>
           </div>
         )}
@@ -507,12 +507,12 @@ export default function UnionGamesPage() {
                     <StatusBadge status={t.status} />
                   </div>
                   <div className={styles.tournMeta}>
-                    <span> {fmtChips(t.buy_in)}</span>
+                    <span> {formatChips(t.buy_in)}</span>
                     <span>
                       {t.registered_count || 0}/{t.max_players || '∞'}
                     </span>
                     <span> {formatDate(t.start_time || null)}</span>
-                    {t.prize_pool ? <span> {fmtChips(t.prize_pool)}</span> : null}
+                    {t.prize_pool ? <span> {formatChips(t.prize_pool)}</span> : null}
                   </div>
                   <div className={styles.tournActions}>
                     <Link to={`/tournaments/${t.id}`} className={styles.btnGhost}>
@@ -617,7 +617,7 @@ export default function UnionGamesPage() {
             <div className={styles.bbjContainer}>
               <div className={styles.bbjPoolCard}>
                 <div className={styles.bbjLabel}>Current BBJ Pool</div>
-                <div className={styles.bbjAmount}>{fmtChips(bbjPool.total_pool)}</div>
+                <div className={styles.bbjAmount}>{formatChips(bbjPool.total_pool)}</div>
                 <div className={styles.bbjSublabel}>Bad Beat Jackpot</div>
               </div>
 

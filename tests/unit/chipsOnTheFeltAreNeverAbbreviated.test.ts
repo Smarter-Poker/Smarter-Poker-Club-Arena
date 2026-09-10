@@ -21,15 +21,17 @@
  * the sign flipped, and it broke the bet-granularity spec. Abbreviating and
  * truncating are both "rounded or shortened".
  *
- * `fmtChips` is deliberately NOT changed: it serves lobby and browsing rows,
- * where the exact number changes no decision. If a table surface starts
- * importing it, that is the regression this file is here to catch.
+ * `fmtChips` (the lobby's "1.5K") was left alone when this was written and
+ * retired on 2026-09-10 under Dan's 2026-09-04 "ABSOLUTELY ZERO ROUNDING
+ * ANYWHERE EVER": every surface now formats through the same family, and
+ * tests/money-is-displayed-one-way.law.test.ts keeps it that way.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-import { formatStackChips, formatTableChips, fmtChips } from '../../src/utils/format';
+import { formatStackChips, formatTableChips } from '../../src/utils/format';
+import * as format from '../../src/utils/format';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -106,8 +108,8 @@ describe('formatStackChips - a stack under 100 reads to the penny (Dan 2026-09-0
     expect(seat).not.toContain('amount >= 1 ? Math.round(amount) : amount');
   });
 
-  it('leaves fmtChips alone - the lobby may still abbreviate', () => {
-    expect(fmtChips(1500)).toBe('1.5K');
+  it('the abbreviating lobby formatter no longer exists to be reached for', () => {
+    expect((format as Record<string, unknown>).fmtChips).toBeUndefined();
   });
 });
 

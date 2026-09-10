@@ -54,6 +54,7 @@ import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 import './ClubProfileModal.css';
 
 export interface ClubProfileModalProps {
@@ -66,13 +67,6 @@ export interface ClubProfileModalProps {
   /** The table whose session is summarised. Absent for an unseated observer. */
   tableId?: string;
 }
-
-/** Chips, to the two decimal places every other cashier surface uses. */
-const fmtChips = (n: number) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 
 /** Whole counts (hands, big blinds) never carry decimals. */
 const fmtWhole = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0).toLocaleString('en-US');
@@ -233,13 +227,13 @@ export function ClubProfileModal({
               <div className="cpm-stat">
                 <span className="cpm-stat-label">Stack</span>
                 <span className="cpm-stat-value">
-                  {stats ? fmtChips(stats.currentStack) : '--'}
+                  {stats ? formatChips(stats.currentStack) : '--'}
                 </span>
               </div>
               <div className="cpm-stat">
                 <span className="cpm-stat-label">Net</span>
                 <span className={`cpm-stat-value ${netClass}`}>
-                  {net === null ? '--' : `${netPrefix}${fmtChips(net)}`}
+                  {net === null ? '--' : `${netPrefix}${formatChips(net)}`}
                 </span>
               </div>
               <div className="cpm-stat">
@@ -250,7 +244,9 @@ export function ClubProfileModal({
               </div>
               <div className="cpm-stat">
                 <span className="cpm-stat-label">Bought In</span>
-                <span className="cpm-stat-value">{stats ? fmtChips(stats.buyInTotal) : '--'}</span>
+                <span className="cpm-stat-value">
+                  {stats ? formatChips(stats.buyInTotal) : '--'}
+                </span>
               </div>
             </div>
           </div>

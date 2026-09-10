@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useToast } from '../common/Toast';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './ReportPlayerModal.css';
 
 interface ReportPlayerModalProps {
@@ -52,6 +54,10 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
   const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* The report flow must be leavable and named from the keyboard: Escape
+     closes it, focus stays inside it, the close control has a name. */
+  useDialogEscape(isOpen, onClose);
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen);
   useEffect(() => {
     if (isOpen) {
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
@@ -103,6 +109,10 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
     <div className="report-modal-overlay" onClick={onClose}>
       <div
         className="report-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="report-player-modal-title"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           opacity: mounted ? 1 : 0,
@@ -111,9 +121,9 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
         }}
       >
         <div className="report-header">
-          <h2>Report Player</h2>
-          <button className="close-btn" onClick={onClose}>
-            ×
+          <h2 id="report-player-modal-title">Report Player</h2>
+          <button type="button" className="close-btn" onClick={onClose} aria-label="Close Report">
+            <span aria-hidden="true">×</span>
           </button>
         </div>
 

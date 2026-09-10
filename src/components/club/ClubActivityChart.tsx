@@ -22,6 +22,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { formatChips } from '../../utils/format';
 
 export interface ClubActivityPoint {
   d: string;
@@ -54,11 +55,6 @@ function shortDay(iso: string): string {
 }
 
 const fmtInt = (n: number) => Math.trunc(n).toLocaleString('en-US');
-const fmtChips = (n: number) =>
-  (Math.trunc(n * 100) / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 
 export default function ClubActivityChart({ data, height = 240, handsLabel }: Props) {
   const points = (data || []).map((p) => ({ ...p, label: shortDay(p.d) }));
@@ -128,7 +124,7 @@ export default function ClubActivityChart({ data, height = 240, handsLabel }: Pr
             formatter={(value, name) => {
               const label = String(name ?? '');
               return label === 'Rake'
-                ? [fmtChips(Number(value)), label]
+                ? [formatChips(Number(value)), label]
                 : [fmtInt(Number(value)), label];
             }}
           />

@@ -122,26 +122,52 @@ describe('tournament levels belong to the hand that was created with them', () =
       })
     );
     let ready = false;
-    const inputs = engine.readNextHandInputs().then((rows: unknown) => {
+    await expect(engine.readNextHandInputs()).resolves.toEqual(seats);
+    const inputs = engine.awaitNextHandRest().then(() => {
       ready = true;
-      return rows;
     });
     await Promise.resolve();
     await Promise.resolve();
     expect(ready).toBe(false);
     expect(engine.handController).toBeNull();
     release({ ...engine.tableInfo, ...levelTwo });
-    await expect(inputs).resolves.toEqual(seats);
+    await expect(inputs).resolves.toBeUndefined();
     const hand = await deal();
     hand.start();
     expect(hand.getState()).toMatchObject({ currentBet: 40, pot: 72 });
   });
 
-  it('refuses the next-hand input set when the blind authority cannot be read', async () => {
+  it('uses the level reached during the rest after next-hand inputs were prepared', async () => {
+    const { engine, deal } = fixture();
+    engine.allocateGlobalHandNumber = async () => 100;
+    engine.armNextHandRest(60_000);
+    await engine.prepareNextHand();
+    let releaseRest!: () => void;
+    const sleep = vi.spyOn(engine, 'sleep').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRest = resolve;
+        })
+    );
+    const rest = engine.awaitNextHandRest();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sleep).toHaveBeenCalledOnce();
+    loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    releaseRest();
+    await rest;
+    expect(loadTable).toHaveBeenCalledOnce();
+    const hand = await deal();
+    hand.start();
+    expect(hand.getState()).toMatchObject({ currentBet: 40, pot: 72 });
+  });
+
+  it('refuses the next deal when the blind authority cannot be read', async () => {
     const { engine } = fixture();
     const unavailable = new Error('blind authority rejected the read');
     loadTable.mockRejectedValue(unavailable);
-    await expect(engine.readNextHandInputs()).rejects.toBe(unavailable);
+    await engine.readNextHandInputs();
+    await expect(engine.awaitNextHandRest()).rejects.toBe(unavailable);
     expect(engine.handController).toBeNull();
   });
 });

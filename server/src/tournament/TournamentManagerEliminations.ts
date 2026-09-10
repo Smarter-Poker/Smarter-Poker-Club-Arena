@@ -3983,6 +3983,57 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
     return cleaned;
   }
+  /**
+   * One record, never a retry: the terminal authority refused this manager's
+   * parameters against its stored receipt and the receipt could not be read
+   * back. Names the tournament, what was observed and what is stored.
+   */
+  private async reportTerminalReceiptDisagreement(
+    error: TerminalSettlementDisagreementError
+  ): Promise<void> {
+    reportError(error, 'Tournament.atomic_finish_receipt_disagreement');
+    try {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.atomic_finish_receipt_disagreement',
+        `Tournament ${this.tournamentId} has a stored terminal receipt that disagrees with this manager's finish parameters, and the receipt could not be adopted. The manager stood down without retrying. ${error.message}`,
+        {
+          tournament_id: this.tournamentId,
+          observed_settlement_mode: error.observed.settlementMode,
+          observed_winner_id: error.observed.winnerId,
+          stored_settlement_mode: error.stored?.settlementMode ?? null,
+          stored_winner_id: error.stored?.winnerId ?? null,
+          proven_refusal: true,
+          outcome_unknown: false,
+        }
+      );
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
+  /** The receipt won over this process's observation; say so once, then continue from the receipt. */
+  private async reportAdoptedTerminalReceipt(
+    observedWinnerId: string,
+    receipt: VerifiedTournamentCompletionReceipt
+  ): Promise<void> {
+    const message =
+      `[Tournament:${this.tournamentId.slice(0, 8)}] adopted the stored terminal receipt ` +
+      `(${receipt.settlementMode}, winner ${receipt.winnerId.slice(0, 8)}) over this manager's ` +
+      `observed winner ${observedWinnerId.slice(0, 8)}; no money moved on this process's view`;
+    reportError(new Error(message), 'Tournament.atomic_finish_receipt_adopted');
+    try {
+      await raiseFinancialAlert('warning', 'Tournament.atomic_finish_receipt_adopted', message, {
+        tournament_id: this.tournamentId,
+        observed_winner_id: observedWinnerId,
+        stored_winner_id: receipt.winnerId,
+        stored_settlement_mode: receipt.settlementMode,
+      });
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
   protected async finishTournament(winnerId: string): Promise<void> {
     // A committed receipt makes this cleanup-only work. It must remain
     // reachable ahead of every local latch and maintenance admission guard.
@@ -4146,56 +4197,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     await this.cleanupCommittedTournament(receipt);
   }
 
-  /**
-   * One record, never a retry: the terminal authority refused this manager's
-   * parameters against its stored receipt and the receipt could not be read
-   * back. Names the tournament, what was observed and what is stored.
-   */
-  private async reportTerminalReceiptDisagreement(
-    error: TerminalSettlementDisagreementError
-  ): Promise<void> {
-    reportError(error, 'Tournament.atomic_finish_receipt_disagreement');
-    try {
-      await raiseFinancialAlert(
-        'critical',
-        'Tournament.atomic_finish_receipt_disagreement',
-        `Tournament ${this.tournamentId} has a stored terminal receipt that disagrees with this manager's finish parameters, and the receipt could not be adopted. The manager stood down without retrying. ${error.message}`,
-        {
-          tournament_id: this.tournamentId,
-          observed_settlement_mode: error.observed.settlementMode,
-          observed_winner_id: error.observed.winnerId,
-          stored_settlement_mode: error.stored?.settlementMode ?? null,
-          stored_winner_id: error.stored?.winnerId ?? null,
-          proven_refusal: true,
-          outcome_unknown: false,
-        }
-      );
-    } catch (alertErr) {
-      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
-    }
-  }
-
-  /** The receipt won over this process's observation; say so once, then continue from the receipt. */
-  private async reportAdoptedTerminalReceipt(
-    observedWinnerId: string,
-    receipt: VerifiedTournamentCompletionReceipt
-  ): Promise<void> {
-    const message =
-      `[Tournament:${this.tournamentId.slice(0, 8)}] adopted the stored terminal receipt ` +
-      `(${receipt.settlementMode}, winner ${receipt.winnerId.slice(0, 8)}) over this manager's ` +
-      `observed winner ${observedWinnerId.slice(0, 8)}; no money moved on this process's view`;
-    reportError(new Error(message), 'Tournament.atomic_finish_receipt_adopted');
-    try {
-      await raiseFinancialAlert('warning', 'Tournament.atomic_finish_receipt_adopted', message, {
-        tournament_id: this.tournamentId,
-        observed_winner_id: observedWinnerId,
-        stored_winner_id: receipt.winnerId,
-        stored_settlement_mode: receipt.settlementMode,
-      });
-    } catch (alertErr) {
-      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
-    }
-  }
   // ── Implemented by TournamentManager (layer 3/3) ──
   protected abstract checkTableBalance(): Promise<void>;
   protected abstract processSatelliteAwards(

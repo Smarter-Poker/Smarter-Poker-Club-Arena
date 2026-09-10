@@ -629,6 +629,7 @@ jobs:
               server/scripts/engine-supervisor.sh \
               server/scripts/engine-up.sh \
               server/scripts/engine-release-seal.py \
+              server/scripts/build-engine-image.sh \
               server/scripts/verify-recovery-stack.sh \
               | tar -x -C \"\$CONTROL_STAGE\"
             # Design note 5: reset to the resolved target, never moving main.
@@ -675,26 +676,23 @@ jobs:
         id: image
         if: steps.dedupe.outputs.skip != 'true'
         run: |
-          if ~/hssh "docker image inspect $IMAGE_REPO:$SHA >/dev/null 2>&1"; then
-            REV=$(~/hssh "docker image inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' $IMAGE_REPO:$SHA" 2>/dev/null || echo "")
-            if [ "$REV" = "$SHA" ]; then
-              echo "reused=true" >> $GITHUB_OUTPUT
-              echo "::notice title=IMAGE ALREADY STAGED::$IMAGE_REPO:$SHA has the exact immutable OCI revision - skipping the build and handing its minutes to the break gate."
-              exit 0
-            fi
-            echo "::warning title=STALE SHA TAG::$IMAGE_REPO:$SHA exists but its immutable revision is '${REV:-missing}'. Rebuilding instead of trusting a mutable tag."
+          set -euo pipefail
+          RESULT_FILE="$(mktemp)"
+          cleanup_result_file() { rm -f -- "$RESULT_FILE"; }
+          trap cleanup_result_file EXIT
+          ~/hssh "/var/lib/club-arena/control-staging/${{ github.run_id }}/server/scripts/build-engine-image.sh \
+            '$REPO_DIR' '$SHA' '$IMAGE_REPO:$SHA'" | tee "$RESULT_FILE"
+          REUSED=$(sed -n 's/^ENGINE_IMAGE_REUSED=//p' "$RESULT_FILE" | tail -1)
+          case "$REUSED" in
+            true|false) ;;
+            *) echo "::error::clean image builder returned no valid reuse verdict"; exit 1 ;;
+          esac
+          echo "reused=$REUSED" >> "$GITHUB_OUTPUT"
+          if [ "$REUSED" = true ]; then
+            echo "::notice title=IMAGE ALREADY STAGED::$IMAGE_REPO:$SHA has the exact revision, server-tree and clean-build contract."
+          else
+            echo "::notice title=CLEAN IMAGE BUILT::$IMAGE_REPO:$SHA was built only from its committed server tree."
           fi
-          echo "reused=false" >> $GITHUB_OUTPUT
-          ~/hssh "cd $REPO_DIR/server && docker build \
-            --build-arg GIT_COMMIT_SHA=$SHA \
-            --label org.opencontainers.image.revision=$SHA \
-            -t $IMAGE_REPO:$SHA ."
-          ~/hssh "
-            set -e
-            ID=\$(docker image inspect -f '{{.Id}}' $IMAGE_REPO:$SHA)
-            REV=\$(docker image inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' $IMAGE_REPO:$SHA)
-            [ \"\$REV\" = '$SHA' ]
-            echo \"validated immutable image \$ID at revision \$REV\""
 
       - name: Install/refresh host supervisor
         if: steps.dedupe.outputs.skip != 'true'

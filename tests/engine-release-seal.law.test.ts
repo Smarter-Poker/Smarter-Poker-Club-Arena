@@ -1,10 +1,12 @@
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 const ROOT = resolve(import.meta.dirname, '..');
 const read = (path: string) => readFileSync(resolve(ROOT, path), 'utf8');
 const sealScript = resolve(ROOT, 'server/scripts/engine-release-seal.py');
+const imageBuilder = resolve(ROOT, 'server/scripts/build-engine-image.sh');
 
 const A_SHA = 'a'.repeat(40);
 const B_SHA = 'b'.repeat(40);
@@ -535,7 +538,7 @@ exit 0
     );
     expect(failedRecovery.status).toBe(1);
     expect(failedRecovery.stdout).toContain('exact sealed desired release could not be restored');
-  });
+  }, 15_000);
 
   it('expires a prepared token at its TTL boundary before it can authorize a start', () => {
     runSeal([
@@ -792,6 +795,7 @@ exit 0
 
 describe('every host mutation path obeys the durable release authority', () => {
   const workflow = read('.github/workflows/auto-deploy-hetzner.yml');
+  const imageBuilderSource = read('server/scripts/build-engine-image.sh');
   const engineUp = read('server/scripts/engine-up.sh');
   const supervisor = read('server/scripts/engine-supervisor.sh');
   const installer = read('server/scripts/install-engine-supervisor.sh');
@@ -1021,19 +1025,158 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(prepareBlock).not.toMatch(/sleep\s|for i in|ATTEMPTS=/);
   });
 
-  it('builds every target, including pre-seal rollback commits, with immutable revision metadata', () => {
+  it('builds every target from its exact server tree and reuses only that proven build contract', () => {
     const build = workflow.slice(
       workflow.indexOf('name: Build immutable image'),
       workflow.indexOf('name: Install/refresh host supervisor')
     );
-    expect(build).toContain('--label org.opencontainers.image.revision=$SHA');
-    const equality = build
-      .split('\n')
-      .find((line) => line.includes("= '$SHA' ") && line.includes('REV'));
-    expect(equality).toContain('\\$REV');
-    expect(build.indexOf('--label org.opencontainers.image.revision=$SHA')).toBeLessThan(
-      build.indexOf(equality!)
+    expect(workflow).toContain('server/scripts/build-engine-image.sh');
+    expect(build).toContain('/server/scripts/build-engine-image.sh');
+    expect(build).not.toContain('docker build');
+    expect(build).not.toContain('cd $REPO_DIR/server');
+    expect(statSync(imageBuilder).mode & 0o111).not.toBe(0);
+    expect(imageBuilderSource).toContain('GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive');
+    expect(imageBuilderSource).toContain('"${TARGET_SHA}:server"');
+    expect(imageBuilderSource).toContain('com.smarterpoker.engine.source-tree');
+    expect(imageBuilderSource).toContain('com.smarterpoker.engine.build-contract');
+    expect(imageBuilderSource).toContain("BUILD_CONTRACT='clean-server-archive-v1'");
+    expect(imageBuilderSource).toContain("trap 'exit 130' INT");
+    expect(imageBuilderSource).toContain("trap 'exit 143' HUP TERM");
+    expect(imageBuilderSource.indexOf('EXISTING_REVISION')).toBeLessThan(
+      imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
     );
+    expect(imageBuilderSource.indexOf('EXISTING_TREE')).toBeLessThan(
+      imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
+    );
+    expect(imageBuilderSource.indexOf('EXISTING_CONTRACT')).toBeLessThan(
+      imageBuilderSource.indexOf("echo 'ENGINE_IMAGE_REUSED=true'")
+    );
+  });
+
+  it('excludes mutable host files and credentials from the executable image build path', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'engine-clean-build-'));
+    try {
+      const repo = join(sandbox, 'repo');
+      const server = join(repo, 'server');
+      const source = join(server, 'src');
+      const bin = join(sandbox, 'bin');
+      const dockerState = join(sandbox, 'docker-state');
+      const contextRoot = join(sandbox, 'contexts');
+      mkdirSync(source, { recursive: true });
+      mkdirSync(bin);
+      mkdirSync(dockerState);
+      writeFileSync(join(server, 'Dockerfile'), 'FROM scratch\n');
+      writeFileSync(join(server, 'package.json'), '{"name":"exact-tree"}\n');
+      writeFileSync(join(server, 'tsconfig.json'), '{}\n');
+      writeFileSync(join(source, 'tracked.ts'), 'export const tracked = true;\n');
+
+      const runGit = (args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      expect(runGit(['init', '-q']).status).toBe(0);
+      expect(runGit(['config', 'user.email', 'release-law@example.invalid']).status).toBe(0);
+      expect(runGit(['config', 'user.name', 'Release Law']).status).toBe(0);
+      expect(runGit(['add', 'server']).status).toBe(0);
+      expect(runGit(['commit', '-qm', 'exact committed server tree']).status).toBe(0);
+      const targetSha = runGit(['rev-parse', 'HEAD']).stdout.trim();
+      const serverTree = runGit(['rev-parse', 'HEAD:server']).stdout.trim();
+
+      // These are the production defect: files present beside the checkout but
+      // absent from the target commit must be impossible for Docker to ingest.
+      writeFileSync(
+        join(source, 'untracked-sentinel.ts'),
+        'throw new Error("host contamination");\n'
+      );
+      writeFileSync(join(server, '.env'), 'DATABASE_URL=must-never-enter-the-image\n');
+
+      const fakeDocker = `#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="$FAKE_DOCKER_STATE_DIR"
+mkdir -p "$STATE_DIR"
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+  shift 2
+  [ -f "$STATE_DIR/built" ] || exit 1
+  if [ "$#" -ge 1 ] && [ "$1" = -f ]; then
+    FORMAT="$2"
+    case "$FORMAT" in
+      '{{.Id}}') printf '%s\\n' 'sha256:${'d'.repeat(64)}' ;;
+      *org.opencontainers.image.revision*) [ -f "$STATE_DIR/revision" ] && cat "$STATE_DIR/revision" ;;
+      *com.smarterpoker.engine.source-tree*) [ -f "$STATE_DIR/source-tree" ] && cat "$STATE_DIR/source-tree" ;;
+      *com.smarterpoker.engine.build-contract*) [ -f "$STATE_DIR/build-contract" ] && cat "$STATE_DIR/build-contract" ;;
+      *) exit 2 ;;
+    esac
+  fi
+  exit 0
+fi
+if [ "$1" = build ]; then
+  shift
+  [ -f "$PWD/src/tracked.ts" ]
+  [ ! -e "$PWD/src/untracked-sentinel.ts" ]
+  [ ! -e "$PWD/.env" ]
+  printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
+      --label)
+        case "$2" in
+          org.opencontainers.image.revision=*) printf '%s' "$2" | cut -d= -f2- > "$STATE_DIR/revision" ;;
+          com.smarterpoker.engine.source-tree=*) printf '%s' "$2" | cut -d= -f2- > "$STATE_DIR/source-tree" ;;
+          com.smarterpoker.engine.build-contract=*) printf '%s' "$2" | cut -d= -f2- > "$STATE_DIR/build-contract" ;;
+          *) exit 3 ;;
+        esac
+        shift 2
+        ;;
+      -t) printf '%s' "$2" > "$STATE_DIR/image-ref"; shift 2 ;;
+      .) shift ;;
+      *) exit 4 ;;
+    esac
+  done
+  printf 'build\\n' >> "$STATE_DIR/builds"
+  touch "$STATE_DIR/built"
+  exit 0
+fi
+exit 5
+`;
+      writeFileSync(join(bin, 'docker'), fakeDocker);
+      chmodSync(join(bin, 'docker'), 0o755);
+
+      // A legacy revision-only tag must rebuild once; revision alone never
+      // proves which bytes the mutable checkout contributed.
+      writeFileSync(join(dockerState, 'built'), '');
+      writeFileSync(join(dockerState, 'revision'), targetSha);
+      const env = {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        FAKE_DOCKER_STATE_DIR: dockerState,
+        ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
+      };
+      const first = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        { encoding: 'utf8', env }
+      );
+      expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
+      expect(first.stdout).toContain('ENGINE_IMAGE_REUSED=false');
+      expect(readFileSync(join(dockerState, 'source-tree'), 'utf8').trim()).toBe(serverTree);
+      expect(readFileSync(join(dockerState, 'build-contract'), 'utf8').trim()).toBe(
+        'clean-server-archive-v1'
+      );
+      expect(readFileSync(join(dockerState, 'build-arg'), 'utf8')).toBe(
+        `GIT_COMMIT_SHA=${targetSha}`
+      );
+      const usedContext = readFileSync(join(dockerState, 'context-path'), 'utf8').trim();
+      expect(existsSync(usedContext)).toBe(false);
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+
+      const second = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        { encoding: 'utf8', env }
+      );
+      expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
+      expect(second.stdout).toContain('ENGINE_IMAGE_REUSED=true');
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
   });
 
   it('revalidates restart authority under the shared lock and starts in that same shell', () => {

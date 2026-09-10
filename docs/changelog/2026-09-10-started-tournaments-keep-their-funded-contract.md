@@ -1,0 +1,7 @@
+# Proposed: started tournaments retain their funded contract
+
+The installed service cancellation function can reach its refund authority after a tournament has started. This conflicts with the existing rule that tournaments resume or settle. An isolated call to the full installed function reproduced that behavior by reaching its first escrow write with `started_at` set.
+
+The proposed migration refuses a new cancellation when actual start, committed draw, persisted hand or paid non-refund award evidence exists. It preserves the existing committed-receipt replay before that refusal. An unstarted pre-draw event remains eligible for its existing financial path, including an expired scheduled start time and the production default multiplier of zero. No new partial-refund policy or historical award rewrite is introduced.
+
+The migration is pinned to the reviewed installed source and checks the exact resulting function body. Its fourteen revised routing/refusal groups passed after the default-zero correction, using two segments to avoid repeating eight already-passed cases. The first segment stopped during synthetic paid-award fixture setup; the six-case continuation completed normally. Production application and publication remain pending. The separately completed nine guarantee funding groups prove actual bank and escrow behavior; they do not substitute for cancellation verification.

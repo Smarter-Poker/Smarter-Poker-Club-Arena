@@ -1,0 +1,37 @@
+{
+  "observed_at": "2026-09-10T04:30:54.649207+00:00",
+  "candidate_body_md5": "16f0bf17983ec0ced4a8f8127d6af979",
+  "migration_sha256": "ad538b696cc604d66a4c9adc8e0c2fc720c27d58ab1888858211df413138a2dc",
+  "passed": [
+    "cancellation refuses started evidence before its first financial write",
+    "cancellation refuses running evidence before its first financial write",
+    "cancellation refuses launch evidence before its first financial write",
+    "cancellation refuses multiplier evidence before its first financial write",
+    "cancellation refuses draw evidence before its first financial write",
+    "cancellation refuses reserve evidence before its first financial write",
+    "cancellation refuses hand evidence before its first financial write",
+    "cancellation refuses legacy_hand evidence before its first financial write",
+    "cancellation refuses paid_award evidence before its first financial write",
+    "cancellation unstarted remains routed to the existing financial authority",
+    "cancellation default_zero remains routed to the existing financial authority",
+    "cancellation past_schedule remains routed to the existing financial authority",
+    "stored cancellation replay reaches its existing receipt reader before the new refusal",
+    "cancellation waiting behind a committed draw refuses without releasing the draw"
+  ],
+  "first_segment": {
+    "log": "/tmp/codex-entry-cancel-policy-revised16f.log",
+    "groups": 8,
+    "stopped_before_case": "paid_award",
+    "reason": "Synthetic obligation kind prize violates installed kind constraint; corrected to place",
+    "runner_exit_success": false
+  },
+  "second_segment": {
+    "log": "/tmp/codex-entry-cancel-policy-revised16f-remaining.log",
+    "results": "/tmp/ca-registration-funding-pg17-s44p91j1/results.json",
+    "groups": 6,
+    "runner_exit_success": true,
+    "private_cluster_removed": true
+  },
+  "production_database_used": false,
+  "production_applied": false
+}

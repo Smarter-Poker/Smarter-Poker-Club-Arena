@@ -4,6 +4,7 @@
 Creates its own local PostgreSQL 17 cluster; accepts no database URL.
 Use --cross-club --baseline to reproduce the old receipt failure.
 Use --purchases-only for the rebuy/re-entry/add-on groups.
+Use --guarantees-only or --cancellation-policy-only for those focused groups.
 Fixture limits are in fixtures/registration-funding/README.md and
 fixtures/tournament-purchase-funding/README.md.
 """
@@ -165,7 +166,19 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses=','-w','start'])
         started=True
 
-        if '--purchases-only' in sys.argv:
+        if '--cancellation-policy-only' in sys.argv:
+            from tournament_cancellation_policy_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--obligations-only' in sys.argv:
+            from tournament_obligation_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--satellite-awards-only' in sys.argv:
+            from satellite_award_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--guarantees-only' in sys.argv:
+            from tournament_guarantee_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--purchases-only' in sys.argv:
             from tournament_purchase_funding_cases import verify
             verify(q,fresh,overlap,call,check)
         elif '--cross-club' in sys.argv:
@@ -209,6 +222,10 @@ with (root/'results.log').open('w') as log:
 
             cross_club()
             from tournament_purchase_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+            from tournament_guarantee_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+            from tournament_cancellation_policy_cases import verify
             verify(q,fresh,overlap,call,check)
 
     finally:

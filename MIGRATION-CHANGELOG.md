@@ -17289,7 +17289,6 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 
 **TypeScript:** Not applicable, SQL rehearsal, Python runner and evidence only.
 
-
 ## Change: Preserve The Current Spin Terminal Acceptance Blocker
 
 **Files:** `scripts/ci/rehearse-spin-current-terminal.py`, `scripts/ci/probes/spin-current-terminal-native.sql`, `docs/audits/2026-09-10-spin-current-terminal-native-evidence.json`.
@@ -17303,3 +17302,17 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 **Why:** Keep an executable record of the real remaining incompatibility instead of accepting a payout-only pass as terminal acceptance. Live seat-guard parity remains unverified.
 
 **TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only.
+
+## Change: Verify Current Spin Concurrency And Restore The Local Schema
+
+**Files:** `scripts/ci/rehearse-spin-current-concurrency.py`, `scripts/ci/probes/spin-current-concurrency-fixture.sql`, `docs/audits/2026-09-10-spin-current-concurrency-native-evidence.json`.
+
+**What Existed:** Native concurrent Spin evidence pinned the prior b303/1c911 wrapper. Current zero-default and row-projection changes had only sequential acceptance.
+
+**What Changed:** Reviewed all active effects of complete34412, saved an explicit restore journal before DDL, temporarily installed its exact current wrapper in the owned local database, and exercised three overlapping native races. Three new approved synthetic events funded the pool through actual entry booking and a prior native draw. Every money call retained origin and all native guards.
+
+**Verified:** Shared reserve contender waited, then refused `no_eligible_tiers` after the winner funded exactly two chips. Changed-rules and exact same-event rivals waited and replayed the identical immutable receipt. All three races preserved the full financial snapshot after the rival finished. Actual contributions8.28, prior draw5, winner2, final balance1.28 and total drawn7. Full schema catalog including function definitions/owners/ACLs, defaults and all triggers matched exactly after restoring the prior wrapper. The first restoration attempt lacked a statement terminator and failed transactionally; the saved restore script and journal were corrected and exact restoration independently verified. The checked-in runner contains this correction.
+
+**Why:** Establish current concurrent conservation and immutable replay without treating historical wrapper evidence as current or leaving temporary schema changes behind. Three960fixture events remain as approved; no production or resource-cleanup actions.
+
+**TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.

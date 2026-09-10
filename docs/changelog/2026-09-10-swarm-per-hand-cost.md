@@ -145,8 +145,11 @@ host), then an engine restart. After one :55 cycle with `/metrics` showing
 (`ALTER PUBLICATION supabase_realtime DROP TABLE public.hand_projection_outbox`)
 at a quiet moment; that is the 5-7% of DB time.
 
-**Workstream I (settlement writes each seat once): analysed, proven, NOT
-applied.** `I-one-seat-write-per-hand.md/.sql` show the combined write is
+**Workstream I (settlement writes each seat once): APPLIED 05:59 UTC as
+migration 20260910054712** after the rolled-back validation reported
+`VERDICT: PASS` on a live cash seat (seat_writes=1 with and without the
+envelope). First five minutes: 3,851 settlements succeeded, 0 failed, 0 stuck,
+0 ledger write failures. The paragraph below is the pre-apply analysis. `I-one-seat-write-per-hand.md/.sql` show the combined write is
 behaviour-identical (all 43 table_seats triggers read; none inspects the
 time-bank columns; row images identical in a rolled-back probe) and saves
 ~2.0-2.6 ms per hand steady state (7-20 ms cold), about 1% of settlement. It
@@ -158,3 +161,37 @@ for a 1% gain, and the two functions were replaced once already tonight by
 another agent (diamonds delegation). Held for Dan's explicit go; the SQL has
 md5 guards and a rolled-back self-test that must end in
 `PROBE_ROLLED_BACK ... VERDICT: PASS`.
+
+## Phase 4 (05:45-06:30 UTC): the review pass and the last DB fixes
+
+- **Migration 20260910054638** (applied 05:50 UTC): the `tables` RLS policy
+  gets the same hashed-subplan rewrite as `tournaments`; `supabase_auth_admin`
+  is a trusted actor in `fn_active_maintenance_release_boundary` (GoTrue's own
+  role; signup wallet trigger was raising 42501); `fn_spin_expire_unfilled`
+  reads `COALESCE(spin_multiplier,0) > 0` - with the column's DEFAULT 0 it had
+  expired NOTHING since 09-08, so nobody waiting in an unfilled Spin past the
+  timeout was refunded.
+- **Review agents on the three engine PRs** (each finding fixed on the branch,
+  or on a new branch where the PR had already merged, per 10.82):
+  #4107 spin backoff: registry pruned against the REGISTERING board, alert
+  call wrapped so it cannot throw into the launch, stall watchdog skips parked
+  ids, `/metrics` gauges `poker_spin_launches_parked*` and `/health`
+  `spinLaunchParks`; 30 tests. #4112 horse seat (merged as 5800a2b9db, follow-up
+  branch `fix/seat-first-precheck-verifies-before-it-skips`, merged f725361edf):
+  a skip is verified by a lock-free re-read so a horse that stood up between
+  the read and its turn still gets the RPC this pass (10.5), a seat that opens
+  after a `table_full` answer is filled this pass, `poker_seat_first_precheck_total{outcome}`;
+  37 tests. #4115 outbox: `HAND_PROJECTION_POLL_MS=` empty no longer means a
+  0 ms interval, the poll can be held off by an armed retry for at most 25 s,
+  and the drain now runs per-table chains with bounded concurrency (default 4,
+  strict hand order inside a table; the DB serialises per table with advisory
+  locks) - the 100k-row outbox backlog drains ~4x faster; outbox depth and
+  oldest-age gauges plus four Prometheus alert rules (`hand-projection` group;
+  go live with `infra/monitoring/deploy.sh` on engine-01; they WILL fire until
+  the backlog is gone). 49 tests; 2,884 engine tests green.
+- **Listener decision:** the engine host holds no database password and none
+  will be placed there by an agent (10.84), so `ENGINE_PG_LISTEN_URL` stays
+  unset. The Realtime subscription on `hand_projection_outbox` is redundant
+  anyway (every committed hand wakes the worker locally, and the 5 s poll is a
+  net), so once #4115 is deployed the table leaves the publication - that is
+  the 5-7% of DB time, with no LISTEN needed.

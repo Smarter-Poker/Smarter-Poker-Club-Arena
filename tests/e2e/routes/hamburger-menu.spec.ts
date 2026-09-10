@@ -314,11 +314,11 @@ test.describe('Hamburger Menu — Version Footer', () => {
 
     if (!(await openMenuOrSkip(page))) return;
 
-    // Look for version text. Case-insensitive on purpose: the footer renders
-    // "Club Arena V1.12" (capital V — house Title Case), and the original
-    // lower-case regex could never match it. It never had to: signed out this
-    // spec skipped, so the assertion was first evaluated on 2026-08-23.
-    const version = page.getByText(/Club Arena .* Command Deck V\d/i).first();
+    // The shared Poker Arena drawer owns the version footer. Keep the version
+    // match independent of the release number.
+    const version = page
+      .getByRole('dialog', { name: 'Poker Arena' })
+      .getByText(/Poker Arena .* Command Deck V\d/i);
     await version.scrollIntoViewIfNeeded();
     await expect(version).toBeVisible({ timeout: 3000 });
   });

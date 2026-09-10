@@ -11,7 +11,7 @@ beforeAll(async () => {
   ({ TournamentManagerBase } = await import('./tournament/TournamentManagerBase.js'));
   ({ supabase } = await import('./services/supabase.js'));
   ({ ServerTableEngineBase } = await import('./engine/ServerTableEngineBase.js'));
-});
+}, 60_000); // importing GameServer alone can pass 10s on a loaded CI runner
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-10T12:55:00.000Z'));

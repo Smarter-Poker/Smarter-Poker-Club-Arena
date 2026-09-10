@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/the-knockout-door-owns-every-bust. Applied to production as migration 20260910072351_an_elimination_without_a_place_cannot_be_written: a DEFERRED constraint trigger on tournament_players (tournament_elimination_has_a_place) refusing status='eliminated' with a NULL position in a RUNNING, COMPLETING or COMPLETED tournament, so only the knockout door - which assigns the place in the same transaction - can record a bust.",
+  "functions": ["fn_tournament_elimination_has_a_place"]
+}

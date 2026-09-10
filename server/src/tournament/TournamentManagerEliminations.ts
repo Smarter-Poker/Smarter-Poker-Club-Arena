@@ -353,6 +353,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.isProcessingEliminations = true;
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
+    // One grace per admitted sweep (SWEEP_MUTATION_GRACE_MS). Reset with the
+    // deadline it extends, never carried between sweeps.
+    this.eliminationMutationGraceGranted = false;
     // How many of these the single JS thread is carrying at once, and how
     // long one takes. Both are measurement only - see engineInstruments.
     const sweepStartedAt = Date.now();
@@ -886,8 +889,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
+          let committedThisPass = 0;
           for (let i = 0; i < bustedOrdered.length; i++) {
             if (!this.running || signal.aborted) return;
+
+            /**
+             * A SWEEP THAT CANNOT AFFORD ITS FIRST MUTATION NEVER MAKES ONE.
+             *
+             * Everything above this line is READS, and on a large backlog they
+             * can spend the whole work budget. Every mutation below asks
+             * `eliminationMutationAllowed()`, which is false once the budget is
+             * gone - so `eliminatePlayer` used to refuse silently, the pass
+             * aborted as though the database had said no, the durable wake was
+             * never acknowledged, and the next sweep repeated the same reads on
+             * the same backlog. Fifteen tournaments were in that livelock for up
+             * to 100 minutes on 2026-09-10, three of them holding more than 150
+             * busted players each.
+             *
+             * Yielding is still the rule; buying one bounded extension when this
+             * pass has committed NOTHING is what makes the yield a yield rather
+             * than a stall. See SWEEP_MUTATION_GRACE_MS for the measurement.
+             */
+            if (this.eliminationWorkBudgetExpired()) {
+              if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
+              }
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] bust preparation spent the whole ${TournamentManagerBase.SWEEP_WORK_BUDGET_MS}ms budget with ${bustedOrdered.length} player(s) to record; extending once by ${TournamentManagerBase.SWEEP_MUTATION_GRACE_MS}ms so this sweep commits at least one finish`
+                ),
+                'Tournament.bust_mutation_grace_granted'
+              );
+            }
 
             // Place 1 belongs to the winner and is never handed out here.
             let place = nextPosition;
@@ -937,6 +973,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               return;
             }
             this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+            committedThisPass++;
             takenPositions.add(place);
             nextPosition = Math.min(nextPosition, place) - 1;
           }

@@ -1,0 +1,109 @@
+{
+  "captured_at": "2026-09-10T12:48:37.806Z",
+  "scope": "Disposable activation and membership protocol only; partial production trigger composition",
+  "production_writes": false,
+  "complete_clock_implemented": false,
+  "actual_catalog_functions": 4,
+  "passed": 16,
+  "observed_lock_barriers": 7,
+  "evidence": [
+    {
+      "case": "Captured Launch And Durable Evidence Bodies Are Exact",
+      "pass": true
+    },
+    {
+      "case": "Baseline Reproduces Inactive Reopen Outside Activation Scan",
+      "pass": true
+    },
+    {
+      "barrier": "activation waits for absent membership gate",
+      "wait_event": "advisory"
+    },
+    {
+      "case": "Absent Publication Reopen Serializes Before First Activation",
+      "pass": true
+    },
+    {
+      "barrier": "activation waits for inactive membership gate",
+      "wait_event": "advisory"
+    },
+    {
+      "case": "Inactive Publication Reopen Serializes Before First Activation",
+      "pass": true
+    },
+    {
+      "case": "Activated Insert Derives Current Blinds",
+      "pass": true
+    },
+    {
+      "case": "Activation First Refuses Whole Conflicting Entry Transaction",
+      "pass": true
+    },
+    {
+      "barrier": "adopt waits for legacy anchor write",
+      "wait_event": "advisory"
+    },
+    {
+      "case": "Absent Publication Legacy Parent Write Holds Activation Barrier",
+      "pass": true
+    },
+    {
+      "barrier": "publisher waits for existing launch receipt",
+      "wait_event": "transactionid"
+    },
+    {
+      "case": "Existing Launch Receipt Inversion Escapes Before Parent Wait",
+      "pass": true
+    },
+    {
+      "barrier": "publisher waits for legacy parent",
+      "wait_event": "transactionid"
+    },
+    {
+      "case": "Parent First Capacity Escapes Before Existing Launch Trigger",
+      "pass": true
+    },
+    {
+      "barrier": "publisher waits for existing child row",
+      "wait_event": "transactionid"
+    },
+    {
+      "case": "Child First Close Escapes Before Any Parent Wait",
+      "pass": true
+    },
+    {
+      "case": "Inactive Gate Also Refuses Occupied Publication And Parent Rows",
+      "pass": true
+    },
+    {
+      "case": "Every Reassignment Direction Preserves Existing Immutability",
+      "pass": true
+    },
+    {
+      "case": "Terminal Close Cannot Reopen Or Revive",
+      "pass": true
+    },
+    {
+      "case": "Replay Original Remains Separate From Current Level",
+      "pass": true
+    },
+    {
+      "case": "Last Table Failure Rolls Back Parent Tables Activation And Receipt",
+      "pass": true
+    },
+    {
+      "barrier": "publisher waits for maintenance owner",
+      "wait_event": "advisory"
+    },
+    {
+      "case": "Persistent Freeze Is Checked After The Maintenance Wait",
+      "pass": true
+    }
+  ],
+  "limitations": [
+    "No production lease or durable pause implementation",
+    "No actual financial schema or paid-entry RPC composition",
+    "No full terminal, settlement, G/B/T or atomic-table wait graph",
+    "Prototype operation and activation ACLs are not a production authorization design"
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "captured_at": "2026-09-10T12:46:33.512Z",
+  "functions": [
+    {
+      "body_md5": "a0a32c47d6ec20b05796b6b5a1f451af",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_lock_tournament_launch_proof_parents(p_tournament_ids uuid[])\n RETURNS TABLE(tournament_id uuid, parent_status text, launch_id uuid, launch_lease_generation uuid, launch_completed_at timestamp with time zone)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_ids uuid[];\nBEGIN\n  SELECT array_agg(DISTINCT requested.id ORDER BY requested.id)\n    INTO v_ids\n    FROM unnest(p_tournament_ids) AS requested(id)\n   WHERE requested.id IS NOT NULL;\n\n  IF v_ids IS NULL THEN\n    RETURN;\n  END IF;\n\n  /* Do not invert these two blocks.  Launch completion already owns receipt\n     -> parent, and every child must join that order. */\n  /* A few legacy RPCs entered with the tournament parent already locked.\n     Waiting for a receipt owned by completion would make a cycle: completion\n     waits for their parent while they wait for its receipt.  Fail that outer\n     transaction as retryable instead of waiting; a clean retry enters this\n     helper before touching another launch-proof row. */\n  BEGIN\n    PERFORM 1\n      FROM public.tournament_launch_receipts r\n     WHERE r.tournament_id = ANY(v_ids)\n     ORDER BY r.tournament_id\n     FOR UPDATE NOWAIT;\n  EXCEPTION WHEN lock_not_available THEN\n    RAISE EXCEPTION\n      'TOURNAMENT_TRANSITION_BUSY: launch proof receipt is changing'\n      USING ERRCODE = '40001';\n  END;\n\n  PERFORM 1\n    FROM public.tournaments t\n   WHERE t.id = ANY(v_ids)\n   ORDER BY t.id\n   FOR UPDATE;\n\n  IF EXISTS (\n    SELECT 1\n      FROM unnest(v_ids) AS requested(id)\n     WHERE NOT EXISTS (\n       SELECT 1 FROM public.tournaments t WHERE t.id = requested.id\n     )\n  ) THEN\n    RAISE EXCEPTION 'tournament launch proof child names a missing parent'\n      USING ERRCODE = '23503';\n  END IF;\n\n  RETURN QUERY\n    SELECT t.id,\n           t.status::text,\n           r.launch_id,\n           r.lease_generation,\n           r.completed_at\n      FROM public.tournaments t\n      LEFT JOIN public.tournament_launch_receipts r\n        ON r.tournament_id = t.id\n     WHERE t.id = ANY(v_ids)\n     ORDER BY t.id;\nEND;\n$function$\n",
+      "signature": "fn_lock_tournament_launch_proof_parents(uuid[])"
+    },
+    {
+      "body_md5": "d6dee7feba0b911c6ade99ce7e4c2b72",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_lock_and_classify_tournament_table()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_ids uuid[];\n  v_parent_status text;\n  v_launch_id uuid;\n  v_launch_generation uuid;\n  v_launch_completed_at timestamptz;\n  v_proof_open boolean;\n  v_needs_origin boolean := false;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND NEW.tournament_id IS NOT DISTINCT FROM OLD.tournament_id\n     AND NEW.status IS NOT DISTINCT FROM OLD.status\n     AND NEW.current_players IS NOT DISTINCT FROM OLD.current_players\n     AND NEW.max_players IS NOT DISTINCT FROM OLD.max_players\n     AND NEW.is_deleted IS NOT DISTINCT FROM OLD.is_deleted THEN\n    RETURN NEW;\n  END IF;\n\n  v_ids := CASE\n    WHEN TG_OP = 'INSERT' THEN ARRAY[NEW.tournament_id]\n    WHEN TG_OP = 'DELETE' THEN ARRAY[OLD.tournament_id]\n    ELSE ARRAY[OLD.tournament_id, NEW.tournament_id]\n  END;\n\n  v_needs_origin := TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL;\n  IF TG_OP = 'UPDATE'\n     AND OLD.tournament_id IS NULL\n     AND NEW.tournament_id IS NOT NULL THEN\n    v_needs_origin := true;\n  END IF;\n\n  IF TG_OP = 'UPDATE'\n     AND OLD.tournament_id IS NOT NULL\n     AND NEW.tournament_id IS DISTINCT FROM OLD.tournament_id THEN\n    PERFORM *\n      FROM public.fn_lock_tournament_launch_proof_parents(v_ids);\n    RAISE EXCEPTION\n      'TOURNAMENT_TABLE_ORIGIN_IMMUTABLE: table % cannot change tournament', OLD.id\n      USING ERRCODE = '55000';\n  END IF;\n\n  IF NOT v_needs_origin THEN\n    SELECT EXISTS (\n      SELECT 1\n        FROM public.tournaments t\n        LEFT JOIN public.tournament_launch_receipts r\n          ON r.tournament_id = t.id\n       WHERE t.id = ANY(v_ids)\n         AND (upper(t.status::text) = 'REGISTERING' OR r.completed_at IS NULL)\n         AND (upper(t.status::text) = 'REGISTERING' OR r.tournament_id IS NOT NULL)\n    ) INTO v_proof_open;\n    IF NOT v_proof_open THEN\n      RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;\n    END IF;\n  END IF;\n\n  IF v_needs_origin THEN\n    SELECT locked.parent_status,\n           locked.launch_id,\n           locked.launch_lease_generation,\n           locked.launch_completed_at\n      INTO v_parent_status,\n           v_launch_id,\n           v_launch_generation,\n           v_launch_completed_at\n      FROM public.fn_lock_tournament_launch_proof_parents(\n        ARRAY[NEW.tournament_id]\n      ) AS locked;\n\n    IF upper(v_parent_status) = 'RUNNING' THEN\n      IF v_launch_id IS NOT NULL AND v_launch_completed_at IS NULL THEN\n        RAISE EXCEPTION\n          'TOURNAMENT_TABLE_ORIGIN_STATE_MISMATCH: RUNNING parent has an incomplete launch receipt'\n          USING ERRCODE = '55000';\n      END IF;\n      INSERT INTO public.tournament_table_origins (\n        table_id, tournament_id, origin_kind\n      ) VALUES (\n        NEW.id, NEW.tournament_id, 'capacity'\n      );\n    ELSIF upper(v_parent_status) = 'REGISTERING' THEN\n      IF v_launch_id IS NULL THEN\n        INSERT INTO public.tournament_table_origins (\n          table_id, tournament_id, origin_kind\n        ) VALUES (\n          NEW.id, NEW.tournament_id, 'prelaunch'\n        );\n      ELSIF v_launch_completed_at IS NULL THEN\n        INSERT INTO public.tournament_table_origins (\n          table_id,\n          tournament_id,\n          origin_kind,\n          launch_id,\n          launch_lease_generation\n        ) VALUES (\n          NEW.id,\n          NEW.tournament_id,\n          'launch',\n          v_launch_id,\n          v_launch_generation\n        );\n      ELSE\n        RAISE EXCEPTION\n          'TOURNAMENT_TABLE_ORIGIN_STATE_MISMATCH: REGISTERING parent has a completed launch receipt'\n          USING ERRCODE = '55000';\n      END IF;\n    ELSIF v_launch_id IS NULL THEN\n      INSERT INTO public.tournament_table_origins (\n        table_id, tournament_id, origin_kind\n      ) VALUES (\n        NEW.id, NEW.tournament_id, 'prelaunch'\n      );\n    ELSE\n      RAISE EXCEPTION\n        'STALE_TOURNAMENT_LAUNCH_TABLE: completed or inconsistent launch cannot create table %',\n        NEW.id\n        USING ERRCODE = '55000';\n    END IF;\n  ELSE\n    PERFORM *\n      FROM public.fn_lock_tournament_launch_proof_parents(v_ids);\n  END IF;\n\n  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;\nEND;\n$function$\n",
+      "signature": "trg_lock_and_classify_tournament_table()"
+    },
+    {
+      "body_md5": "9dc93e1a464e6694f588345f19640869",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\n  v_tournament_id uuid;\nBEGIN\n  IF TG_OP<>'INSERT' THEN\n    v_old_tournament_id:=NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP<>'DELETE' THEN\n    v_new_tournament_id:=NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP='UPDATE' AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN\n    RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n      USING ERRCODE='55000';\n  END IF;\n  v_tournament_id:=COALESCE(v_new_tournament_id,v_old_tournament_id);\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_TABLE_NAME='chip_ledger' AND TG_OP<>'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='INSERT' THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id=v_tournament_id FOR KEY SHARE;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=v_tournament_id) THEN\n    RAISE EXCEPTION 'cancelled tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n",
+      "signature": "fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "body_md5": "ae1034bcccd7d6de4e574caecfaf9a78",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_table_terminal_close_is_irreversible()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_new_status text;\n  v_ended_at timestamptz;\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    -- Tournament tables are durable event evidence. They close; they are never\n    -- deleted. This unconditional rule needs no parent lock after PostgreSQL\n    -- has already acquired the child row, so it cannot reverse terminal's\n    -- tournament -> table order.\n    IF OLD.tournament_id IS NOT NULL THEN\n      RAISE EXCEPTION 'tournament table % is durable and cannot be deleted',OLD.id\n        USING ERRCODE = '55000';\n    END IF;\n    RETURN OLD;\n  END IF;\n\n  IF TG_OP = 'INSERT' THEN\n    IF NEW.terminal_closed_at IS NOT NULL THEN\n      RAISE EXCEPTION 'new table % cannot supply a terminal marker',NEW.id\n        USING ERRCODE = '55000';\n    END IF;\n    IF NEW.tournament_id IS NOT NULL THEN\n      -- INSERT has no child row to lock yet, so taking the parent first is\n      -- deadlock-safe. If terminal owns it, this waits and then sees COMPLETED;\n      -- if expansion owns it first, terminal waits and includes the new table.\n      SELECT upper(COALESCE(t.status::text,'')) INTO v_new_status\n        FROM public.tournaments t\n       WHERE t.id = NEW.tournament_id\n       FOR SHARE;\n      IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n        RAISE EXCEPTION 'cannot add table % to terminal tournament %',\n          NEW.id,NEW.tournament_id USING ERRCODE = '55000';\n      END IF;\n    END IF;\n    RETURN NEW;\n  END IF;\n\n  IF NEW.id IS DISTINCT FROM OLD.id THEN\n    RAISE EXCEPTION 'table identity % is immutable',OLD.id\n      USING ERRCODE = '55000';\n  END IF;\n\n  -- Reassociation would be a child-row-first parent transition and would also\n  -- change the immutable event table set. Tournament membership never moves.\n  IF NEW.tournament_id IS DISTINCT FROM OLD.tournament_id\n     AND (NEW.tournament_id IS NOT NULL OR OLD.tournament_id IS NOT NULL) THEN\n    RAISE EXCEPTION 'table % tournament association is immutable',OLD.id\n      USING ERRCODE = '55000';\n  END IF;\n\n  IF OLD.terminal_closed_at IS NOT NULL THEN\n    IF NEW.tournament_id IS DISTINCT FROM OLD.tournament_id\n       OR NEW.terminal_closed_at IS DISTINCT FROM OLD.terminal_closed_at\n       OR lower(COALESCE(NEW.status::text,'')) <> 'closed'\n       OR lower(COALESCE(NEW.lifecycle,'')) <> 'closed'\n       OR NEW.current_players IS DISTINCT FROM 0 THEN\n      RAISE EXCEPTION 'terminal tournament table % cannot reopen or move',OLD.id\n        USING ERRCODE = '55000';\n    END IF;\n    RETURN NEW;\n  END IF;\n\n  IF NEW.tournament_id IS NOT NULL THEN\n    SELECT upper(COALESCE(t.status::text,'')),t.ended_at\n      INTO v_new_status,v_ended_at\n      FROM public.tournaments t WHERE t.id = NEW.tournament_id;\n    IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n      IF NEW.current_players IS DISTINCT FROM 0 THEN\n        RAISE EXCEPTION 'table % cannot reopen terminal tournament %',\n          NEW.id,NEW.tournament_id USING ERRCODE = '55000';\n      END IF;\n      -- The existing game-end hook first clears current_players while leaving\n      -- status unchanged. Coerce that one-way zero-player write directly to\n      -- the terminal shape; delayed waiting/running writes can never reopen it.\n      NEW.status := 'closed';\n      NEW.lifecycle := 'closed';\n      NEW.terminal_closed_at := COALESCE(v_ended_at,transaction_timestamp());\n    ELSIF NEW.terminal_closed_at IS NOT NULL THEN\n      RAISE EXCEPTION 'live tournament table % cannot supply a terminal marker',NEW.id\n        USING ERRCODE = '55000';\n    END IF;\n  ELSIF NEW.terminal_closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'unscoped table % cannot supply a terminal marker',NEW.id\n      USING ERRCODE = '55000';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "signature": "fn_tournament_table_terminal_close_is_irreversible()"
+    }
+  ],
+  "table_before_triggers": [
+    {
+      "definition": "CREATE TRIGGER aa_tournament_table_launch_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION trg_lock_and_classify_tournament_table()",
+      "relname": "tables",
+      "tgname": "aa_tournament_table_launch_proof_lock",
+      "tgtype": 31
+    },
+    {
+      "definition": "CREATE TRIGGER ab_tournament_table_close_requires_empty BEFORE UPDATE OF status, is_deleted ON public.tables FOR EACH ROW EXECUTE FUNCTION trg_tournament_table_close_requires_empty()",
+      "relname": "tables",
+      "tgname": "ab_tournament_table_close_requires_empty",
+      "tgtype": 19
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "relname": "tables",
+      "tgname": "cancelled_tournament_evidence_is_immutable",
+      "tgtype": 31
+    },
+    {
+      "definition": "CREATE TRIGGER poker_arena_table_guard BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()",
+      "relname": "tables",
+      "tgname": "poker_arena_table_guard",
+      "tgtype": 23
+    },
+    {
+      "definition": "CREATE TRIGGER tables_updated_at BEFORE UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+      "relname": "tables",
+      "tgname": "tables_updated_at",
+      "tgtype": 19
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_table_terminal_close_is_irreversible BEFORE INSERT OR DELETE OR UPDATE OF id, tournament_id, status, current_players, lifecycle, terminal_closed_at ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tournament_table_terminal_close_is_irreversible()",
+      "relname": "tables",
+      "tgname": "tournament_table_terminal_close_is_irreversible",
+      "tgtype": 31
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "relname": "tables",
+      "tgname": "trg_guard_retired_club_mutation",
+      "tgtype": 31
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_autostart_guard BEFORE INSERT OR UPDATE OF auto_start_players, max_players ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tables_autostart_guard()",
+      "relname": "tables",
+      "tgname": "trg_tables_autostart_guard",
+      "tgtype": 23
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_block_deleted_revival BEFORE UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_block_deleted_table_revival()",
+      "relname": "tables",
+      "tgname": "trg_tables_block_deleted_revival",
+      "tgtype": 19
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_closed_main_releases_index BEFORE INSERT OR UPDATE OF lifecycle, is_deleted, main_index, cluster_id ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_closed_cluster_main_releases_index()",
+      "relname": "tables",
+      "tgname": "trg_tables_closed_main_releases_index",
+      "tgtype": 23
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_cluster_table_ceiling BEFORE INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_cluster_table_ceiling()",
+      "relname": "tables",
+      "tgname": "trg_tables_cluster_table_ceiling",
+      "tgtype": 7
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_creation_guard BEFORE INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tables_creation_guard()",
+      "relname": "tables",
+      "tgname": "trg_tables_creation_guard",
+      "tgtype": 7
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_managed_delete_guard BEFORE DELETE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_delete()",
+      "relname": "tables",
+      "tgname": "trg_tables_managed_delete_guard",
+      "tgtype": 11
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_managed_lifecycle_guard BEFORE UPDATE OF status, is_deleted ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle()",
+      "relname": "tables",
+      "tgname": "trg_tables_managed_lifecycle_guard",
+      "tgtype": 19
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_sync_rit BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tables_sync_rit()",
+      "relname": "tables",
+      "tgname": "trg_tables_sync_rit",
+      "tgtype": 23
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_union_ownership BEFORE INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_union_ownership()",
+      "relname": "tables",
+      "tgname": "trg_tables_union_ownership",
+      "tgtype": 7
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_union_ownership_upd BEFORE UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_enforce_table_union_ownership_update()",
+      "relname": "tables",
+      "tgname": "trg_tables_union_ownership_upd",
+      "tgtype": 19
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_stamp_table_game_scope BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_game_scope()",
+      "relname": "tables",
+      "tgname": "zzzz_stamp_table_game_scope",
+      "tgtype": 23
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_stamp_table_seat_admission BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_seat_admission()",
+      "relname": "tables",
+      "tgname": "zzzz_stamp_table_seat_admission",
+      "tgtype": 23
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzz_table_parent_keys_guard BEFORE UPDATE ON public.tables FOR EACH ROW WHEN ((old.seat_admission_key IS DISTINCT FROM new.seat_admission_key)) EXECUTE FUNCTION trg_table_parent_keys_guard()",
+      "relname": "tables",
+      "tgname": "zzzzz_table_parent_keys_guard",
+      "tgtype": 19
+    }
+  ]
+}

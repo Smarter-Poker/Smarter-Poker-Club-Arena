@@ -749,8 +749,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   state(
     'tournament',
-    'ICM inputs: stacks, payouts, bubble, bounties, chests, satellite, blind clock',
-    'HorseLogic.icmRisk / endgameAdjust / satelliteRead'
+    'Phase 6 schema-v1 context: tournament type, seats, stacks, payouts/tickets, bounty types and inventory, registration/re-entry/rebuy/add-on state, exact level clock, hand-for-hand, M and atlas coordinates',
+    'HorseDecisionWorkerRuntime.assertPhase6TournamentSnapshot; HorseLogic.icmRisk / decidePreflopV7 / endgameAdjust / satelliteRead'
   ),
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1000,6 +1000,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // so a healthy day never trips them and a dead layer always does.
   // ─────────────────────────────────────────────────────────────────────────
   receipt('decide', 'HorseLogic.decide', 'every live decision', 'V15'),
+  receipt('decide_tournament', 'HorseLogic.decide', 'every live tournament decision', 'Phase6'),
+  receipt(
+    'decide_tournament_preflop',
+    'HorseLogic.decide',
+    'every live tournament preflop decision',
+    'Phase6',
+    'decide_tournament',
+    0.05
+  ),
   receipt(
     'decide_omaha',
     'HorseLogic.decide',
@@ -1481,6 +1490,68 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a schema-v1 state passed the worker privacy, legality, side-pot, rake and variant-rule boundary',
     'Phase5',
     'decide',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_context',
+    'HorseLogic (Phase6)',
+    'a live tournament decision received the schema-v1 tournament context',
+    'Phase6',
+    'decide_tournament',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_context_*',
+    'HorseLogic (Phase6)',
+    'complete and explicit-incomplete outcomes partition every Phase 6 context read',
+    'Phase6',
+    'phase6_tournament_context',
+    0.99
+  ),
+  receipt(
+    'phase6_m_engine',
+    'HorseLogic (Phase6)',
+    'real, effective, projected, velocity and covering-opponent M were present',
+    'Phase6',
+    'phase6_tournament_context',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_preflop',
+    'HorseLogic (Phase6)',
+    'a live tournament preflop decision resolved an atlas coordinate',
+    'Phase6',
+    'decide_tournament_preflop',
+    0.99
+  ),
+  receipt(
+    'phase6_route_*',
+    'HorseLogic (Phase6)',
+    'solver, atlas, and solverless-variant routes partition actual tournament preflop returns',
+    'Phase6',
+    'phase6_tournament_preflop',
+    0.99
+  ),
+  receipt(
+    'phase6_branch_*',
+    'HorseLogic (Phase6)',
+    'the branch attached to the actual tournament preflop return',
+    'Phase6',
+    'phase6_tournament_preflop',
+    0.99
+  ),
+  receipt(
+    'phase6_route_atlas',
+    'HorseLogic (Phase6)',
+    'an actual tournament preflop return used the Phase 6 atlas path',
+    'Phase6'
+  ),
+  receipt(
+    'phase6_atlas_*',
+    'HorseLogic (Phase6)',
+    'baseline and labeled-fallback outcomes partition actual atlas returns',
+    'Phase6',
+    'phase6_route_atlas',
     0.99
   ),
   receipt(

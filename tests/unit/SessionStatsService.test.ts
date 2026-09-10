@@ -37,13 +37,14 @@ vi.mock('../../src/lib/supabase', () => {
   };
   return {
     supabase: {
-      from: () => buildChain(),
+      from: vi.fn(() => buildChain()),
     },
   };
 });
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
+import { supabase } from '../../src/lib/supabase';
 import { sessionStatsService } from '../../src/services/SessionStatsService';
 
 describe('SessionStatsService', () => {
@@ -56,6 +57,41 @@ describe('SessionStatsService', () => {
   afterEach(() => {
     sessionStatsService.resetAll();
     vi.useRealTimers();
+  });
+
+  it('keeps Diamond session results out of chip session history', () => {
+    sessionStatsService.startSession('diamond-table', 'user-1', 100, 2, 'diamonds');
+    sessionStatsService.recordHand('diamond-table', 150, true, true, false);
+    const result = sessionStatsService.endSession('diamond-table');
+    expect(result).toMatchObject({ arenaAsset: 'diamonds', profitLoss: 50, handsPlayed: 1 });
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it('does not restore a chip snapshot into a Diamond session', () => {
+    localStorage.setItem(
+      'club-arena-session-diamond-table',
+      JSON.stringify({
+        userId: 'user-1',
+        sessionStartTime: Date.now(),
+        currentStack: 999,
+        buyInTotal: 999,
+        profitLoss: 123,
+      })
+    );
+    sessionStatsService.startSession('diamond-table', 'user-1', 100, 2, 'diamonds');
+    expect(sessionStatsService.getStats('diamond-table')).toMatchObject({
+      arenaAsset: 'diamonds',
+      currentStack: 100,
+      buyInTotal: 100,
+      profitLoss: 0,
+    });
+  });
+
+  it('retains chip session persistence', () => {
+    sessionStatsService.startSession('chip-table', 'user-1', 100, 2);
+    sessionStatsService.recordHand('chip-table', 150, true, true, false);
+    sessionStatsService.endSession('chip-table');
+    expect(supabase.from).toHaveBeenCalledWith('session_history');
   });
 
   // ─────────────────────────────────────────────────────────────────────────

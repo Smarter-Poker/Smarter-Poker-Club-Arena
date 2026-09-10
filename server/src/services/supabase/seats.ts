@@ -59,6 +59,7 @@ import { tableCountChangedFilter } from './tables.js';
 type CashoutScope = { userId: string; tableId: string; seatNumber: number; occupancyId: string };
 
 export interface SeatCashoutReceipt {
+  asset?: 'chips' | 'diamonds';
   ok: true;
   stack: number;
   credited: boolean;
@@ -83,6 +84,7 @@ function confirmedCashout(data: unknown, scope: CashoutScope): SeatCashoutReceip
     !Number.isFinite(receipt.stack) ||
     receipt.stack < 0 ||
     Math.round(receipt.stack * 100) / 100 !== receipt.stack ||
+    (receipt.asset === 'diamonds' && !Number.isSafeInteger(receipt.stack)) ||
     receipt.seat_number !== scope.seatNumber ||
     receipt.occupancy_id !== scope.occupancyId ||
     receipt.user_id !== scope.userId ||
@@ -282,6 +284,7 @@ export async function atomicCashout(
     void notifyWaitlistSeatOpen(tableId);
     pushFinancialUpdate(userId, {
       tableId,
+      asset: receipt.asset,
       ledgerEntry:
         receipt.stack > 0 ? { direction: 'in', amount: receipt.stack, kind: 'cashout' } : null,
     });

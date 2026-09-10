@@ -75,3 +75,35 @@ own stopped-engine cutover) need one production lease that the deploy honours:
 with this change, a run that finds the window taken can simply wait for the
 next break instead of being cancelled. That lease is being built separately
 (`server/scripts/engine-production-authority.py`, not yet merged).
+
+## Follow-up the same evening: the colours after #4208
+
+An adversarial review of #4208 found the new colours would still lie in three
+places, fixed in the follow-up:
+
+- **A superseded run was red.** The control-plane check refused any run whose
+  workflow commit was no longer main's tip with `exit 1`: 8 of 8 red deploy runs
+  on 2026-09-10 were this, none a ship failure, and one opened a false "deploy
+  train is failing" alarm (#4109). With runs now holding the group for up to an
+  hour, a run queued behind one almost always starts after main moves. An
+  ANCESTOR of main now stands down green (`superseded`), touching nothing; a
+  commit that is not an ancestor of main is still refused, red.
+- **Already-live runs announced the commit was NOT on production.** The dedupe
+  now names each skip (`already_live`, `coalesced`, `superseded`), the step that
+  exists to be seen prints a notice for already-live, and the ledger records
+  which one it was (and `cancelled before a verified cutover` for cancellations).
+- **The Verdict could paint a run red while production served the commit** (a
+  dedupe that read an unreadable `/health`). It now asks production once,
+  cache-busted, before painting red; unreadable stays red and says so. The break
+  gate exports `gate_kind` on every decline, and the Verdict allowlists exactly
+  one deliberate kind, `lease_held_elsewhere`, for the production lease to use.
+
+Also: `timeout-minutes` 110 -> 130 so a failed cutover's ROLLBACK (~8m) and the
+always() tail can finish at the worst start minute; `INFLIGHT_STALE_MIN` 120 ->
+270 because a run's age includes time spent pending behind another (2 x 130 + 10);
+the dead "Record that this deploy run started" step and its script are removed
+(it wrote to `fn_ca_record_engine_deploy_start`, retired live by
+`20260910183316`, and warned on every run); the watchdog's train alarm names the
+workflow (so `check-main-is-green` sees it as loud), counts `timed_out`, and no
+longer tells the reader to "fix main, never the gate" when the failing step is the
+Verdict.

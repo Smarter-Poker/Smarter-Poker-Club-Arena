@@ -1,3 +1,5 @@
+import { DEFAULT_REQUEST_DEADLINE_MS, runWithRequestDeadline } from './requestDeadline';
+
 export interface RosterReadRetryOptions {
   attempts?: number;
   baseDelayMs?: number;
@@ -80,42 +82,6 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function runTimedAttempt<T>(
-  read: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  parentSignal?: AbortSignal
-): Promise<T> {
-  if (parentSignal?.aborted) throw abortError();
-  const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      if (timeout) clearTimeout(timeout);
-      parentSignal?.removeEventListener('abort', onParentAbort);
-      callback();
-    };
-    const onParentAbort = () => {
-      controller.abort();
-      finish(() => reject(abortError()));
-    };
-
-    parentSignal?.addEventListener('abort', onParentAbort, { once: true });
-    timeout = setTimeout(() => {
-      controller.abort();
-      finish(() => reject(new RosterReadTimeoutError(timeoutMs)));
-    }, timeoutMs);
-
-    Promise.resolve(read(controller.signal)).then(
-      (value) => finish(() => resolve(value)),
-      (error) => finish(() => reject(error))
-    );
-  });
-}
-
 /**
  * Runs an idempotent roster read with a bounded per-attempt deadline and
  * abort-aware exponential jitter. Authentication, authorization and validation
@@ -128,13 +94,18 @@ export async function runRosterReadWithRetry<T>(
   const attempts = Math.max(1, Math.floor(options.attempts ?? 3));
   const baseDelayMs = Math.max(0, options.baseDelayMs ?? 400);
   const maxDelayMs = Math.max(baseDelayMs, options.maxDelayMs ?? 4_000);
-  const timeoutMs = Math.max(1, options.timeoutMs ?? 12_000);
+  const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_REQUEST_DEADLINE_MS);
   const random = options.random ?? Math.random;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return await runTimedAttempt(read, timeoutMs, options.signal);
+      return await runWithRequestDeadline(read, {
+        timeoutMs,
+        signal: options.signal,
+        timeoutError: (ms) => new RosterReadTimeoutError(ms),
+        abortError,
+      });
     } catch (error) {
       lastError = error;
       if (

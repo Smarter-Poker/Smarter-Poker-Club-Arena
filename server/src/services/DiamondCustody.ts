@@ -17,26 +17,31 @@ export interface DiamondCustodyReceipt {
   amount: number;
   available_balance: number;
   custody_balance: number;
-  journal_id: string;
+  journal_id: string | null;
   debt_settled?: number;
 }
-function receipt(value: unknown, requestId: string): DiamondCustodyReceipt {
+function receipt(
+  value: unknown,
+  requestId: string,
+  operation: 'reserve' | 'release'
+): DiamondCustodyReceipt {
   if (!value || typeof value !== 'object') throw new Error('Missing Diamond Custody Receipt');
   const v = value as Record<string, unknown>;
   if (
     v.success !== true ||
     v.request_id !== requestId ||
     typeof v.custody_id !== 'string' ||
-    typeof v.journal_id !== 'string' ||
     !v.custody_id ||
-    !v.journal_id ||
+    (operation === 'release' && v.amount === 0
+      ? v.journal_id !== null
+      : typeof v.journal_id !== 'string' || !v.journal_id) ||
     ![v.amount, v.available_balance, v.custody_balance].every(
       (n) => Number.isSafeInteger(n) && Number(n) >= 0
     )
   )
     throw new Error('Invalid Diamond Custody Receipt');
   if (
-    Number(v.amount) <= 0 ||
+    (operation === 'reserve' && Number(v.amount) === 0) ||
     Number(v.amount) > 2147483647 ||
     (v.debt_settled !== undefined &&
       (!Number.isSafeInteger(v.debt_settled) ||
@@ -84,7 +89,7 @@ export async function reserveDiamondEntry(
         p_request_id: input.requestId,
       });
       if (error) throw new Error(error.message || 'Diamond Reservation Failed');
-      const result = receipt(data, input.requestId);
+      const result = receipt(data, input.requestId, 'reserve');
       if (result.amount !== input.amount) throw new Error('Diamond Reservation Amount Mismatch');
       if (result.custody_balance !== input.amount)
         throw new Error('Diamond Reservation Balance Mismatch');
@@ -103,7 +108,7 @@ export async function releaseDiamondEntry(
       p_request_id: requestId,
     });
     if (error) throw new Error(error.message || 'Diamond Release Failed');
-    const result = receipt(data, requestId);
+    const result = receipt(data, requestId, 'release');
     if (result.custody_id !== custodyId) throw new Error('Diamond Release Custody Mismatch');
     if (result.custody_balance !== 0) throw new Error('Diamond Release Balance Mismatch');
     return result;

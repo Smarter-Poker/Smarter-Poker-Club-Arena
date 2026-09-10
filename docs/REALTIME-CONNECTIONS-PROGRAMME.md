@@ -47,8 +47,11 @@ Exact evidence: `docs/audits/2026-09-10-realtime-phase16-release.md`.
 Subsequent production acceptance, the Cashier canary readiness correction, and
 loaded-fleet qualifications: `docs/audits/2026-09-10-realtime-acceptance-follow-through.md`.
 Scope: `docs/changelog/2026-09-10-realtime-phase16-cashier-directory.md`.
-A subsequent live run exposed Cashier menu clipping at 320px. The scoped portal
-repair and pending viewport acceptance are recorded in the follow-through audit.
+A subsequent live run exposed Cashier menu clipping at 320px. PR4154 repaired
+it and both unchanged production Cashier cases passed at exact release f1992eeb
+in run 34457185978. Fresh public/origin bytes still contained the repair at
+13:03 UTC. See `docs/audits/2026-09-10-realtime-phase16-cashier-acceptance.md`.
+Natural reconnect, physical iPad/PWA, and broader programme acceptance remain open.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
 failures reproduced and repaired. All 26 mounted cases and 39 existing scope

@@ -133,7 +133,7 @@ export interface LeagueMatchup {
 
 export interface LeagueGameContext {
   gameMode: 'cash' | 'tournament';
-  format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  format: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
   ante?: number;
   tournament?: HorseGameStateV2['tournament'];
 }

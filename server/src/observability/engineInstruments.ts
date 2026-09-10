@@ -204,8 +204,8 @@ export const engineTracer = new Tracer({
 // spins, heads up and mtt's as well. not just the cash game tables." Every
 // format already shares this engine and this socket, so they were always
 // measured - but they were one indistinguishable number, so "are Spins slow?"
-// had no answer. `format` is cash | spin | hu_sng | mtt, four values, so at
-// most eight series with audience. Still never a table_id.
+// had no answer. `format` is cash | spin | hu_sng | sng | mtt, five values,
+// so at most ten series with audience. Still never a table_id.
 //
 // Horses lose nothing here (CLAUDE.md 10.5): the same latency is observed for
 // every table; the label says who was watching, it does not change what any
@@ -230,10 +230,10 @@ export const settlementStepSlow = alwaysOnRegistry.counter(
   'Settlement step attempts taking at least 1000ms'
 );
 
-/** act -> broadcast, ms, 2 series (audience=human|horse). */
+/** act -> broadcast, ms, bounded by audience x tournament format. */
 export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
   'poker_act_to_broadcast_ms',
-  'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|mtt'
+  'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|sng|mtt'
 );
 
 /**
@@ -427,10 +427,10 @@ for (const outcome of ['completed', 'partial', 'frozen', 'error', 'coalesced']) 
   bountyRecoverySweepRunsTotal.inc(0, { outcome });
 }
 
-/** Actions processed, 2 series. */
+/** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',
-  'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|mtt)'
+  'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|sng|mtt)'
 );
 
 /**

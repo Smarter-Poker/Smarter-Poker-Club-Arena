@@ -693,6 +693,43 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.sent).toHaveLength(1);
   });
 
+  it('isolates a recoverable request validation error and keeps FIFO running', async () => {
+    const worker = new FakeWorker();
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+    worker.emitMessage(ready);
+    const active = client.decideFast(snapshot('invalid-snapshot'));
+    const queued = client.decideFast(snapshot('healthy-successor'));
+
+    worker.emitMessage({
+      type: 'ERROR',
+      requestId: 1,
+      generation: 7,
+      fence: 'invalid-snapshot',
+      message: 'horse state hero card count does not match variant/street rules',
+      recoverable: true,
+    });
+
+    await expect(active).rejects.toThrow(
+      'horse state hero card count does not match variant/street rules'
+    );
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
+    expect(client.status()).toMatchObject({
+      phase: 'ready',
+      queueDepth: 1,
+      recoverableRequestErrors: 1,
+      lastRecoverableRequestErrorType: 'DECIDE_FAST',
+      lastRecoverableRequestError:
+        'horse state hero card count does not match variant/street rules',
+      lastError: null,
+    });
+    worker.emitMessage(fastResult(2, 'healthy-successor'));
+    await expect(queued).resolves.toMatchObject({ type: 'FAST_RESULT', requestId: 2 });
+    expect(client.status()).toMatchObject({ phase: 'ready', queueDepth: 0, completedJobs: 1 });
+    expect(onFatal).not.toHaveBeenCalled();
+    expect(worker.terminateCalls).toBe(0);
+  });
+
   it('terminal-fails an ACK that certifies the wrong durable operation', async () => {
     const worker = new FakeWorker();
     const onFatal = vi.fn();

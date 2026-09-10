@@ -1,3 +1,3 @@
 # tests/engine-release-seal.law.test.ts
 
-The engine may start only an immutable release authorized by the durable host seal. A candidate remains non-persistent until its HTTP, proxy, and database proofs commit that seal; recovery and rollback always converge on the exact sealed desired image.
+The engine may start only an immutable release authorized by the durable host seal. A candidate remains non-persistent until its HTTP, proxy, and database proofs commit that seal; recovery and rollback always converge on the exact sealed desired image. The audited auto-deploy workflow is the sole workflow allowed to mutate the live engine; mutable environment edits cannot bypass its maintenance certificate or image authority.

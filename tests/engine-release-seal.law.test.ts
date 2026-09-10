@@ -1,4 +1,12 @@
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -784,7 +792,6 @@ exit 0
 
 describe('every host mutation path obeys the durable release authority', () => {
   const workflow = read('.github/workflows/auto-deploy-hetzner.yml');
-  const envWorkflow = read('.github/workflows/update-hetzner-env.yml');
   const engineUp = read('server/scripts/engine-up.sh');
   const supervisor = read('server/scripts/engine-supervisor.sh');
   const installer = read('server/scripts/install-engine-supervisor.sh');
@@ -935,11 +942,13 @@ describe('every host mutation path obeys the durable release authority', () => {
     const commit = workflow.indexOf('name: Commit the verified SHA/image-ID release seal');
     const rollback = workflow.indexOf('name: ROLLBACK', commit);
     const commitBlock = workflow.slice(commit, rollback);
-    const remoteStart = commitBlock.indexOf('~/hssh "');
+    const remoteCommand = commitBlock.indexOf('hssh "');
+    const remoteStart = remoteCommand - 2;
     const remoteEnd = commitBlock.indexOf(
       '\n          echo "Durable release authority',
       remoteStart
     );
+    expect(remoteCommand).toBeGreaterThan(2);
     expect(remoteStart).toBeGreaterThan(0);
     expect(remoteEnd).toBeGreaterThan(remoteStart);
 
@@ -1104,9 +1113,37 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(rollback).not.toMatch(/\\$CONTROL\/engine-up\.sh/);
   });
 
-  it('does not let the env editor forge image identity', () => {
-    expect(envWorkflow).toMatch(/GIT_COMMIT_SHA \| ENGINE_VERSION/);
-    expect(envWorkflow).toContain('engine-release-seal.py get desired-image-id');
-    expect(envWorkflow).not.toContain('IMAGE=club-arena-engine:current');
+  it('has no alternate workflow that can mutate the live engine outside the sealed cutover', () => {
+    const workflowDir = resolve(ROOT, '.github/workflows');
+    const workflowFiles = readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name));
+    expect(workflowFiles).not.toContain('update-hetzner-env.yml');
+
+    const mutationOwners = workflowFiles.filter((name) => {
+      const source = readFileSync(resolve(workflowDir, name), 'utf8');
+      return source.split('\n').some((line) => {
+        if (line.trimStart().startsWith('#')) return false;
+        return (
+          /engine-up\.sh(?:["']|\s|$)/.test(line) ||
+          /docker\s+(?:run|stop|start|restart|unpause|rm)\b.*club-arena-engine/.test(line)
+        );
+      });
+    });
+    expect(mutationOwners).toEqual(['auto-deploy-hetzner.yml']);
+
+    for (const name of workflowFiles.filter((file) => file !== 'auto-deploy-hetzner.yml')) {
+      const runnable = readFileSync(resolve(workflowDir, name), 'utf8')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('#'))
+        .join('\n');
+      expect(runnable, `${name} invokes a sealed engine controller`).not.toMatch(
+        /(?:engine-up|engine-supervisor)\.sh/
+      );
+      expect(runnable, `${name} touches canonical engine configuration`).not.toMatch(
+        /(?:\/opt\/club-arena|\$?REPO_DIR)\/server\/\.env/
+      );
+      expect(runnable, `${name} mutates the live engine process`).not.toMatch(
+        /docker\s+(?:container\s+)?(?:run|start|stop|kill|rm|restart|unpause|update)\b[^\n]*club-arena-engine/
+      );
+    }
   });
 });

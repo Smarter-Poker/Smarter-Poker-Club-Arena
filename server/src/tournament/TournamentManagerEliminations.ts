@@ -53,6 +53,7 @@ import {
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
+import { horseRebuyAllowance } from '../services/FreeBuy.js';
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -367,6 +368,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.isProcessingEliminations = true;
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
+    // One grace per admitted sweep (SWEEP_MUTATION_GRACE_MS). Reset with the
+    // deadline it extends, never carried between sweeps.
+    this.eliminationMutationGraceGranted = false;
     // How many of these the single JS thread is carrying at once, and how
     // long one takes. Both are measurement only - see engineInstruments.
     const sweepStartedAt = Date.now();
@@ -900,8 +904,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
+          let committedThisPass = 0;
           for (let i = 0; i < bustedOrdered.length; i++) {
             if (!this.running || signal.aborted) return;
+
+            /**
+             * A SWEEP THAT CANNOT AFFORD ITS FIRST MUTATION NEVER MAKES ONE.
+             *
+             * Everything above this line is READS, and on a large backlog they
+             * can spend the whole work budget. Every mutation below asks
+             * `eliminationMutationAllowed()`, which is false once the budget is
+             * gone - so `eliminatePlayer` used to refuse silently, the pass
+             * aborted as though the database had said no, the durable wake was
+             * never acknowledged, and the next sweep repeated the same reads on
+             * the same backlog. Fifteen tournaments were in that livelock for up
+             * to 100 minutes on 2026-09-10, three of them holding more than 150
+             * busted players each.
+             *
+             * Yielding is still the rule; buying one bounded extension when this
+             * pass has committed NOTHING is what makes the yield a yield rather
+             * than a stall. See SWEEP_MUTATION_GRACE_MS for the measurement.
+             */
+            if (this.eliminationWorkBudgetExpired()) {
+              if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
+              }
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] bust preparation spent the whole ${TournamentManagerBase.SWEEP_WORK_BUDGET_MS}ms budget with ${bustedOrdered.length} player(s) to record; extending once by ${TournamentManagerBase.SWEEP_MUTATION_GRACE_MS}ms so this sweep commits at least one finish`
+                ),
+                'Tournament.bust_mutation_grace_granted'
+              );
+            }
 
             // Place 1 belongs to the winner and is never handed out here.
             let place = nextPosition;
@@ -951,6 +988,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               return;
             }
             this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+            committedThisPass++;
             takenPositions.add(place);
             nextPosition = Math.min(nextPosition, place) - 1;
           }
@@ -1420,10 +1458,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
-   * Give busted HORSES their rebuy, exactly as a human would take one.
+   * Give busted HORSES their configured recovery, subject to the event and
+   * deterministic horse policy.
    *
-   * Every eligibility rule (rebuys offered, inside the rebuy level window,
-   * under max_rebuys, stack low enough) is enforced inside
+   * Every eligibility rule (the configured product, its level window,
+   * database cap, stack state and funding) is enforced inside
    * process_tournament_rebuy, which also does the chip debit, the prize-pool
    * increment and the single rake booking in one transaction. So this asks
    * and lets the database say no -- the refusals ('Rebuy limit reached',
@@ -1433,8 +1472,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Horses only. A real player's rebuy is their own decision and is taken
    * through the client.
    *
-   * Bounded by construction: max_rebuys (2 on the scheduled events) and the
-   * rebuy level window, both enforced server-side, so this cannot loop.
+   * Bounded by construction: the database event cap/window plus the Free Buy
+   * horse's deterministic 0-5 allowance, so this cannot loop indefinitely.
    */
   private async tryTournamentRebuys(
     bustedUserIds: string[]
@@ -1454,9 +1493,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return { rebought, answered };
     }
     const t = this.tournamentCache as
-      | { is_rebuy?: boolean; rebuy_levels?: number | null; late_reg_levels?: number | null }
+      | {
+          is_rebuy?: boolean;
+          is_reentry?: boolean;
+          free_buy?: boolean;
+          rebuy_levels?: number | null;
+          late_reg_levels?: number | null;
+        }
       | undefined;
-    if (!t?.is_rebuy || bustedUserIds.length === 0) return { rebought, answered };
+    if ((!t?.is_rebuy && !t?.is_reentry) || bustedUserIds.length === 0) {
+      return { rebought, answered };
+    }
+    // The horse input device follows the event's executable recovery product.
+    // Prefer a rebuy when both legacy flags are present; a re-entry-only event
+    // must not silently eliminate every horse while humans retain the option.
+    const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry';
     if (!this.eliminationMutationAllowed()) return { rebought, answered };
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
@@ -1477,12 +1528,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered };
 
       const declined = new Map<string, number>();
+      let freeBuyReloads: Map<string, number> | null = null;
+      if (t.free_buy === true) {
+        const horseIds = horseRows.map((horse) => String(horse.id));
+        const { data: reloadRows, error: reloadErr } = await supabase
+          .from('tournament_players')
+          .select('user_id, rebuys')
+          .eq('tournament_id', this.tournamentId)
+          .in('user_id', horseIds);
+        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (reloadErr || !Array.isArray(reloadRows)) {
+          // Unknown allowance state is not a decline. Preserve the decision
+          // window and retry rather than either charging or eliminating.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          return { rebought, answered };
+        }
+        freeBuyReloads = new Map(
+          reloadRows.map((row) => [
+            String(row.user_id),
+            Math.max(0, Math.floor(Number(row.rebuys) || 0)),
+          ])
+        );
+      }
       for (const h of horseRows) {
         if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (freeBuyReloads) {
+          const used = freeBuyReloads.get(h.id);
+          if (used === undefined) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            continue;
+          }
+          if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
+            answered.add(h.id);
+            continue;
+          }
+        }
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
-          p_rebuy_type: 'rebuy',
+          p_rebuy_type: recoveryType,
           // null: let the server price it. Passing a client-side quote here
           // would only risk a spurious 'Price mismatch'.
           p_cost: null,

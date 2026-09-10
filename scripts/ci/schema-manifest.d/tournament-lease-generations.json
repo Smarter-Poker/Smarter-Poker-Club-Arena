@@ -16,8 +16,7 @@
     "trg_lock_and_validate_tournament_live_seat",
     "trg_lock_and_classify_tournament_table",
     "trg_validate_tournament_table_origin",
-    "trg_tournament_table_origin_is_immutable",
-    "trg_assert_live_tournament_seat_has_roster"
+    "trg_tournament_table_origin_is_immutable"
   ],
   "tables": ["tournament_table_origins"],
   "columns": {

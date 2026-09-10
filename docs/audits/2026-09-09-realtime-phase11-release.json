@@ -1,0 +1,366 @@
+{
+  "phase": 11,
+  "scope": "TournamentDetails routed and embedded snapshot ownership",
+  "repairs": [
+    {
+      "pr": 4043,
+      "head": "ab677869af8c15de715ca48572cbf29f250cec38",
+      "merge": "c79e2687f8446d47488dd8c17990cc6abf263f5d",
+      "merged_at": "2026-09-09T22:56:50Z",
+      "ci_run": 34414137878,
+      "ci_conclusion": "success"
+    },
+    {
+      "pr": 4046,
+      "head": "b0bf8ae850c53c424faeba105e8a8acf64b92ced",
+      "ci_run": 34414946450,
+      "merge": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+      "merged_at": "2026-09-09T23:13:33Z",
+      "ci_conclusion": "success",
+      "ci_attempt": 2
+    }
+  ],
+  "local_verification": {
+    "original_mounted_failures": 11,
+    "main_focused_passed": 193,
+    "main_mounted_passed": 14,
+    "boundary_before": {
+      "failed": 1,
+      "passed": 14,
+      "observed": 600,
+      "expected": 700
+    },
+    "boundary_after_passed": 15,
+    "typescript": "passed after both commits",
+    "production_build": "passed on main repair; corrective CI production build passed",
+    "normal_push_related_passed": {
+      "4043": 515,
+      "4046": 212
+    }
+  },
+  "ci_retry": {
+    "run": 34414946450,
+    "attempt_1_failure": "PostgreSQL 17 probe infrastructure error 58P01: shared memory segment no longer existed",
+    "attempt_1_failed_at": "2026-09-09T23:01:22.5536264Z",
+    "attempt_1_job": 102677642353,
+    "action": "rerun-failed-jobs",
+    "accepted_at": "2026-09-09T23:09:45.692Z",
+    "probe_on_attempt_2": "success; no code changes or gate bypass"
+  },
+  "live_baseline": {
+    "observed_at": "2026-09-09T22:54:39.942022+00:00",
+    "tournament_id": "64dcc65e-a1c0-4db6-8e50-c66526c02c04",
+    "database": {
+      "status": "RUNNING",
+      "current_level": 2,
+      "entry_rows": 24,
+      "entry_chips": 288000,
+      "visible_table_rows": 3
+    },
+    "browser": {
+      "display_level": 3,
+      "entries": 24,
+      "total_chips": 288000,
+      "tables": 3
+    },
+    "acceptance": "pre-publication baseline only"
+  },
+  "acceptance_limits": [
+    "Physical iPad/PWA reconnect and background-resume acceptance unavailable.",
+    "Controlled browser validates the published rendered flow; deterministic reconnect, refusal, retirement and ordering failures are covered by mounted-page tests.",
+    "No live player seats, registrations, balances or push deliveries modified as probes."
+  ],
+  "corrective_release_gate": {
+    "observed_at": "2026-09-09T23:13:54.493Z",
+    "status_reader_exit": 0,
+    "status_reader": {
+      "pr": 4046,
+      "branch": "agent/codex-realtime-phase11/fix/snapshot-patch-boundaries",
+      "sha": "b0bf8ae850c53c424faeba105e8a8acf64b92ced",
+      "state": "GREEN",
+      "mergeable_state": "UNCOMPUTED",
+      "failures": [],
+      "reason": null
+    },
+    "pr": {
+      "number": 4046,
+      "merged": true,
+      "merged_at": "2026-09-09T23:13:33Z",
+      "head": "b0bf8ae850c53c424faeba105e8a8acf64b92ced",
+      "merge_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a"
+    },
+    "run": {
+      "id": 34414946450,
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 2
+    },
+    "jobs": [
+      {
+        "id": 102679884696,
+        "name": "TypeScript Check",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679885579,
+        "name": "Live Production E2E",
+        "status": "completed",
+        "conclusion": "skipped",
+        "failed": []
+      },
+      {
+        "id": 102679885878,
+        "name": "Post-Deploy Verification",
+        "status": "completed",
+        "conclusion": "skipped",
+        "failed": []
+      },
+      {
+        "id": 102679886010,
+        "name": "Source Windows Are Structural",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679886461,
+        "name": "Production Build",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679886514,
+        "name": "CSS Beat E2E (multi-table + animations)",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679886543,
+        "name": "Client Unit Tests shard 3",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679886591,
+        "name": "Server Engine (typecheck + tests)",
+        "status": "completed",
+        "conclusion": "skipped",
+        "failed": []
+      },
+      {
+        "id": 102679886758,
+        "name": "Client Unit Tests shard 2",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679886806,
+        "name": "Accounting transactions (PostgreSQL 17)",
+        "status": "completed",
+        "conclusion": "skipped",
+        "failed": []
+      },
+      {
+        "id": 102679887269,
+        "name": "Client Unit Tests shard 4",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679887384,
+        "name": "Client Unit Tests (vitest)",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679911271,
+        "name": "What changed",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679913511,
+        "name": "Stub Gate",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102679921802,
+        "name": "Client Unit Tests shard 1",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      },
+      {
+        "id": 102680654673,
+        "name": "What this run verified",
+        "status": "completed",
+        "conclusion": "success",
+        "failed": []
+      }
+    ]
+  },
+  "runtime_source_blobs": {
+    "src/pages/tournament/TournamentDetails.tsx": "26462d6c080cc412623113ab2f4a5606d746f122",
+    "src/services/TournamentService.ts": "82cf4f36310fa0e08268d1b276cec16f2bd11be7"
+  },
+  "corrective_contains_main_repair": true,
+  "publication": {
+    "verified_at": "2026-09-09T23:19:43.303261+00:00",
+    "stamps": [
+      {
+        "url": "https://smarter.poker/hub/club-arena/build-info.json",
+        "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+        "built_at": "2026-09-09T23:16:14Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34415964089"
+      },
+      {
+        "url": "https://ca-static.smarter.poker/build-info.json",
+        "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+        "built_at": "2026-09-09T23:16:14Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34415964089"
+      }
+    ],
+    "entry_url": "https://smarter.poker/hub/club-arena/assets/index-Coy3KdTT-v6.js",
+    "asset_url": "https://smarter.poker/hub/club-arena/assets/TournamentDetails-C6DZ_YE0-v6.js",
+    "asset_sha256": "8154cf9d567a62b8ffdd97af67cc8df0a79f4f2c87d229fd1b0cb816624a16d0",
+    "checks": {
+      "tournamentPatches": true,
+      "entryPatches": true,
+      "tablePatches": true,
+      "throwOnError": true,
+      "Tournament Details Could Not Be Loaded.": true,
+      "Tournament Details Could Not Be Refreshed. Showing The Last Confirmed Data.": true
+    }
+  },
+  "publisher": {
+    "observed_at": "2026-09-09T23:21:41.240Z",
+    "run": 34415964089,
+    "jobs": [
+      {
+        "name": "publish-needed",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": []
+      },
+      {
+        "name": "client-tests (3)",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": []
+      },
+      {
+        "name": "client-tests (2)",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": []
+      },
+      {
+        "name": "client-tests (4)",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": []
+      },
+      {
+        "name": "client-tests (1)",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": []
+      },
+      {
+        "name": "build-and-store",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Stamp build provenance",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Upload dist for the sync job",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify dist is complete",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "publish-to-origin",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Install the origin key and pin the host key",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Stand down if the origin already serves a newer bundle",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Publish - rsync the release, swap the symlink, prune",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify the origin serves this bundle",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "Publish the app bundle (Capgo OTA)",
+        "status": "completed",
+        "conclusion": "skipped",
+        "steps": []
+      }
+    ]
+  },
+  "live_acceptance": {
+    "database_observed_at": "2026-09-09T23:20:49.490027+00:00",
+    "browser_observed_at": "2026-09-09T23:21:30.579Z",
+    "url": "https://smarter.poker/hub/club-arena/tournaments/64dcc65e-a1c0-4db6-8e50-c66526c02c04",
+    "browser": "Supported controlled Chrome; existing authenticated session",
+    "loaded_module": "/hub/club-arena/assets/index-Coy3KdTT-v6.js",
+    "database": {
+      "status": "RUNNING",
+      "current_level": 2,
+      "entry_rows": 24,
+      "entry_chips": 288000,
+      "visible_table_rows": 3
+    },
+    "browser_result": {
+      "tabs_verified": ["Details", "Ranking", "Tables"],
+      "display_level": 3,
+      "entries": 24,
+      "total_chips": 288000,
+      "table_cards": 3,
+      "displayed_alerts": 0
+    },
+    "kind": "Published rendered flow; not physical-device or live transport-fault acceptance"
+  },
+  "served_contains_repairs": {
+    "4043": true,
+    "4046": true
+  }
+}

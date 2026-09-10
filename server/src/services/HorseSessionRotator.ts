@@ -1029,9 +1029,9 @@ export class HorseSessionRotator {
    *
    * Two reads, both small and both once per cycle: the bookings for
    * tournaments that start inside the window, and the same for seat-first
-   * games with no start time. A read that fails leaves nobody: the horse is
-   * seated late by `ensureLateRegSeated` as it was before today, and the
-   * beat says nothing moved.
+   * games with no start time. A read that fails leaves nobody: atomic
+   * tournament admission remains authoritative, and the beat says nothing
+   * moved.
    */
   private async leaveCashForTournaments(
     allSeats: any[],
@@ -1104,7 +1104,7 @@ export class HorseSessionRotator {
     const seatFirst = await bookingRead('seat_first');
     if (!this.lifecycleIsCurrent(generation)) return 0;
     /* A short read leaves nobody this cycle rather than guessing who is
-       committed; the horse is seated late by ensureLateRegSeated, as before. */
+       committed; atomic tournament admission remains authoritative. */
     if (!timed.complete || !seatFirst.complete) return 0;
     const bookingsByHorse = new Map<string, ImminentBooking[]>();
     const seen = new Set<string>();

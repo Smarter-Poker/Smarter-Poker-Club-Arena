@@ -2764,11 +2764,3 @@
   font-size: clamp(20px, 3vw, 28px);
   color: #f4f7ff;
 }
-.diamondArenaCard {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 2 / 3;
-  object-fit: contain;
-  user-select: none;
-}

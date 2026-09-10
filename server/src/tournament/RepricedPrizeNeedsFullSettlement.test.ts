@@ -51,9 +51,12 @@ const terminal = newestFunction(
 
 describe('late-reg repricing is not a second money path', () => {
   it('records the corrected cache without moving money itself', () => {
-    expect(reprice).toMatch(
-      /\.from\('tournament_players'\)[\s\S]*?\.update\(\{ prize: correctPrize \}\)[\s\S]*?\.eq\('tournament_id', this\.tournamentId\)[\s\S]*?\.eq\('user_id', player\.user_id\)/
-    );
+    expect(reprice).toContain("supabase.rpc(\n          'fn_ca_reprice_unpaid_tournament_place'");
+    expect(reprice).toContain('p_expected_prize: expectedPrize');
+    expect(reprice).toContain('p_new_prize: correctPrize');
+    expect(reprice).toContain('record.tournament_id !== this.tournamentId');
+    expect(reprice).toContain('record.user_id !== player.user_id');
+    expect(reprice).not.toMatch(/\.from\('tournament_players'\)[\s\S]*?\.update\(/);
     expect(blankNonCode(reprice)).not.toMatch(
       /settleTournamentObligation|creditTournamentPrize|credit_player_wallet|wallet_transactions|tournament_payouts|requestTournamentTerminalReceipt/
     );
@@ -64,7 +67,7 @@ describe('late-reg repricing is not a second money path', () => {
       "requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
     );
     expect(blankNonCode(finish)).not.toMatch(
-      /recalculateEliminatedPrizes|correctPrize|\.from\('tournament_players'\)|settleTournamentObligation/
+      /recalculateEliminatedPrizes|correctPrize|fn_ca_reprice_unpaid_tournament_place|settleTournamentObligation/
     );
   });
 });

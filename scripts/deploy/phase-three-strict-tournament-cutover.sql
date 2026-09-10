@@ -1,12 +1,27 @@
 -- Prepared accounting Phase 3 strict tournament cutover. NOT APPLIED.
--- Historical candidate 3005bad8f was never on main. Its exact-hand prerequisite
--- is absent from main and live catalogs (verified 2026-09-09).
--- Do not deploy until that dependency and engine adoption are independently
--- evidenced. Reserve a fresh migration only after the complete rehearsal passes.
+-- Final-deal v2 and the whole cutover remain unapproved/unverified. NOT APPLIED.
+-- The final-deal v2 implementation was blocked by automatic approval review.
+-- The exact-hand prerequisite is resolved. The remaining cutover blocker is
+-- the absent, unverified final-deal v2 batch authority. Preserve every source
+-- and engine-adoption gate; reserve a fresh migration only after the complete
+-- approved rehearsal passes.
 -- Player rebuy/decline route compatibility is covered by the focused PG probe.
 -- Historical certificates and incident findings remain unchanged.
 
 BEGIN;
+
+-- Read-only fail-closed prerequisite before any table lock or DDL. Existence
+-- alone is not deployment certification; every later source/adoption gate stays.
+DO $require_final_deal_v2_contract$
+BEGIN
+  IF to_regprocedure(
+       'public.fn_ca_verify_terminal_final_deal_batch(uuid,boolean)'
+     ) IS NULL THEN
+    RAISE EXCEPTION
+      'Stage B remains blocked: the approved, verified final-deal v2 batch contract is absent';
+  END IF;
+END;
+$require_final_deal_v2_contract$;
 
 /* A busy relation aborts the whole cutover instead of making a live table
    wait behind DDL. Re-run only in the audited quiet window after inspecting
@@ -63,10 +78,42 @@ BEGIN
          'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
      AND p.prosecdef;
 
+  -- Preserve the deployed busy-manager fix. A generic FOR SHARE substring
+  -- also occurs in comments, so exact source identities guard this upgrade.
+  IF md5(v_source) NOT IN ('ab227471f29f2944ebd64909622b6af7',
+                          'd21a055b448febe83c1637371b150100')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid=to_regprocedure('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)')
+          AND md5(p.prosrc)='d1b5100c2b9f92bec5fd1680b0b4f230'
+          AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+          AND p.proconfig=ARRAY['search_path=public, pg_temp']
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid=to_regprocedure('public.heartbeat_tournament_leases_v4(text,jsonb,integer)')
+          AND md5(p.prosrc)='5e6c99545e07c21efcb50e5cb3441c14'
+          AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+          AND p.proconfig=ARRAY['search_path=public, pg_temp']
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B requires the exact KEY SHARE hook, UPDATE takeover and non-key heartbeat authorities';
+  END IF;
+
+  -- The browser reveal exception delegates only to the already hardened body.
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p
+       WHERE p.oid=to_regprocedure('public.fn_mystery_bounty_reveal(uuid,uuid,boolean)')
+         AND md5(p.prosrc)='5578ec53c8a531eeba47d448ae9af1b1'
+         AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+         AND p.proconfig=ARRAY['search_path=public, pg_temp']
+         AND p.proacl::text='{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}') THEN
+    RAISE EXCEPTION 'Stage-B shared player reveal requires the exact hardened identity authority';
+  END IF;
+
   IF position('app.smarter_data_actor' IN v_source) = 0
      OR position('x-smarter-data-actor' IN v_source) = 0
      OR position('l.lease_generation = v_lease_generation' IN v_source) = 0
-     OR position('FOR SHARE' IN v_source) = 0
+     OR position(E'     FOR KEY SHARE;\n  END IF;' IN v_source) = 0
      OR position('request.jwt.claims' IN v_source) = 0
      OR position('auth.role()' IN v_source) = 0
      OR position('verified JWT role disagrees with request claims' IN v_source) = 0 THEN
@@ -506,6 +553,562 @@ BEGIN
 END;
 $refuse_inflight_legacy_final_table_deal$;
 
+/* Cash batches retain their owner-only payment primitives when the public
+   compatibility door contracts. Each primitive calls the existing private
+   obligation core in the same outer transaction. Do not relax the public gate
+   or introduce a caller-controlled bypass flag. */
+-- BEGIN CANONICAL TERMINAL PLACE BATCH CONTRACT
+-- Version is owned by this writer; legacy p_source cannot choose semantics.
+ALTER TABLE public.tournament_place_settlement_batches
+ ADD COLUMN IF NOT EXISTS contract_version integer NOT NULL DEFAULT 1;
+DO $canonical_place_batch_version$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_attribute a JOIN pg_attrdef d
+   ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+   WHERE a.attrelid='public.tournament_place_settlement_batches'::regclass
+    AND a.attname='contract_version' AND a.atttypid='integer'::regtype
+    AND a.attnotnull AND pg_get_expr(d.adbin,d.adrelid)='1') THEN
+  RAISE EXCEPTION 'canonical place batch version column differs';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint
+  WHERE conrelid='public.tournament_place_settlement_batches'::regclass
+   AND conname='tournament_place_batch_contract_version') THEN
+  ALTER TABLE public.tournament_place_settlement_batches
+   ADD CONSTRAINT tournament_place_batch_contract_version CHECK(contract_version IN (1,2));
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint
+   WHERE conrelid='public.tournament_place_settlement_batches'::regclass
+    AND conname='tournament_place_batch_contract_version' AND convalidated
+    AND pg_get_constraintdef(oid)='CHECK ((contract_version = ANY (ARRAY[1, 2])))') THEN
+  RAISE EXCEPTION 'canonical place batch version constraint differs';
+ END IF;
+END;
+$canonical_place_batch_version$;
+
+-- Verify the current cash authority's version 2 batch against its canonical
+-- ladder, durable bust sequence, every paid obligation and wallet receipt.
+CREATE OR REPLACE FUNCTION public.fn_ca_verify_terminal_place_batch(
+ p_tournament_id uuid,p_require_terminal boolean DEFAULT false
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $verify_terminal_place_batch$
+DECLARE
+ v_t public.tournaments%ROWTYPE;
+ v_b public.tournament_place_settlement_batches%ROWTYPE;
+ v_e public.tournament_escrow%ROWTYPE;
+ v_ladder jsonb; v_plan jsonb;
+ v_field integer; v_positive integer; v_bubble_place integer;
+ v_place_total numeric; v_bubble_amount numeric:=0;
+ v_bubble_user uuid; v_ob public.tournament_obligations%ROWTYPE;
+ v_bubble_count integer;
+BEGIN
+ SELECT * INTO STRICT v_t FROM public.tournaments WHERE id=p_tournament_id;
+ SELECT * INTO STRICT v_b FROM public.tournament_place_settlement_batches
+  WHERE tournament_id=p_tournament_id;
+ IF v_b.contract_version<>2 OR v_b.mode<>'structure' OR v_b.settled_at IS NULL
+  OR v_t.prize_pool_finalized IS DISTINCT FROM true
+  OR v_t.prize_pool IS NULL OR v_t.prize_pool<0
+  OR v_t.prize_pool::text IN ('NaN','Infinity','-Infinity')
+  OR v_t.prize_pool<>round(v_t.prize_pool,2)
+  OR v_t.prize_pool<COALESCE(v_t.guaranteed_prize,0)
+ THEN RAISE EXCEPTION 'canonical terminal batch is not funded and settled'; END IF;
+ SELECT count(*) INTO v_field FROM public.tournament_players
+  WHERE tournament_id=p_tournament_id;
+ IF v_field=0 OR
+  (SELECT count(*) FROM public.tournament_players WHERE tournament_id=p_tournament_id
+   AND status='winner' AND position=1)<>1
+  OR (SELECT count(DISTINCT position) FROM public.tournament_players
+   WHERE tournament_id=p_tournament_id)<>v_field
+  OR EXISTS(SELECT 1 FROM public.tournament_players WHERE tournament_id=p_tournament_id
+    AND (position IS NULL OR position<1 OR position>v_field
+     OR status NOT IN ('winner','eliminated')
+     OR (status='winner' AND position<>1)
+     OR (status='eliminated' AND (eliminated_at IS NULL OR elimination_sequence IS NULL))))
+  OR (SELECT count(DISTINCT elimination_sequence) FROM public.tournament_players
+   WHERE tournament_id=p_tournament_id AND status='eliminated')<>v_field-1
+  OR EXISTS(SELECT 1 FROM (
+   SELECT position,row_number() OVER(ORDER BY elimination_sequence DESC,id)+1 AS expected
+    FROM public.tournament_players WHERE tournament_id=p_tournament_id AND status='eliminated'
+   ) ranked WHERE position<>expected)
+ THEN RAISE EXCEPTION 'canonical terminal batch has no exact durable standings'; END IF;
+ SELECT COALESCE(jsonb_agg(jsonb_build_object('place',a.place,'amount',a.amount)
+   ORDER BY a.place),'[]'::jsonb),COALESCE(sum(a.amount),0),
+   count(*) FILTER(WHERE a.amount>0),max(a.place)+1
+ INTO v_ladder,v_place_total,v_positive,v_bubble_place
+ FROM public.fn_ca_tournament_place_amounts(p_tournament_id) a;
+ IF jsonb_array_length(v_ladder)=0
+  OR EXISTS(SELECT 1 FROM jsonb_array_elements(v_ladder) a
+   WHERE (a->>'amount')::numeric<0 OR (a->>'amount')::numeric<>round((a->>'amount')::numeric,2))
+ THEN RAISE EXCEPTION 'canonical terminal batch ladder is invalid'; END IF;
+ IF v_t.bubble_protection AND v_bubble_place<=v_field THEN
+  v_bubble_amount:=v_t.buy_in_amount;
+  IF v_bubble_amount IS NULL OR v_bubble_amount<=0
+   OR v_bubble_amount::text IN ('NaN','Infinity','-Infinity')
+   OR v_bubble_amount<>round(v_bubble_amount,2)
+  THEN RAISE EXCEPTION 'canonical terminal batch Bubble amount is invalid'; END IF;
+  SELECT user_id INTO STRICT v_bubble_user FROM public.tournament_players
+   WHERE tournament_id=p_tournament_id AND position=v_bubble_place AND status='eliminated';
+ END IF;
+ IF v_place_total+v_bubble_amount IS DISTINCT FROM v_t.prize_pool
+ THEN RAISE EXCEPTION 'canonical ladder and Bubble do not allocate one pool'; END IF;
+ SELECT COALESCE(jsonb_agg(jsonb_build_object('place',(a->>'place')::integer,
+  'user_id',tp.user_id,'club_id',tp.club_id,'cents',round((a->>'amount')::numeric*100)::bigint)
+  ORDER BY (a->>'place')::integer),'[]'::jsonb) INTO v_plan
+ FROM jsonb_array_elements(v_ladder) a JOIN public.tournament_players tp
+  ON tp.tournament_id=p_tournament_id AND tp.position=(a->>'place')::integer
+ WHERE (a->>'amount')::numeric>0;
+ IF jsonb_array_length(v_plan)<>v_positive OR v_b.place_count<>v_positive
+  OR v_b.amount_owed IS DISTINCT FROM v_place_total
+  OR v_b.plan_fingerprint IS DISTINCT FROM md5(v_plan::text)
+  OR v_b.escrow_required<0 OR v_b.escrow_available<v_b.escrow_required
+  OR v_b.escrow_required>v_t.prize_pool
+  OR v_b.escrow_required<>round(v_b.escrow_required,2)
+  OR v_b.escrow_available<>round(v_b.escrow_available,2)
+ THEN RAISE EXCEPTION 'canonical terminal batch header or funding proof differs'; END IF;
+ IF EXISTS(SELECT 1 FROM public.tournament_players tp
+  LEFT JOIN LATERAL (SELECT (a->>'amount')::numeric AS amount
+   FROM jsonb_array_elements(v_ladder) a WHERE (a->>'place')::integer=tp.position) expected ON true
+  WHERE tp.tournament_id=p_tournament_id
+   AND tp.prize IS DISTINCT FROM COALESCE(expected.amount,
+    CASE WHEN tp.user_id=v_bubble_user THEN v_bubble_amount ELSE 0 END))
+ THEN RAISE EXCEPTION 'canonical terminal batch prize cache differs'; END IF;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(v_plan) a
+  LEFT JOIN public.tournament_obligations o ON o.tournament_id=p_tournament_id
+   AND o.kind='place' AND o.place=(a->>'place')::integer
+  WHERE o.id IS NULL OR o.user_id IS DISTINCT FROM (a->>'user_id')::uuid
+   OR o.amount_owed IS DISTINCT FROM (a->>'cents')::numeric/100
+   OR o.amount_paid IS DISTINCT FROM o.amount_owed OR o.settled_at IS NULL)
+  OR EXISTS(SELECT 1 FROM public.tournament_obligations o
+   WHERE o.tournament_id=p_tournament_id AND o.kind='place'
+    AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v_plan) a
+     WHERE o.place=(a->>'place')::integer AND o.user_id=(a->>'user_id')::uuid
+      AND o.amount_owed=(a->>'cents')::numeric/100))
+ THEN RAISE EXCEPTION 'canonical terminal batch obligations differ'; END IF;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(v_plan) a WHERE
+  (SELECT COALESCE(sum(p.amount),0) FROM public.tournament_payouts p
+   WHERE p.tournament_id=p_tournament_id AND p.position=(a->>'place')::integer
+    AND p.user_id=(a->>'user_id')::uuid) IS DISTINCT FROM (a->>'cents')::numeric/100)
+  OR EXISTS(SELECT 1 FROM public.tournament_payouts p
+   WHERE p.tournament_id=p_tournament_id AND p.position IS NOT NULL AND
+    (NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v_plan) a
+      WHERE p.position=(a->>'place')::integer AND p.user_id=(a->>'user_id')::uuid)
+     OR p.amount IS NULL OR p.amount<=0 OR p.amount<>round(p.amount,2)
+     OR p.idempotency_key IS NULL OR NOT EXISTS(
+      SELECT 1 FROM public.wallet_credit_idempotency k WHERE k.key=p.idempotency_key
+       AND k.user_id=p.user_id AND k.amount=p.amount)))
+ THEN RAISE EXCEPTION 'canonical terminal batch payout or wallet receipt differs'; END IF;
+ SELECT count(*) INTO v_bubble_count FROM public.tournament_obligations
+  WHERE tournament_id=p_tournament_id AND kind='bubble_protection';
+ IF v_bubble_amount>0 THEN
+  SELECT * INTO STRICT v_ob FROM public.tournament_obligations
+   WHERE tournament_id=p_tournament_id AND kind='bubble_protection';
+  IF v_bubble_count<>1 OR v_ob.place IS NOT NULL OR v_ob.user_id IS DISTINCT FROM v_bubble_user
+   OR v_ob.amount_owed IS DISTINCT FROM v_bubble_amount OR v_ob.amount_paid IS DISTINCT FROM v_bubble_amount
+   OR v_ob.settled_at IS NULL
+   OR v_ob.source IS NULL
+   OR v_ob.source NOT IN ('engine.eliminatePlayer','engine.atomicPlaceSettlement','engine.fn_settle_tournament_places','engine.fn_settle_tournament_bubble_protection')
+   OR v_b.bubble_contract_required IS DISTINCT FROM true
+   OR v_b.bubble_obligation_id IS DISTINCT FROM v_ob.id
+   OR v_b.bubble_user_id IS DISTINCT FROM v_bubble_user
+   OR v_b.bubble_source IS DISTINCT FROM v_ob.source
+   OR v_b.bubble_amount_owed IS DISTINCT FROM v_bubble_amount
+   OR v_b.bubble_amount_paid_before<0 OR v_b.bubble_amount_paid_before>v_bubble_amount
+   OR (SELECT COALESCE(sum(amount),0) FROM public.tournament_payouts
+    WHERE tournament_id=p_tournament_id AND source='bubble_protection')<>v_bubble_amount
+   OR EXISTS(SELECT 1 FROM public.tournament_payouts p
+    WHERE p.tournament_id=p_tournament_id AND p.source='bubble_protection'
+     AND (p.position IS NOT NULL OR p.user_id IS DISTINCT FROM v_bubble_user OR p.amount<=0
+      OR p.amount<>round(p.amount,2) OR p.idempotency_key IS NULL
+      OR NOT EXISTS(SELECT 1 FROM public.wallet_credit_idempotency k
+       WHERE k.key=p.idempotency_key AND k.user_id=p.user_id AND k.amount=p.amount)))
+  THEN RAISE EXCEPTION 'canonical terminal batch Bubble proof differs'; END IF;
+ ELSIF v_bubble_count<>0 OR v_b.bubble_contract_required IS DISTINCT FROM false
+  OR v_b.bubble_obligation_id IS NOT NULL OR v_b.bubble_user_id IS NOT NULL
+  OR v_b.bubble_source IS NOT NULL OR v_b.bubble_amount_owed<>0
+  OR v_b.bubble_amount_paid_before<>0
+  OR EXISTS(SELECT 1 FROM public.tournament_payouts
+   WHERE tournament_id=p_tournament_id AND source='bubble_protection')
+ THEN RAISE EXCEPTION 'canonical terminal batch has uncontracted Bubble evidence'; END IF;
+ SELECT * INTO STRICT v_e FROM public.tournament_escrow WHERE tournament_id=p_tournament_id;
+ IF v_e.enforced IS DISTINCT FROM true OR v_e.prize_balance IS DISTINCT FROM 0::numeric
+  OR (p_require_terminal AND (v_e.bounty_balance IS DISTINCT FROM 0::numeric
+   OR v_e.fee_balance IS DISTINCT FROM 0::numeric OR v_e.closed_at IS NULL
+   OR EXISTS(SELECT 1 FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id
+    WHERE t.tournament_id=p_tournament_id AND (s.left_at IS NULL OR s.status IS DISTINCT FROM 'left'))))
+ THEN RAISE EXCEPTION 'canonical terminal batch has open custody or seats'; END IF;
+ RETURN jsonb_build_object('ok',true,'contract_version',2,'place_total',v_place_total,
+  'bubble_amount',v_bubble_amount,'place_count',v_positive,'plan_fingerprint',v_b.plan_fingerprint);
+END;
+$verify_terminal_place_batch$;
+REVOKE ALL ON FUNCTION public.fn_ca_verify_terminal_place_batch(uuid,boolean)
+ FROM PUBLIC,anon,authenticated,service_role;
+
+DO $contract_terminal_place_batch$
+DECLARE
+ v_oid oid; v_definition text; v_source text; v_before jsonb; v_after jsonb;
+BEGIN
+ v_oid:=to_regprocedure('public.fn_settle_tournament_places(uuid,uuid)');
+ IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_oid AND proowner='postgres'::regrole
+  AND prosecdef AND proconfig=ARRAY['search_path=public','statement_timeout=30s']::text[]
+  AND prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql'))
+  OR has_function_privilege('anon',v_oid,'EXECUTE')
+  OR has_function_privilege('authenticated',v_oid,'EXECUTE')
+  OR NOT has_function_privilege('service_role',v_oid,'EXECUTE') THEN
+  RAISE EXCEPTION 'canonical place batch prerequisite metadata differs: fn_settle_tournament_places';
+ END IF;
+ SELECT prosrc,pg_get_functiondef(oid),
+  jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
+   'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
+ INTO v_source,v_definition,v_before FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source) NOT IN ('d0262f4928b12eea1cc5e9175cbf2737','2fb9eb9761e248315f36df617e519512') THEN
+  RAISE EXCEPTION 'canonical place batch prerequisite body differs: fn_settle_tournament_places';
+ END IF;
+ IF md5(v_source)='d0262f4928b12eea1cc5e9175cbf2737' THEN
+  IF position($canonical_old_0_0$  v_rows integer;$canonical_old_0_0$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 0/0 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_0_0$  v_rows integer;$canonical_old_0_0$,$canonical_new_0_0$  v_rows integer;
+  v_modern_batch public.tournament_place_settlement_batches%ROWTYPE;
+  v_modern_replay boolean := false;
+  v_modern_required numeric := 0;
+  v_modern_escrow_before numeric := 0;
+  v_modern_plan jsonb;
+  v_modern_positive integer;
+$canonical_new_0_0$);
+  IF position($canonical_old_0_1$  IF lower(COALESCE(v_t.variant,'')) = 'satellite'$canonical_old_0_1$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 0/1 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_0_1$  IF lower(COALESCE(v_t.variant,'')) = 'satellite'$canonical_old_0_1$,$canonical_new_0_1$  -- A published batch is an immutable money plan. Replay it without even
+  -- transiently clearing cached prizes or rewriting a frozen obligation.
+  SELECT * INTO v_modern_batch FROM public.tournament_place_settlement_batches
+   WHERE tournament_id=p_tournament_id FOR UPDATE;
+  IF FOUND THEN
+    IF v_modern_batch.contract_version<>2 OR v_modern_batch.settled_at IS NULL THEN
+      RAISE EXCEPTION 'existing place batch requires its original settlement authority'
+        USING ERRCODE='55000';
+    END IF;
+    v_modern_replay:=true;
+  END IF;
+
+  IF lower(COALESCE(v_t.variant,'')) = 'satellite'$canonical_new_0_1$);
+  IF position($canonical_old_0_2$v_status = 'COMPLETED'$canonical_old_0_2$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 0/2 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_0_2$v_status = 'COMPLETED'$canonical_old_0_2$,$canonical_new_0_2$(v_status = 'COMPLETED' OR v_modern_replay)$canonical_new_0_2$);
+  IF position($canonical_old_0_3$v_status <> 'COMPLETED'$canonical_old_0_3$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 0/3 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_0_3$v_status <> 'COMPLETED'$canonical_old_0_3$,$canonical_new_0_3$(v_status <> 'COMPLETED' AND NOT v_modern_replay)$canonical_new_0_3$);
+  IF position($canonical_old_0_4$    IF v_bubble_amount > 0 THEN
+      v_bubble_result :=$canonical_old_0_4$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 0/4 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_0_4$    IF v_bubble_amount > 0 THEN
+      v_bubble_result :=$canonical_old_0_4$,$canonical_new_0_4$    SELECT e.prize_balance INTO STRICT v_modern_escrow_before
+      FROM public.tournament_escrow e
+     WHERE e.tournament_id=p_tournament_id AND e.enforced FOR UPDATE;
+    SELECT COALESCE(sum(o.amount_owed-o.amount_paid),0)
+      INTO v_modern_required FROM public.tournament_obligations o
+     WHERE o.tournament_id=p_tournament_id AND o.kind IN ('place','bubble_protection');
+    IF v_modern_required<0 OR v_modern_required<>round(v_modern_required,2)
+       OR v_modern_escrow_before IS NULL
+       OR v_modern_escrow_before<v_modern_required
+       OR v_modern_escrow_before<>round(v_modern_escrow_before,2) THEN
+      RAISE EXCEPTION 'canonical place batch lacks exact pre-credit funding'
+        USING ERRCODE='23514';
+    END IF;
+
+    IF v_bubble_amount > 0 THEN
+      v_bubble_result :=$canonical_new_0_4$);
+  IF position($canonical_old_0_5$  RETURN jsonb_build_object(
+    'ok',true,$canonical_old_0_5$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 0/5 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_0_5$  RETURN jsonb_build_object(
+    'ok',true,$canonical_old_0_5$,$canonical_new_0_5$  -- This header certifies money the same authority just proved and paid.
+  -- It never invents or seeds a payment, and its original funding snapshot is
+  -- preserved unchanged on every retry.
+  IF NOT v_modern_replay THEN
+    IF v_status='COMPLETED' THEN
+      RAISE EXCEPTION 'completed event has no current canonical place batch'
+        USING ERRCODE='55000';
+    END IF;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'place',(a->>'place')::integer,'user_id',tp.user_id,'club_id',tp.club_id,
+      'cents',round((a->>'amount')::numeric*100)::bigint)
+      ORDER BY (a->>'place')::integer),'[]'::jsonb),count(*)
+      INTO v_modern_plan,v_modern_positive
+      FROM jsonb_array_elements(v_ladder) a JOIN public.tournament_players tp
+       ON tp.tournament_id=p_tournament_id AND tp.position=(a->>'place')::integer
+     WHERE (a->>'amount')::numeric>0;
+    IF (SELECT e.prize_balance FROM public.tournament_escrow e
+         WHERE e.tournament_id=p_tournament_id) IS DISTINCT FROM
+         v_modern_escrow_before-v_modern_required THEN
+      RAISE EXCEPTION 'canonical place batch lost its exact escrow delta'
+        USING ERRCODE='23514';
+    END IF;
+    -- The real Bubble payer may normalize source while crediting. Record its
+    -- settled identity, retaining v_bubble_paid as the pre-credit snapshot.
+    IF v_bubble_amount>0 THEN
+      SELECT * INTO STRICT v_bubble_ob FROM public.tournament_obligations
+       WHERE tournament_id=p_tournament_id AND kind='bubble_protection';
+    END IF;
+    INSERT INTO public.tournament_place_settlement_batches(
+      tournament_id,mode,plan_fingerprint,place_count,amount_owed,
+      escrow_required,escrow_available,bubble_contract_required,
+      bubble_obligation_id,bubble_user_id,bubble_source,
+      bubble_amount_owed,bubble_amount_paid_before,source,settled_at,contract_version)
+    VALUES(p_tournament_id,'structure',md5(v_modern_plan::text),
+      v_modern_positive,v_total_expected,v_modern_required,v_modern_escrow_before,
+      v_bubble_amount>0,
+      CASE WHEN v_bubble_amount>0 THEN v_bubble_ob.id ELSE NULL END,
+      CASE WHEN v_bubble_amount>0 THEN v_bubble_user_id ELSE NULL END,
+      CASE WHEN v_bubble_amount>0 THEN v_bubble_ob.source ELSE NULL END,
+      v_bubble_amount,CASE WHEN v_bubble_amount>0 THEN v_bubble_paid ELSE 0 END,
+      'engine.fn_settle_tournament_places',transaction_timestamp(),2);
+  END IF;
+  PERFORM public.fn_ca_verify_terminal_place_batch(p_tournament_id,false);
+
+  RETURN jsonb_build_object(
+    'ok',true,$canonical_new_0_5$);
+  EXECUTE v_definition;
+ END IF;
+ SELECT prosrc,
+  jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
+   'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
+ INTO v_source,v_after FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source)<>'2fb9eb9761e248315f36df617e519512' OR v_before IS DISTINCT FROM v_after THEN
+  RAISE EXCEPTION 'canonical place batch postcondition differs: fn_settle_tournament_places';
+ END IF;
+ v_oid:=to_regprocedure('public.trg_tournament_atomic_place_completion_guard()');
+ IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_oid AND proowner='postgres'::regrole
+  AND prosecdef AND proconfig=ARRAY['search_path=public']::text[]
+  AND prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql'))
+  OR has_function_privilege('anon',v_oid,'EXECUTE')
+  OR has_function_privilege('authenticated',v_oid,'EXECUTE')
+  OR NOT has_function_privilege('service_role',v_oid,'EXECUTE') THEN
+  RAISE EXCEPTION 'canonical place batch prerequisite metadata differs: trg_tournament_atomic_place_completion_guard';
+ END IF;
+ SELECT prosrc,pg_get_functiondef(oid),
+  jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
+   'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
+ INTO v_source,v_definition,v_before FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source) NOT IN ('35aaa6ce83fe80578c85c8e43cf4234b','96b9396e20bf1f8776d4299dcf19b08b') THEN
+  RAISE EXCEPTION 'canonical place batch prerequisite body differs: trg_tournament_atomic_place_completion_guard';
+ END IF;
+ IF md5(v_source)='35aaa6ce83fe80578c85c8e43cf4234b' THEN
+  IF position($canonical_old_1_0$  IF v_batch.escrow_available + 0.005 < v_batch.escrow_required THEN$canonical_old_1_0$ IN v_definition)=0 THEN RAISE EXCEPTION 'canonical batch source fragment 1/0 absent'; END IF;
+  v_definition:=replace(v_definition,$canonical_old_1_0$  IF v_batch.escrow_available + 0.005 < v_batch.escrow_required THEN$canonical_old_1_0$,$canonical_new_1_0$  IF v_batch.contract_version=2 THEN
+    PERFORM public.fn_ca_verify_terminal_place_batch(NEW.id,true);
+    RETURN NEW;
+  END IF;
+
+  IF v_batch.escrow_available + 0.005 < v_batch.escrow_required THEN$canonical_new_1_0$);
+  EXECUTE v_definition;
+ END IF;
+ SELECT prosrc,
+  jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
+   'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
+ INTO v_source,v_after FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source)<>'96b9396e20bf1f8776d4299dcf19b08b' OR v_before IS DISTINCT FROM v_after THEN
+  RAISE EXCEPTION 'canonical place batch postcondition differs: trg_tournament_atomic_place_completion_guard';
+ END IF;
+END;
+$contract_terminal_place_batch$;
+DO $canonical_batch_terminal_marker$
+DECLARE v_oid oid:='public.trg_freeze_batched_tournament_place()'::regprocedure;
+ v_source text; v_definition text; v_before jsonb; v_after jsonb;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_oid AND proowner='postgres'::regrole
+   AND prosecdef AND proconfig=ARRAY['search_path=public']::text[]) THEN
+  RAISE EXCEPTION 'frozen batch trigger metadata differs';
+ END IF;
+ SELECT prosrc,pg_get_functiondef(oid),jsonb_build_object('owner',proowner,'acl',proacl,
+  'config',proconfig,'definer',prosecdef,'language',prolang,'args',proargtypes::text,'returns',prorettype)
+ INTO v_source,v_definition,v_before FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source) NOT IN ('da224a232366acc2443f0ec5428567e0','5c00f4babf2e07dd86e9f47e14588b07') THEN
+  RAISE EXCEPTION 'frozen batch trigger source differs';
+ END IF;
+ IF md5(v_source)='da224a232366acc2443f0ec5428567e0' THEN
+  IF position($marker_old$  IF v_gate <> OLD.tournament_id::text THEN$marker_old$ IN v_definition)=0 THEN
+   RAISE EXCEPTION 'frozen batch trigger marker anchor absent';
+  END IF;
+  v_definition:=replace(v_definition,$marker_old$  IF v_gate <> OLD.tournament_id::text THEN$marker_old$,$marker_new$  -- Stamp only the exact lifecycle marker after completion. Frozen monetary
+  -- columns and payment gates retain their original restrictions.
+  IF OLD.terminal_closed_at IS NULL AND NEW.terminal_closed_at IS NOT NULL
+     AND isfinite(NEW.terminal_closed_at)
+     AND (to_jsonb(NEW)-'terminal_closed_at') IS NOT DISTINCT FROM
+         (to_jsonb(OLD)-'terminal_closed_at')
+     AND EXISTS(SELECT 1 FROM public.tournament_place_settlement_batches b
+       WHERE b.tournament_id=OLD.tournament_id AND b.contract_version=2
+        AND b.settled_at IS NOT NULL)
+     AND EXISTS(SELECT 1 FROM public.tournaments t
+       WHERE t.id=OLD.tournament_id AND upper(t.status::text)='COMPLETED'
+        AND t.ended_at IS NOT DISTINCT FROM NEW.terminal_closed_at) THEN
+    PERFORM public.fn_ca_verify_terminal_place_batch(OLD.tournament_id,true);
+    RETURN NEW;
+  END IF;
+  IF v_gate <> OLD.tournament_id::text THEN$marker_new$);
+  EXECUTE v_definition;
+ END IF;
+ SELECT prosrc,jsonb_build_object('owner',proowner,'acl',proacl,
+  'config',proconfig,'definer',prosecdef,'language',prolang,'args',proargtypes::text,'returns',prorettype)
+ INTO v_source,v_after FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source)<>'5c00f4babf2e07dd86e9f47e14588b07' OR v_before IS DISTINCT FROM v_after THEN
+  RAISE EXCEPTION 'frozen batch marker postcondition differs';
+ END IF;
+END;
+$canonical_batch_terminal_marker$;
+-- END CANONICAL TERMINAL PLACE BATCH CONTRACT
+
+-- BEGIN CANONICAL TERMINAL READINESS DISPATCH
+-- Only the versioned format proof changes. Shared finish claim, winner,
+-- obligation, custody, rake, bounty and mystery certification remain intact.
+DO $contract_terminal_batch_readiness$
+DECLARE v_oid oid:='public.fn_tournament_finish_readiness(uuid,uuid)'::regprocedure;
+ v_source text; v_definition text; v_before jsonb; v_after jsonb;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_oid AND proowner='postgres'::regrole
+  AND prosecdef AND proconfig=ARRAY['search_path=public, pg_temp']::text[])
+  OR has_function_privilege('anon',v_oid,'EXECUTE')
+  OR has_function_privilege('authenticated',v_oid,'EXECUTE')
+  OR has_function_privilege('service_role',v_oid,'EXECUTE') THEN
+  RAISE EXCEPTION 'terminal readiness owner-only metadata differs';
+ END IF;
+ SELECT prosrc,pg_get_functiondef(oid),
+  jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
+    'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
+ INTO v_source,v_definition,v_before FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source) NOT IN ('ac4a33b4428ca68fb385b7de764a8590','993e6e1de9edba2fe235d86ff6c243c9') THEN RAISE EXCEPTION 'terminal readiness source differs'; END IF;
+ IF md5(v_source)='ac4a33b4428ca68fb385b7de764a8590' THEN
+  IF position($readiness_old_0$  v_bad_satellite_seats integer := 0;$readiness_old_0$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 0 absent'; END IF;
+  v_definition:=replace(v_definition,$readiness_old_0$  v_bad_satellite_seats integer := 0;$readiness_old_0$,$readiness_new_0$  v_modern_place boolean := false;
+  v_modern_deal boolean := false;
+  v_bad_satellite_seats integer := 0;$readiness_new_0$);
+  IF position($readiness_old_1$  v_kind := public.fn_tournament_finish_kind(p_tournament_id);$readiness_old_1$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 1 absent'; END IF;
+  v_definition:=replace(v_definition,$readiness_old_1$  v_kind := public.fn_tournament_finish_kind(p_tournament_id);$readiness_old_1$,$readiness_new_1$  v_kind := public.fn_tournament_finish_kind(p_tournament_id);
+  IF v_kind='normal' THEN
+    SELECT COALESCE((to_jsonb(b)->>'contract_version')::integer,1)=2
+      INTO v_modern_place FROM public.tournament_place_settlement_batches b
+     WHERE b.tournament_id=p_tournament_id;
+  ELSIF v_kind='final_table_deal' THEN
+    SELECT COALESCE((to_jsonb(b)->>'contract_version')::integer,1)=2
+      INTO v_modern_deal FROM public.tournament_final_table_deal_batches b
+     WHERE b.tournament_id=p_tournament_id;
+  END IF;
+  v_modern_place:=COALESCE(v_modern_place,false);
+  v_modern_deal:=COALESCE(v_modern_deal,false);
+$readiness_new_1$);
+  IF position($readiness_old_2$  IF v_kind <> 'satellite' THEN$readiness_old_2$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 2 absent'; END IF;
+  v_definition:=replace(v_definition,$readiness_old_2$  IF v_kind <> 'satellite' THEN$readiness_old_2$,$readiness_new_2$  IF v_kind <> 'satellite' AND NOT v_modern_place AND NOT v_modern_deal THEN$readiness_new_2$);
+  IF position($readiness_old_3$    SELECT round(COALESCE(sum(o.amount_owed),0),2) INTO v_place_owed$readiness_old_3$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 3 absent'; END IF;
+  v_definition:=replace(v_definition,$readiness_old_3$    SELECT round(COALESCE(sum(o.amount_owed),0),2) INTO v_place_owed$readiness_old_3$,$readiness_new_3$    IF v_modern_place THEN
+      BEGIN
+        v_domain_check:=public.fn_ca_verify_terminal_place_batch(p_tournament_id,true);
+        IF COALESCE((v_domain_check->>'ok')::boolean,false) IS NOT TRUE THEN
+          RAISE EXCEPTION 'canonical place proof refused';
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        v_failures:=v_failures||jsonb_build_array(jsonb_build_object(
+          'code','canonical_place_batch_not_proven','detail',SQLERRM));
+      END;
+    END IF;
+
+    SELECT round(COALESCE(sum(o.amount_owed),0),2) INTO v_place_owed$readiness_new_3$);
+  IF position($readiness_old_4$    IF abs(v_place_owed - round(COALESCE(v_t.prize_pool,0),2)) > 0.005 THEN$readiness_old_4$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 4 absent'; END IF;
+  v_definition:=replace(v_definition,$readiness_old_4$    IF abs(v_place_owed - round(COALESCE(v_t.prize_pool,0),2)) > 0.005 THEN$readiness_old_4$,$readiness_new_4$    IF NOT v_modern_place AND abs(v_place_owed - round(COALESCE(v_t.prize_pool,0),2)) > 0.005 THEN$readiness_new_4$);
+  IF position($readiness_old_5$      v_domain_check := public.fn_check_atomic_final_table_deal(p_tournament_id);$readiness_old_5$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 5 absent'; END IF;
+  v_definition:=replace(v_definition,$readiness_old_5$      v_domain_check := public.fn_check_atomic_final_table_deal(p_tournament_id);$readiness_old_5$,$readiness_new_5$      IF v_modern_deal THEN
+        BEGIN
+          v_domain_check:=public.fn_ca_verify_terminal_final_deal_batch(p_tournament_id,true);
+        EXCEPTION WHEN OTHERS THEN
+          v_domain_check:=jsonb_build_object('ok',false,'reason',SQLERRM);
+        END;
+      ELSE
+        v_domain_check := public.fn_check_atomic_final_table_deal(p_tournament_id);
+      END IF;$readiness_new_5$);
+  EXECUTE v_definition;
+ END IF;
+ SELECT prosrc,
+  jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
+    'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
+ INTO v_source,v_after FROM pg_proc WHERE oid=v_oid;
+ IF md5(v_source)<>'993e6e1de9edba2fe235d86ff6c243c9' OR v_before IS DISTINCT FROM v_after THEN RAISE EXCEPTION 'readiness source or metadata postcondition differs'; END IF;
+END;
+$contract_terminal_batch_readiness$;
+-- END CANONICAL TERMINAL READINESS DISPATCH
+
+DO $contract_cash_batch_payers$
+DECLARE
+  v_row record;
+  v_source text;
+  v_definition text;
+  v_old CONSTANT text := 'public.fn_settle_tournament_obligation(';
+  v_new CONSTANT text := 'public.fn_settle_tournament_obligation_before_atomic_batch_gate(';
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+     WHERE p.oid=to_regprocedure(
+       'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)')
+       AND md5(p.prosrc)='68f74f87580ea2c2a1cacbe30f9b4289'
+       AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+       AND l.lanname='plpgsql'
+       AND p.proconfig=ARRAY['search_path=public']::text[]
+  ) THEN
+    RAISE EXCEPTION 'Stage-B cash contraction requires the exact private obligation core';
+  END IF;
+
+  FOR v_row IN SELECT * FROM (VALUES
+    ('public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)',
+     '329237bd65214e17d4ca3298f363f248', '3585ddbfdb0a197243d5e6eefb6b670f'),
+    ('public.fn_ca_settle_tournament_bubble_raw(uuid,uuid,numeric)',
+     '3a5a0f079b7884a5bd2e6bfe6a15ccb7', 'f1fc7a0bf480b1034f0f1d9cba3b4d0b'),
+    ('public.fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)',
+     '58e2768644b692f23a9a071a8a5d1ee8', '852e35483b67c1fc59b6347b51c79cb8')
+  ) expected(identity, before_md5, after_md5)
+  LOOP
+    SELECT p.prosrc, pg_get_functiondef(p.oid)
+      INTO v_source, v_definition
+      FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+     WHERE p.oid=to_regprocedure(v_row.identity)
+       AND md5(p.prosrc)=v_row.before_md5
+       AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+       AND l.lanname='plpgsql'
+       AND p.proconfig=ARRAY['search_path=public']::text[];
+    IF NOT FOUND
+       OR (length(v_source)-length(replace(v_source,v_old,'')))
+          IS DISTINCT FROM length(v_old)
+       OR position(v_new IN v_source)>0 THEN
+      RAISE EXCEPTION 'Stage-B cash payer source differs: %',v_row.identity;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM pg_proc p
+      CROSS JOIN LATERAL aclexplode(
+        COALESCE(p.proacl,acldefault('f',p.proowner))) privilege
+       WHERE p.oid=to_regprocedure(v_row.identity)
+         AND privilege.privilege_type='EXECUTE'
+         AND privilege.grantee<>p.proowner
+    ) OR has_function_privilege('anon',v_row.identity,'EXECUTE')
+      OR has_function_privilege('authenticated',v_row.identity,'EXECUTE')
+      OR has_function_privilege('service_role',v_row.identity,'EXECUTE') THEN
+      RAISE EXCEPTION 'Stage-B cash payer is not owner-only: %',v_row.identity;
+    END IF;
+
+    EXECUTE replace(v_definition,v_old,v_new);
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+       WHERE p.oid=to_regprocedure(v_row.identity)
+         AND md5(p.prosrc)=v_row.after_md5
+         AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+         AND l.lanname='plpgsql'
+         AND p.proconfig=ARRAY['search_path=public']::text[]
+         AND position(v_old IN p.prosrc)=0
+         AND (length(p.prosrc)-length(replace(p.prosrc,v_new,'')))=length(v_new)
+    ) OR EXISTS (
+      SELECT 1 FROM pg_proc p
+      CROSS JOIN LATERAL aclexplode(
+        COALESCE(p.proacl,acldefault('f',p.proowner))) privilege
+       WHERE p.oid=to_regprocedure(v_row.identity)
+         AND privilege.privilege_type='EXECUTE'
+         AND privilege.grantee<>p.proowner
+    ) OR has_function_privilege('anon',v_row.identity,'EXECUTE')
+      OR has_function_privilege('authenticated',v_row.identity,'EXECUTE')
+      OR has_function_privilege('service_role',v_row.identity,'EXECUTE') THEN
+      RAISE EXCEPTION 'Stage-B cash payer postcondition differs: %',v_row.identity;
+    END IF;
+  END LOOP;
+END;
+$contract_cash_batch_payers$;
+
 CREATE OR REPLACE FUNCTION public.fn_settle_tournament_obligation(
   p_tournament_id uuid,
   p_kind text,
@@ -693,6 +1296,9 @@ DECLARE
     'rpc/fn_collect_bounty',
     'rpc/fn_complete_tournament_entry_reprice',
     'rpc/fn_complete_tournament_launch_atomic',
+    'rpc/fn_complete_tournament_terminal_proposal',
+    'rpc/fn_begin_tournament_deal_review',
+    'rpc/fn_close_tournament_deal_review',
     'rpc/fn_decline_tournament_rebuy',
     'rpc/fn_eliminate_tournament_player_atomic',
     'rpc/fn_ensure_late_registration_capacity',
@@ -734,6 +1340,7 @@ DECLARE
     'rpc/fn_sync_seat_first_player_count',
     'rpc/heartbeat_table_leases_v3',
     'rpc/heartbeat_tournament_leases_v3',
+    'rpc/heartbeat_tournament_leases_v4',
     'rpc/release_table_leases_v2',
     'rpc/release_tournament_leases_v2'
   ]::text[];
@@ -788,16 +1395,18 @@ BEGIN
      routes fail when a callback loses its bound manager context; recovery and
      lease-coordination routes accept the explicitly marked service actor too.
      Old/headerless engine binaries can use neither family after cutover. */
-  -- Rebuy and decline are shared player/manager RPCs. Their authenticated
-  -- callers retain the function's own player/session checks and receive no
-  -- manager proof. All server callers still require their exact manager lease.
+  -- Rebuy, decline and mystery reveal are shared player/manager RPCs. Their
+  -- authenticated callers retain each function's own player/session checks
+  -- (reveal uses auth.uid(), never supplied actor/auto) and receive no manager
+  -- proof. All server callers still require their exact manager lease.
   IF v_path = ANY(v_manager_exclusive_paths)
      AND v_actor IS DISTINCT FROM 'tournament-manager'
      AND NOT (
        v_request_role = 'authenticated'
        AND v_actor = ''
        AND v_path IN (
-         'rpc/process_tournament_rebuy', 'rpc/fn_decline_tournament_rebuy'
+         'rpc/process_tournament_rebuy', 'rpc/fn_decline_tournament_rebuy',
+         'rpc/fn_mystery_bounty_reveal'
        )
      ) THEN
     RAISE EXCEPTION
@@ -881,7 +1490,7 @@ BEGIN
        AND l.lease_generation = v_lease_generation
        AND l.heartbeat_at >=
            clock_timestamp() - make_interval(secs => v_stale_seconds)
-     FOR SHARE;
+     FOR KEY SHARE;
   END IF;
 
   IF NOT FOUND THEN
@@ -898,7 +1507,7 @@ BEGIN
     true
   );
   /* This marker is written last and only after the exact lease row is held
-     FOR SHARE. Row triggers can consume this transaction proof without doing
+     FOR KEY SHARE. Row triggers can consume this transaction proof without doing
      the same indexed lease read again for every affected row. */
   PERFORM set_config('app.smarter_manager_request_fenced', 'protocol-2', true);
 END;
@@ -916,7 +1525,7 @@ DROP FUNCTION IF EXISTS public.fn_smarter_data_api_pre_request();
 
 /* A marked manager is not merely "some manager".  Every direct row it touches
    must resolve to the same tournament named by the transaction-local request
-   proof. The pre-request hook already holds the exact lease FOR SHARE for the
+   proof. The pre-request hook already holds the exact lease FOR KEY SHARE for the
    complete PostgREST transaction. Re-reading that same row once per affected
    row would add hot-path work without strengthening the lock. */
 CREATE OR REPLACE FUNCTION public.fn_assert_tournament_manager_write_scope(
@@ -1258,7 +1867,8 @@ BEGIN
      OR position('ENGINE_DATA_AUTHORITY_REQUIRED' IN v_hook_source) = 0
      OR position($needle$'shared-estate-service'$needle$ IN v_hook_source) = 0
      OR position($needle$'browser'$needle$ IN v_hook_source) = 0
-     OR position('FOR SHARE' IN v_hook_source) = 0
+     OR position(E'     FOR KEY SHARE;\n  END IF;' IN v_hook_source) = 0
+     OR md5((SELECT p.prosrc FROM pg_proc p WHERE p.oid='smarter_private.fn_smarter_data_api_pre_request()'::regprocedure)) <> 'd21a055b448febe83c1637371b150100'
      OR position('l.lease_generation = v_lease_generation' IN v_hook_source) = 0
      OR position('app.smarter_manager_request_fenced' IN v_hook_source) = 0
      OR position('auth.role()' IN v_hook_source) = 0

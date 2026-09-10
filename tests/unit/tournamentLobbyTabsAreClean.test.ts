@@ -96,7 +96,7 @@ describe('every tab cleans up after itself', () => {
    NOTHING IS DEFINED TWICE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('shared logic lives in types.ts and nowhere else', () => {
+describe('shared logic has one canonical home and nowhere else', () => {
   it('no tab carries its own payout-structure parser', () => {
     // There were three. Detail's counted a range row as one paid place, which
     // moved the money bubble and blanked podium prizes.
@@ -129,8 +129,13 @@ describe('shared logic lives in types.ts and nowhere else', () => {
 
   it('the shared helpers are actually exported for them to use', () => {
     const types = read('types.ts');
+    const payoutParser = fs.readFileSync(
+      path.join(process.cwd(), 'src/lib/payoutStructure.ts'),
+      'utf8'
+    );
+    expect(payoutParser).toContain('export function parsePayoutStructure');
+    expect(types).toContain("export { parsePayoutStructure } from '../../../lib/payoutStructure'");
     for (const name of [
-      'parsePayoutStructure',
       'paidPlaceCount',
       'placePrize',
       'effectivePrizePool',

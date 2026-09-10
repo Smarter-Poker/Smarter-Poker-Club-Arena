@@ -9,8 +9,16 @@ elif [[ -x /opt/homebrew/opt/postgresql@17/bin/postgres ]]; then
   PG_BIN=/opt/homebrew/opt/postgresql@17/bin
 elif command -v postgres >/dev/null 2>&1 && postgres --version | grep -q ' 17\.'; then
   PG_BIN=$(dirname "$(command -v postgres)")
+elif command -v docker >/dev/null 2>&1 && [[ "${PHASE4_PG17_IN_DOCKER:-0}" != "1" ]]; then
+  exec docker run --rm --user postgres \
+    -e USER=postgres \
+    -e PG17_BIN=/usr/lib/postgresql/17/bin \
+    -e PHASE4_PG17_IN_DOCKER=1 \
+    -v "$ROOT:/workspace:ro" \
+    -w /workspace \
+    postgres:17 bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 else
-  echo 'PostgreSQL 17 is required (set PG17_BIN to its bin directory).' >&2
+  echo 'PostgreSQL 17 or Docker is required (or set PG17_BIN to its bin directory).' >&2
   exit 1
 fi
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/horse-phase4-pg.XXXXXX")
@@ -49,6 +57,36 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909071759_v31_input_identity_requires_json_strings.sql"
 # Canonical-type hardening must also be replay-safe.
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909071759_v31_input_identity_requires_json_strings.sql"
+"${PSQL[@]}" -f "$HERE/hand-key-migration-guard.sql"
+GUARD_OUTPUT="$WORK/hand-key-migration-guard.out"
+if "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909165541_v31_hand_keys_bind_both_hole_card_suits.sql" \
+    >"$GUARD_OUTPUT" 2>&1; then
+  echo 'V31 hand-key migration accepted a pre-existing certified dataset.' >&2
+  exit 1
+fi
+grep -q 'cannot change the V31 hand-key contract while certified datasets exist' "$GUARD_OUTPUT"
+"${PSQL[@]}" -c 'TRUNCATE public.gto_v31_input_bundles CASCADE' >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909165541_v31_hand_keys_bind_both_hole_card_suits.sql"
+# The two-hole-suit transition must remain replay-safe before a corpus exists.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909165541_v31_hand_keys_bind_both_hole_card_suits.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909170039_v31_hand_keys_reject_impossible_decks.sql"
+# Impossible-deck rejection is also an idempotent contract hardening.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909170039_v31_hand_keys_reject_impossible_decks.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909170749_v31_hand_key_counts_match_street.sql"
+# Street-bound key validation and its table constraint must remain replay-safe.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909170749_v31_hand_key_counts_match_street.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909171644_v31_policy_json_is_canonical.sql"
+# Canonical source and compact-policy JSON enforcement must remain replay-safe.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909171644_v31_policy_json_is_canonical.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909172537_v31_dataset_and_source_integers_are_canonical.sql"
+# Dataset declarations and source integer semantics must remain replay-safe.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909172537_v31_dataset_and_source_integers_are_canonical.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909175000_v31_control_receipts_use_exact_json_types.sql"
+# Signed control-plane receipts and source envelopes must remain replay-safe.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909175000_v31_control_receipts_use_exact_json_types.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909180000_v31_agreement_receipts_bind_the_runtime_cell.sql"
+# V31 decision receipts, database binding, and reference-specific audit logic are replay-safe.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260909180000_v31_agreement_receipts_bind_the_runtime_cell.sql"
 "${PSQL[@]}" -f "$HERE/input-bundle-bootstrap.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"

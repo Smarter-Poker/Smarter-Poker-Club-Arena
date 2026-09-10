@@ -5,6 +5,9 @@ import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
 import PageSkeleton from '../common/PageSkeleton';
 import DiamondCustodyBalance from './DiamondCustodyBalance';
+import DiamondArenaWallet from './DiamondArenaWallet';
+import PokerArenaNavigation from './PokerArenaNavigation';
+import './DiamondArenaShell.css';
 
 interface AccessState {
   key: string;
@@ -98,11 +101,13 @@ export default function ArenaAccessBoundary({
     );
   if (state.context.automaticMembership)
     return (
-      <section className="club-home" aria-label="Diamond Arena">
+      <section className="club-home diamond-arena-shell" aria-label="Diamond Arena">
+        <PokerArenaNavigation />
         <h2>Diamond Arena</h2>
         <p>You Are Already A Member.</p>
         <p>Diamond Games Are Not Open For Play Yet.</p>
         <DiamondCustodyBalance />
+        <DiamondArenaWallet />
       </section>
     );
   if (!state.context.member && redirectToJoin)
@@ -110,11 +115,17 @@ export default function ArenaAccessBoundary({
   if (!state.context.member)
     return (
       <section className="club-home error">
+        <PokerArenaNavigation />
         <h2>Join This Club To Enter</h2>
         <Link className="btn btn-primary" to={`/invite/${encodeURIComponent(key)}`}>
           Join This Club
         </Link>
       </section>
     );
-  return <>{children}</>;
+  return (
+    <>
+      <PokerArenaNavigation />
+      {children}
+    </>
+  );
 }

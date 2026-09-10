@@ -19,6 +19,7 @@ import type {
   PineappleDiscardSnapshot,
   HorseDecisionWorkerStatusResult,
 } from './protocol.js';
+import { horseDecisionSolverStoresAreValid } from './protocol.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
 
 export interface WorkerLike {
@@ -66,6 +67,19 @@ export class HorseDecisionAbortedError extends Error {
   override readonly name = 'AbortError';
 
   constructor(message = 'horse decision was aborted') {
+    super(message);
+  }
+}
+
+/**
+ * The request remained queued until its action-clock budget expired. This is
+ * not an authority cancellation: the turn may still be current and must take
+ * the caller's fail-safe action instead of being silently abandoned.
+ */
+export class HorseDecisionExpiredError extends Error {
+  override readonly name = 'TimeoutError';
+
+  constructor(message = 'horse decision expired before worker dispatch') {
     super(message);
   }
 }
@@ -221,7 +235,7 @@ export class LiveHorseDecisionWorkerClient {
       lastComputeMs: this.lastComputeMs,
       completedJobs: this.completedJobs,
       lastError: this.lastError,
-      solverStores: this.solverStores ? { ...this.solverStores } : null,
+      solverStores: this.solverStores ? structuredClone(this.solverStores) : null,
       solverPolicyArtifact: this.solverPolicyArtifact
         ? structuredClone(this.solverPolicyArtifact)
         : null,
@@ -461,9 +475,13 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error(`unexpected READY while worker is ${this.phase}`));
         return;
       }
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker returned invalid solver-store identity'));
+        return;
+      }
       this.readyAt = Date.now();
       clearTimeout(this.readyTimer);
-      this.solverStores = { ...message.solverStores };
+      this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = Date.now();
@@ -574,7 +592,11 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
-      this.solverStores = { ...message.solverStores };
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker status lost solver-store identity'));
+        return;
+      }
+      this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = this.lastCompletedAt;
@@ -656,7 +678,7 @@ export class LiveHorseDecisionWorkerClient {
     job.settled = true;
     this.detachAbort(job);
     job.reject(
-      new HorseDecisionAbortedError(
+      new HorseDecisionExpiredError(
         `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
       )
     );

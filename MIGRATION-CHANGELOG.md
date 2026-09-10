@@ -2,6 +2,22 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Hand Settlement Retains Its Dealt Seat Generation
+
+A later terminal writer replaced the earlier exact-seat checks. The forward restoration preserves current terminal behavior and binds stack/time-bank writes to the dealt row and join timestamp. Database expansion applied as 20260909234808 with exact definitions and ACLs verified. Real PostgreSQL regression, rollback, replay and full hand-boundary checks pass. Engine identity capture is built; publication and complete accounting Phase 3 acceptance remain pending. Re-read: yes. See docs/audits/2026-09-09-hand-generation-overwrite-checkpoint.md.
+
+## 2026-09-09: Unbound Initial Registration Is Retired
+
+After verified receipt-client publication, the old one-argument registration alias is denied to every application role. The authenticated receipt wrapper and internal seat-first core retain their exact privileges. Applied as live version 20260909221729 and verified read-only. The isolated PostgreSQL harness passed, including 15 registration assertions with actual retired-role denial and authenticated replay. Re-read: yes. This supersedes the pending initial-registration publication/alias notes below; full Phase 3 acceptance remains open. See docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md.
+
+## 2026-09-09: Initial Registration Retains Its Original Operation
+
+The authenticated wallet registration path now binds a durable request UUID to the caller and tournament through the shared immutable entry receipt protocol. The existing atomic funding core and new receipt commit together. Client lost responses replay that exact request and no longer infer success from a current roster row. Seven regressions reproduced the gap; 115 client tests, TypeScript and the isolated PostgreSQL harness pass, including ten new wrapper assertions. Re-read: yes. The additive function is applied; integrated build, normal publication, legacy alias retirement and full Phase 3 acceptance remain pending. See docs/changelog/2026-09-09-tournament-registration-operation-receipts.md.
+
+## 2026-09-09: Durable Tournament Seat Refund Identity
+
+TablePage seat exits now retain the original request across later retries through the existing durable refund helper, with a distinct table key and authenticated-account check. Canonical server receipt and ticket parsing remain unchanged. Two regressions reproduced the gap; 108 focused tests, TypeScript and the production build pass. Re-read: yes. No database migration. Publication and overall accounting Phase 3 acceptance remain pending. See docs/changelog/2026-09-09-durable-tournament-seat-refund.md.
+
 ## 2026-09-09: Spin Reveals Follow The Booked Result
 
 The engine could announce a locally drawn 2x outcome before an idempotent reserve receipt restored a booked 10x outcome, or announce before settlement failed. The early reveal now follows successful settlement and booked-multiplier validation, retaining the existing hold and reconnect window and preceding table work. Five production-fragment cases cover unresolved, replayed, failed, malformed and matching receipts. The complete tournament/maintenance/pause suite passes 1348 tests in 127 files; server TypeScript and build pass. Re-read: yes. No migration or financial repair. Phase 3 publication is explicitly authorized in the audit chat; refreshed verification and publication are in progress; see docs/audits/2026-09-09-phase3-tournament-lifecycle.md.

@@ -1,5 +1,17 @@
 # Real-Time Connections Programme
 
+## Built-In Execution Standard (September 9, 2026)
+
+Significant Club Arena work must have a built-in server owner and durable
+recovery. Cron is a secondary safeguard or housekeeping mechanism, not the
+sole progress path. See `docs/standards/EVENT-DRIVEN-EXECUTION.md`.
+
+The Supabase email has been reconciled against current schema, cron history,
+subscriptions, and delivery records in
+`docs/audits/2026-09-09-supabase-email-reconciliation.md`. The reminder ownership
+replacement is published and verified in `docs/audits/2026-09-09-tournament-reminder-release.md`.
+The missing detailed-log/device evidence remains open.
+
 Dan, 2026-09-04, after a 22-hour "Reconnecting To The Table" outage that
 every monitor slept through: "TAKE EVERYTHING YOU JUST SUGGESTED, AND CREATE
 A COMPREHENSIVE BUILD PLAN AND BREAK IT DOWN INTO PHASES. DO ONE PHASE AT A
@@ -10,19 +22,22 @@ Club Arena `build-info.json` showing the sha), and verified on production by
 reading, not assuming. The list below is the order; each phase records its
 verification when it lands.
 
-| Phase | Name                                      | Delivers                                                                                                                                                                                  | Status                            |
-| ----- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| 1     | Measure                                   | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules                          | done                              |
-| 2     | See the client                            | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done                              |
-| 3     | Do no harm                                | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done                              |
-| 4     | Restart handoff + protocol                | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done                              |
-| 5     | Trust and limits                          | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done                              |
-| 6     | Prove it from outside                     | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done                              |
-| 7     | Guardrails                                | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done                              |
-| 8     | Connection ownership and refusal recovery | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets                                                                     | published; device acceptance open |
-| 9     | Financial reconnect and refresh ownership | Refresh after every channel open; bypass stale cashier cache; retain invalidations during reads; reject retired balance responses                                                         | published; device acceptance open |
+| Phase | Name                                         | Delivers                                                                                                                                                                                  | Status                            |
+| ----- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| 1     | Measure                                      | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules                          | done                              |
+| 2     | See the client                               | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done                              |
+| 3     | Do no harm                                   | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done                              |
+| 4     | Restart handoff + protocol                   | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done                              |
+| 5     | Trust and limits                             | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done                              |
+| 6     | Prove it from outside                        | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done                              |
+| 7     | Guardrails                                   | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done                              |
+| 8     | Connection ownership and refusal recovery    | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets                                                                     | published; device acceptance open |
+| 9     | Financial reconnect and refresh ownership    | Refresh after every channel open; bypass stale cashier cache; retain invalidations during reads; reject retired balance responses                                                         | published; device acceptance open |
+| 10    | Cashier history recovery and scope ownership | Retain history invalidations; isolate user and club results/cache; preserve confirmed rows on read failure                                                                                | published; device acceptance open |
+| 11    | Tournament lobby snapshot recovery           | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open |
 
-| 10 | Cashier history recovery and scope ownership | Retain history invalidations; isolate user and club results/cache; preserve confirmed rows on read failure | implementation verified; publication pending |
+Phase 11 scope and regression evidence: `docs/changelog/2026-09-09-realtime-phase11-tournament-snapshots.md`.
+Published release and controlled-browser evidence: `docs/audits/2026-09-09-realtime-phase11-release.md`.
 
 Phase 10 scope and regression evidence: `docs/changelog/2026-09-09-realtime-phase10-cashier-history.md`.
 

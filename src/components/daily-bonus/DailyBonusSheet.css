@@ -1,3 +1,8 @@
+/* Asset paths here are root-relative (/assets/...), NOT /hub/club-arena/...
+   Vite rewrites them with the build's base, so the web build still emits
+   /hub/club-arena/assets/... while the app build (base '/') gets a path
+   that resolves inside the bundle. A hardcoded /hub/club-arena prefix
+   draws nothing in the app, with no error. */
 /* ═══════════════════════════════════════════════════════════════════════════
    DAILY CLUB ARENA BONUS - the sheet
 
@@ -88,12 +93,9 @@
   position: relative;
   padding: 16cqw 7.2cqw 15cqw;
   background:
-    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto
-      no-repeat,
-    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100%
-      auto no-repeat,
-    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto
-      repeat-y;
+    url('/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto no-repeat,
+    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100% auto no-repeat,
+    url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto repeat-y;
 }
 
 /* The close control sits in the cap's rail, on the club nav shell. */
@@ -109,8 +111,7 @@
   border-radius: 0;
   color: #dfe8ef;
   font: 800 3.4cqw/1 var(--dbs-font-value);
-  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
-    no-repeat;
+  background: url('/assets/club-buttons/club-nav-shell.webp') center top / 100% 114% no-repeat;
   text-shadow: 0 2px 2px #000;
   cursor: pointer;
 }
@@ -171,8 +172,7 @@
   align-items: center;
   justify-items: stretch;
   padding: 0 7%;
-  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
-    100% no-repeat;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
 }
 
 .dbs-plaque__label {
@@ -430,8 +430,8 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
-  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-primary.png')
-    center / 100% 100% no-repeat;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
+    no-repeat;
   text-shadow:
     0 0 1cqw rgb(140 210 255 / 90%),
     0 0.25cqw 0 rgb(0 0 0 / 70%),
@@ -453,7 +453,7 @@
 
 .dbs-btn--secondary {
   color: #d6ffe1;
-  background-image: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
   text-shadow:
     0 0 1cqw rgb(50 210 122 / 80%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);

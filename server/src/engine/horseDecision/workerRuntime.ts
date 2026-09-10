@@ -5,10 +5,13 @@ import { HorseMind } from '../HorseMind.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
+import { bettingStructureFor } from '../BettingStructure.js';
+import { calculateContestablePot } from '../PokerEngine.js';
+import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
 import { gtoPostflopCount } from '../GtoPostflop.js';
-import { gtoPostflopV31Count } from '../GtoPostflopV31.js';
+import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
 import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
 import {
   hydrateHorseMindFromDb,
@@ -51,6 +54,7 @@ import type {
   CommitDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 
 export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
@@ -83,6 +87,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),
         postflopV31: gtoPostflopV31Count(),
+        postflopV31Dataset: gtoPostflopV31Dataset(),
       },
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
@@ -117,6 +122,7 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),
         postflopV31: gtoPostflopV31Count(),
+        postflopV31Dataset: gtoPostflopV31Dataset(),
       },
       solverPolicyArtifact: solverPolicyArtifactStatus(),
       governor: equityGovernor.snapshot(),
@@ -154,6 +160,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       charts: gtoChartCount(),
       postflop: gtoPostflopCount(),
       postflopV31: gtoPostflopV31Count(),
+      postflopV31Dataset: gtoPostflopV31Dataset(),
     },
     solverPolicyArtifact: solverPolicyArtifactStatus(),
     governor: equityGovernor.snapshot(),
@@ -175,6 +182,14 @@ function asMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 /**
  * Worker-side FIFO. The promise chain is the sole execution lane: no two
  * HorseLogic calls can interleave while they temporarily install their
@@ -189,13 +204,6 @@ export class HorseDecisionWorkerRuntime {
   private started = false;
   private stopped = false;
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
-  /**
-   * Per-process entropy used to derive an independent stream for each fenced
-   * decision. The canonical module RNG is never advanced by speculative work,
-   * so cancellation timing cannot change a later table's answer.
-   */
-  private rngSalt: number | null = null;
-
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies
@@ -322,6 +330,9 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('offline V31 candidate controls are forbidden in live decision requests');
     }
+    if (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') {
+      this.assertCanonicalDecisionSnapshot(request);
+    }
     if (
       request.type === 'DECIDE_DEEP' &&
       (!Number.isInteger(request.rngBefore) ||
@@ -348,6 +359,234 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  /** Runtime law at the structured-clone boundary; TypeScript cannot enforce it. */
+  private assertCanonicalDecisionSnapshot(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest
+  ): void {
+    const gs = request.gameState;
+    if (!/^phase5-v1:[0-9a-f]{64}$/.test(request.decisionKey)) {
+      throw new Error('decisionKey must be a Phase 5 canonical state digest');
+    }
+    if (gs.stateSchemaVersion !== 1) throw new Error('horse state schema version 1 is required');
+    if (gs.heroSeat !== request.player.seat || gs.currentPlayerSeat !== request.player.seat) {
+      throw new Error('horse state hero/current seat does not match the decision player');
+    }
+    if (!Array.isArray(gs.players) || gs.players.length < 1) {
+      throw new Error('horse state must include every public seat including hero');
+    }
+    const seats = new Set<number>();
+    const userIds = new Set<string>();
+    for (const seat of gs.players) {
+      if (!Number.isSafeInteger(seat.seat) || seat.seat < 1 || seats.has(seat.seat)) {
+        throw new Error('horse state public seats must be unique positive integers');
+      }
+      if (
+        typeof seat.user_id !== 'string' ||
+        seat.user_id.length === 0 ||
+        userIds.has(seat.user_id)
+      ) {
+        throw new Error('horse state public user ids must be unique and non-empty');
+      }
+      seats.add(seat.seat);
+      userIds.add(seat.user_id);
+      if (
+        !Number.isFinite(seat.stack) ||
+        seat.stack < 0 ||
+        !Number.isFinite(seat.bet) ||
+        seat.bet < 0 ||
+        !Number.isFinite(seat.totalInvested) ||
+        seat.totalInvested < 0
+      ) {
+        throw new Error('horse state public chip values must be finite and non-negative');
+      }
+    }
+    const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
+    if (!publicHero || publicHero.user_id !== request.player.user_id) {
+      throw new Error('horse state must include the same public hero identity');
+    }
+    if (
+      !Number.isFinite(request.player.stack) ||
+      request.player.stack < 0 ||
+      !Number.isFinite(request.player.bet) ||
+      request.player.bet < 0 ||
+      !Number.isFinite(request.player.totalInvested) ||
+      request.player.totalInvested < 0 ||
+      Math.abs(publicHero.stack - request.player.stack) > 0.005 ||
+      Math.abs(publicHero.bet - request.player.bet) > 0.005 ||
+      Math.abs(publicHero.totalInvested - request.player.totalInvested) > 0.005 ||
+      publicHero.is_folded !== request.player.is_folded ||
+      publicHero.is_all_in !== request.player.is_all_in ||
+      publicHero.is_sitting_out !== request.player.is_sitting_out
+    ) {
+      throw new Error('horse state public hero does not match the private decision player');
+    }
+    if (gs.players.some((seat) => !Array.isArray(seat.cards) || seat.cards.length !== 0)) {
+      throw new Error('horse state contains private seat cards');
+    }
+    if (!isKnownVariant(gs.gameVariant)) throw new Error('horse state gameVariant is unknown');
+    const expectedRules = horseVariantRulesFor(gs.gameVariant);
+    const rules = gs.variantRules;
+    if (
+      !rules ||
+      !Number.isSafeInteger(rules.holeCardsDealt) ||
+      !['any', 'exactly_two', 'discard_to_two'].includes(rules.holeCardsUse) ||
+      !['any', 'exactly_three'].includes(rules.boardCardsUse) ||
+      !Number.isSafeInteger(rules.deckSize) ||
+      typeof rules.splitLow8OrBetter !== 'boolean' ||
+      rules.holeCardsDealt !== expectedRules.holeCardsDealt ||
+      rules.holeCardsUse !== expectedRules.holeCardsUse ||
+      rules.boardCardsUse !== expectedRules.boardCardsUse ||
+      rules.deckSize !== expectedRules.deckSize ||
+      rules.splitLow8OrBetter !== expectedRules.splitLow8OrBetter
+    ) {
+      throw new Error('horse state variant rules do not match gameVariant');
+    }
+    if (!Array.isArray(request.player.cards)) {
+      throw new Error('horse state requires hero private cards');
+    }
+    const expectedHoleCards =
+      gs.gameVariant === 'pineapple' && (gs.stage === 'turn' || gs.stage === 'river')
+        ? 2
+        : expectedRules.holeCardsDealt;
+    if (request.player.cards.length !== expectedHoleCards) {
+      throw new Error('horse state hero card count does not match variant/street rules');
+    }
+    const validRanks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
+    const validSuits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+    if (
+      request.player.cards.some(
+        (card) => !card || !validRanks.has(card.rank) || !validSuits.has(card.suit)
+      ) ||
+      new Set(request.player.cards.map((card) => `${card.rank}:${card.suit}`)).size !==
+        request.player.cards.length
+    ) {
+      throw new Error('horse state hero cards are invalid');
+    }
+    const actions = gs.legalActions;
+    const legalValues = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'discard']);
+    if (
+      !Array.isArray(actions) ||
+      actions.length === 0 ||
+      new Set(actions).size !== actions.length ||
+      actions.some((action) => !legalValues.has(action))
+    ) {
+      throw new Error('horse state legalActions is invalid');
+    }
+    if (
+      !Number.isFinite(gs.pot) ||
+      gs.pot < 0 ||
+      !Number.isFinite(gs.currentBet) ||
+      gs.currentBet < 0 ||
+      !Number.isFinite(gs.minRaise) ||
+      gs.minRaise < 0 ||
+      !Number.isFinite(gs.bigBlind) ||
+      gs.bigBlind <= 0 ||
+      !Number.isFinite(gs.toCall) ||
+      (gs.toCall as number) < 0
+    ) {
+      throw new Error('horse state toCall must be finite and non-negative');
+    }
+    const expectedToCall = Math.round(Math.max(0, gs.currentBet - request.player.bet) * 100) / 100;
+    if (Math.abs((gs.toCall as number) - expectedToCall) > 0.005) {
+      throw new Error('horse state toCall does not match currentBet and hero bet');
+    }
+    if (
+      !actions.includes('fold') ||
+      ((gs.toCall as number) <= 0.005 && !actions.includes('check')) ||
+      ((gs.toCall as number) <= 0.005 && actions.includes('call')) ||
+      ((gs.toCall as number) > 0.005 && actions.includes('check')) ||
+      (actions.includes('bet') && gs.currentBet > 0.005) ||
+      (actions.includes('raise') && gs.currentBet <= 0.005)
+    ) {
+      throw new Error('horse state legalActions do not match the call state');
+    }
+    const sized = actions.includes('bet') || actions.includes('raise');
+    const validBound = (value: number | null | undefined): boolean =>
+      value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+    if (
+      !validBound(gs.minRaiseTo) ||
+      !validBound(gs.maxRaiseTo) ||
+      (sized && (gs.minRaiseTo === null || gs.maxRaiseTo === null)) ||
+      (!sized && (gs.minRaiseTo !== null || gs.maxRaiseTo !== null)) ||
+      (typeof gs.minRaiseTo === 'number' &&
+        typeof gs.maxRaiseTo === 'number' &&
+        gs.maxRaiseTo < gs.minRaiseTo - 0.005)
+    ) {
+      throw new Error('horse state wager bounds are inconsistent with legalActions');
+    }
+    if (
+      !['no_limit', 'pot_limit', 'fixed_limit'].includes(gs.bettingStructure ?? '') ||
+      gs.bettingStructure !== bettingStructureFor(gs.gameVariant)
+    ) {
+      throw new Error('horse state bettingStructure is invalid');
+    }
+    if (
+      (gs.bettingStructure === 'fixed_limit' &&
+        (!Number.isFinite(gs.fixedBetSize) || (gs.fixedBetSize as number) <= 0)) ||
+      (gs.bettingStructure !== 'fixed_limit' && gs.fixedBetSize !== null)
+    ) {
+      throw new Error('horse state fixedBetSize is inconsistent with bettingStructure');
+    }
+    if (
+      typeof gs.wagersCapped !== 'boolean' ||
+      (gs.commitmentCapRemaining !== null &&
+        (!Number.isFinite(gs.commitmentCapRemaining) ||
+          (gs.commitmentCapRemaining as number) < 0)) ||
+      (typeof gs.commitmentCapRemaining === 'number' &&
+        (gs.toCall as number) > gs.commitmentCapRemaining + 0.005 &&
+        actions.includes('call'))
+    ) {
+      throw new Error('horse state commitment cap is inconsistent with legalActions');
+    }
+    if (!Array.isArray(gs.actionHistory) || !Array.isArray(gs.pots)) {
+      throw new Error('horse state requires action history and live side pots');
+    }
+    if (
+      gs.pots.some(
+        (pot) =>
+          !Number.isFinite(pot.amount) ||
+          pot.amount < 0 ||
+          !Array.isArray(pot.eligiblePlayers) ||
+          pot.eligiblePlayers.length === 0 ||
+          new Set(pot.eligiblePlayers).size !== pot.eligiblePlayers.length ||
+          pot.eligiblePlayers.some(
+            (userId) =>
+              !userIds.has(userId) || gs.players.find((seat) => seat.user_id === userId)?.is_folded
+          )
+      )
+    ) {
+      throw new Error('horse state side-pot eligibility is invalid');
+    }
+    const potTotal = gs.pots.reduce((sum, pot) => sum + pot.amount, 0);
+    if (Math.abs(potTotal - gs.pot) > 0.01) {
+      throw new Error('horse state side pots do not conserve the live pot');
+    }
+    const expectedContestable = calculateContestablePot(
+      gs.players,
+      request.player.user_id,
+      gs.toCall as number
+    );
+    if (
+      !Number.isFinite(gs.contestablePot) ||
+      (gs.contestablePot as number) < 0 ||
+      (gs.contestablePot as number) > gs.pot + 0.005 ||
+      Math.abs((gs.contestablePot as number) - expectedContestable) > 0.01
+    ) {
+      throw new Error('horse state contestable pot is invalid');
+    }
+    if (
+      !gs.rakeConfig ||
+      !Number.isFinite(gs.rakeConfig.percent) ||
+      !Number.isFinite(gs.rakeConfig.cap) ||
+      typeof gs.rakeConfig.noFlopNoDrop !== 'boolean'
+    ) {
+      throw new Error('horse state requires the exact rake config');
+    }
+    if (request.decisionKey !== buildHorseDecisionKey(request)) {
+      throw new Error('decisionKey does not bind the canonical decision snapshot');
+    }
+  }
+
   private executeFast(request: FastHorseDecisionRequest): void {
     const canonicalRng = this.deps.saveRng();
     const rngBefore = this.requestRngSeed(request, 'fast');
@@ -356,8 +595,11 @@ export class HorseDecisionWorkerRuntime {
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     try {
+      const player = deepFreeze(request.player);
+      const gameState = deepFreeze(request.gameState);
+      this.deps.noteFeature('phase5_canonical_state');
       captured = this.deps.captureDecisionEffects(() =>
-        this.deps.decide(request.player, request.gameState, request.style, request.mods, {
+        this.deps.decide(player, gameState, request.style, request.mods, {
           ...request.opts,
           decisionTimeMs: request.decisionTimeMs,
           telemetry: true,
@@ -398,8 +640,10 @@ export class HorseDecisionWorkerRuntime {
     const startedAt = this.deps.now();
     let decision;
     try {
+      const player = deepFreeze(request.player);
+      const gameState = deepFreeze(request.gameState);
       decision = this.deps.captureDecisionEffects(() =>
-        this.deps.decide(request.player, request.gameState, request.style, request.mods, {
+        this.deps.decide(player, gameState, request.style, request.mods, {
           ...request.opts,
           decisionTimeMs: request.decisionTimeMs,
           telemetry: false,
@@ -476,20 +720,22 @@ export class HorseDecisionWorkerRuntime {
     });
   }
 
-  /** Stable xorshift seed for one immutable authority fence. */
+  /** Stable xorshift seed for one immutable canonical decision state. */
   private requestRngSeed(
-    request: Pick<HorseDecisionJobRequest, 'generation' | 'fence'>,
+    request: Pick<HorseDecisionJobRequest, 'generation' | 'fence'> & { decisionKey?: string },
     operation: 'fast' | 'discard'
   ): number {
-    const base = (this.rngSalt ??= this.deps.saveRng()) >>> 0 || 1;
-    let hash = base ^ 0x811c9dc5;
-    const material = `${operation}:${request.generation}:${request.fence}`;
+    let hash = 0x811c9dc5;
+    const material =
+      operation === 'fast' && request.decisionKey
+        ? `fast:${request.decisionKey}`
+        : `${operation}:${request.generation}:${request.fence}`;
     for (let index = 0; index < material.length; index++) {
       hash ^= material.charCodeAt(index);
       hash = Math.imul(hash, 0x01000193);
     }
-    // Final avalanche prevents similar table/hand suffixes from producing
-    // correlated first draws while retaining the worker's boot-time entropy.
+    // Final avalanche prevents similar canonical state suffixes from producing
+    // correlated first draws while remaining identical across worker restarts.
     hash ^= hash >>> 16;
     hash = Math.imul(hash, 0x7feb352d);
     hash ^= hash >>> 15;

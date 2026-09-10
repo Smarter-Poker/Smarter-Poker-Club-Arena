@@ -9,7 +9,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
-import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
@@ -19,8 +18,6 @@ import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
-import PushSubscriptionSync from './components/notifications/PushSubscriptionSync';
-import FirstRunPushPrompt from './components/notifications/FirstRunPushPrompt';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
@@ -50,7 +47,7 @@ import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
 import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
-import { useInTabLobbyActive } from './components/club/inTabLobbySurface';
+import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -65,6 +62,25 @@ import TOSGuard from './components/legal/TOSGuard';
 const AgeGate = lazyWithRetry(() => import('./components/legal/AgeGate'));
 const ConsentPrompt = lazyWithRetry(() => import('./components/legal/ConsentPrompt'));
 import { lazyWithRetry } from './utils/lazyWithRetry';
+
+// Push maintenance is intentionally delayed inside these components (four
+// seconds for the silent subscription refresh, twenty seconds for the first
+// prompt). Keep that optional work out of first paint while preserving the
+// application-root mount that lets it operate on every route. The retry-safe
+// loader also gives an atomic publish the same stale-chunk recovery as routes.
+const PushSubscriptionSync = lazyWithRetry(
+  () => import('./components/notifications/PushSubscriptionSync')
+);
+const FirstRunPushPrompt = lazyWithRetry(
+  () => import('./components/notifications/FirstRunPushPrompt')
+);
+// The ticker is another application-root overlay, but it renders only on a
+// live table or club lobby and does not contribute to the first paint. Load it
+// after the shell so its polling, settings, and announcement graph is paid for
+// by the feature instead of every route.
+const TournamentStartingTicker = lazyWithRetry(
+  () => import('./components/tournament/TournamentStartingTicker')
+);
 
 // Pages (lazy loaded for performance)
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
@@ -239,7 +255,7 @@ const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
 
 // Loading fallback
 function LoadingSpinner() {
-  return <LoadingState message="Preparing Club Arena" />;
+  return <LoadingState message="Preparing Poker Arena" />;
 }
 
 /**
@@ -260,8 +276,8 @@ import SlugEnforcer from './components/common/SlugEnforcer';
 import RouterBridge from './components/common/RouterBridge';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
-function ClubFooterMount() {
-  return <ClubBottomNav />;
+function ClubFooterMount({ clubId }: { clubId?: string }) {
+  return <ClubBottomNav clubId={clubId} />;
 }
 
 /** The footer probe must stay outside auth, TOS, realtime, and data providers.
@@ -281,6 +297,7 @@ function ClubFooterProbe() {
 function FullApp() {
   const location = useLocation();
   const inTabLobbyActive = useInTabLobbyActive();
+  const inTabLobbyClubId = useInTabLobbyClubId();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -492,8 +509,10 @@ function FullApp() {
           to be able to appear wherever the player actually is. See
           src/lib/pushClient.ts for why enrolment targets the ROOT service
           worker and not Club Arena's own sw-bus.js. */}
-        <PushSubscriptionSync />
-        <FirstRunPushPrompt />
+        <Suspense fallback={null}>
+          <PushSubscriptionSync />
+          <FirstRunPushPrompt />
+        </Suspense>
         <GlobalBalanceSync />
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
@@ -523,7 +542,9 @@ function FullApp() {
           left, there should be a scrolling announcement across all active
           club/union cash games and tournaments." It has to reach players where
           they already are, so it rides at the app root over every page. */}
-        <TournamentStartingTicker />
+        <Suspense fallback={null}>
+          <TournamentStartingTicker />
+        </Suspense>
         {/* Dan 2026-08-21: when an MTT starts, the player's seat opens itself. */}
         <TournamentAutoSeat />
         <MilestoneToast />
@@ -2059,7 +2080,11 @@ function FullApp() {
           </Suspense>
           {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
               footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
-          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive) && <ClubFooterMount />}
+          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId) && (
+            <ClubFooterMount
+              clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
+            />
+          )}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and

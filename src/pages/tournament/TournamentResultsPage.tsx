@@ -28,6 +28,7 @@ import {
   type MysteryBountyPlayerTotals,
 } from '../../services/MysteryBountyService';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
+import TournamentPaymentStatus from '../../components/tournament/TournamentPaymentStatus';
 
 interface CompletedTournament {
   id: string;
@@ -1022,6 +1023,12 @@ export default function TournamentResultsPage() {
                 {t.current_players} · Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
                 {t.ended_at ? new Date(t.ended_at).toLocaleDateString() : '-'}
               </div>
+
+              {selectedTournament?.id === t.id && activeTab === 'standings' && (
+                <div onClick={(event) => event.stopPropagation()}>
+                  <TournamentPaymentStatus tournamentId={t.id} />
+                </div>
+              )}
 
               {/* Expanded Results — Tabs */}
               {selectedTournament?.id === t.id &&

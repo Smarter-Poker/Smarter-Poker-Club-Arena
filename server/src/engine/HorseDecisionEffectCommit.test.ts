@@ -47,6 +47,7 @@ vi.mock('./horseDecision/index.js', async () => {
 });
 
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
 
 const TABLE = 'fafafafa-fafa-fafa-fafa-fafafafafafa';
 
@@ -92,8 +93,15 @@ function harness(intendedActionAccepted: boolean) {
         seat: 2,
         user_id: 'human-2',
         username: 'Human Two',
+        cards: [
+          { rank: 'J', suit: 'spades' },
+          { rank: 'J', suit: 'diamonds' },
+        ],
       },
     ],
+    communityCards2: [],
+    communityCards3: [],
+    pots: [],
     dealerSeat: 2,
     actionHistory: [],
   };
@@ -104,7 +112,31 @@ function harness(intendedActionAccepted: boolean) {
   engine.handCount = 12;
   engine.tableInfo = { action_time_seconds: 15, big_blind: 2, game_variant: 'nlh' };
   engine.seatedPlayers = [player];
-  engine.handController = { getState: () => state, performAction };
+  engine.handController = {
+    getState: () => state,
+    getAuthoritativeActionState: () => ({
+      schemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      canAct: true,
+      legalActions: ['fold', 'check', 'bet', 'all_in'],
+      toCall: 0,
+      minRaiseTo: 2,
+      maxRaiseTo: 100,
+      structure: 'no_limit',
+      fixedBetSize: null,
+      wagersCapped: false,
+    }),
+    computeLivePots: () => [{ amount: 10, eligiblePlayers: ['horse-1', 'human-2'] }],
+    getContestablePotForCall: () => 10,
+    getRakeConfigSnapshot: () => ({
+      percent: 10,
+      cap: 5,
+      noFlopNoDrop: true,
+      playerCountCaps: [{ players: 2, cap: 2.5 }],
+    }),
+    performAction,
+  };
   engine.disconnectEngine = { isSittingOut: () => false };
   engine.timeBankEngine = { getPlayerBank: () => null };
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'lease-9' });
@@ -127,6 +159,51 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it('publishes one canonical public state and never exposes any seat private cards', () => {
+    const { engine, player, enginePlayer, state } = harness(true);
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+
+    const snapshot = decisionWorker.decideFast.mock.calls[0]?.[0] as any;
+    expect(snapshot.player.cards).toEqual(enginePlayer.cards);
+    expect(snapshot.gameState.players).toHaveLength(2);
+    expect(snapshot.gameState.players.every((seat: any) => seat.cards.length === 0)).toBe(true);
+    expect(snapshot.gameState).toMatchObject({
+      stateSchemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      legalActions: ['fold', 'check', 'bet', 'all_in'],
+      toCall: 0,
+      minRaiseTo: 2,
+      maxRaiseTo: 100,
+      bettingStructure: 'no_limit',
+      commitmentCapRemaining: null,
+      contestablePot: 10,
+      pots: [{ amount: 10, eligiblePlayers: ['horse-1', 'human-2'] }],
+      rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
+      variantRules: { holeCardsDealt: 2, holeCardsUse: 'any', deckSize: 52 },
+    });
+    expect(snapshot.decisionKey).toMatch(/^phase5-v1:[0-9a-f]{64}$/);
+    expect(snapshot.decisionKey).not.toContain('"rank":"J"');
+  });
+
+  it('removes a false all-in and clamps the wager ceiling at a table commitment cap', () => {
+    const { engine, player, enginePlayer, state } = harness(true);
+    engine.tableInfo = {
+      ...engine.tableInfo,
+      cap_enabled: true,
+      cap_bb: 10,
+    };
+    enginePlayer.totalInvested = 15;
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+
+    const snapshot = decisionWorker.decideFast.mock.calls[0]?.[0] as any;
+    expect(snapshot.gameState.commitmentCapRemaining).toBe(5);
+    expect(snapshot.gameState.maxRaiseTo).toBe(5);
+    expect(snapshot.gameState.legalActions).toEqual(['fold', 'check', 'bet']);
+  });
+
   it('commits one captured plan only after the intended wager is accepted', async () => {
     const { engine, player, enginePlayer, state, performAction } = harness(true);
 
@@ -150,6 +227,31 @@ describe('authoritative horse action effect commit', () => {
 
     expect(performAction).toHaveBeenNthCalledWith(1, 1, 'bet', 20);
     expect(performAction).toHaveBeenNthCalledWith(2, 1, 'check');
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+
+  it('takes the safe action immediately when a queued worker decision expires', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    decisionWorker.decideFast.mockRejectedValueOnce(
+      new HorseDecisionExpiredError('queued decision used its complete budget')
+    );
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(performAction).toHaveBeenCalledTimes(1);
+    expect(performAction).toHaveBeenCalledWith(1, 'check', undefined);
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+
+  it('does not act after a genuine authority abort', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    decisionWorker.decideFast.mockRejectedValueOnce(new HorseDecisionAbortedError());
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(performAction).not.toHaveBeenCalled();
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
   });
 });

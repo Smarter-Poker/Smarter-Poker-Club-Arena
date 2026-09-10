@@ -378,7 +378,8 @@ describe('satellite award current_players write', () => {
       ),
       'utf8'
     );
-    expect(src).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(src).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
+    expect(src).not.toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
     expect(atomic).toMatch(
       /UPDATE public\.tournaments target SET current_players=\(\s*SELECT count\(\*\) FROM public\.tournament_players tp\s*WHERE tp\.tournament_id=target\.id\)/
     );

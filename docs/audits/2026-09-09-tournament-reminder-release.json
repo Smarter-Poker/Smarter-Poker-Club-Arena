@@ -1,0 +1,102 @@
+{
+  "recordedAt": "2026-09-09T22:05:48.970005+00:00",
+  "scope": "Tournament reminder execution, bounded release verification",
+  "database": {
+    "project": "kuklfnapbkmacvwxktbh",
+    "migration": "20260909195446",
+    "checks": 43,
+    "appliedOnce": true,
+    "browserExecuteDenied": true,
+    "hotTableForeignKeys": 0
+  },
+  "releases": {
+    "clubArena": {
+      "pr": 4012,
+      "merge": "6e9de72fec52c481ab515814600aa2a29b4ce297",
+      "ci": 34406576673,
+      "publicAndOriginSha": "65931a248c4f35b15e6dbd50aedd3b2f8d08a576",
+      "buildAt": "2026-09-09T21:43:21Z",
+      "ancestryVerified": true
+    },
+    "worldHub": {
+      "initialPr": 1695,
+      "authCorrectionPr": 1700,
+      "merge": "04c10d4f30c1b7e8291f99ca04c0e18bfcd52689",
+      "source": "ce4eb05be7d1f35f299692590b2a891bfa8fc834",
+      "allThreeBlobsMatch": true,
+      "ci": 34408500269,
+      "liveHealthAt": "2026-09-09T21:51:59.243Z"
+    },
+    "workers": {
+      "initialPr": 127,
+      "authCorrectionPr": 128,
+      "merge": "d91ac884be10741aed2c96029e52ffa3129f51ff",
+      "source": "64e7448ae69a03c5f8f2c490a66915b058ec4f5f",
+      "allThreeBlobsMatch": true,
+      "ci": 34409445299,
+      "deployment": 34409607658,
+      "cutoverAndRevisionStepCompletedAt": "2026-09-09T21:57:14Z"
+    }
+  },
+  "workerOriginReadiness": {
+    "observedAt": "2026-09-09T21:52:37.710Z",
+    "http": 200,
+    "reminderProtocol": 1,
+    "reminderAuth": "database_service_role"
+  },
+  "postCorrectionObservation": {
+    "sampleCount": 13,
+    "first": "2026-09-09T21:57:54.465862+00:00",
+    "last": "2026-09-09T22:04:00.009808+00:00",
+    "allExpectedVersion": true,
+    "allRunning": true,
+    "maximumConsecutiveFailures": 0,
+    "finalState": {
+      "status": "running",
+      "inFlight": false,
+      "lastPreparedAt": "2026-09-09T22:03:33.854Z",
+      "lastDispatchAt": "2026-09-09T21:58:01.156Z",
+      "nextWakeAt": "2026-09-09T22:04:03.854Z",
+      "oldestPendingAt": null,
+      "consecutiveFailures": 0,
+      "queued": 19,
+      "sent": 0,
+      "skipped": 0,
+      "failedAttempts": 0,
+      "uncertain": 0,
+      "running": true,
+      "protocol": 1
+    },
+    "errorLogs": {
+      "observedAt": "2026-09-09T22:03:46.406518+00:00",
+      "since": "2026-09-09T21:57:10Z",
+      "logReadSucceeded": true,
+      "reminderErrorLines": 0
+    }
+  },
+  "naturalCycle": {
+    "databaseObservedAt": "2026-09-09T22:01:30.259491Z",
+    "createdAt": "2026-09-09T21:58:00.131201Z",
+    "stage": "2m",
+    "queuedThenSkippedNoSubscription": 19,
+    "seatedSuppressionReceipts": 5,
+    "unresolvedRows": 0,
+    "queueToClaimMs": {
+      "rows": 19,
+      "batches": 1,
+      "p50": 253.028,
+      "p90": 253.028,
+      "max": 253.028
+    },
+    "workerRecordedSent": 0,
+    "workerRecordedSkipped": 0,
+    "providerDeliveryProven": false
+  },
+  "acceptance": {
+    "serverExecutionVerified": true,
+    "physicalIPadPwaVerified": false,
+    "notificationDisplayTapAndReturnVerified": false,
+    "wholeRealtimeProgrammeComplete": false,
+    "remainingRequirement": "Supported physical iPad/PWA session with notifications enabled for receipt, tap-through and return-to-table acceptance."
+  }
+}

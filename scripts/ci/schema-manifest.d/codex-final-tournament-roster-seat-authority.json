@@ -1,0 +1,27 @@
+{
+  "_owner": "fix/live-migration-provenance",
+  "_comment": "The final database-only tournament roster and seat authority retires both scheduler mutators, their detector, the stale live-seat trigger, and every remaining amount-trusting public seat-exit door. It records the exact disabled scheduler pair, enforces a deferred reciprocal RUNNING roster-seat invariant, keeps satellite-funded unregistration ticket-only, and exposes one service-only compare-and-set prize-repricing authority.",
+  "tables": ["tournament_mutator_scheduler_retirement_receipts"],
+  "functions": [
+    "fn_ca_assert_running_tournament_roster_seat",
+    "fn_ca_reprice_unpaid_tournament_place",
+    "fn_ca_unregister_tournament_player_exact_seat_exit_core_v2",
+    "trg_ca_assert_running_tournament_roster_seat"
+  ],
+  "removedTables": ["ca_broke_seat_sightings"],
+  "removedFunctions": [
+    "fn_ca_absent_tournament_players",
+    "fn_ca_eliminate_absent_tournament_players",
+    "fn_ca_release_broke_seats",
+    "fn_sync_tournament_live_seat_chips",
+    "trg_assert_live_tournament_seat_has_roster"
+  ],
+  "columns": {
+    "tournament_mutator_scheduler_retirement_receipts": [
+      "captured_at",
+      "job_ids",
+      "jobs",
+      "migration_version"
+    ]
+  }
+}

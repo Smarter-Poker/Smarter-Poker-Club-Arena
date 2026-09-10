@@ -5,8 +5,10 @@ import type {
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 import {
   HorseDecisionAbortedError,
+  HorseDecisionExpiredError,
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
 } from './client.js';
@@ -62,37 +64,104 @@ class FakeWorker implements WorkerLike {
   }
 }
 
-const snapshot = (fence: string): LiveHorseDecisionSnapshot => ({
-  generation: 7,
-  fence,
-  decisionTimeMs: 1_800_000,
-  player: {
-    seat: 1,
-    user_id: 'horse-1',
-    username: 'Horse One',
-    stack: 100,
-    bet: 0,
-    totalInvested: 0,
-    cards: [],
-    is_folded: false,
-    is_all_in: false,
-    is_sitting_out: false,
-  },
-  gameState: {
-    players: [],
-    communityCards: [],
-    pot: 3,
-    currentBet: 2,
-    minRaise: 2,
-    stage: 'preflop',
-    gameVariant: 'nlh',
-    bigBlind: 2,
-  },
-});
+const snapshot = (fence: string): LiveHorseDecisionSnapshot => {
+  const value: LiveHorseDecisionSnapshot = {
+    generation: 7,
+    fence,
+    decisionKey: '',
+    decisionTimeMs: 1_800_000,
+    player: {
+      seat: 1,
+      user_id: 'horse-1',
+      username: 'Horse One',
+      stack: 100,
+      bet: 0,
+      totalInvested: 0,
+      cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'spades' },
+      ],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+    },
+    gameState: {
+      stateSchemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      legalActions: ['fold', 'call', 'raise', 'all_in'],
+      toCall: 2,
+      minRaiseTo: 4,
+      maxRaiseTo: 100,
+      bettingStructure: 'no_limit',
+      fixedBetSize: null,
+      wagersCapped: false,
+      commitmentCapRemaining: null,
+      players: [
+        {
+          seat: 1,
+          user_id: 'horse-1',
+          username: 'Horse One',
+          stack: 100,
+          bet: 0,
+          totalInvested: 0,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        },
+        {
+          seat: 2,
+          user_id: 'horse-2',
+          username: 'Horse Two',
+          stack: 98,
+          bet: 2,
+          totalInvested: 2,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        },
+      ],
+      communityCards: [],
+      communityCards2: [],
+      communityCards3: [],
+      pot: 2,
+      contestablePot: 2,
+      currentBet: 2,
+      minRaise: 2,
+      stage: 'preflop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      actionHistory: [],
+      pots: [{ amount: 2, eligiblePlayers: ['horse-2'] }],
+      rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
+      variantRules: {
+        holeCardsDealt: 2,
+        holeCardsUse: 'any',
+        boardCardsUse: 'any',
+        deckSize: 52,
+        splitLow8OrBetter: false,
+      },
+    },
+  };
+  value.decisionKey = buildHorseDecisionKey(value);
+  return value;
+};
+
+const V31_DATASET = {
+  id: '11111111-1111-4111-8111-111111111111',
+  checksum: 'a'.repeat(64),
+};
 
 const ready = {
   type: 'READY' as const,
-  solverStores: { charts: 1, postflop: 2, postflopV31: 3 },
+  solverStores: {
+    charts: 1,
+    postflop: 2,
+    postflopV31: 3,
+    postflopV31Dataset: V31_DATASET,
+  },
   solverPolicyArtifact: {
     totalPolicies: 4,
   } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -209,6 +278,28 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a positive V31 store that omits its promoted dataset identity', async () => {
+    const worker = new FakeWorker();
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+
+    worker.emitMessage({
+      ...ready,
+      solverStores: {
+        charts: 1,
+        postflop: 2,
+        postflopV31: 3,
+        postflopV31Dataset: null,
+      },
+    });
+
+    await expect(client.ready()).rejects.toThrow(/invalid solver-store identity/);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(client.status()).toMatchObject({ phase: 'failed' });
+    expect(worker.terminateCalls).toBe(1);
+    expect(onFatal).toHaveBeenCalledTimes(1);
+  });
+
   it('terminal-fails a posted job that never returns instead of wedging the FIFO', async () => {
     const worker = new FakeWorker();
     const onFatal = vi.fn();
@@ -241,9 +332,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
         jobTimeoutMs: 50,
       });
       const queued = client.decideFast(snapshot('queued-before-ready'));
-      const queuedRejection = expect(queued).rejects.toThrow(
-        'horse decision expired after 50ms before worker dispatch'
-      );
+      const queuedRejection = expect(queued).rejects.toBeInstanceOf(HorseDecisionExpiredError);
 
       await vi.advanceTimersByTimeAsync(50);
       await queuedRejection;
@@ -338,7 +427,12 @@ describe('LiveHorseDecisionWorkerClient', () => {
         requestId: 1,
         generation: 0,
         fence: 'worker:status',
-        solverStores: { charts: 11, postflop: 12, postflopV31: 13 },
+        solverStores: {
+          charts: 11,
+          postflop: 12,
+          postflopV31: 13,
+          postflopV31Dataset: V31_DATASET,
+        },
         solverPolicyArtifact: {
           totalPolicies: 14,
         } as HorseDecisionWorkerReady['solverPolicyArtifact'],
@@ -346,11 +440,49 @@ describe('LiveHorseDecisionWorkerClient', () => {
       });
 
       expect(client.status()).toMatchObject({
-        solverStores: { charts: 11, postflop: 12, postflopV31: 13 },
+        solverStores: {
+          charts: 11,
+          postflop: 12,
+          postflopV31: 13,
+          postflopV31Dataset: V31_DATASET,
+        },
         solverPolicyArtifact: { totalPolicies: 14 },
         governor: { scale: 0.08, sampledAt: 456 },
         queueDepth: 0,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('terminal-fails if a status refresh loses the V31 dataset identity', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+      worker.emitMessage(ready);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const status = worker.sent.at(-1) as { requestId: number };
+
+      worker.emitMessage({
+        type: 'STATUS_RESULT',
+        requestId: status.requestId,
+        generation: 0,
+        fence: 'worker:status',
+        solverStores: {
+          charts: 1,
+          postflop: 2,
+          postflopV31: 3,
+          postflopV31Dataset: null,
+        },
+        solverPolicyArtifact: ready.solverPolicyArtifact,
+        governor: ready.governor,
+      });
+
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({ phase: 'failed' });
+      expect(onFatal).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

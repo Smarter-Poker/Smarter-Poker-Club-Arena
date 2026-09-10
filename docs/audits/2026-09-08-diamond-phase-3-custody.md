@@ -1,6 +1,30 @@
 # Diamond Phase 3: Atomic Custody Release And Publication Evidence
 
-Updated September 9, 2026. Phase completion remains open until the Arena publication and authenticated UI checks pass.
+Updated September 9, 2026. Phase 3 runtime and acceptance gates are verified. The dated checkpoints below retain their original status; the final evidence here supersedes their pending rollout statements.
+
+## Final Runtime Adoption, September 9 At 21:05 UTC
+
+Production engine health now reports 561eaa523829ef8ecbd6b11fffe946b6e53fd756 (health prefix 561eaa52), with status, liveness and settlementStatus all ok and blockedSettlementCount 0. GitHub comparison proves it is 15 commits ahead of final repair 4c385b09b72aa458235d6fa1bc486dcf70a01bee with zero commits behind. This is actual runtime adoption, not a staged-image or green-workflow claim.
+
+Both frontend build-info endpoints serve b30e1b8513bf51937276c8d57b44c03ff038cb51, built at 20:48:43 UTC. Ancestry proves inclusion of final repair 4c385b09 and merged acceptance documentation 18e0f76e7282655f37739750ea40b160a43cbdb8. The prior authenticated Diamond routes, invite/home and repaired Shark acceptance remain the recorded UI evidence; they were not rerun to inflate totals. The applied five-migration contract, 79 isolated SQL assertions, original build/browser checks, final repair's 17,590 client and 8,127 server passes (18 skipped), and worker/scheduler retirement evidence above remain applicable.
+
+The user directs dispatching staged releases immediately toward their maintenance window while other implementation proceeds. Normal dispatches with force=false were submitted; cancelled runs were never counted as deployment, and no restart/window protection was bypassed. The running engine version and source ancestry close the remaining adoption gate.
+
+Phase 3's stated custody deliverable is complete. No public funded Diamond game is enabled; those gameplay and accounting release gates remain in later phases. Phase 4 continues separately.
+
+## Verified Publication And Browser Acceptance, September 9 At 18:02 UTC
+
+Arena PR 3972 merged at 17:39:44 UTC as `ec5a84f994f10215823d27fc05a562ff6348f352`. Both the public rewrite and static-origin build-info endpoints serve that exact commit, built at 17:48:27 UTC by successful publisher `34384177966`. The publisher selected that target even though its event SHA predates it; the built provenance and production response are the release evidence.
+
+Final implementation CI passed 17,552 client tests, 8,123 server tests (18 skipped), TypeScript, production build, 150 CSS cases, 13 Studio cases and 3 mobile-decision cases. Live-production and post-deploy CI jobs were skipped, not passed. A manifest-format defect was fixed in `b29bce8d09caf44c58e83939e93341247306de6d`, preserving the supported manifest schema and every gate.
+
+After the user's explicit age/terms acceptance, the authenticated browser verified the UUID Diamond route, finance and agents routes: automatic membership, games not open, Available Diamonds and Diamonds In Play, with no Join or chip-management rail/footer. The stale invite redirected automatically to `/hub/club-arena/clubs/diamond-arena` and rendered the same balance screen. Home includes the automatic Diamond entry. No Diamond errors were captured. No real player money, seat, purchase or bonus-claim mutation was used.
+
+Shark's joined lobby and game list load, but its seat-state query reproducibly reported an error. Read-only production inspection found three parent foreign keys; the original unqualified embed returns HTTP 300 PGRST201. Repair PR 3982 (`43c3b140f67698294543333b7fcb05f88810f7ca`) selects the existing `table_seats_table_id_fkey` explicitly. Its 15 focused and 802 related tests passed before push. Its publication and authenticated error-free recheck remain required.
+
+Fresh database reads confirm all five recorded migrations, zero custody/movement/lot-reservation rows, no obsolete obligation table or recovery RPC, RLS on all three tables, own-user read policies, and service-only monetary RPCs. The balance RPC remains authenticated-only. Worker retirement and dispatcher evidence are recorded below.
+
+Engine at 18:00 UTC serves `5dd902e9`, status/liveness/settlement status all ok and zero blocked settlements. That revision does not contain the new Phase 3 server adapter. Deployment `34385758736` targets a descendant containing the Phase 3 merge through the normal maintenance pipeline. Server adoption is still open; no restart or maintenance protection was bypassed. Phase 3 is not yet complete, and Phase 4 implementation has not started.
 
 ## Current Contract, September 9 At 17:25 UTC
 
@@ -52,3 +76,15 @@ The normal Arena push stopped at two repository checks. The existing reporting h
 Prepared follow-up `20260909065926_poker_diamond_custody_reporting_contract.sql` creates the read-only `fn_poker_diamond_custody_discrepancies` and restates those existing private grants. Automatic approval review rejected this follow-up as a separate production security/schema change; a materially smaller additive-only version was also rejected. Neither follow-up was applied. Explicit approval of the reporting-name transition and existing private grants remains required. After creation, move callers, verify worker adoption, then retire the obsolete report name and update recovery's internal call through a forward migration.
 
 Workers PR 124 merged as `83de0a1ae155c74ebc9847c3554d174220fbf5bd`; deployment run `34321588332` passed exact-revision health verification. The attempted new report caller was restored before merge in PR 125 head `0c91e4f32a09851e4090d9ff483a734c4fdb4d26`, preserving the existing deployed database contract while approval is unresolved. World Hub schedule PR 1681 is pushed through the normal pipeline. Arena has not pushed successfully. No Phase 3 completion or Phase 4 start is claimed.
+
+## Repair Acceptance, September 9 At 18:39 UTC
+
+The custody failure visibility repair, PR 3985, merged at 18:27:59 UTC as 4c385b09b72aa458235d6fa1bc486dcf70a01bee. Its source is 9d9e6af25a087ac00c23dc342d11af62f3ec4ce1. Required CI passed: 17,590 client tests (5,334 + 4,223 + 4,111 + 3,922), 8,127 server tests with 18 skipped, TypeScript and the applicable source gates. Browser, production-build, live-production and post-deploy jobs were skipped for this server-only repair; they are not additional passes. The original Phase 3 build/browser evidence above remains the applicable full frontend run.
+
+The adapter reports unverified reserve/release outcomes through the existing financialAlerts management path and preserves the original error and request identity. Response loss does not issue a compensating credit or a second reserve/release. Thirty focused custody and alert tests passed locally, including failed alert delivery preserving the original custody failure.
+
+The Shark seat relationship repair, PR 3982, merged as 6e413b26ed0497fb9cbb3045295ada2a1f110efd. Production served that exact revision when the authenticated verification tab was reloaded at approximately 18:25 UTC. The SHARK CLUB identity, wallet region and game grid loaded. The error log retained only the two earlier loadMyGameStates.seats errors at 17:48:42 and 17:54:53; no new occurrence followed the repaired reload. This closes the reproducible ambiguous-parent regression found during Phase 3 acceptance.
+
+At 18:39:14 UTC both frontend build-info endpoints served b72f3bedbe549017c850e6464e91e782ef136e6d, built at 18:35:59 UTC. Git merge-base ancestry verified that this release contains the final custody repair 4c385b09 and therefore its original Phase 3 implementation. The engine still served 5dd902e9 with status and settlementStatus ok and zero blocked settlements. That engine revision does not close Phase 3 adoption. Deployment 34389206628 targets the final custody repair and must complete its normal maintenance-window cutover before final release acceptance.
+
+Dan explicitly permits Phase 4 development while this remaining runtime gate is verified in the background. The programme records that authorization. It does not mark the Phase 3 engine gate passed, enable funded Diamond games or claim Phase 4 complete.

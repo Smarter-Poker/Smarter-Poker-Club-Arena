@@ -60,7 +60,7 @@ import {
   type LobbyTournamentRow,
   withClubLabel,
 } from '../components/lobby/lobbyEntries';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
@@ -3358,7 +3358,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
              the set makes the seated branch reachable for seat-first games
              and changes nothing for cash rows, which still key on table_id. */
           .from('table_seats')
-          .select('table_id, tables(tournament_id)')
+          .select('table_id, tables!table_seats_table_id_fkey(tournament_id)')
           .eq('user_id', currentUserId)
           .is('left_at', null)
           .limit(QUERY_LIMITS.LIST),
@@ -3685,13 +3685,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!currentUserId || actionBusy) return;
       setActionBusy(true);
       try {
-        await tournamentService.unregisterPlayer(t.id, currentUserId);
+        const result = await tournamentService.unregisterPlayer(t.id, currentUserId);
         setRegisteredTournamentIds((prev) => {
           const s = new Set(prev);
           s.delete(t.id);
           return s;
         });
-        toast.success('You Are No Longer Registered');
+        toast.success(tournamentUnregisterSuccessText(result));
       } catch (e) {
         reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
@@ -4572,10 +4572,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
                 <span className="lobby-wallets-trigger__copy">
                   <strong>My Wallets</strong>
+                  {/* THE COUNT, OR NOTHING AT ALL (Dan 2026-09-09): it
+                      "shouldn't say LOADING BALANC. It should just have 5
+                      BALANCES or how ever many wallets that user has only."
+
+                      DynamicWallet knows how many rows this viewer gets before
+                      a single balance has loaded - the row set comes from the
+                      role, not from the money - and it now publishes that count
+                      in a layout effect, so the real number is here for the
+                      first painted frame. The empty string is only the frame
+                      before that: an empty bay, never a word that has to be
+                      taken back a moment later. */}
                   <small>
                     {visibleWalletCount > 0
                       ? `${visibleWalletCount} ${visibleWalletCount === 1 ? 'Balance' : 'Balances'}`
-                      : 'Loading Balances'}
+                      : ''}
                   </small>
                 </span>
                 <span

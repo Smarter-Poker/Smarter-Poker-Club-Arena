@@ -12,6 +12,7 @@ import {
   evaluateOmahaHand,
   evaluateOmahaLowHand,
   calculatePots,
+  calculateContestablePot,
   calculateBettingState,
   validateAction,
   calculateRake,
@@ -53,6 +54,7 @@ import type {
   PerPotAward,
   RakeConfig,
   BettingState,
+  AuthoritativeActionState,
 } from '../types.js';
 
 import { reportError } from '../services/errorReporter.js';
@@ -1704,7 +1706,7 @@ export class HandController {
    * finalizeRunout(true) then emits WINNERS [], and that handler does
    * `localPlayer.stack = enginePlayer.stack` from a fresh (still uncredited)
    * getState(). So it overwrote the one real credit — the seated player's —
-   * with the pre-payout stack, and syncStacks persisted that. Both players in
+   * with the pre-payout stack, and the old hand writer persisted that. Both players in
    * an all-in RIT pot finished on their post-betting stack and the pot was
    * destroyed. 28,691 tables have run_it_twice_enabled.
    *
@@ -3265,6 +3267,81 @@ export class HandController {
     };
   }
 
+  /**
+   * Phase 5 Round 1: one authoritative legality contract for clients and the
+   * live horse worker. This deliberately calls the same private rule functions
+   * as performAction(), rather than asking either consumer to infer reopening,
+   * fixed-limit or pot-limit rights from a reduced state object.
+   */
+  public getAuthoritativeActionState(userId: string): AuthoritativeActionState | null {
+    const player = this.state.players.find((p) => p.user_id === userId);
+    if (!player) return null;
+
+    const bettingState = this.buildBettingState(player);
+    const canAct =
+      this.state.currentPlayerSeat === player.seat &&
+      !player.is_folded &&
+      !player.is_all_in &&
+      !player.is_sitting_out &&
+      player.stack > 0;
+    let legalActions = canAct ? this.getAvailableActions(player) : [];
+    const hasBet = legalActions.includes('bet');
+    const hasRaise = legalActions.includes('raise');
+    const hasSizedWager = hasBet || hasRaise;
+    const cents = (value: number): number => Math.round(value * 100) / 100;
+
+    let minRaiseTo: number | null = null;
+    let maxRaiseTo: number | null = null;
+    if (hasSizedWager) {
+      minRaiseTo = cents(
+        hasRaise ? this.state.currentBet + bettingState.minRaise : bettingState.minRaise
+      );
+      const stackBound = hasRaise ? player.bet + player.stack : player.stack;
+      const structureBound =
+        bettingState.maxRaise === undefined
+          ? Infinity
+          : hasRaise
+            ? this.state.currentBet + bettingState.maxRaise
+            : bettingState.maxRaise;
+      maxRaiseTo = cents(Math.min(stackBound, structureBound));
+      // A stack below the ordinary minimum can still act through the explicit
+      // all_in action, but there is no legal sized bet/raise interval. Do not
+      // advertise an impossible range with min > max.
+      if (maxRaiseTo < minRaiseTo - 0.005) {
+        legalActions = legalActions.filter((action) => action !== (hasRaise ? 'raise' : 'bet'));
+        minRaiseTo = null;
+        maxRaiseTo = null;
+      }
+    }
+
+    return {
+      schemaVersion: 1,
+      heroSeat: player.seat,
+      currentPlayerSeat: this.state.currentPlayerSeat,
+      canAct,
+      legalActions,
+      toCall: cents(Math.max(0, bettingState.toCall)),
+      minRaiseTo,
+      maxRaiseTo,
+      structure: bettingState.structure ?? 'no_limit',
+      fixedBetSize: isFixedLimitVariant(this.config.gameVariant)
+        ? fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+        : null,
+      wagersCapped: bettingState.wagersCapped === true,
+    };
+  }
+
+  /** Exact per-hand rake rules; cloned so a decision cannot mutate settlement. */
+  public getRakeConfigSnapshot(): RakeConfig {
+    return {
+      ...this.config.rakeConfig,
+      playerCountCaps: this.config.rakeConfig.playerCountCaps?.map((tier) => ({ ...tier })),
+      timedRake: this.config.rakeConfig.timedRake
+        ? { ...this.config.rakeConfig.timedRake }
+        : undefined,
+    };
+  }
+
   getCurrentPlayer(): SeatPlayer | undefined {
     return this.state.players.find((p) => p.seat === this.state.currentPlayerSeat);
   }
@@ -3310,6 +3387,20 @@ export class HandController {
   /** Live side pots computed from current contributions (not the cached ones). */
   public computeLivePots(): import('../types.js').Pot[] {
     return calculatePots(this.state.players);
+  }
+
+  /**
+   * Pot already in the middle that this player can win after matching the
+   * current wager, excluding the player's own not-yet-committed call.
+   */
+  public getContestablePotForCall(userId: string): number | null {
+    const player = this.state.players.find((candidate) => candidate.user_id === userId);
+    if (!player) return null;
+    return calculateContestablePot(
+      this.state.players,
+      userId,
+      this.buildBettingState(player).toCall
+    );
   }
 
   /**

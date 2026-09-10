@@ -10,7 +10,6 @@
 
 import { HandController } from './HandController.js';
 import {
-  bettingStructureFor,
   isPotLimitVariant,
   isFixedLimitVariant,
   fixedLimitBetSize,
@@ -20,9 +19,16 @@ import {
   substituteOnCappedStreet,
   type BettingStructure,
 } from './BettingStructure.js';
-import type { HandStage, ActionType, HorseDecision } from '../types.js';
+import { horseVariantRulesFor } from './VariantRules.js';
+import type {
+  HandStage,
+  ActionType,
+  HorseDecision,
+  SeatPlayer,
+  AuthoritativeActionState,
+} from '../types.js';
 
-import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
+import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
 import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
@@ -39,6 +45,7 @@ import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { noteFire } from './BrainTelemetry.js';
 import {
+  buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
   HorseDecisionAbortedError,
   type FastHorseDecisionResult,
@@ -61,6 +68,75 @@ export type SecondLookDecline =
 export type SecondLookPlan =
   | { ok: true; afterMs: number }
   | { ok: false; reason: SecondLookDecline };
+
+type CappedActionState = AuthoritativeActionState & {
+  /** Null means this table has no per-hand commitment cap. */
+  commitmentCapRemaining: number | null;
+};
+
+/**
+ * Apply the table's per-hand commitment ceiling to the HandController's legal
+ * menu. HandController owns poker rules; the table owns this host-configured
+ * ceiling, so this is the only composition step shared by HTTP and horses.
+ */
+export function applyTableCommitmentCap(
+  source: AuthoritativeActionState,
+  player: Pick<SeatPlayer, 'stack' | 'bet' | 'totalInvested'>,
+  capEnabled: boolean,
+  capBB: number,
+  bigBlind: number
+): CappedActionState {
+  const legalActions = [...source.legalActions];
+  const capChips = capEnabled && capBB > 0 && bigBlind > 0 ? capBB * bigBlind : 0;
+  if (capChips <= 0) {
+    return { ...source, legalActions, commitmentCapRemaining: null };
+  }
+
+  const cents = (value: number): number => Math.round(value * 100) / 100;
+  const capRemaining = cents(Math.max(0, capChips - (Number(player.totalInvested) || 0)));
+  let boundedActions = legalActions;
+  let minRaiseTo = source.minRaiseTo;
+  let maxRaiseTo = source.maxRaiseTo;
+
+  // A cap-bounded wager leaves chips in front of the player; it is never an
+  // all-in. The authoritative action path performs the same conversion.
+  if (player.stack > capRemaining + 0.005) {
+    boundedActions = boundedActions.filter((action) => action !== 'all_in');
+  }
+  // Forced/dead contributions can leave two players with different whole-hand
+  // totals even when their live street bets match. A full call that crosses
+  // the caller's cap is not converted into a partial call: that would invent
+  // a non-all-in under-call and corrupt action completion/side-pot semantics.
+  if (source.toCall > capRemaining + 0.005) {
+    boundedActions = boundedActions.filter((action) => action !== 'call');
+  }
+
+  const wagerAction = boundedActions.includes('raise')
+    ? 'raise'
+    : boundedActions.includes('bet')
+      ? 'bet'
+      : null;
+  if (wagerAction) {
+    const capTo = wagerAction === 'raise' ? player.bet + capRemaining : capRemaining;
+    maxRaiseTo = cents(Math.min(maxRaiseTo ?? capTo, capTo));
+    if (minRaiseTo === null || maxRaiseTo < minRaiseTo - 0.005) {
+      boundedActions = boundedActions.filter((action) => action !== wagerAction);
+      minRaiseTo = null;
+      maxRaiseTo = null;
+    }
+  } else {
+    minRaiseTo = null;
+    maxRaiseTo = null;
+  }
+
+  return {
+    ...source,
+    legalActions: boundedActions,
+    minRaiseTo,
+    maxRaiseTo,
+    commitmentCapRemaining: capRemaining,
+  };
+}
 
 /**
  * One telemetry key per gate, fired as LITERALS.
@@ -1557,29 +1633,32 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (stillAllowed <= 0) {
         return { success: false, error: "You have committed this table's cap for this hand" };
       }
+      // If the cap stops short of the live call while chips remain behind,
+      // rewriting all-in to a sized raise would create the same illegal
+      // non-all-in under-call the canonical menu removed. A genuinely short
+      // stack may still put its final chips in; only the table cap is barred
+      // from pretending the player is all-in.
+      if (stillAllowed < player.stack && toCall > capRemaining + 0.005) {
+        return {
+          success: false,
+          error: "Calling would exceed this table's per-hand commitment cap",
+        };
+      }
       if (stillAllowed < player.stack) {
         normalizedAction = state.currentBet > 0 ? 'raise' : 'bet';
         amount = state.currentBet > 0 ? player.bet + stillAllowed : stillAllowed;
       }
     }
 
-    // Clamp amounts
-    /**
-     * A CALL IS DELIBERATELY NOT CAPPED, and it does not need to be.
-     *
-     * Clamping a call would produce a SHORT call — an under-call that the pot
-     * logic has to turn into a side pot — which is a genuine pot-integrity
-     * hazard for a feature no live table has switched on. It is also
-     * unnecessary, because the cap is a per-player TOTAL and every wager that
-     * can be called has already been clamped above:
-     *
-     *   a caller's total after calling = the bettor's total for this hand,
-     *   the bettor's total is <= the cap by construction,
-     *   therefore the caller's total is <= the cap.
-     *
-     * A player can never call their way past a ceiling that every bet in front
-     * of them already respects.
-     */
+    // Clamp amounts. Never synthesize a partial non-all-in call: unequal dead
+    // or forced contributions mean the bettor can remain under its own cap
+    // while the same street call would put this player over theirs.
+    if (normalizedAction === 'call' && capRemaining !== Infinity && toCall > capRemaining + 0.005) {
+      return {
+        success: false,
+        error: "Calling would exceed this table's per-hand commitment cap",
+      };
+    }
     if (normalizedAction === 'call') amount = toCall;
     if (normalizedAction === 'bet' && amount !== undefined) {
       amount = isFixedLimit ? flBetSize : Math.max(state.minRaise, amount);
@@ -1831,61 +1910,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const player = state.players.find((p) => p.user_id === userId);
     if (!player) return defaultResult;
 
-    if (state.currentPlayerSeat !== player.seat) {
-      return { ...defaultResult, pot: state.pot };
-    }
-
-    const toCall = Math.max(0, state.currentBet - player.bet);
-    const actions: string[] = [];
-
-    if (toCall > 0) {
-      actions.push('fold', 'call');
-      if (player.stack > toCall) actions.push('raise');
-    } else {
-      actions.push('check');
-      if (player.stack > 0) actions.push('bet');
-    }
-    actions.push('all_in');
-
-    let minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
-    let maxRaiseTo = player.stack + player.bet;
-
-    // FIX 176: Bible V8 §4.14: Cap maxRaise for pot-limit games (PLO variants)
-    // Pot-limit max raise SIZE = pot + toCall (the pot after you call).
-    // Raise TO = currentBet + (pot + toCall). The old formula had an extra toCall
-    // which allowed raises ~toCall higher than legal pot-limit max.
-    // VARIANT OVERRIDE 2026-08-28: the LIVE hand's variant — the pot-limit
-    // clamp must bind on a PLO bomb hand even at an NLH table.
-    const variant = this.activeHandVariant();
-    const structure = bettingStructureFor(variant);
-    let betSize: number | undefined;
-    if (structure === 'pot_limit') {
-      const potLimitMaxBet = potLimitBettingPot(state) + toCall;
-      const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
-      maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
-    } else if (structure === 'fixed_limit') {
-      // 2026-08-23: min and max collapse onto the same number — the client has
-      // no slider to draw, only a "Bet 4" / "Raise to 8" button. Reporting the
-      // stack as maxRaise here is what would have let a limit table render a
-      // no-limit slider and then have every drag rejected.
-      betSize = fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage);
-      const wagerTo =
-        state.currentBet +
-        fixedLimitStreetBounds(state.actionHistory, state.stage, betSize, state.currentBet)
-          .raiseSize;
-      minRaiseTo = Math.min(wagerTo, maxRaiseTo);
-      maxRaiseTo = minRaiseTo;
-    }
+    const authoritative = this.handController.getAuthoritativeActionState(userId);
+    if (!authoritative) return { ...defaultResult, pot: state.pot };
+    const bounded = applyTableCommitmentCap(
+      authoritative,
+      player,
+      this.tableInfo?.cap_enabled === true,
+      Number(this.tableInfo?.cap_bb) || 0,
+      Number(this.tableInfo?.big_blind) || 0
+    );
 
     return {
-      canAct: true,
-      actions,
-      toCall,
-      minRaise: minRaiseTo,
-      maxRaise: maxRaiseTo,
+      canAct: bounded.canAct,
+      actions: bounded.legalActions,
+      toCall: bounded.toCall,
+      minRaise: bounded.minRaiseTo ?? 0,
+      maxRaise: bounded.maxRaiseTo ?? 0,
       pot: state.pot,
-      structure,
-      betSize,
+      structure: bounded.structure,
+      betSize: bounded.fixedBetSize ?? undefined,
     };
   }
 
@@ -2260,7 +2303,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     player: SeatedPlayer,
     seat: number,
     enginePlayer: any,
-    state: {
+    _state: {
       currentBet: number;
       minRaise: number;
       pot: number;
@@ -2310,7 +2353,38 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return;
     }
 
-    const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
+    // Phase 5 Round 1: read the controller ONCE after the authority fence. The
+    // callback's reduced argument is useful for dispatch, but is not the
+    // canonical decision state and must not be the source of poker rules.
+    if (!handControllerRef) return;
+    const state = handControllerRef.getState();
+    const authoritativePlayer = state.players.find((candidate) => candidate.seat === seat);
+    const controllerActions = handControllerRef.getAuthoritativeActionState(player.user_id);
+    if (!authoritativePlayer || !controllerActions || !controllerActions.canAct) {
+      reportError(
+        new Error('Current horse seat has no authoritative decision state'),
+        'ServerTableEngine.' + this.tableId + '.horse_state_missing'
+      );
+      this.cancelHorseDecisionWork();
+      return;
+    }
+    const boundedActions = applyTableCommitmentCap(
+      controllerActions,
+      authoritativePlayer,
+      this.tableInfo?.cap_enabled === true,
+      Number(this.tableInfo?.cap_bb) || 0,
+      Number(this.tableInfo?.big_blind) || 0
+    );
+    const toCall = boundedActions.toCall;
+    const contestablePot = handControllerRef.getContestablePotForCall(player.user_id);
+    if (contestablePot === null) {
+      reportError(
+        new Error('Current horse seat has no contestable-pot state'),
+        'ServerTableEngine.' + this.tableId + '.horse_contestable_pot_missing'
+      );
+      this.cancelHorseDecisionWork();
+      return;
+    }
 
     // AUDIT V2 (2026-07-23): horse_profile is a jsonb column — in production it
     // was {} for every horse, so the old styleMap[object] lookup ALWAYS fell
@@ -2322,8 +2396,41 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       player.user_id
     );
 
-    const fullState = this.handController ? this.handController.getState() : null;
-    const gameState = {
+    const activeVariant = this.activeHandVariant() || 'nlh';
+    const decisionPlayer: SeatPlayer = {
+      ...authoritativePlayer,
+      cards: [...authoritativePlayer.cards],
+      is_sitting_out:
+        authoritativePlayer.is_sitting_out === true ||
+        this.disconnectEngine.isSittingOut(this.tableId, authoritativePlayer.user_id),
+    };
+    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => ({
+      ...candidate,
+      // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
+      // only. Hero's private cards exist exactly once, on decisionPlayer.
+      cards: [],
+      is_sitting_out:
+        candidate.is_sitting_out === true ||
+        this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id),
+    }));
+    const gameState: HorseGameStateV2 = {
+      stateSchemaVersion: 1,
+      heroSeat: boundedActions.heroSeat,
+      currentPlayerSeat: boundedActions.currentPlayerSeat,
+      legalActions: [...boundedActions.legalActions],
+      toCall: boundedActions.toCall,
+      minRaiseTo: boundedActions.minRaiseTo,
+      maxRaiseTo: boundedActions.maxRaiseTo,
+      bettingStructure: boundedActions.structure,
+      fixedBetSize: boundedActions.fixedBetSize,
+      wagersCapped: boundedActions.wagersCapped,
+      commitmentCapRemaining: boundedActions.commitmentCapRemaining,
+      pots: handControllerRef
+        .computeLivePots()
+        .map((pot) => ({ ...pot, eligiblePlayers: [...pot.eligiblePlayers] })),
+      contestablePot,
+      rakeConfig: handControllerRef.getRakeConfigSnapshot(),
+      variantRules: horseVariantRulesFor(activeVariant),
       // V28 AUDIT FIX (2026-08-29): is_sitting_out was hardcoded false at the
       // deal (correctly, for HandController's purposes), which made EVERY
       // !is_sitting_out filter in the brain inert — oppsLeft, tableSize,
@@ -2332,17 +2439,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // one player disconnected, the heads-up branches never fired: the SB
       // opened on 0.44 instead of 0.24. The engine has the truth in
       // DisconnectEngine; stamp it onto the copy the brain reads.
-      players: state.players.map((p) => ({
-        ...p,
-        is_sitting_out:
-          p.is_sitting_out === true || this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
-      })),
-      communityCards: state.communityCards,
+      players: publicPlayers,
+      communityCards: [...state.communityCards],
       // MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
       // double/triple-board bomb hand the fleet prices EVERY board — the
       // brain averages per-board equity, exactly what the pot pays on.
-      communityCards2: fullState?.communityCards2 ?? [],
-      communityCards3: fullState?.communityCards3 ?? [],
+      communityCards2: [...(state.communityCards2 ?? [])],
+      communityCards3: [...(state.communityCards3 ?? [])],
       // BOMB POTS 2026-09-02 (V36): tell the brain this hand is a bomb pot.
       // Every range at the table is RANDOM (there was no preflop street to
       // narrow it), the pot is antes, and on a multi-board hand every pot
@@ -2354,20 +2457,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       boardCount:
         this.currentHandBombPot?.board_count ??
         1 +
-          ((fullState?.communityCards2?.length ?? 0) > 0 ? 1 : 0) +
-          ((fullState?.communityCards3?.length ?? 0) > 0 ? 1 : 0),
+          ((state.communityCards2?.length ?? 0) > 0 ? 1 : 0) +
+          ((state.communityCards3?.length ?? 0) > 0 ? 1 : 0),
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,
       stage: state.stage,
       // VARIANT OVERRIDE 2026-08-28: horses evaluate the hand they were DEALT
       // — PLO equity on a PLO bomb hand, whatever the table's label says.
-      gameVariant: (this.activeHandVariant() || 'nlh') as string,
+      gameVariant: activeVariant,
       bigBlind: this.tableInfo?.big_blind || 2,
       // AUDIT V2: position + action context for the V2 decision engine
-      dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,
-      lastRaise: fullState?.lastRaise,
-      actionHistory: fullState?.actionHistory,
+      dealerSeat: state.dealerSeat ?? this.currentHandDealerSeat,
+      lastRaise: state.lastRaise,
+      actionHistory: state.actionHistory.map((action) => ({ ...action })),
       // V11 (Dan 2026-08-22): cash and tournaments are DIFFERENT games. Tell
       // the brain EXPLICITLY which one this is (it was guessing from blind
       // size) plus the ante, so preflop ranges, ICM pressure, push/fold
@@ -2386,7 +2489,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // eviction reads - and widens toward the floor like a regular would.
       vpipFloor: this.vpipFloor(),
       ownVpip: (() => {
-        const row = this.nitStatus.get(enginePlayer.user_id);
+        const row = this.nitStatus.get(authoritativePlayer.user_id);
         return row ? { hands: row.hands, vpip: row.vpip } : undefined;
       })(),
       // V18 STRADDLE (2026-08-26): straddle posts are not ActionRecords, so
@@ -2401,15 +2504,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       ...this.horseTournamentContext(),
     };
 
+    // The shared builder binds every decision-affecting input and is repeated
+    // at the worker boundary. Worker timing and boot entropy never enter it;
+    // private opponent cards were removed before gameState was constructed.
     const decisionSnapshot: LiveHorseDecisionSnapshot = {
       generation: turnToken,
       fence,
+      decisionKey: '',
       decisionTimeMs,
-      player: enginePlayer,
+      player: decisionPlayer,
       gameState,
       style: horseStyle,
       mods: horseMods,
     };
+    decisionSnapshot.decisionKey = buildHorseDecisionKey(decisionSnapshot);
 
     // ROOT-CAUSE CAPACITY FIX (2026-09-08). HorseLogic is CPU-heavy and owns
     // process-global RNG, opponent memory and solver stores. Running it in
@@ -2504,6 +2612,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // genuinely random", and a uniform slow cadence is just a slower script.
         const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
         const requested = decision.thinkTime || 2500;
+        const safeWorkerFallback = fastResult.requestId === -1;
         let thinkTimeMs: number;
         // V28 AUDIT FIX (2026-08-29): the sentinel path scheduled the action PAST
         // the turn clock with no check that a bank existed to catch it. A horse's
@@ -2524,7 +2633,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           (bank as { usesRemaining?: number }).usesRemaining !== 0 &&
           ((bank as { remainingSeconds?: number }).remainingSeconds ?? 0) * 1000 >
             ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS + 2000;
-        if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL && bankUsable) {
+        if (safeWorkerFallback) {
+          // The queue-plus-compute deadline has already consumed the worker's
+          // entire budget. A check/fold fallback is a liveness action, not a
+          // poker decision, so do not strand the current turn behind another
+          // ordinary think timer after the worker has expired.
+          thinkTimeMs = 0;
+        } else if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL && bankUsable) {
           // A deliberate TIME BANK burn. Let the turn clock expire - the engine
           // auto-activates the bank on primary-timer expiry (Bible V8 6.2) - then
           // act a few seconds into it. Bounded well inside the granted bank so a
@@ -2665,8 +2780,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
           // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
           // At an AoF table the preflop menu is fold or shove, and HandController
-          // rejects everything else. The horse brain does not know about AoF, so
-          // its decision is coerced here: any non-fold intent becomes the all-in.
+          // rejects everything else. The Phase 5 snapshot and brain both know
+          // about AoF; this commit-side coercion remains as a final legality belt.
           // (A fold with nothing owed still normalizes to the legal check below.)
           if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
             if (action !== 'fold') {
@@ -2686,12 +2801,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
           // Clamp amounts
           //
-          // 2026-08-23: the horses size their bets no-limit style (HorseLogic reads
-          // only `isPotLimit`). On a fixed-limit table every one of those sizings is
-          // illegal, so without this snap each horse decision would be rejected and
-          // fall through to the check/fold degradation below - a limit table full of
-          // bots that never bet. Snap to the street's legal wager instead, exactly
-          // as the human path does.
+          // 2026-08-23: the original horse path sized every bet no-limit style. The
+          // Phase 5 canonical boundary now supplies and enforces the exact fixed-
+          // limit bound; this commit-side snap remains as a final legality belt.
           // Same 2026-08-28 override correction as the human clamp above: the
           // hand's variant, not the table's.
           const horseFlBetSize = isFixedLimitVariant(this.activeHandVariant())
@@ -2699,11 +2811,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               // the same HandStage literals the controller emits.
               fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)
             : 0;
-          /* CAP FIX 2026-08-27: the horse path is a parallel implementation of the
-         human clamp chain and carried NO cap term at all — `cap_enabled` /
-         `cap_bb` were read only in _handlePlayerActionInner, so a horse at a
-         capped table sized and shoved against its raw stack, straight past the
-         ceiling the host set. Same arithmetic as the human path. */
+          /* CAP FIX 2026-08-27: this commit-side check predates the Phase 5 shared
+         canonical cap menu. Keep it as a final belt against a stale delayed
+         decision; the worker has already received the same ceiling. */
           const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
           const horseCapChips =
             this.tableInfo?.cap_enabled === true && horseCapBB > 0
@@ -2742,9 +2852,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // illegal too - so a horse that wanted to RAISE folded the hand it had
           // just decided to raise with. Substitute the closest legal intent instead
           // (call when money is owed, check when none is), which cannot be refused.
-          // The horse snapshot is a reduced shape with no actionHistory, so the cap
-          // is read from the controller's own state - the same list validateAction
-          // will be judged against a few lines below.
+          // Re-read the controller's action history at commit time so the final
+          // guard is judged against the same list performAction will validate.
           const liveState = handControllerRef.getState();
           if (
             horseFlBetSize > 0 &&

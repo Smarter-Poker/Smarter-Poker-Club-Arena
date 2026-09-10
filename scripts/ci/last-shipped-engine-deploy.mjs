@@ -1,6 +1,13 @@
 /**
  * How long has it been since WE last restarted the engine?
  *
+ * ── WHAT READS IT NOW (2026-09-10) ───────────────────────────────────────────
+ * The restart-coalescing gate this was written for is gone (the :55 break is
+ * the spacing, and with no cron a coalesced run would strand its commit). The
+ * deploy still reads this for one thing: an engine younger than our own last
+ * shipped deploy was restarted by something else - the UNPLANNED RESTART
+ * warning. The history below is why it asks the ledger and not the process.
+ *
  * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
  * The restart-coalescing gate in auto-deploy-hetzner.yml used to read
  * `/health.uptime`. Uptime answers "when did this process start". The gate is

@@ -237,3 +237,28 @@ describe('tournament sit-outs retain their forced-bet obligations', () => {
     expect(engine.handController).toBeNull();
   });
 });
+
+describe('a pause arriving while the controller is being prepared', () => {
+  it.each([
+    ['maintenance', (e: any) => e.pauseForMaintenance(300_000)],
+    ['deal discussion', (e: any) => e.pauseForFinalTableDeal(60_000)],
+    ['synchronized break', (e: any) => e.pauseAfterHand(420_000, { beforeNextHand: true })],
+    ['operator', (e: any) => e.adminPause()],
+  ] as const)('discards the unstarted controller for %s', async (_name, arm) => {
+    const { engine, seats } = fixture();
+    engine.running = true;
+    engine.isCurrentEngine = () => true;
+    const start = vi.fn(() => {
+      throw new Error('unexpected hand start');
+    });
+    engine.fetchTimeBankExtras = async () => {
+      engine.handController.start = start;
+      arm(engine);
+      return new Map();
+    };
+    await engine.dealHand(seats);
+    expect(start).not.toHaveBeenCalled();
+    expect(engine.handController).toBeNull();
+    expect(engine.currentHandDealtStacks.size).toBe(0);
+  });
+});

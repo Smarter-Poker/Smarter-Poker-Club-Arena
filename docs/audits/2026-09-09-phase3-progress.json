@@ -119,7 +119,8 @@
       "id": "K06",
       "requirement": "Keep maintenance, hand-for-hand, deal discussion and operator pauses independently owned. One resume cannot clear another.",
       "priority": "P1",
-      "status": "partial_behavioral_correction"
+      "status": "behavior_verified_pending_engine_adoption",
+      "evidence": "pause_ownership_correction"
     },
     {
       "id": "K07",
@@ -1270,7 +1271,7 @@
     "observed": "An active 10/20/2 hand keeps its original stakes and legal raise after a 20/40/4 level update. The next hand now reads and posts 20/40/4 even when that update occurs during the prepared between-hand rest. Delayed/failed reads cannot pass the deal boundary; the new rest case performs one blind read.",
     "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Production adoption of the new rest-boundary correction remains pending.",
     "full_control_closed": false,
-    "status": "behavior_verified_pending_publication_and_engine_adoption",
+    "status": "merged_pending_engine_adoption",
     "baseline_rest_failure": {
       "current_bet": 20,
       "pot": 36,
@@ -1281,7 +1282,28 @@
       "NextHandInputs.test.ts": 3,
       "server_types": "passed"
     },
-    "correction_commit": "10f03f68fcd80533140a24c2a57559e44686bb20"
+    "correction_commit": "10f03f68fcd80533140a24c2a57559e44686bb20",
+    "pull_request": 4092,
+    "merge_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+    "ci_run": 34431826633,
+    "ci_conclusion": "success",
+    "dispatch": {
+      "requested_at": "2026-09-10T03:09:43.732994+00:00",
+      "status": 204,
+      "sha": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "includes_pr": 4092
+    },
+    "successor_dispatch": {
+      "requested_at": "2026-09-10T03:27:18.326888+00:00",
+      "status": 204,
+      "sha": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "reason": "Prior two requests cancelled; no active or queued Hetzner run; live build does not contain PR4092."
+    },
+    "successor_run": 34433388061
   },
   "registration_funding_and_receipt_correction": {
     "control": "T01",
@@ -1392,5 +1414,25 @@
       "ci_run": 34430313387,
       "ci_conclusion": "success"
     }
+  },
+  "pause_ownership_correction": {
+    "controls": ["K05", "K06"],
+    "status": "behavior_verified_pending_publication_and_engine_adoption",
+    "baseline_failures": {
+      "pause_during_rest": 4,
+      "pause_during_controller_preparation": 4,
+      "operator_resume_releases_other_state": 4,
+      "other_resume_releases_operator_state": 3
+    },
+    "tests_passed": {
+      "PauseDuringPreparedRest.test.ts": 5,
+      "TournamentBlindSnapshot.test.ts": 13,
+      "TerminalCloseoutBoundary.test.ts": 9,
+      "FinalTableDealPause.test.ts": 12
+    },
+    "server_types": "passed",
+    "behavior": "Recheck all next-hand pause owners after prepared rest and before controller start. Ordinary hand-for-hand re-arm still permits one shared hand. Operator resume cannot clear maintenance lock or transition another owner to running; other resumes preserve the operator state.",
+    "limits": "Synthetic transport, roster and lease inputs; real dealing loop, controller preparation and pause methods. Does not certify durable synchronized deadlines, drain-timeout policy, database move cutover, or engine adoption.",
+    "full_controls_closed": false
   }
 }

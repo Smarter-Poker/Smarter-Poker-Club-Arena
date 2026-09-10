@@ -4260,13 +4260,22 @@ export abstract class ServerTableEngineBase {
     this.releasePauseGate();
   }
 
-  /**
-   * Drop a controller that was prepared but has not crossed start().  This is
-   * local lifecycle cleanup only: no table, seat, stack, or wallet write is
-   * performed here.
-   */
-  protected discardPreparedHandForTerminalCloseout(): boolean {
-    if (!this.terminalCloseoutPaused) return false;
+  /** Owners that forbid opening the next hand, including an operator hold. */
+  protected isNextHandPaused(): boolean {
+    return (
+      this.adminPauseLock ||
+      this.maintenanceLock ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      this.tournamentMovePauseOwners.size > 0 ||
+      (this.handForHandPaused && this.holdBeforeNextHand)
+    );
+  }
+
+  /** Drop an unstarted controller without a table, seat, stack or wallet write. */
+  protected discardPreparedHandForPause(): boolean {
+    if (!this.isNextHandPaused()) return false;
     this.handController = null;
     this.currentHandDealtStacks.clear();
     if (this.handSpan) {
@@ -4434,7 +4443,7 @@ export abstract class ServerTableEngineBase {
     this.pauseMaxWaitMs = null;
     this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
-    if (this.tableFSM.state === 'paused') {
+    if (this.tableFSM.state === 'paused' && !this.adminPauseLock && !this.maintenanceLock) {
       this.tableFSM.transition('running');
     }
     this.releasePendingPauseWait();

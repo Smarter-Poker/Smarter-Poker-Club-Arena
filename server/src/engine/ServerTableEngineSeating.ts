@@ -1439,7 +1439,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   public adminResume(): { success: boolean } {
     this.adminPauseLock = false;
-    this.maintenanceLock = false;
+    // Clearing the operator's request cannot announce or transition a resume
+    // while a different owner still holds this table.
+    if (this.isNextHandPaused() || this.handForHandPaused) return { success: true };
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
     }
@@ -1460,6 +1462,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     this.maintenanceLock = locked;
     if (locked && this.tableFSM.state === 'running') {
       this.tableFSM.transition('paused');
+    } else if (
+      !locked &&
+      !this.isNextHandPaused() &&
+      !this.handForHandPaused &&
+      this.tableFSM.state === 'paused'
+    ) {
+      this.tableFSM.transition('running');
     }
     console.log(`[ServerTableEngine:${this.tableId}] Maintenance lock: ${locked}`);
     return { success: true };

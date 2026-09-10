@@ -19,12 +19,15 @@ interface LeaderboardCardProps {
   title?: string;
   limit?: number;
   showCurrentUser?: boolean;
+  /** `glass`: no box of its own, printed on a console's glass (#ClubArenaConsole). */
+  variant?: 'card' | 'glass';
 }
 
 function LeaderboardCardInner({
   promotionId,
   title = 'Leaderboard',
   limit = 10,
+  variant = 'card',
   showCurrentUser = true,
 }: LeaderboardCardProps) {
   const { user } = useAuthUser();
@@ -105,7 +108,7 @@ function LeaderboardCardInner({
 
   if (loading) {
     return (
-      <div className={styles.card}>
+      <div className={`${styles.card} ${variant === 'glass' ? styles.glass : ''}`}>
         <div className={styles.loading}>
           <div className={styles.spinner}></div>
         </div>
@@ -114,15 +117,19 @@ function LeaderboardCardInner({
   }
 
   return (
-    <div className={styles.card}>
-      <div className={styles.header}>
-        <h3>{title}</h3>
-        <span className={styles.trophy}>T</span>
-      </div>
+    <div className={`${styles.card} ${variant === 'glass' ? styles.glass : ''}`}>
+      {/* On a console's glass the row above already names the race, and a
+          glyph is never printed on the master (#ClubArenaConsole). */}
+      {variant !== 'glass' && (
+        <div className={styles.header}>
+          <h3>{title}</h3>
+          <span className={styles.trophy}>T</span>
+        </div>
+      )}
 
       {entries.length === 0 ? (
         <div className={styles.empty}>
-          <span>≡</span>
+          {variant !== 'glass' && <span>≡</span>}
           <p>No Entries Yet</p>
         </div>
       ) : (

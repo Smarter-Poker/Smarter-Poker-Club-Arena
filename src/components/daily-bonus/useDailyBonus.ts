@@ -68,6 +68,7 @@ export function applyClaim(
         claimed: true,
         claimed_at: new Date().toISOString(),
         granted,
+        revealed: result.revealed ?? t.revealed ?? null,
         capped: false,
       };
     }
@@ -77,6 +78,26 @@ export function applyClaim(
     return t;
   });
   const unclaimed = tiles.filter((t) => !t.claimed && !t.locked).length;
+  // Phase 3: a shield tile is now held; a boost tile is now running. Both are
+  // what the ledger returned, never a figure of the sheet's own.
+  const shield =
+    granted.kind === 'shield'
+      ? {
+          held: (prev.shield?.held ?? 0) + Math.max(0, granted.quantity),
+          expires_at: prev.shield?.expires_at ?? granted.expires_at ?? null,
+        }
+      : prev.shield;
+  const boost =
+    granted.kind === 'boost'
+      ? {
+          active: true,
+          factor: granted.factor,
+          kind: 'mission_diamonds',
+          ends_at: granted.ends_at,
+          seconds_left: Math.max(0, Math.round((granted.hours ?? granted.quantity) * 3600)),
+          applied_diamonds: 0,
+        }
+      : prev.boost;
   return {
     ...prev,
     tiles,
@@ -84,6 +105,8 @@ export function applyClaim(
     claimed_today: true,
     streak: typeof result.streak === 'number' ? result.streak : prev.streak,
     caps,
+    shield,
+    boost,
   };
 }
 
@@ -93,9 +116,12 @@ export function useDailyBonus(enabled: boolean) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [claimingSlot, setClaimingSlot] = useState<number | null>(null);
   const [secondsToReset, setSecondsToReset] = useState(0);
+  const [boostSecondsLeft, setBoostSecondsLeft] = useState(0);
   const mounted = useRef(true);
   /** Absolute instant of the Chicago midnight the last status reported. */
   const deadline = useRef<number | null>(null);
+  /** Absolute instant a live Mission Boost ends, from the status or the claim that started it. */
+  const boostEnds = useRef<number | null>(null);
   /** The deadline a rollover re-read has already been issued for. */
   const rolledOver = useRef<number | null>(null);
   const inFlight = useRef<Promise<void> | null>(null);
@@ -119,8 +145,11 @@ export function useDailyBonus(enabled: boolean) {
         if (!mounted.current) return;
         const seconds = Math.max(0, Number(next.seconds_to_reset) || 0);
         deadline.current = Date.now() + seconds * 1000;
+        const boostLeft = next.boost?.active ? Math.max(0, next.boost.seconds_left ?? 0) : 0;
+        boostEnds.current = boostLeft > 0 ? Date.now() + boostLeft * 1000 : null;
         setStatus(next);
         setSecondsToReset(seconds);
+        setBoostSecondsLeft(boostLeft);
       } catch (err) {
         if (!mounted.current) return;
         setLoadError(err instanceof Error ? err.message : 'Could Not Load Your Daily Bonus');
@@ -145,6 +174,10 @@ export function useDailyBonus(enabled: boolean) {
   useEffect(() => {
     if (!status) return;
     const tick = () => {
+      const ends = boostEnds.current;
+      // The boost clock is the same kind of deadline: the distance to the
+      // instant the ledger said it ends, never a decremented counter.
+      setBoostSecondsLeft(ends == null ? 0 : Math.max(0, Math.ceil((ends - Date.now()) / 1000)));
       const at = deadline.current;
       if (at == null) return;
       const left = Math.max(0, Math.ceil((at - Date.now()) / 1000));
@@ -167,6 +200,15 @@ export function useDailyBonus(enabled: boolean) {
         const result = await dailyBonusService.claim(status.today, tile.slot);
         if (!mounted.current) return null;
         if (result.success && result.granted) {
+          if (result.granted.kind === 'boost') {
+            const hours = result.granted.hours ?? result.granted.quantity;
+            const ends = result.granted.ends_at ? Date.parse(result.granted.ends_at) : NaN;
+            boostEnds.current = Number.isFinite(ends) ? ends : Date.now() + hours * 3600 * 1000;
+            // The clock is set HERE, not left to the next tick. The readout is
+            // gated on it, and a boost that has just been claimed must never
+            // render as "not running" for the second before the interval fires.
+            setBoostSecondsLeft(Math.max(0, Math.ceil((boostEnds.current - Date.now()) / 1000)));
+          }
           setStatus((prev) => (prev ? applyClaim(prev, tile.slot, result) : prev));
           return { slot: tile.slot, result, refusal: '' };
         }
@@ -190,7 +232,16 @@ export function useDailyBonus(enabled: boolean) {
     [status, claimingSlot, load]
   );
 
-  return { status, loading, loadError, reload: load, claim, claimingSlot, secondsToReset };
+  return {
+    status,
+    loading,
+    loadError,
+    reload: load,
+    claim,
+    claimingSlot,
+    secondsToReset,
+    boostSecondsLeft,
+  };
 }
 
 /** hh:mm:ss for the countdown. */

@@ -81,6 +81,26 @@ describe('the My Wallets count line', () => {
   });
 
   /**
+   * THE PAGE MUST NOT TAKE THE COUNT BACK (2026-09-10). Everything above was
+   * true on 2026-09-09 and the plate still printed nothing, because the page
+   * reset `visibleWalletCount` to 0 from its own effect on the club id. That
+   * effect and the wallet's publish belong to the same commit, a child's
+   * effects run before its parent's, so the reset landed after the publish
+   * and wiped it - measured on production, signed in, on a phone profile:
+   * empty at fifteen seconds on a cold load, a warm reload and a client-side
+   * re-entry. The wallet is the ONLY writer of that state. The mechanism is
+   * demonstrated in tests/unit/theWalletsCountSurvivesTheClubReset.test.tsx.
+   */
+  it('is written only by the wallet: the page never resets it', () => {
+    // The state hook and the prop that hands the setter to DynamicWallet are
+    // the only two places the setter may appear. Any CALL of it in this file
+    // is a reset, and a reset wipes the count.
+    const calls = PAGE.match(/setVisibleWalletCount\s*\(/g) ?? [];
+    expect(calls, 'ClubHomePage calls setVisibleWalletCount itself').toEqual([]);
+    expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
+  });
+
+  /**
    * "ALL FONTS AND BUTTONS MUST BE CENTERED INSIDE THEIR FRAMES" (Dan). The
    * painted MY WALLETS title's optical centre is 54.65% of the plate, measured
    * off the my-wallets-v1 master, and the zone must be symmetric about it.

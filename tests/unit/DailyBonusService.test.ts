@@ -179,6 +179,42 @@ describe('DailyBonusService', () => {
     expect(status.seconds_to_reset).toBe(0);
     expect(status.shown_today).toBe(false);
     expect(status.tiles).toEqual([]);
+    // Phase 3 fields read as nothing held, nothing running, nothing protected
+    // when the payload predates them.
+    expect(status.shield).toEqual({ held: 0, expires_at: null });
+    expect(status.boost).toEqual({ active: false });
+    expect(status.streak_protected).toBe(false);
+  });
+
+  it('carries the shield, the live boost and a protected day through, as the ledger reports them', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        ...STATUS,
+        shield: { held: 2, expires_at: '2026-10-10T18:00:00+00:00' },
+        boost: {
+          active: true,
+          factor: 2,
+          kind: 'mission_diamonds',
+          ends_at: '2026-09-09T18:00:00+00:00',
+          seconds_left: 4000,
+          applied_diamonds: 30,
+        },
+        streak_protected: true,
+      },
+      error: null,
+    });
+    const status = await dailyBonusService.getStatus();
+    expect(status.shield).toEqual({ held: 2, expires_at: '2026-10-10T18:00:00+00:00' });
+    expect(status.boost.active).toBe(true);
+    expect(status.boost.seconds_left).toBe(4000);
+    expect(status.boost.applied_diamonds).toBe(30);
+    expect(status.streak_protected).toBe(true);
+    // A boost the ledger says is not active never becomes one here.
+    mocks.rpc.mockResolvedValueOnce({
+      data: { ...STATUS, boost: { active: 'yes', seconds_left: 99 } },
+      error: null,
+    });
+    expect((await dailyBonusService.getStatus()).boost).toEqual({ active: false });
   });
 
   it('marks today shown through its own RPC and swallows a failure (the local mark covers it)', async () => {
@@ -193,6 +229,7 @@ describe('DailyBonusService', () => {
   it('maps every server reason to Title Case copy and reads an unknown one as itself', () => {
     expect(claimReasonText('vip_only')).toBe('VIP Members Only');
     expect(claimReasonText('daily_cap')).toBe('Daily Diamond Cap Reached');
+    expect(claimReasonText('boost_already_live')).toBe('A Mission Boost Is Already Running');
     expect(claimReasonText('something_new')).toBe('Could Not Claim (something_new)');
   });
 

@@ -1,0 +1,15 @@
+{
+  "_owner": "fix/hetzner-club-arena-publish-authority",
+  "_comment": "These nine public RPCs were verified in the production catalog on 2026-09-10 after the Stage-B compatibility migration. The live snapshot had not yet absorbed them, which made the phantom-reference gate report working tournament-deal calls as missing.",
+  "functions": [
+    "fn_begin_tournament_deal_review",
+    "fn_cancel_tournament_deal_review",
+    "fn_close_tournament_deal_review",
+    "fn_complete_tournament_terminal_proposal",
+    "fn_get_tournament_deal_consensus",
+    "fn_get_tournament_deal_proposal",
+    "fn_get_tournament_deal_review",
+    "fn_request_tournament_deal_review",
+    "fn_resolve_tournament_terminal_proposal_outcome"
+  ]
+}

@@ -54,6 +54,8 @@
  */
 import process from 'node:process';
 
+import { groupByWorkflow, redWorkflows } from './lib/workflowVerdicts.mjs';
+
 const REPO = process.env.GITHUB_REPOSITORY || 'Smarter-Poker/Smarter-Poker-World-Hub';
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
 const HOURS = Number(process.env.MAIN_RED_HOURS || 6);
@@ -125,42 +127,19 @@ if (runs.length === 0) {
 }
 
 // Newest first, then group by workflow.
+//
+// A SKIPPED OR CANCELLED RUN IS NOT A GREEN RUN. This used to read the single
+// newest run per workflow and require `conclusion === 'failure'`, which made any
+// workflow that interleaves skips with failures invisible - and an event-driven
+// `workflow_run` listener with a concurrency group interleaves by construction.
+// Measured 2026-09-09: Post-Deploy E2E (production) had failed 24 times in 21
+// hours with no success, 7 of 7 verdicts in-window were failures, and the newest
+// run - the only one read - was `cancelled`. See scripts/ci/lib/workflowVerdicts.mjs.
 runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-const byWorkflow = new Map();
-for (const r of runs) {
-  if (!byWorkflow.has(r.name)) byWorkflow.set(r.name, []);
-  byWorkflow.get(r.name).push(r);
-}
+const byWorkflow = groupByWorkflow(runs);
 
 const now = Date.now();
-const red = [];
-
-for (const [name, list] of byWorkflow) {
-  const latest = list[0];
-  if (latest.conclusion !== 'failure') continue;
-
-  // How many consecutive failures, and when did the rot start?
-  let consecutive = 0;
-  let firstBad = latest;
-  for (const r of list) {
-    if (r.conclusion !== 'failure') break;
-    consecutive++;
-    firstBad = r;
-  }
-
-  const hours = (now - new Date(firstBad.created_at)) / 3_600_000;
-  const lastGreen = list.find((r) => r.conclusion === 'success');
-
-  red.push({
-    name,
-    consecutive,
-    hours,
-    since: firstBad.created_at,
-    url: latest.html_url,
-    lastGreen: lastGreen ? lastGreen.created_at : null,
-    seen: list.length,
-  });
-}
+const red = redWorkflows(runs, now);
 
 // Open issues, so a workflow that already raised one is not double-reported.
 let openIssues = [];
@@ -196,7 +175,7 @@ const hrs = (h) => (h >= 48 ? `${(h / 24).toFixed(1)} days` : `${h.toFixed(1)}h`
 console.log(`Scanned ${runs.length} completed runs on ${BRANCH}, ${byWorkflow.size} workflows.`);
 
 if (red.length === 0) {
-  console.log(`OK - every workflow's latest run on ${BRANCH} is green or neutral.`);
+  console.log(`OK - every workflow's latest VERDICT on ${BRANCH} is green.`);
   process.exit(0);
 }
 
@@ -212,7 +191,8 @@ console.log('');
 for (const r of red) {
   const mark = r.loud ? 'loud ' : r.hours >= HOURS ? 'SILENT' : 'fresh';
   console.log(
-    `  ${mark} ${r.name} - ${r.consecutive} consecutive failure(s) over ${hrs(r.hours)}` +
+    `  ${mark} ${r.name} - ${r.consecutive} consecutive failed verdict(s) over ` +
+      `${r.windowLimited ? 'at least ' : ''}${hrs(r.hours)}` +
       (r.lastGreen ? `, last green ${r.lastGreen}` : ', no green run in the window') +
       (r.loud ? ' [an open issue already names it]' : '')
   );
@@ -230,7 +210,8 @@ if (overdue.length === 0) {
 
 const lines = overdue.map(
   (r) =>
-    `- **${r.name}** - ${r.consecutive} consecutive failures over ${hrs(r.hours)}` +
+    `- **${r.name}** - ${r.consecutive} consecutive failed verdicts over ` +
+    `${r.windowLimited ? 'at least ' : ''}${hrs(r.hours)}` +
     (r.lastGreen ? `, last green \`${r.lastGreen}\`` : ', no green run in the scanned window') +
     `\n  ${r.url}`
 );

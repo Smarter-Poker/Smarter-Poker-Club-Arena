@@ -1,0 +1,39 @@
+{
+  "phase": 3,
+  "controls": ["T01", "T02", "T04", "T05", "T06"],
+  "status": "prepared_client_fix_and_native_refund_evidence",
+  "source_base": "02ea27e84d86cb73485df273a4fab11c3d7154f8",
+  "client_tests_passed": 127,
+  "client_types": "passed",
+  "production_build": "passed_local_not_published",
+  "native_groups_passed": 14,
+  "native_clients": ["PostgreSQL 17 psql", "pinned Node pg 8.16.3"],
+  "native_cases": [
+    "real entry and public refund close original wallet escrow fees and roster once",
+    "refund preserves charged club wallet after another older membership appears",
+    "refund returns immutable original charge when displayed entry price changes",
+    "late unregistration receipt failure rolls back every funded relation",
+    "overlapping same_request unregistrations pay one original entry",
+    "overlapping different_request unregistrations pay one original entry",
+    "unregistration waiting behind committed start preserves funded entry",
+    "scheduled start cutoff refuses voluntary refund without financial writes",
+    "lost prestart refund response remains an exact read after start",
+    "free entry unregisters with zero spendable credit and a durable receipt",
+    "old refund identity cannot unregister a later paid registration",
+    "cutoff reached during refund reverses the whole uncommitted transaction",
+    "configured 1 5 10 25 and 40 entries fund disclosed components and refund exact cents",
+    "bounty PKO and mystery entry components return through the common funded refund"
+  ],
+  "production_financial_mutations": false,
+  "push_or_deployment": false,
+  "migration_required": false,
+  "controls_closed": false,
+  "evidence": "docs/audits/2026-09-10-phase3-funded-entry-unregistration.md",
+  "remaining": [
+    "Actual launch and accepted-hand concurrency",
+    "Satellite transfer and cancellation boundaries",
+    "Full HTTP/RLS and live supporting trigger graph",
+    "Client publication and runtime adoption"
+  ],
+  "source_guard_tests_passed": 43
+}

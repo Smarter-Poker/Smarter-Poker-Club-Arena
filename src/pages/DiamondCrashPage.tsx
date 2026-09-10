@@ -288,7 +288,7 @@ export default function DiamondCrashPage() {
     if (player && cfg && player.rounds_today >= cfg.max_rounds_per_player_per_day)
       return 'You Have Reached Today’s Limit';
     if (betOption && !betOption.playable)
-      return 'The Bank Cannot Cover A Win At That Bet Right Now';
+      return 'The Club Cannot Cover A Win At That Bet Right Now';
     if (player && player.spendable < bet) {
       return cfg?.purchased_only && player.diamonds >= bet
         ? 'Crash Takes Purchased Diamonds Only'

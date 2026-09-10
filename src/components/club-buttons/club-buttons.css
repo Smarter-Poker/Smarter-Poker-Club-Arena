@@ -71,6 +71,25 @@
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
 }
 
+/* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). One shell, two places: the club
+   lobby, where it is the club's own door and stands on its own; and inside a
+   buy-in, rebuy or add-on modal, where it follows the balance row and needs
+   only the gap. Nothing is drawn here - the shell is painted - so this is
+   placement and nothing else. */
+.diamonds-to-chips,
+.lobby-diamond-games {
+  display: block;
+  width: 100%;
+}
+
+.diamonds-to-chips {
+  margin: 0.5rem 0 0.25rem;
+}
+
+.lobby-diamond-games {
+  margin: 0.75rem 0;
+}
+
 .cb-action {
   --cb-state-color: var(--club-blue-core);
   position: relative;

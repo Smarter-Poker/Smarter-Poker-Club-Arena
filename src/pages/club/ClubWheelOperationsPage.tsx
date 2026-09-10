@@ -5,18 +5,22 @@
  *
  * What a union owner (or a standalone club's owner) needs to run the wheel and
  * nothing else: turn it on and off, set the spin price, set the exposure
- * allowance (the most the host accepts being ahead of what the wheel has minted
- * it), the diamond seed the prize float starts from, the per-player caps, and
+ * allowance (the most the host accepts being ahead of what the wheel has taken
+ * in), the diamond seed the prize float starts from, the per-player caps, and
  * READ the numbers that say whether the wheel is doing what the odds table
  * promises - realised return against the 80 percent spec as a z-score, the
- * lock rate, the exposure headroom, and the invariant (paid <= minted +
+ * lock rate, the exposure headroom, and the invariant (paid <= taken in +
  * allowance) that the arithmetic makes impossible to break and
- * fn_wheel_metrics re-derives anyway.
+ * fn_wheel_metrics re-derives anyway. AMENDED 2026-09-10: nothing is minted
+ * any more. The diamonds a spin takes in are the host owner's, and every chip
+ * the wheel pays leaves the host's promo wallet, which is why that wallet and
+ * the owner's diamonds are the two figures at the top of this page.
  *
  * THE FREE SPIN (2026-09-09) has its own console here: the switch and the
  * daily pot post to fn_wheel_set_free_spin, the day's count and what it has
- * paid come from fn_wheel_free_state. It pays diamonds only, so it never
- * touches the bank, the exposure or the invariant printed above it.
+ * paid come from fn_wheel_free_state. It pays diamonds only, out of the
+ * owner's own balance, so it never touches the promo wallet, the exposure or
+ * the invariant printed above it.
  *
  * Every control posts a patch to fn_wheel_set_config, which decides who may:
  * fn_wheel_can_operate (union owner, co-owner or admin through
@@ -297,7 +301,7 @@ export default function ClubWheelOperationsPage() {
   const pool = metrics?.pool;
   const enabled = Boolean(cfg?.enabled);
   const freeOn = Boolean(cfg?.free_spin_enabled);
-  const hostWord = metrics?.host_kind === 'union' ? 'Union Bank' : 'Club Treasury';
+  const hostWord = metrics?.host_kind === 'union' ? 'Union' : 'Club';
   const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
   return (
@@ -320,7 +324,18 @@ export default function ClubWheelOperationsPage() {
         aria-labelledby="wheel-ops-title"
       >
         <div className={styles.rows}>
-          <Row label={hostWord} value={chips(metrics?.bank_chips)} meta="Chips To Pay" />
+          <Row
+            label={`${hostWord} Promo Wallet`}
+            value={chips(metrics?.bank_chips)}
+            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'silver'}
+            meta="Every Chip Prize Is Paid From Here"
+          />
+          <Row
+            label="Owner Diamonds"
+            value={compactChips(metrics?.owner_diamonds ?? 0)}
+            ink="blue"
+            meta="Where The Diamonds Taken In Land, And Where Diamond Prizes Come From"
+          />
           <Row
             label="Exposure"
             value={chips(metrics?.exposure_chips)}
@@ -347,12 +362,13 @@ export default function ClubWheelOperationsPage() {
             label="Invariant"
             value={metrics?.invariant_ok === false ? 'Broken' : 'Holds'}
             ink={metrics?.invariant_ok === false ? 'red' : 'green'}
-            meta="Paid Against Minted"
+            meta="Paid Against Taken In"
           />
         </div>
         <p className="sc-copy">
-          Paid Never Exceeds Minted Plus The Allowance; The Per-Spin Gate Makes That Arithmetic, And
-          The Metrics Re-Derive It. A Locked Tier Is One The Pool Could Not Cover On That Spin.
+          Paid Never Exceeds What Was Taken In Plus The Allowance, And Every Chip Leaves The Promo
+          Wallet; The Per-Spin Gate Makes That Arithmetic, And The Metrics Re-Derive It. A Locked
+          Tier Is One The Promo Wallet Could Not Cover On That Spin.
         </p>
       </SpadeConsole>
 
@@ -457,7 +473,7 @@ export default function ClubWheelOperationsPage() {
             mode="decimal"
             value={draft.exposure_allowance_chips}
             onChange={set('exposure_allowance_chips')}
-            hint="The Most The Wheel May Pay Beyond What It Has Minted You."
+            hint="The Most The Wheel May Pay Beyond What It Has Taken In."
           />
           <Field
             label="Diamond Seed (Diamonds)"
@@ -567,8 +583,17 @@ export default function ClubWheelOperationsPage() {
             value={compactChips(pool?.intake_diamonds ?? 0)}
             ink="blue"
           />
-          <Row label={`Chips Minted To The ${hostWord}`} value={chips(pool?.chips_minted)} />
-          <Row label="Chips Paid To Players" value={chips(pool?.chips_paid)} ink="gold" />
+          <Row
+            label="Chips Taken In"
+            value={chips(metrics?.intake_chips)}
+            meta="At The Bridge Rate"
+          />
+          <Row
+            label="Chips Paid To Players"
+            value={chips(pool?.chips_paid)}
+            ink="gold"
+            meta="Out Of The Promo Wallet"
+          />
           <Row
             label="Diamond Prize Float"
             value={compactChips(Math.floor(pool?.diamond_float ?? 0))}

@@ -4,6 +4,7 @@ import { soundService } from '../../services/SoundService';
 // tournament buy-ins must never be decimal buy-ins, whole numbers only."
 // This file used to define its own money() that FORCED two decimals.
 import { money, moneyExact } from '../../utils/buyIn';
+import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
@@ -23,6 +24,14 @@ interface RebuyModalProps {
   onConfirm: () => void;
   onClose: () => void;
   isProcessing: boolean;
+  /**
+   * The club whose host runs the Diamond Games (Dan 2026-09-10: a player who
+   * cannot cover a rebuy is offered the diamonds-to-chips door rather than a
+   * dead end). Omitted, the door is simply not offered.
+   */
+  diamondGamesClubId?: string | null;
+  /** Leave the table for the games. The parent decides what closing means. */
+  onPlayDiamonds?: (path: string) => void;
 }
 
 const RebuyModal: React.FC<RebuyModalProps> = ({
@@ -34,6 +43,8 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   onConfirm,
   onClose,
   isProcessing,
+  diamondGamesClubId,
+  onPlayDiamonds,
 }) => {
   if (!isOpen) return null;
 
@@ -93,6 +104,14 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
               </span>
             </div>
           </div>
+          {!canAfford && onPlayDiamonds && (
+            <DiamondsToChipsButton
+              clubId={diamondGamesClubId}
+              enabled={isOpen}
+              size="compact"
+              onGo={onPlayDiamonds}
+            />
+          )}
           {!canAfford && (
             <div className="rebuyWarning">
               Insufficient Balance - You Need {money(totalCost)} To Rebuy

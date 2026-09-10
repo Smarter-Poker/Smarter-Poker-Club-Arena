@@ -220,7 +220,13 @@ export interface GameMetrics {
     reserved_chips: number;
     constrained_rounds: number;
   } | null;
+  /** The host's PROMO wallet: the bank every payout comes out of (2026-09-10). */
   bank_chips: number;
+  /** What the game has taken in, in chips at the bridge rate. */
+  intake_chips: number;
+  /** The host's owner, and the diamond wallet the intake lands in. */
+  owner_id: string | null;
+  owner_diamonds: number;
   open_rounds: number;
   exposure_chips: number;
   exposure_headroom_chips: number;
@@ -257,6 +263,37 @@ export interface FloorCrashPoint {
   crash_cents: number;
   cashed: boolean;
   at: string;
+}
+
+/**
+ * THE DOOR (Dan 2026-09-10): "when a player is out of chips or doesn't have
+ * enough to rebuy into a tournament or rebuy into a cash game, they be prompted
+ * to play diamonds to chips. there also needs to be a button for this inside
+ * the club lobby." One read answers both, for a union host and a standalone
+ * club alike: which games this club's host has open, what the cheapest way in
+ * costs, what the player holds, and whether today's free spin is still there.
+ */
+export interface DiamondGamesEntry {
+  ok: boolean;
+  error?: string;
+  host_kind: 'union' | 'club';
+  diamonds_per_chip: number;
+  games: { wheel: boolean; plinko: boolean; crash: boolean };
+  /** The host has at least one game switched on. */
+  open: boolean;
+  /** Open, this player is a member, and the platform is not on its break. */
+  available: boolean;
+  spin_price_diamonds: number | null;
+  min_bet_diamonds: number | null;
+  /** The cheapest way in: a spin or the smallest bet. */
+  entry_diamonds: number | null;
+  diamonds: number;
+  /** What those diamonds are worth in chips at the bridge rate. */
+  chips_from_diamonds: number;
+  is_member: boolean;
+  member_chips: number | null;
+  free_spin_ready: boolean;
+  frozen: boolean;
 }
 
 export interface GameFloor {
@@ -617,6 +654,9 @@ const DiamondGamesService = {
           }
         : null,
       bank_chips: num(raw.bank_chips),
+      intake_chips: num(raw.intake_chips),
+      owner_id: raw.owner_id ? String(raw.owner_id) : null,
+      owner_diamonds: num(raw.owner_diamonds),
       open_rounds: num(raw.open_rounds),
       exposure_chips: num(raw.exposure_chips),
       exposure_headroom_chips: num(raw.exposure_headroom_chips),
@@ -688,6 +728,37 @@ const DiamondGamesService = {
         cashed: Boolean(p.cashed),
         at: String(p.at ?? ''),
       })),
+    };
+  },
+
+  /** Can this player turn diamonds into chips at this club, and what does it cost? */
+  async entry(clubId: string): Promise<DiamondGamesEntry> {
+    const { data, error } = await supabase.rpc('fn_diamond_games_entry', { p_club_id: clubId });
+    if (error) throw error;
+    const raw = rec(data);
+    const games = rec(raw.games);
+    return {
+      ok: Boolean(raw.ok),
+      error: raw.error ? String(raw.error) : undefined,
+      host_kind: (raw.host_kind as 'union' | 'club') ?? 'club',
+      diamonds_per_chip: num(raw.diamonds_per_chip) || 100,
+      games: {
+        wheel: Boolean(games.wheel),
+        plinko: Boolean(games.plinko),
+        crash: Boolean(games.crash),
+      },
+      open: Boolean(raw.open),
+      available: Boolean(raw.available),
+      spin_price_diamonds: intOrNull(raw.spin_price_diamonds),
+      min_bet_diamonds: intOrNull(raw.min_bet_diamonds),
+      entry_diamonds: intOrNull(raw.entry_diamonds),
+      diamonds: num(raw.diamonds),
+      chips_from_diamonds: num(raw.chips_from_diamonds),
+      is_member: Boolean(raw.is_member),
+      member_chips:
+        raw.member_chips === null || raw.member_chips === undefined ? null : num(raw.member_chips),
+      free_spin_ready: Boolean(raw.free_spin_ready),
+      frozen: Boolean(raw.frozen),
     };
   },
 

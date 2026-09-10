@@ -14,6 +14,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { haptic, soundService } from '../../services/SoundService';
 import './BuyInModal.css';
 import { reportError } from '../../utils/errorReporter';
+import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -45,6 +46,12 @@ export interface BuyInModalProps {
   cashoutRestriction?: number;
   /** Takes the player to the cashier. Without it the "Top Up Account" button is not rendered. */
   onTopUp?: () => void;
+  /**
+   * The club whose host runs the Diamond Games (Dan 2026-09-10). Omitted, the
+   * diamonds-to-chips door is not offered.
+   */
+  diamondGamesClubId?: string | null;
+  onPlayDiamonds?: (path: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -78,6 +85,8 @@ export function BuyInModal({
   countdown,
   cashoutRestriction,
   onTopUp,
+  diamondGamesClubId,
+  onPlayDiamonds,
   onRetryBalance,
 }: BuyInModalProps) {
   // State
@@ -509,6 +518,20 @@ export function BuyInModal({
           <button className="buy-in-modal__top-up" onClick={onTopUp}>
             Top Up Account
           </button>
+        )}
+
+        {/* THE OTHER WAY TO FIND CHIPS (Dan 2026-09-10): "when a player is out
+            of chips or doesn't have enough to rebuy into a cash game, they be
+            prompted to play diamonds to chips." It only appears when the club's
+            host actually has a game open and the player holds enough diamonds
+            to get in; otherwise there is nothing here to press. */}
+        {!recovery && !hasEnoughBalance && onPlayDiamonds && (
+          <DiamondsToChipsButton
+            clubId={diamondGamesClubId}
+            enabled={isOpen}
+            size="compact"
+            onGo={onPlayDiamonds}
+          />
         )}
       </div>
     </div>

@@ -20,7 +20,6 @@
     "fn_diamond_game_cap_cents",
     "fn_crash_point_cents",
     "fn_crash_multiplier_cents",
-    "fn_diamond_game_mint_leg",
     "fn_diamond_game_prize_leg",
     "fn_diamond_game_take_bet",
     "fn_crash_decide",
@@ -41,10 +40,16 @@
     "fn_wheel_free_spin_result",
     "fn_wheel_free_state",
     "fn_wheel_free_spin",
-    "fn_wheel_set_free_spin"
+    "fn_wheel_set_free_spin",
+    "fn_diamond_game_owner",
+    "fn_diamond_game_promo",
+    "fn_diamond_game_promo_lock",
+    "fn_diamond_game_pay_diamonds",
+    "fn_diamond_games_entry"
   ],
   "columns": {
     "wheel_configs": ["diamond_seed", "free_spin_enabled", "free_spin_daily_budget_diamonds"],
     "wheel_pools": ["diamond_seed"]
-  }
+  },
+  "removedFunctions": ["fn_diamond_game_mint_leg"]
 }

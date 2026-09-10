@@ -4,20 +4,23 @@
  * Dan: "House edge on this should be 20% and never pay more out than we take
  * in." And the same day: "1 diamond = 1 cent, 1 chip = 1 dollar."
  *
- * The Diamond Wheel (supabase/migrations/20260907233833_the_diamond_wheel.sql)
- * keeps both by ARITHMETIC, not by an odds table being honest:
+ * The Diamond Wheel keeps both by ARITHMETIC, not by an odds table being
+ * honest. AMENDED 2026-09-10 (migration 20260910192951_the_games_belong_to_the_host,
+ * Dan: "all diamonds taken in get credited to the union owners wallet, or the
+ * club owners wallet ... chip payouts are 100% connected and wired to the promo
+ * wallet"). The law is unchanged; the money it is stated on moved:
  *
  *   - the prize table version that is active must return exactly 0.800000 of
  *     the spin and its weights must sum to 100,000, or it cannot be activated;
- *   - a chip prize is drawable only when chips_paid + prize <=
- *     chips_minted + this spin's mint + the host's exposure allowance, AND the
- *     host bank holds it; a diamond prize only when the diamond float covers
- *     it; a locked tier is left out of the draw and shown as locked;
- *   - the chip share of every spin is MINTED to the host through the declared
- *     issuance door (mint / issuance_reserve, registered by the chip_ledger
- *     issuance trigger), the diamond share accrues to the float, and the rest
- *     is retired diamonds: the house;
- *   - after every spin the pool re-checks paid <= minted + allowance and
+ *   - NOTHING IS MINTED any more. Every diamond taken in is credited to the
+ *     host's OWNER, and every chip prize is paid out of the host's PROMO
+ *     wallet, so the games add nothing to chip supply;
+ *   - a chip prize is drawable only when chips_paid + prize <= the chips this
+ *     wheel HAS TAKEN IN (this spin included) + the host's exposure allowance,
+ *     AND the promo wallet holds it; a diamond prize only when the wheel's own
+ *     diamond float covers it AND the owner holds it; a locked tier is left out
+ *     of the draw and shown as locked;
+ *   - after every spin the pool re-checks paid <= taken in + allowance and
  *     raises if the gate was bypassed;
  *   - the rate is a row (ca_bridge_rate), read by fn_ca_bridge_rate(); neither
  *     the wheel nor the owner bridge carries a literal.
@@ -54,9 +57,11 @@ const bridge = latest('the_bridge_rate_is_a_row');
 const word = latest('the_ledger_learns_the_word_wheel_prize');
 const autoskip = latest('the_wheel_clears_its_autoskip');
 const guard = latest('the_profile_guard_admits_the_wheel');
+/** The 2026-09-10 rewrite: the host is the house. */
+const host = latest('the_games_belong_to_the_host');
 
 /** The spin body as it stands after the fix-forward migrations. */
-const SPIN = body(autoskip.sql, 'fn_wheel_spin');
+const SPIN = body(host.sql, 'fn_wheel_spin');
 
 describe('the rate is a row, never a literal', () => {
   it('ca_bridge_rate reads 100 diamonds per chip and is read through fn_ca_bridge_rate()', () => {
@@ -135,15 +140,22 @@ describe('the prize table returns exactly 80 percent or it cannot be activated',
 });
 
 describe('a prize is drawable only when it can be paid now', () => {
-  it('gates a chip tier on the exposure allowance AND the host bank', () => {
+  it('gates a chip tier on what was taken in AND the promo wallet that pays it', () => {
     expect(SPIN).toContain(
-      'IF pool.chips_paid + seg.amount * v_mult > pool.chips_minted + v_mint_now + cfg.exposure_allowance_chips THEN'
+      'IF pool.chips_paid + seg.amount * v_mult > v_intake_chips + cfg.exposure_allowance_chips THEN'
     );
-    expect(SPIN).toContain('IF v_bank + v_mint_now < seg.amount * v_mult THEN');
+    expect(SPIN).toContain('IF v_bank < seg.amount * v_mult THEN');
+    // v_intake_chips IS what the wheel has taken in, this spin included.
+    expect(SPIN).toContain(
+      'v_intake_chips := round((pool.intake_diamonds + v_price)::numeric / v_rate, 2);'
+    );
+    expect(SPIN).toContain('v_bank := public.fn_diamond_game_promo_lock(v_host, v_kind);');
   });
 
   it('gates a diamond tier on the diamond float', () => {
     expect(SPIN).toContain('IF pool.diamond_float + v_dia_now < seg.amount * v_mult THEN');
+    // AND the host's owner must hold it: the owner pays every diamond prize now.
+    expect(SPIN).toContain('IF v_owner_dia + v_price < seg.amount * v_mult THEN');
   });
 
   it('draws only from the eligible tiers and reports the locked ones', () => {
@@ -155,7 +167,7 @@ describe('a prize is drawable only when it can be paid now', () => {
 
   it('re-checks the invariant after the pool moves and raises if the gate was bypassed', () => {
     expect(SPIN).toContain(
-      'IF pool.chips_paid > pool.chips_minted + cfg.exposure_allowance_chips THEN'
+      'IF pool.chips_paid > round(pool.intake_diamonds::numeric / v_rate, 2) + cfg.exposure_allowance_chips THEN'
     );
     expect(SPIN).toContain('the gate was bypassed');
     expect(wheel.sql).toMatch(
@@ -171,34 +183,55 @@ describe("every leg is the platform's own door", () => {
     expect(SPIN).toContain("'wheel:' || v_spin_id::text, 0);");
   });
 
-  it('the host share is a declared, registered issuance', () => {
-    expect(SPIN).toContain(
-      "PERFORM public.fn_ca_declare_ledger('mint', 'issuance_reserve', NULL, NULL, 'wheel-mint:' || v_spin_id::text, NULL);"
+  it('NOTHING IS MINTED: the intake is the host owner\u2019s, as a transfer', () => {
+    expect(SPIN).not.toContain('issuance_reserve');
+    expect(SPIN).not.toContain('fn_diamond_game_mint_leg');
+    expect(SPIN).toContain("public.add_diamonds_to_balance(v_owner, v_price, 'transfer',");
+    expect(SPIN).toContain("'wheel:' || v_spin_id::text || ':intake'");
+    expect(SPIN).toContain('the spin price could not be credited to the host owner');
+    // And the mint helper the other two games used is gone from the platform.
+    expect(host.sql).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_diamond_game_mint_leg(uuid, text, numeric, text);'
     );
-    expect(SPIN).toContain('the host bank moved but no mint leg was journaled');
   });
 
-  it('a chip prize is one journal row, host bank to player, category wheel_prize', () => {
-    expect(SPIN).toContain("PERFORM public.fn_ca_declare_ledger('wheel_prize',");
+  it('a chip prize is one journal row, PROMO WALLET to player, category wheel_prize', () => {
+    // The leg is declared from the PROMO side and the member side stands down,
+    // so the row names the column the chips left (union_wallets.promo_wallet or
+    // clubs.promo_balance) instead of naming the member wallet twice. The two
+    // host shapes journal under different account names for the same promo
+    // column, which is why the label, not the account, is what says promo.
+    expect(SPIN).toContain("PERFORM public.fn_ca_declare_ledger('wheel_prize', 'player_wallet',");
+    expect(SPIN).toContain("ARRAY['club_members']");
+    // The wallet it actually spends, on both host shapes.
     expect(SPIN).toContain(
-      "CASE WHEN v_kind = 'union' THEN 'union_bank' ELSE 'club_treasury' END,"
+      'UPDATE public.union_wallets SET promo_wallet = promo_wallet - v_prize_chips'
     );
+    expect(SPIN).toContain('UPDATE public.clubs SET promo_balance = promo_balance - v_prize_chips');
+    expect(SPIN).not.toContain('chip_treasury = chip_treasury - v_prize_chips');
+    expect(SPIN).not.toContain('chip_balance = chip_balance - v_prize_chips');
+    // And it refuses to carry on if the wallet moved without a journal row.
     expect(SPIN).toContain(
-      "CASE WHEN v_kind = 'union' THEN ARRAY['union_wallets'] ELSE ARRAY['clubs'] END"
+      "IF NOT EXISTS (SELECT 1 FROM public.chip_ledger WHERE idempotency_key = 'wheel-prize:'"
     );
     expect(word.sql).toContain("'wheel_prize'::text");
     expect(word.sql).toMatch(/NOT VALID;/);
   });
 
-  it('a diamond prize goes through add_diamonds_to_balance under a wheel reference', () => {
-    expect(SPIN).toContain("public.add_diamonds_to_balance(v_user, v_prize_dia, 'wheel_prize',");
+  it('a diamond prize is paid BY THE OWNER, under a wheel reference', () => {
+    expect(SPIN).toContain(
+      'PERFORM public.fn_diamond_game_pay_diamonds(v_owner, v_user, v_prize_dia,'
+    );
     expect(SPIN).toContain("'wheel:' || v_spin_id::text || ':prize'");
+    const pay = body(host.sql, 'fn_diamond_game_pay_diamonds');
+    expect(pay).toContain("public.add_diamonds_to_balance(p_owner, -p_amount, 'transfer'");
+    expect(pay).toContain("public.add_diamonds_to_balance(p_user, p_amount, 'transfer'");
     expect(bridge.sql).toContain(
       "WHEN starts_with(p_reference_id, 'wheel:')            THEN 'wheel'"
     );
   });
 
-  it('the autoskip is cleared after the prize leg so the next mint is journaled', () => {
+  it('the autoskip is cleared after the prize leg so the next write is journaled', () => {
     expect(SPIN).toContain("PERFORM set_config('app.ledger_autoskip_union_wallets', '', true);");
     expect(SPIN).toContain("PERFORM set_config('app.ledger_autoskip_clubs', '', true);");
   });
@@ -208,6 +241,12 @@ describe("every leg is the platform's own door", () => {
     expect(g).toContain("'function (public[.])?fn_wheel_spin[(]'");
     expect(g).toContain("'function (public[.])?fn_ca_daily_bonus_claim[(]'");
     expect(g).toContain("'function (public[.])?deduct_diamonds[(]'");
+  });
+
+  it('and the two games that now pay an owner join it in the same migration', () => {
+    expect(host.sql).toContain("OR v_stack ~ 'function (public[.])?fn_plinko_drop[(]'");
+    expect(host.sql).toContain("OR v_stack ~ 'function (public[.])?fn_crash_start[(]'");
+    expect(host.sql).toContain('the profile guard does not name every door');
   });
 });
 

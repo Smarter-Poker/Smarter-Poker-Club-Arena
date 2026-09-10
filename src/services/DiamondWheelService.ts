@@ -67,6 +67,9 @@ export interface WheelPoolView {
   diamond_float: number;
   diamonds_paid: number;
   realized_rtp: number | null;
+  /** The host's promo wallet, and what the wheel has taken in, both in chips. */
+  promo_wallet_chips: number;
+  intake_chips: number;
 }
 
 export interface WheelPlayerView {
@@ -102,7 +105,7 @@ export interface WheelCommit {
   expires_at: string;
 }
 
-export type WheelFreeReason = 'closed' | 'used' | 'pot_empty' | 'not_member';
+export type WheelFreeReason = 'closed' | 'used' | 'pot_empty' | 'not_member' | 'owner';
 
 export interface WheelFreeState {
   ok: boolean;
@@ -206,7 +209,13 @@ export interface WheelMetrics {
     diamonds_paid: number;
     constrained_spins: number;
   } | null;
+  /** The host's PROMO wallet: the bank every chip prize comes out of (2026-09-10). */
   bank_chips?: number;
+  /** What the wheel has taken in, in chips at the bridge rate. */
+  intake_chips?: number;
+  /** The host's owner, and the diamond wallet the intake lands in. */
+  owner_id?: string | null;
+  owner_diamonds?: number;
   exposure_chips?: number;
   exposure_headroom_chips?: number;
   realized_rtp_lifetime?: number | null;
@@ -308,6 +317,8 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
           diamond_float: num(pool.diamond_float),
           diamonds_paid: num(pool.diamonds_paid),
           realized_rtp: numOrNull(pool.realized_rtp),
+          promo_wallet_chips: num(pool.promo_wallet_chips),
+          intake_chips: num(pool.intake_chips),
         }
       : undefined,
     player: player
@@ -396,7 +407,11 @@ function normaliseFreeState(raw: Record<string, unknown>): WheelFreeState {
     enabled: Boolean(raw.enabled),
     available: Boolean(raw.available),
     reason:
-      reason === 'closed' || reason === 'used' || reason === 'pot_empty' || reason === 'not_member'
+      reason === 'closed' ||
+      reason === 'used' ||
+      reason === 'pot_empty' ||
+      reason === 'not_member' ||
+      reason === 'owner'
         ? reason
         : null,
     used_today: Boolean(raw.used_today),
@@ -555,6 +570,9 @@ const DiamondWheelService = {
           }
         : null,
       bank_chips: num(raw.bank_chips),
+      intake_chips: num(raw.intake_chips),
+      owner_id: raw.owner_id ? String(raw.owner_id) : null,
+      owner_diamonds: num(raw.owner_diamonds),
       exposure_chips: num(raw.exposure_chips),
       exposure_headroom_chips: num(raw.exposure_headroom_chips),
       realized_rtp_lifetime: numOrNull(raw.realized_rtp_lifetime),

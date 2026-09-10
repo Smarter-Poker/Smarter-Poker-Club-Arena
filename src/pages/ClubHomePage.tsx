@@ -111,11 +111,8 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdCard from '../components/ads/HouseAdCard';
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
-import {
-  ArenaActionButton,
-  ClubButtonsSurface,
-  ClubIdentityCard,
-} from '../components/club-buttons';
+import { ClubIdentityCard } from '../components/club-buttons';
+import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
@@ -5111,18 +5108,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           action shell rather than drawn in CSS. The games page itself still
           decides what is open here; this only gets the player to it.
       ═══════════════════════════════════════════════════════════════════ */}
-        <ClubButtonsSurface className="lobby-diamond-games">
-          <ArenaActionButton
-            icon="diamond"
-            label="Diamond Games"
-            sublabel="Turn Diamonds Into Chips"
-            size="large"
-            onClick={() => {
-              haptic.selection();
-              navigate(`/clubs/${clubId}/diamond-games`);
-            }}
-          />
-        </ClubButtonsSurface>
+        {/* Dan 2026-09-10: "there also needs to be a button for this inside
+          the club lobby." It was a plain link to the games; it is now the door
+          itself, printing what the player actually holds and what those
+          diamonds are worth in chips, and saying so when today's free spin is
+          still there. `alwaysShow` keeps the club's own door in its place
+          while the read lands and even when the player has nothing yet. */}
+        <DiamondsToChipsButton
+          clubId={clubId ?? null}
+          alwaysShow
+          size="large"
+          className="lobby-diamond-games"
+          onGo={(path) => {
+            haptic.selection();
+            navigate(path);
+          }}
+        />
 
         {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always

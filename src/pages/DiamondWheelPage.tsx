@@ -389,7 +389,9 @@ export default function DiamondWheelPage() {
         ? ' Your Free Spin Returns Tomorrow.'
         : free.reason === 'pot_empty'
           ? ' Today’s Free Spins Are Gone; They Return Tomorrow.'
-          : ''
+          : free.reason === 'owner'
+            ? ' The Club Pays The Free Spin, So Its Owner Does Not Take One.'
+            : ''
       : '';
   const readoutSubCopy = lastResult
     ? lastResult.outcome.kind === 'nothing'
@@ -497,7 +499,7 @@ export default function DiamondWheelPage() {
                   >
                     {prizeLabel(seg)}
                     {seg.locked ? (
-                      <span className={styles.rowMeta}>Locked Until The Pool Grows</span>
+                      <span className={styles.rowMeta}>Locked Until The Club Can Cover It</span>
                     ) : null}
                   </span>
                   <span className={`${styles.cell} ${styles.cellRight} sc-ink--muted`}>
@@ -514,15 +516,15 @@ export default function DiamondWheelPage() {
           </div>
           {freeMode ? (
             <p className="sc-copy">
-              Today’s Free Spin Pays In Diamonds, And Every Prize Pays. It Uses The Same Sealed Seed
-              As A Paid Spin, So You Can Check It The Same Way. When It Lands, The Paid Wheel
-              Returns With Its Eleven Prizes In Chips And Diamonds.
+              Today’s Free Spin Pays In Diamonds, On The Club, And Every Prize Pays. It Uses The
+              Same Sealed Seed As A Paid Spin, So You Can Check It The Same Way. When It Lands, The
+              Paid Wheel Returns With Its Eleven Prizes In Chips And Diamonds.
             </p>
           ) : (
             <p className="sc-copy">
               The Wheel Returns 80% Of Everything It Takes In Over Time And Never Pays Out More Than
-              It Has Taken In. A Locked Prize Is One The Pool Cannot Cover Yet; It Unlocks As The
-              Pool Grows.
+              It Has Taken In. Every Prize Is Paid By The Club Itself, Out Of Its Promo Wallet. A
+              Locked Prize Is One The Club Cannot Cover Right Now; It Unlocks When It Can.
               {state.pool && state.pool.spins > 0 && state.pool.realized_rtp !== null
                 ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(0)}% Over ${compactChips(state.pool.spins)} Spins.`
                 : ''}

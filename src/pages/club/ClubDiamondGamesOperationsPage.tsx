@@ -5,14 +5,17 @@
  *
  * One page, two games, a switch on the plates. What a host owner needs to run
  * them and nothing else: open and close each game, the bet sizes, the exposure
- * allowance (the most the host accepts being ahead of what the game has minted
- * it), the cap fraction, the multiplier ceiling, the crash curve, the
+ * allowance (the most the host accepts being ahead of what the game has taken
+ * in), the cap fraction, the multiplier ceiling, the crash curve, the
  * per-player limits, and the readings that say whether the game is doing what
  * its odds promise: realised return against the 80 percent spec as a z-score
  * per window, the constrained rate, exposure headroom, open rounds still
- * holding a reservation, and the invariant (paid + reserved <= minted +
+ * holding a reservation, and the invariant (paid + reserved <= taken in +
  * allowance) that the arithmetic makes impossible to break and
- * fn_diamond_game_metrics re-derives anyway.
+ * fn_diamond_game_metrics re-derives anyway. AMENDED 2026-09-10: nothing is
+ * minted any more. The diamonds a round takes in are the host owner's, and
+ * every chip a game pays leaves the host's promo wallet, which is why that
+ * wallet and the owner's diamonds are the two figures at the top of this page.
  *
  * Every control posts a patch to fn_diamond_game_set_config, which decides who
  * may (fn_wheel_can_operate). The page shows a refusal, it never pre-empts one.
@@ -283,7 +286,7 @@ export default function ClubDiamondGamesOperationsPage() {
   const pool = metrics?.pool;
   const enabled = Boolean(cfg?.enabled);
   const word = GAME_WORD[game];
-  const hostWord = metrics?.host_kind === 'union' ? 'Union Bank' : 'Club Treasury';
+  const hostWord = metrics?.host_kind === 'union' ? 'Union' : 'Club';
   const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
   return (
@@ -322,10 +325,16 @@ export default function ClubDiamondGamesOperationsPage() {
       >
         <div className={styles.rows}>
           <Row
-            label={hostWord}
+            label={`${hostWord} Promo Wallet`}
             value={chips(metrics?.bank_chips)}
-            ink="silver"
-            meta="Chips To Pay"
+            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'silver'}
+            meta="Every Payout Is Paid From Here"
+          />
+          <Row
+            label="Owner Diamonds"
+            value={compactChips(metrics?.owner_diamonds ?? 0)}
+            ink="blue"
+            meta="Where The Diamonds Taken In Land"
           />
           <Row
             label="Exposure"
@@ -357,9 +366,9 @@ export default function ClubDiamondGamesOperationsPage() {
           />
         </div>
         <p className="sc-copy">
-          Paid Plus Reserved Never Exceeds Minted Plus The Allowance; The Per-Round Cap Makes That
-          Arithmetic, And The Metrics Re-Derive It. Capped Rounds Are Ones The Pool Could Not
-          Promise The Full Ceiling On.
+          Paid Plus Reserved Never Exceeds What Was Taken In Plus The Allowance, And Every Chip
+          Leaves The Promo Wallet; The Per-Round Cap Makes That Arithmetic, And The Metrics
+          Re-Derive It. Capped Rounds Are Ones The Pool Could Not Promise The Full Ceiling On.
         </p>
       </SpadeConsole>
 
@@ -457,7 +466,7 @@ export default function ClubDiamondGamesOperationsPage() {
             label="Exposure Allowance (Chips)"
             value={draft.exposure_allowance_chips}
             onChange={set('exposure_allowance_chips')}
-            hint={`The Most ${word} May Pay Beyond What It Has Minted You.`}
+            hint={`The Most ${word} May Pay Beyond What It Has Taken In.`}
           />
           <Field
             label="Minimum Bet (Diamonds)"
@@ -546,7 +555,11 @@ export default function ClubDiamondGamesOperationsPage() {
             value={compactChips(pool?.intake_diamonds ?? 0)}
             ink="blue"
           />
-          <Row label={`Chips Minted To The ${hostWord}`} value={chips(pool?.chips_minted)} />
+          <Row
+            label="Chips Taken In"
+            value={chips(metrics?.intake_chips)}
+            meta="At The Bridge Rate"
+          />
           <Row label="Chips Paid To Players" value={chips(pool?.chips_paid)} ink="gold" />
           <Row label="Chips Held For Open Rounds" value={chips(pool?.reserved_chips)} />
           <Row label="Capped Rounds" value={compactChips(pool?.constrained_rounds ?? 0)} />

@@ -51,7 +51,13 @@ function latest(fragment: string): { name: string; sql: string } {
 }
 
 function body(sql: string, fn: string): string {
-  const open = sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`);
+  // A door whose signature changed is dropped and re-created, so it may be a
+  // plain CREATE rather than CREATE OR REPLACE. Both are the same statement to
+  // this law; read whichever one the migration used.
+  const open = Math.max(
+    sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`),
+    sql.lastIndexOf(`CREATE FUNCTION public.${fn}(`)
+  );
   expect(open, `${fn} has moved or gone`).toBeGreaterThan(-1);
   const start = sql.indexOf('$function$', open);
   const end = sql.indexOf('$function$', start + 10);
@@ -62,14 +68,24 @@ function body(sql: string, fn: string): string {
 const games = latest('plinko_and_crash_the_two_alternates_to_the_wheel');
 const words = latest('the_ledger_learns_plinko_and_crash_prizes');
 const opens = latest('the_wheel_opens_with_a_seeded_diamond_float');
+/**
+ * AMENDED 2026-09-10. Dan: "make sure that the chip payouts are 100% connected
+ * and wired to the promo wallet and all diamonds taken in get credited to the
+ * union owners wallet, or the club owners wallet." The law is unchanged - these
+ * games still never pay out more than they take in - but the money it is stated
+ * on moved: nothing is minted, the intake is the host owner's, and every payout
+ * comes out of the host's promo wallet. Every body below is read from that
+ * migration, which is the one that is live.
+ */
+const host = latest('the_games_belong_to_the_host');
 
-const CAP = body(games.sql, 'fn_diamond_game_cap_cents');
-const ADMIT = body(games.sql, 'fn_diamond_game_admit');
-const DROP = body(games.sql, 'fn_plinko_drop');
-const START = body(games.sql, 'fn_crash_start');
-const DECIDE = body(games.sql, 'fn_crash_decide');
-const MINT = body(games.sql, 'fn_diamond_game_mint_leg');
-const PRIZE = body(games.sql, 'fn_diamond_game_prize_leg');
+const CAP = body(host.sql, 'fn_diamond_game_cap_cents');
+const ADMIT = body(host.sql, 'fn_diamond_game_admit');
+const DROP = body(host.sql, 'fn_plinko_drop');
+const START = body(host.sql, 'fn_crash_start');
+const DECIDE = body(host.sql, 'fn_crash_decide');
+const TAKE = body(host.sql, 'fn_diamond_game_take_bet');
+const PRIZE = body(host.sql, 'fn_diamond_game_prize_leg');
 const AUDIT = body(games.sql, 'fn_plinko_table_audit');
 
 const C16 = [
@@ -77,44 +93,64 @@ const C16 = [
 ];
 
 describe('the house share is arithmetic, not an odds table being honest', () => {
-  it('a bet is whole chips at the bridge rate and 0.80 of it is minted', () => {
+  it('a bet is whole chips at the bridge rate', () => {
     expect(ADMIT).toContain('o_rate := public.fn_ca_bridge_rate();');
     expect(ADMIT).toContain('p_bet % o_rate <> 0');
     expect(ADMIT).toContain('o_bet_chips := round(p_bet::numeric / o_rate, 2);');
-    expect(ADMIT).toContain('o_mint := round(o_bet_chips * 0.8, 2);');
-    expect(CAP).toContain('v_mint numeric := round(p_bet_chips * 0.8, 2);');
     expect(ADMIT).not.toMatch(/o_rate\s*:=\s*\d/);
   });
 
-  it('the host share is a declared, registered issuance with an idempotency key', () => {
-    expect(MINT).toContain(
-      "PERFORM public.fn_ca_declare_ledger('mint', 'issuance_reserve', NULL, NULL, p_key, NULL);"
+  it('NOTHING IS MINTED, and the helper that minted is dropped', () => {
+    expect(host.sql).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_diamond_game_mint_leg(uuid, text, numeric, text);'
     );
-    expect(MINT).toContain('the host bank moved but no mint leg was journaled');
-    expect(DROP).toContain("'plinko-mint:' || v_id::text");
-    expect(START).toContain("'crash-mint:' || v_id::text");
+    for (const b of [DROP, START, ADMIT, CAP, PRIZE, TAKE]) {
+      expect(b).not.toContain('issuance_reserve');
+      expect(b).not.toContain('fn_diamond_game_mint_leg');
+    }
+    expect(host.sql).toContain('the host is the house: a game still mints');
   });
 
-  it('the bet is paid through deduct_diamonds under a game reference', () => {
-    const take = body(games.sql, 'fn_diamond_game_take_bet');
-    expect(take).toContain(
-      'v_deduct := public.deduct_diamonds(p_user, p_bet, p_description, p_type, p_type, p_meta, p_reference, 0);'
+  it('the bet is paid through deduct_diamonds AND credited to the host owner', () => {
+    expect(TAKE).toContain(
+      "v_deduct := public.deduct_diamonds(p_user, p_bet, p_description, p_type, 'diamond_game',"
     );
+    expect(TAKE).toContain(
+      "v_credit := public.add_diamonds_to_balance(p_owner, p_bet, 'transfer', p_owner_note, p_reference || ':intake');"
+    );
+    expect(TAKE).toContain('the bet could not be credited to the host owner');
+    // The owner is the union's owner for a union host, the club's for a club.
+    const owner = body(host.sql, 'fn_diamond_game_owner');
+    expect(owner).toContain('SELECT u.owner_id FROM public.unions u WHERE u.id = p_host');
+    expect(owner).toContain('SELECT c.owner_id FROM public.clubs c WHERE c.id = p_host');
+    expect(ADMIT).toContain('o_owner := public.fn_diamond_game_owner(o_host, o_kind);');
     expect(DROP).toContain("'plinko:' || v_id::text");
     expect(DROP).toContain("'plinko_drop'");
     expect(START).toContain("'crash:' || v_id::text");
     expect(START).toContain("'crash_bet'");
   });
+
+  it('the bank a payout comes out of IS the promo wallet, on both host shapes', () => {
+    expect(ADMIT).toContain('o_bank := public.fn_diamond_game_promo_lock(o_host, o_kind);');
+    const lock = body(host.sql, 'fn_diamond_game_promo_lock');
+    expect(lock).toContain(
+      'SELECT COALESCE(w.promo_wallet, 0) INTO v_promo FROM public.union_wallets w'
+    );
+    expect(lock).toContain('SELECT COALESCE(c.promo_balance, 0) INTO v_promo FROM public.clubs c');
+    expect(lock).toContain('FOR UPDATE');
+  });
 });
 
 describe('the cap: a round is promised only what the pool can pay now', () => {
   it('is cap_fraction of the headroom, never above the ceiling, never above the bank', () => {
+    // The headroom is what the game HAS TAKEN IN, this bet included.
     expect(CAP).toContain(
-      'v_headroom  := COALESCE(p_pool.chips_minted, 0) + v_mint + p_cfg.exposure_allowance_chips'
+      'v_intake numeric := COALESCE(p_pool.intake_diamonds, 0) / public.fn_ca_bridge_rate() + p_bet_chips;'
     );
+    expect(CAP).toContain('v_headroom  := v_intake + p_cfg.exposure_allowance_chips');
     expect(CAP).toContain('- COALESCE(p_pool.chips_paid, 0) - COALESCE(p_pool.reserved_chips, 0);');
     expect(CAP).toContain(
-      'v_bank_room := COALESCE(p_bank, 0) + v_mint - COALESCE(p_pool.reserved_chips, 0);'
+      'v_bank_room := COALESCE(p_bank, 0) - COALESCE(p_pool.reserved_chips, 0);'
     );
     expect(CAP).toContain('floor(p_cfg.cap_fraction * v_headroom / p_bet_chips * 100)');
     expect(CAP).toContain('floor(v_bank_room / p_bet_chips * 100)');
@@ -141,14 +177,18 @@ describe('the cap: a round is promised only what the pool can pay now', () => {
 
   it('re-checks the invariant after every move and raises if the cap was bypassed', () => {
     expect(DROP).toContain(
-      'IF pool.chips_paid + pool.reserved_chips > pool.chips_minted + (adm.o_cfg).exposure_allowance_chips THEN'
+      'IF pool.chips_paid + pool.reserved_chips > v_intake_chips + (adm.o_cfg).exposure_allowance_chips THEN'
     );
     expect(START).toContain(
-      'IF pool.chips_paid + pool.reserved_chips > pool.chips_minted + (adm.o_cfg).exposure_allowance_chips THEN'
+      'IF pool.chips_paid + pool.reserved_chips > v_intake_chips + (adm.o_cfg).exposure_allowance_chips THEN'
     );
     expect(DECIDE).toContain(
-      'IF pool.chips_paid + pool.reserved_chips > pool.chips_minted + cfg.exposure_allowance_chips + 0.000001 THEN'
+      'IF pool.chips_paid + pool.reserved_chips > v_intake_chips + cfg.exposure_allowance_chips + 0.000001 THEN'
     );
+    // And v_intake_chips is read off the pool, never off a mint that no longer happens.
+    for (const b of [DROP, START, DECIDE]) {
+      expect(b).toMatch(/v_intake_chips := round\(pool\.intake_diamonds::numeric \/ /);
+    }
     for (const b of [DROP, START, DECIDE]) expect(b).toContain('the cap was bypassed');
   });
 });
@@ -257,16 +297,27 @@ describe('crash returns exactly 80 percent at every cash-out target', () => {
 });
 
 describe("every payout is the platform's own door, and nobody is filtered", () => {
-  it('a payout is one journal row, host bank to player, under its own category', () => {
+  it('a payout is one journal row, PROMO WALLET to player, under its own category', () => {
     expect(PRIZE).toContain("DECLARE v_category text := p_game || '_prize';");
+    // The PROMO side writes the leg, so the counterparty it declares is the
+    // player it is paying, and the member side is the one told to stand down.
     expect(PRIZE).toContain(
-      "CASE WHEN p_kind = 'union' THEN 'union_bank' ELSE 'club_treasury' END,"
+      "PERFORM public.fn_ca_declare_ledger(v_category, 'player_wallet', p_user, NULL, p_key, ARRAY['club_members']);"
+    );
+    // The wallet it actually spends, on both host shapes, and never the bank.
+    expect(PRIZE).toContain(
+      'UPDATE public.union_wallets SET promo_wallet = COALESCE(promo_wallet, 0) - p_amount'
     );
     expect(PRIZE).toContain(
-      "CASE WHEN p_kind = 'union' THEN ARRAY['union_wallets'] ELSE ARRAY['clubs'] END"
+      'UPDATE public.clubs SET promo_balance = COALESCE(promo_balance, 0) - p_amount'
     );
-    expect(PRIZE).toContain('the host bank refused');
-    expect(PRIZE).toContain("PERFORM set_config('app.ledger_autoskip_union_wallets', '', true);");
+    expect(PRIZE).not.toContain('chip_treasury');
+    expect(PRIZE).not.toContain('chip_balance = chip_balance -');
+    expect(PRIZE).toContain('the host promo wallet refused');
+    // The movement is journaled exactly once: the promo side writes the leg and
+    // the member side stands down, so there is no anonymous twin.
+    expect(PRIZE).toContain('the promo wallet moved but no prize leg was journaled');
+    expect(PRIZE).toContain("PERFORM set_config('app.ledger_autoskip_club_members', '', true);");
     expect(words.sql).toContain("'plinko_prize'::text, 'crash_prize'::text");
     expect(words.sql).toMatch(/NOT VALID;/);
   });
@@ -276,16 +327,21 @@ describe("every payout is the platform's own door, and nobody is filtered", () =
     expect(opens.sql).not.toMatch(/is_horse/);
   });
 
-  it('the wheel opened with a seeded diamond float, and the seed is netted out of the house take', () => {
+  it('the wheel opened with a seeded diamond float, and it still bounds the diamond side', () => {
     expect(opens.sql).toMatch(
       /ADD COLUMN IF NOT EXISTS diamond_seed integer NOT NULL DEFAULT 2500 CHECK \(diamond_seed >= 0\)/
     );
-    const m = body(opens.sql, 'fn_wheel_metrics');
-    expect(m).toContain('(pool.diamond_float - pool.diamond_seed) / v_rate');
     const t = body(opens.sql, 'fn_wheel_pool_seed');
     expect(t).toContain(
       'NEW.diamond_float := COALESCE(NEW.diamond_float, 0) + COALESCE(v_seed, 0);'
     );
+    // 2026-09-10: the house take is what the host kept - everything it took in,
+    // less the chips and the diamonds it paid back out. Nothing is minted, so
+    // there is no mint to subtract and no seed to net out.
+    const m = body(host.sql, 'fn_wheel_metrics');
+    expect(m).toContain('THEN round(pool.intake_diamonds::numeric / v_rate - pool.chips_paid');
+    expect(m).toContain('- pool.diamonds_paid::numeric / v_rate, 4) END,');
+    expect(m).not.toContain('pool.chips_minted');
   });
 
   it('the registry knows the three money movers', () => {

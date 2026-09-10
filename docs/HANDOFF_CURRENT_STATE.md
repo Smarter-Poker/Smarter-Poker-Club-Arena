@@ -10,7 +10,7 @@ only to Club Arena Hetzner infrastructure. Do not use a World Hub sync, Vercel,
 workstation SSH, a local credential file, or an Actions workflow dispatch.
 
 The database deploy dispatcher and its start-marker reconciler are retired by
-migration `20260910172000`. Their historical rows are preserved in the locked
+migration `20260910183316`. Their historical rows are preserved in the locked
 `ca_archive` schema, and their crons and callable functions are removed.
 
 ## 2026-09-10 Addendum: the break failures of 00:00 and 07:00, and what closed them
@@ -623,11 +623,11 @@ WORKSTREAM B - PHASE 1: EVERY BREAK IS MEASURED, EVERY DEPLOY FIRES
   (type='engine_break_failed').
 - Retired automation: the database deploy dispatcher, deploy-start marker,
   associated crons, and callable functions were removed by forward migration
-  `20260910172000`. Historical rows were moved to locked `ca_archive` tables.
+  `20260910183316`. Historical rows were moved to locked `ca_archive` tables.
   The database no longer stores or uses a GitHub deployment token.
 - Migrations 20260902203100, 20260902204600, 20260902211500 were applied. Their
   historical dispatcher and deploy-marker machinery was subsequently retired
-  by migration 20260910172000; the historical data remains in `ca_archive`.
+  by migration 20260910183316; the historical data remains in `ca_archive`.
 - Historical verification: scorecards scored 19:00 fail/1224 and 20:00
   fail/1732; freeze marks captured 20:55+21:00; one real failure push was
   deduped. Current release code no longer contains the deploy-start recorder or
@@ -813,7 +813,7 @@ PHASE 1 (PR #2710, MERGED to main; DB objects applied):
 | supabase/migrations/20260902203100_engine_restart_phase1_scorecard_freezeproof_dispatcher.sql | Merged+Applied | scorecard, freeze marks, dispatcher, start-marker | yes |
 | supabase/migrations/20260902204600_engine_restart_phase1_deploy_start_marker.sql | Merged+Applied | deploy start marker table+fn | yes |
 | supabase/migrations/20260902211500_engine_restart_phase1_review_fixes.sql | Merged+Applied | cron :12, pre-mark waits for freeze, dispatcher marker guard | yes |
-| former deploy-start recorder | Retired | database dispatch reconciliation removed in `20260910172000` | n/a |
+| former deploy-start recorder | Retired | database dispatch reconciliation removed in `20260910183316` | n/a |
 | scripts/ci/schema-manifest.d/cowork-restart-phase1.json | Merged | schema manifest fragment | yes |
 | .github/workflows/auto-deploy-hetzner.yml | Merged | "Record that this deploy run started" step | yes |
 | docs/ENGINE-RESTART-PROGRAMME.md | Merged | the 9-phase plan | yes |
@@ -1006,7 +1006,7 @@ New tables this session (all RLS-enabled, service_role only, no money path):
 ca_break_scorecards (PK break_ended_at)
 ca_freeze_circulation_marks (PK window_hour, kind)
 The former deploy-dispatch configuration, log, and start-marker tables are
-archived outside `public` by migration `20260910172000`.
+archived outside `public` by migration `20260910183316`.
 engine_maintenance_break_log (PK break_started_at) - written by the engine
 (deploys with #2715; 0 rows until then)
 
@@ -1015,7 +1015,7 @@ authenticated, service_role only):
 fn_ca_circulation_total, fn_ca_capture_freeze_mark,
 fn_ca_record_break_scorecard (redefined in Phase 2 to read the break log),
 fn_ca_break_scorecard_push. The former deploy-dispatch and start-marker
-functions are removed by migration `20260910172000`.
+functions are removed by migration `20260910183316`.
 
 New indexes (LIVE, CREATE INDEX CONCURRENTLY, from #2703):
 idx_tournaments_addon_period_open, idx_tables_bomb_pot_due,
@@ -1048,7 +1048,7 @@ Local vs remote: there is no local database; all work was against production
 ---
 
 DECISION 1 - CLOSED. The database-side deploy dispatcher must not be armed.
-Migration `20260910172000` removes its crons and callable functions and moves
+Migration `20260910183316` removes its crons and callable functions and moves
 its historical rows to locked `ca_archive`. Default-branch Club Arena GitHub
 workflows are the only engine deployment authority.
 

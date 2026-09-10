@@ -6,7 +6,7 @@ Club Arena still carried two legacy automation families after their source imple
 
 ## After
 
-Migration `20260910172000_retire_legacy_autofix_and_db_deploy_dispatch.sql` removes every executable function and exact cron entry for those retired paths in one transaction. It deletes only the named dispatcher secret, moves historical rows into the locked `ca_archive` schema, revokes runtime access, and fails closed if any executable route survives.
+Migration `20260910183316_retire_legacy_autofix_and_db_deploy_dispatch.sql` removes every executable function and exact cron entry for those retired paths in one transaction. It deletes only the named dispatcher secret, moves historical rows into the locked `ca_archive` schema, revokes runtime access, and fails closed if any executable route survives.
 
 The transaction refuses a production lock after four seconds, caps each
 statement at 45 seconds, and caps the whole PostgreSQL 17 transaction at 55

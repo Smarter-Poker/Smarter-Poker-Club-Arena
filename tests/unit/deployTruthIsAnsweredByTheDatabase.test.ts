@@ -14,7 +14,7 @@ const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const WORKFLOW = '.github/workflows/auto-deploy-hetzner.yml';
 const RECORDER = 'scripts/ci/record-engine-deploy-attempt.mjs';
 const RETIREMENT =
-  'supabase/migrations/20260910172000_retire_legacy_autofix_and_db_deploy_dispatch.sql';
+  'supabase/migrations/20260910183316_retire_legacy_autofix_and_db_deploy_dispatch.sql';
 
 const deployControlFunctions = [
   'fn_ca_deploy_dispatch_tick',

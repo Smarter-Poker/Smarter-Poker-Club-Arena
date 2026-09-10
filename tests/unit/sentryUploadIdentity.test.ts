@@ -8,7 +8,7 @@ import { parse } from 'yaml';
 import { resolveSentryUpload } from '../../scripts/sentry-upload-policy';
 
 const mocks = vi.hoisted(() => ({
-  sentry: vi.fn(() => ({ name: 'observed-sentry-upload' })),
+  sentry: vi.fn((_options: unknown) => ({ name: 'observed-sentry-upload' })),
 }));
 vi.mock('@sentry/vite-plugin', () => ({ sentryVitePlugin: mocks.sentry }));
 const originalDirectory = process.cwd();
@@ -97,6 +97,7 @@ describe('Source map upload identity', () => {
     );
     expect(build.env.CA_SENTRY_UPLOAD).toBe('1');
     expect(build.env.VITE_APP_VERSION).toBe(checkout.with.ref);
+    expect(checkout.with['fetch-depth']).toBe(0);
     expect(build.env.VITE_APP_VERSION).toBe('${{ needs.publish-needed.outputs.target_sha }}');
     const resolution = workflow.jobs['publish-needed'].steps.find(
       (step: { id?: string }) => step.id === 'target'

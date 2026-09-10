@@ -33,7 +33,7 @@
   },
   "independent_reviewers": ["root", "phase3_acceptance", "payer_completion"],
   "full_app_minimum4_build": "passed in isolated candidate; compatibility evidence is in2026-09-10-build-file-concurrency.json",
-  "publication_state": "This build repair has not yet passed remote CI or publication.",
+  "publication_state": "PR4178 merged and the repair is present in verified successful public successor builds.",
   "remaining_limits": [
     "Sentry publisher403 remains unresolved; credentials and permissions unchanged",
     "No captured-rakeback UI or satellite Stage-B activation",
@@ -49,5 +49,48 @@
     "after_fix_integrated_tests": 58,
     "independent_review": "phase3_acceptance approved policy and real-Git/plugin regression case",
     "reference": "https://git-scm.com/docs/githooks"
+  },
+  "release_verification": {
+    "pr": 4178,
+    "merge": "7075d2ee43b027ba5882eca58feb566c7e6e71a8",
+    "ci_run": 34493160539,
+    "required_ci": "success",
+    "original_publisher": 34494656614,
+    "original_publisher_result": "cancelled by a later main build",
+    "successful_successor_publisher": 34495044585,
+    "successful_successor_sha": "72358c1e120a6ef7fe94c5ea4df0948f7a17423a",
+    "actual_upload_opt_in": "CA_SENTRY_UPLOAD=1",
+    "actual_release": "club-arena@72358c1e120a6ef7fe94c5ea4df0948f7a17423a",
+    "source_identity_guard": "accepted full SHA, clean full-history checkout",
+    "sentry_upload": "HTTP403 persists; upload not claimed successful",
+    "remaining_public_source_maps": 0,
+    "later_successful_publisher": 34495448646,
+    "ancestor_checks": "7075 is ancestor of72358 and59a034",
+    "public_readback": {
+      "observed_at": "2026-09-10T15:39:55.663513+00:00",
+      "urls": [
+        {
+          "url": "https://ca-static.smarter.poker/build-info.json",
+          "status": 200,
+          "body": {
+            "ca_sha": "59a0344989a5e9ca23e1a4d50829689c0cc0f704",
+            "built_at": "2026-09-10T15:28:02Z",
+            "built_by": "publish-club-arena.yml",
+            "run_id": "34495448646"
+          }
+        },
+        {
+          "url": "https://smarter.poker/hub/club-arena/build-info.json",
+          "status": 200,
+          "body": {
+            "ca_sha": "59a0344989a5e9ca23e1a4d50829689c0cc0f704",
+            "built_at": "2026-09-10T15:28:02Z",
+            "built_by": "publish-club-arena.yml",
+            "run_id": "34495448646"
+          }
+        }
+      ]
+    },
+    "native_ota": "skipped"
   }
 }

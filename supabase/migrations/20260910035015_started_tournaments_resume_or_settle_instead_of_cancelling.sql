@@ -34,14 +34,14 @@ $guard$;
 BEGIN
   SELECT prosrc,pg_get_functiondef(oid) INTO v_body,v_definition
     FROM pg_proc WHERE oid=v_oid;
-  IF md5(v_body)='16f0bf17983ec0ced4a8f8127d6af979' THEN RETURN; END IF;
-  IF v_body IS NULL OR md5(v_body)<>'6aae8b91e135ac1eac7e6a768b574c13' THEN
+  IF md5(v_body)='16ea7acbbf76613a0a1193dff18f1330' THEN RETURN; END IF;
+  IF v_body IS NULL OR md5(v_body)<>'8c2641c634de919487c7bbb7eb8c5c22' THEN
     RAISE EXCEPTION 'atomic cancellation source changed; review its composed authority before applying';
   END IF;
   EXECUTE replace(v_definition,v_body,
     replace(v_body,'  -- Freeze every identity before any payer runs.',
       v_guard||'  -- Freeze every identity before any payer runs.'));
-  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=v_oid)<>'16f0bf17983ec0ced4a8f8127d6af979' THEN
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=v_oid)<>'16ea7acbbf76613a0a1193dff18f1330' THEN
     RAISE EXCEPTION 'atomic cancellation refusal body did not match its reviewed definition';
   END IF;
 END;

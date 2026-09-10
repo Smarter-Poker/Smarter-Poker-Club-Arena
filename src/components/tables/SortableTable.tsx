@@ -12,6 +12,16 @@ interface SortableTableProps<T> {
   data: T[];
 }
 
+function rowKey(row: Record<string, unknown>, index: number): string {
+  const id = row.id ?? row.key ?? row.uuid;
+  if (typeof id === 'string' || typeof id === 'number') return `id:${id}`;
+  try {
+    return `row:${JSON.stringify(row)}`;
+  } catch {
+    return `idx:${index}`;
+  }
+}
+
 export function SortableTable<T extends Record<string, unknown>>({
   columns,
   data,
@@ -57,8 +67,12 @@ export function SortableTable<T extends Record<string, unknown>>({
           </tr>
         </thead>
         <tbody>
+          {/* A row's key is its record, not its position: handleSort reorders
+              the list, and a positional key made React reuse each row's DOM
+              node against a different record after every click. A row that
+              carries an id keys on it; one that does not keys on its content. */}
           {sortedData.map((row, rowIdx) => (
-            <tr key={rowIdx}>
+            <tr key={rowKey(row, rowIdx)}>
               {columns.map((col, colIdx) => (
                 <td key={colIdx}>{String(row[col.key])}</td>
               ))}

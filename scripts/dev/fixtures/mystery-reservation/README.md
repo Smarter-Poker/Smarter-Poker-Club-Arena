@@ -1,0 +1,11 @@
+# Mystery Reservation Rehearsal
+
+Run `python3 scripts/dev/probe-mystery-reservation-pg17.py`. The runner only starts its own local PostgreSQL 17 cluster on a Unix socket, accepts no database URL and removes its database after execution. `POKER_AUDIT_PG_BIN` may select a local PG17 binary directory. Logs and a JSON result remain under the printed temporary directory.
+
+The fixture captures six installed function bodies and four reservation table shapes, including their check and uniqueness constraints. `catalog.json` records their production body hashes. The exact award attachment, acknowledgement and deferred recipient-sum triggers execute. A minimal tournament read/write shape and test JWT helpers supply the seed/reserve/reveal inputs. The runner executes actual reservation and reveal code, including its exact generation outbox binding and deferred commit guard. There is no wallet payer or successful-payment stub.
+
+Scope limits: funded inventory here means the chest sum equals the already-funded bounty pool represented by the synthetic tournament. Admission debits, pool funding journals, outbox creation by a real hand, wallet payment, terminal evidence immutability, manager lease admission, foreign keys, RLS and the remaining tournament triggers are not instantiated. Those require their own production-shape acceptance. The production catalog separately confirms RLS enabled and no anon/authenticated access to all four sealed mystery tables; that read-only inspection is not a behavioral RLS test.
+
+Thirteen scenario groups pass: exact N-1 inventory; entry-open refusal; underfunded inventory refusal; duplicate sequence rollback; immutable reseed; persisted recipient binding with an exact odd-cent split; same-generation retry with a new client token; wrong-hand refusal; two distinct chests; late recipient fault rollback; revealer impersonation refusal; stable authorized reveal replay; and a real competing request observed blocked before it returns the existing award. Reservation attempts use deliberately false client recipients and random client tokens to prove that the persisted obligation remains authoritative.
+
+No code or financial policy was changed. Reservation/reveal evidence does not complete CA-03-03 until payout and terminal closure evidence also passes.

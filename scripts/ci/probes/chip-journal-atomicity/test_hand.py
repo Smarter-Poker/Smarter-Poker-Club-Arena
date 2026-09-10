@@ -15,6 +15,7 @@ def payload(a=95,b=105,duplicate=False,reverse=False,mixed=False):
 def operation(stacks,rake=0,bbj=0,inflow=0):
  return f"fn_ca_settle_hand_stacks_absolute({TABLE},1,{stacks},{rake},{bbj},null,{inflow})"
 SETUP=f"""
+INSERT INTO clubs(id,asset) VALUES({CLUB},'chips');
 INSERT INTO tables(id,club_id) VALUES({TABLE},{CLUB});
 INSERT INTO table_seats(table_id,user_id,seat_number,stack,is_sitting_out) VALUES({TABLE},'{A}',1,100,false),({TABLE},'{B}',2,100,false);
 """

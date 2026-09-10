@@ -6,6 +6,9 @@ vi.mock('../../src/services/ArenaContextService', () => ({ getArenaContext: mock
 vi.mock('../../src/lib/supabase', () => ({
   supabase: { auth: { onAuthStateChange: mocks.auth } },
 }));
+vi.mock('../../src/components/arena/DiamondCashLobby', () => ({
+  default: () => <div>Diamond Cash Tables</div>,
+}));
 import ArenaAccessBoundary from '../../src/components/arena/ArenaAccessBoundary';
 const chip = {
   arena: { id: 'chip', kind: 'chip_club', asset: 'chips' },
@@ -100,5 +103,49 @@ describe('Arena entry before cached club content mounts', () => {
     fireEvent.focus(window);
     await waitFor(() => expect(screen.queryByText('Private Chip Lobby')).toBeNull());
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+});
+
+describe('Diamond public cash admission gate', () => {
+  it('opens only the dedicated cash lobby on an affirmative server gate', async () => {
+    mocks.access.mockResolvedValue({ ...diamond, cashGamesEnabled: true });
+    render(
+      <MemoryRouter initialEntries={['/clubs/diamond']}>
+        <ArenaAccessBoundary clubKey="diamond">
+          <div>Chip Operations</div>
+        </ArenaAccessBoundary>
+      </MemoryRouter>
+    );
+    expect(await screen.findByText('Diamond Cash Tables')).toBeTruthy();
+    expect(screen.queryByText('Chip Operations')).toBeNull();
+  });
+  it('keeps finance routes out of the cash table lobby', async () => {
+    mocks.access.mockResolvedValue({ ...diamond, cashGamesEnabled: true });
+    render(
+      <MemoryRouter initialEntries={['/clubs/diamond/finance']}>
+        <ArenaAccessBoundary clubKey="diamond">
+          <div>Chip Operations</div>
+        </ArenaAccessBoundary>
+      </MemoryRouter>
+    );
+    await screen.findByText('You Are Already A Member.');
+    expect(screen.queryByText('Diamond Cash Tables')).toBeNull();
+    expect(screen.queryByText('Chip Operations')).toBeNull();
+  });
+  it('closes the cash lobby when fresh entitlement revokes the gate', async () => {
+    mocks.access
+      .mockResolvedValueOnce({ ...diamond, cashGamesEnabled: true })
+      .mockResolvedValueOnce(diamond);
+    render(
+      <MemoryRouter initialEntries={['/clubs/diamond']}>
+        <ArenaAccessBoundary clubKey="diamond">
+          <div>Chip Operations</div>
+        </ArenaAccessBoundary>
+      </MemoryRouter>
+    );
+    await screen.findByText('Diamond Cash Tables');
+    fireEvent.focus(window);
+    await screen.findByText('Diamond Games Are Not Open For Play Yet.');
+    expect(screen.queryByText('Diamond Cash Tables')).toBeNull();
   });
 });

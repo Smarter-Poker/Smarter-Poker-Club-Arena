@@ -1,3 +1,5 @@
+-- Production arena identity is authoritative for stack-writer dispatch.
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS asset text NOT NULL DEFAULT 'chips';
 
 ALTER TABLE tables ADD COLUMN IF NOT EXISTS tournament_id uuid;
 ALTER TABLE table_seats ADD COLUMN IF NOT EXISTS club_id uuid;

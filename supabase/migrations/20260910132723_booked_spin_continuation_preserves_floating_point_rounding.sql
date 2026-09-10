@@ -10,6 +10,7 @@ BEGIN
   IF v_oid IS NULL OR NOT EXISTS (
     SELECT 1 FROM pg_proc p WHERE p.oid=v_oid
       AND md5(p.prosrc)='b5769b647e5b106caaf51982ac245ee8'
+      AND p.proowner='postgres'::regrole
       AND p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp']
       AND p.proacl::text='{postgres=X/postgres}'
   ) THEN
@@ -269,6 +270,7 @@ BEGIN
     SELECT 1 FROM pg_proc p
     WHERE p.oid='public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'::regprocedure
       AND md5(p.prosrc)='4f83c09a69eecc766a1f3984feeb9823'
+      AND p.proowner='postgres'::regrole
       AND p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp']
       AND p.proacl::text='{postgres=X/postgres}'
   ) THEN

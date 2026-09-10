@@ -118,7 +118,7 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  FIX: git pull --rebase origin main, then rebuild.\n`;
   if (process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1') {
     console.error(msg);
-    console.log("bypassed");
+    process.exit(1);
   }
   console.warn(msg);
 }

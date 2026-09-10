@@ -1,0 +1,168 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+const script = path.resolve('scripts/stamp-build-provenance.mjs');
+const fixtures: string[] = [];
+
+// Each subprocess sees only its temporary repository. Runner git context and
+// CI flags must not change the scenario or expose the enclosing worktree.
+const cleanEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key]) =>
+      !key.startsWith('GIT_') &&
+      ![
+        'GITHUB_ACTIONS',
+        'GITHUB_RUN_ID',
+        'GITHUB_REPOSITORY',
+        'STRICT_PROVENANCE',
+        'CA_DIST',
+      ].includes(key)
+  )
+);
+const fixtureEnv = {
+  ...cleanEnv,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+};
+
+afterEach(() => {
+  for (const dir of fixtures.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function directory() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ca-provenance-test-'));
+  fixtures.push(dir);
+  return dir;
+}
+
+function git(dir: string, ...args: string[]) {
+  const result = spawnSync('git', args, {
+    cwd: dir,
+    env: fixtureEnv,
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(`Fixture git ${args[0]} failed: ${result.error ?? result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+function repository(state: 'current' | 'behind' | 'ahead' | 'diverged' | 'no-remote') {
+  const dir = directory();
+  git(dir, 'init', '--quiet', '--initial-branch=main');
+  git(dir, 'config', 'user.name', 'Smarter-Poker');
+  git(dir, 'config', 'user.email', '254329056+Smarter-Poker@users.noreply.github.com');
+  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'fixture base');
+  const base = git(dir, 'rev-parse', 'HEAD');
+  if (state !== 'no-remote') git(dir, 'update-ref', 'refs/remotes/origin/main', base);
+  if (state === 'behind' || state === 'diverged') {
+    git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'fixture main advancement');
+    git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(dir, 'checkout', '--quiet', '--detach', base);
+  }
+  if (state === 'ahead' || state === 'diverged') {
+    git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'fixture branch advancement');
+  }
+  return dir;
+}
+
+function stamp(dir: string, overrides: Record<string, string> = {}) {
+  const result = spawnSync(process.execPath, [script], {
+    cwd: dir,
+    env: { ...fixtureEnv, ...overrides },
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
+  const artifact = path.join(dir, overrides.CA_DIST || 'dist', 'ca-provenance.json');
+  expect(existsSync(artifact)).toBe(true);
+  return { ...result, info: JSON.parse(readFileSync(artifact, 'utf8')) };
+}
+
+describe('actual build provenance subprocess', () => {
+  it.each([
+    ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
+    ['strict local release', { STRICT_PROVENANCE: '1' }],
+  ])('refuses stale source in %s and retains its diagnostic artifact', (_name, env) => {
+    const dir = repository('behind');
+    const result = stamp(dir, env);
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+    expect(result.stderr).toContain('1 commit(s) BEHIND origin/main');
+    expect(result.stdout).not.toContain('bypassed');
+    expect(result.info).toMatchObject({
+      commit: git(dir, 'rev-parse', 'HEAD'),
+      behindMain: 1,
+      aheadMain: 0,
+    });
+  });
+
+  it('refuses a divergent CI checkout despite an additional branch commit', () => {
+    const result = stamp(repository('diverged'), { GITHUB_ACTIONS: 'true' });
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+    expect(result.info).toMatchObject({ behindMain: 1, aheadMain: 1 });
+  });
+
+  it.each([{}, { STRICT_PROVENANCE: '0' }])(
+    'keeps a stale local diagnostic build usable: %j',
+    (env) => {
+      const result = stamp(repository('behind'), env);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain('1 commit(s) BEHIND origin/main');
+      expect(result.info).toMatchObject({ behindMain: 1, builtBy: 'local' });
+    }
+  );
+
+  it('accepts current CI source with the exact source and run identity', () => {
+    const dir = repository('current');
+    const result = stamp(dir, {
+      GITHUB_ACTIONS: 'true',
+      GITHUB_REPOSITORY: 'Smarter-Poker/Smarter-Poker-Club-Arena',
+      GITHUB_RUN_ID: '12345',
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.info).toMatchObject({
+      schema: 1,
+      commit: git(dir, 'rev-parse', 'HEAD'),
+      commitTime: git(dir, 'show', '-s', '--format=%cI', 'HEAD'),
+      branch: 'main',
+      dirty: false,
+      behindMain: 0,
+      aheadMain: 0,
+      builtBy: 'github-actions',
+      ciRun: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/12345',
+    });
+  });
+
+  it('accepts an ahead-only strict build and preserves the native output directory', () => {
+    const dir = repository('ahead');
+    const result = stamp(dir, { STRICT_PROVENANCE: '1', CA_DIST: 'dist-native' });
+    expect(result.status).toBe(0);
+    expect(result.info).toMatchObject({ behindMain: 0, aheadMain: 1 });
+    expect(existsSync(path.join(dir, 'dist'))).toBe(false);
+  });
+
+  it('preserves unknown-distance diagnostics when origin/main is unavailable', () => {
+    const result = stamp(repository('no-remote'), { STRICT_PROVENANCE: '1' });
+    expect(result.status).toBe(0);
+    expect(result.info).toMatchObject({ behindMain: null, aheadMain: null });
+    expect(result.stdout).toContain('behind-main=?');
+  });
+
+  it('preserves the documented non-git diagnostic artifact', () => {
+    const result = stamp(directory(), { GITHUB_ACTIONS: 'true' });
+    expect(result.status).toBe(0);
+    expect(result.info).toMatchObject({
+      commit: 'unknown',
+      commitTime: 'unknown',
+      branch: 'unknown',
+      behindMain: null,
+      aheadMain: null,
+    });
+  });
+});

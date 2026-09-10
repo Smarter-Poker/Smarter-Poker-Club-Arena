@@ -72,23 +72,62 @@ SELECT smarter_private.fn_smarter_data_api_pre_request();
 RESET ROLE;
 
 DO $service_hook_execution_and_private_surface$
+DECLARE
+  v_authenticator_oid oid;
+  v_current_database_oid oid;
+  v_canonical_global_hook_settings bigint;
+  v_applicable_hook_settings bigint;
 BEGIN
+  SELECT r.oid INTO STRICT v_authenticator_oid
+    FROM pg_roles r
+   WHERE r.rolname = 'authenticator';
+  SELECT d.oid INTO STRICT v_current_database_oid
+    FROM pg_database d
+   WHERE d.datname = current_database();
+
   IF current_setting('app.smarter_data_actor', true) <> 'service' THEN
     RAISE EXCEPTION 'service_role could not execute the private PostgREST hook';
   END IF;
   IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NOT NULL THEN
     RAISE EXCEPTION 'request hook still has a public RPC spelling';
   END IF;
-  IF NOT EXISTS (
+  SELECT
+    count(*) FILTER (
+      WHERE s.setdatabase = 0
+        AND s.setrole = v_authenticator_oid
+        AND setting.value =
+            'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+    ),
+    count(*)
+    INTO v_canonical_global_hook_settings, v_applicable_hook_settings
+    FROM pg_db_role_setting s
+    CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
+   WHERE s.setdatabase IN (0, v_current_database_oid)
+     AND s.setrole IN (0, v_authenticator_oid)
+     AND setting.value LIKE 'pgrst.db_pre_request=%';
+
+  IF v_canonical_global_hook_settings <> 1
+     OR v_applicable_hook_settings <> 1 THEN
+    RAISE EXCEPTION
+      'PostgREST private request hook settings are not exact (canonical global %, applicable %)',
+      v_canonical_global_hook_settings,
+      v_applicable_hook_settings;
+  END IF;
+
+  IF EXISTS (
     SELECT 1
       FROM pg_db_role_setting s
-      JOIN pg_roles r ON r.oid = s.setrole
       CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
-     WHERE r.rolname = 'authenticator'
-       AND setting.value =
-           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+      CROSS JOIN LATERAL regexp_split_to_table(
+        split_part(setting.value, '=', 2),
+        '[[:space:]]*,[[:space:]]*'
+      ) AS exposed(schema_name)
+     WHERE s.setdatabase IN (0, v_current_database_oid)
+       AND s.setrole IN (0, v_authenticator_oid)
+       AND setting.value LIKE 'pgrst.db_schemas=%'
+       AND exposed.schema_name = 'smarter_private'
   ) THEN
-    RAISE EXCEPTION 'PostgREST is not configured for the private request hook';
+    RAISE EXCEPTION 'smarter_private is exposed to this PostgREST instance';
   END IF;
 END;
 $service_hook_execution_and_private_surface$;

@@ -1,9 +1,19 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(__dirname, '..');
+const migrationsDirectory = resolve(root, 'supabase/migrations');
+
+function stagedMigration(suffix: string): string {
+  const matches = readdirSync(migrationsDirectory).filter((file) =>
+    file.endsWith(`_${suffix}.sql`)
+  );
+  expect(matches, `${suffix} migration`).toHaveLength(1);
+  return readFileSync(resolve(migrationsDirectory, matches[0]), 'utf8');
+}
+
 const lanePostimage = readFileSync(
   resolve(
     root,
@@ -27,6 +37,17 @@ const cashoutPostimage = readFileSync(
   'utf8'
 );
 const contractionCode = contraction.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
+const stageBOneThroughFive = [
+  'stage_b_forward_authority_expansion',
+  'stage_b_exact_precondition_repairs',
+  'stage_b_terminal_break_invariant',
+  'stage_b_atomic_finish_precertification',
+  'stage_b_current_postimage_contraction',
+]
+  .map(stagedMigration)
+  .join('\n')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*--.*$/gm, '');
 
 const planStart = lanePostimage.indexOf('v_plan CONSTANT jsonb := jsonb_build_object(');
 const planEnd = lanePostimage.indexOf('\n  );', planStart);
@@ -114,6 +135,44 @@ const indirectTerminalWrappers = new Set([
   'atomic_cancel_tournament',
   'fn_complete_tournament_terminal',
 ]);
+
+describe('Stage-B contraction preserves the exact current production tail', () => {
+  it('pins the two later function bodies that the current-tail guard does not replace', () => {
+    const postcondition = dollarBody('verify_current_postimage_contraction');
+
+    for (const [identity, sourceHash] of [
+      [
+        'public.fn_active_maintenance_release_boundary()' as const,
+        '66f0ca0e4ebf27a74dd4b7c211c4fd0f',
+      ],
+      [
+        'public.fn_ca_eliminate_absent_tournament_players(integer,integer,boolean)' as const,
+        '05855868cb0cbb1199049b5e0e97aa56',
+      ],
+    ]) {
+      expect(compact(postcondition)).toContain(
+        compact(`('${identity}'::regprocedure, '${sourceHash}'::text)`)
+      );
+      expect(countNeedle(postcondition, sourceHash)).toBe(1);
+    }
+
+    // These are the immediately superseded 034411 maintenance and pre-072322
+    // eliminator hashes. Accepting either would silently certify a stale tail.
+    expect(postcondition).not.toContain('9e66fb8c6cbecfa67fb91a924723a797');
+    expect(postcondition).not.toContain('421488851cad34b81b8fea7f2f796fed');
+  });
+
+  it('never recreates or drops either preserved body in boundaries one through five', () => {
+    for (const name of [
+      'fn_active_maintenance_release_boundary',
+      'fn_ca_eliminate_absent_tournament_players',
+    ]) {
+      expect(stageBOneThroughFive).not.toMatch(
+        new RegExp(`(?:CREATE(?: OR REPLACE)?|DROP) FUNCTION\\s+public\\.${name}\\s*\\(`)
+      );
+    }
+  });
+});
 
 describe('Stage-B contraction preserves the 035435 per-tournament settlement lanes', () => {
   it('derives one unique thirty-function topology from the live migration', () => {
@@ -249,12 +308,12 @@ describe('Stage-B contraction preserves the 035435 per-tournament settlement lan
     ).toBe('PERFORM public.fn_ca_lock_settlement_lane_global();');
   });
 
-  it('keeps raw G acquisitions at the five intentional transaction fences only', () => {
+  it('keeps raw G acquisitions at the three intentional transaction fences only', () => {
     expect(
       contractionCode.match(
         /SELECT\s+pg_advisory_xact_lock\s*\(\s*hashtextextended\s*\(\s*'ca:tournament-terminal-settlement:v1'\s*,\s*0\s*\)\s*\)\s*;/g
       )
-    ).toHaveLength(5);
+    ).toHaveLength(3);
   });
 
   it('does not remove the three 035435 lane helpers', () => {
@@ -293,6 +352,7 @@ describe('Stage-B contraction preserves the 035435 per-tournament settlement lan
   it('composes over the exact 063559 and 064701 busy-manager postimages', () => {
     const preflight = dollarBody('require_stage_a_request_authority');
     const finalProof = dollarBody('verify_current_postimage_contraction');
+    const managerProof = dollarBody('assert_strict_manager_request_fence');
 
     for (const provenance of [
       '20260910063559',
@@ -317,11 +377,22 @@ describe('Stage-B contraction preserves the 035435 per-tournament settlement lan
       expect(preflight).toContain(sourceHash);
     }
 
-    expect(preflight).toContain('FOR KEY SHARE;');
+    expect(preflight).toContain('$manager_write_lease_pattern$');
+    expect(preflight).toContain(
+      "v_hook_semantic := regexp_replace(v_source, '/\\*.*?\\*/', ' ', 'gs')"
+    );
+    expect(preflight).toContain('v_hook_semantic !~ v_manager_write_lease_pattern');
+    expect(preflight).toContain('FOR[[:space:]]+KEY[[:space:]]+SHARE[[:space:]]*;');
     expect(preflight).toContain('FOR UPDATE;\\n\\n');
     expect(preflight).toContain('FOR NO KEY UPDATE OF l SKIP LOCKED');
     expect(contraction).toContain('Preserve 20260910063559');
-    expect(contraction).toContain("position('FOR KEY SHARE' IN v_hook_source) = 0");
+    expect(managerProof).toContain(
+      "v_hook_semantic := regexp_replace(v_hook_source, '/\\*.*?\\*/', ' ', 'gs')"
+    );
+    expect(managerProof).toContain('v_hook_semantic !~ v_manager_write_lease_pattern');
+    expect(managerProof).toContain(
+      "v_hook_semantic ~\n          'engine_tournament_leases[[:space:]]+l[[:space:]][^;]*FOR[[:space:]]+SHARE[[:space:]]*;'"
+    );
     expect(contraction).toContain('engine_tournament_leases[[:space:]]+l');
     expect(operationIndexes('claim_tournament_lease_v2')).toEqual({ creates: [], removals: [] });
 

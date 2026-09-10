@@ -41,9 +41,12 @@ The logical IDs embedded inside these files are immutable. After each production
 ## Current Forward Cutover Order
 
 The supported executable sequence is one continuously frozen current-postimage
-chain. After the final production-head rebase, each physical filename must sort
-in this order and its exact statement bytes must be sealed to the migration
-ledger before moving to the next boundary:
+chain. The rehearsal resolves these semantic names in order and authenticates
+the immutable logical ID embedded in each file; temporary physical filenames
+are not compared with the live ledger head. On production apply, Supabase assigns
+each boundary its physical ledger version, after which that version and the exact
+statement bytes are sealed to the migration ledger before moving to the next
+boundary:
 
 1. `stage_b_forward_authority_expansion`
 2. `stage_b_exact_precondition_repairs`
@@ -56,7 +59,10 @@ Resolve and validate the chain with
 `scripts/dev/probe-stage-b-forward-chain-pg17.sh --resolve-only`; never begin
 from an archived intermediate boundary.
 
-The two add-on definitions are contiguous because the second pins the installed processor and predecessor bodies. The two closeouts refuse a frozen platform and therefore run between the two freeze windows. The terminal migrations remain frozen through their final postconditions.
+All six boundaries run inside the same continuously frozen, stopped-engine
+window. Boundaries 2, 5, and 6 independently re-authenticate that authority,
+take the canonical relation locks, and reject fresh engine authority before
+performing any cutover work; none may be moved outside the window.
 
 ## Release Receipt
 

@@ -6,23 +6,35 @@ migration_dir="$repo_dir/supabase/migrations"
 archive_dir="$repo_dir/supabase/retired-unapplied"
 manifest="$archive_dir/MANIFEST.sha256"
 resolver="$repo_dir/scripts/ops/lib/resolve-staged-or-promoted-migration.sh"
-seat_move_hotfix_ledger_version='20260910051447'
+diamond_fixture="$repo_dir/scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql"
+current_live_ledger_head='20260910080728'
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
+manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
+busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
+hand_heartbeat_statement_sha256='5816d16550ef470f9359cae427aec0c5346df92f5c6d35b07385def4ab9b4c04'
+bounty_evidence_statement_sha256='2fdcbc3c1ccda299b53fea97a6fe9ace267919d3e3f1d9c60ae796726812c47b'
+cash_entry_ladder_statement_sha256='826248f9d290154781197628d41dd9b3b09bdf0daa2f7f65c47d166c275c7ab0'
+cron_control_sha256='19e650bc51d7534f5c9446e4f63ecaa99e43316fba202d21de9c7be6f37ca6b6'
+money_control_sha256='32b913b609d9e73469b78bb457845b26785c6c33edcb69131791f83bf0ac0558'
+absent_functions_sha256='fd5d11d378f3e694d92926fa53deda82c719485be6f226f7ba2e2b036ead09de'
+maintenance_proconfigs_sha256='3fb43fba91d2d923e68f0b08b0274320066048449657a3981b69baf270bb2025'
+elimination_guard_sha256='f818fd0881db431fe5d1323fbf50efbb64c175ff10a7165b8cb5f6791310942e'
 
 usage() {
   cat >&2 <<'USAGE'
 Usage: scripts/dev/probe-stage-b-forward-chain-pg17.sh [MODE]
 
 MODE is one of:
-  --resolve-only          resolve and byte-check sources without a database
+  --resolve-only          resolve sources and verify their logical order
   --keyshare-replay       apply #1-#6, then prove #6 is an exact no-op replay
   --keyshare-mixed-state  apply #1-#5, inject one ownership key, and prove #6
                           refuses and rolls back the mixed preimage
 
-Without MODE, this clones the acknowledged baseline twice, proves the terminal-
-break repair success and late-failure rollback cases, then applies the six
-current Stage-B migrations once to the acknowledged clone. Database modes use
-one already-prepared, disposable local PostgreSQL 17 clone. Set:
+Without MODE, this proves the terminal repair and late-failure rollback, applies
+#1-#5 once with the Diamond/accepted-hand fixture, then clones that
+postimage for #6 replay and authenticated unknown-preimage rollback. Database
+modes clone but never mutate one local PostgreSQL 17 production-schema donor
+containing no player, game, or financial rows. Set:
   STAGE_B_FORWARD_REHEARSAL_ACK=DISPOSABLE_LOCAL_PG17_CLONE
   STAGE_B_FORWARD_REHEARSAL_DATABASE=<exact current_database() name>
 and connect with normal libpq variables or PGSERVICE. DATABASE_URL is rejected.
@@ -56,62 +68,44 @@ chain_names=(
   stage_b_current_postimage_contraction
   stage_b_lease_keyshare_once
 )
-chain_files=()
-for migration_name in "${chain_names[@]}"; do
-  chain_files+=("$(resolve_staged_or_promoted_migration "$migration_dir" "$migration_name")")
-done
-
-baseline_names=(
-  seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in
-  spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row
-  the_settlement_lane_is_per_tournament_not_platform_wide
-  the_seat_move_door_the_engine_calls_exists
+chain_logical_ids=(
+  20260910042007
+  20260910042020
+  20260910042033
+  20260910042058
+  20260910042112
+  20260910042137
 )
-baseline_files=()
-baseline_versions=()
-for migration_name in "${baseline_names[@]}"; do
-  baseline_file="$(resolve_staged_or_promoted_migration "$migration_dir" "$migration_name")"
-  baseline_basename="$(basename "$baseline_file")"
-  baseline_version="${baseline_basename%%_*}"
-  [[ "$baseline_version" =~ ^[0-9]{14}$ ]] || {
-    echo "Baseline migration has no ledger-shaped version: ${baseline_basename}." >&2
-    exit 65
-  }
-  baseline_files+=("$baseline_file")
-  baseline_versions+=("$baseline_version")
-done
-
-for ((index = 1; index < ${#baseline_versions[@]}; index += 1)); do
-  if [[ ! "${baseline_versions[$((index - 1))]}" < "${baseline_versions[$index]}" ]]; then
-    echo 'Current pre-Stage-B baseline migrations do not have strict version order.' >&2
-    exit 65
-  fi
-done
-
-baseline_last_index=$((${#baseline_files[@]} - 1))
-newest_baseline="$(basename "${baseline_files[$baseline_last_index]}")"
-first_stage_b="$(basename "${chain_files[0]}")"
-first_stage_b_version="${first_stage_b%%_*}"
-if [[ ! "${baseline_versions[$baseline_last_index]}" < "$first_stage_b_version" ]]; then
-  echo "Stage-B starts at or before the current ledger head: ${first_stage_b} does not follow ${newest_baseline}." >&2
+if [[ "${#chain_names[@]}" -ne "${#chain_logical_ids[@]}" ]]; then
+  echo 'Stage-B semantic suffixes and logical identities are not one-to-one.' >&2
   exit 65
 fi
+chain_files=()
+for ((index = 0; index < ${#chain_names[@]}; index += 1)); do
+  migration_name="${chain_names[$index]}"
+  migration_file="$(resolve_staged_or_promoted_migration "$migration_dir" "$migration_name")"
+  migration_basename="$(basename "$migration_file")"
+  logical_identity="${chain_logical_ids[$index]}_${migration_name}"
 
-for ((index = 1; index < ${#chain_files[@]}; index += 1)); do
-  previous="$(basename "${chain_files[$((index - 1))]}")"
-  current="$(basename "${chain_files[$index]}")"
-  previous_version="${previous%%_*}"
-  current_version="${current%%_*}"
-  if [[ ! "$previous_version" =~ ^[0-9]{14}$ \
-     || ! "$current_version" =~ ^[0-9]{14}$ ]]; then
-    echo "Stage-B migration has no ledger-shaped version: ${previous} or ${current}." >&2
+  if [[ ! "$migration_basename" =~ ^[0-9]{14}_${migration_name}\.sql(\.pending)?$ ]]; then
+    echo "Stage-B source does not have the expected semantic suffix: ${migration_basename}." >&2
     exit 65
   fi
-  if [[ ! "$previous_version" < "$current_version" ]]; then
-    echo "Stage-B migration versions are not strictly increasing: ${previous} then ${current}." >&2
+  if ! grep -Eq "^-- ${logical_identity}(\\.sql)?$" "$migration_file"; then
+    echo "Stage-B source does not declare logical identity ${logical_identity}: ${migration_basename}." >&2
     exit 65
   fi
+  if [[ "$index" -gt 0 \
+     && ! "${chain_logical_ids[$((index - 1))]}" < "${chain_logical_ids[$index]}" ]]; then
+    echo "Stage-B logical identities are not strictly ordered at ${logical_identity}." >&2
+    exit 65
+  fi
+  chain_files+=("$migration_file")
 done
+[[ -r "$diamond_fixture" ]] || {
+  echo "The current-schema Diamond accepted-hand fixture is unreadable: ${diamond_fixture}." >&2
+  exit 66
+}
 
 [[ -r "$manifest" ]] || {
   echo 'The retired Stage-B SHA-256 manifest is unreadable.' >&2
@@ -170,23 +164,259 @@ if [[ ! -x "${pg17_bin}/psql" ]] \
   echo 'PostgreSQL 17 psql, createdb and dropdb are required. Set PG17_BINDIR to its bin directory.' >&2
   exit 2
 fi
-
 psql_cmd=(
   "${pg17_bin}/psql" -X -v ON_ERROR_STOP=1
   --dbname="$expected_database"
-  -v "baseline_version_1=${baseline_versions[0]}"
-  -v "baseline_name_1=${baseline_names[0]}"
-  -v "baseline_version_2=${baseline_versions[1]}"
-  -v "baseline_name_2=${baseline_names[1]}"
-  -v "baseline_version_3=${baseline_versions[2]}"
-  -v "baseline_name_3=${baseline_names[2]}"
-  -v "baseline_version_4=${baseline_versions[3]}"
-  -v "baseline_name_4=${baseline_names[3]}"
-  -v "seat_move_hotfix_ledger_version=$seat_move_hotfix_ledger_version"
+  -v "current_live_ledger_head=$current_live_ledger_head"
   -v "seat_move_hotfix_statement_sha256=$seat_move_hotfix_statement_sha256"
+  -v "manager_request_authority_statement_sha256=$manager_request_authority_statement_sha256"
+  -v "busy_manager_statement_sha256=$busy_manager_statement_sha256"
+  -v "hand_heartbeat_statement_sha256=$hand_heartbeat_statement_sha256"
+  -v "bounty_evidence_statement_sha256=$bounty_evidence_statement_sha256"
+  -v "cash_entry_ladder_statement_sha256=$cash_entry_ladder_statement_sha256"
+  -v "cron_control_sha256=$cron_control_sha256"
+  -v "money_control_sha256=$money_control_sha256"
+  -v "absent_functions_sha256=$absent_functions_sha256"
+  -v "maintenance_proconfigs_sha256=$maintenance_proconfigs_sha256"
+  -v "elimination_guard_sha256=$elimination_guard_sha256"
 )
+
+emit_zero_player_data_assertion_function() {
+  cat <<'SQL'
+CREATE OR REPLACE FUNCTION pg_temp.assert_zero_player_data_baseline()
+RETURNS bigint
+LANGUAGE plpgsql
+SET search_path TO 'pg_catalog','public','pg_temp'
+AS $assert_zero_player_data_baseline$
+DECLARE
+  v_relation_name text;
+  v_relation regclass;
+  v_rows bigint;
+  v_total bigint:=0;
+BEGIN
+  FOREACH v_relation_name IN ARRAY ARRAY[
+    'auth.users','public.profiles','public.clubs','public.club_members',
+    'public.tables','public.table_seats','public.tournaments',
+    'public.tournament_players','public.tournament_tickets','public.club_wallets',
+    'public.club_wallet_transactions','public.chip_ledger',
+    'public.poker_diamond_custody',
+    'public.poker_diamond_movements','public.poker_diamond_hand_receipts',
+    'public.seat_cashout_receipts'
+  ]::text[] LOOP
+    v_relation:=to_regclass(v_relation_name);
+    IF v_relation IS NULL THEN
+      RAISE EXCEPTION 'STAGE_B_REQUIRED_ZERO_DATA_RELATION_MISSING: %',
+        v_relation_name USING ERRCODE='55000';
+    END IF;
+    EXECUTE format('SELECT count(*) FROM %s',v_relation) INTO STRICT v_rows;
+    v_total:=v_total+v_rows;
+  END LOOP;
+
+  IF to_regclass('public.poker_diamond_obligations') IS NOT NULL THEN
+    RAISE EXCEPTION
+      'STAGE_B_RETIRED_RELATION_PRESENT: public.poker_diamond_obligations'
+      USING ERRCODE='55000';
+  END IF;
+  RETURN v_total;
+END;
+$assert_zero_player_data_baseline$;
+SQL
+}
+
 preflight="$({
-  "${psql_cmd[@]}" -Atq -F '|' <<'SQL'
+  {
+    emit_zero_player_data_assertion_function
+    cat <<'SQL'
+WITH expected_anchors(version,name) AS (
+  VALUES
+    ('20260910034411','seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'),
+    ('20260910034412','spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'),
+    ('20260910035435','the_settlement_lane_is_per_tournament_not_platform_wide'),
+    ('20260910051447','the_seat_move_door_the_engine_calls_exists'),
+    ('20260910052523','hand_projection_outbox_notifies_its_listener'),
+    ('20260910054638','tables_policy_hashed_auth_admin_trusted_and_unfilled_spins_e'),
+    ('20260910054712','a_hand_settles_each_seat_once'),
+    ('20260910055857','tournament_bounty_per_pot_evidence'),
+    ('20260910060034','cash_entry_close_proves_the_reserved_unpaid_ladder'),
+    ('20260910062308','server_financial_alerts_accept_an_entity_id'),
+    ('20260910063559','a_busy_manager_keeps_its_lease'),
+    ('20260910064305','a_union_ticket_is_issued_at_the_club_the_winner_plays_from'),
+    ('20260910064701','a_hand_commit_does_not_hold_the_lease_against_its_own_heartb'),
+    ('20260910065825','the_journal_window_is_a_snapshot_not_a_clock'),
+    ('20260910070417','a_ticket_entry_is_an_entry'),
+    ('20260910071131','cash_entry_reprice_service_only_access'),
+    ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took'),
+    ('20260910072351','an_elimination_without_a_place_cannot_be_written'),
+    ('20260910073355','the_retired_sweeps_keep_their_disabled_schedule_rows'),
+    ('20260910073818','the_break_writer_outwaits_the_doors_it_serializes'),
+    ('20260910074504','a_manager_sweeps_itself_once_when_it_adopts_the_event'),
+    ('20260910075958','a_deferred_check_reads_the_row_at_commit_not_the_statement'),
+    ('20260910080137','the_outbox_leaves_the_realtime_publication'),
+    ('20260910080242','the_guard_that_stopped_five_satellites_is_answered_for'),
+    ('20260910080728','three_money_doors_are_audited_and_registered')
+), exact_body_rows(version,name,statement_sha256) AS (
+  VALUES
+    ('20260910051447','the_seat_move_door_the_engine_calls_exists',
+     :'seat_move_hotfix_statement_sha256'),
+    ('20260910063559','a_busy_manager_keeps_its_lease',
+     :'busy_manager_statement_sha256'),
+    ('20260910064701','a_hand_commit_does_not_hold_the_lease_against_its_own_heartb',
+     :'hand_heartbeat_statement_sha256')
+), descriptor_rows(version,name,statement_bytes,statement_sha256) AS (
+  VALUES
+    ('20260910055857','tournament_bounty_per_pot_evidence',7533,
+     :'bounty_evidence_statement_sha256'),
+    ('20260910060034','cash_entry_close_proves_the_reserved_unpaid_ladder',7344,
+     :'cash_entry_ladder_statement_sha256')
+), audited_tail_rows(version,name,statement_count) AS (
+  VALUES
+    ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1),
+    ('20260910072351','an_elimination_without_a_place_cannot_be_written',1),
+    ('20260910073355','the_retired_sweeps_keep_their_disabled_schedule_rows',1),
+    ('20260910073818','the_break_writer_outwaits_the_doors_it_serializes',4),
+    ('20260910074504','a_manager_sweeps_itself_once_when_it_adopts_the_event',1),
+    ('20260910075958','a_deferred_check_reads_the_row_at_commit_not_the_statement',1),
+    ('20260910080137','the_outbox_leaves_the_realtime_publication',1),
+    ('20260910080242','the_guard_that_stopped_five_satellites_is_answered_for',1),
+    ('20260910080728','three_money_doors_are_audited_and_registered',1)
+), audited_tail_statements(version,name,ordinal,statement_bytes,statement_sha256) AS (
+  VALUES
+    ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1,13334,
+     '917370d3ab53a24b3783fb19aaaedbcc92f3e21b191c2b8f0f75c7037da560a7'),
+    ('20260910072351','an_elimination_without_a_place_cannot_be_written',1,3176,
+     '47df9d8bda8062c869e03bc80b16f6d3b596b5bdcdfd8c8d5afcac4d9836f774'),
+    ('20260910073355','the_retired_sweeps_keep_their_disabled_schedule_rows',1,3726,
+     '31dc07904307df179c912fa8b7512e55be179b2ca4aab957cd1543ce7ef154bd'),
+    ('20260910073818','the_break_writer_outwaits_the_doors_it_serializes',1,92,
+     'e35a015b273990e6dd2b91dd7a6f010789783786bdcee2ec957e6649020b54c3'),
+    ('20260910073818','the_break_writer_outwaits_the_doors_it_serializes',2,93,
+     '5fe9e6c9bac1d7346a8a4bef33c765565c026cd2acf0732007b1112a247d4498'),
+    ('20260910073818','the_break_writer_outwaits_the_doors_it_serializes',3,93,
+     '602fbb76b3337805e972d34ac8815791aa3358f51dd0e1cd17f323747f335f31'),
+    ('20260910073818','the_break_writer_outwaits_the_doors_it_serializes',4,83,
+     '6004ff5b7b75a276a91a78154ff5db40e6350ddacb9eb84baaddf6e02fefb44a'),
+    ('20260910074504','a_manager_sweeps_itself_once_when_it_adopts_the_event',1,4267,
+     '269551d6bcbe53a5d326e2b4825a203ec744287f7f2b9c126bfe27c9d1a5a29f'),
+    ('20260910075958','a_deferred_check_reads_the_row_at_commit_not_the_statement',1,4759,
+     '80966d34bda469c36e2b9afad5d594e5b334c2bbc7d3cc80fe930f1c6d295ec4'),
+    ('20260910080137','the_outbox_leaves_the_realtime_publication',1,76,
+     '44403761d38baa2ebd4d609f03263f654a3f4c8c9ae49b810ef89dc7ed20d50b'),
+    ('20260910080242','the_guard_that_stopped_five_satellites_is_answered_for',1,5499,
+     '41f2ae92fb733af7017025fb602464a2dd9c3be747f12f8c5cfbf58e0a449019'),
+    ('20260910080728','three_money_doors_are_audited_and_registered',1,6234,
+     '105085e76fb17e082d9073b6e3abcfb91db7317541458f160f20cc295783d76a')
+), cron_control_objects AS (
+  SELECT jsonb_build_object(
+           'jobid',jobid,'jobname',jobname,'schedule',schedule,
+           'command',command,'database',database,'username',username,
+           'nodename',nodename,'nodeport',nodeport,'active',active) AS value
+    FROM cron.job
+   WHERE jobname IN ('ca-eliminate-absent-players','ca-release-broke-seats')
+      OR command ILIKE '%fn_ca_eliminate_absent_tournament_players%'
+      OR command ILIKE '%fn_ca_release_broke_seats%'
+   ORDER BY jobid
+), cron_control_canon AS (
+  SELECT count(*) AS row_count,
+         COALESCE(jsonb_agg(value),'[]'::jsonb)::text AS value
+    FROM cron_control_objects
+), money_control_objects AS (
+  SELECT jsonb_build_object(
+           'proname',proname,'status',status,'notes',notes,
+           'added_at_utc',to_char(added_at AT TIME ZONE 'UTC',
+                                  'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) AS value
+    FROM public.ca_money_rpc_registry
+   WHERE proname IN (
+     'fn_move_tournament_player',
+     'fn_poker_diamond_settle_cash_hand',
+     'fn_poker_diamond_cashout')
+   ORDER BY proname
+), money_control_canon AS (
+  SELECT count(*) AS row_count,
+         COALESCE(jsonb_agg(value),'[]'::jsonb)::text AS value
+    FROM money_control_objects
+), absent_function_objects AS (
+  SELECT jsonb_build_object(
+           'signature',format('%I.%I(%s)',n.nspname,p.proname,
+                              pg_get_function_identity_arguments(p.oid)),
+           'owner',pg_get_userbyid(p.proowner),
+           'security_definer',p.prosecdef,
+           'volatility',p.provolatile,'parallel',p.proparallel,
+           'proconfig',COALESCE((SELECT jsonb_agg(x ORDER BY x)
+                                   FROM unnest(p.proconfig) x),'[]'::jsonb),
+           'prosrc_md5',md5(p.prosrc),
+           'functiondef_bytes',octet_length(pg_get_functiondef(p.oid)),
+           'functiondef_sha256',encode(
+             sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')) AS value
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public'
+     AND p.oid IN (
+       'public.fn_ca_eliminate_absent_tournament_players(integer,integer,boolean)'::regprocedure,
+       'public.fn_ca_release_broke_seats(integer,integer,boolean)'::regprocedure)
+   ORDER BY p.proname
+), absent_function_canon AS (
+  SELECT count(*) AS row_count,jsonb_agg(value)::text AS value
+    FROM absent_function_objects
+), maintenance_objects AS (
+  SELECT jsonb_build_object(
+           'signature',format('%I.%I(%s)',n.nspname,p.proname,
+                              pg_get_function_identity_arguments(p.oid)),
+           'proconfig',COALESCE((SELECT jsonb_agg(x ORDER BY x)
+                                   FROM unnest(p.proconfig) x),'[]'::jsonb)) AS value
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE p.oid IN (
+     'public.fn_save_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,text,uuid)'::regprocedure,
+     'public.fn_clear_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,uuid)'::regprocedure,
+     'public.fn_claim_engine_maintenance_break(uuid,uuid,text)'::regprocedure,
+     'public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)'::regprocedure)
+   ORDER BY p.proname
+), maintenance_canon AS (
+  SELECT count(*) AS row_count,jsonb_agg(value)::text AS value
+    FROM maintenance_objects
+), elimination_function AS (
+  SELECT jsonb_build_object(
+           'kind','function',
+           'signature','public.fn_tournament_elimination_has_a_place()',
+           'owner',pg_get_userbyid(p.proowner),
+           'security_definer',p.prosecdef,
+           'proconfig',COALESCE((SELECT jsonb_agg(x ORDER BY x)
+                                   FROM unnest(p.proconfig) x),'[]'::jsonb),
+           'prosrc_md5',md5(p.prosrc),
+           'functiondef_bytes',octet_length(pg_get_functiondef(p.oid)),
+           'functiondef_sha256',encode(
+             sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')) AS value
+    FROM pg_proc p
+   WHERE p.oid=
+     'public.fn_tournament_elimination_has_a_place()'::regprocedure
+), elimination_trigger AS (
+  SELECT jsonb_build_object(
+           'kind','trigger','name',tgname,'table',tgrelid::regclass::text,
+           'function',tgfoid::regprocedure::text,'enabled',tgenabled,
+           'internal',tgisinternal,'deferrable',tgdeferrable,
+           'initially_deferred',tginitdeferred,
+           'triggerdef',pg_get_triggerdef(oid,true)) AS value
+    FROM pg_trigger
+   WHERE tgrelid='public.tournament_players'::regclass
+     AND tgname='tournament_elimination_has_a_place'
+), elimination_constraint AS (
+  SELECT jsonb_build_object(
+           'kind','constraint','name',conname,'type',contype,
+           'table',conrelid::regclass::text,'deferrable',condeferrable,
+           'initially_deferred',condeferred,'validated',convalidated,
+           'constraintdef',pg_get_constraintdef(oid,true)) AS value
+    FROM pg_constraint
+   WHERE conrelid='public.tournament_players'::regclass
+     AND conname='tournament_elimination_has_a_place'
+), elimination_objects AS (
+  SELECT value FROM elimination_function
+  UNION ALL SELECT value FROM elimination_trigger
+  UNION ALL SELECT value FROM elimination_constraint
+), elimination_canon AS (
+  SELECT count(*) AS row_count,
+         jsonb_agg(value ORDER BY value->>'kind')::text AS value
+    FROM elimination_objects
+)
 SELECT current_database(),
        current_setting('server_version_num')::integer / 10000,
        COALESCE(inet_server_addr()::text, 'local-socket'),
@@ -197,36 +427,43 @@ SELECT current_database(),
          THEN 'local'
          ELSE 'remote'
        END,
-       CASE
-         WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL THEN -1
-         ELSE (
-           SELECT count(*)
-             FROM supabase_migrations.schema_migrations
-            WHERE (version, name) IN (
-              (:'baseline_version_1', :'baseline_name_1'),
-              (:'baseline_version_2', :'baseline_name_2'),
-              (:'baseline_version_3', :'baseline_name_3')
-            )
-               OR (
-                 version=:'seat_move_hotfix_ledger_version'
-                 AND name=:'baseline_name_4'
-                 AND cardinality(statements)=1
-                 AND encode(
-                       extensions.digest(statements[1],'sha256'),'hex'
-                     )=:'seat_move_hotfix_statement_sha256'
-               )
-         )
-       END,
-       CASE
-         WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL
-           THEN NULL
-         ELSE (
-           SELECT max(version)
-             FROM supabase_migrations.schema_migrations
-            WHERE version=:'seat_move_hotfix_ledger_version'
-              AND name=:'baseline_name_4'
-         )
-       END,
+       (SELECT count(*)
+          FROM expected_anchors expected
+         WHERE (SELECT count(*)
+                  FROM supabase_migrations.schema_migrations actual
+                 WHERE actual.version=expected.version
+                   AND actual.name=expected.name)=1),
+       (SELECT max(version) FILTER (WHERE version ~ '^[0-9]{14}$')
+          FROM supabase_migrations.schema_migrations),
+       (SELECT count(*)
+          FROM exact_body_rows expected
+          JOIN supabase_migrations.schema_migrations actual
+            ON actual.version=expected.version AND actual.name=expected.name
+         WHERE cardinality(actual.statements)=1
+           AND encode(extensions.digest(actual.statements[1],'sha256'),'hex')=
+                 expected.statement_sha256),
+       (SELECT count(*)
+          FROM descriptor_rows expected
+          JOIN supabase_migrations.schema_migrations actual
+            ON actual.version=expected.version AND actual.name=expected.name
+         WHERE cardinality(actual.statements)=1
+           AND octet_length(actual.statements[1])=expected.statement_bytes
+           AND encode(extensions.digest(actual.statements[1],'sha256'),'hex')=
+                 expected.statement_sha256),
+       (SELECT count(*)
+          FROM audited_tail_rows expected
+          JOIN supabase_migrations.schema_migrations actual
+            ON actual.version=expected.version AND actual.name=expected.name
+         WHERE cardinality(actual.statements)=expected.statement_count),
+       (SELECT count(*)
+          FROM audited_tail_statements expected
+          JOIN supabase_migrations.schema_migrations actual
+            ON actual.version=expected.version AND actual.name=expected.name
+         WHERE octet_length(actual.statements[expected.ordinal])=
+                 expected.statement_bytes
+           AND encode(extensions.digest(
+                 actual.statements[expected.ordinal],'sha256'),'hex')=
+                 expected.statement_sha256),
        CASE
          WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL THEN -1
          ELSE (
@@ -242,18 +479,7 @@ SELECT current_database(),
             )
          )
        END,
-       CASE
-         WHEN to_regclass('public.engine_maintenance_break') IS NULL
-           OR to_regprocedure('public.fn_platform_frozen()') IS NULL THEN -1
-         ELSE (
-           SELECT count(*)
-             FROM public.engine_maintenance_break b
-            WHERE b.id
-              AND b.enforce_freeze
-              AND b.phase = 'counting_down'
-              AND public.fn_platform_frozen()
-         )
-       END,
+       (SELECT count(*) FROM public.engine_maintenance_break),
        CASE
          WHEN to_regclass('public.engine_leader') IS NULL
            OR to_regclass('public.engine_table_leases') IS NULL
@@ -294,12 +520,70 @@ SELECT current_database(),
            AND p.proconfig=ARRAY['search_path=public']::text[]
            AND p.proacl::text=
                  '{postgres=X/postgres,service_role=X/postgres}'
-           AND l.lanname='sql');
+           AND l.lanname='sql'),
+       pg_temp.assert_zero_player_data_baseline(),
+       CASE WHEN (SELECT row_count FROM cron_control_canon)=2
+                  AND (SELECT octet_length(value) FROM cron_control_canon)=539
+                  AND (SELECT encode(sha256(convert_to(value,'UTF8')),'hex')
+                         FROM cron_control_canon)=:'cron_control_sha256'
+            THEN 1 ELSE 0 END,
+       CASE WHEN (SELECT row_count FROM money_control_canon)=3
+                  AND (SELECT octet_length(value) FROM money_control_canon)=1348
+                  AND (SELECT encode(sha256(convert_to(value,'UTF8')),'hex')
+                         FROM money_control_canon)=:'money_control_sha256'
+            THEN 1 ELSE 0 END,
+       CASE WHEN (SELECT row_count FROM absent_function_canon)=2
+                  AND (SELECT octet_length(value) FROM absent_function_canon)=841
+                  AND (SELECT encode(sha256(convert_to(value,'UTF8')),'hex')
+                         FROM absent_function_canon)=:'absent_functions_sha256'
+            THEN 1 ELSE 0 END,
+       (SELECT count(*)
+          FROM pg_proc p
+         WHERE p.oid IN (
+           'public.fn_ca_eliminate_absent_tournament_players(integer,integer,boolean)'::regprocedure,
+           'public.fn_ca_release_broke_seats(integer,integer,boolean)'::regprocedure)
+           AND (SELECT count(*) FROM aclexplode(
+                  COALESCE(p.proacl,acldefault('f',p.proowner))) a
+                 WHERE a.privilege_type='EXECUTE')=2
+           AND (SELECT count(*) FROM aclexplode(
+                  COALESCE(p.proacl,acldefault('f',p.proowner))) a
+                 WHERE a.grantor=p.proowner AND a.grantee=p.proowner
+                   AND a.privilege_type='EXECUTE' AND NOT a.is_grantable)=1
+           AND (SELECT count(*) FROM aclexplode(
+                  COALESCE(p.proacl,acldefault('f',p.proowner))) a
+                 WHERE a.grantor=p.proowner
+                   AND a.grantee='service_role'::regrole
+                   AND a.privilege_type='EXECUTE' AND NOT a.is_grantable)=1),
+       CASE WHEN (SELECT row_count FROM maintenance_canon)=4
+                  AND (SELECT octet_length(value) FROM maintenance_canon)=1197
+                  AND (SELECT encode(sha256(convert_to(value,'UTF8')),'hex')
+                         FROM maintenance_canon)=:'maintenance_proconfigs_sha256'
+            THEN 1 ELSE 0 END,
+       CASE WHEN (SELECT row_count FROM elimination_canon)=3
+                  AND (SELECT octet_length(value) FROM elimination_canon)=1067
+                  AND (SELECT encode(sha256(convert_to(value,'UTF8')),'hex')
+                         FROM elimination_canon)=:'elimination_guard_sha256'
+            THEN 1 ELSE 0 END,
+       CASE WHEN to_regclass('public.hand_projection_outbox') IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM pg_publication
+                               WHERE pubname='supabase_realtime')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM pg_publication_tables
+                     WHERE pubname='supabase_realtime'
+                       AND schemaname='public'
+                       AND tablename='hand_projection_outbox')
+            THEN 1 ELSE 0 END;
 SQL
+  } | "${psql_cmd[@]}" -Atq -F '|'
 })"
 IFS='|' read -r actual_database major_version server_address locality \
-  baseline_receipts hotfix_ledger_version staged_receipts frozen_rows fresh_authorities \
-  immutable_guard_acl contract_document_shape <<<"$preflight"
+  anchor_receipts ledger_head exact_body_receipts descriptor_receipts \
+  audited_tail_receipts audited_tail_statements staged_receipts maintenance_rows \
+  fresh_authorities immutable_guard_acl contract_document_shape donor_data_rows \
+  cron_control_exact money_control_exact absent_functions_exact \
+  absent_function_acls maintenance_proconfigs elimination_guard \
+  outbox_publication_absent \
+  <<<"$preflight"
 
 if [[ "$actual_database" != "$expected_database" ]]; then
   echo "Connected database ${actual_database:-<unknown>} does not match the acknowledged disposable database." >&2
@@ -309,21 +593,29 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$baseline_receipts" != '4' ]]; then
-  echo 'The disposable clone is not based on all four current pre-Stage-B ledger boundaries.' >&2
+if [[ "$anchor_receipts" != '25' || "$ledger_head" != "$current_live_ledger_head" ]]; then
+  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/25 anchors, head ${ledger_head:-<missing>}." >&2
   exit 65
 fi
-if [[ "$hotfix_ledger_version" != "$seat_move_hotfix_ledger_version" ]] \
-   || [[ ! "$hotfix_ledger_version" < "$first_stage_b_version" ]]; then
-  echo "Stage-B ${first_stage_b_version} does not follow the applied seat-move hotfix ${hotfix_ledger_version:-<missing>}." >&2
+if [[ "$exact_body_receipts" != '3' ]]; then
+  echo 'The donor does not contain all three byte-exact live body ledger rows (051447, 063559, 064701).' >&2
   exit 65
 fi
+if [[ "$descriptor_receipts" != '2' ]]; then
+  echo 'The donor does not contain the observed descriptor-only 055857 and 060034 ledger metadata.' >&2
+  exit 65
+fi
+if [[ "$audited_tail_receipts" != '9' || "$audited_tail_statements" != '12' ]]; then
+  echo 'The donor does not contain the byte-authenticated 072322-080728 live ledger tail.' >&2
+  exit 65
+fi
+echo 'STAGE_B_CURRENT_LIVE_SCHEMA_MANIFEST_OK'
 if [[ "$staged_receipts" != '0' ]]; then
   echo 'At least one Stage-B boundary is already ledgered; use a fresh disposable clone.' >&2
   exit 65
 fi
-if [[ "$frozen_rows" != '1' || "$fresh_authorities" != '0' ]]; then
-  echo 'The disposable clone is not frozen with every engine authority stale.' >&2
+if [[ "$maintenance_rows" != '0' || "$fresh_authorities" != '0' ]]; then
+  echo 'The donor must have no maintenance row and every engine authority must be stale.' >&2
   exit 65
 fi
 if [[ "$immutable_guard_acl" != '1' ]]; then
@@ -332,6 +624,142 @@ if [[ "$immutable_guard_acl" != '1' ]]; then
 fi
 if [[ "$contract_document_shape" != '1' ]]; then
   echo 'The disposable clone is missing the exact production managed-game contract document helper and ACL.' >&2
+  exit 65
+fi
+if [[ "$donor_data_rows" != '0' ]]; then
+  echo "The donor contains ${donor_data_rows} player, game, or financial rows; use a production-schema zero-data clone." >&2
+  exit 65
+fi
+echo 'STAGE_B_ZERO_PLAYER_DATA_BASELINE_OK'
+if [[ "$cron_control_exact" != '1' || "$money_control_exact" != '1' ]]; then
+  echo 'The donor is missing the exact immutable 080728 inactive-sweep or money-registry control rows.' >&2
+  exit 65
+fi
+if [[ "$absent_functions_exact" != '1' || "$absent_function_acls" != '2' ]]; then
+  echo 'The donor does not preserve the exact 072322 absent-player function definitions, catalog, and ACLs.' >&2
+  exit 65
+fi
+if [[ "$maintenance_proconfigs" != '1' || "$elimination_guard" != '1' \
+   || "$outbox_publication_absent" != '1' ]]; then
+  echo 'The donor does not preserve the audited 073818 maintenance budgets, 075958 deferred elimination guard, or 080137 publication absence.' >&2
+  exit 65
+fi
+
+donor_state_fingerprint() {
+  {
+    emit_zero_player_data_assertion_function
+    cat <<'SQL'
+WITH target_functions(identity) AS (
+  VALUES
+    ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'),
+    ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)'),
+    ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)'),
+    ('smarter_private.fn_smarter_data_api_pre_request()'),
+    ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)'),
+    ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)'),
+    ('public.fn_ca_eliminate_absent_tournament_players(integer,integer,boolean)'),
+    ('public.fn_ca_release_broke_seats(integer,integer,boolean)'),
+    ('public.fn_save_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,text,uuid)'),
+    ('public.fn_clear_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,uuid)'),
+    ('public.fn_claim_engine_maintenance_break(uuid,uuid,text)'),
+    ('public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)'),
+    ('public.fn_tournament_elimination_has_a_place()')
+), ledger AS (
+  SELECT encode(extensions.digest(COALESCE(string_agg(
+           version||E'\x1f'||name||E'\x1f'||cardinality(statements)::text||E'\x1f'||
+           encode(extensions.digest(array_to_string(statements,E'\x1e'),'sha256'),'hex'),
+           E'\n' ORDER BY version,name),''),'sha256'),'hex') AS fingerprint
+    FROM supabase_migrations.schema_migrations
+), functions AS (
+  SELECT jsonb_object_agg(
+           target.identity,
+           CASE WHEN p.oid IS NULL THEN jsonb_build_object('present',false)
+                ELSE jsonb_build_object(
+                  'present',true,
+                  'definition',pg_get_functiondef(p.oid),
+                  'owner',pg_get_userbyid(p.proowner),
+                  'security_definer',p.prosecdef,
+                  'configuration',p.proconfig,
+                  'acl',p.proacl)
+           END
+           ORDER BY target.identity) AS fingerprint
+    FROM target_functions target
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(target.identity)
+), cron_controls AS (
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'jobid',jobid,'jobname',jobname,'schedule',schedule,
+           'command',command,'database',database,'username',username,
+           'nodename',nodename,'nodeport',nodeport,'active',active)
+           ORDER BY jobid),'[]'::jsonb) AS fingerprint
+    FROM cron.job
+   WHERE jobname IN ('ca-eliminate-absent-players','ca-release-broke-seats')
+      OR command ILIKE '%fn_ca_eliminate_absent_tournament_players%'
+      OR command ILIKE '%fn_ca_release_broke_seats%'
+), money_controls AS (
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'proname',proname,'status',status,'notes',notes,
+           'added_at_utc',to_char(added_at AT TIME ZONE 'UTC',
+                                  'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
+           ORDER BY proname),'[]'::jsonb) AS fingerprint
+    FROM public.ca_money_rpc_registry
+   WHERE proname IN (
+     'fn_move_tournament_player',
+     'fn_poker_diamond_settle_cash_hand',
+     'fn_poker_diamond_cashout')
+), elimination_catalog AS (
+  SELECT jsonb_build_object(
+           'trigger',COALESCE((SELECT to_jsonb(t) FROM (
+             SELECT tgname,tgenabled,tgisinternal,tgdeferrable,tginitdeferred,
+                    pg_get_triggerdef(oid,true) AS definition
+               FROM pg_trigger
+              WHERE tgrelid='public.tournament_players'::regclass
+                AND tgname='tournament_elimination_has_a_place') t),'null'::jsonb),
+           'constraint',COALESCE((SELECT to_jsonb(c) FROM (
+             SELECT conname,contype,condeferrable,condeferred,convalidated,
+                    pg_get_constraintdef(oid,true) AS definition
+               FROM pg_constraint
+              WHERE conrelid='public.tournament_players'::regclass
+                AND conname='tournament_elimination_has_a_place') c),'null'::jsonb)
+         ) AS fingerprint
+), donor_data AS (
+  SELECT pg_temp.assert_zero_player_data_baseline() AS rows
+)
+SELECT md5(jsonb_build_object(
+         'ledger',(SELECT fingerprint FROM ledger),
+         'functions',(SELECT fingerprint FROM functions),
+         'cron_controls',(SELECT fingerprint FROM cron_controls),
+         'money_controls',(SELECT fingerprint FROM money_controls),
+         'elimination_catalog',(SELECT fingerprint FROM elimination_catalog),
+         'outbox_in_realtime',EXISTS (
+           SELECT 1 FROM pg_publication_tables
+            WHERE pubname='supabase_realtime'
+              AND schemaname='public'
+              AND tablename='hand_projection_outbox'),
+         'stage_b_relations',jsonb_build_array(
+           to_regclass('public.tournament_seat_exit_authority_cutover')::text,
+           to_regclass('public.tournament_pending_zero_seat_cutover_receipts')::text,
+           to_regclass('public.tournament_paid_candidate_cutover_receipts')::text,
+           to_regclass('public.tournament_positive_orphan_cutover_receipts')::text,
+           to_regclass('public.tournament_mutator_scheduler_retirement_receipts')::text,
+           to_regclass('public.tournament_terminal_break_normalization_receipts')::text),
+         'ownership_keys',(SELECT count(*) FROM pg_constraint
+           WHERE (conrelid=to_regclass('public.engine_table_leases')
+                  AND conname='engine_table_leases_owner_generation_key')
+              OR (conrelid=to_regclass('public.engine_tournament_leases')
+                  AND conname='engine_tournament_leases_owner_generation_key')),
+         'maintenance_rows',(SELECT count(*) FROM public.engine_maintenance_break),
+         'leader_rows',(SELECT count(*) FROM public.engine_leader),
+         'table_lease_rows',(SELECT count(*) FROM public.engine_table_leases),
+         'tournament_lease_rows',(SELECT count(*) FROM public.engine_tournament_leases),
+         'donor_data_rows',(SELECT rows FROM donor_data)
+       )::text);
+SQL
+  } | "${psql_cmd[@]}" --dbname="$expected_database" -Atq
+}
+
+donor_fingerprint_before="$(donor_state_fingerprint)"
+if [[ -z "$donor_fingerprint_before" ]]; then
+  echo 'Could not fingerprint the zero-data donor before rehearsal.' >&2
   exit 65
 fi
 
@@ -348,7 +776,9 @@ WITH target_functions(identity) AS (
     ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'),
     ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)'),
     ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)'),
-    ('smarter_private.fn_smarter_data_api_pre_request()')
+    ('smarter_private.fn_smarter_data_api_pre_request()'),
+    ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)'),
+    ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)')
 ), function_rows AS (
   SELECT target.identity,
          p.oid,
@@ -418,7 +848,7 @@ WITH target_functions(identity) AS (
     LEFT JOIN pg_class idx ON idx.oid=con.conindid
 )
 SELECT CASE
-         WHEN (SELECT count(*) FROM function_rows WHERE oid IS NOT NULL)<>4
+         WHEN (SELECT count(*) FROM function_rows WHERE oid IS NOT NULL)<>6
            THEN 'missing'
          ELSE md5(jsonb_build_object(
            'functions',(
@@ -539,11 +969,12 @@ run_chain_prefix() {
   local migration_count="$1"
   local replay_keyshare="$2"
   local target_database="${3:-$expected_database}"
+  local first_migration_index="${4:-0}"
   {
     printf '%s\n' '\set ON_ERROR_STOP on'
     printf '%s\n' '\set VERBOSITY verbose'
     printf '%s\n' 'SELECT pg_advisory_lock_shared(530090, 1);'
-    for ((index = 0; index < migration_count; index += 1)); do
+    for ((index = first_migration_index; index < migration_count; index += 1)); do
       migration_file="${chain_files[$index]}"
       printf '%s\n' "\\echo APPLYING $(basename "$migration_file")"
       printf '%s\n' "\\ir '$migration_file'"
@@ -589,11 +1020,255 @@ SQL
   } | "${psql_cmd[@]}" --dbname="$target_database"
 }
 
+emit_current_live_tail_postimage_assertion() {
+  cat <<'SQL'
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_080728_control_postimage(
+  p_cron_sha256 text,
+  p_money_sha256 text,
+  p_maintenance_sha256 text,
+  p_elimination_sha256 text
+)
+RETURNS text
+LANGUAGE plpgsql
+SET search_path TO 'pg_catalog','public','pg_temp'
+AS $assert_stage_b_080728_control_postimage$
+DECLARE
+  v_cron_rows integer;
+  v_retirement_receipts integer;
+  v_retirement_exact boolean;
+  v_money_rows integer;
+  v_money_value text;
+  v_maintenance_rows integer;
+  v_maintenance_value text;
+  v_elimination_rows integer;
+  v_elimination_value text;
+  v_eliminator_exact integer;
+BEGIN
+  SELECT count(*) INTO v_cron_rows
+    FROM cron.job
+   WHERE jobname IN ('ca-eliminate-absent-players','ca-release-broke-seats')
+      OR command ILIKE '%fn_ca_eliminate_absent_tournament_players%'
+      OR command ILIKE '%fn_ca_release_broke_seats%';
+
+  SELECT count(*),COALESCE(bool_and(
+           job_ids=ARRAY[364,365]::bigint[]
+           AND octet_length(jobs::text)=539
+           AND encode(sha256(convert_to(jobs::text,'UTF8')),'hex')=
+                 p_cron_sha256),false)
+    INTO v_retirement_receipts,v_retirement_exact
+    FROM public.tournament_mutator_scheduler_retirement_receipts
+   WHERE migration_version=
+     '20260910042112_stage_b_current_postimage_contraction';
+  IF v_cron_rows<>0 OR v_retirement_receipts<>1
+     OR NOT v_retirement_exact THEN
+    RAISE EXCEPTION
+      'STAGE_B_080728_CRON_CONTROL_POSTIMAGE_INEXACT: % live rows / % exact receipts',
+      v_cron_rows,v_retirement_receipts USING ERRCODE='55000';
+  END IF;
+
+  WITH objects AS (
+    SELECT jsonb_build_object(
+             'proname',proname,'status',status,'notes',notes,
+             'added_at_utc',to_char(added_at AT TIME ZONE 'UTC',
+                                    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) AS value
+      FROM public.ca_money_rpc_registry
+     WHERE proname IN (
+       'fn_move_tournament_player',
+       'fn_poker_diamond_settle_cash_hand',
+       'fn_poker_diamond_cashout')
+     ORDER BY proname
+  )
+  SELECT count(*),COALESCE(jsonb_agg(value),'[]'::jsonb)::text
+    INTO v_money_rows,v_money_value
+    FROM objects;
+  IF v_money_rows<>3 OR octet_length(v_money_value)<>1348
+     OR encode(sha256(convert_to(v_money_value,'UTF8')),'hex')<>
+          p_money_sha256 THEN
+    RAISE EXCEPTION 'STAGE_B_080728_MONEY_REGISTRY_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH objects AS (
+    SELECT jsonb_build_object(
+             'signature',format('%I.%I(%s)',n.nspname,p.proname,
+                                pg_get_function_identity_arguments(p.oid)),
+             'proconfig',COALESCE((SELECT jsonb_agg(x ORDER BY x)
+                                     FROM unnest(p.proconfig) x),'[]'::jsonb))
+             AS value
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE p.oid IN (
+       'public.fn_save_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,text,uuid)'::regprocedure,
+       'public.fn_clear_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,uuid)'::regprocedure,
+       'public.fn_claim_engine_maintenance_break(uuid,uuid,text)'::regprocedure,
+       'public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)'::regprocedure)
+     ORDER BY p.proname
+  )
+  SELECT count(*),jsonb_agg(value)::text
+    INTO v_maintenance_rows,v_maintenance_value
+    FROM objects;
+  IF v_maintenance_rows<>4 OR octet_length(v_maintenance_value)<>1197
+     OR encode(sha256(convert_to(v_maintenance_value,'UTF8')),'hex')<>
+          p_maintenance_sha256 THEN
+    RAISE EXCEPTION 'STAGE_B_073818_MAINTENANCE_CONFIG_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH f AS (
+    SELECT jsonb_build_object(
+             'kind','function',
+             'signature','public.fn_tournament_elimination_has_a_place()',
+             'owner',pg_get_userbyid(p.proowner),
+             'security_definer',p.prosecdef,
+             'proconfig',COALESCE((SELECT jsonb_agg(x ORDER BY x)
+                                     FROM unnest(p.proconfig) x),'[]'::jsonb),
+             'prosrc_md5',md5(p.prosrc),
+             'functiondef_bytes',octet_length(pg_get_functiondef(p.oid)),
+             'functiondef_sha256',encode(
+               sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')) value
+      FROM pg_proc p
+     WHERE p.oid=
+       'public.fn_tournament_elimination_has_a_place()'::regprocedure
+  ), t AS (
+    SELECT jsonb_build_object(
+             'kind','trigger','name',tgname,'table',tgrelid::regclass::text,
+             'function',tgfoid::regprocedure::text,'enabled',tgenabled,
+             'internal',tgisinternal,'deferrable',tgdeferrable,
+             'initially_deferred',tginitdeferred,
+             'triggerdef',pg_get_triggerdef(oid,true)) value
+      FROM pg_trigger
+     WHERE tgrelid='public.tournament_players'::regclass
+       AND tgname='tournament_elimination_has_a_place'
+  ), c AS (
+    SELECT jsonb_build_object(
+             'kind','constraint','name',conname,'type',contype,
+             'table',conrelid::regclass::text,'deferrable',condeferrable,
+             'initially_deferred',condeferred,'validated',convalidated,
+             'constraintdef',pg_get_constraintdef(oid,true)) value
+      FROM pg_constraint
+     WHERE conrelid='public.tournament_players'::regclass
+       AND conname='tournament_elimination_has_a_place'
+  ), objects AS (
+    SELECT value FROM f UNION ALL SELECT value FROM t UNION ALL SELECT value FROM c
+  )
+  SELECT count(*),jsonb_agg(value ORDER BY value->>'kind')::text
+    INTO v_elimination_rows,v_elimination_value
+    FROM objects;
+  IF v_elimination_rows<>3 OR octet_length(v_elimination_value)<>1067
+     OR encode(sha256(convert_to(v_elimination_value,'UTF8')),'hex')<>
+          p_elimination_sha256 THEN
+    RAISE EXCEPTION 'STAGE_B_075958_ELIMINATION_GUARD_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*) INTO v_eliminator_exact
+    FROM pg_proc p
+   WHERE p.oid=to_regprocedure(
+           'public.fn_ca_eliminate_absent_tournament_players(integer,integer,boolean)')
+     AND md5(p.prosrc)='05855868cb0cbb1199049b5e0e97aa56'
+     AND octet_length(pg_get_functiondef(p.oid))=7734
+     AND encode(sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')=
+           '7cdb2c9ffc7e260c84ca02fccc66f6e6a0d3764e2f824e7617f51c7f7d6e1d59'
+     AND p.proowner='postgres'::regrole AND p.prosecdef
+     AND p.provolatile='v' AND p.proparallel='u'
+     AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+     AND (SELECT count(*) FROM aclexplode(
+            COALESCE(p.proacl,acldefault('f',p.proowner))) a
+           WHERE a.privilege_type='EXECUTE')=1
+     AND (SELECT count(*) FROM aclexplode(
+            COALESCE(p.proacl,acldefault('f',p.proowner))) a
+           WHERE a.grantor=p.proowner AND a.grantee=p.proowner
+             AND a.privilege_type='EXECUTE' AND NOT a.is_grantable)=1;
+  IF v_eliminator_exact<>1
+     OR to_regprocedure(
+          'public.fn_ca_release_broke_seats(integer,integer,boolean)')
+          IS NOT NULL THEN
+    RAISE EXCEPTION 'STAGE_B_072322_ABSENT_MUTATOR_POSTIMAGE_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+
+  IF to_regclass('public.hand_projection_outbox') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM pg_publication
+                     WHERE pubname='supabase_realtime')
+     OR EXISTS (SELECT 1 FROM pg_publication_tables
+                 WHERE pubname='supabase_realtime'
+                   AND schemaname='public'
+                   AND tablename='hand_projection_outbox') THEN
+    RAISE EXCEPTION 'STAGE_B_080137_OUTBOX_PUBLICATION_MEMBERSHIP_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+
+  RETURN 'STAGE_B_080728_CONTROL_POSTIMAGE_OK';
+END;
+$assert_stage_b_080728_control_postimage$;
+SQL
+}
+
+assert_current_live_tail_postimage() {
+  local database="$1"
+  {
+    emit_current_live_tail_postimage_assertion
+    printf '%s\n' \
+      "SELECT pg_temp.assert_stage_b_080728_control_postimage(:'cron_control_sha256',:'money_control_sha256',:'maintenance_proconfigs_sha256',:'elimination_guard_sha256');"
+  } | "${psql_cmd[@]}" --dbname="$database" -Atq
+}
+
+prepare_current_postimage_template() {
+  local database="$1"
+  local fixture_log=''
+  local required_marker
+
+  if ! fixture_log="$({
+    printf '%s\n' '\set ON_ERROR_STOP on'
+    printf '%s\n' '\set VERBOSITY verbose'
+    printf '%s\n' 'SELECT pg_advisory_lock_shared(530090, 1);'
+    for ((index = 0; index < 5; index += 1)); do
+      migration_file="${chain_files[$index]}"
+      printf '%s\n' "\\echo APPLYING $(basename "$migration_file")"
+      printf '%s\n' "\\ir '$migration_file'"
+    done
+    emit_current_live_tail_postimage_assertion
+    printf '%s\n' \
+      "SELECT pg_temp.assert_stage_b_080728_control_postimage(:'cron_control_sha256',:'money_control_sha256',:'maintenance_proconfigs_sha256',:'elimination_guard_sha256');"
+    printf '%s\n' "\\echo RUNNING $(basename "$diamond_fixture")"
+    printf '%s\n' "\\ir '$diamond_fixture'"
+    cat <<'SQL'
+DO $require_diamond_fixture_fingerprint$
+BEGIN
+  IF to_regprocedure('pg_temp.stage_b_diamond_current_schema_fingerprint()') IS NULL
+     OR pg_temp.stage_b_diamond_current_schema_fingerprint() IS NULL THEN
+    RAISE EXCEPTION 'STAGE_B_DIAMOND_FIXTURE_FINGERPRINT_INTERFACE_MISSING';
+  END IF;
+END;
+$require_diamond_fixture_fingerprint$;
+SELECT pg_temp.assert_stage_b_080728_control_postimage(
+  :'cron_control_sha256',:'money_control_sha256',
+  :'maintenance_proconfigs_sha256',:'elimination_guard_sha256');
+SELECT pg_advisory_unlock_shared(530090, 1);
+SQL
+  } | "${psql_cmd[@]}" --dbname="$database" 2>&1)"; then
+    printf '%s\n' "$fixture_log" >&2
+    echo 'The current-schema Diamond accepted-hand rehearsal failed.' >&2
+    return 1
+  fi
+  printf '%s\n' "$fixture_log"
+  for required_marker in \
+    STAGE_B_DIAMOND_ACCEPTED_HAND_SUCCESS_REPLAY_ROLLBACK_OK \
+    STAGE_B_DIAMOND_ACCEPTED_HAND_CURRENT_SCHEMA_OK \
+    STAGE_B_080728_CONTROL_POSTIMAGE_OK; do
+    if ! grep -Fq "$required_marker" <<<"$fixture_log"; then
+      echo "The current-schema fixture did not emit required marker ${required_marker}." >&2
+      return 1
+    fi
+  done
+}
+
 keyshare_postimage_fingerprint() {
+  local database="${1:-$expected_database}"
   {
     emit_keyshare_fingerprint_function
     printf '%s\n' 'SELECT pg_temp.stage_b_keyshare_fingerprint();'
-  } | "${psql_cmd[@]}" -Atq
+  } | "${psql_cmd[@]}" --dbname="$database" -Atq
 }
 
 terminal_guard_fingerprint() {
@@ -606,21 +1281,71 @@ terminal_guard_fingerprint() {
 
 scenario_databases=()
 created_scenario_database=''
+scenario_template_database=''
+postgrest_role_setting_normalized=false
+
+restore_dump_lost_postgrest_role_setting() {
+  if [[ "$postgrest_role_setting_normalized" != true ]]; then
+    return 0
+  fi
+
+  if ! "${psql_cmd[@]}" --dbname="$expected_database" -q <<'SQL'
+BEGIN;
+ALTER ROLE authenticator RESET pgrst.db_pre_request;
+DO $verify_dump_lost_postgrest_role_setting_restored$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_db_role_setting s
+      JOIN pg_roles r ON r.oid=s.setrole
+      CROSS JOIN LATERAL unnest(COALESCE(s.setconfig,'{}'::text[])) setting(value)
+     WHERE r.rolname='authenticator'
+       AND setting.value LIKE 'pgrst.db_pre_request=%'
+  ) THEN
+    RAISE EXCEPTION 'STAGE_B_DUMP_ROLE_SETTING_RESTORE_FAILED'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$verify_dump_lost_postgrest_role_setting_restored$;
+COMMIT;
+SQL
+  then
+    echo 'Could not restore the disposable cluster authenticator role setting.' >&2
+    return 1
+  fi
+  postgrest_role_setting_normalized=false
+  echo 'STAGE_B_DUMP_ROLE_SETTING_RESTORED'
+}
 
 cleanup_scenario_databases() {
+  local original_status=$?
   local cleanup_database
+  local cleanup_failed=false
+  if ! restore_dump_lost_postgrest_role_setting; then
+    cleanup_failed=true
+  fi
   for cleanup_database in "${scenario_databases[@]}"; do
     if ! "${pg17_bin}/dropdb" \
       --maintenance-db="$expected_database" \
       --if-exists "$cleanup_database" >/dev/null; then
       printf 'Could not remove disposable scenario database %s.\n' \
         "$cleanup_database" >&2
+      cleanup_failed=true
     fi
   done
+  if [[ "$cleanup_failed" == true ]]; then
+    trap - EXIT
+    if [[ "$original_status" -ne 0 ]]; then
+      exit "$original_status"
+    fi
+    exit 1
+  fi
+  return "$original_status"
 }
 
 create_scenario_database() {
   local scenario_kind="$1"
+  local template_database="${2:-${scenario_template_database:-$expected_database}}"
   created_scenario_database="stageb_${scenario_kind}_$$_${RANDOM}"
   if [[ ! "$created_scenario_database" =~ ^[a-z0-9_]+$ ]] \
      || [[ "${#created_scenario_database}" -gt 63 ]]; then
@@ -629,10 +1354,268 @@ create_scenario_database() {
   fi
   "${pg17_bin}/createdb" \
     --maintenance-db="$expected_database" \
-    --template="$expected_database" \
+    --template="$template_database" \
     "$created_scenario_database"
   scenario_databases+=("$created_scenario_database")
   printf 'STAGE_B_SCENARIO_DATABASE_CREATED %s\n' "$created_scenario_database"
+}
+
+normalize_dump_lost_postgrest_role_setting() {
+  local setting_state
+  setting_state="$("${psql_cmd[@]}" --dbname="$expected_database" -Atq -F '|' <<'SQL'
+WITH settings AS (
+  SELECT s.setdatabase,setting.value
+    FROM pg_db_role_setting s
+    JOIN pg_roles r ON r.oid=s.setrole
+    CROSS JOIN LATERAL unnest(COALESCE(s.setconfig,'{}'::text[])) setting(value)
+   WHERE r.rolname='authenticator'
+     AND setting.value LIKE 'pgrst.db_pre_request=%'
+), ledger AS (
+  SELECT count(*) AS exact_rows
+    FROM supabase_migrations.schema_migrations m
+   WHERE m.version='20260908125958'
+     AND m.name='tournament_manager_requests_carry_lease_authority'
+     AND cardinality(m.statements)=1
+     AND encode(
+           extensions.digest(array_to_string(m.statements,E'\x1e'),'sha256'),
+           'hex'
+         )=:'manager_request_authority_statement_sha256'
+)
+SELECT (SELECT count(*) FROM settings),
+       (SELECT count(*) FROM settings
+         WHERE setdatabase=0
+           AND value=
+             'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'),
+       (SELECT exact_rows FROM ledger);
+SQL
+)"
+
+  case "$setting_state" in
+    '1|1|1')
+      echo 'STAGE_B_POSTGREST_ROLE_SETTING_ALREADY_EXACT'
+      return 0
+      ;;
+    '0|0|1') ;;
+    *)
+      echo "The disposable cluster has an unauthenticated PostgREST role-setting preimage: ${setting_state:-<missing>}." >&2
+      return 1
+      ;;
+  esac
+
+  "${psql_cmd[@]}" --dbname="$expected_database" -q <<'SQL'
+BEGIN;
+DO $authenticate_dump_lost_postgrest_role_setting$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_db_role_setting s
+      JOIN pg_roles r ON r.oid=s.setrole
+      CROSS JOIN LATERAL unnest(COALESCE(s.setconfig,'{}'::text[])) setting(value)
+     WHERE r.rolname='authenticator'
+       AND setting.value LIKE 'pgrst.db_pre_request=%'
+  ) THEN
+    RAISE EXCEPTION 'STAGE_B_DUMP_ROLE_SETTING_PREIMAGE_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$authenticate_dump_lost_postgrest_role_setting$;
+
+ALTER ROLE authenticator
+  SET pgrst.db_pre_request =
+    'smarter_private.fn_smarter_data_api_pre_request';
+
+DO $verify_dump_lost_postgrest_role_setting$
+BEGIN
+  IF (SELECT count(*)
+        FROM pg_db_role_setting s
+        JOIN pg_roles r ON r.oid=s.setrole
+        CROSS JOIN LATERAL unnest(COALESCE(s.setconfig,'{}'::text[])) setting(value)
+       WHERE r.rolname='authenticator'
+         AND s.setdatabase=0
+         AND setting.value=
+           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request')<>1
+     OR (SELECT count(*)
+           FROM pg_db_role_setting s
+           JOIN pg_roles r ON r.oid=s.setrole
+           CROSS JOIN LATERAL unnest(COALESCE(s.setconfig,'{}'::text[])) setting(value)
+          WHERE r.rolname='authenticator'
+            AND setting.value LIKE 'pgrst.db_pre_request=%')<>1 THEN
+    RAISE EXCEPTION 'STAGE_B_DUMP_ROLE_SETTING_NORMALIZATION_FAILED'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$verify_dump_lost_postgrest_role_setting$;
+COMMIT;
+SQL
+  postgrest_role_setting_normalized=true
+  echo 'STAGE_B_DUMP_ROLE_SETTING_NORMALIZED'
+}
+
+normalize_dump_lost_hotfix_owner_acl() {
+  local database="$1"
+  "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
+BEGIN;
+
+CREATE OR REPLACE FUNCTION pg_temp.stage_b_hotfix_table_catalog_fingerprint(
+  p_relation regclass,
+  p_normalize_owner_acl boolean
+)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_catalog','public','pg_temp'
+AS $stage_b_hotfix_table_catalog_fingerprint$
+  SELECT md5(jsonb_build_object(
+           'shape',(
+             SELECT jsonb_agg(
+                      a.attname||':'||format_type(a.atttypid,a.atttypmod)||':'||
+                      CASE WHEN a.attnotnull THEN 'not-null' ELSE 'nullable' END
+                      ORDER BY a.attnum)
+               FROM pg_attribute a
+              WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped),
+           'constraints',(
+             SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'type',k.contype::text,
+                        'def',pg_get_constraintdef(k.oid,true),
+                        'validated',k.convalidated,
+                        'deferrable',k.condeferrable,
+                        'deferred',k.condeferred,
+                        'no_inherit',k.connoinherit,
+                        'index_valid',i.indisvalid,
+                        'index_ready',i.indisready)
+                      ORDER BY k.contype::text||':'||
+                               pg_get_constraintdef(k.oid,true))
+               FROM pg_constraint k
+               LEFT JOIN pg_index i ON i.indexrelid=NULLIF(k.conindid,0)
+              WHERE k.conrelid=c.oid),
+           'rls',c.relrowsecurity,
+           'force_rls',c.relforcerowsecurity,
+           'owner',c.relowner::regrole::text,
+           'acl',CASE WHEN p_normalize_owner_acl
+                      THEN '{postgres=arwdDxtm/postgres}'::text
+                      ELSE c.relacl::text END,
+           'policy_count',(
+             SELECT count(*) FROM pg_policy p WHERE p.polrelid=c.oid)
+         )::text)
+    FROM pg_class c
+   WHERE c.oid=p_relation;
+$stage_b_hotfix_table_catalog_fingerprint$;
+
+DO $authenticate_dump_lost_hotfix_owner_acl$
+DECLARE
+  v_relation text;
+  v_expected text;
+  v_acl text;
+BEGIN
+  IF (SELECT count(*)
+        FROM supabase_migrations.schema_migrations m
+       WHERE m.version='20260910051447'
+         AND m.name='the_seat_move_door_the_engine_calls_exists'
+         AND cardinality(m.statements)=1
+         AND encode(extensions.digest(m.statements[1],'sha256'),'hex')=
+               'b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2')<>1 THEN
+    RAISE EXCEPTION 'STAGE_B_ACL_NORMALIZATION_LEDGER_PREIMAGE_DRIFTED'
+      USING ERRCODE='55000';
+  END IF;
+
+  FOR v_relation,v_expected IN
+    SELECT * FROM (VALUES
+      ('public.tournament_seat_exit_authorizations',
+       '556029bd3b99e8bb0ef36db2a28ed862'),
+      ('public.tournament_seat_move_receipts',
+       'd13f29c5d5a781fe2a7f834673ecc820')
+    ) expected(relation_name,fingerprint)
+  LOOP
+    IF to_regclass(v_relation) IS NULL THEN
+      RAISE EXCEPTION 'STAGE_B_ACL_NORMALIZATION_RELATION_MISSING: %',v_relation
+        USING ERRCODE='55000';
+    END IF;
+    SELECT c.relacl::text INTO v_acl
+      FROM pg_class c WHERE c.oid=to_regclass(v_relation);
+    IF v_acl IS NOT NULL
+       AND v_acl<>'{postgres=arwdDxtm/postgres}' THEN
+      RAISE EXCEPTION 'STAGE_B_ACL_NORMALIZATION_UNKNOWN_PREIMAGE: %=%',
+        v_relation,v_acl USING ERRCODE='55000';
+    END IF;
+    IF pg_temp.stage_b_hotfix_table_catalog_fingerprint(
+         to_regclass(v_relation),true)<>v_expected THEN
+      RAISE EXCEPTION 'STAGE_B_ACL_NORMALIZATION_NON_ACL_CATALOG_DRIFTED: %',
+        v_relation USING ERRCODE='55000';
+    END IF;
+  END LOOP;
+
+END;
+$authenticate_dump_lost_hotfix_owner_acl$;
+
+GRANT ALL PRIVILEGES ON TABLE
+  public.tournament_seat_exit_authorizations,
+  public.tournament_seat_move_receipts
+TO postgres;
+
+DO $verify_normalized_hotfix_owner_acl$
+DECLARE
+  v_relation text;
+  v_expected text;
+BEGIN
+  FOR v_relation,v_expected IN
+    SELECT * FROM (VALUES
+      ('public.tournament_seat_exit_authorizations',
+       '556029bd3b99e8bb0ef36db2a28ed862'),
+      ('public.tournament_seat_move_receipts',
+       'd13f29c5d5a781fe2a7f834673ecc820')
+    ) expected(relation_name,fingerprint)
+  LOOP
+    IF (SELECT c.relacl::text FROM pg_class c
+         WHERE c.oid=to_regclass(v_relation))<>
+           '{postgres=arwdDxtm/postgres}'
+       OR pg_temp.stage_b_hotfix_table_catalog_fingerprint(
+            to_regclass(v_relation),false)<>v_expected THEN
+      RAISE EXCEPTION 'STAGE_B_ACL_NORMALIZATION_FAILED: %',v_relation
+        USING ERRCODE='55000';
+    END IF;
+  END LOOP;
+END;
+$verify_normalized_hotfix_owner_acl$;
+COMMIT;
+SQL
+  echo "STAGE_B_DUMP_OWNER_ACL_NORMALIZED ${database}"
+}
+
+seed_synthetic_freeze() {
+  local database="$1"
+  "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
+BEGIN;
+DELETE FROM public.engine_maintenance_break;
+INSERT INTO public.engine_maintenance_break(
+  id,phase,announced_at,break_started_at,enforce_freeze,break_ends_at,
+  reason,declared_by,ownership_token,updated_at
+)
+SELECT true,'counting_down',seeded.at,seeded.at,true,
+       seeded.at+interval '10 minutes','Stage B PG17 Rehearsal',
+       'stage-b-forward-chain-pg17',
+       '72000000-0000-4000-8000-000000000001',seeded.at
+  FROM (SELECT statement_timestamp() AS at) seeded;
+DO $verify_synthetic_freeze$
+BEGIN
+  IF (SELECT count(*) FROM public.engine_maintenance_break
+       WHERE id AND enforce_freeze AND phase='counting_down')<>1
+     OR NOT public.fn_platform_frozen() THEN
+    RAISE EXCEPTION 'STAGE_B_SYNTHETIC_FREEZE_NOT_AUTHORITATIVE';
+  END IF;
+  IF (SELECT count(*) FROM public.engine_leader
+       WHERE heartbeat_at>=clock_timestamp()-interval '30 seconds')
+     + (SELECT count(*) FROM public.engine_table_leases
+         WHERE heartbeat_at>=clock_timestamp()-interval '30 seconds')
+     + (SELECT count(*) FROM public.engine_tournament_leases
+         WHERE heartbeat_at>=clock_timestamp()-interval '30 seconds')<>0 THEN
+    RAISE EXCEPTION 'STAGE_B_SYNTHETIC_FREEZE_HAS_FRESH_ENGINE_AUTHORITY';
+  END IF;
+END;
+$verify_synthetic_freeze$;
+COMMIT;
+SQL
+  echo "STAGE_B_SYNTHETIC_FREEZE_READY ${database}"
 }
 
 seed_hotfix_move_receipt() {
@@ -643,25 +1626,35 @@ INSERT INTO auth.users(id)
 VALUES ('71000000-0000-0000-0000-000000000001');
 INSERT INTO public.profiles(id)
 VALUES ('71000000-0000-0000-0000-000000000001');
+INSERT INTO public.clubs(id,name,owner_id,slug,code)
+VALUES (
+  '71000000-0000-0000-0000-000000000002',
+  'Stage-B PG17 fixture club',
+  '71000000-0000-0000-0000-000000000001',
+  'stage-b-pg17-fixture-club','SBP17'
+);
 INSERT INTO public.tournaments(
   id,name,description,game_type,buy_in_amount,buy_in_fee,start_time,status,
-  max_players,created_at,updated_at,on_break
+  max_players,created_at,updated_at,on_break,club_id
 ) VALUES (
   '71000000-0000-0000-0000-000000000011',
   'Stage-B hotfix receipt preservation',
   'Disposable PG17 immutable move-receipt fixture',
   'NLH',0,0,'2026-09-10 00:00:00-05','RUNNING',9,
-  '2026-09-09 23:00:00-05','2026-09-10 00:00:00-05',false
+  '2026-09-09 23:00:00-05','2026-09-10 00:00:00-05',false,
+  '71000000-0000-0000-0000-000000000002'
 );
 INSERT INTO public.tables(
-  id,name,tournament_id,game_type,status,lifecycle,current_players,
+  id,name,club_id,tournament_id,game_type,status,lifecycle,current_players,
   seat_game_scope,seat_admission_key
 ) VALUES
   ('71000000-0000-0000-0000-000000000021','Receipt source',
+   '71000000-0000-0000-0000-000000000002',
    '71000000-0000-0000-0000-000000000011','tournament','active','live',0,
    'table:71000000-0000-0000-0000-000000000021',
    'tournament:71000000-0000-0000-0000-000000000011'),
   ('71000000-0000-0000-0000-000000000022','Receipt destination',
+   '71000000-0000-0000-0000-000000000002',
    '71000000-0000-0000-0000-000000000011','tournament','active','live',1,
    'table:71000000-0000-0000-0000-000000000022',
    'tournament:71000000-0000-0000-0000-000000000011');
@@ -728,10 +1721,16 @@ seed_terminal_tournament() {
     -v "fixture_name=$fixture_name" \
     -v "fixture_description=$fixture_description" <<'SQL'
 SET session_replication_role=replica;
+INSERT INTO public.clubs(id,name,slug,code)
+VALUES (
+  '70000000-0000-0000-0000-000000000002',
+  'Stage-B terminal fixture club',
+  'stage-b-terminal-fixture-club','SBT17'
+);
 INSERT INTO public.tournaments(
   id,name,description,game_type,buy_in_amount,buy_in_fee,start_time,status,
   max_players,created_at,updated_at,ended_at,on_break,
-  break_started_at,break_ends_at
+  break_started_at,break_ends_at,club_id
 ) VALUES (
   :'fixture_tournament_id'::uuid,
   :'fixture_name',
@@ -739,7 +1738,8 @@ INSERT INTO public.tournaments(
   'NLH',0,0,'2026-09-09 13:00:00-05','COMPLETED',9,
   '2026-09-09 12:00:00-05','2026-09-09 15:00:00-05',
   '2026-09-09 15:00:00-05',true,
-  '2026-09-09 14:50:00-05','2026-09-09 15:05:00-05'
+  '2026-09-09 14:50:00-05','2026-09-09 15:05:00-05',
+  '70000000-0000-0000-0000-000000000002'
 );
 SET session_replication_role=origin;
 SQL
@@ -856,6 +1856,215 @@ SQL
   echo 'STAGE_B_TERMINAL_RESIDUE_SUCCESS_OK'
 }
 
+run_terminal_candidate_behavior() {
+  local database="$1"
+  "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
+DO $require_candidate_adapter_preimage$
+BEGIN
+  IF to_regprocedure(
+       'smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(uuid,uuid,text,boolean,timestamp with time zone,timestamp with time zone)'
+     ) IS NULL
+     OR (SELECT t.tgenabled
+           FROM pg_trigger t
+          WHERE t.tgrelid='public.tournaments'::regclass
+            AND t.tgname='zzzzzz_tournaments_financial_certificate'
+            AND NOT t.tgisinternal) IS DISTINCT FROM 'D' THEN
+    RAISE EXCEPTION 'STAGE_B_TERMINAL_CANDIDATE_ADAPTER_PREIMAGE_INEXACT';
+  END IF;
+END;
+$require_candidate_adapter_preimage$;
+
+-- Production enables this existing trigger at #5. Enable only that trigger in
+-- this disposable #3 scenario so the candidate adapter is exercised without
+-- replaying #4/#5 or weakening any other completion guard.
+ALTER TABLE public.tournaments
+  ENABLE TRIGGER zzzzzz_tournaments_financial_certificate;
+
+BEGIN;
+SET LOCAL session_replication_role=replica;
+
+CREATE TEMP TABLE stage_b_terminal_candidates(
+  tournament_id uuid PRIMARY KEY,
+  winner_id uuid NOT NULL,
+  rake_destination text NOT NULL,
+  rake_settled_at timestamptz,
+  rake_attributed_at timestamptz
+) ON COMMIT PRESERVE ROWS;
+
+INSERT INTO stage_b_terminal_candidates VALUES
+  ('73000000-0000-0000-0000-000000000011',
+   '73000000-0000-0000-0000-000000000101',
+   'club_treasury:73000000-0000-0000-0000-000000000001',
+   '2026-09-10 16:00:00+00','2026-09-10 16:00:00+00'),
+  ('73000000-0000-0000-0000-000000000012',
+   '73000000-0000-0000-0000-000000000102',
+   'pending',NULL,NULL);
+
+INSERT INTO auth.users(id)
+SELECT winner_id FROM stage_b_terminal_candidates ORDER BY winner_id;
+INSERT INTO public.profiles(id)
+SELECT winner_id FROM stage_b_terminal_candidates ORDER BY winner_id;
+INSERT INTO public.clubs(id,name,slug,code) VALUES (
+  '73000000-0000-0000-0000-000000000001',
+  'Stage B terminal candidate club','stage-b-terminal-candidate-club','SBTC17'
+);
+
+INSERT INTO public.tournaments(
+  id,name,description,game_type,variant,buy_in_amount,buy_in_fee,start_time,
+  status,current_players,max_players,created_at,updated_at,started_at,ended_at,
+  club_id,prize_pool,prize_pool_finalized,total_rake,bounty_pool,
+  bounty_pool_paid,on_break,break_started_at,break_ends_at
+)
+SELECT c.tournament_id,
+       CASE WHEN c.rake_destination='pending'
+            THEN 'Stage B blocked terminal candidate'
+            ELSE 'Stage B ready terminal candidate' END,
+       'Disposable PG17 candidate-aware terminal completion fixture',
+       'NLH','standard',0,0,'2026-09-10 13:00:00+00','COMPLETING',1,9,
+       '2026-09-10 12:00:00+00','2026-09-10 16:00:00+00',
+       '2026-09-10 13:00:00+00','2026-09-10 16:00:00+00',
+       '73000000-0000-0000-0000-000000000001',0,true,0,0,0,true,
+       '2026-09-10 15:50:00+00','2026-09-10 16:05:00+00'
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+
+INSERT INTO public.tournament_players(
+  id,tournament_id,user_id,chips,chip_count,status,position,prize,club_id,
+  registered_at
+)
+SELECT CASE WHEN c.rake_destination='pending'
+            THEN '73000000-0000-0000-0000-000000000202'::uuid
+            ELSE '73000000-0000-0000-0000-000000000201'::uuid END,
+       c.tournament_id,c.winner_id,1,1,'winner',1,0,
+       '73000000-0000-0000-0000-000000000001',
+       '2026-09-10 12:30:00+00'
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+
+INSERT INTO public.tournament_place_settlement_batches(
+  tournament_id,mode,plan_fingerprint,place_count,amount_owed,
+  escrow_required,escrow_available,source,prepared_at,settled_at
+)
+SELECT c.tournament_id,'structure','d751713988987e9331980363e24189ce',
+       0,0,0,0,'stage_b_terminal_candidate',
+       '2026-09-10 15:59:00+00','2026-09-10 16:00:00+00'
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+
+INSERT INTO public.tournament_finish_receipts(
+  tournament_id,winner_user_id,finish_kind,claim_source,claimed_at
+)
+SELECT c.tournament_id,c.winner_id,'normal','stage_b_terminal_candidate',
+       '2026-09-10 15:59:00+00'
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+
+INSERT INTO public.tournament_rake_settlements(
+  tournament_id,club_id,amount,destination,source,created_at,settled_at,
+  attributed_at,attributed_users
+)
+SELECT c.tournament_id,'73000000-0000-0000-0000-000000000001',0,
+       c.rake_destination,'stage_b_terminal_candidate',
+       '2026-09-10 15:59:00+00',c.rake_settled_at,c.rake_attributed_at,0
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+
+INSERT INTO public.tournament_escrow(
+  tournament_id,opened_from,opened_at,updated_at,closed_at,close_note
+)
+SELECT c.tournament_id,'stage_b_terminal_candidate',
+       '2026-09-10 12:00:00+00','2026-09-10 16:00:00+00',
+       '2026-09-10 16:00:00+00','stage_b_terminal_candidate_zero_close'
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+
+INSERT INTO public.tournament_terminal_settlements(
+  tournament_id,winner_id,settlement_mode,started_status,prize_pool,bounty_pool,
+  cash_payout_count,cash_payout_total,bounty_payout_total,mystery_was_active,
+  mystery_pool_cents,cash_receipt,mystery_receipt,bounty_receipt,
+  closed_table_count,closed_table_ids,source_seat_count,source_seat_ids,
+  released_seat_count,released_seat_ids,rake_amount,rake_destination,
+  rake_settled_at,rake_attributed_at,rake_attributed_users,escrow_closed_at,
+  escrow_close_note,completed_at,settled_at
+)
+SELECT c.tournament_id,c.winner_id,'places','COMPLETING',0,0,0,0,0,false,0,
+       jsonb_build_object(
+         'ok',true,'fully_settled',true,'status','COMPLETING','winner_amount',0,
+         'payouts',jsonb_build_array(jsonb_build_object(
+           'place',1,'user_id',c.winner_id,'amount',0)),
+         'deal_shares','[]'::jsonb,'bubble_protection','null'::jsonb),
+       jsonb_build_object('ok',true,'reason','not_a_mystery_tournament'),
+       jsonb_build_object('ok',true,'reason','not_a_bounty_tournament'),
+       0,ARRAY[]::uuid[],0,ARRAY[]::uuid[],0,ARRAY[]::uuid[],0,
+       c.rake_destination,
+       COALESCE(c.rake_settled_at,'2026-09-10 16:00:00+00'),
+       COALESCE(c.rake_attributed_at,'2026-09-10 16:00:00+00'),0,
+       '2026-09-10 16:00:00+00','stage_b_terminal_candidate_zero_close',
+       '2026-09-10 16:00:00+00','2026-09-10 16:01:00+00'
+  FROM stage_b_terminal_candidates c ORDER BY c.tournament_id;
+COMMIT;
+
+BEGIN;
+UPDATE public.tournaments SET status='COMPLETED'
+ WHERE id='73000000-0000-0000-0000-000000000011';
+COMMIT;
+
+DO $verify_ready_terminal_candidate$
+BEGIN
+  IF (SELECT count(*) FROM public.tournaments
+       WHERE id='73000000-0000-0000-0000-000000000011'
+         AND status='COMPLETED' AND on_break=false
+         AND break_started_at IS NULL AND break_ends_at IS NULL)<>1
+     OR (SELECT count(*) FROM public.tournament_finish_receipts
+          WHERE tournament_id='73000000-0000-0000-0000-000000000011'
+            AND certified_at IS NOT NULL
+            AND completed_at='2026-09-10 16:00:00+00'
+            AND COALESCE((evidence->>'ok')::boolean,false)
+            AND evidence->'failures'='[]'::jsonb)<>1
+     OR (SELECT count(*) FROM public.tournament_players
+          WHERE tournament_id='73000000-0000-0000-0000-000000000011'
+            AND terminal_closed_at='2026-09-10 16:00:00+00')<>1
+     OR (SELECT count(*) FROM public.tournament_rake_settlements
+          WHERE tournament_id='73000000-0000-0000-0000-000000000011'
+            AND terminal_closed_at='2026-09-10 16:00:00+00')<>1 THEN
+    RAISE EXCEPTION 'STAGE_B_READY_TERMINAL_CANDIDATE_NOT_CERTIFIED';
+  END IF;
+END;
+$verify_ready_terminal_candidate$;
+
+DO $verify_unrelated_failure_survives_adapter$
+DECLARE
+  v_message text;
+BEGIN
+  BEGIN
+    UPDATE public.tournaments SET status='COMPLETED'
+     WHERE id='73000000-0000-0000-0000-000000000012';
+    RAISE EXCEPTION 'STAGE_B_TERMINAL_CANDIDATE_UNRELATED_FAILURE_ACCEPTED';
+  EXCEPTION WHEN check_violation THEN
+    GET STACKED DIAGNOSTICS v_message=MESSAGE_TEXT;
+    IF position('rake_not_settled' IN v_message)=0
+       OR position('terminal_break_flag_set' IN v_message)>0 THEN
+      RAISE EXCEPTION 'STAGE_B_TERMINAL_CANDIDATE_WRONG_FAILURE: %',v_message;
+    END IF;
+  END;
+
+  IF (SELECT count(*) FROM public.tournaments
+       WHERE id='73000000-0000-0000-0000-000000000012'
+         AND status='COMPLETING' AND on_break
+         AND break_started_at='2026-09-10 15:50:00+00'
+         AND break_ends_at='2026-09-10 16:05:00+00')<>1
+     OR (SELECT count(*) FROM public.tournament_finish_receipts
+          WHERE tournament_id='73000000-0000-0000-0000-000000000012'
+            AND certified_at IS NULL AND completed_at IS NULL
+            AND evidence IS NULL)<>1
+     OR (SELECT count(*) FROM public.tournament_players
+          WHERE tournament_id='73000000-0000-0000-0000-000000000012'
+            AND terminal_closed_at IS NOT NULL)<>0
+     OR (SELECT count(*) FROM public.tournament_rake_settlements
+          WHERE tournament_id='73000000-0000-0000-0000-000000000012'
+            AND terminal_closed_at IS NOT NULL)<>0 THEN
+    RAISE EXCEPTION 'STAGE_B_TERMINAL_CANDIDATE_FAILURE_DID_NOT_ROLL_BACK';
+  END IF;
+END;
+$verify_unrelated_failure_survives_adapter$;
+SQL
+  echo 'STAGE_B_TERMINAL_CANDIDATE_BEHAVIOR_OK'
+}
+
 seed_noncanonical_missing_finish_claim() {
   local database="$1"
   "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
@@ -968,31 +2177,35 @@ SQL
   echo 'STAGE_B_LATE_MISSING_FINISH_CLAIM_ROLLBACK_OK'
 }
 
-if [[ "$probe_mode" == 'mixed' ]]; then
-  run_chain_prefix 5 false
-  "${psql_cmd[@]}" -q <<'SQL'
+run_keyshare_unknown_preimage_rollback() {
+  local database="$1"
+  local mixed_fingerprint_before
+  local mixed_fingerprint_after
+  local mixed_log=''
+  local mixed_post
+
+  "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
 ALTER TABLE public.engine_table_leases
   ADD CONSTRAINT engine_table_leases_owner_generation_key
   UNIQUE (table_id,instance_id,lease_generation);
 SQL
-  mixed_fingerprint_before="$(keyshare_postimage_fingerprint)"
+  mixed_fingerprint_before="$(keyshare_postimage_fingerprint "$database")"
   if [[ "$mixed_fingerprint_before" == 'missing' ]]; then
     echo 'The #1-#5 mixed-state fixture is missing a key-share target function.' >&2
-    exit 65
+    return 65
   fi
-  mixed_log=''
-  if mixed_log="$("${psql_cmd[@]}" -f "${chain_files[5]}" 2>&1)"; then
+  if mixed_log="$("${psql_cmd[@]}" --dbname="$database" -f "${chain_files[5]}" 2>&1)"; then
     echo 'Stage-B #6 accepted a mixed ownership-key preimage.' >&2
-    exit 1
+    return 1
   fi
-  if ! grep -Fq 'LEASE_KEYSHARE_MIXED_PREIMAGE: table key 1, tournament key 0' \
+  if ! grep -Fq 'LEASE_KEYSHARE_UNKNOWN_PREIMAGE: table key 1, tournament key 0' \
     <<<"$mixed_log"; then
     printf '%s\n' "$mixed_log" >&2
-    echo 'Stage-B #6 did not fail at the mixed-preimage classifier.' >&2
-    exit 1
+    echo 'Stage-B #6 did not fail at the authenticated unknown-preimage classifier.' >&2
+    return 1
   fi
   mixed_post="$({
-    "${psql_cmd[@]}" -Atq -F '|' <<'SQL'
+    "${psql_cmd[@]}" --dbname="$database" -Atq -F '|' <<'SQL'
 SELECT
   (SELECT count(*) FROM pg_constraint
     WHERE conrelid='public.engine_table_leases'::regclass
@@ -1002,48 +2215,106 @@ SELECT
       AND conname='engine_tournament_leases_owner_generation_key');
 SQL
   })"
-  mixed_fingerprint_after="$(keyshare_postimage_fingerprint)"
+  mixed_fingerprint_after="$(keyshare_postimage_fingerprint "$database")"
   if [[ "$mixed_post" != '1|0' \
      || "$mixed_fingerprint_after" != "$mixed_fingerprint_before" ]]; then
     echo 'Stage-B #6 mixed-state refusal left a partial schema or function write.' >&2
-    exit 1
+    return 1
   fi
-  echo 'STAGE_B_LEASE_KEYSHARE_MIXED_STATE_ROLLBACK_OK'
+  echo 'STAGE_B_LEASE_KEYSHARE_UNKNOWN_PREIMAGE_ROLLBACK_OK'
+}
+
+assert_donor_unchanged() {
+  local donor_fingerprint_after
+  restore_dump_lost_postgrest_role_setting
+  donor_fingerprint_after="$(donor_state_fingerprint)"
+  if [[ -z "$donor_fingerprint_after" \
+     || "$donor_fingerprint_after" != "$donor_fingerprint_before" ]]; then
+    echo 'The production-schema zero-data donor changed during rehearsal.' >&2
+    return 1
+  fi
+  echo 'STAGE_B_ZERO_DATA_DONOR_UNCHANGED'
+}
+
+trap cleanup_scenario_databases EXIT
+
+create_scenario_database 'normalized_input' "$expected_database"
+normalized_input_database="$created_scenario_database"
+normalize_dump_lost_hotfix_owner_acl "$normalized_input_database"
+normalize_dump_lost_postgrest_role_setting
+scenario_template_database="$normalized_input_database"
+
+if [[ "$probe_mode" == 'mixed' ]]; then
+  create_scenario_database 'keyshare_mixed'
+  mixed_database="$created_scenario_database"
+  seed_synthetic_freeze "$mixed_database"
+  run_chain_prefix 5 false "$mixed_database"
+  assert_current_live_tail_postimage "$mixed_database"
+  run_keyshare_unknown_preimage_rollback "$mixed_database"
+  assert_current_live_tail_postimage "$mixed_database"
+  assert_donor_unchanged
   exit 0
 fi
 
-if [[ "$probe_mode" == 'apply' ]]; then
-  trap cleanup_scenario_databases EXIT
-
-  create_scenario_database 'terminal_residue'
-  terminal_residue_database="$created_scenario_database"
-  run_terminal_residue_success "$terminal_residue_database"
-
-  create_scenario_database 'late_finish_claim'
-  late_finish_claim_database="$created_scenario_database"
-  run_late_missing_finish_claim_rollback "$late_finish_claim_database"
-
-  echo 'STAGE_B_DEFECT_REPRODUCTIONS_PG17_OK'
-
-  # Reuse the clean six-boundary pass for the new mandatory hotfix preimage.
-  # This avoids a duplicate chain run while proving a nonempty immutable move
-  # receipt survives both #1 and #5 exactly.
-  seed_hotfix_move_receipt "$expected_database"
-  move_receipts_before="$(move_receipt_fingerprint "$expected_database")"
-fi
-
 if [[ "$probe_mode" == 'replay' ]]; then
-  run_chain_prefix 6 true
+  create_scenario_database 'keyshare_replay'
+  replay_database="$created_scenario_database"
+  seed_synthetic_freeze "$replay_database"
+  run_chain_prefix 6 true "$replay_database"
+  assert_current_live_tail_postimage "$replay_database"
   echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
-else
-  run_chain_prefix 6 false
+  assert_donor_unchanged
+  echo 'STAGE_B_FORWARD_CHAIN_PG17_OK'
+  exit 0
 fi
-if [[ "$probe_mode" == 'apply' ]]; then
-  move_receipts_after="$(move_receipt_fingerprint "$expected_database")"
-  if [[ "$move_receipts_after" != "$move_receipts_before" ]]; then
-    echo 'The clean Stage-B chain changed the immutable hotfix move-receipt ledger.' >&2
-    exit 1
-  fi
-  echo 'STAGE_B_HOTFIX_MOVE_RECEIPT_PRESERVED_PG17_OK'
+
+create_scenario_database 'terminal_residue'
+terminal_residue_database="$created_scenario_database"
+seed_synthetic_freeze "$terminal_residue_database"
+run_terminal_residue_success "$terminal_residue_database"
+run_terminal_candidate_behavior "$terminal_residue_database"
+
+create_scenario_database 'late_finish_claim'
+late_finish_claim_database="$created_scenario_database"
+seed_synthetic_freeze "$late_finish_claim_database"
+run_late_missing_finish_claim_rollback "$late_finish_claim_database"
+
+echo 'STAGE_B_DEFECT_REPRODUCTIONS_PG17_OK'
+
+# Apply #1-#5 once. The resulting database becomes the exact template for both
+# #6 outcomes, so the authenticated current postimage and its Diamond fixture
+# are not rebuilt for the replay and unknown-preimage branches.
+create_scenario_database 'current_postimage'
+current_postimage_database="$created_scenario_database"
+seed_synthetic_freeze "$current_postimage_database"
+seed_hotfix_move_receipt "$current_postimage_database"
+move_receipts_before="$(move_receipt_fingerprint "$current_postimage_database")"
+prepare_current_postimage_template "$current_postimage_database"
+move_receipts_after_stage_five="$(move_receipt_fingerprint "$current_postimage_database")"
+if [[ "$move_receipts_after_stage_five" != "$move_receipts_before" ]]; then
+  echo 'Stage-B #1-#5 changed the immutable hotfix move-receipt ledger.' >&2
+  exit 1
 fi
+create_scenario_database 'keyshare_mixed' "$current_postimage_database"
+mixed_database="$created_scenario_database"
+seed_synthetic_freeze "$mixed_database"
+
+create_scenario_database 'keyshare_clean' "$current_postimage_database"
+clean_database="$created_scenario_database"
+seed_synthetic_freeze "$clean_database"
+
+run_keyshare_unknown_preimage_rollback "$mixed_database"
+assert_current_live_tail_postimage "$mixed_database"
+run_chain_prefix 6 true "$clean_database" 5
+assert_current_live_tail_postimage "$clean_database"
+echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
+
+move_receipts_after="$(move_receipt_fingerprint "$clean_database")"
+if [[ "$move_receipts_after" != "$move_receipts_before" ]]; then
+  echo 'The clean Stage-B chain changed the immutable hotfix move-receipt ledger.' >&2
+  exit 1
+fi
+echo 'STAGE_B_HOTFIX_MOVE_RECEIPT_PRESERVED_PG17_OK'
+
+assert_donor_unchanged
 echo 'STAGE_B_FORWARD_CHAIN_PG17_OK'

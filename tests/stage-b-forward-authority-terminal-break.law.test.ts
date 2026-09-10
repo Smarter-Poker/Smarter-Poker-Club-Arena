@@ -1,8 +1,9 @@
 /**
  * Stage B expands its private authority schema before it repairs production
  * data, then installs the permanent terminal-break invariant after the repair.
- * Neither boundary may replay or overwrite the newer 034411 postimage, and
- * every Stage-B reservation must sort after the 035435 live ledger head.
+ * Neither boundary may replay or overwrite the newer 034411 postimage. The
+ * rehearsal follows the six immutable logical IDs; temporary physical filenames
+ * are not chronology and must never be compared with the live ledger head.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -26,9 +27,27 @@ function stagedMigrationFile(suffix: string): string {
   return matches[0];
 }
 
-const expansionFile = stagedMigrationFile('stage_b_forward_authority_expansion');
-const repairFile = stagedMigrationFile('stage_b_exact_precondition_repairs');
-const invariantFile = stagedMigrationFile('stage_b_terminal_break_invariant');
+const stageBChain = [
+  ['stage_b_forward_authority_expansion', '20260910042007_stage_b_forward_authority_expansion'],
+  ['stage_b_exact_precondition_repairs', '20260910042020_stage_b_exact_precondition_repairs'],
+  ['stage_b_terminal_break_invariant', '20260910042033_stage_b_terminal_break_invariant'],
+  [
+    'stage_b_atomic_finish_precertification',
+    '20260910042058_stage_b_atomic_finish_precertification',
+  ],
+  ['stage_b_current_postimage_contraction', '20260910042112_stage_b_current_postimage_contraction'],
+  ['stage_b_lease_keyshare_once', '20260910042137_stage_b_lease_keyshare_once'],
+] as const;
+const stageBFiles = stageBChain.map(([suffix]) => stagedMigrationFile(suffix));
+const [expansionFile, repairFile, invariantFile] = stageBFiles;
+const stageBPristineGateRelations = [
+  'auth.users',
+  'public.clubs',
+  'public.tournaments',
+  'public.tables',
+  'public.chip_ledger',
+  'public.tournament_tickets',
+] as const;
 
 function migration(file: string): string {
   return readFileSync(resolve(root, 'supabase', 'migrations', file), 'utf8');
@@ -45,6 +64,10 @@ const invariant = migration(invariantFile);
 const forwardBoundaries = `${expansion}\n${invariant}`;
 const harness = readFileSync(
   resolve(root, 'scripts/dev/probe-stage-b-forward-chain-pg17.sh'),
+  'utf8'
+);
+const diamondFixture = readFileSync(
+  resolve(root, 'scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql'),
   'utf8'
 );
 
@@ -75,20 +98,29 @@ function dollarBlock(source: string, tag: string): string {
 }
 
 describe('the reserved Stage-B forward authority boundaries stay split', () => {
-  it('uses the exact reserved order above the production postimage', () => {
-    const versions = [
-      productionPostimageFile,
-      spinPostimageFile,
-      settlementLanePostimageFile,
-      seatMoveHotfixFile,
-      expansionFile,
-      repairFile,
-      invariantFile,
-    ].map((file) => file.slice(0, 14));
+  it('uses semantic chain order and all six immutable logical IDs', () => {
+    expect(stageBFiles).toHaveLength(6);
+    stageBChain.forEach(([, logicalId], index) => {
+      expect(migration(stageBFiles[index]).split(/\r?\n/, 1)[0]).toBe(`-- ${logicalId}`);
+    });
 
-    expect(versions).toEqual([...versions].sort());
-    expect(expansion).toContain('-- 20260910042007_stage_b_forward_authority_expansion');
-    expect(invariant).toContain('-- 20260910042033_stage_b_terminal_break_invariant');
+    const chainNames = harness
+      .match(/chain_names=\(\n([\s\S]*?)\n\)/)?.[1]
+      .trim()
+      .split(/\s+/);
+    const chainLogicalIds = harness
+      .match(/chain_logical_ids=\(\n([\s\S]*?)\n\)/)?.[1]
+      .trim()
+      .split(/\s+/);
+    expect(chainNames).toEqual(stageBChain.map(([suffix]) => suffix));
+    expect(chainLogicalIds).toEqual(stageBChain.map(([, logicalId]) => logicalId.slice(0, 14)));
+    expect(harness).toContain(
+      'Stage-B semantic suffixes and logical identities are not one-to-one.'
+    );
+    expect(harness).toContain('Stage-B logical identities are not strictly ordered');
+    expect(harness).not.toContain('first_stage_b_version');
+    expect(harness).not.toContain('Stage-B starts at or before the current ledger head');
+    expect(harness).not.toContain('does not follow the applied seat-move hotfix');
     expect(spinPostimage).toContain(
       '-- 20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql'
     );
@@ -173,10 +205,161 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(expansion).not.toContain('ALTER TABLE public.tournaments');
     expect(expansion).toContain('Stage-B schema expansion unexpectedly wrote relation %');
     expect(harness).toContain('the_seat_move_door_the_engine_calls_exists');
-    expect(harness).toContain("baseline_receipts\" != '4'");
-    expect(harness).toContain('hotfix_ledger_version');
-    expect(harness).toContain("seat_move_hotfix_ledger_version='20260910051447'");
-    expect(harness).toContain('extensions.digest(statements[1]');
+    expect(harness).not.toContain("baseline_receipts\" != '4'");
+    expect(
+      occurrences(
+        harness,
+        /encode\(extensions\.digest\(actual\.statements\[1\],'sha256'\),'hex'\)/g
+      )
+    ).toBe(2);
+  });
+
+  it('requires the byte-authenticated 080728 live schema and a zero-player-data donor', () => {
+    const currentLiveSources = [
+      ['20260910034411', 'seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'],
+      ['20260910034412', 'spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'],
+      ['20260910035435', 'the_settlement_lane_is_per_tournament_not_platform_wide'],
+      ['20260910051447', 'the_seat_move_door_the_engine_calls_exists'],
+      ['20260910052523', 'hand_projection_outbox_notifies_its_listener'],
+      ['20260910054638', 'tables_policy_hashed_auth_admin_trusted_and_unfilled_spins_e'],
+      ['20260910054712', 'a_hand_settles_each_seat_once'],
+      ['20260910055857', 'tournament_bounty_per_pot_evidence'],
+      ['20260910060034', 'cash_entry_close_proves_the_reserved_unpaid_ladder'],
+      ['20260910062308', 'server_financial_alerts_accept_an_entity_id'],
+      ['20260910063559', 'a_busy_manager_keeps_its_lease'],
+      ['20260910064305', 'a_union_ticket_is_issued_at_the_club_the_winner_plays_from'],
+      ['20260910064701', 'a_hand_commit_does_not_hold_the_lease_against_its_own_heartb'],
+      ['20260910065825', 'the_journal_window_is_a_snapshot_not_a_clock'],
+      ['20260910070417', 'a_ticket_entry_is_an_entry'],
+      ['20260910071131', 'cash_entry_reprice_service_only_access'],
+      ['20260910072322', 'the_knockout_door_owns_every_bust_a_hand_took'],
+      ['20260910072351', 'an_elimination_without_a_place_cannot_be_written'],
+      ['20260910073355', 'the_retired_sweeps_keep_their_disabled_schedule_rows'],
+      ['20260910073818', 'the_break_writer_outwaits_the_doors_it_serializes'],
+      ['20260910074504', 'a_manager_sweeps_itself_once_when_it_adopts_the_event'],
+      ['20260910075958', 'a_deferred_check_reads_the_row_at_commit_not_the_statement'],
+      ['20260910080137', 'the_outbox_leaves_the_realtime_publication'],
+      ['20260910080242', 'the_guard_that_stopped_five_satellites_is_answered_for'],
+      ['20260910080728', 'three_money_doors_are_audited_and_registered'],
+    ] as const;
+
+    expect(currentLiveSources).toHaveLength(25);
+    for (const [version, name] of currentLiveSources) {
+      expect(harness).toContain(version);
+      expect(harness).toContain(name);
+    }
+    expect(harness).toContain("current_live_ledger_head='20260910080728'");
+    expect(harness).toContain(
+      `if [[ "$anchor_receipts" != '25' || "$ledger_head" != "$current_live_ledger_head" ]]`
+    );
+    expect(harness).toContain(`if [[ "$exact_body_receipts" != '3' ]]`);
+    expect(harness).toContain(`if [[ "$descriptor_receipts" != '2' ]]`);
+    expect(harness).toContain(
+      `if [[ "$audited_tail_receipts" != '9' || "$audited_tail_statements" != '12' ]]`
+    );
+    expect(harness).toContain('emit_zero_player_data_assertion_function() {');
+    expect(harness).toContain(
+      'CREATE OR REPLACE FUNCTION pg_temp.assert_zero_player_data_baseline()'
+    );
+    const zeroDataRelationArray = harness.match(
+      /FOREACH v_relation_name IN ARRAY ARRAY\[([\s\S]*?)\]::text\[\] LOOP/
+    )?.[1];
+    expect(zeroDataRelationArray, 'zero-data donor relation array').toBeDefined();
+    const zeroDataRelations = [...zeroDataRelationArray!.matchAll(/'([^']+)'/g)].map(
+      (match) => match[1]
+    );
+    expect(new Set(zeroDataRelations).size).toBe(zeroDataRelations.length);
+    expect(zeroDataRelations).toEqual(expect.arrayContaining([...stageBPristineGateRelations]));
+    expect(harness).toContain(
+      "IF to_regclass('public.poker_diamond_obligations') IS NOT NULL THEN"
+    );
+    expect(harness).toContain('SELECT pg_temp.assert_zero_player_data_baseline() AS rows');
+    expect(harness).toContain(`if [[ "$donor_data_rows" != '0' ]]`);
+    expect(harness).toContain('use a production-schema zero-data clone');
+    expect(harness).toContain("echo 'STAGE_B_CURRENT_LIVE_SCHEMA_MANIFEST_OK'");
+    expect(harness).toContain("echo 'STAGE_B_ZERO_PLAYER_DATA_BASELINE_OK'");
+  });
+
+  it('makes each finalized behavioral rehearsal contract part of the default run', () => {
+    const preparationStart = harness.indexOf('prepare_current_postimage_template() {');
+    const preparationEnd = harness.indexOf(
+      '\nkeyshare_postimage_fingerprint() {',
+      preparationStart
+    );
+    expect(preparationStart).toBeGreaterThanOrEqual(0);
+    expect(preparationEnd).toBeGreaterThan(preparationStart);
+    const preparation = harness.slice(preparationStart, preparationEnd);
+    const defaultRunStart = harness.indexOf("create_scenario_database 'terminal_residue'");
+    expect(defaultRunStart).toBeGreaterThanOrEqual(0);
+    const defaultRun = harness.slice(defaultRunStart);
+
+    expect(defaultRun).toContain('run_terminal_residue_success "$terminal_residue_database"');
+    expect(defaultRun).toContain('run_terminal_candidate_behavior "$terminal_residue_database"');
+    expect(defaultRun).toContain(
+      'run_late_missing_finish_claim_rollback "$late_finish_claim_database"'
+    );
+    expect(defaultRun).toContain(
+      'prepare_current_postimage_template "$current_postimage_database"'
+    );
+    expect(defaultRun).toContain(
+      `create_scenario_database 'keyshare_mixed' "$current_postimage_database"`
+    );
+    expect(defaultRun).toContain(
+      `create_scenario_database 'keyshare_clean' "$current_postimage_database"`
+    );
+    expect(defaultRun).toContain('run_keyshare_unknown_preimage_rollback "$mixed_database"');
+    expect(defaultRun).toContain('run_chain_prefix 6 true "$clean_database" 5');
+    expect(defaultRun).toContain('assert_current_live_tail_postimage "$mixed_database"');
+    expect(defaultRun).toContain('assert_current_live_tail_postimage "$clean_database"');
+
+    for (const marker of [
+      'STAGE_B_DIAMOND_ACCEPTED_HAND_SUCCESS_REPLAY_ROLLBACK_OK',
+      'STAGE_B_DIAMOND_ACCEPTED_HAND_CURRENT_SCHEMA_OK',
+      'STAGE_B_080728_CONTROL_POSTIMAGE_OK',
+    ]) {
+      expect(preparation).toContain(marker);
+    }
+    expect(harness).toContain('STAGE_B_LEASE_KEYSHARE_UNKNOWN_PREIMAGE_ROLLBACK_OK');
+    expect(defaultRun).toContain("echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'");
+    expect(harness).toContain('LEASE_KEYSHARE_UNKNOWN_PREIMAGE: table key 1, tournament key 0');
+    expect(harness).not.toContain('LEASE_KEYSHARE_MIXED_PREIMAGE');
+    expect(harness).not.toContain('STAGE_B_LEASE_KEYSHARE_MIXED_STATE_ROLLBACK_OK');
+  });
+
+  it('executes the candidate-aware terminal transition without forgiving another failure', () => {
+    const start = harness.indexOf('run_terminal_candidate_behavior() {');
+    const end = harness.indexOf('\nseed_noncanonical_missing_finish_claim() {', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const candidate = harness.slice(start, end);
+
+    expect(candidate).toContain('ENABLE TRIGGER zzzzzz_tournaments_financial_certificate');
+    expect(candidate).toContain("UPDATE public.tournaments SET status='COMPLETED'");
+    expect(candidate).toContain("evidence->'failures'='[]'::jsonb");
+    expect(candidate).toContain("position('rake_not_settled' IN v_message)=0");
+    expect(candidate).toContain("position('terminal_break_flag_set' IN v_message)>0");
+    expect(candidate).toContain('STAGE_B_TERMINAL_CANDIDATE_FAILURE_DID_NOT_ROLL_BACK');
+    expect(candidate).toContain('STAGE_B_TERMINAL_CANDIDATE_BEHAVIOR_OK');
+  });
+
+  it('fingerprints all six functions authenticated by the key-share boundary', () => {
+    const start = harness.indexOf('emit_keyshare_fingerprint_function() {');
+    const end = harness.indexOf('\nemit_terminal_guard_fingerprint_function() {', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const fingerprint = harness.slice(start, end);
+
+    for (const identity of [
+      'fn_ca_commit_hand_settlement_exact_before_obligations',
+      'fn_ca_resolve_unbound_pending_addons',
+      'fn_close_empty_tournament_table',
+      'fn_smarter_data_api_pre_request',
+      'claim_tournament_lease_v2',
+      'heartbeat_tournament_leases_v4',
+    ]) {
+      expect(fingerprint).toContain(identity);
+    }
+    expect(fingerprint).toContain('count(*) FROM function_rows WHERE oid IS NOT NULL)<>6');
   });
 
   it('admits only the authenticated transaction-local terminal-break normalization', () => {
@@ -298,7 +481,10 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(invariant).toContain(
       "normalization_version <>\n             '20260910042020_stage_b_exact_precondition_repairs'"
     );
-    expect(invariant).toContain('NOT v_database_is_pristine AND v_receipt_count = 0');
+    expect(invariant).not.toContain('NOT v_database_is_pristine AND v_receipt_count = 0');
+    expect(invariant).toContain("authority = 'tournament_seat_exit_authority:v1'");
+    expect(invariant).toContain("'20260910042020_stage_b_exact_precondition_repairs'");
+    expect(invariant).toContain('v_cutover_count <> 1 OR v_authenticated_cutover_count <> 1');
     expect(invariant).not.toContain('v_receipt_count <> 1308');
     expect(invariant).toContain('r.on_break_before');
     expect(invariant).toContain('r.break_started_at_before IS NOT NULL');
@@ -417,18 +603,38 @@ describe('Stage B preserves the 034411 production postimage', () => {
 
 describe('the Stage-B rehearsal emits literal psql meta-commands', () => {
   it('passes backslash commands as printf data instead of an escape-bearing format', () => {
-    const start = harness.indexOf('run_chain_prefix() {');
-    const end = harness.indexOf('\nkeyshare_postimage_fingerprint() {', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const runner = harness.slice(start, end);
+    const prefixStart = harness.indexOf('run_chain_prefix() {');
+    const prefixEnd = harness.indexOf(
+      '\nemit_current_live_tail_postimage_assertion() {',
+      prefixStart
+    );
+    expect(prefixStart).toBeGreaterThanOrEqual(0);
+    expect(prefixEnd).toBeGreaterThan(prefixStart);
+    const prefixRunner = harness.slice(prefixStart, prefixEnd);
+    const preparationStart = harness.indexOf('prepare_current_postimage_template() {');
+    const preparationEnd = harness.indexOf(
+      '\nkeyshare_postimage_fingerprint() {',
+      preparationStart
+    );
+    expect(preparationStart).toBeGreaterThanOrEqual(0);
+    expect(preparationEnd).toBeGreaterThan(preparationStart);
+    const preparationRunner = harness.slice(preparationStart, preparationEnd);
+    const runners = `${prefixRunner}\n${preparationRunner}`;
 
-    expect(runner).not.toContain('printf "\\\\echo');
-    expect(runner).not.toContain('printf "\\\\ir');
-    expect(runner).not.toContain('\u001b');
-    expect(runner.match(/printf '%s\\n' "\\\\echo APPLYING/g)).toHaveLength(1);
-    expect(runner.match(/printf '%s\\n' "\\\\echo REPLAYING/g)).toHaveLength(1);
-    expect(runner.match(/printf '%s\\n' "\\\\ir /g)).toHaveLength(2);
+    expect(runners).not.toContain('printf "\\\\echo');
+    expect(runners).not.toContain('printf "\\\\ir');
+    expect(runners).not.toContain('\u001b');
+    expect(prefixRunner.match(/printf '%s\\n' "\\\\echo APPLYING/g)).toHaveLength(1);
+    expect(prefixRunner.match(/printf '%s\\n' "\\\\echo REPLAYING/g)).toHaveLength(1);
+    expect(prefixRunner.match(/printf '%s\\n' "\\\\ir /g)).toHaveLength(2);
+    expect(preparationRunner.match(/printf '%s\\n' "\\\\echo APPLYING/g)).toHaveLength(1);
+    expect(preparationRunner.match(/printf '%s\\n' "\\\\echo RUNNING/g)).toHaveLength(1);
+    expect(preparationRunner.match(/printf '%s\\n' "\\\\echo REPLAYING/g)).toBeNull();
+    expect(preparationRunner.match(/printf '%s\\n' "\\\\ir /g)).toHaveLength(2);
+    expect(preparationRunner).not.toContain('chain_files[4]');
+    expect(harness).not.toContain('#1-#5 or its exact replay');
+    expect(diamondFixture).not.toContain('stage_b_diamond_current_postimage_snapshot');
+    expect(diamondFixture).not.toContain('assert_stage_b_current_postimage_replay_exact');
     expect(harness).not.toContain('ind.oid');
     expect(harness.match(/CASE WHEN idx\.oid IS NULL THEN NULL/g)).toHaveLength(3);
   });

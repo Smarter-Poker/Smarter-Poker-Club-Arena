@@ -30,18 +30,6 @@ const cutovers = [
     gate: 'require_live_terminal_cutover_freeze',
   },
   {
-    file: '20260910055909_stage_b_exact_precondition_repairs.sql',
-    gate: 'require_live_seat_exit_cutover_freeze',
-  },
-  {
-    file: '20260910055955_stage_b_current_postimage_contraction.sql',
-    gate: 'require_live_legacy_hold_retirement_freeze',
-  },
-  {
-    file: '20260910055955_stage_b_current_postimage_contraction.sql',
-    gate: 'require_live_terminal_acl_cutover_freeze',
-  },
-  {
     file: '20260909165602_the_four_table_limit_is_never_satellite_cash.sql',
     gate: 'require_live_cap_correction_freeze',
   },

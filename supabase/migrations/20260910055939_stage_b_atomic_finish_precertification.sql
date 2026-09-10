@@ -1,4 +1,4 @@
--- 20260910042058_stage_b_atomic_finish_precertification.sql
+-- 20260910042058_stage_b_atomic_finish_precertification
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-09-10 UTC.
 --

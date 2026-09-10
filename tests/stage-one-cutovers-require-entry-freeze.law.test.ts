@@ -20,27 +20,6 @@ const cutovers: Cutover[] = [
     firstBarrier: 'CREATE TABLE IF NOT EXISTS public.tournament_obligation_retirements',
     liveError: 'obligation retirement live cutover requires the maintenance entry freeze',
   },
-  {
-    file: '20260910055955_stage_b_current_postimage_contraction.sql',
-    gateTag: 'require_live_legacy_hold_retirement_freeze',
-    expiryTag: 'verify_live_legacy_hold_retirement_freeze_still_held',
-    firstBarrier: 'LOCK TABLE public.chip_escrow_holds IN SHARE ROW EXCLUSIVE MODE',
-    liveError:
-      'legacy tournament hold retirement live cutover requires the maintenance entry freeze',
-  },
-  {
-    file: '20260910055909_stage_b_exact_precondition_repairs.sql',
-    gateTag: 'require_live_seat_exit_cutover_freeze',
-    firstBarrier: "SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))",
-    liveError: 'tournament seat-exit live cutover requires the maintenance entry freeze',
-  },
-  {
-    file: '20260910055955_stage_b_current_postimage_contraction.sql',
-    gateTag: 'require_live_terminal_acl_cutover_freeze',
-    expiryTag: 'verify_live_terminal_acl_cutover_freeze_still_held',
-    firstBarrier: 'DO $terminal_acl_prerequisites$',
-    liveError: 'terminal ACL hardening live cutover requires the maintenance entry freeze',
-  },
 ];
 
 const pristineRelations = [
@@ -117,21 +96,16 @@ describe('stage-one tournament cutovers require the live maintenance entry freez
     expect(body).toContain("USING ERRCODE = '55006'");
   });
 
-  it('gates both metadata-only retirements despite their intentionally non-money behavior', () => {
+  it('gates metadata-only retirement despite its intentionally non-money behavior', () => {
     const obligationRetirement = sqlFor(cutovers[0].file);
-    const holdRetirement = sqlFor(cutovers[1].file);
 
     expect(obligationRetirement).toContain('Retirement is metadata-only');
-    expect(holdRetirement).toContain('This migration moves no money');
     expect(
       obligationRetirement.indexOf('DO $require_live_obligation_retirement_freeze$')
     ).toBeLessThan(
       obligationRetirement.indexOf(
         'CREATE TABLE IF NOT EXISTS public.tournament_obligation_retirements'
       )
-    );
-    expect(holdRetirement.indexOf('DO $require_live_legacy_hold_retirement_freeze$')).toBeLessThan(
-      holdRetirement.indexOf('LOCK TABLE public.chip_escrow_holds')
     );
   });
 

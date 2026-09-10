@@ -20,12 +20,14 @@ BEGIN;
 
 -- A deployment must fail closed instead of occupying tournament money/seat
 -- locks past the short maintenance trough. PostgreSQL 17's transaction budget
--- bounds the complete lock-holding transaction; the other two budgets bound
--- each blocked lock acquisition and statement. A retry is safe because the
--- whole cutover, including its proof row and cron retirement, is atomic.
+-- bounds the complete lock-holding transaction while preserving 30 seconds of
+-- the authenticated three-minute freeze as restart/recovery headroom; the
+-- other two budgets bound each blocked lock acquisition and statement. A retry
+-- is safe because the whole cutover, including its proof row and cron
+-- retirement, is atomic.
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
-SET LOCAL transaction_timeout = '180s';
+SET LOCAL transaction_timeout = '150s';
 
 -- Terminal settlement is the root of every tournament identity mutation.
 -- Take that root before the historical reconciler lock or any relation lock:
@@ -36,19 +38,24 @@ SELECT pg_advisory_xact_lock(
   hashtextextended('ca:tournament-terminal-settlement:v1',0));
 SELECT pg_advisory_xact_lock_shared(530090,1);
 
--- The freeze predicate is executable cutover authority, not a name to trust.
--- Authenticate its exact body and the statement trigger that serializes every
--- maintenance-row writer before using either the live or pristine branch.
-DO $authenticate_entry_freeze_authority$
+-- Every migration transaction must prove its own stopped-engine authority.
+-- Neither an operator-held host mutex nor the preceding migration's committed
+-- proof can protect this transaction. Authenticate the durable freeze writer,
+-- then take the global realtime/maintenance/engine relation order before the
+-- candidate snapshot or any repair DML can observe a restarted engine.
+DO $authenticate_stage_b_stopped_engine_authority$
 DECLARE
   v_break_relation oid := to_regclass('public.engine_maintenance_break');
-  v_predicate oid := to_regprocedure('public.fn_entry_purchases_frozen()');
+  v_predicate oid := to_regprocedure('public.fn_platform_frozen()');
+  v_entry_predicate oid :=
+    to_regprocedure('public.fn_entry_purchases_frozen()');
   v_writer oid :=
     to_regprocedure('public.fn_serialize_engine_maintenance_break_write()');
   v_relation_owner oid;
 BEGIN
-  IF v_break_relation IS NULL OR v_predicate IS NULL OR v_writer IS NULL THEN
-    RAISE EXCEPTION 'canonical maintenance entry-freeze authority is missing'
+  IF v_break_relation IS NULL OR v_predicate IS NULL
+     OR v_entry_predicate IS NULL OR v_writer IS NULL THEN
+    RAISE EXCEPTION 'Stage-B stopped-engine authority is missing'
       USING ERRCODE = '55000';
   END IF;
 
@@ -60,6 +67,19 @@ BEGIN
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
      WHERE p.oid = v_predicate
+       AND md5(p.prosrc) = '112b1265824ee082b8adc67ea367d826'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'boolean'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'sql'
+  ) OR NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_entry_predicate
        AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
        AND p.proowner = v_relation_owner
        AND p.prokind = 'f' AND p.provolatile = 'v'
@@ -68,12 +88,7 @@ BEGIN
        AND p.pronargs = 0 AND p.pronargdefaults = 0
        AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
        AND l.lanname = 'sql'
-  ) THEN
-    RAISE EXCEPTION 'maintenance entry-freeze predicate is not canonical'
-      USING ERRCODE = '55000';
-  END IF;
-
-  IF NOT EXISTS (
+  ) OR NOT EXISTS (
     SELECT 1
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
@@ -87,7 +102,7 @@ BEGIN
        AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
        AND l.lanname = 'plpgsql'
   ) THEN
-    RAISE EXCEPTION 'maintenance-row serialization function is not canonical'
+    RAISE EXCEPTION 'Stage-B durable platform freeze authority is not canonical'
       USING ERRCODE = '55000';
   END IF;
 
@@ -104,25 +119,22 @@ BEGIN
        AND tg.tgqual IS NULL
        AND tg.tgnargs = 0
   ) <> 1 THEN
-    RAISE EXCEPTION 'maintenance-row serialization trigger is not canonical and enabled'
+    RAISE EXCEPTION 'Stage-B maintenance serialization trigger is not canonical'
       USING ERRCODE = '55000';
   END IF;
 END;
-$authenticate_entry_freeze_authority$;
+$authenticate_stage_b_stopped_engine_authority$;
 
--- A clean source-controlled replay has no engine that can publish a freeze.
--- Exempt only the exact pristine database. Any account, club, tournament,
--- table, journal leg or ticket is live shape and requires the time-bounded
--- maintenance entry predicate before the historical reconciler can be joined.
-DO $require_live_seat_exit_cutover_freeze$
+LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_maintenance_break IN SHARE MODE NOWAIT;
+LOCK TABLE public.engine_leader IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_table_leases IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
+
+DO $require_stage_b_stopped_engine_authority$
 DECLARE
   v_database_is_pristine boolean;
 BEGIN
-  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
-    RAISE EXCEPTION
-      'tournament seat-exit cutover requires the serialized maintenance predicate first';
-  END IF;
-
   SELECT NOT (
        EXISTS (SELECT 1 FROM auth.users)
     OR EXISTS (SELECT 1 FROM public.clubs)
@@ -133,13 +145,41 @@ BEGIN
   ) INTO v_database_is_pristine;
 
   IF NOT v_database_is_pristine
-     AND NOT public.fn_entry_purchases_frozen() THEN
+     AND (
+       public.fn_platform_frozen() IS NOT TRUE
+       OR (
+         SELECT count(*)
+           FROM public.engine_maintenance_break b
+          WHERE b.id
+            AND b.enforce_freeze
+            AND b.phase = 'counting_down'
+            AND b.break_started_at IS NOT NULL
+            AND b.break_started_at >= b.announced_at
+            AND b.break_ends_at > b.break_started_at
+            AND b.break_ends_at < b.announced_at + interval '15 minutes'
+            AND b.break_ends_at >= clock_timestamp() + interval '3 minutes'
+       ) <> 1
+     ) THEN
     RAISE EXCEPTION
-      'tournament seat-exit live cutover requires the maintenance entry freeze'
+      'Stage-B boundary requires an authenticated counting-down freeze with three minutes of headroom'
+      USING ERRCODE = '55006';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1 FROM public.engine_leader l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) OR EXISTS (
+       SELECT 1 FROM public.engine_table_leases l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) OR EXISTS (
+       SELECT 1 FROM public.engine_tournament_leases l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) THEN
+    RAISE EXCEPTION 'Stage-B boundary requires every engine authority heartbeat to be stale'
       USING ERRCODE = '55006';
   END IF;
 END;
-$require_live_seat_exit_cutover_freeze$;
+$require_stage_b_stopped_engine_authority$;
 
 -- The historical minute reconciler used this exact session advisory lock.
 -- Acquire it before any relation lock so a running job can finish before the

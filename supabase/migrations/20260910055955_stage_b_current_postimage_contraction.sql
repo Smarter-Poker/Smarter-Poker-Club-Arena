@@ -24,8 +24,154 @@
 
 BEGIN;
 SET LOCAL lock_timeout = '10s';
-SET LOCAL statement_timeout = '300s';
-SET LOCAL transaction_timeout = '600s';
+SET LOCAL statement_timeout = '120s';
+SET LOCAL transaction_timeout = '150s';
+
+-- A committed stopped-engine proof cannot authorize this transaction. Take the
+-- terminal root and durable maintenance key again, authenticate the platform
+-- freeze writer, then close the global realtime/maintenance/engine relation
+-- order before inspecting a receipt or replacing any runtime authority.
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1',0));
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+DO $authenticate_stage_b_stopped_engine_authority$
+DECLARE
+  v_break_relation oid := to_regclass('public.engine_maintenance_break');
+  v_predicate oid := to_regprocedure('public.fn_platform_frozen()');
+  v_entry_predicate oid :=
+    to_regprocedure('public.fn_entry_purchases_frozen()');
+  v_writer oid :=
+    to_regprocedure('public.fn_serialize_engine_maintenance_break_write()');
+  v_relation_owner oid;
+BEGIN
+  IF v_break_relation IS NULL OR v_predicate IS NULL
+     OR v_entry_predicate IS NULL OR v_writer IS NULL THEN
+    RAISE EXCEPTION 'Stage-B stopped-engine authority is missing'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT c.relowner INTO STRICT v_relation_owner
+    FROM pg_class c WHERE c.oid = v_break_relation;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_predicate
+       AND md5(p.prosrc) = '112b1265824ee082b8adc67ea367d826'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'boolean'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'sql'
+  ) OR NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_entry_predicate
+       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'boolean'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'sql'
+  ) OR NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_writer
+       AND md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'trigger'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'plpgsql'
+  ) THEN
+    RAISE EXCEPTION 'Stage-B durable platform freeze authority is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (
+    SELECT count(*)
+      FROM pg_trigger tg
+     WHERE tg.tgrelid = v_break_relation
+       AND tg.tgname = 'aa_serialize_maintenance_break_write'
+       AND tg.tgfoid = v_writer
+       AND NOT tg.tgisinternal
+       AND tg.tgenabled = 'O'
+       AND tg.tgtype = 62
+       AND tg.tgattr::text = ''
+       AND tg.tgqual IS NULL
+       AND tg.tgnargs = 0
+  ) <> 1 THEN
+    RAISE EXCEPTION 'Stage-B maintenance serialization trigger is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+END;
+$authenticate_stage_b_stopped_engine_authority$;
+
+LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_maintenance_break IN SHARE MODE NOWAIT;
+LOCK TABLE public.engine_leader IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_table_leases IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
+
+DO $require_stage_b_stopped_engine_authority$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND (
+       public.fn_platform_frozen() IS NOT TRUE
+       OR (
+         SELECT count(*)
+           FROM public.engine_maintenance_break b
+          WHERE b.id
+            AND b.enforce_freeze
+            AND b.phase = 'counting_down'
+            AND b.break_started_at IS NOT NULL
+            AND b.break_started_at >= b.announced_at
+            AND b.break_ends_at > b.break_started_at
+            AND b.break_ends_at < b.announced_at + interval '15 minutes'
+            AND b.break_ends_at >= clock_timestamp() + interval '3 minutes'
+       ) <> 1
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B boundary requires an authenticated counting-down freeze with three minutes of headroom'
+      USING ERRCODE = '55006';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1 FROM public.engine_leader l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) OR EXISTS (
+       SELECT 1 FROM public.engine_table_leases l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) OR EXISTS (
+       SELECT 1 FROM public.engine_tournament_leases l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) THEN
+    RAISE EXCEPTION 'Stage-B boundary requires every engine authority heartbeat to be stale'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_stage_b_stopped_engine_authority$;
 
 -- #1's receipt proof ended with #1's transaction. Reacquire a writer-blocking
 -- table lock at this final-authority boundary and snapshot the complete dynamic
@@ -2135,16 +2281,11 @@ GRANT EXECUTE ON FUNCTION public.fn_update_managed_game(text,uuid,jsonb)
 -- catalog and advisory lock remain held, and both legacy mutators are dropped
 -- with RESTRICT rather than hidden behind a revoke.
 --
--- Migration 20260910042020 held this job key while repairing its source rows,
--- but that transaction has committed before this boundary starts. Reacquire
--- the complete canonical prefix here: terminal settlement first, then the
--- maintenance entry barrier, then the reconciler's own session-lock key. A
--- running invocation must finish before this transaction can continue, while
+-- The transaction-start gate already owns terminal settlement and the durable
+-- maintenance barrier. Acquire only the reconciler's own session-lock key here.
+-- A running invocation must finish before this transaction can continue, while
 -- every later pg_try_advisory_lock invocation skips until the cron row and
 -- callable authority are retired in this same transaction.
-SELECT pg_advisory_xact_lock(
-  hashtextextended('ca:tournament-terminal-settlement:v1',0));
-SELECT pg_advisory_xact_lock_shared(530090,1);
 SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'));
 
 DO $legacy_reconciler_preflight$
@@ -3154,118 +3295,9 @@ $verify_live_seat_exit_cutover_freeze_still_held$;
 
 
 
--- This migration moves no money, but it proves the legacy hold population is
--- empty while retiring a formerly executable refund door. Serialize that
--- catalog and evidence transition with terminal settlement and live entry
--- purchases before taking the hold relation lock.
-SELECT pg_advisory_xact_lock(
-  hashtextextended('ca:tournament-terminal-settlement:v1',0));
-SELECT pg_advisory_xact_lock_shared(530090,1);
-
--- The freeze predicate is executable cutover authority, not a name to trust.
--- Authenticate its exact body and the statement trigger that serializes every
--- maintenance-row writer before using either the live or pristine branch.
-DO $authenticate_entry_freeze_authority$
-DECLARE
-  v_break_relation oid := to_regclass('public.engine_maintenance_break');
-  v_predicate oid := to_regprocedure('public.fn_entry_purchases_frozen()');
-  v_writer oid :=
-    to_regprocedure('public.fn_serialize_engine_maintenance_break_write()');
-  v_relation_owner oid;
-BEGIN
-  IF v_break_relation IS NULL OR v_predicate IS NULL OR v_writer IS NULL THEN
-    RAISE EXCEPTION 'canonical maintenance entry-freeze authority is missing'
-      USING ERRCODE = '55000';
-  END IF;
-
-  SELECT c.relowner INTO STRICT v_relation_owner
-    FROM pg_class c WHERE c.oid = v_break_relation;
-
-  IF NOT EXISTS (
-    SELECT 1
-      FROM pg_proc p
-      JOIN pg_language l ON l.oid = p.prolang
-     WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
-       AND p.proowner = v_relation_owner
-       AND p.prokind = 'f' AND p.provolatile = 'v'
-       AND NOT p.prosecdef AND NOT p.proretset
-       AND p.prorettype = 'boolean'::regtype
-       AND p.pronargs = 0 AND p.pronargdefaults = 0
-       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
-       AND l.lanname = 'sql'
-  ) THEN
-    RAISE EXCEPTION 'maintenance entry-freeze predicate is not canonical'
-      USING ERRCODE = '55000';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-      FROM pg_proc p
-      JOIN pg_language l ON l.oid = p.prolang
-     WHERE p.oid = v_writer
-       AND md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'
-       AND p.proowner = v_relation_owner
-       AND p.prokind = 'f' AND p.provolatile = 'v'
-       AND NOT p.prosecdef AND NOT p.proretset
-       AND p.prorettype = 'trigger'::regtype
-       AND p.pronargs = 0 AND p.pronargdefaults = 0
-       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
-       AND l.lanname = 'plpgsql'
-  ) THEN
-    RAISE EXCEPTION 'maintenance-row serialization function is not canonical'
-      USING ERRCODE = '55000';
-  END IF;
-
-  IF (
-    SELECT count(*)
-      FROM pg_trigger tg
-     WHERE tg.tgrelid = v_break_relation
-       AND tg.tgname = 'aa_serialize_maintenance_break_write'
-       AND tg.tgfoid = v_writer
-       AND NOT tg.tgisinternal
-       AND tg.tgenabled = 'O'
-       AND tg.tgtype = 62
-       AND tg.tgattr::text = ''
-       AND tg.tgqual IS NULL
-       AND tg.tgnargs = 0
-  ) <> 1 THEN
-    RAISE EXCEPTION 'maintenance-row serialization trigger is not canonical and enabled'
-      USING ERRCODE = '55000';
-  END IF;
-END;
-$authenticate_entry_freeze_authority$;
-
--- Clean schema replay has no engine to publish a maintenance row. Permit only
--- the exact source-controlled pristine shape; any account, club, tournament,
--- table, journal leg or ticket makes this a live-shaped database that must be
--- inside the serialized entry freeze before the retirement can continue.
-DO $require_live_legacy_hold_retirement_freeze$
-DECLARE
-  v_database_is_pristine boolean;
-BEGIN
-  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
-    RAISE EXCEPTION
-      'legacy tournament hold retirement requires the serialized maintenance predicate first';
-  END IF;
-
-  SELECT NOT (
-       EXISTS (SELECT 1 FROM auth.users)
-    OR EXISTS (SELECT 1 FROM public.clubs)
-    OR EXISTS (SELECT 1 FROM public.tournaments)
-    OR EXISTS (SELECT 1 FROM public.tables)
-    OR EXISTS (SELECT 1 FROM public.chip_ledger)
-    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
-  ) INTO v_database_is_pristine;
-
-  IF NOT v_database_is_pristine
-     AND NOT public.fn_entry_purchases_frozen() THEN
-    RAISE EXCEPTION
-      'legacy tournament hold retirement live cutover requires the maintenance entry freeze'
-      USING ERRCODE = '55006';
-  END IF;
-END;
-$require_live_legacy_hold_retirement_freeze$;
+-- The transaction-start gate already owns and authenticates terminal,
+-- maintenance, entry-freeze, realtime, and stopped-engine authority for this
+-- one-shot hold-door retirement.
 
 LOCK TABLE public.chip_escrow_holds IN SHARE ROW EXCLUSIVE MODE;
 
@@ -3351,117 +3383,8 @@ $verify_live_legacy_hold_retirement_freeze_still_held$;
 
 
 
--- ACL replacement changes every terminal service root as one authority
--- boundary. Serialize it with terminal settlement first and the shared entry
--- maintenance root second, before reading or changing any function catalog.
-SELECT pg_advisory_xact_lock(
-  hashtextextended('ca:tournament-terminal-settlement:v1',0));
-SELECT pg_advisory_xact_lock_shared(530090,1);
-
--- The freeze predicate is executable cutover authority, not a name to trust.
--- Authenticate its exact body and the statement trigger that serializes every
--- maintenance-row writer before using either the live or pristine branch.
-DO $authenticate_entry_freeze_authority$
-DECLARE
-  v_break_relation oid := to_regclass('public.engine_maintenance_break');
-  v_predicate oid := to_regprocedure('public.fn_entry_purchases_frozen()');
-  v_writer oid :=
-    to_regprocedure('public.fn_serialize_engine_maintenance_break_write()');
-  v_relation_owner oid;
-BEGIN
-  IF v_break_relation IS NULL OR v_predicate IS NULL OR v_writer IS NULL THEN
-    RAISE EXCEPTION 'canonical maintenance entry-freeze authority is missing'
-      USING ERRCODE = '55000';
-  END IF;
-
-  SELECT c.relowner INTO STRICT v_relation_owner
-    FROM pg_class c WHERE c.oid = v_break_relation;
-
-  IF NOT EXISTS (
-    SELECT 1
-      FROM pg_proc p
-      JOIN pg_language l ON l.oid = p.prolang
-     WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
-       AND p.proowner = v_relation_owner
-       AND p.prokind = 'f' AND p.provolatile = 'v'
-       AND NOT p.prosecdef AND NOT p.proretset
-       AND p.prorettype = 'boolean'::regtype
-       AND p.pronargs = 0 AND p.pronargdefaults = 0
-       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
-       AND l.lanname = 'sql'
-  ) THEN
-    RAISE EXCEPTION 'maintenance entry-freeze predicate is not canonical'
-      USING ERRCODE = '55000';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-      FROM pg_proc p
-      JOIN pg_language l ON l.oid = p.prolang
-     WHERE p.oid = v_writer
-       AND md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'
-       AND p.proowner = v_relation_owner
-       AND p.prokind = 'f' AND p.provolatile = 'v'
-       AND NOT p.prosecdef AND NOT p.proretset
-       AND p.prorettype = 'trigger'::regtype
-       AND p.pronargs = 0 AND p.pronargdefaults = 0
-       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
-       AND l.lanname = 'plpgsql'
-  ) THEN
-    RAISE EXCEPTION 'maintenance-row serialization function is not canonical'
-      USING ERRCODE = '55000';
-  END IF;
-
-  IF (
-    SELECT count(*)
-      FROM pg_trigger tg
-     WHERE tg.tgrelid = v_break_relation
-       AND tg.tgname = 'aa_serialize_maintenance_break_write'
-       AND tg.tgfoid = v_writer
-       AND NOT tg.tgisinternal
-       AND tg.tgenabled = 'O'
-       AND tg.tgtype = 62
-       AND tg.tgattr::text = ''
-       AND tg.tgqual IS NULL
-       AND tg.tgnargs = 0
-  ) <> 1 THEN
-    RAISE EXCEPTION 'maintenance-row serialization trigger is not canonical and enabled'
-      USING ERRCODE = '55000';
-  END IF;
-END;
-$authenticate_entry_freeze_authority$;
-
--- A clean schema replay has no engine to advertise a freeze. Exempt only the
--- exact pristine database; any durable account, club, tournament, table,
--- journal leg or ticket makes this a live-shaped cutover and requires the
--- serialized time-bounded entry predicate.
-DO $require_live_terminal_acl_cutover_freeze$
-DECLARE
-  v_database_is_pristine boolean;
-BEGIN
-  IF to_regprocedure('public.fn_entry_purchases_frozen()') IS NULL THEN
-    RAISE EXCEPTION
-      'terminal ACL hardening requires the serialized maintenance predicate first';
-  END IF;
-
-  SELECT NOT (
-       EXISTS (SELECT 1 FROM auth.users)
-    OR EXISTS (SELECT 1 FROM public.clubs)
-    OR EXISTS (SELECT 1 FROM public.tournaments)
-    OR EXISTS (SELECT 1 FROM public.tables)
-    OR EXISTS (SELECT 1 FROM public.chip_ledger)
-    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
-  ) INTO v_database_is_pristine;
-
-  IF NOT v_database_is_pristine
-     AND NOT public.fn_entry_purchases_frozen() THEN
-    RAISE EXCEPTION
-      'terminal ACL hardening live cutover requires the maintenance entry freeze'
-      USING ERRCODE = '55006';
-  END IF;
-END;
-$require_live_terminal_acl_cutover_freeze$;
+-- The same transaction-start authority remains held while terminal service
+-- roots are replaced as one ACL boundary.
 
 DO $terminal_acl_prerequisites$
 DECLARE
@@ -7014,12 +6937,8 @@ $phase_b_freeze_still_held$;
    wait behind DDL. Re-run only in the audited quiet window after inspecting
    the unchanged catalog; never hide a timeout behind an automatic retry. */
 
-/* Supabase Realtime takes relation-catalog locks while rebuilding its
-   subscription state. Acquire that global catalog boundary before this
-   migration inspects or changes any public object, so the cutover cannot form
-   the inverse public-relation -> realtime.subscription lock order. NOWAIT
-   aborts an occupied window whole instead of pausing live tables behind DDL. */
-LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+/* The transaction-start gate already owns realtime.subscription before every
+   public relation/catalog operation in this composed boundary. */
 
 /* Stage B is a contraction after the independently receipted seat-first
    retirement. Refuse to duplicate or bypass that boundary: the atomic creator
@@ -7044,7 +6963,8 @@ END;
 $require_seat_first_retirement$;
 
 /* Refuse an out-of-order cutover or an accidental replacement of an unrelated
-   PostgREST hook.  Reapplying this exact migration is harmless. */
+   PostgREST hook. This contraction is forward-only and applied once; the
+   Supabase migration ledger, not source-level replay, prevents reapplication. */
 DO $require_stage_a_request_authority$
 DECLARE
   v_hook oid:=to_regprocedure(
@@ -7062,11 +6982,13 @@ DECLARE
   v_postgres oid:='postgres'::regrole;
   v_bad integer;
   v_source text;
+  v_hook_semantic text;
   v_claim_source text;
   v_heartbeat_source text;
   v_settlement_core text;
   v_settlement_door text;
   v_settlement_wrapper text;
+  v_manager_write_lease_pattern text := $manager_write_lease_pattern$FROM[[:space:]]+public\.engine_tournament_leases[[:space:]]+l[[:space:]]+WHERE[[:space:]]+l\.tournament_id[[:space:]]*=[[:space:]]*v_tournament_id[[:space:]]+AND[[:space:]]+l\.protocol_version[[:space:]]*=[[:space:]]*2[[:space:]]+AND[[:space:]]+l\.lease_generation[[:space:]]*=[[:space:]]*v_lease_generation[[:space:]]+AND[[:space:]]+l\.heartbeat_at[[:space:]]*>=[[:space:]]*clock_timestamp\(\)[[:space:]]*-[[:space:]]*make_interval\(secs[[:space:]]*=>[[:space:]]*v_stale_seconds\)[^;]*FOR[[:space:]]+KEY[[:space:]]+SHARE[[:space:]]*;$manager_write_lease_pattern$;
 BEGIN
   IF to_regclass('supabase_migrations.schema_migrations') IS NULL
      OR NOT EXISTS (
@@ -7186,6 +7108,10 @@ BEGIN
   SELECT p.prosrc INTO STRICT v_source
     FROM pg_proc p
    WHERE p.oid=v_hook;
+  -- Comments are explanatory, not executable tokens. Remove them before the
+  -- bounded statement regex so a semicolon inside the audited lease rationale
+  -- cannot be mistaken for the SQL statement terminator.
+  v_hook_semantic := regexp_replace(v_source, '/\*.*?\*/', ' ', 'gs');
   SELECT p.prosrc INTO STRICT v_claim_source
     FROM pg_proc p WHERE p.oid=v_claim;
   SELECT p.prosrc INTO STRICT v_heartbeat_source
@@ -7194,14 +7120,8 @@ BEGIN
   IF position('app.smarter_data_actor' IN v_source) = 0
      OR position('x-smarter-data-actor' IN v_source) = 0
      OR position('l.lease_generation = v_lease_generation' IN v_source) = 0
-     OR position(E'FROM public.engine_tournament_leases l\n'
-                 '     WHERE l.tournament_id = v_tournament_id\n'
-                 '       AND l.protocol_version = 2\n'
-                 '       AND l.lease_generation = v_lease_generation\n'
-                 '       AND l.heartbeat_at >=\n'
-                 '           clock_timestamp() - make_interval(secs => v_stale_seconds)\n'
-                 '     FOR KEY SHARE;' IN v_source) = 0
-     OR v_source ~
+     OR v_hook_semantic !~ v_manager_write_lease_pattern
+     OR v_hook_semantic ~
           'engine_tournament_leases[[:space:]]+l[[:space:]][^;]*FOR[[:space:]]+SHARE[[:space:]]*;'
      OR position('request.jwt.claims' IN v_source) = 0
      OR position('auth.role()' IN v_source) = 0
@@ -7495,14 +7415,13 @@ $require_stage_a_tournament_settlement_expand$;
    tables first because the old request obtains that relation before its
    deferred validator locks a protocol-1 lease. NOWAIT makes a concurrent
    legacy insert or wake/receipt writer abort this entire cutover without a
-   partial catalog change. Holding the lease relation EXCLUSIVE then prevents
-   a heartbeat or a bridge FOR SHARE lock from crossing the replacement. */
+   partial catalog change. The transaction-start ACCESS EXCLUSIVE lease hold
+   prevents a heartbeat or a bridge lock from crossing the replacement. */
 LOCK TABLE public.tables IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 LOCK TABLE public.tournament_table_origins IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 LOCK TABLE public.tournament_capacity_table_receipts
   IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 LOCK TABLE public.tournament_manager_wakes IN SHARE ROW EXCLUSIVE MODE NOWAIT;
-LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
 
 DO $refuse_live_protocol_one_tournament_manager$
 BEGIN
@@ -8460,17 +8379,31 @@ REVOKE ALL ON FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligati
 DO $assert_strict_manager_request_fence$
 DECLARE
   v_legacy_roster_has_job boolean := false;
+  v_authenticator_oid oid;
+  v_current_database_oid oid;
+  v_canonical_global_hook_settings bigint;
+  v_applicable_hook_settings bigint;
   v_hook_source text;
+  v_hook_semantic text;
   v_scope_source text;
   v_row_guard_source text;
   v_single_obligation_source text;
   v_satellite_cash_source text;
+  v_manager_write_lease_pattern text := $manager_write_lease_pattern$FROM[[:space:]]+public\.engine_tournament_leases[[:space:]]+l[[:space:]]+WHERE[[:space:]]+l\.tournament_id[[:space:]]*=[[:space:]]*v_tournament_id[[:space:]]+AND[[:space:]]+l\.protocol_version[[:space:]]*=[[:space:]]*2[[:space:]]+AND[[:space:]]+l\.lease_generation[[:space:]]*=[[:space:]]*v_lease_generation[[:space:]]+AND[[:space:]]+l\.heartbeat_at[[:space:]]*>=[[:space:]]*clock_timestamp\(\)[[:space:]]*-[[:space:]]*make_interval\(secs[[:space:]]*=>[[:space:]]*v_stale_seconds\)[^;]*FOR[[:space:]]+KEY[[:space:]]+SHARE[[:space:]]*;$manager_write_lease_pattern$;
 BEGIN
+  SELECT r.oid INTO STRICT v_authenticator_oid
+    FROM pg_roles r
+   WHERE r.rolname = 'authenticator';
+  SELECT d.oid INTO STRICT v_current_database_oid
+    FROM pg_database d
+   WHERE d.datname = current_database();
+
   SELECT p.prosrc INTO STRICT v_hook_source
     FROM pg_proc p
    WHERE p.oid =
          'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
      AND p.prosecdef;
+  v_hook_semantic := regexp_replace(v_hook_source, '/\*.*?\*/', ' ', 'gs');
   SELECT p.prosrc INTO STRICT v_scope_source
     FROM pg_proc p
    WHERE p.oid =
@@ -8496,15 +8429,8 @@ BEGIN
      OR position('ENGINE_DATA_AUTHORITY_REQUIRED' IN v_hook_source) = 0
      OR position($needle$'shared-estate-service'$needle$ IN v_hook_source) = 0
      OR position($needle$'browser'$needle$ IN v_hook_source) = 0
-     OR position(E'FROM public.engine_tournament_leases l\n'
-                 '     WHERE l.tournament_id = v_tournament_id\n'
-                 '       AND l.protocol_version = 2\n'
-                 '       AND l.lease_generation = v_lease_generation\n'
-                 '       AND l.heartbeat_at >=\n'
-                 '           clock_timestamp() - make_interval(secs => v_stale_seconds)\n'
-                 '     /* Preserve 20260910063559:' IN v_hook_source) = 0
-     OR position('FOR KEY SHARE' IN v_hook_source) = 0
-     OR v_hook_source ~
+     OR v_hook_semantic !~ v_manager_write_lease_pattern
+     OR v_hook_semantic ~
           'engine_tournament_leases[[:space:]]+l[[:space:]][^;]*FOR[[:space:]]+SHARE[[:space:]]*;'
      OR position('l.lease_generation = v_lease_generation' IN v_hook_source) = 0
      OR position('app.smarter_manager_request_fenced' IN v_hook_source) = 0
@@ -8800,16 +8726,31 @@ BEGIN
     RAISE EXCEPTION 'Every manager-owned row family is not scope guarded';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1
-      FROM pg_db_role_setting s
-      JOIN pg_roles r ON r.oid = s.setrole
-      CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) setting(value)
-     WHERE r.rolname = 'authenticator'
-       AND setting.value =
-           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
-  ) THEN
-    RAISE EXCEPTION 'PostgREST strict request hook setting is absent';
+  /* PostgREST reads settings for its login role in this database. Require the
+     one intentional role-wide hook and refuse a database-wide or
+     role-in-database value that could override it for this API instance. Rows
+     for another database or login role are not applicable here. */
+  SELECT
+    count(*) FILTER (
+      WHERE s.setdatabase = 0
+        AND s.setrole = v_authenticator_oid
+        AND setting.value =
+            'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+    ),
+    count(*)
+    INTO v_canonical_global_hook_settings, v_applicable_hook_settings
+    FROM pg_db_role_setting s
+    CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) setting(value)
+   WHERE s.setdatabase IN (0, v_current_database_oid)
+     AND s.setrole IN (0, v_authenticator_oid)
+     AND setting.value LIKE 'pgrst.db_pre_request=%';
+
+  IF v_canonical_global_hook_settings <> 1
+     OR v_applicable_hook_settings <> 1 THEN
+    RAISE EXCEPTION
+      'PostgREST strict request hook settings are not exact (canonical global %, applicable %)',
+      v_canonical_global_hook_settings,
+      v_applicable_hook_settings;
   END IF;
 
   IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NOT NULL THEN
@@ -8865,13 +8806,13 @@ BEGIN
   IF EXISTS (
     SELECT 1
       FROM pg_db_role_setting s
-      JOIN pg_roles r ON r.oid = s.setrole
       CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
       CROSS JOIN LATERAL regexp_split_to_table(
         split_part(setting.value, '=', 2),
         '[[:space:]]*,[[:space:]]*'
       ) AS exposed(schema_name)
-     WHERE r.rolname = 'authenticator'
+     WHERE s.setdatabase IN (0, v_current_database_oid)
+       AND s.setrole IN (0, v_authenticator_oid)
        AND setting.value LIKE 'pgrst.db_schemas=%'
        AND exposed.schema_name = 'smarter_private'
   ) THEN
@@ -8961,9 +8902,7 @@ NOTIFY pgrst, 'reload schema';
 -- do not reopen a generation-blind door during an ordinary application rollback.
 
 
--- Global Supabase catalog order: realtime.subscription before public objects.
--- NOWAIT refuses a busy cutover window whole rather than blocking live tables.
-LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+-- The global realtime boundary has been held since transaction start.
 
 DO $strict_contract$
 DECLARE
@@ -9892,7 +9831,7 @@ NOTIFY pgrst, 'reload schema';
 
 
 
-LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+-- The global realtime boundary has been held since transaction start.
 
 DO $require_canonical_move_authority$
 BEGIN
@@ -10139,12 +10078,16 @@ BEGIN
       VALUES
         ('public.trg_lock_and_validate_tournament_live_seat()'::regprocedure,
          '27e86e2b51bb6cfb17c13569c8870f10'::text),
+        /* 20260910054638: retain the current trusted-auth-admin maintenance
+           boundary body, not 034411's earlier pre-auth-admin postimage. */
         ('public.fn_active_maintenance_release_boundary()'::regprocedure,
-         '9e66fb8c6cbecfa67fb91a924723a797'::text),
+         '66f0ca0e4ebf27a74dd4b7c211c4fd0f'::text),
         ('public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)'::regprocedure,
          '16a587f7567336fe4379135f22e3fb41'::text),
+        /* 20260910072322: retain the knockout-door ownership predicate
+           composed over 10002804's felt-first eliminator body. */
         ('public.fn_ca_eliminate_absent_tournament_players(integer,integer,boolean)'::regprocedure,
-         '421488851cad34b81b8fea7f2f796fed'::text),
+         '05855868cb0cbb1199049b5e0e97aa56'::text),
         ('public.fn_concurrent_game_load(uuid,uuid,uuid,uuid)'::regprocedure,
          '4ecd7a690da622a1d18eaec13206e5a5'::text),
         ('public.fn_deliver_satellite_ticket_exact(uuid,uuid,uuid,text,integer,numeric)'::regprocedure,

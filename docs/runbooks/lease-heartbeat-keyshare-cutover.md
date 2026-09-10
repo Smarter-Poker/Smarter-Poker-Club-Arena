@@ -47,11 +47,23 @@ invalidate Stage B's exact source precondition and leave a mixed protocol.
 Production migration `20260909234808_restore_exact_hand_generation_after_terminal_writer`
 is an already-applied prerequisite, not a seventh cutover write. Before taking
 the host lock, require its unique one-statement ledger receipt and require the
-live seven- and twelve-argument settlement definitions to be
-`9be5d1da12d8f674a47a50ffb9a6df81` and
-`f93a85ebe5a509ccb7dfedb9be1ed3fa`. Stage B pins those bytes before
-retiring either rolling door, and the immediately following strict contraction
-preserves terminal receipts while removing the legacy payload fallback.
+current composed Stage-A settlement catalog to match all four hashes below:
+
+- seven-argument `fn_ca_settle_hand_stacks_absolute`: definition MD5
+  `a7f5dbcd26c3a19f16ecc2ebe010b1d1`, source MD5
+  `e67e89b3aec325f8038e0507a1511eec`;
+- twelve-argument `fn_ca_commit_hand_settlement`: definition MD5
+  `a1738adaf943656868e68a7bf7ce8d1e`, source MD5
+  `0ef3c57a6a31acc383ce4b95a0f9519f`.
+
+The older `9be5d1da...` / `f93a85eb...` pair identifies the earlier restore
+migration's immediate postimage, before the later seat-exit and time-bank
+composition, and is not a valid current-live preflight. Stage B pins the
+current composed catalog bytes before retiring either rolling door; its
+asserted seven-argument rename changes that function's definition text (and
+therefore its definition MD5) while preserving the pinned source body. The
+immediately following strict contraction preserves terminal receipts while
+removing the legacy payload fallback.
 
 ## Preflight
 
@@ -133,12 +145,34 @@ Inspect at least one cash table, multi-table tournament, Sit & Go, and Spin.
 
 ## Seal and publish
 
-Rename the pending artifact to the exact Supabase-assigned 14-digit version
-without changing a byte. Verify it against the ledger, commit the source seal,
-push, merge, and wait for every required workflow. Completion requires the
-served engine image SHA (and World Hub `build-info.json` if the client bundle
-changed) to equal the merged release SHA. A healthy old image, open PR, or
-running workflow is not publication.
+Seal all six applied Stage-B artifacts named in the non-negotiable order above,
+not only the final key-share artifact. For each of
+`stage_b_forward_authority_expansion`, `stage_b_exact_precondition_repairs`,
+`stage_b_terminal_break_invariant`, `stage_b_atomic_finish_precertification`,
+`stage_b_current_postimage_contraction`, and `stage_b_lease_keyshare_once`:
+
+1. rename its source file to the exact Supabase-assigned 14-digit ledger version
+   while preserving its bytes exactly;
+2. prove the pre-rename and post-rename checksums are identical and the sealed
+   file is byte-equal to the stored migration statement; and
+3. update every checked-in reference to the former path, including scripts,
+   tests, manifests, and runbooks, then prove no stale path reference remains.
+
+Commit and push the complete six-artifact source seal. After the PR is merged,
+first verify and record its exact 40-character merge SHA. Then immediately
+dispatch that already-merged SHA, before any workflow wait or status poll
+(replace the placeholder with the verified SHA):
+
+```sh
+gh workflow run auto-deploy-hetzner.yml --ref main -f ref_sha=<exact-40-char-merged-sha>
+```
+
+Never wait for the hourly engine window or scheduler to dispatch this release.
+Only after the immediate dispatch is accepted may the required workflows be
+polled to completion. Completion requires the served engine image SHA (and
+World Hub `build-info.json` if the client bundle changed) to equal the merged
+release SHA. A healthy old image, open PR, or running workflow is not
+publication.
 
 Rollback after commit is a reviewed forward migration. Never delete the
 ledger row, drop the ownership constraints ad hoc, or restore `FOR SHARE` in a

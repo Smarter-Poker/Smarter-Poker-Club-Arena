@@ -32,6 +32,136 @@ BEGIN;
 
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
+SET LOCAL transaction_timeout = '150s';
+
+-- This transaction must prove the stopped-engine boundary for itself. A prior
+-- migration's committed proof and an operator-held host mutex do not block a
+-- database engine restart. Authenticate and hold the durable freeze, then take
+-- the global realtime/maintenance/engine relation order before topology reads
+-- or ownership-key DDL.
+SELECT pg_advisory_xact_lock_shared(530090,1);
+
+DO $authenticate_stage_b_stopped_engine_authority$
+DECLARE
+  v_break_relation oid := to_regclass('public.engine_maintenance_break');
+  v_predicate oid := to_regprocedure('public.fn_platform_frozen()');
+  v_writer oid :=
+    to_regprocedure('public.fn_serialize_engine_maintenance_break_write()');
+  v_relation_owner oid;
+BEGIN
+  IF v_break_relation IS NULL OR v_predicate IS NULL OR v_writer IS NULL THEN
+    RAISE EXCEPTION 'Stage-B stopped-engine authority is missing'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT c.relowner INTO STRICT v_relation_owner
+    FROM pg_class c WHERE c.oid = v_break_relation;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_predicate
+       AND md5(p.prosrc) = '112b1265824ee082b8adc67ea367d826'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'boolean'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'sql'
+  ) OR NOT EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE p.oid = v_writer
+       AND md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'
+       AND p.proowner = v_relation_owner
+       AND p.prokind = 'f' AND p.provolatile = 'v'
+       AND NOT p.prosecdef AND NOT p.proretset
+       AND p.prorettype = 'trigger'::regtype
+       AND p.pronargs = 0 AND p.pronargdefaults = 0
+       AND p.proconfig = ARRAY['search_path=public, pg_temp']::text[]
+       AND l.lanname = 'plpgsql'
+  ) THEN
+    RAISE EXCEPTION 'Stage-B durable platform freeze authority is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (
+    SELECT count(*)
+      FROM pg_trigger tg
+     WHERE tg.tgrelid = v_break_relation
+       AND tg.tgname = 'aa_serialize_maintenance_break_write'
+       AND tg.tgfoid = v_writer
+       AND NOT tg.tgisinternal
+       AND tg.tgenabled = 'O'
+       AND tg.tgtype = 62
+       AND tg.tgattr::text = ''
+       AND tg.tgqual IS NULL
+       AND tg.tgnargs = 0
+  ) <> 1 THEN
+    RAISE EXCEPTION 'Stage-B maintenance serialization trigger is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+END;
+$authenticate_stage_b_stopped_engine_authority$;
+
+LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_maintenance_break IN SHARE MODE NOWAIT;
+LOCK TABLE public.engine_leader IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_table_leases IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN ACCESS EXCLUSIVE MODE NOWAIT;
+
+DO $require_stage_b_stopped_engine_authority$
+DECLARE
+  v_database_is_pristine boolean;
+BEGIN
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF NOT v_database_is_pristine
+     AND (
+       public.fn_platform_frozen() IS NOT TRUE
+       OR (
+         SELECT count(*)
+           FROM public.engine_maintenance_break b
+          WHERE b.id
+            AND b.enforce_freeze
+            AND b.phase = 'counting_down'
+            AND b.break_started_at IS NOT NULL
+            AND b.break_started_at >= b.announced_at
+            AND b.break_ends_at > b.break_started_at
+            AND b.break_ends_at < b.announced_at + interval '15 minutes'
+            AND b.break_ends_at >= clock_timestamp() + interval '3 minutes'
+       ) <> 1
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B boundary requires an authenticated counting-down freeze with three minutes of headroom'
+      USING ERRCODE = '55006';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1 FROM public.engine_leader l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) OR EXISTS (
+       SELECT 1 FROM public.engine_table_leases l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) OR EXISTS (
+       SELECT 1 FROM public.engine_tournament_leases l
+        WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+     ) THEN
+    RAISE EXCEPTION 'Stage-B boundary requires every engine authority heartbeat to be stale'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$require_stage_b_stopped_engine_authority$;
 
 DO $require_strict_stage_b_topology$
 BEGIN
@@ -58,9 +188,6 @@ BEGIN
   END IF;
 END;
 $require_strict_stage_b_topology$;
-
-LOCK TABLE public.engine_table_leases IN ACCESS EXCLUSIVE MODE NOWAIT;
-LOCK TABLE public.engine_tournament_leases IN ACCESS EXCLUSIVE MODE NOWAIT;
 
 CREATE TEMP TABLE pg_temp.lease_keyshare_cutover_mode (
   mode text PRIMARY KEY CHECK (mode IN ('apply', 'verify'))

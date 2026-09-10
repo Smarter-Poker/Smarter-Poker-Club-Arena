@@ -43,6 +43,8 @@ DECLARE
   v_database_is_pristine boolean;
   v_receipt_count bigint;
   v_wrong_version_count bigint;
+  v_cutover_count bigint;
+  v_authenticated_cutover_count bigint;
 BEGIN
   SELECT NOT (
        EXISTS (SELECT 1 FROM auth.users)
@@ -100,11 +102,32 @@ BEGIN
   IF to_regclass(
        'public.tournament_terminal_break_normalization_receipts'
      ) IS NULL
+     OR to_regclass(
+       'public.tournament_seat_exit_authority_cutover'
+     ) IS NULL
      OR to_regprocedure(
        'public.fn_tournament_terminal_break_normalization_receipt_immutable()'
      ) IS NULL THEN
     RAISE EXCEPTION
       'terminal break invariant requires the forward expansion first'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT count(*),
+         count(*) FILTER (
+           WHERE authority = 'tournament_seat_exit_authority:v1'
+             AND migration_version =
+               '20260910042020_stage_b_exact_precondition_repairs'
+             AND installed_at IS NOT NULL
+             AND installed_at <= clock_timestamp()
+         )
+    INTO v_cutover_count, v_authenticated_cutover_count
+    FROM public.tournament_seat_exit_authority_cutover;
+
+  IF v_cutover_count <> 1 OR v_authenticated_cutover_count <> 1 THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires the exact Stage-B repair cutover singleton: rows %, authenticated %',
+      v_cutover_count, v_authenticated_cutover_count
       USING ERRCODE = '55000';
   END IF;
 
@@ -116,12 +139,10 @@ BEGIN
     INTO v_receipt_count, v_wrong_version_count
     FROM public.tournament_terminal_break_normalization_receipts;
 
-  IF (v_database_is_pristine AND v_receipt_count <> 0)
-     OR (NOT v_database_is_pristine AND v_receipt_count = 0)
-     OR v_wrong_version_count <> 0 THEN
+  IF v_wrong_version_count <> 0 THEN
     RAISE EXCEPTION
-      'terminal break repair receipt cohort changed: pristine %, rows %, wrong-version %',
-      v_database_is_pristine, v_receipt_count, v_wrong_version_count
+      'terminal break repair receipt cohort has % wrong-version rows among % total',
+      v_wrong_version_count, v_receipt_count
       USING ERRCODE = '55000';
   END IF;
 
@@ -391,7 +412,6 @@ $make_finish_certificate_candidate_aware$;
 DO $verify_terminal_break_invariant$
 DECLARE
   v_bad bigint;
-  v_database_is_pristine boolean;
   v_receipt_count bigint;
   v_wrong_version_count bigint;
   v_terminal_trigger "char";
@@ -443,15 +463,6 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  SELECT NOT (
-       EXISTS (SELECT 1 FROM auth.users)
-    OR EXISTS (SELECT 1 FROM public.clubs)
-    OR EXISTS (SELECT 1 FROM public.tournaments)
-    OR EXISTS (SELECT 1 FROM public.tables)
-    OR EXISTS (SELECT 1 FROM public.chip_ledger)
-    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
-  ) INTO v_database_is_pristine;
-
   SELECT count(*),
          count(*) FILTER (
            WHERE r.normalization_version <>
@@ -460,11 +471,10 @@ BEGIN
     INTO v_receipt_count, v_wrong_version_count
     FROM public.tournament_terminal_break_normalization_receipts r;
 
-  IF (v_database_is_pristine AND v_receipt_count <> 0)
-     OR (NOT v_database_is_pristine AND v_receipt_count = 0)
-     OR v_wrong_version_count <> 0 THEN
+  IF v_wrong_version_count <> 0 THEN
     RAISE EXCEPTION
-      'terminal break receipt cohort changed during invariant activation'
+      'terminal break receipt cohort has % wrong-version rows among % total during invariant activation',
+      v_wrong_version_count, v_receipt_count
       USING ERRCODE = '55000';
   END IF;
 

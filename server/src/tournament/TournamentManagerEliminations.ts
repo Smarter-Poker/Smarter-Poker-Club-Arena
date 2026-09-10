@@ -52,6 +52,7 @@ import {
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
+import { horseRebuyAllowance } from '../services/FreeBuy.js';
 
 interface QueuedBountyReveal {
   awardId: string;
@@ -967,11 +968,47 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // hand and same starting stack. Hand order must never be skipped:
               // doing so would advance a PKO watermark past unpaid money.
               const refusedId = bustedOrdered[i].user_id;
-              this.bustRefusalStreak.set(
-                refusedId,
-                (this.bustRefusalStreak.get(refusedId) ?? 0) + 1
+              const streak = (this.bustRefusalStreak.get(refusedId) ?? 0) + 1;
+              this.bustRefusalStreak.set(refusedId, streak);
+
+              /**
+               * ONE PLAYER THE DOOR CANNOT ACCEPT IS NOT A REASON TO STOP THE
+               * WHOLE EVENT (2026-09-10).
+               *
+               * Aborting the pass is right for a TRANSIENT refusal - a CAS miss
+               * or an evidence defer clears itself in seconds, and retrying in
+               * hand order costs nothing. It is wrong for a PERMANENT one. The
+               * door refuses deterministically for several real reasons
+               * (`unresolved_knockout_generation_chain`,
+               * `pko_order_already_advanced`,
+               * `knockout_generation_has_new_live_seat`), and every one of them
+               * used to freeze the event: no other bust could be recorded, the
+               * field never shrank, the event never finished, and its escrow
+               * was never paid to anybody. Measured today: seven events stuck
+               * that way for up to eighteen hours, one refusing the same player
+               * every fifteen seconds since 2026-09-08, together holding
+               * thousands of chips no player could be given.
+               *
+               * So the abort stands for the first two refusals of the same
+               * player, and after that this pass records the rest of the field
+               * and says out loud who it could not record. Skipping is the
+               * lesser harm and it is bounded: hand order is preserved for
+               * everyone the door accepts, the blocked player keeps their
+               * chronological `eliminated_at` when they are finally recorded,
+               * and fn_normalize_tournament_final_standings re-derives every
+               * finishing place from that chronology before the event pays.
+               */
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
+                ),
+                'Tournament.bust_blocked_player_skipped'
               );
-              return;
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+              continue;
             }
             this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
             committedThisPass++;
@@ -1444,10 +1481,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
-   * Give busted HORSES their rebuy, exactly as a human would take one.
+   * Give busted HORSES their configured recovery, subject to the event and
+   * deterministic horse policy.
    *
-   * Every eligibility rule (rebuys offered, inside the rebuy level window,
-   * under max_rebuys, stack low enough) is enforced inside
+   * Every eligibility rule (the configured product, its level window,
+   * database cap, stack state and funding) is enforced inside
    * process_tournament_rebuy, which also does the chip debit, the prize-pool
    * increment and the single rake booking in one transaction. So this asks
    * and lets the database say no -- the refusals ('Rebuy limit reached',
@@ -1457,8 +1495,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Horses only. A real player's rebuy is their own decision and is taken
    * through the client.
    *
-   * Bounded by construction: max_rebuys (2 on the scheduled events) and the
-   * rebuy level window, both enforced server-side, so this cannot loop.
+   * Bounded by construction: the database event cap/window plus the Free Buy
+   * horse's deterministic 0-5 allowance, so this cannot loop indefinitely.
    */
   private async tryTournamentRebuys(
     bustedUserIds: string[]
@@ -1478,9 +1516,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return { rebought, answered };
     }
     const t = this.tournamentCache as
-      | { is_rebuy?: boolean; rebuy_levels?: number | null; late_reg_levels?: number | null }
+      | {
+          is_rebuy?: boolean;
+          is_reentry?: boolean;
+          free_buy?: boolean;
+          rebuy_levels?: number | null;
+          late_reg_levels?: number | null;
+        }
       | undefined;
-    if (!t?.is_rebuy || bustedUserIds.length === 0) return { rebought, answered };
+    if ((!t?.is_rebuy && !t?.is_reentry) || bustedUserIds.length === 0) {
+      return { rebought, answered };
+    }
+    // The horse input device follows the event's executable recovery product.
+    // Prefer a rebuy when both legacy flags are present; a re-entry-only event
+    // must not silently eliminate every horse while humans retain the option.
+    const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry';
     if (!this.eliminationMutationAllowed()) return { rebought, answered };
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
@@ -1501,12 +1551,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered };
 
       const declined = new Map<string, number>();
+      let freeBuyReloads: Map<string, number> | null = null;
+      if (t.free_buy === true) {
+        const horseIds = horseRows.map((horse) => String(horse.id));
+        const { data: reloadRows, error: reloadErr } = await supabase
+          .from('tournament_players')
+          .select('user_id, rebuys')
+          .eq('tournament_id', this.tournamentId)
+          .in('user_id', horseIds);
+        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (reloadErr || !Array.isArray(reloadRows)) {
+          // Unknown allowance state is not a decline. Preserve the decision
+          // window and retry rather than either charging or eliminating.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          return { rebought, answered };
+        }
+        freeBuyReloads = new Map(
+          reloadRows.map((row) => [
+            String(row.user_id),
+            Math.max(0, Math.floor(Number(row.rebuys) || 0)),
+          ])
+        );
+      }
       for (const h of horseRows) {
         if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (freeBuyReloads) {
+          const used = freeBuyReloads.get(h.id);
+          if (used === undefined) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            continue;
+          }
+          if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
+            answered.add(h.id);
+            continue;
+          }
+        }
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
-          p_rebuy_type: 'rebuy',
+          p_rebuy_type: recoveryType,
           // null: let the server price it. Passing a client-side quote here
           // would only risk a spurious 'Price mismatch'.
           p_cost: null,

@@ -1,6 +1,6 @@
 # Accounting Phase 3: Exact Hand Generation
 
-Status: database expansion applied and verified; engine publication and overall Phase 3 acceptance remain open.
+Status: database expansion and engine adoption verified. Overall Phase 3 acceptance remains open. See the 2026-09-10 continuation below.
 
 ## Confirmed Regression
 
@@ -39,3 +39,9 @@ A direct production schema-only dump timed out with zero output; no production d
 The pending tournament seat-exit migration is not yet applied in production. It renames the corrected core before wrapping it. The migration source was expanded after the initial live application to also update that preserved core when source replay has already installed the wrapper. Both layouts and repeat applications are verified; production output definitions are unchanged from the initial verified application. Its original applied SQL is retained in Supabase migration history and the local evidence directory. Strict tournament cutover, all twelve CA-03 controls, engine deployment and final acceptance remain open. This checkpoint is not a Phase 3 completion claim.
 
 Read-only admission check: zero active seats have a missing join timestamp. No historical seat was rewritten to satisfy the new engine capture.
+
+## 2026-09-10 Continuation
+
+Engine health now serves b4c427a6e8474d796d29b682a9e153e03d78755d, containing PR 4061. The exact-generation source was compared with the released tree; the only later changes in two affected files add asset identity. Health reports zero stalled tables, zero blocked settlements, idle maintenance, and all 282 tables resumed. The live 12-argument outer definition is f93a85ebe5a509ccb7dfedb9be1ed3fa, service-only, and retains both exact join-generation and time-bank refusal checks.
+
+A new owned disposable clone passed legacy and exact full-hand acceptance, rollback, replay and four invalid-generation cases. The separate rebuy assertion remains open. The broader tournament suite passed 1,398 tests in 132 files. Both public and origin frontend stamps match 37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2 and contain the registration and durable seat-refund changes. The seven tournament guards remain disabled; the pending seating RPCs and strict financial cutover are not certified by these narrower checks. See 2026-09-10-chip-drift-resume-evidence.json.

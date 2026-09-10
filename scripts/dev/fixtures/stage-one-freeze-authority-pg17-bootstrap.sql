@@ -14,3 +14,15 @@ CREATE TABLE public.engine_maintenance_break (
   CHECK (phase IN ('last_hand', 'counting_down')),
   CHECK (phase <> 'counting_down' OR break_ends_at IS NOT NULL)
 );
+
+-- Minimal structural inputs used by the captured release-certificate reader.
+-- All rows in this database are synthetic; the script starts its own cluster.
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $role$
+  SELECT NULLIF(current_setting('request.jwt.claim.role', true), '');
+$role$;
+CREATE TABLE public.engine_maintenance_thaws (
+  contract_version integer,
+  release_target_at timestamptz,
+  shifted jsonb NOT NULL
+);

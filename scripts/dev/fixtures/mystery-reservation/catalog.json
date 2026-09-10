@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-09-10",
+  "source": "read-only production pg_catalog",
+  "functions": [
+    {
+      "signature": "fn_attach_bounty_award_obligation()",
+      "body_md5": "c25cddea0d2f1ec56f7255823ed88a7e"
+    },
+    {
+      "signature": "fn_mystery_bounty_reveal(uuid,uuid,boolean)",
+      "body_md5": "5578ec53c8a531eeba47d448ae9af1b1"
+    },
+    {
+      "signature": "fn_mystery_bounty_seed(uuid,integer,jsonb)",
+      "body_md5": "f78272f535468f7399c78d5c4ec87e35"
+    },
+    {
+      "signature": "fn_ack_bounty_obligation_from_award()",
+      "body_md5": "42bd9247e220db40fb41c4fc6ef1b7f2"
+    },
+    {
+      "signature": "fn_assert_bounty_award_has_recipients()",
+      "body_md5": "aa905f63527272e7aded4ac7fdbc9d15"
+    },
+    {
+      "signature": "fn_mystery_bounty_reserve(uuid,uuid,jsonb,uuid,text,uuid,integer)",
+      "body_md5": "789f33328d2641870eeaf23bba2f582a"
+    }
+  ],
+  "tables": [
+    "tournament_bounty_award_recipients",
+    "tournament_bounty_awards",
+    "tournament_bounty_chests",
+    "tournament_bounty_obligations"
+  ]
+}

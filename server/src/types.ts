@@ -798,7 +798,8 @@ export interface Winner {
  * shares (scaled + penny-repaired against the user's credited total in
  * HandController before WINNERS is emitted); board is set on double-board
  * hands.
- * Presentation data only — never used to move money.
+ * Amounts are presentation values, never another chip transfer. Tournament
+ * history also preserves pot and recipient identities for knockout attribution.
  */
 export interface PerPotAward {
   userId: string;

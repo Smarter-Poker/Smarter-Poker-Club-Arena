@@ -1,0 +1,33 @@
+{
+  "passed": 17,
+  "cases": [
+    "baseline reproduces missing later-pot claimant from merged winner",
+    "actual later-pot award survives merged paid total",
+    "same claim replays deterministically without writing a payout",
+    "equal tied recipients remain distinct and preserve existing hi-lo sharing",
+    "old ineligible side-pot winner remains refused",
+    "old accepted complete pot history retains its claimant",
+    "exact null evidence never falls back to merged winners",
+    "exact empty evidence never falls back to merged winners",
+    "exact object evidence never falls back to merged winners",
+    "exact wrong pot evidence never falls back to merged winners",
+    "exact missing pot evidence never falls back to merged winners",
+    "exact self evidence never falls back to merged winners",
+    "exact outsider evidence never falls back to merged winners",
+    "exact malformed id evidence never falls back to merged winners",
+    "null pot index uses array position",
+    "anonymous and authenticated calls remain refused",
+    "rows remain limited to synthetic fixture evidence"
+  ],
+  "baseline_md5": "193de04c64c285ba0bf0cb20bb38c28d",
+  "proposed_md5": "6ead779d2261848571713f0220953082",
+  "cluster": "/tmp/ca-bounty-pot-pg17-a8nygwkx",
+  "scope": "claimant read authority only",
+  "production_mutations": false,
+  "reader_live_observed_at": "2026-09-10T05:36:22.796408Z",
+  "server_tests": 123,
+  "client_tests": 58,
+  "server_typecheck": "passed",
+  "private_cluster_stopped": true,
+  "recorded_at": "2026-09-10T05:52:23.248768+00:00"
+}

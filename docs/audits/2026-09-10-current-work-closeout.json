@@ -3,7 +3,7 @@
     {
       "ref": "backup/resume-poker-sep10/tournament-guards",
       "sha": "24217c5024a4c031aec51dbddba531cd3c1b7842",
-      "status": "Database approval blocked",
+      "status": "Three reviewed production guards applied and independently verified; historical archive remains preserved",
       "verification": "14 cancellation,11 obligation,7 elimination native groups; old obligation fails expected invariant; old elimination/current constraint baseline6 passes",
       "remote_reference_verified": true
     },
@@ -38,7 +38,7 @@
     {
       "ref": "backup/resume-poker-sep10/satellite-funded-helper",
       "sha": "473bd2d41b88ad352819c77031ddc4dad209917b",
-      "status": "Independent database candidate awaiting explicit project deployment approval",
+      "status": "Independent funded-seat correction applied and independently verified; does not activate exact-K Stage-B",
       "verification": "24 native checks,5 observed lock waits,13 committed input hashes",
       "remote_reference_verified": true
     },
@@ -67,37 +67,278 @@
     }
   ],
   "database_release": {
-    "applied": false,
-    "blocker": "Automatic approval review rejected persistent function/ACL migration; existing repository push authorization was not accepted as explicit authorization for this production database target.",
+    "applied": true,
     "candidates": [
       {
         "file": "supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
         "sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
         "source_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
-        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql"
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+        "recorded_file": "supabase/migrations/20260910171843_started_tournaments_resume_or_settle_instead_of_cancelling.sql"
       },
       {
         "file": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
         "sha256": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
         "source_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
-        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql"
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+        "recorded_file": "supabase/migrations/20260910171857_a_refused_finishing_place_creates_no_debt.sql"
       },
       {
         "file": "supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
         "sha256": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
         "source_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
-        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql"
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+        "recorded_file": "supabase/migrations/20260910171911_a_tournament_elimination_requires_a_finishing_rank.sql"
       },
       {
         "file": "supabase/migrations/20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
         "sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
         "source_commit": "473bd2d41b88ad352819c77031ddc4dad209917b",
-        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/473bd2d41b88ad352819c77031ddc4dad209917b/supabase/migrations/20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql"
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/473bd2d41b88ad352819c77031ddc4dad209917b/supabase/migrations/20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+        "recorded_file": "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql"
       }
     ],
     "project_id": "kuklfnapbkmacvwxktbh",
     "project_name": "PokerIQ-Production",
     "latest_installed_readback": [
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_admin_id uuid",
+        "body_md5": "16ea7acbbf76613a0a1193dff18f1330",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974419+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_admin_id"],
+        "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "atomic_cancel_tournament(uuid,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text DEFAULT NULL::text, p_position integer DEFAULT NULL::integer",
+        "body_md5": "2c21c56c6a9d4a2f8ee79082bd4fef57",
+        "defaults": "NULL::text, NULL::integer",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974461+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_satellite_id", "p_target_id", "p_user_id", "p_username", "p_position"],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "3e628d6a57a93eeb61d494ee33f989a3",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974482+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_ca_escrow_on_rake_record()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974497+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": false,
+        "provolatile": "v",
+        "result": "void",
+        "signature": "fn_ca_lock_settlement_lane_global()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid",
+        "body_md5": "56663389f8348d2ab35a54460c0b7632",
+        "defaults": null,
+        "language": "sql",
+        "observed_at": "2026-09-10T17:20:23.974514+00:00",
+        "owner": "postgres",
+        "proargmodes": ["i", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"],
+        "proargnames": [
+          "p_tournament_id",
+          "prize_in",
+          "bounty_in",
+          "fee_in",
+          "overlay_in",
+          "satellite_in",
+          "prize_out",
+          "bounty_out",
+          "fee_out",
+          "refund_out",
+          "prize_balance",
+          "bounty_balance",
+          "fee_balance"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": true,
+        "prosecdef": true,
+        "provolatile": "s",
+        "result": "TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)",
+        "signature": "fn_ca_tournament_escrow(uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_position integer, p_prize numeric, p_bubble_refund numeric DEFAULT 0",
+        "body_md5": "b4937067d9bf337e1466095b9e1d5424",
+        "defaults": "0",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974539+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_user_id", "p_position", "p_prize", "p_bubble_refund"],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 1,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "ebabbaf0456d80335aaa2e04471d0ab6",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974557+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974577+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974596+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_sync_tournament_current_players()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "1d00219cefe6de725da5d33fe0b38002",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974613+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_tournament_elimination_has_a_place()"
+      }
+    ],
+    "reviewed_scope": [
+      "Refuse cancelling a started or committed-award tournament after receipt replay",
+      "Refuse second finishing-place debt creation or increase, preserving existing unpaid debt",
+      "Return an early refusal for missing finishing rank; existing deferred constraint stays enabled",
+      "Count funded satellite target seats once and keep exact prize/bounty/fee components; preserve ticket-redemption inflow"
+    ],
+    "historical_blocker": "Automatic approval review rejected persistent function/ACL migration; existing repository push authorization was not accepted as explicit authorization for this production database target.",
+    "authorization": {
+      "user_message": "YES APPROVED... FINISH THIS UP NOW",
+      "approved_request": "Apply the exact four migrations in c1447e69ed39f3be093972bf722960b29a02ad79/docs/audits/2026-09-10-current-work-closeout.md to PokerIQ-Production kuklfnapbkmacvwxktbh",
+      "prior_automatic_review_rejection_resolved_by_explicit_target_approval": true
+    },
+    "verified": true,
+    "deployment_evidence": "docs/audits/2026-09-10-approved-database-deployment.json",
+    "previous_installed_readback": [
       {
         "observed_at": "2026-09-10 16:39:03.389404+00",
         "signature": "atomic_cancel_tournament(uuid,uuid)",
@@ -147,12 +388,43 @@
         "proconfig": ["search_path=public"]
       }
     ],
-    "reviewed_scope": [
-      "Refuse cancelling a started or committed-award tournament after receipt replay",
-      "Refuse second finishing-place debt creation or increase, preserving existing unpaid debt",
-      "Return an early refusal for missing finishing rank; existing deferred constraint stays enabled",
-      "Count funded satellite target seats once and keep exact prize/bounty/fee components; preserve ticket-redemption inflow"
-    ]
+    "ledger": [
+      {
+        "name": "started_tournaments_resume_or_settle_instead_of_cancelling",
+        "sql_bytes": 4722,
+        "sql_sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+        "statement_count": 1,
+        "version": "20260910171843"
+      },
+      {
+        "name": "a_refused_finishing_place_creates_no_debt",
+        "sql_bytes": 24703,
+        "sql_sha256": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+        "statement_count": 1,
+        "version": "20260910171857"
+      },
+      {
+        "name": "a_tournament_elimination_requires_a_finishing_rank",
+        "sql_bytes": 10914,
+        "sql_sha256": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
+        "statement_count": 1,
+        "version": "20260910171911"
+      },
+      {
+        "name": "satellite_seats_count_once_and_keep_the_funded_prize",
+        "sql_bytes": 31628,
+        "sql_sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+        "statement_count": 1,
+        "version": "20260910171924"
+      }
+    ],
+    "verification_assertions": {
+      "all_six_changed_bodies_match": true,
+      "all_ten_function_metadata_unchanged": true,
+      "four_dependency_bodies_unchanged": true,
+      "four_ledger_sql_sha256_match": true,
+      "two_triggers_unchanged": true
+    }
   },
   "multi_table": {
     "pr": 4188,
@@ -694,7 +966,7 @@
     "No independent satellite Stage-B activation",
     "No historical backpay, manual balance edits or repair cron"
   ],
-  "observed_at": "2026-09-10T17:03:14.665511+00:00",
+  "observed_at": "2026-09-10T17:22:31.723503+00:00",
   "worktree_inventory": {
     "observed_at": "2026-09-10T17:03:13.076322+00:00",
     "worktrees": [
@@ -774,6 +1046,8 @@
     "branch": "backup/resume-poker-sep10/current-work-closeout",
     "publication": "Normal documentation commit/push and exact remote readback follow this snapshot; final result is linked fromPR4188",
     "overall_complete": false,
-    "database_approval_required": true
+    "database_approval_required": false,
+    "database_deployment_verified": true,
+    "source_publication_branch": "agent/codex-poker-audit-sep09/fix/approved-database-release"
   }
 }

@@ -10,7 +10,21 @@ root = Path(tempfile.mkdtemp(prefix='ca-mystery-reservation-pg17-'))
 cluster, socket = root/'cluster', root/'socket'
 socket.mkdir()
 port = str(35000 + os.getpid() % 10000)
-args = [str(pg/'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', str(socket), '-p', port, '-d', 'postgres', '-U', 'mystery_test']
+node = os.environ.get('PGNODE')
+query_helper = repo / 'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/registration-query.mjs'
+
+def client_command():
+    return [node,str(query_helper)] if node else [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1']
+
+def connection_env(application_name=None):
+    env = dict(os.environ,PGHOST=str(socket),PGHOSTADDR='',PGPORT=port,
+               PGDATABASE='postgres',PGUSER='mystery_test')
+    if application_name is not None:
+        env['PGAPPNAME'] = application_name
+    return env
+
+def encode(body):
+    return (json.dumps(body) if node else body) + '\n'
 passed = []
 started = False
 base = """
@@ -47,7 +61,12 @@ with (root/'results.log').open('w') as log:
         log.write(r.stdout); log.flush()
         if r.returncode: raise AssertionError('Command failed: '+str(root/'results.log'))
         return r.stdout.strip()
-    def sql(body): return cmd(args+['-c',body])
+    def sql(body):
+        r = subprocess.run(client_command(),input=encode(body),capture_output=True,
+                           text=True,timeout=30,env=connection_env())
+        log.write(r.stdout+r.stderr); log.flush()
+        if r.returncode: raise AssertionError('SQL failed: '+str(root/'results.log'))
+        return r.stdout.strip()
     def check(name, body, seeded=True):
         sql('BEGIN;'+base+(seed if seeded else '')+body+'; SET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;')
         passed.append(name); print('PASS '+name,flush=True)
@@ -58,7 +77,7 @@ with (root/'results.log').open('w') as log:
         cmd([str(pg/'initdb'),'-D',str(cluster),'-U','mystery_test','--auth=trust','--no-locale'])
         started=True
         cmd([str(pg/'pg_ctl'),'-D',str(cluster),'-l',str(root/'postgres.log'),'-o',f'-k {socket} -p {port} -c listen_addresses=', '-w','start'])
-        cmd(args+['-f',str(fixture/'fixture.sql')])
+        sql((fixture/'fixture.sql').read_text())
         sql("""CREATE FUNCTION test_state() RETURNS jsonb LANGUAGE sql AS $s$
         SELECT jsonb_build_array(
          (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM tournaments t),
@@ -115,21 +134,24 @@ with (root/'results.log').open('w') as log:
         # Real concurrent sessions. The first reserve holds the tournament row;
         # the second must be observed waiting before the first commits.
         sql(base+seed)
-        env = dict(os.environ, PGAPPNAME='mystery_reserve_owner')
-        owner=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log,text=True,bufsize=1,env=env)
+        owner=subprocess.Popen(client_command(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+            stderr=log,text=True,bufsize=1,env=connection_env('mystery_reserve_owner'))
         rival=None
         try:
-            owner.stdin.write('BEGIN;\n\\o /dev/null\nSELECT '+reserve()+';\n\\o\n\\echo OWNED\n'); owner.stdin.flush()
+            owner.stdin.write(encode('BEGIN; DO $owner$ BEGIN PERFORM '+reserve()+"; END $owner$; SELECT 'OWNED';")); owner.stdin.flush()
             assert select.select([owner.stdout],[],[],10)[0], 'Reservation owner did not become ready'
             assert owner.stdout.readline().strip()=='OWNED', 'Reservation owner exited before ready'
-            rival=subprocess.Popen(args+['-c','SELECT '+reserve()+';'],stdout=subprocess.PIPE,stderr=log,text=True,env=dict(os.environ,PGAPPNAME='mystery_reserve_rival'))
+            rival=subprocess.Popen(client_command(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                stderr=log,text=True,env=connection_env('mystery_reserve_rival'))
+            rival.stdin.write(encode('SELECT '+reserve()+';')); rival.stdin.flush()
             deadline=time.monotonic()+10; blocked=False
             while time.monotonic()<deadline:
                 blocked=sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='mystery_reserve_rival' AND wait_event_type='Lock');")=='t'
                 if blocked: break
                 time.sleep(.05)
             assert blocked, 'Competing reserve was not observed blocked'
-            owner.stdin.write('COMMIT;\n\\q\n'); owner.stdin.flush(); owner.wait(timeout=10)
+            owner.stdin.write(encode('COMMIT;')); owner.stdin.close(); owner.wait(timeout=10)
+            assert owner.returncode==0, 'Reservation owner failed to commit'
             result, _=rival.communicate(timeout=10)
             assert rival.returncode==0 and json.loads(result)['already'] is True
             assert sql("SELECT count(*)=1 AND sum(amount_cents)=301 FROM tournament_bounty_awards;")=='t'

@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Mystery CI Uses Its Available PostgreSQL Client
+
+The embedded CI runtime has no psql, so the mystery probe now uses the existing PGNODE client when configured. All thirteen groups pass in both client modes, including observed concurrent reservation, isolated role identity and rollback. Node mode was verified with no psql binary and invalid inherited connection variables. Client failure still stops execution. No financial assertion, shared client, application runtime or production change. Re-read: yes. See docs/changelog/2026-09-10-mystery-ci-uses-the-available-postgres-client.md.
+
 ## 2026-09-10: Cancellation Acceptance Uses The Approved Origin-Wallet Policy
 
 The cancellation probe still used a retired registration alias, an obsolete wallet-routing assumption and satellite-ticket refund expectations. Its prepared assertions now use request-bound host-club registration and require exact origin-wallet cash refunds with no new ticket. A synthetic native run restored only the exact tracked platform-source seed, then refused the mixed-schema ticket outcome. Current downstream parity is unproved and a known satellite receipt fingerprint/ACL gap remains; no live defect is inferred. All temporary changes and synthetic rows rolled back. Source guards are not native acceptance. CA-03-11 and Phase 3 stay open. Re-read: yes. See docs/audits/2026-09-10-entry-refund-cancellation-acceptance-gate.json.

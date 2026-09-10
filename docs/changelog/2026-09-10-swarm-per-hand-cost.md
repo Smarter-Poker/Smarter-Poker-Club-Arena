@@ -10,15 +10,15 @@ C-stuck-spins, D-outbox-notify, E-tick-horse-lobby).
 
 ## Applied: migration 20260910034411 (one transaction, one reload)
 
-| change | measured before | after |
-|---|---|---|
+| change                                                                                                                    | measured before                                                                                                                                                                        | after                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | B: `trg_lock_and_validate_tournament_live_seat` proof-open EXISTS `t.id = ANY(v_ids)` -> `(t.id = v_old OR t.id = v_new)` | 0.83-0.99 ms per tournament seat write, re-planned on every call (array parameter never adopts the generic plan); 55-60% of steady-state trigger time on a tournament seat stack write | 0.026 ms once the generic plan is adopted; ~-4.9 ms per tournament hand |
-| A1: `fn_active_maintenance_release_boundary` OFFSET 0 fence | `shifted ?& <14 keys>` evaluated first over all 167 thaws rows on every fn_platform_frozen() call: 229 us | 32 us; fn_platform_frozen ~300 -> ~100 us |
-| E: RLS `poker_arena_tournament_access` on tournaments rewritten to a hashed subplan over clubs | per-row plpgsql call over 135,616 rows for a union member: 66,700 ms; 148 statement timeouts (8 s) in 70 min never visible in pg_stat_statements | 340 ms, ~14 ms with the index below |
-| E: `idx_cash_seat_moves_cancelled_player` (player_id, created_at) WHERE cancelled | 110k-row seq scan per candidate seat in the cash-cluster tick (496 ms / 88k buffers for one open seat) | 2-page index |
-| E: `idx_tables_cluster_open` (cluster_id, role, main_index, created_at) WHERE lifecycle<>'closed' | every per-cluster statement discarded ~97% closed tables; fn_cash_clusters_to_tick EXISTS seq-scanned 206k rows (78 ms) per pass | 137-row index |
-| E: `idx_tables_cluster_closed_status_drift` | status_followed_lifecycle repair scanned each cluster every tick | 2-row index |
-| E: `idx_tournaments_updated_at` (CONCURRENTLY, separate statement) | top-N sort over 130k rows for the lobby ORDER BY | ordered backward scan |
+| A1: `fn_active_maintenance_release_boundary` OFFSET 0 fence                                                               | `shifted ?& <14 keys>` evaluated first over all 167 thaws rows on every fn_platform_frozen() call: 229 us                                                                              | 32 us; fn_platform_frozen ~300 -> ~100 us                               |
+| E: RLS `poker_arena_tournament_access` on tournaments rewritten to a hashed subplan over clubs                            | per-row plpgsql call over 135,616 rows for a union member: 66,700 ms; 148 statement timeouts (8 s) in 70 min never visible in pg_stat_statements                                       | 340 ms, ~14 ms with the index below                                     |
+| E: `idx_cash_seat_moves_cancelled_player` (player_id, created_at) WHERE cancelled                                         | 110k-row seq scan per candidate seat in the cash-cluster tick (496 ms / 88k buffers for one open seat)                                                                                 | 2-page index                                                            |
+| E: `idx_tables_cluster_open` (cluster_id, role, main_index, created_at) WHERE lifecycle<>'closed'                         | every per-cluster statement discarded ~97% closed tables; fn_cash_clusters_to_tick EXISTS seq-scanned 206k rows (78 ms) per pass                                                       | 137-row index                                                           |
+| E: `idx_tables_cluster_closed_status_drift`                                                                               | status_followed_lifecycle repair scanned each cluster every tick                                                                                                                       | 2-row index                                                             |
+| E: `idx_tournaments_updated_at` (CONCURRENTLY, separate statement)                                                        | top-N sort over 130k rows for the lobby ORDER BY                                                                                                                                       | ordered backward scan                                                   |
 
 A's headline finding: the "frozen-check-first" reorder of
 `fn_refuse_while_frozen` that phase 1 planned is a net LOSS and was not
@@ -87,7 +87,7 @@ in play instead of frozen. No refunds, no hand-written wallet rows.
    has no direct Postgres connection today) with LISTEN + jittered reconnect +
    a 5 s poll fallback, both paths live with `poker_hand_projection_wakes_total{source}`
    for one :55 cycle, then `ALTER PUBLICATION supabase_realtime DROP TABLE
-   public.hand_projection_outbox`. LISTEN needs a SESSION-mode connection: the
+public.hand_projection_outbox`. LISTEN needs a SESSION-mode connection: the
    direct host is IPv6-only and Hetzner is IPv4, so a new env var
    (`ENGINE_PG_LISTEN_URL`, session pooler on 5432) has to be set by Dan via
    `update-hetzner-env`; the SQL includes an optional LISTEN-only role.
@@ -120,3 +120,41 @@ Average 4.4 backends busy across 8 cores since the 02:34 restart, and that
 window includes the spin retry loop (0.6 core, now gone), the swarm's probes,
 and the cold cache. Cash seat write ~2 ms of guards; tournament seat write
 ~0.85 ms. Lobby query no longer times out for union members.
+
+## Phase 3 (05:00-05:40 UTC): the engine work, shipped as branches
+
+Four more agents, each in its own worktree, each branch pushed through the
+pre-push hook green (the hook runs tsc plus the tests covering the diff);
+`agent-open-pr.yml` opened the pull requests and autopilot merges them when
+the required checks pass. Nothing here was merged by hand.
+
+| PR    | branch                                              | what                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #4107 | fix/spin-launch-terminal-reasons-backoff            | A terminal Spin draw refusal (9 deterministic reasons, confirmed against the live function body) parks the launch: 30 s doubling to a 15 min cap with jitter, ONE critical financial alert (`Tournament.spin_launch_parked`, keyed per tournament + reason), one warn. Transient reasons (`launch_lease_lost`, `launch_receipt_state_mismatch`, `entry_purchases_frozen`, transport errors) keep the 3 tries then a 5 s doubling park. `discoverSeatFirstStarts` and `ensureTournamentManagerAdmission` skip parked ids. Simulated three hours of a permanent refusal: 16 calls and 1 alert, versus ~3,000 calls before. 24 new tests; 3,859 server tests green. |
+| #4112 | fix/horse-seat-first-skips-a-seat-it-already-has    | `topUpWithHorses` reuses the `table_seats` rows it already read and reads `tables.max_players` once, and calls `fn_seat_horse_in_seat_first_game` only for a horse the rows do not show seated on a table the rows do not show full; an RPC `table_full` marks the table full for the rest of the pass. Same RPC, same args, RPC still the authority, no is_horse filter. Log line `seat-first-precheck` per pass with skipped/called counts. Before: 1,533 calls / <=579 seats in 46 min, >=60% no-ops, 590 ms mean (global advisory lock convoy). 24 new tests.                                                                                                |
+| #4115 | fix/hand-projection-wakes-by-notify-with-a-poll-net | `HandOutboxListener` (dedicated `pg` client, LISTEN hand_projection_outbox, jittered reconnect, heartbeat, resync wake) enabled only when `ENGINE_PG_LISTEN_URL` is set; a 5 s poll that fires only when no drain is running; `poker_hand_projection_wakes_total{source}`; Realtime subscription kept for the cutover. Migration `20260910052523_hand_projection_outbox_notifies_its_listener` (NOTIFY trigger) is APPLIED on production (05:32 UTC) and has no engine effect until the listener connects. 13 new tests; 2,778 server tests green.                                                                                                               |
+| #4117 | fix/cpu-alert-2026-09-10-records                    | The four DB migrations from phases 1-2 (already applied and recorded), both changelogs, and the swarm reports. The definer-authorization gate asked for an explicit REVOKE/GRANT on `fn_spin_draw_and_settle_atomic`; production already had exactly that grant set (postgres, service_role), so the migration now states it.                                                                                                                                                                                                                                                                                                                                    |
+
+**Dan must set one thing** for #4115 to do anything beyond the poll:
+`ENGINE_PG_LISTEN_URL` in `/opt/club-arena/server/.env` on the engine host,
+value = the Supabase SESSION-mode pooler string (Dashboard > Connect > Session
+pooler, port 5432, user `postgres.<ref>`; not 6543, not the direct IPv6-only
+host), then an engine restart. After one :55 cycle with `/metrics` showing
+`poker_hand_outbox_listener_connected 1` and `wakes_total{source="listen"} >=
+{source="realtime"}`, run step 2 from the migration's comment block
+(`ALTER PUBLICATION supabase_realtime DROP TABLE public.hand_projection_outbox`)
+at a quiet moment; that is the 5-7% of DB time.
+
+**Workstream I (settlement writes each seat once): analysed, proven, NOT
+applied.** `I-one-seat-write-per-hand.md/.sql` show the combined write is
+behaviour-identical (all 43 table_seats triggers read; none inspects the
+time-bank columns; row images identical in a rolled-back probe) and saves
+~2.0-2.6 ms per hand steady state (7-20 ms cold), about 1% of settlement. It
+needs the time-bank values to ride in a transaction-local setting
+(`app.ca_hand_time_banks`) because the stack payload is hashed into
+`hand_atomic_commits.payload_hash` and the core is owner-only behind three
+SECURITY DEFINER wrappers. That is a real design change inside the money path
+for a 1% gain, and the two functions were replaced once already tonight by
+another agent (diamonds delegation). Held for Dan's explicit go; the SQL has
+md5 guards and a rolled-back self-test that must end in
+`PROBE_ROLLED_BACK ... VERDICT: PASS`.

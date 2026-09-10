@@ -5,8 +5,10 @@ import type {
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 import {
   HorseDecisionAbortedError,
+  HorseDecisionExpiredError,
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
 } from './client.js';
@@ -62,70 +64,90 @@ class FakeWorker implements WorkerLike {
   }
 }
 
-const snapshot = (fence: string): LiveHorseDecisionSnapshot => ({
-  generation: 7,
-  fence,
-  decisionKey: `phase5:${fence}`,
-  decisionTimeMs: 1_800_000,
-  player: {
-    seat: 1,
-    user_id: 'horse-1',
-    username: 'Horse One',
-    stack: 100,
-    bet: 0,
-    totalInvested: 0,
-    cards: [],
-    is_folded: false,
-    is_all_in: false,
-    is_sitting_out: false,
-  },
-  gameState: {
-    stateSchemaVersion: 1,
-    heroSeat: 1,
-    currentPlayerSeat: 1,
-    legalActions: ['fold', 'call', 'raise', 'all_in'],
-    toCall: 2,
-    minRaiseTo: 4,
-    maxRaiseTo: 100,
-    bettingStructure: 'no_limit',
-    fixedBetSize: null,
-    wagersCapped: false,
-    commitmentCapRemaining: null,
-    players: [
-      {
-        seat: 1,
-        user_id: 'horse-1',
-        username: 'Horse One',
-        stack: 100,
-        bet: 0,
-        totalInvested: 0,
-        cards: [],
-        is_folded: false,
-        is_all_in: false,
-        is_sitting_out: false,
-      },
-    ],
-    communityCards: [],
-    communityCards2: [],
-    communityCards3: [],
-    pot: 3,
-    currentBet: 2,
-    minRaise: 2,
-    stage: 'preflop',
-    gameVariant: 'nlh',
-    bigBlind: 2,
-    actionHistory: [],
-    pots: [{ amount: 3, eligiblePlayers: ['horse-1'] }],
-    rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
-    variantRules: {
-      holeCardsDealt: 2,
-      holeCardsUse: 'any',
-      boardCardsUse: 'any',
-      deckSize: 52,
-      splitLow8OrBetter: false,
+const snapshot = (fence: string): LiveHorseDecisionSnapshot => {
+  const value: LiveHorseDecisionSnapshot = {
+    generation: 7,
+    fence,
+    decisionKey: '',
+    decisionTimeMs: 1_800_000,
+    player: {
+      seat: 1,
+      user_id: 'horse-1',
+      username: 'Horse One',
+      stack: 100,
+      bet: 0,
+      totalInvested: 0,
+      cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'spades' },
+      ],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
     },
-  },
-});
+    gameState: {
+      stateSchemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      legalActions: ['fold', 'call', 'raise', 'all_in'],
+      toCall: 2,
+      minRaiseTo: 4,
+      maxRaiseTo: 100,
+      bettingStructure: 'no_limit',
+      fixedBetSize: null,
+      wagersCapped: false,
+      commitmentCapRemaining: null,
+      players: [
+        {
+          seat: 1,
+          user_id: 'horse-1',
+          username: 'Horse One',
+          stack: 100,
+          bet: 0,
+          totalInvested: 0,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        },
+        {
+          seat: 2,
+          user_id: 'horse-2',
+          username: 'Horse Two',
+          stack: 98,
+          bet: 2,
+          totalInvested: 2,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        },
+      ],
+      communityCards: [],
+      communityCards2: [],
+      communityCards3: [],
+      pot: 2,
+      contestablePot: 2,
+      currentBet: 2,
+      minRaise: 2,
+      stage: 'preflop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      actionHistory: [],
+      pots: [{ amount: 2, eligiblePlayers: ['horse-2'] }],
+      rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
+      variantRules: {
+        holeCardsDealt: 2,
+        holeCardsUse: 'any',
+        boardCardsUse: 'any',
+        deckSize: 52,
+        splitLow8OrBetter: false,
+      },
+    },
+  };
+  value.decisionKey = buildHorseDecisionKey(value);
+  return value;
+};
 
 const V31_DATASET = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -310,9 +332,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
         jobTimeoutMs: 50,
       });
       const queued = client.decideFast(snapshot('queued-before-ready'));
-      const queuedRejection = expect(queued).rejects.toThrow(
-        'horse decision expired after 50ms before worker dispatch'
-      );
+      const queuedRejection = expect(queued).rejects.toBeInstanceOf(HorseDecisionExpiredError);
 
       await vi.advanceTimersByTimeAsync(50);
       await queuedRejection;

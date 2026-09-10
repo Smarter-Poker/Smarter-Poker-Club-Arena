@@ -619,6 +619,9 @@ BEGIN
   RETURN v_token;
 END;
 $function$;
+-- Unchanged grants, stated so the migration says them: owner only.
+REVOKE ALL ON FUNCTION public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid) FROM PUBLIC, anon, authenticated;
+
 
 -- ---------------------------------------------------------------------------
 -- 4. The committed-move resolver waits for the move's writer on T(id).
@@ -888,6 +891,11 @@ BEGIN
        WHERE award_id = p_award_id), '[]'::jsonb));
 END;
 $function$;
+-- Unchanged grants, stated so the migration says them: the engine's
+-- service identity and the owner, never a browser.
+REVOKE ALL ON FUNCTION public.fn_mystery_bounty_pay(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_mystery_bounty_pay(uuid) TO service_role;
+
 
 -- ---------------------------------------------------------------------------
 -- 6. The Daily Missions player lock no longer blocks foreign-key checks.
@@ -920,6 +928,11 @@ BEGIN
   END IF;
 END;
 $function$;
+-- Unchanged grants, stated so the migration says them: the engine's
+-- service identity and the owner, never a browser.
+REVOKE ALL ON FUNCTION public.fn_lock_daily_mission_user(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_lock_daily_mission_user(uuid) TO service_role;
+
 
 -- ---------------------------------------------------------------------------
 -- 7. The launch release takes the lane before the tournament and receipt
@@ -997,6 +1010,10 @@ BEGIN
                                'release_reason', v_reason);
 END;
 $function$;
+-- Unchanged grants, stated so the migration says them: engine only.
+REVOKE ALL ON FUNCTION public.fn_ca_release_unseatable_registrant_at_launch(uuid,uuid,uuid,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_release_unseatable_registrant_at_launch(uuid,uuid,uuid,text) TO service_role;
+
 
 -- ---------------------------------------------------------------------------
 -- 8. POSTCONDITIONS on the live catalog, inside this transaction.

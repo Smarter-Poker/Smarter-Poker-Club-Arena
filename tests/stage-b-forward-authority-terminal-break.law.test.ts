@@ -477,8 +477,8 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       [
         '20260910173147',
         'the_settlement_lane_is_per_tournament_for_rolling_authorities',
-        49073,
-        'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0',
+        50176,
+        'bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b',
       ],
       [
         '20260910174349',
@@ -572,8 +572,8 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       [
         '20260910173147',
         'the_settlement_lane_is_per_tournament_for_rolling_authorities',
-        49073,
-        'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0',
+        50176,
+        'bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b',
       ],
       [
         '20260910174349',
@@ -1004,8 +1004,8 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       [
         '20260910173147',
         'the_settlement_lane_is_per_tournament_for_rolling_authorities',
-        49073,
-        'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0',
+        50176,
+        'bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b',
       ],
       [
         '20260910174349',

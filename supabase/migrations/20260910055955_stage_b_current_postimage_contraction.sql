@@ -667,8 +667,8 @@ BEGIN
        'cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68'),
       ('20260910171924','satellite_seats_count_once_and_keep_the_funded_prize',31628,
        '9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3'),
-      ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',49073,
-       'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0'),
+      ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',50176,
+       'bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b'),
       ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',14494,
        '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17')
   )

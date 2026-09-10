@@ -33,12 +33,19 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
+/**
+ * Phase 3 (20260910181625): a `shield` tile is a Streak Shield credit, a
+ * `boost` tile is 24 hours of 2x diamonds on Daily Missions, and a mystery
+ * tile's prize is multiplied by a lucky roll the server makes at the tap.
+ */
 export type DailyBonusTileKind =
   | 'diamonds'
   | 'throwables'
   | 'rabbit_hunts'
   | 'time_bank'
-  | 'mystery';
+  | 'mystery'
+  | 'shield'
+  | 'boost';
 
 export interface DailyBonusGranted {
   kind: Exclude<DailyBonusTileKind, 'mystery'>;
@@ -49,6 +56,36 @@ export interface DailyBonusGranted {
   diamond_transaction_id?: string;
   expires_at?: string;
   balance_after: number | null;
+  /** Mystery tiles only: the server's lucky multiplier (1-5) already applied to the amounts. */
+  lucky?: number;
+  /** Boost only. */
+  factor?: number;
+  hours?: number;
+  boost_id?: string;
+  ends_at?: string;
+}
+
+/** What a claimed mystery tile turned out to be, lucky roll applied. */
+export interface DailyBonusRevealed {
+  kind: DailyBonusTileKind;
+  diamonds: number;
+  quantity: number;
+  lucky?: number;
+}
+
+export interface DailyBonusShield {
+  /** Unspent, unexpired shields the player holds. */
+  held: number;
+  expires_at: string | null;
+}
+
+export interface DailyBonusBoost {
+  active: boolean;
+  factor?: number;
+  kind?: string;
+  ends_at?: string;
+  seconds_left?: number;
+  applied_diamonds?: number;
 }
 
 export interface DailyBonusTile {
@@ -67,6 +104,8 @@ export interface DailyBonusTile {
   locked: boolean;
   /** A diamond tile the player's remaining daily cap would trim. */
   capped: boolean;
+  /** A claimed mystery tile: what it turned out to be. */
+  revealed?: DailyBonusRevealed | null;
 }
 
 export interface DailyBonusWeekDay {
@@ -120,6 +159,10 @@ export interface DailyBonusStatus {
   tomorrow: DailyBonusPreview[];
   caps: DailyBonusCaps | null;
   cents_per_diamond: number;
+  /** Phase 3: shields held, a live Mission Boost, and whether a shield saved today's streak. */
+  shield: DailyBonusShield;
+  boost: DailyBonusBoost;
+  streak_protected: boolean;
 }
 
 export interface DailyBonusClaimResult {
@@ -131,7 +174,7 @@ export interface DailyBonusClaimResult {
   bonus_date?: string;
   today?: string;
   granted?: DailyBonusGranted;
-  revealed?: { kind: DailyBonusTileKind; diamonds: number; quantity: number } | null;
+  revealed?: DailyBonusRevealed | null;
   streak?: number;
   first_claim_of_day?: boolean;
   detail?: unknown;
@@ -155,6 +198,7 @@ export const CLAIM_REASON_TEXT: Record<string, string> = {
   no_profile: 'Sign In To Claim',
   request_id_required: 'Could Not Claim, Try Again',
   day_rolled_over: 'A New Day Has Started, Here Is Today’s Sheet',
+  boost_already_live: 'A Mission Boost Is Already Running',
   invalid_amount: 'Nothing To Pay On This Tile',
   award_refused: 'Could Not Claim, Try Again',
   empty_response: 'Could Not Claim, Try Again',
@@ -223,6 +267,21 @@ class DailyBonusServiceClass {
       week: Array.isArray(status.week) ? status.week : [],
       tomorrow: Array.isArray(status.tomorrow) ? status.tomorrow : [],
       caps: status.caps ?? null,
+      // Phase 3 fields: a status from before the ledger learned them reads as
+      // nothing held, nothing running, nothing protected.
+      shield: {
+        held: Math.max(0, Number(status.shield?.held) || 0),
+        expires_at: status.shield?.expires_at ?? null,
+      },
+      boost:
+        status.boost && status.boost.active === true
+          ? {
+              ...status.boost,
+              active: true,
+              seconds_left: Math.max(0, Number(status.boost.seconds_left) || 0),
+            }
+          : { active: false },
+      streak_protected: status.streak_protected === true,
     };
   }
 

@@ -87,13 +87,14 @@ describe('cinematic retained route families', () => {
   });
 
   it('resolves cinematic artwork through the deploy- and CDN-aware media base', () => {
-    const header = readFileSync('src/components/rewards/RewardsSurfaceHeader.tsx', 'utf8');
+    // The Rewards header prints on the spade console (#ClubArenaConsole,
+    // 2026-09-09) and carries no art of its own, so it left this list.
     const account = readFileSync('src/components/account/AccountSurfaceHeader.tsx', 'utf8');
     const community = readFileSync('src/components/community/CommunitySurfaceHeader.tsx', 'utf8');
     const workspaces = readFileSync('src/pages/workspaces/ArenaWorkspacePages.tsx', 'utf8');
     const missions = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
 
-    for (const source of [header, account, community, workspaces, missions]) {
+    for (const source of [account, community, workspaces, missions]) {
       expect(source).toContain('mediaUrl(');
     }
     for (const path of [

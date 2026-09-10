@@ -1,0 +1,26 @@
+{
+  "_owner": "agent/cw-dailybonus3/feat/daily-club-arena-bonus-phase3",
+  "tables": ["player_boosts"],
+  "functions": [
+    "fn_ca_daily_bonus_boost_extra",
+    "fn_ca_daily_bonus_roll_mystery",
+    "fn_ca_daily_bonus_roll_lucky"
+  ],
+  "columns": {
+    "ca_daily_bonus_days": ["streak_protected", "shield_consumed_id"],
+    "player_boosts": [
+      "id",
+      "user_id",
+      "kind",
+      "factor",
+      "starts_at",
+      "ends_at",
+      "source",
+      "claim_id",
+      "applications",
+      "applied_diamonds",
+      "last_applied_at",
+      "created_at"
+    ]
+  }
+}

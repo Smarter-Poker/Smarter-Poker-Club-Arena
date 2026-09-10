@@ -20,14 +20,14 @@ in Dan's Claude gallery; rulings and live state below are the source of truth.
 
 ## Phases
 
-| Phase | What                                                                                                                                                               | State                                |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
-| 0     | Retire the chip ladder (`20260907232514_a_daily_bonus_pays_nothing_in_chips`), remove the wheel / Bonus page UI, `/bonuses` redirects to Promotions                | Live in prod; PR #3585               |
-| 1     | Ledger: calendar, days, claims, `fn_ca_daily_bonus_status`, `fn_ca_daily_bonus_claim`, caps, budget counter, `feature_purchases.source`                            | Live in prod; this branch mirrors it |
-| 2     | The sheet: tiles on the club-utility shell, week strip, countdown, per-tile Claim, entry trigger in the shell, header gift icon, Promotions card, `/bonuses` route | Next                                 |
-| 3     | Mystery reveal animation, 24h mission boost (`player_boosts`), Streak Shield, chest days                                                                           |                                      |
-| 4     | Operator panel in the Financial Admin Hub: calendar editor (history-tracked), claims, streak distribution, retention                                               |                                      |
-| 5     | Cut over the World Hub `daily_login` action to this streak; seed existing streaks; burn-in                                                                         |                                      |
+| Phase | What                                                                                                                                                                      | State                                                |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 0     | Retire the chip ladder (`20260907232514_a_daily_bonus_pays_nothing_in_chips`), remove the wheel / Bonus page UI, `/bonuses` redirects to Promotions                       | Live in prod; PR #3585                               |
+| 1     | Ledger: calendar, days, claims, `fn_ca_daily_bonus_status`, `fn_ca_daily_bonus_claim`, caps, budget counter, `feature_purchases.source`                                   | Live in prod; PR #3588                               |
+| 2     | The sheet: tiles on the club-utility shell, week strip, countdown, per-tile Claim, entry trigger in the shell, header gift icon, Promotions card, `/bonuses` route        | Live in prod; PRs #3593, #3621, #4021                |
+| 3     | Lucky multiplier on the mystery tile, 24h Mission Boost (`player_boosts`), Streak Shield, the day-14 / day-30 chests carry a shield; the sheet moves to the spade console | Ledger live in prod 2026-09-10; sheet on this branch |
+| 4     | Operator panel in the Financial Admin Hub: calendar editor (history-tracked), claims, streak distribution, retention                                                      |                                                      |
+| 5     | Cut over the World Hub `daily_login` action to this streak; seed existing streaks; burn-in                                                                                |                                                      |
 
 ## How it pays (phase 1, live)
 
@@ -82,3 +82,77 @@ account change, and on a bounded retry after a failed read. A "nothing to
 show" answer is kept per tab in sessionStorage until midnight. It never opens on a
 table, on /multi-table, on /bonuses (the inline sheet), or over the welcome
 and profile gates. See `docs/changelog/2026-09-09-the-daily-bonus-audit.md`.
+
+## Forgive, boost, gamble (phase 3, ledger live 2026-09-10)
+
+`20260910181625_the_daily_bonus_learns_to_forgive_boost_and_gamble`, one
+transaction, applied 18:21 UTC in 558 ms with `lock_timeout = '4s'` and the
+two hot foreign keys (`player_boosts -> profiles`,
+`ca_daily_bonus_days.shield_consumed_id -> feature_purchases`) as its last
+statements. Same rules as phase 1: one SECURITY DEFINER function owns each
+move, every amount is derived from state the caller cannot write, every
+diamond lands in the journal the reconcilers already watch. Nothing mints a
+chip.
+
+- **Streak Shield.** A calendar tile (`kind = 'shield'`, cycle day 4, and the
+  day-14 and day-30 chests). Claimed, it is a `feature_purchases` credit
+  (`feature = 'streak_shield'`, cost 0, `source = 'daily_bonus'`, 30 days).
+  `fn_ca_daily_bonus_open_day` spends it: when the last claimed day is exactly
+  two days ago (one missed day) and a live shield is held, the shield's
+  `uses_remaining` drops by one, the streak continues from the last claimed
+  day, and the day row records `streak_protected = true` and
+  `shield_consumed_id`. Two missed days are a reset and spend nothing. A
+  shield covers one day, never a holiday.
+- **Lucky multiplier.** The mystery prize is still rolled when the day opens
+  (`fn_ca_daily_bonus_roll_mystery`: 10 diamonds 40%, 25 diamonds 25%,
+  5 throwables 15%, 3 rabbit hunts 10%, 50 diamonds 7%, 100 diamonds 3%).
+  When the tile is claimed, `fn_ca_daily_bonus_roll_lucky` rolls 1x 55%,
+  2x 25%, 3x 12%, 4x 5%, 5x 3%, and the claim pays prize x roll, diamonds
+  clamped at 125 like every other claim. The result carries `lucky` and the
+  revealed prize; the browser learns both at the tap and never rolls anything.
+  Both roll functions have EXECUTE revoked from anon and authenticated.
+- **Mission Boost.** A calendar tile (`kind = 'boost'`, cycle day 7,
+  `quantity` = hours). Claimed, it is one `player_boosts` row
+  (`kind = 'mission_diamonds'`, `factor = 2.00`, 24 hours); a second claim
+  while one runs is refused `boost_already_live`. Daily Missions do not pay
+  through `award_diamonds_v2` (they write `profiles.diamonds` and
+  `diamond_transactions` directly inside `claim_daily_challenges_serialized_body`),
+  so the boost's EXTRA is: that body, after its own diamonds, calls
+  `fn_ca_daily_bonus_boost_extra(user, base, reference)`, which finds the live
+  boost `FOR UPDATE`, computes `round(base x (factor - 1))`, and pays it through
+  `award_diamonds_v2('daily_bonus_boost', ref ca_daily_bonus:boost:<user>:<reference>, bonus_diamonds = LEAST(125, extra))`.
+  The action's catalog row counts toward the 110/150 daily cap with
+  `max_per_day = 24`; the family monthly cap and `club_arena_daily` engine
+  classification apply as for every other bonus diamond. A capped player simply
+  gets no extra. The guard admits the function on its call stack.
+- **Read side.** `fn_ca_daily_bonus_status()` adds `shield {held, expires_at}`,
+  `streak_protected`, `boost {active, factor, kind, ends_at, seconds_left, applied_diamonds}`
+  and per-tile `revealed`.
+- **The sheet.** `DailyBonusSheet` is the spade console wearing the diamond
+  crest (#ClubArenaConsole; the shark plaques are gone, Dan 2026-09-09):
+  every tile a row printed on the glass with its painted render, CLAIM a lit
+  word, the popup's controls on the two painted plates. Shield and boost
+  tiles, the lucky reveal, a protected day, a held shield and a running
+  boost's countdown all print from the status and claim payloads; the sheet
+  rolls and computes nothing. /bonuses prints the same content on the
+  Rewards Circuit header's glass (`chassis="glass"`).
+  `docs/changelog/2026-09-10-the-daily-bonus-learns-to-forgive-boost-and-gamble.md`.
+
+### Verification record (2026-09-10, rolled-back probes on production, then the apply)
+
+P1 a player at streak 5 who claimed two days ago and holds a shield opens
+today at streak 6, protected, shield uses 0, day-row shield id matches.
+P2 status as that player reports streak 6, protected, shield held 0, boost
+inactive, three tiles, mystery on slot 2. P3 claiming the mystery pays the
+rolled 10 diamonds x lucky 2 = 20, replay with the same request id is
+idempotent. P4 a two-day gap resets to streak 1, protected false, the held
+shield still has its use. P5 cycle day 7 carries the boost tile; claiming it
+creates exactly one live 2.00x row and status says active. P6 boost extra on a
+base of 20 pays 20; on a base of 5000 pays 125 (clamp); a player without a
+boost gets null; both journal rows classify as `club_arena_daily`. P7 10,000
+rolls of each function sit within 1.5 pp of the weights. P8 the missions body
+calls the extra, `award_diamonds_v2` has the shared branch, 4 calendar rows,
+catalog `max_per_day` 24, 3 registry rows. After the apply: every pre-existing
+ACL unchanged, `player_boosts` RLS on with owner SELECT only, the history row
+byte-exact to the file, and a live `fn_ca_daily_bonus_status()` for a real
+player carries the new keys.

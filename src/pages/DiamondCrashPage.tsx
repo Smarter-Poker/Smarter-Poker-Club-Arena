@@ -20,6 +20,15 @@
  * is honoured by the server the moment the curve passes it, whatever this tab
  * does afterwards, so a dropped connection cannot cost a planned exit.
  *
+ * AUTO PLAY (2026-09-10). The steel plate sets a run (Run Off, Run 5, 10, 25,
+ * 50) and the blue plate starts it (Auto Play 5); while it runs the steel
+ * plate says Stop and the blue plate counts the round between climbs. A run
+ * needs an auto cash-out, because the page will not be the one deciding when
+ * to leave a climb. Every round in the run is its own server round with its
+ * own sealed commit, started as the last one settles, and the run stops on
+ * its own the moment a round is refused, the diamonds run out, the day's
+ * limit is reached, or the player leaves the page.
+ *
  * THE PICTURE (#ClubArenaConsole). The deck console: the curve on the glass,
  * four bays (Bet and Auto are controls - tap to change, the bay's ink is its
  * state), two plates. While a round is open the primary plate IS the cash-out,
@@ -50,6 +59,7 @@ import {
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
+import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
@@ -61,6 +71,8 @@ import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;
+/** The pause between a settled round and the next of a run, so the result can be read. */
+const AUTO_PAUSE_MS = 1500;
 /** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
 const TARGETS = [150, 200, 300, 500, 1000, 2000, 5000, 10000, 100000] as const;
 const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
@@ -101,11 +113,15 @@ export default function DiamondCrashPage() {
   const [verdict, setVerdict] = useState<CrashFairnessVerdict | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [waitSeconds, setWaitSeconds] = useState(0);
+  const [autoSize, setAutoSize] = useState<number>(0);
+  /** A run in progress: how many rounds it is, how many have settled. */
+  const [autoRun, setAutoRun] = useState<AutoRun | null>(null);
+  const autoRunRef = useRef<AutoRun | null>(null);
+  autoRunRef.current = autoRun;
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(false);
   const roundRef = useRef<CrashRound | null>(null);
   roundRef.current = round;
-  const oddsRef = useRef<HTMLDivElement | null>(null);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
@@ -165,11 +181,15 @@ export default function DiamondCrashPage() {
         triggerHaptic('light');
       }
       setClientSeed(randomClientSeed());
+      setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));
       if (clubUuid) {
         void loadState(clubUuid).catch((err) => reportError(err, 'DiamondCrashPage.reload'));
         void loadHistory(clubUuid);
         void refreshFloor();
       }
+      /* The commit this round used is spent. Clear it before asking for the
+         next, so nothing (the runner included) can press Start on a dead ticket. */
+      setCommit(null);
       void freshCommit();
     },
     [stopPolling, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]
@@ -278,23 +298,40 @@ export default function DiamondCrashPage() {
   }, [state, player, cfg, bet, betOption]);
 
   const open = phase === 'open';
+  const running = autoRun !== null;
   const canStart = Boolean(
     clubUuid && commit && !open && !starting && !blocker && waitSeconds <= 0
   );
 
   const cycleBet = useCallback(() => {
-    if (open || starting || bets.length < 2) return;
+    if (open || starting || running || bets.length < 2) return;
     const i = bets.findIndex((b) => b.bet_diamonds === bet);
     setBet(bets[(i + 1) % bets.length].bet_diamonds);
     triggerHaptic('light');
-  }, [open, starting, bets, bet]);
+  }, [open, starting, running, bets, bet]);
 
   const cycleAuto = useCallback(() => {
-    if (open || starting) return;
+    if (open || starting || running) return;
     const i = autoPresets.indexOf(autoChoice as (typeof AUTO_PRESETS)[number]);
     setAutoCents(autoPresets[(i + 1) % autoPresets.length]);
     triggerHaptic('light');
-  }, [open, starting, autoPresets, autoChoice]);
+  }, [open, starting, running, autoPresets, autoChoice]);
+
+  const cycleRun = useCallback(() => {
+    if (open || starting || running) return;
+    setAutoSize(cycleRunSize);
+    triggerHaptic('light');
+  }, [open, starting, running]);
+
+  /** The run ends: on the last round, on Stop, or on the first refusal. */
+  const endRun = useCallback(
+    (why: string | null) => {
+      if (!autoRunRef.current) return;
+      setAutoRun(null);
+      if (why) toast.info(why);
+    },
+    [toast]
+  );
 
   const handleStart = useCallback(async () => {
     if (!clubUuid || !commit || busyRef.current || open) return;
@@ -315,6 +352,7 @@ export default function DiamondCrashPage() {
       if (!live()) return;
       if (!result.ok) {
         toast.error(result.error || 'The Round Was Refused');
+        endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
         await freshCommit();
         void loadState(clubUuid).catch(() => undefined);
         return;
@@ -327,6 +365,7 @@ export default function DiamondCrashPage() {
     } catch (err) {
       reportError(err, 'DiamondCrashPage.start');
       if (live()) toast.error('The Round Did Not Start. Nothing Was Charged');
+      endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
       await freshCommit();
     } finally {
       busyRef.current = false;
@@ -345,7 +384,45 @@ export default function DiamondCrashPage() {
     loadState,
     finish,
     adopt,
+    endRun,
   ]);
+
+  const startRun = useCallback(() => {
+    if (!autoSize || running || open || starting) return;
+    if (!autoTarget) {
+      toast.info('Set An Auto Cash Out First. Auto Play Cashes Out For You');
+      return;
+    }
+    triggerHaptic('medium');
+    setAutoRun({ total: autoSize, done: 0 });
+  }, [autoSize, running, open, starting, autoTarget, toast]);
+
+  const stopRun = useCallback(() => endRun('Auto Play Stopped'), [endRun]);
+
+  /* The runner. It presses Start when the page would let a thumb press it:
+     a fresh commit in hand, the last round settled, the pause between rounds
+     served, nothing blocking. Every round it starts carries the auto cash-out
+     that was set when the run began; the server settles it, not this page. */
+  useEffect(() => {
+    const verdict = autoRunVerdict(
+      autoRun,
+      { busy: open || starting, blocker, ready: canStart },
+      AUTO_PAUSE_MS
+    );
+    if (verdict.kind === 'wait') return;
+    if (verdict.kind === 'finished') {
+      setAutoRun(null);
+      toast.success(`Auto Play Finished: ${autoRun?.total ?? 0} Rounds`);
+      return;
+    }
+    if (verdict.kind === 'blocked') {
+      setAutoRun(null);
+      toast.info(`Auto Play Stopped: ${verdict.why}`);
+      return;
+    }
+    const t = setTimeout(() => void handleStart(), verdict.delayMs);
+    return () => clearTimeout(t);
+  }, [autoRun, open, starting, blocker, canStart, handleStart, toast]);
 
   const handleCashOut = useCallback(async () => {
     const current = roundRef.current;
@@ -438,9 +515,14 @@ export default function DiamondCrashPage() {
   const liveWorth = open && round ? (round.bet_chips * liveCents) / 100 : 0;
   const startLabel = starting
     ? 'Starting'
-    : waitSeconds > 0
-      ? `Ready In ${waitSeconds}s`
-      : `Start ${bet.toLocaleString()}`;
+    : autoRun
+      ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+      : waitSeconds > 0
+        ? `Ready In ${waitSeconds}s`
+        : autoSize
+          ? `Auto Play ${autoSize}`
+          : `Start ${bet.toLocaleString()}`;
+  const runLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
   const pill = open
     ? 'Live'
     : state.frozen
@@ -477,7 +559,7 @@ export default function DiamondCrashPage() {
             ink: betOption && !betOption.playable ? 'red' : 'white',
             onPress: cycleBet,
             pressLabel: 'Change Bet',
-            disabled: open || starting || bets.length < 2,
+            disabled: open || starting || running || bets.length < 2,
           },
           {
             label: 'Auto',
@@ -491,15 +573,21 @@ export default function DiamondCrashPage() {
             ink: (open ? roundAuto : autoTarget) ? 'gold' : 'muted',
             onPress: cycleAuto,
             pressLabel: 'Change Auto Cash Out',
-            disabled: open || starting,
+            disabled: open || starting || running,
           },
           { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
           { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
         ]}
-        secondary={{
-          label: 'Odds',
-          onClick: () => oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-        }}
+        secondary={
+          running
+            ? { label: runLabel, ink: 'red', onClick: stopRun }
+            : {
+                label: runLabel,
+                ink: autoSize ? 'gold' : 'silver',
+                onClick: cycleRun,
+                disabled: open || starting,
+              }
+        }
         primary={
           open
             ? {
@@ -508,7 +596,11 @@ export default function DiamondCrashPage() {
                 onClick: handleCashOut,
                 disabled: cashing,
               }
-            : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
+            : running
+              ? { label: startLabel, ink: 'gold', disabled: true }
+              : autoSize
+                ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
+                : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
         }
       >
         <div className={styles.stage} ref={stageRef}>
@@ -539,13 +631,18 @@ export default function DiamondCrashPage() {
                     : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. Nothing Paid`
                   : blocker
                     ? blocker
-                    : `Up To ${multiplierLabel(capCents)} On This Bet. Tap Bet Or Auto To Change Them.`}
+                    : autoSize
+                      ? autoTarget
+                        ? `Auto Play Runs ${autoSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
+                        : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
+                      : `Up To ${multiplierLabel(capCents)} On This Bet. Tap Bet Or Auto To Change Them.`}
+              {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
           </div>
         </div>
       </DeckConsole>
 
-      <div ref={oddsRef}>
+      <div>
         <SpadeConsole eyebrow="How It Pays" title="The Odds" foot="foot">
           <div className={styles.rows}>
             <div className={`${styles.grid4} ${styles.grid4Head}`}>

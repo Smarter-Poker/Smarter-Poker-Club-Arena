@@ -307,6 +307,17 @@
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
 }
 
+/* The week's board is an order: the position prints before the name. */
+.rowRank {
+  display: inline-block;
+  min-width: 3.6cqw;
+  margin-right: 1.4cqw;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── The last twenty crash points: a printed strip, newest first ─────────── */
 
 .strip {

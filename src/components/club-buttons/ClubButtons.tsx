@@ -5,6 +5,7 @@ import type {
   SelectHTMLAttributes,
 } from 'react';
 import { useEffect, useId, useRef } from 'react';
+import { Mark, type MarkName } from './marks';
 import './club-buttons.css';
 
 export type ClubButtonsMode = 'arena' | 'hub' | 'commander';
@@ -169,59 +170,26 @@ function DiamondMark({ uid, className }: MarkProps) {
   );
 }
 
-/** Icons that are marks rather than wireframes. The rest fall through below. */
+/**
+ * Every icon is a mark now: the diamond is the cut stone above, the other
+ * fourteen are lit objects from one recipe (marks.tsx, marks.json). There is
+ * no wireframe left to fall through to.
+ */
 const MARKS: Partial<Record<ClubIconName, (p: MarkProps) => ReactNode>> = {
   diamond: DiamondMark,
 };
 
+/* Every icon name but the diamond must have a mark in marks.json; tsc says so. */
+type EveryIconHasAMark = Exclude<ClubIconName, 'diamond'> extends MarkName ? true : never;
+const everyIconHasAMark: EveryIconHasAMark = true;
+void everyIconHasAMark;
+
 export function ClubIcon({ name, className }: { name: ClubIconName; className?: string }) {
-   
   const uid = useId().replace(/:/g, '');
-  const Mark = MARKS[name];
-  if (Mark) return Mark({ uid, className: join('cb-icon', 'cb-mark', className) });
-
-  const shared = {
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.8,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    'aria-hidden': true,
-    className: join('cb-icon', className),
-  };
-
-  const paths: Record<ClubIconName, ReactNode> = {
-    spade: (
-      <path d="M12 3C9.4 7.2 5 9 5 13a4 4 0 0 0 7 2.7V20H8m4-4.3A4 4 0 0 0 19 13c0-4-4.4-5.8-7-10Z" />
-    ),
-    diamond: <path d="m12 2 7 7-7 13L5 9l7-7Zm-7 7h14M9 2l3 20 3-20" />,
-    bank: (
-      <>
-        <path d="m3 9 9-6 9 6H3Zm2 10h14M4 22h16M6 9v10m4-10v10m4-10v10m4-10v10" />
-      </>
-    ),
-    wallet: (
-      <path d="M4 6.5h14a2 2 0 0 1 2 2v9H4a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2h12v4m0 4h5v4h-5a2 2 0 1 1 0-4Z" />
-    ),
-    treasury: <path d="M4 5h16v15H4V5Zm3 3h10v9H7V8Zm5 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z" />,
-    chat: <path d="M4 4h16v12H9l-5 4V4Zm4 6h.01M12 10h.01M16 10h.01" />,
-    stats: <path d="M4 20V10h4v10H4Zm6 0V4h4v16h-4Zm6 0v-7h4v7h-4Z" />,
-    timer: <path d="M9 2h6M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8Zm0 4v5l3 2" />,
-    rabbit: (
-      <path d="M8 9 6 2c3 0 5 3 6 6 1-3 3-6 6-6l-2 7m2 3a6 6 0 1 1-12 0c0-3 2.7-5 6-5s6 2 6 5Zm-8 1h.01m4 0h.01M10 16h4" />
-    ),
-    previous: <path d="M5 5v14m14-13-9 6 9 6V6Z" />,
-    menu: <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z" />,
-    add: <path d="M12 4v16M4 12h16" />,
-    settings: (
-      <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4m0-12.8L17 7M7 17l-1.4 1.4" />
-    ),
-    sound: <path d="M4 9h4l5-4v14l-5-4H4V9Zm13 1a3 3 0 0 1 0 4m2-7a7 7 0 0 1 0 10" />,
-    info: <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-11v6m0-10h.01" />,
-  };
-
-  return <svg {...shared}>{paths[name]}</svg>;
+  const cls = join('cb-icon', 'cb-mark', className);
+  const Special = MARKS[name];
+  if (Special) return Special({ uid, className: cls });
+  return <Mark name={name as MarkName} uid={uid} className={cls} />;
 }
 
 export interface ArenaActionButtonProps extends Omit<

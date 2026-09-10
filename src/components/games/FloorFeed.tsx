@@ -52,6 +52,46 @@ export function prizeLabel(w: FloorWin): string {
   return w.multiplier_cents ? `${multiplierLabel(w.multiplier_cents)} For ${chips}` : chips;
 }
 
+/** The rows themselves: who, which game, when, what it paid. Shared with the week's board. */
+export function FloorRows({
+  rows,
+  game,
+  ranked = false,
+}: {
+  rows: FloorWin[];
+  /** One game's rows: the meta line then carries only the time. */
+  game?: FloorWin['game'];
+  /** Print the position: the board is an order, the feed is a stream. */
+  ranked?: boolean;
+}) {
+  return (
+    <div className={`${styles.rows} ${styles.rowsCompact}`}>
+      {rows.map((w, i) => (
+        <div key={`${w.at}-${i}`} className={styles.row}>
+          <span className={`${styles.rowLabel} ${w.mine ? 'sc-ink--white' : 'sc-ink--silver'}`}>
+            {ranked ? <span className={`${styles.rowRank} sc-ink--blue`}>{i + 1}</span> : null}
+            <img
+              className={styles.rowAvatar}
+              src={getAvatarWithFallback(w.avatar, w.name, w.name, 24)}
+              alt=""
+              aria-hidden="true"
+            />
+            {w.mine ? 'You' : w.name}
+            <span className={`${styles.rowMeta} sc-ink--muted`}>
+              {game ? timeAgo(w.at) : `${GAME_WORD[w.game]}, ${timeAgo(w.at)}`}
+            </span>
+          </span>
+          <span
+            className={`${styles.rowValue} ${w.kind === 'diamonds' ? 'sc-ink--blue' : 'sc-ink--gold'}`}
+          >
+            {prizeLabel(w)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function FloorFeed({
   wins,
   title = 'Recent Wins',
@@ -76,29 +116,26 @@ export default function FloorFeed({
             : 'No Wins Yet. Yours Could Be The First.'}
         </p>
       ) : (
-        <div className={`${styles.rows} ${styles.rowsCompact}`}>
-          {rows.map((w, i) => (
-            <div key={`${w.at}-${i}`} className={styles.row}>
-              <span className={`${styles.rowLabel} ${w.mine ? 'sc-ink--white' : 'sc-ink--silver'}`}>
-                <img
-                  className={styles.rowAvatar}
-                  src={getAvatarWithFallback(w.avatar, w.name, w.name, 24)}
-                  alt=""
-                  aria-hidden="true"
-                />
-                {w.mine ? 'You' : w.name}
-                <span className={`${styles.rowMeta} sc-ink--muted`}>
-                  {game ? timeAgo(w.at) : `${GAME_WORD[w.game]}, ${timeAgo(w.at)}`}
-                </span>
-              </span>
-              <span
-                className={`${styles.rowValue} ${w.kind === 'diamonds' ? 'sc-ink--blue' : 'sc-ink--gold'}`}
-              >
-                {prizeLabel(w)}
-              </span>
-            </div>
-          ))}
-        </div>
+        <FloorRows rows={rows} game={game} />
+      )}
+    </SpadeConsole>
+  );
+}
+
+/**
+ * The week's board: the host's five biggest wins of the last seven days,
+ * biggest first, straight from fn_diamond_game_floor's top_week. A recent
+ * win is small more often than not; this is the one the room talks about.
+ */
+export function BiggestWins({ wins }: { wins: FloorWin[] }) {
+  return (
+    <SpadeConsole eyebrow="This Week" title="Biggest Wins" foot="foot">
+      {wins.length === 0 ? (
+        <p className="sc-copy sc-copy--center sc-ink--muted">
+          No Wins This Week Yet. Yours Could Be The First.
+        </p>
+      ) : (
+        <FloorRows rows={wins.slice(0, 5)} ranked />
       )}
     </SpadeConsole>
   );

@@ -19,6 +19,15 @@
  * four bays (Board and Bet are controls - tap to change, the bay's ink is its
  * state), two plates. Odds, fairness and history each on their own console.
  * Nothing is drawn but the board and the line the client seed is typed on.
+ *
+ * AUTO DROP (2026-09-10). The steel plate sets a run (Run Off, Run 5, 10, 25,
+ * 50) and the blue plate starts it (Auto Drop 5); while it runs the steel
+ * plate says Stop and the blue plate counts the ball. Every
+ * ball in the run is its own server round with its own sealed commit, taken
+ * one after another as each lands, and the run stops on its own the moment a
+ * drop is refused, the diamonds run out, the day's limit is reached, or the
+ * player leaves the page. Nothing is decided any faster and nothing is
+ * decided here: the runner only presses Drop.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -46,6 +55,7 @@ import {
   type PlinkoFairnessVerdict,
 } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
+import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
@@ -55,6 +65,8 @@ import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
 
 const MAX_CLIENT_SEED = 64;
+/** The pause between a landing and the next ball of a run, so the slot can be read. */
+const AUTO_PAUSE_MS = 700;
 
 function odds(weight: number): string {
   const oneIn = PLINKO_WEIGHT_TOTAL / weight;
@@ -91,8 +103,12 @@ export default function DiamondPlinkoPage() {
   const [verdict, setVerdict] = useState<PlinkoFairnessVerdict | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [waitSeconds, setWaitSeconds] = useState(0);
+  const [autoSize, setAutoSize] = useState<number>(0);
+  /** A run in progress: how many balls it is, how many have landed. */
+  const [autoRun, setAutoRun] = useState<AutoRun | null>(null);
+  const autoRunRef = useRef<AutoRun | null>(null);
+  autoRunRef.current = autoRun;
   const busyRef = useRef(false);
-  const oddsRef = useRef<HTMLDivElement | null>(null);
   const [stageRef, stageWidth] = useMeasuredWidth<HTMLDivElement>(300);
   const { floor, refresh: refreshFloor } = useGameFloor(clubUuid, 20);
 
@@ -208,20 +224,37 @@ export default function DiamondPlinkoPage() {
   }, [state, player, cfg, bet, betOption]);
 
   const canDrop = Boolean(clubUuid && commit && table && !dropping && !blocker && waitSeconds <= 0);
+  const running = autoRun !== null;
 
   const cycleTable = useCallback(() => {
-    if (dropping || tables.length < 2) return;
+    if (dropping || running || tables.length < 2) return;
     const i = tables.findIndex((t) => t.version === (table?.version ?? -1));
     setTableVersion(tables[(i + 1) % tables.length].version);
     triggerHaptic('light');
-  }, [dropping, tables, table]);
+  }, [dropping, running, tables, table]);
 
   const cycleBet = useCallback(() => {
-    if (dropping || bets.length < 2) return;
+    if (dropping || running || bets.length < 2) return;
     const i = bets.findIndex((b) => b.bet_diamonds === bet);
     setBet(bets[(i + 1) % bets.length].bet_diamonds);
     triggerHaptic('light');
-  }, [dropping, bets, bet]);
+  }, [dropping, running, bets, bet]);
+
+  const cycleAuto = useCallback(() => {
+    if (dropping || running) return;
+    setAutoSize(cycleRunSize);
+    triggerHaptic('light');
+  }, [dropping, running]);
+
+  /** The run ends: on the last ball, on Stop, or on the first refusal. */
+  const endAuto = useCallback(
+    (why: string | null) => {
+      if (!autoRunRef.current) return;
+      setAutoRun(null);
+      if (why) toast.info(why);
+    },
+    [toast]
+  );
 
   const handleDrop = useCallback(async () => {
     if (!clubUuid || !commit || !table || busyRef.current || dropping) return;
@@ -244,6 +277,7 @@ export default function DiamondPlinkoPage() {
       if (!live()) return;
       if (!result.ok) {
         toast.error(result.error || 'The Drop Was Refused');
+        endAuto(autoRunRef.current ? 'Auto Drop Stopped' : null);
         await freshCommit();
         if (clubUuid) void loadState(clubUuid).catch(() => undefined);
         return;
@@ -255,11 +289,24 @@ export default function DiamondPlinkoPage() {
     } catch (err) {
       reportError(err, 'DiamondPlinkoPage.drop');
       if (live()) toast.error('The Drop Did Not Go Through. Nothing Was Charged');
+      endAuto(autoRunRef.current ? 'Auto Drop Stopped' : null);
       await freshCommit();
     } finally {
       busyRef.current = false;
     }
-  }, [clubUuid, commit, table, dropping, clientSeed, bet, live, toast, freshCommit, loadState]);
+  }, [
+    clubUuid,
+    commit,
+    table,
+    dropping,
+    clientSeed,
+    bet,
+    live,
+    toast,
+    freshCommit,
+    loadState,
+    endAuto,
+  ]);
 
   const handleLanded = useCallback(() => {
     if (!pending) return;
@@ -277,13 +324,50 @@ export default function DiamondPlinkoPage() {
       triggerHaptic('light');
     }
     setClientSeed(randomClientSeed());
+    setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));
     if (clubUuid) {
       void loadState(clubUuid).catch((err) => reportError(err, 'DiamondPlinkoPage.reload'));
       void loadHistory(clubUuid);
       void refreshFloor();
     }
+    /* The commit this ball used is spent. Clear it before asking for the next,
+       so nothing (the runner included) can press Drop on a dead ticket. */
+    setCommit(null);
     void freshCommit();
   }, [pending, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]);
+
+  const startAuto = useCallback(() => {
+    if (!autoSize || running || dropping) return;
+    triggerHaptic('medium');
+    setAutoRun({ total: autoSize, done: 0 });
+  }, [autoSize, running, dropping]);
+
+  const stopAuto = useCallback(() => endAuto('Auto Drop Stopped'), [endAuto]);
+
+  /* The runner. It presses Drop when the page would let a thumb press it:
+     a fresh commit in hand, the pause between drops served, nothing blocking.
+     It does not wait for anything the page does not wait for, and it stops
+     the moment the page would refuse. */
+  useEffect(() => {
+    const verdict = autoRunVerdict(
+      autoRun,
+      { busy: dropping, blocker, ready: canDrop },
+      AUTO_PAUSE_MS
+    );
+    if (verdict.kind === 'wait') return;
+    if (verdict.kind === 'finished') {
+      setAutoRun(null);
+      toast.success(`Auto Drop Finished: ${autoRun?.total ?? 0} Drops`);
+      return;
+    }
+    if (verdict.kind === 'blocked') {
+      setAutoRun(null);
+      toast.info(`Auto Drop Stopped: ${verdict.why}`);
+      return;
+    }
+    const t = setTimeout(() => void handleDrop(), verdict.delayMs);
+    return () => clearTimeout(t);
+  }, [autoRun, dropping, blocker, canDrop, handleDrop, toast]);
 
   const handleVerify = useCallback(
     async (result: PlinkoDrop) => {
@@ -326,11 +410,16 @@ export default function DiamondPlinkoPage() {
 
   const path = pending?.outcome.path ?? null;
   const boardWidth = Math.max(220, Math.min(420, stageWidth - 4));
-  const dropLabel = dropping
-    ? 'Dropping'
-    : waitSeconds > 0
-      ? `Ready In ${waitSeconds}s`
-      : `Drop ${bet.toLocaleString()}`;
+  const dropLabel = autoRun
+    ? `Ball ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+    : dropping
+      ? 'Dropping'
+      : waitSeconds > 0
+        ? `Ready In ${waitSeconds}s`
+        : autoSize
+          ? `Auto Drop ${autoSize}`
+          : `Drop ${bet.toLocaleString()}`;
+  const autoLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
   const pill = state.frozen
     ? 'Break'
     : state.available
@@ -364,7 +453,7 @@ export default function DiamondPlinkoPage() {
             ink: 'white',
             onPress: cycleTable,
             pressLabel: 'Change Board',
-            disabled: dropping || tables.length < 2,
+            disabled: dropping || running || tables.length < 2,
           },
           {
             label: 'Bet',
@@ -372,16 +461,28 @@ export default function DiamondPlinkoPage() {
             ink: betOption && !betOption.playable ? 'red' : 'white',
             onPress: cycleBet,
             pressLabel: 'Change Bet',
-            disabled: dropping || bets.length < 2,
+            disabled: dropping || running || bets.length < 2,
           },
           { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
           { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
         ]}
-        secondary={{
-          label: 'Odds',
-          onClick: () => oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-        }}
-        primary={{ label: dropLabel, ink: 'white', onClick: handleDrop, disabled: !canDrop }}
+        secondary={
+          running
+            ? { label: autoLabel, ink: 'red', onClick: stopAuto }
+            : {
+                label: autoLabel,
+                ink: autoSize ? 'gold' : 'silver',
+                onClick: cycleAuto,
+                disabled: dropping,
+              }
+        }
+        primary={
+          running
+            ? { label: dropLabel, ink: 'gold', disabled: true }
+            : autoSize
+              ? { label: dropLabel, ink: 'gold', onClick: startAuto, disabled: !canDrop }
+              : { label: dropLabel, ink: 'white', onClick: handleDrop, disabled: !canDrop }
+        }
       >
         <div className={styles.stage} ref={stageRef}>
           <div className={styles.board}>
@@ -409,24 +510,27 @@ export default function DiamondPlinkoPage() {
               </span>
               <span className={`sc-copy ${styles.readoutSub}`}>
                 {lastResult.outcome.payout_chips > 0
-                  ? `${multiplierLabel(lastResult.outcome.multiplier_cents)} On ${chipsLabel(lastResult.bet_chips)} Chips`
+                  ? `${multiplierLabel(lastResult.outcome.multiplier_cents)} On ${chipsLabel(lastResult.bet_chips)} ${lastResult.bet_chips === 1 ? 'Chip' : 'Chips'}`
                   : 'The Centre Pays Nothing. Drop Again'}
                 {lastResult.outcome.capped ? ' (Trimmed To What The Pool Could Pay)' : ''}
+                {autoRun ? ` Auto Drop ${autoRun.done} Of ${autoRun.total}.` : ''}
               </span>
             </div>
           ) : (
             <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
               {blocker
                 ? blocker
-                : anyTrimmed
-                  ? 'Gold Slots Are Trimmed To The Biggest Win The Pool Can Cover On This Bet Right Now. Tap Board Or Bet To Change Them.'
-                  : `${table?.name ?? ''} Pays Up To ${table ? multiplierLabel(table.max_multiplier_cents) : ''}. Tap Board Or Bet To Change Them. The Centre Pays Nothing.`}
+                : autoSize && !running
+                  ? `Auto Drop Sends ${autoSize} Balls One After Another At ${compactChips(bet)} Diamonds Each, And Stops On Its Own If A Drop Is Refused. Tap Run To Change It.`
+                  : anyTrimmed
+                    ? 'Gold Slots Are Trimmed To The Biggest Win The Pool Can Cover On This Bet Right Now. Tap Board Or Bet To Change Them.'
+                    : `${table?.name ?? ''} Pays Up To ${table ? multiplierLabel(table.max_multiplier_cents) : ''}. Tap Board Or Bet To Change Them. The Centre Pays Nothing.`}
             </p>
           )}
         </div>
       </DeckConsole>
 
-      <div ref={oddsRef}>
+      <div>
         <SpadeConsole eyebrow="The Board" title={table ? `${table.name} Odds` : 'Odds'} foot="foot">
           {table ? (
             <div className={styles.rows}>

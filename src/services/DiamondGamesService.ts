@@ -264,6 +264,8 @@ export interface GameFloor {
   error?: string;
   wins: FloorWin[];
   crash_points: FloorCrashPoint[];
+  /** The host's five biggest wins of the last seven days, biggest first. */
+  top_week: FloorWin[];
 }
 
 export interface GameConfigFull {
@@ -661,23 +663,26 @@ const DiamondGamesService = {
     if (error) throw error;
     const raw = rec(data);
     const wins = Array.isArray(raw.wins) ? (raw.wins as Record<string, unknown>[]) : [];
+    const top = Array.isArray(raw.top_week) ? (raw.top_week as Record<string, unknown>[]) : [];
     const points = Array.isArray(raw.crash_points)
       ? (raw.crash_points as Record<string, unknown>[])
       : [];
+    const win = (w: Record<string, unknown>): FloorWin => ({
+      game: (w.game as FloorWin['game']) ?? 'wheel',
+      at: String(w.at ?? ''),
+      kind: (w.kind as FloorWin['kind']) ?? 'chips',
+      amount: num(w.amount),
+      value_chips: num(w.value_chips),
+      multiplier_cents: intOrNull(w.multiplier_cents),
+      name: String(w.name ?? 'Player'),
+      avatar: w.avatar ? String(w.avatar) : null,
+      mine: Boolean(w.mine),
+    });
     return {
       ok: Boolean(raw.ok),
       error: raw.error ? String(raw.error) : undefined,
-      wins: wins.map((w) => ({
-        game: (w.game as FloorWin['game']) ?? 'wheel',
-        at: String(w.at ?? ''),
-        kind: (w.kind as FloorWin['kind']) ?? 'chips',
-        amount: num(w.amount),
-        value_chips: num(w.value_chips),
-        multiplier_cents: intOrNull(w.multiplier_cents),
-        name: String(w.name ?? 'Player'),
-        avatar: w.avatar ? String(w.avatar) : null,
-        mine: Boolean(w.mine),
-      })),
+      wins: wins.map(win),
+      top_week: top.map(win),
       crash_points: points.map((p) => ({
         crash_cents: num(p.crash_cents),
         cashed: Boolean(p.cashed),

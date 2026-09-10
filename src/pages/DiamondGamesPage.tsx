@@ -10,10 +10,11 @@
  * never pay out more than they have taken in; the page says that plainly
  * because a player who is not told the edge assumes the worst.
  *
- * THE PICTURE (#ClubArenaConsole). A balances console that only closes, then
- * one plated console per game: the figures on the glass, the state in the
- * pill, "How It Pays" on the steel plate, the game's verb on the blue glass.
- * Nothing is drawn.
+ * THE PICTURE (#ClubArenaConsole). A balances console that only closes, the
+ * week's biggest wins, then one plated console per game: the figures on the
+ * glass, the state in the pill, "How It Pays" on the steel plate, the game's
+ * verb on the blue glass, and the floor's recent wins under them. Nothing
+ * is drawn.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -29,7 +30,7 @@ import DiamondWheelService, {
 import DiamondGamesService, { type GameState } from '../services/DiamondGamesService';
 import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
-import FloorFeed from '../components/games/FloorFeed';
+import FloorFeed, { BiggestWins } from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
@@ -217,7 +218,7 @@ export default function DiamondGamesPage() {
         </p>
       </SpadeConsole>
 
-      <FloorFeed wins={floor?.wins ?? []} limit={8} />
+      <BiggestWins wins={floor?.top_week ?? []} />
 
       <SpadeConsole
         eyebrow="Spin"
@@ -337,6 +338,8 @@ export default function DiamondGamesPage() {
           </p>
         ) : null}
       </SpadeConsole>
+
+      <FloorFeed wins={floor?.wins ?? []} limit={8} />
     </div>
   );
 }

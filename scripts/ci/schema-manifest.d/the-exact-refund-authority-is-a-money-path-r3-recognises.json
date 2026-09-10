@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-legacy-horse-id-is-still-a-player",
+  "functions": ["fn_ca_money_path_log"]
+}

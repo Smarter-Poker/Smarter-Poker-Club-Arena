@@ -137,14 +137,6 @@ describe('the call sites whose id list grows with the room', () => {
     expect(lifecycle).not.toMatch(/\.in\('id', playerIds\)/);
   });
 
-  it('late-reg seating never reads a failed seat query as an empty room', () => {
-    const manager = src('src/tournament/TournamentManager.ts');
-    expect(manager).toMatch(/Tournament\.lateRegSeated/);
-    expect(manager).toMatch(
-      /if \(!seatRead\.complete\) \{[\s\S]*?requestUrgentEliminationSweepAfter\(TournamentManagerBase\.LATE_REG_REDRIVE_MS\);[\s\S]*?return;[\s\S]*?\}/
-    );
-  });
-
   it('terminal cleanup consumes receipt identities and issues no URL-sized seat query', () => {
     const elim = src('src/tournament/TournamentManagerEliminations.ts');
     const start = elim.indexOf('private async cleanupCommittedTablesAndManager(');

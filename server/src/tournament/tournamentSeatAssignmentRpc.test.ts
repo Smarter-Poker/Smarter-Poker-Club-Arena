@@ -32,7 +32,7 @@ const receipt = {
 describe('atomic tournament seat assignment transport', () => {
   beforeEach(() => rpc.mockReset());
 
-  it('accepts only the exact requested assignment receipt', async () => {
+  it('accepts the exact database assignment receipt', async () => {
     rpc.mockResolvedValue({ data: receipt, error: null });
 
     await expect(assignTournamentPlayerSeatAtomically(input)).resolves.toEqual({
@@ -55,11 +55,33 @@ describe('atomic tournament seat assignment transport', () => {
     });
   });
 
+  it('treats a different valid database-selected chair as authoritative', async () => {
+    const selected = {
+      ...receipt,
+      table_id: '00000000-0000-4000-8000-000000000009',
+      seat_number: 8,
+    };
+    rpc.mockResolvedValue({ data: selected, error: null });
+
+    await expect(assignTournamentPlayerSeatAtomically(input)).resolves.toMatchObject({
+      tournamentId: input.tournamentId,
+      userId: input.userId,
+      tableId: selected.table_id,
+      seatNumber: selected.seat_number,
+    });
+    expect(rpc).toHaveBeenCalledWith('fn_assign_tournament_player_seat_atomic', {
+      p_tournament_id: input.tournamentId,
+      p_user_id: input.userId,
+      p_table_id: input.tableId,
+      p_seat_number: input.seatNumber,
+    });
+  });
+
   it.each([
     ['tournament_id', '00000000-0000-4000-8000-000000000009'],
     ['user_id', '00000000-0000-4000-8000-000000000009'],
-    ['table_id', '00000000-0000-4000-8000-000000000009'],
-    ['seat_number', 8],
+    ['table_id', 'not-a-uuid'],
+    ['seat_number', 11],
     ['stack', 0],
     ['current_players', 0],
     ['assigned_at', 'not-a-date'],

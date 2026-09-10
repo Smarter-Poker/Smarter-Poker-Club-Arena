@@ -8,6 +8,7 @@ import type {
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
@@ -16,7 +17,7 @@ import {
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
   fence: 'table:hand:turn',
-  decisionKey: 'phase5:table:hand:turn',
+  decisionKey: '',
   decisionTimeMs: 3_599_999,
   player: {
     seat: 2,
@@ -25,7 +26,12 @@ const snapshot: LiveHorseDecisionSnapshot = {
     stack: 88,
     bet: 2,
     totalInvested: 2,
-    cards: [],
+    cards: [
+      { rank: 'A', suit: 'spades' },
+      { rank: 'K', suit: 'spades' },
+      { rank: 'Q', suit: 'hearts' },
+      { rank: 'J', suit: 'hearts' },
+    ],
     is_folded: false,
     is_all_in: false,
     is_sitting_out: false,
@@ -55,18 +61,34 @@ const snapshot: LiveHorseDecisionSnapshot = {
         is_all_in: false,
         is_sitting_out: false,
       },
+      {
+        seat: 3,
+        user_id: 'horse-3',
+        username: 'Horse Three',
+        stack: 96,
+        bet: 4,
+        totalInvested: 4,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      },
     ],
     communityCards: [],
     communityCards2: [],
     communityCards3: [],
-    pot: 5,
+    pot: 6,
+    contestablePot: 6,
     currentBet: 4,
     minRaise: 4,
     stage: 'preflop',
     gameVariant: 'plo4',
     bigBlind: 2,
     actionHistory: [],
-    pots: [{ amount: 5, eligiblePlayers: ['horse-2'] }],
+    pots: [
+      { amount: 4, eligiblePlayers: ['horse-2', 'horse-3'] },
+      { amount: 2, eligiblePlayers: ['horse-3'] },
+    ],
     rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
     variantRules: {
       holeCardsDealt: 4,
@@ -77,6 +99,7 @@ const snapshot: LiveHorseDecisionSnapshot = {
     },
   },
 };
+snapshot.decisionKey = buildHorseDecisionKey(snapshot);
 
 const governor = () => ({
   enabled: true,
@@ -219,6 +242,11 @@ const fastRequest = (requestId = 1): FastHorseDecisionRequest => ({
   requestId,
 });
 
+const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => ({
+  ...request,
+  decisionKey: buildHorseDecisionKey(request),
+});
+
 describe('HorseDecisionWorkerRuntime', () => {
   it('gates on owned-service hydration and returns fast RNG/latency/governor receipts', async () => {
     const h = harness();
@@ -280,6 +308,63 @@ describe('HorseDecisionWorkerRuntime', () => {
       type: 'ERROR',
       requestId: 1,
       message: 'horse state contains private seat cards',
+    });
+  });
+
+  it('rejects variant rules that disagree with the authoritative variant', async () => {
+    const h = harness();
+    h.runtime.receive(
+      rekey({
+        ...fastRequest(),
+        gameState: {
+          ...snapshot.gameState,
+          variantRules: { ...snapshot.gameState.variantRules!, holeCardsUse: 'any' },
+        },
+      })
+    );
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state variant rules do not match gameVariant',
+    });
+  });
+
+  it('rejects side-pot eligibility for a player absent from public state', async () => {
+    const h = harness();
+    h.runtime.receive(
+      rekey({
+        ...fastRequest(),
+        gameState: {
+          ...snapshot.gameState,
+          pots: [{ amount: 6, eligiblePlayers: ['missing-player'] }],
+        },
+      })
+    );
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state side-pot eligibility is invalid',
+    });
+  });
+
+  it('rejects a contestable pot that includes an unreachable side pot', async () => {
+    const h = harness();
+    h.runtime.receive(
+      rekey({
+        ...fastRequest(),
+        gameState: { ...snapshot.gameState, contestablePot: 5 },
+      })
+    );
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state contestable pot is invalid',
     });
   });
 
@@ -458,12 +543,12 @@ describe('HorseDecisionWorkerRuntime', () => {
 
   it('derives each fast RNG stream from its canonical key, not prior speculative work', async () => {
     const afterOtherWork = harness();
-    afterOtherWork.runtime.receive({ ...fastRequest(1), fence: 'other-table:stale-turn' });
-    afterOtherWork.runtime.receive({ ...fastRequest(2), fence: 'target-table:owned-turn' });
+    afterOtherWork.runtime.receive(rekey({ ...fastRequest(1), fence: 'other-table:stale-turn' }));
+    afterOtherWork.runtime.receive(rekey({ ...fastRequest(2), fence: 'target-table:owned-turn' }));
     await afterOtherWork.runtime.drain();
 
     const direct = harness();
-    direct.runtime.receive({ ...fastRequest(1), fence: 'target-table:owned-turn' });
+    direct.runtime.receive(rekey({ ...fastRequest(1), fence: 'target-table:owned-turn' }));
     await direct.runtime.drain();
 
     expect(afterOtherWork.decisionsAtRng[1]).toBe(direct.decisionsAtRng[0]);
@@ -485,11 +570,51 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(first.decisionsAtRng[0]).toBe(restarted.decisionsAtRng[0]);
   });
 
+  it('changes the RNG stream when a bound decision input changes', async () => {
+    const balanced = harness();
+    balanced.runtime.receive(rekey({ ...fastRequest(1), style: 'balanced' }));
+    await balanced.runtime.drain();
+
+    const aggressive = harness();
+    aggressive.runtime.receive(rekey({ ...fastRequest(1), style: 'lag' }));
+    await aggressive.runtime.drain();
+
+    expect(balanced.decisionsAtRng).toHaveLength(1);
+    expect(aggressive.decisionsAtRng).toHaveLength(1);
+    expect(balanced.decisionsAtRng[0]).not.toBe(aggressive.decisionsAtRng[0]);
+  });
+
+  it('binds profile modifiers, live options and the decision-hour input', () => {
+    const base = fastRequest(1);
+    const baseKey = buildHorseDecisionKey(base);
+
+    expect(buildHorseDecisionKey({ ...base, mods: { aggression: 1.2 } })).not.toBe(baseKey);
+    expect(buildHorseDecisionKey({ ...base, opts: { v20Multiway: false } })).not.toBe(baseKey);
+    expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs - 1 })).toBe(
+      baseKey
+    );
+    expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs + 1 })).not.toBe(
+      baseKey
+    );
+  });
+
+  it('rejects a changed snapshot carrying its old decision key', async () => {
+    const h = harness();
+    h.runtime.receive({ ...fastRequest(1), style: 'lag' });
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'decisionKey does not bind the canonical decision snapshot',
+    });
+  });
+
   it('restores canonical RNG when a fast decision throws', async () => {
     const h = harness();
     h.setThrowDecision(true);
 
-    h.runtime.receive({ ...fastRequest(1), fence: 'throwing-fast-turn' });
+    h.runtime.receive(rekey({ ...fastRequest(1), fence: 'throwing-fast-turn' }));
     await h.runtime.drain();
 
     expect(h.rng()).toBe(101);

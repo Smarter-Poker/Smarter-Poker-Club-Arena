@@ -59,6 +59,9 @@ export interface PreflopCtx {
   oppsLeft: number;
   toCall: number;
   currentBet: number;
+  /** Pot hero can actually win, excluding hero's not-yet-committed call. */
+  contestablePot?: number;
+  /** Full betting pot. Pot-limit raise ceilings and sizing continue to use it. */
   pot: number;
   bigBlind: number;
   stack: number;
@@ -401,7 +404,10 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   const toCall = ctx.toCall;
   const effCall = Math.min(toCall, stack);
   if (effCall <= 0) return out;
-  const guardOdds = effCall / (ctx.pot + effCall);
+  const pricePot = Number.isFinite(ctx.contestablePot)
+    ? Math.max(0, ctx.contestablePot as number)
+    : ctx.pot;
+  const guardOdds = effCall / (pricePot + effCall);
   const isTourney = ctx.mode === 'tournament';
   const stackBB = stack / bb;
   const pricedIn =
@@ -460,6 +466,9 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     stackBB,
     rand,
   } = ctx;
+  const pricePot = Number.isFinite(ctx.contestablePot)
+    ? Math.max(0, ctx.contestablePot as number)
+    : pot;
 
   // ═══ V24 ICM IS ABOUT RISKING A LIFE, NOT A BLIND (Dan 2026-08-28) ═══════
   // "I full potted 8 hands in a row and never got called once."
@@ -555,7 +564,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // that, folding burns chips no strategy can win back. Applies to every
   // branch below: checked FIRST, before any strength threshold can fold.
   const effCall = Math.min(toCall, stack);
-  const guardOdds = effCall > 0 ? effCall / (pot + effCall) : 1;
+  const guardOdds = effCall > 0 ? effCall / (pricePot + effCall) : 1;
   const pricedIn =
     ctx.mode !== undefined && // V11 on — ablation (mode absent) keeps legacy
     toCall > 0 &&
@@ -1204,7 +1213,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // percentile means what it says.
     let callBar = callThresh - bbDiscount;
     if (ctx.isOmaha && ctx.ploPriceDefense === true) {
-      const odds = toCall / Math.max(1e-9, pot + toCall);
+      const odds = toCall / Math.max(1e-9, pricePot + toCall);
       const priceRelief = Math.max(0, 0.5 - odds); // BB ~0.17, cold call ~0.09
       callBar -= priceRelief;
     }
@@ -1376,7 +1385,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const pricedCallThresh = Math.max(floor3, callThresh - relief3 - commit3);
     const capOK3 = toCall <= stack * 0.35 || (investedShare >= 0.1 && guardOdds <= 0.45);
     if (strength >= pricedCallThresh && capOK3) return { a: 'call' };
-    if (toCall > 0 && toCall <= pot * 0.15 && strength >= 0.45) return { a: 'call' };
+    if (toCall > 0 && toCall <= pricePot * 0.15 && strength >= 0.45) return { a: 'call' };
     if (toCall === 0) return { a: 'check' };
     return { a: 'fold' };
   }

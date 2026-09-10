@@ -9,13 +9,13 @@ the compute add-on had gone Medium -> Large -> XL in about ten days.
 ~57 h of query execution on a 4-core XL = ~3.3 backends busy on average, at
 ~10k hands/h. Monday 2026-09-08 ran 25-35k hands/h. Where it went:
 
-| share | what |
-|------:|------|
-| ~27% | per-hand settlement: `fn_ca_commit_hand_settlement` 159 ms/hand, `fn_ca_process_hand_post_commit_obligations` 74 ms, `fn_project_hand_side_effects` 33 ms x2 |
-| ~10% | audit/reconcile crons (~130 pg_cron jobs) |
-| ~8%  | `fn_cash_clusters_tick_all` ~900 ms every ~6 s + per-game ticks |
-| ~7%  | Realtime WAL decoding, driven by the engine's service_role subscription on `hand_projection_outbox` (494k writes / 17 h) |
-| ~5%  | `fn_aggregate_gto_v31_next`; ~5% `fn_seat_horse_in_seat_first_game` at 1.1 s/call; ~2.5% PostgREST pre-request at ~150 req/s; ~2% tournaments lobby query at 775 ms |
+| share | what                                                                                                                                                                |
+| ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  ~27% | per-hand settlement: `fn_ca_commit_hand_settlement` 159 ms/hand, `fn_ca_process_hand_post_commit_obligations` 74 ms, `fn_project_hand_side_effects` 33 ms x2        |
+|  ~10% | audit/reconcile crons (~130 pg_cron jobs)                                                                                                                           |
+|   ~8% | `fn_cash_clusters_tick_all` ~900 ms every ~6 s + per-game ticks                                                                                                     |
+|   ~7% | Realtime WAL decoding, driven by the engine's service_role subscription on `hand_projection_outbox` (494k writes / 17 h)                                            |
+|   ~5% | `fn_aggregate_gto_v31_next`; ~5% `fn_seat_horse_in_seat_first_game` at 1.1 s/call; ~2.5% PostgREST pre-request at ~150 req/s; ~2% tournaments lobby query at 775 ms |
 
 During the 01:05-02:30 UTC evening ramp (13k hands/h) settlement averaged
 **1,370 ms/hand** with 25 active backends on 4 cores: the box was queueing.

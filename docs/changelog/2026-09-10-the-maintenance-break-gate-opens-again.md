@@ -73,3 +73,70 @@ put the individual writes at 21 ms (club_members), 19 ms (seat delete), 49 ms
 `trg_club_members_audit_chip_movement` and
 `trg_tables_emit_game_management_event` the largest single triggers. The
 seconds are spent queueing, not working. Recorded for the next pass.
+
+## Outcome, 07:53-08:10 UTC
+
+The 07:53 announcement went through on its first attempt. The durable row was
+written 1.2 seconds after the announcement instant
+(`announced_at 07:53:00.001`, `updated_at 07:53:01.204`), `/health` reported
+`durableConfirmed: true`, the countdown started at 07:55, and deploy run
+34449341468 walked straight through the gate it had been sitting at since
+07:30: cut over, verified, promoted, sealed. Production moved from 56962e04
+to 86aab0e645 - twenty-two commits, four hours of catch-up, including #4107,
+#4112, #4115, #4126 and #4136.
+
+What the deploy fixed on arrival, measured rather than assumed:
+
+- Hand projection restarted and began draining immediately: 2,486 hands
+  projected during the break itself, 22,894 by 08:10, outbox depth down from
+  132,542 to 113,123 and falling at about 1,350 rows a minute net of inflow.
+- The wake counters read `local=257 realtime=257` one minute after play
+  resumed, which is the evidence that let `hand_projection_outbox` leave the
+  Realtime publication (migration 20260910080137). After the drop, `realtime`
+  froze at 590 and the drain carried on unchanged on local wakes.
+- The terminal-replay retry storm stopped. Two COMPLETED heads-up PLO4
+  tournaments had produced 9,252 `terminal replay parameters disagree with
+stored receipt` errors in the 07:00-07:42 window; between 08:01 and 08:10
+  there were none. Both had 0 active players and settled money throughout -
+  the loop was noise, not loss.
+- `bounty ledger names a mismatched obligation generation`: 113 in the
+  pre-deploy window, 0 after.
+
+Engine after the cutover: `liveness ok`, `settlementStatus ok`,
+`stalledTableCount 0`, `blockedSettlementCount 0`, leader elected, 698 hands
+in the deal-rate window.
+
+Database load during the backlog drain, sampled over 70 quarter-second ticks:
+2.60 busy backends against 8 cores, 32.5%. Before this whole effort started
+it was 3.3-3.7 busy against 4 cores, 83-93%.
+
+## The next thing to fix, with its evidence
+
+The global settlement lane is still global. #4135 set out to make the lane
+per-tournament, and `fn_ca_lock_settlement_lane_for_tournament` does take a
+per-tournament key - but only after taking the platform-wide key
+`ca:tournament-terminal-settlement:v1` exclusively, and an
+`pg_advisory_xact_lock` is held to commit. So every hand settlement, every
+rolling authority and every seat-exit still queues behind one key, and the
+per-tournament scoping underneath it buys nothing yet.
+
+Measured on production at 08:09 over 80 quarter-second samples of that key:
+held in 89% of samples, a queue present in 78.8% of them, 2.55 waiters on
+average, 5 at peak, and the longest single wait 6.6 seconds. Postgres logged
+dozens of `still waiting for ExclusiveLock on advisory lock
+[5,4265093629,1253463894,1] after 10000.xxx ms` entries in the 08:01-08:10
+window alone. The waiters seen were `fn_claim_tournament_bounty_elimination`,
+`fn_seat_horse_in_seat_first_game`, `process_tournament_rebuy` and
+`fn_training_cache_run_drift_audit`.
+
+This was deliberately NOT fixed here, because the global key is not only a
+mutex: three trigger guards read it as proof of authority -
+`fn_tournament_live_seat_acquisition_requires_authority` (`v_owns_global`),
+`fn_tournament_payouts_are_append_only` (`v_owns_terminal_root`) and
+`fn_satellite_target_player_provenance_is_immutable`
+(`v_owns_acquisition_root`). Dropping it from the rolling path would make
+those guards refuse live seat acquisitions and payout writes. The real fix -
+teaching the guards to accept the per-tournament key as proof, then taking
+the global key shared on the rolling path - is a designed change to a money
+path and belongs with #4135's own tests, not to a passing repair of the
+deploy gate.

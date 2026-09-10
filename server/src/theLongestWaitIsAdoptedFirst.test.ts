@@ -67,10 +67,18 @@ describe('the longest-waiting tournament is adopted first', () => {
   });
 
   it('the cash fleet still has its own per-sweep adoption budget', () => {
-    // Recorded so the asymmetry is deliberate rather than forgotten: cash
-    // adoption is bounded per sweep by the C20 budget and tournament adoption
-    // is not, which is why ORDER is what protects the tournament tail. A change
-    // to either one should have to move this pin and say so.
     expect(SRC).toContain('if (startedThisSweep >= budgetThisSweep) break;');
+  });
+
+  it('RUNNING re-adoption is bounded too, and the order still decides which', () => {
+    // Moved 2026-09-10. This pin used to record a deliberate asymmetry: cash
+    // adoption was bounded per sweep by C20 and tournament adoption was not,
+    // so ORDER alone protected the tail. On 2026-09-10 the unbounded side
+    // resumed ~740 tournaments per pass, starved the lease heartbeats and
+    // re-adopted the same fenced set on every pass (tournamentResumeBudget.ts).
+    // It now has the same AIMD budget. The budget decides HOW MANY per pass;
+    // this board's started_at order still decides WHICH, so both pins stand.
+    expect(SRC).toMatch(/selectRunningResumes\(\s*running \|\| \[\]/);
+    expect(SRC).toContain('budget: this.tournamentResumeBudget');
   });
 });

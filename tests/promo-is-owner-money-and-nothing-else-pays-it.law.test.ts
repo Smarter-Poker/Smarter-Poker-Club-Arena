@@ -51,7 +51,13 @@ const SPLASH = read('the_splash_pot_is_not_designed_yet');
 const PHANTOM = read('the_phantom_promo_pool_is_retired');
 const WALLET_SVC = readFileSync(resolve(ROOT, 'src/services/WalletService.ts'), 'utf8');
 const AGENT_PAGE = readFileSync(resolve(ROOT, 'src/pages/AgentDashboardPage.tsx'), 'utf8');
-const SESSIONS_PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerSessionsPage.tsx'), 'utf8');
+/* PlayerSessionsPage.tsx was de-routed on 2026-08-31 (App.tsx redirects
+   /player-sessions to clubs/:clubId/members) and deleted on 2026-09-10 (audit
+   CL-56); nothing imported it, so its promo button reached nobody. The pins
+   below that read it now read the one page that still disburses promo chips.
+   A page that no longer exists cannot call the retired path, which is what
+   "leaves no page calling the retired path" asserts. */
+const PROMO_PAGES = [AGENT_PAGE];
 
 describe('the splash pot is shut until it is designed', () => {
   it('refuses every call and says why', () => {
@@ -120,14 +126,14 @@ describe('the app calls the owner door', () => {
   });
 
   it('leaves no page calling the retired path', () => {
-    for (const page of [AGENT_PAGE, SESSIONS_PAGE]) {
+    for (const page of PROMO_PAGES) {
       expect(page).not.toContain('WalletService.distributePromo(');
       expect(page).toContain('WalletService.disbursePromo(');
     }
   });
 
   it('drops the agent-PK lookup the retired path needed', () => {
-    for (const page of [AGENT_PAGE, SESSIONS_PAGE]) {
+    for (const page of PROMO_PAGES) {
       expect(page).not.toContain('Agent record not found for this club');
     }
   });

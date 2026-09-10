@@ -39,8 +39,10 @@ verification when it lands.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
 failures reproduced and repaired. All 26 mounted cases and 39 existing scope
-and anti-flicker contracts pass; TypeScript and production compilation pass.
-Publication and natural-event/device acceptance are not yet established.
+and anti-flicker contracts pass. PR4104 is published; exact public/origin bytes
+were verified on September 10 at 05:26:52 UTC. Natural-event, production UI
+and physical-device acceptance remain open.
+Exact evidence: `docs/audits/2026-09-10-realtime-phase15-release.md`.
 Scope: `docs/changelog/2026-09-10-realtime-phase15-confirmed-tournament-inventory.md`.
 
 Phase 14: Lobby inventory and waitlist recovery. PR4095 is published and the

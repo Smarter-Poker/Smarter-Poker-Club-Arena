@@ -9,3 +9,5 @@ The dashboard transfer form selects an agent, so its send explicitly targets tha
 The portal regressions failed on the original source and pass with the fixes. Focused component and intent tests cover lost responses, remounts, malformed receipts, repeated clicks, cross-club completions and out-of-order reads. The final integrated run passed 92 tests across six files, including two additional pending-request remount cases that failed before the confirmation fix. Full client TypeScript passes.
 
 This begins Phase Four under the user instruction to proceed in parallel. It does not close the remaining Phase Three terminal acceptance or the separate expected-actor RPC contract gap. No SQL change is part of this patch.
+
+The required source-contract checks now pin the shared durable reservation, complete transfer identity, recipient-derived wallet route, and strict receipt validation. The discarded-error baseline was reduced because the financial portal now handles its lookup error. Seventy-two affected source-contract and behavioral tests passed.

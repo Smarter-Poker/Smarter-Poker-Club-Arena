@@ -1,3 +1,7 @@
+## 2026-09-10: Agent Transfer Source Contracts
+
+Align the existing money-path law with durable reservations and strict receipt confirmation, and reduce the financial portal discarded-error baseline after handling its lookup error. Seventy-two affected tests passed. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.
+
 ## 2026-09-10: Phase Four Agent Transfer Integrity
 
 Bind portal wallet and commission responses to their current identity and read generation. Preserve durable operation IDs across dashboard and modal retries, and validate exact transfer receipts. Add deferred-response component regressions. No SQL migration. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.

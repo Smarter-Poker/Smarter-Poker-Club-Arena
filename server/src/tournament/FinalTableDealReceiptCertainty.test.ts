@@ -25,7 +25,7 @@ describe('a final-table deal completes only from the immutable terminal receipt'
   it('parks and re-proves every mutable input before invoking the sole terminal writer', () => {
     const park = boundary.indexOf('parkForTerminalCloseout(');
     const roster = boundary.indexOf(".select('user_id, chips')", park);
-    const votes = boundary.indexOf(".from('tournament_deal_votes')", roster);
+    const votes = boundary.indexOf('this.readFinalTableDealConsensus(alive)', roster);
     const writer = boundary.indexOf('requestTournamentTerminalReceipt(', votes);
     const receiptProof = boundary.indexOf('receipt.dealShares.length === alive.length', writer);
     const tail = boundary.indexOf('return this.settleFinalTableDeal(receipt)', receiptProof);

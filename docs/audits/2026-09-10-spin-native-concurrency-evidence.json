@@ -1,0 +1,88 @@
+{
+  "verified_at": "2026-09-10T05:19:58.811871+00:00",
+  "control": "CA-03-08",
+  "scope": "Observed overlapping native immutable funded-draw requests",
+  "production_mutations": false,
+  "database": "exclusively owned full_stage1 on local socket port 55473",
+  "fixture_event": "93010000-0000-0000-0000-000000000001",
+  "baseline_verified_empty_owned_ids": true,
+  "setup_sha256": "2dbbb398eb782b13b3df22c8f410e612a11d8b8b1492587d39ffde383555def4",
+  "fixture_source": "scripts/ci/probes/spin-funded-launch-native.sql",
+  "migrations": [
+    "supabase/migrations/20260909020315_the_launch_completion_tells_a_bust_from_an_uncredited_stack.sql",
+    "supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql",
+    "supabase/migrations/20260909183217_a_played_spin_with_one_vacated_busted_seat_can_complete_laun.sql",
+    "supabase/migrations/20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql"
+  ],
+  "saved_definition_snapshot_sha256": "de833f4d4f9fa7fbcddc2d609f054863b64e46c0e7c099d5b600b1afdb048944",
+  "passed": [
+    {
+      "phase": "concurrent_changed_rules",
+      "observed_lock_wait": true,
+      "owner_replay": false,
+      "rival_replay": true,
+      "financial_state_unchanged": true,
+      "exact_counts": true
+    },
+    {
+      "phase": "concurrent_exact_retry",
+      "observed_lock_wait": true,
+      "owner_replay": true,
+      "rival_replay": true,
+      "financial_state_unchanged": true,
+      "exact_counts": true
+    }
+  ],
+  "native_accounting": "Real current entry, reserve, journal, rake, escrow, RNG, receipt and lease authorities; no money or RNG stubs. Rival lock wait observed before owner COMMIT. Each same-event race preserves one draw receipt, two reserve receipts, two Spin journal legs and one rake row.",
+  "retained_state": "Current native Spin schema, one 9301 event, three 9401 first-attempt events and three verified 9501 shared-reserve events retained in exclusively owned full_stage1; no cleanup or restore attempted.",
+  "new_local_catalog": [
+    "fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric)|a0f5a4d8edb0c0e403d3c00a9aadaa95|366a1981c2ea9f0f54b41fe50a5d19b4",
+    "fn_prove_played_spin_launch_recovery(uuid)|b7bc1bb46141fb6bd415b3658e622a3b|8bc978cc105c18b2e3350016b48a50eb",
+    "fn_complete_tournament_launch_before_lease_generation(uuid,uuid)|dce5d1ac72e862f3c30c9a9a73f56d18|9ee8a10e08a7b4f36dc27d26665dc2cf",
+    "fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)|b303d83aadd381950dfe658578767a4c|1c911e3ada50ffe0493b9b375e3fa9ae",
+    "fn_spin_book_entry(uuid)|604113bd4172433183cdd1d59af04e0f|3e861cfde0bda50d16bc836a665bf4ab"
+  ],
+  "remaining": [
+    "Final winner payout/terminal closure against unresolved current M5 authority parity",
+    "Coordinated production adoption and remaining Phase 3 programme gates"
+  ],
+  "log": "/tmp/codex-chip-bounty-spin-native-concurrency.log",
+  "shared_reserve": {
+    "verified_at": "2026-09-10T05:30:31.912790+00:00",
+    "events": [
+      "95010000-0000-0000-0000-000000000001",
+      "95010000-0000-0000-0000-000000000002",
+      "95010000-0000-0000-0000-000000000003"
+    ],
+    "opening_pool": 0,
+    "actual_entry_contributions": 8.28,
+    "actual_prior_native_draw": 5,
+    "available_before_two_launches": 3.28,
+    "minimum_combined_prizes": 4,
+    "observed_second_event_blocked_by_first_event": true,
+    "winning_prize": 2,
+    "losing_request_sqlstate": "P0404",
+    "losing_reason": "no_eligible_tiers",
+    "financial_state_after_loser_equal_to_winner_commit": true,
+    "winning_retry_exact_immutable_receipt": true,
+    "losing_retry_refuses_without_mutation": true,
+    "final_counts": {
+      "drawn": 7.0,
+      "balance": 1.28,
+      "deposited": 8.28,
+      "spin_count": 3,
+      "loser_receipts": 0,
+      "winner_receipts": 1,
+      "loser_reserve_rows": 1,
+      "loser_spin_journals": 1,
+      "winner_reserve_rows": 2,
+      "winner_spin_journals": 2
+    },
+    "setup_sha256": "2bd8d3b66be62365a1aaa83e0f305c822e8442d442c142e5d0c4a30831909f26",
+    "owner_snapshot_sha256": "1a6cb61212307f2b3ad0ffa3b34dac2018ba51544e94eaa47b115c6322839f38",
+    "setup_log": "/tmp/codex-chip-bounty-spin-shared-reserve-second-setup.log",
+    "race_log": "/tmp/codex-chip-bounty-spin-shared-reserve-second-race.log",
+    "scope_note": "Scarcity follows three actual entry bookings and an actual five-chip prior draw. No balance rewrite, RNG stub or disabled runtime guard creates the contention. Opening paid-entry receipts and charges remain synthetic fixture inputs.",
+    "earlier_attempt": "9401 fixture reached expected native P0404 refusal; harness incorrectly expected psql script exit 3 for a -c command (exit 1). Repeated with fresh 9501 IDs and preserved snapshot to verify complete state equality."
+  }
+}

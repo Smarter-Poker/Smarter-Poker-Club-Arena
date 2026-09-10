@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Final Deals Require A Bounded Review Of Exact Server Amounts
+
+Prepared SQL creates actor-bound review requests, immutable post-hand proposals, exact consent and proposal-bound terminal receipts. A central 120-second policy bounds requests and reviews, while consumed hand identity prevents repeated pauses. GET never starts review; request/vote/cancel compare the displayed actor before any mutation. Engine begin/close/complete routes use the existing manager fence. Verification: 68 native assertions passed for each paid/unpaid/partial fixed tail, plus 3 two-session terminal-lock assertions; all local transactions rolled back. Actual cash authority, journal, escrow and payout replay were exercised. Native full-terminal recovery and production activation remain open because live terminal/resolver/rake hashes differ from tracked candidates. No mismatching body or production DDL applied. Re-read: yes. See docs/changelog/2026-09-10-versioned-final-deal-consent.md and docs/audits/2026-09-10-versioned-final-deal-native-acceptance.json.
+
 ## 2026-09-10: Deal Review Mutations Bind The Displayed Actor
 
 Requests, cancellation, and votes now send the displayed actor as a mandatory server precondition, closing the account-switch gap between auth preflight and request token acquisition. Three client regressions failed before correction; 109 focused client tests and full TypeScript pass. Re-read: yes. Matching SQL rejects actor mismatch before writes; native proof remains with the payout lane. No production publication or activation. See docs/changelog/2026-09-10-deal-review-mutations-bind-the-actor.md.

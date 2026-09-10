@@ -1,0 +1,11 @@
+# Versioned Final Deal Consent
+
+Before: generic votes named a tournament and voter, while cash shares were derived from later stacks. Collecting exact votes before parking also made a completed hand invalidate every reviewed amount.
+
+Prepared correction: an explicit actor-bound request creates one durable review epoch. The manager parks first, then creates the immutable post-hand proposal. The server owns separate request and consent deadlines (central policy defaults: 120 seconds each). Repeated calls preserve the deadline; a consumed hand fingerprint requires another committed hand before another pause. GET requests never initiate a pause. Cancellation and expiry close the named review before the manager may resume play; completing or unknown money outcomes remain fenced.
+
+Proposals bind the review epoch, tournament financial scope, full roster, seat generations, committed hands, fixed prize liabilities and exact integer-cent shares. Each vote additionally binds the displayed actor to auth.uid before any write. Only unanimous consent for that unchanged proposal can enter the existing cash authority. The prepared terminal wrapper binds its durable execution and lost-response receipt to the same proposal, review and manager generation.
+
+Verification: 68 native PostgreSQL assertions passed in each of paid, unpaid and partly paid fixed-tail fixtures, with explicit rollback. Three separate two-session lock assertions passed. Tests exercise actual credits, journals, escrow and obligations, including failure after an earlier credit, full-pool totals, exact payout cents and payment replay. Roles, wrong/null actors, requester elimination, deadline replay, cancellation, newer review epochs and post-park pause admission are covered. Existing scope guards were preserved and rejected all three hostile scope changes.
+
+Rollout remains gated. No production DDL or engine deployment is part of this commit. M5 whole-terminal completion and lost-response proof cannot be certified while live terminal, outcome and rake bodies differ from the tracked candidates. Matching internal receipt helpers do not establish full authority parity. No mismatching terminal body, denied satellite receipt restoration, historical payment repair or financial stand-in was installed. See docs/audits/2026-09-10-versioned-final-deal-native-acceptance.json.

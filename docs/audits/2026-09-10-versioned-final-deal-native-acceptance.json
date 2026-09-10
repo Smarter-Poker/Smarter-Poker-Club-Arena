@@ -1,0 +1,110 @@
+{
+  "recorded_at": "2026-09-10T05:27:28.563089+00:00",
+  "programme": "109-item accounting programme",
+  "phase": 3,
+  "control": "CA-03-06",
+  "status": "prepared_not_activated",
+  "source_readback": true,
+  "production_ddl_applied": false,
+  "variants": [
+    {
+      "variant": "paid",
+      "exit_code": 0,
+      "assertions": 68,
+      "rollback": true
+    },
+    {
+      "variant": "unpaid",
+      "exit_code": 0,
+      "assertions": 68,
+      "rollback": true
+    },
+    {
+      "variant": "partial",
+      "exit_code": 0,
+      "assertions": 68,
+      "rollback": true
+    }
+  ],
+  "count_note": "The same 68 assertions run for paid, unpaid and partial fixed-tail starting states; these are not 204 distinct tests.",
+  "two_session_lock_probe": {
+    "assertions": 3,
+    "passed": true,
+    "blocked_seconds": 0.705,
+    "checks": [
+      "actual terminal advisory key serializes consensus expiry observation",
+      "clock_timestamp deadline evaluated after wait",
+      "wallet, payout and escrow snapshots unchanged"
+    ],
+    "scope": "Real database sessions and prepared consensus; this does not execute or certify terminal completion."
+  },
+  "native_authority_body_md5": {
+    "fn_ca_tournament_place_amounts(uuid)": "8f6cde5f5b799949506259f3064568b9",
+    "fn_settle_tournament_final_table_deal(uuid)": "d26fa5a8d5b09bbf8ad2fd28c2e5b1f1"
+  },
+  "fixture_authorities": [
+    "Exact native cash authority and calculator bodies are fingerprint checked against tracked20260909042455 before fixture writes.",
+    "The exact tracked pure manager scope validator is loaded within the rollback-only fixture; full HTTP manager-lease admission remains a separate integration gate.",
+    "The canonical final_table_deal source row is extracted from tracked20260905203123; no payer or journal stub is installed.",
+    "Synthetic committed-hand witness rows exercise the review consumer; hand production is covered separately.",
+    "All three scope-change attempts are refused by existing native lifecycle/asset guards without disabling them."
+  ],
+  "acceptance": [
+    "side-effect-free review and proposal reads",
+    "explicit request and begin replay preserve exact epoch and deadline",
+    "server policy defaults120seconds independently for request and consent",
+    "requester eliminated during park cannot start a review",
+    "consumed post-park hand prevents repeated pauses",
+    "new review cannot reuse prior proposal consents",
+    "wrong and null expected actors refuse before each mutation",
+    "wrong manager generation refuses before terminal call; recovery preserves deadline",
+    "expiry/cancel and old epoch replay are exact and make no money writes",
+    "real cash rollback after an earlier genuine credit",
+    "full100pool consists of95deal plus5fixed and all obligations settle",
+    "every cash payout equals immutable approved cents",
+    "wallet and native journal totals equal100",
+    "cash replay makes no second payment",
+    "completing cash cannot authorize dealer release without whole-terminal result",
+    "role grants and absence of actor-unbound prepared overloads verified"
+  ],
+  "open_gates": [
+    "Native whole-terminal completion and lost-response recovery are not certified: current local replay has no M5 terminal functions and three live bodies do not match available tracked candidates.",
+    "Production expansion, compatible engine and client adoption, and final guard activation must remain serialized by the release coordinator.",
+    "This record does not close all Phase3 controls or authorize Phase4 acceptance."
+  ],
+  "authority_parity": {
+    "fn_complete_tournament_terminal(uuid,uuid,text)": {
+      "live": "f4275f9fa8cb2711f19ffdf7b16a04e6",
+      "tracked_m5": "589388ad7204fef460a1deebf32ecb69",
+      "tracked_seat_wrapper": "098ae780395481eaf3b4f273a97b6aa5"
+    },
+    "fn_resolve_tournament_terminal_outcome(uuid,uuid,text)": {
+      "live": "022c1883533939caf8ebed0cb5699e8c",
+      "tracked": "4c151073f56b53e4b0363bdd916b78d4"
+    },
+    "fn_settle_tournament_rake(uuid,text)": {
+      "live": "05a512317bb7bdcecfaec19ef8ee4e63",
+      "tracked_latest": "cc8ae636957b2582c7486353d57f7766"
+    },
+    "matched_internal_helpers": {
+      "fn_ca_tournament_terminal_receipt(uuid,uuid)": "56ac90a5ed092d1e34fe65b6bbb6606a",
+      "fn_ca_mystery_bounty_completion_evidence(uuid,uuid)": "ca0d61b50c73d0216e13b9b13f6de8ca"
+    },
+    "latest_main_inspected": "c064df4a50b5a09a0bdd3f18a52953139f195b58",
+    "no_mismatching_terminal_body_installed": true
+  },
+  "source_sha256": {
+    "scripts/deploy/phase-three-versioned-final-deal.sql": "f1487253ce6ab9ed140286981174c14cf8a4c4c3753e6964b5cb81434e0ea6fb",
+    "scripts/deploy/phase-three-activate-versioned-final-deal.sql": "f434a3ab28f55cc0e2023a10b9e599f4f4b0130f86cea96b3d7a05e4237be419",
+    "scripts/deploy/phase-three-strict-tournament-cutover.sql": "09154d18e6ee6bdbcf8a36bc4b13b98ade60ed07c445b29b5338df546fc3e4af",
+    "scripts/dev/build-versioned-final-deal-probe.py": "25e9a9d5c3617ca33a0f9643ac5dc64903613f811167cba59fdbacb8bd17b067",
+    "scripts/dev/probe-versioned-final-deal-lock-wait.py": "a767600633304fbf16ef7997fff6fcf42022fa570256d04526db8da521d612e3",
+    "scripts/ci/probes/versioned-final-deal-native.sql": "a7f3bda59622d6a5e4b523b3d60e86beaf59abb25e2b9ae3df07413e9ce34c9b"
+  },
+  "database_postcondition": {
+    "auth_users": 0,
+    "review_table_absent": true,
+    "proposal_table_absent": true,
+    "temporary_scope_validator_absent": true
+  }
+}

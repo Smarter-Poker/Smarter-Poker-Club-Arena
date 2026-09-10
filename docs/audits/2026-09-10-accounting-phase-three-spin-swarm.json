@@ -1,0 +1,67 @@
+{
+  "phase": 3,
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-08",
+  "status": "Open: Focused Acceptance Passed; Full Deployed Money Composition And Release Verification Pending",
+  "source_base": "8b859c0254d7d4f264a757af416bb9570b85b0a2",
+  "production_read_only_observed_at_utc": "2026-09-10T03:24:19.229941+00:00",
+  "implemented_correction": {
+    "file": "server/src/tournament/playedSpinLaunchRecovery.ts",
+    "cause": "Number(hand_count) < 1 accepted missing, nonnumeric, infinite, fractional and coercible non-number proof fields.",
+    "change": "Require a positive safe integer JSON number before the played-and-vacated Spin launch exception.",
+    "before": "10 new regression cases failed; 17 cases passed.",
+    "after": "27 parser cases passed, including all 11 malformed shapes and a valid multi-hand proof."
+  },
+  "verification": [
+    {
+      "command": "scripts/dev/probe-spin-funding-pg17.py",
+      "result": "42 PostgreSQL checks passed",
+      "log": "/tmp/codex-chip-spin-swarm-funding-pg17.log",
+      "scope": "Disposable Unix-socket-only PostgreSQL 17. Actual installed draw, settlement, entry and paid-entry functions, controlled pool ownership, maintenance and RNG. Concurrent reserve draw, refusal rollback, immutable receipt replay, stale lease, refunded entries, fixed rake, persisted rules and played recovery covered.",
+      "limits": "Fixture uses the reviewed earlier lower funding functions. Does not certify the subsequently installed M1 book/settle bodies or their complete production trigger graph."
+    },
+    {
+      "command": "Vitest 2.1.9, focused Spin and launch suites",
+      "result": "170 tests passed in 15 files",
+      "log": "/tmp/codex-chip-spin-swarm-focused-server.log",
+      "scope": "Receipt parsing, restart rules, reveal ordering, launch funding floor and source guards. Existing runner and TypeScript used read-only through temporary resolver aliases; no installation or dependency copying.",
+      "limits": "Includes source and production-fragment tests. Does not itself exercise production wallet writes or a full deployed engine lifecycle."
+    },
+    {
+      "command": "Full server TypeScript --noEmit using temporary config that retains the server tsconfig and resolves existing dependency declarations read-only",
+      "result": "Passed, exit 0, 25.81 seconds",
+      "log": "/tmp/codex-chip-spin-swarm-tsc-final.log",
+      "scope": "Entire current worktree server source and tests. Compiler resolution maps to the existing installed packages without installing or copying dependencies."
+    }
+  ],
+  "production_authority_parity": [
+    {
+      "signature": "fn_spin_draw_and_settle(uuid,jsonb)",
+      "body_md5": "ae40e68edb69f702859a326532b29bed",
+      "comparison": "Exact current M1 source body matches production. Replay consults the committed draw before applying new-draw starting-stack admission."
+    },
+    {
+      "signature": "fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)",
+      "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+      "body_md5": "b303d83aadd381950dfe658578767a4c",
+      "comparison": "Exact function definition after the compact PostgreSQL proof composes the played-recovery migration matches production."
+    },
+    {
+      "signature": "fn_spin_book_entry(uuid)",
+      "body_md5": "604113bd4172433183cdd1d59af04e0f",
+      "comparison": "Current production observed read-only. Older full-schema donor body c6686fe56a264132a98f8eae232f2b19 differs."
+    },
+    {
+      "signature": "fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric)",
+      "body_md5": "a0f5a4d8edb0c0e403d3c00a9aadaa95",
+      "comparison": "Current production observed read-only. Older full-schema donor body 5e2e4092af6d888fcd7c1cd738d9796e differs."
+    }
+  ],
+  "superseded_evidence": "The earlier full_stage1 Spin replay failure (three seats but one exact starting stack after play) came from an older draw authority. It is not current production defect evidence.",
+  "remaining_gates": [
+    "Rehearse current M1 entry and settlement functions together with the immutable launch receipt authority and full real money triggers under production-matching schema provenance.",
+    "Verify the coordinated normal engine publication contains the parser correction.",
+    "Parent accounting coordinator must resolve all other Phase 3 controls and release/Stage B gates before Phase 4."
+  ],
+  "operations": "No production DDL, money writes, backpay, incidents, deployment dispatches, engine/container/tag/host changes, pushes or merges. A newly started disposable full-schema rehearsal was stopped and deleted after disk constraints tightened. Existing unrelated databases and worktrees were not mutated."
+}

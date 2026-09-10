@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Played Spin Recovery Requires A Real Hand Count
+
+`server/src/tournament/playedSpinLaunchRecovery.ts` previously admitted missing or malformed hand evidence through `Number(hand_count) < 1`. The parser now requires a positive safe integer JSON number before the played-game recovery exception. Ten failing adversarial regressions reproduced the hole; 27 parser tests and 170 focused Spin/launch tests pass. The separate compact funding proof passes 42 PostgreSQL checks, with its atomic authority definition verified against production. Full current lower-money-function composition and ordinary engine publication remain open. Re-read: yes. Full server TypeScript: pass. No database or financial mutation. See docs/changelog/2026-09-10-played-spin-recovery-requires-a-real-hand-count.md.
+
 ## 2026-09-10: Current Tournament Seat Moves Require Manager Authority
 
 The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.

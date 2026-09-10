@@ -280,6 +280,11 @@ export interface HorseDecisionWorkerError {
   generation?: number;
   fence?: string;
   message: string;
+  /**
+   * The worker rejected this one request at its structured-clone validation
+   * boundary and remains safe to use. Missing means terminal runtime failure.
+   */
+  recoverable?: true;
 }
 
 export type HorseDecisionWorkerResponse =

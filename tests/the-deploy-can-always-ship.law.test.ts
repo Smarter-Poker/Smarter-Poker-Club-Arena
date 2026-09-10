@@ -58,6 +58,24 @@
  * So this file does not check that the numbers are any particular value. It
  * checks that the numbers still AGREE WITH EACH OTHER, which is the property
  * that actually broke, and the one a human reviewer cannot hold in their head.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 2026-09-10: THE ARITHMETIC ONLY CHECKED THE CALLER THAT HAD STOPPED CALLING
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ *  4. This file proved every CRON minute could reach the break, with a staged
+ *     run assumed to reach the gate in 6 minutes. Neither held. The server
+ *     suite runs before the gate on every run (~9 minutes; staged runs reached
+ *     the gate after 10.3-11.7 minutes), and the cron was no longer the caller:
+ *     GitHub delivered 3 of ~19 ticks that day and the DB dispatcher had been
+ *     retired, so every run was an engine-watchdog or agent dispatch at an
+ *     arbitrary minute. Any run that started before :10 or after :44 staged
+ *     its image, went green and shipped nothing - five of them in one
+ *     afternoon (34491811148, 34493149950, 34505100894, 34511390657,
+ *     34516171966) - while production crash-looped on 7732b971 through three
+ *     breaks with the fix merged. The law now covers EVERY start minute, cold
+ *     and staged, and the watchdog's idea of a stale run must outlast the
+ *     longest legitimate wait.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
@@ -99,8 +117,16 @@ describe('the wait budget can actually reach the break', () => {
    * the worst observed, so it is what the budget must survive.
    */
   const WORST_BUILD_MIN = 18;
-  /** A run that adopts an already-staged image: checkout, tests, pull, gate. */
-  const REUSED_ELAPSED_MIN = 6;
+  /**
+   * A run that adopts an already-staged image: checkout, the server suite,
+   * pull, adopt, supervisor, gate. MEASURED 2026-09-10, not assumed: 10.3-11.7
+   * minutes (runs 34505100894, 34511390657, 34512893031, 34516171966); the
+   * server suite alone is ~9. It was 6 here, which is how a 55-minute ceiling
+   * looked sufficient for starts it could not serve.
+   */
+  const REUSED_ELAPSED_MIN = 12;
+  /** A run that builds cold: everything above plus the worst observed build. */
+  const COLD_ELAPSED_MIN = REUSED_ELAPSED_MIN + WORST_BUILD_MIN;
   /** The gate polls until the next :56 — one minute past the flag opening. */
   const GATE_MINUTE = 56;
 
@@ -156,6 +182,40 @@ describe('the wait budget can actually reach the break', () => {
           `${budgetMin}m of budget`
       ).toBeLessThanOrEqual(budgetMin);
     }
+  });
+
+  it('EVERY start minute reaches the next break, staged or cold', () => {
+    // The caller is not the cron. engine-watchdog.sh and agents dispatch at
+    // whatever minute they happen to run, so the budget has to serve all
+    // sixty. +1 because a run reaching the gate at :56:59 waits 59m59s, not 59m.
+    for (const elapsed of [REUSED_ELAPSED_MIN, COLD_ELAPSED_MIN]) {
+      const budgetMin = timeoutMin - elapsed - reserveS / 60;
+      for (let start = 0; start < 60; start++) {
+        const wait = minutesToGate((start + elapsed) % 60) + 1;
+        expect(
+          wait,
+          `a run started at :${String(start).padStart(2, '0')} reaches the gate after ${elapsed}m ` +
+            `and must wait ${wait}m for :${GATE_MINUTE}, but only has ${budgetMin}m of budget - ` +
+            `it would stage its image, go green and ship nothing (the 2026-09-10 defect)`
+        ).toBeLessThanOrEqual(budgetMin);
+      }
+    }
+  });
+
+  it('the watchdog never treats a run waiting for its break as stale', () => {
+    // A run can now legitimately hold the deploy group for up to an hour. If
+    // the watchdog's in-flight window were shorter than the job ceiling, it
+    // would decide that run was a zombie and dispatch another behind it.
+    const sh = readFileSync(join(ROOT, '.github/scripts/engine-watchdog.sh'), 'utf8');
+    const stale = num(
+      /INFLIGHT_STALE_MIN=\$\{INFLIGHT_STALE_MIN:-(\d+)\}/,
+      sh,
+      'INFLIGHT_STALE_MIN'
+    );
+    expect(
+      stale,
+      `engine-watchdog.sh treats runs older than ${stale}m as stale, but a deploy may run ${timeoutMin}m`
+    ).toBeGreaterThan(timeoutMin);
   });
 
   it('refusing to wait says the image is staged, and does not blame the break', () => {
@@ -302,18 +362,22 @@ describe('the watchdog can say WHY production is behind', () => {
 
   it('being behind always dispatches a deploy, even far from the break', () => {
     // It used to refuse unless the next :55 was within 13 minutes, because a
-    // run that cannot reach the break "provably ships nothing". With the image
-    // staged that is no longer true - the run does the expensive half and the
-    // :35 tick finishes in a minute - and the old rule was itself concentrating
-    // every dispatch into :42-:47, where the build then outlived the break it
-    // was aimed at.
+    // run that cannot reach the break "provably ships nothing". That rule was
+    // concentrating every dispatch into :42-:47, where the build then outlived
+    // the break it was aimed at. Since 2026-09-10 the deploy's ceiling lets a
+    // run started at ANY minute wait in its gate for the next :55 it can
+    // reach, so a dispatch always ships at a break - the only question is
+    // which one, and the watchdog says so.
     const block = sh.slice(sh.indexOf('MINS_TO_WINDOW='), sh.indexOf('BODY=$(cat'));
     expect(block).toMatch(/gh workflow run/);
     expect(
       block,
       'a dispatch must no longer be gated on the break being close - it stages the image either way'
     ).not.toMatch(/if \[ "\$MINS_TO_WINDOW" -le \d+ \]; then\s*\n\s*if gh workflow run/);
-    expect(block).toMatch(/stages the image/);
+    expect(block).toMatch(/waits in the break gate/);
+    expect(block, 'the :35 tick is not a caller anyone can rely on').not.toMatch(
+      /:35 tick cuts over/
+    );
   });
 });
 

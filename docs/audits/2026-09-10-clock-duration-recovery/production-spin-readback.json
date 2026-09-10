@@ -1,0 +1,24 @@
+{
+  "catalog": {
+    "observed_at": "2026-09-10 18:24:20.800877+00",
+    "signature": "fn_resolve_tournament_blinds(text,integer,text,text,numeric)",
+    "body_md5": "4f83c09a69eecc766a1f3984feeb9823",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"],
+    "prosecdef": true
+  },
+  "host_constants": {
+    "observed_at": "2026-09-10 18:25:20.5208+00",
+    "server_version": "17.6",
+    "cases": 77,
+    "matches": 77,
+    "mismatches": []
+  },
+  "installed_helper": {
+    "observed_at": "2026-09-10 18:25:11.225162+00",
+    "cases": 93,
+    "matches": 93,
+    "mismatches": []
+  }
+}

@@ -1480,9 +1480,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     clubId ? resolveClubUUIDSync(clubId) : null
   );
 
+  /* Collapse the wallet list when the club changes. The count under MY WALLETS
+     is NOT reset here, and must not be: DynamicWallet publishes it from a
+     layout effect in the same commit this effect belongs to, and a child's
+     effects run before its parent's, so a reset here landed AFTER the publish
+     and wiped it. Measured 2026-09-10 against production, signed in, on an
+     iPhone profile: the bay printed nothing at 15 seconds on a cold load, a
+     warm reload and a client-side re-entry alike, and before that it printed
+     the placeholder Dan photographed on 2026-09-09 - for the same reason, from
+     the day the count shipped (#2050). The wallet re-publishes whenever its
+     row set changes, which is the only time this number can change, so there
+     is nothing for a reset to do except blank the plate until the next club
+     switch. Pinned by tests/the-mobile-lobby-chrome-stays-fixed.law.test.ts and
+     tests/unit/theWalletsCountSurvivesTheClubReset.test.tsx. */
   useEffect(() => {
     setWalletsExpanded(false);
-    setVisibleWalletCount(0);
   }, [resolvedClubId]);
   useEffect(() => {
     resolvedClubIdRef.current = resolvedClubId;

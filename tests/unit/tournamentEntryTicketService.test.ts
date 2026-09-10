@@ -421,6 +421,79 @@ describe('tournament-entry ticket client service', () => {
     expect(mockEmit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
   });
 
+  it.each(['event', 'seat'] as const)(
+    'retires an obsolete %s refund request without treating the later registration as refunded',
+    async (scope) => {
+      const oldId = '00000000-0000-4000-8000-000000000001';
+      const newId = '00000000-0000-4000-8000-000000000002';
+      const storageKey =
+        'ca:tournament-unregister:v1:user-1:' +
+        (scope === 'event' ? 'tournament-1' : 'seat:table-1');
+      const requestRefund = () =>
+        scope === 'event'
+          ? tournamentService.unregisterPlayer('tournament-1', 'user-1')
+          : tournamentService.leaveTournamentSeatAndRefund('table-1', 'user-1');
+      const pending = JSON.stringify({ requestId: oldId, state: 'pending' });
+      localStorage.setItem(storageKey, pending);
+      sessionStorage.setItem(storageKey, pending);
+      mockUuid.mockReturnValue(newId);
+      mockRpc.mockResolvedValue({
+        data: null,
+        error: {
+          code: 'P0404',
+          message: 'unregistration request id belongs to a prior registration lifecycle',
+        },
+      });
+      await expect(requestRefund()).rejects.toThrow('Earlier Registration');
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockEmit).not.toHaveBeenCalled();
+      expect(JSON.parse(sessionStorage.getItem(storageKey)!)).toEqual({
+        requestId: oldId,
+        state: 'resolved',
+      });
+      mockRpc.mockResolvedValueOnce({
+        data: {
+          ok: true,
+          request_id: newId,
+          registration_id: 'registration-2',
+          refunded_chips: 200,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      });
+      await expect(requestRefund()).resolves.toEqual({
+        refundedChips: 200,
+        returnedTicketValue: 0,
+      });
+      expect(mockRpc.mock.calls[1][1].p_request_id).toBe(newId);
+    }
+  );
+
+  it.each([
+    { code: 'P0404', message: 'registration financial journals disagree' },
+    {
+      code: 'NETWORK',
+      message: 'unregistration request id belongs to a prior registration lifecycle',
+    },
+    { message: 'connection lost after commit' },
+  ])(
+    'retains the original request when the server has not proved its lifecycle obsolete: %o',
+    async (error) => {
+      mockRpc.mockResolvedValue({ data: null, error });
+      await expect(tournamentService.unregisterPlayer('tournament-1', 'user-1')).rejects.toThrow(
+        'Could Not Confirm Tournament Unregistration'
+      );
+      const original = mockRpc.mock.calls[0][1].p_request_id;
+      await expect(tournamentService.unregisterPlayer('tournament-1', 'user-1')).rejects.toThrow(
+        'Could Not Confirm Tournament Unregistration'
+      );
+      expect(mockRpc.mock.calls.every(([, params]) => params.p_request_id === original)).toBe(true);
+      expect(mockUuid).toHaveBeenCalledTimes(1);
+      expect(mockEmit).not.toHaveBeenCalled();
+    }
+  );
+
   it('accepts the exact satellite cash receipt after a lost response', async () => {
     mockRpc
       .mockResolvedValueOnce({ data: null, error: { message: 'response lost after commit' } })

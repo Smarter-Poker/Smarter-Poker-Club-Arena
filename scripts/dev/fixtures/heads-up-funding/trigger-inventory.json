@@ -1,0 +1,1767 @@
+{
+  "captured_at": "2026-09-10T07:10:05.012936+00:00",
+  "installed": [
+    "chip_ledger:aa_ca_capture_tournament_charge_entitlement",
+    "chip_ledger:cancelled_tournament_evidence_is_immutable",
+    "chip_ledger:satellite_transfer_ledger_is_immutable",
+    "chip_ledger:terminal_tournament_evidence_is_immutable",
+    "chip_ledger:trg_ca_append_only",
+    "chip_ledger:trg_ca_chip_ledger_enrich",
+    "chip_ledger:trg_chip_ledger_performed_by",
+    "chip_ledger:zz_ca_attested_day_is_restated_del",
+    "chip_ledger:zz_ca_attested_day_is_restated_upd",
+    "chip_ledger:zz_ca_escrow_overlay_leg",
+    "chip_ledger:zz_ca_escrow_reserve_leg",
+    "chip_ledger:zz_ca_escrow_seat_transfer_leg",
+    "chip_ledger:zz_ca_issuance_leg_is_registered",
+    "chip_ledger:zz_chip_ledger_key_is_claimed_once",
+    "chip_ledger:zz_freeze_guard",
+    "chip_transactions:trg_ca_append_only",
+    "chip_transactions:zz_freeze_guard",
+    "chip_transactions:zz_settlement_freeze_guard",
+    "club_members:trg_block_browser_balance_writes",
+    "club_members:trg_ca_autoledger",
+    "club_members:trg_ca_autoledger_delete",
+    "club_members:trg_ca_autoledger_insert",
+    "club_members:trg_club_members_audit_chip_movement",
+    "entry_purchase_idempotency_receipts:z_entry_purchase_receipt_is_immutable",
+    "rake_records:trg_guard_rake_belongs_to_club",
+    "rake_records:trg_tournament_fee_names_its_player",
+    "rake_records:zz_ca_escrow_rake_record",
+    "table_seats:a0_tournament_live_seat_root_guard",
+    "table_seats:aa_tournament_live_seat_proof_lock",
+    "table_seats:ab_refuse_live_seat_on_closed_tournament_table",
+    "table_seats:cancelled_tournament_seat_is_immutable",
+    "table_seats:poker_arena_chip_seat_guard",
+    "table_seats:terminal_tournament_seat_is_immutable",
+    "table_seats:tournament_live_seat_has_active_roster",
+    "table_seats:tournament_live_seat_update_has_active_roster",
+    "table_seats:trg_ca_guard_seat_creation",
+    "table_seats:trg_clear_sitout_on_turnover",
+    "table_seats:trg_enforce_four_table_limit",
+    "table_seats:trg_log_seat_stack_exit",
+    "table_seats:trg_new_seat_clear_sitout",
+    "table_seats:trg_no_live_seat_on_finished_game",
+    "table_seats:trg_one_live_seat_per_tournament",
+    "table_seats:trg_refuse_seat_on_closed_cluster_table",
+    "table_seats:trg_refuse_seat_revive_on_closed_cluster_table",
+    "table_seats:trg_seat_change_syncs_seat_first_count",
+    "table_seats:trg_stamp_sit_out_at",
+    "table_seats:trg_table_seats_stamp_club",
+    "table_seats:zz_freeze_entry_guard",
+    "table_seats:zz_freeze_guard",
+    "table_seats:zz_restriction_seat_guard",
+    "table_seats:zz_restriction_seat_revive_guard",
+    "table_seats:zzz_stamp_seat_occupancy",
+    "table_seats:zzzz_stamp_active_seat_game_scope",
+    "table_seats:zzzzz_require_live_seat_parent",
+    "table_seats:zzzzz_seat_parent_keys_match",
+    "tables:aa_tournament_table_launch_proof_lock",
+    "tables:ab_tournament_table_close_requires_empty",
+    "tables:zzzz_stamp_table_game_scope",
+    "tables:zzzz_stamp_table_seat_admission",
+    "tables:zzzzz_table_parent_keys_guard",
+    "tables:zzzzz_table_scope_cascade",
+    "tournament_escrow:cancelled_tournament_evidence_is_immutable",
+    "tournament_escrow:terminal_tournament_escrow_is_immutable",
+    "tournament_escrow:trg_guard_retired_club_mutation",
+    "tournament_escrow:zz_spin_escrow_is_enforced",
+    "tournament_launch_receipts:tournament_launch_receipt_is_immutable",
+    "tournament_players:aa_serialize_tournament_player_insert",
+    "tournament_players:aa_tournament_player_launch_proof_lock",
+    "tournament_players:tournament_roster_cannot_orphan_live_seat",
+    "tournament_players:tournament_roster_update_cannot_orphan_live_seat",
+    "tournament_players:trg_ca_tournament_entry_gate",
+    "tournament_players:trg_enforce_tournament_capacity",
+    "tournament_players:trg_sync_tournament_current_players",
+    "tournament_players:trg_tournament_players_stamp_club",
+    "tournament_players:zzzz_refuse_finalized_tournament_entry",
+    "tournament_refund_entitlements:cancelled_tournament_evidence_is_immutable",
+    "tournament_refund_entitlements:terminal_tournament_evidence_is_immutable",
+    "tournament_refund_entitlements:tournament_refund_entitlement_commit_valid",
+    "tournament_refund_entitlements:tournament_refund_entitlement_locks_parent_contract",
+    "tournament_refund_entitlements:tournament_refund_entitlements_append_only",
+    "tournament_refund_tranches:cancelled_tournament_evidence_is_immutable",
+    "tournament_refund_tranches:terminal_tournament_evidence_is_immutable",
+    "tournament_refund_tranches:tournament_refund_tranches_append_only",
+    "tournament_unregistration_receipts:tournament_unregistration_receipts_append_only",
+    "tournaments:tournament_start_time_locked_during_launch",
+    "tournaments:tournaments_short_formats_never_break",
+    "tournaments:trg_tournaments_registered_contract_lock",
+    "tournaments:trg_tournaments_start_readiness",
+    "tournaments:zz_ca_fund_overlay_on_lock",
+    "tournaments:zz_freeze_launch_guard",
+    "tournaments:zzzz_freeze_registered_tournament_settlement_contract",
+    "wallet_transactions:trg_ca_append_only",
+    "wallet_transactions:trg_ca_money_path_log",
+    "wallet_transactions:zz_ca_escrow_wallet_tx"
+  ],
+  "inventory": [
+    {
+      "definition": "CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.tournament_id IS NOT NULL) AND (new.from_type = 'player_wallet'::text) AND (new.to_type = 'prize_liability'::text))) EXECUTE FUNCTION fn_ca_capture_tournament_charge_entitlement()",
+      "enabled": "O",
+      "function": "fn_ca_capture_tournament_charge_entitlement()",
+      "name": "aa_ca_capture_tournament_charge_entitlement",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER satellite_transfer_ledger_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_satellite_transfer_ledger_is_immutable()",
+      "enabled": "O",
+      "function": "fn_satellite_transfer_ledger_is_immutable()",
+      "name": "satellite_transfer_ledger_is_immutable",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "name": "trg_ca_append_only",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_ledger_enrich()",
+      "enabled": "O",
+      "function": "fn_ca_chip_ledger_enrich()",
+      "name": "trg_ca_chip_ledger_enrich",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION enforce_chip_ledger_performed_by()",
+      "enabled": "O",
+      "function": "enforce_chip_ledger_performed_by()",
+      "name": "trg_chip_ledger_performed_by",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_del AFTER DELETE ON public.chip_ledger REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+      "enabled": "O",
+      "function": "fn_ca_attested_day_is_restated()",
+      "name": "zz_ca_attested_day_is_restated_del",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_upd AFTER UPDATE ON public.chip_ledger REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+      "enabled": "O",
+      "function": "fn_ca_attested_day_is_restated()",
+      "name": "zz_ca_attested_day_is_restated_upd",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.to_type = 'prize_liability'::text) AND ((new.category = 'overlay'::text) OR ((new.category = 'correction'::text) AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_overlay_leg()",
+      "name": "zz_ca_escrow_overlay_leg",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_escrow_reserve_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN ((new.category = ANY (ARRAY['spin_entry'::text, 'spin_prize'::text]))) EXECUTE FUNCTION fn_ca_escrow_on_reserve_leg()",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_reserve_leg()",
+      "name": "zz_ca_escrow_reserve_leg",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_escrow_seat_transfer_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.to_type = 'prize_liability'::text) AND (new.idempotency_key ~~ 'tourney:%:seat:%:pool_transfer'::text))) EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg()",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_seat_transfer_leg()",
+      "name": "zz_ca_escrow_seat_transfer_leg",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON public.chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])))) EXECUTE FUNCTION fn_ca_issuance_leg_is_registered()",
+      "enabled": "O",
+      "function": "fn_ca_issuance_leg_is_registered()",
+      "name": "zz_ca_issuance_leg_is_registered",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_chip_ledger_key_is_claimed_once BEFORE INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION zz_chip_ledger_key_is_claimed_once()",
+      "enabled": "O",
+      "function": "zz_chip_ledger_key_is_claimed_once()",
+      "name": "zz_chip_ledger_key_is_claimed_once",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "name": "zz_freeze_guard",
+      "table": "chip_ledger"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON public.chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "name": "trg_ca_append_only",
+      "table": "chip_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "name": "zz_freeze_guard",
+      "table": "chip_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_settlement_freeze_guard BEFORE INSERT ON public.chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_refuse_operator_move_while_settling()",
+      "enabled": "O",
+      "function": "fn_refuse_operator_move_while_settling()",
+      "name": "zz_settlement_freeze_guard",
+      "table": "chip_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER club_members_updated_at BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+      "enabled": "O",
+      "function": "update_updated_at_column()",
+      "name": "club_members_updated_at",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER lock_cashier_hierarchy_insert_delete BEFORE INSERT OR DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()",
+      "enabled": "O",
+      "function": "lock_club_cashier_hierarchy_mutation()",
+      "name": "lock_cashier_hierarchy_insert_delete",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER lock_cashier_hierarchy_update BEFORE UPDATE OF club_id, agent_id, role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()",
+      "enabled": "O",
+      "function": "lock_club_cashier_hierarchy_mutation()",
+      "name": "lock_cashier_hierarchy_update",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER poker_arena_membership_guard BEFORE INSERT OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()",
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure()",
+      "name": "poker_arena_membership_guard",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_admin_holds_no_player_wallet()",
+      "enabled": "O",
+      "function": "fn_admin_holds_no_player_wallet()",
+      "name": "trg_admin_holds_no_player_wallet",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_approval_gate_ins BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()",
+      "enabled": "O",
+      "function": "fn_membership_approval_gate()",
+      "name": "trg_approval_gate_ins",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_approval_gate_upd BEFORE UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()",
+      "enabled": "O",
+      "function": "fn_membership_approval_gate()",
+      "name": "trg_approval_gate_upd",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_audit_club_join AFTER INSERT OR UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation()",
+      "enabled": "O",
+      "function": "fn_audit_club_entry_mutation()",
+      "name": "trg_audit_club_join",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_audit_club_member_delete AFTER DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()",
+      "enabled": "O",
+      "function": "fn_audit_club_member_change()",
+      "name": "trg_audit_club_member_delete",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_audit_club_member_update AFTER UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()",
+      "enabled": "O",
+      "function": "fn_audit_club_member_change()",
+      "name": "trg_audit_club_member_update",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_block_browser_balance_inserts BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_inserts()",
+      "enabled": "O",
+      "function": "fn_block_browser_balance_inserts()",
+      "name": "trg_block_browser_balance_inserts",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_block_browser_balance_writes BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()",
+      "enabled": "O",
+      "function": "fn_block_browser_balance_writes()",
+      "name": "trg_block_browser_balance_writes",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF promo_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('promo_balance=promo_wallet')",
+      "enabled": "O",
+      "function": "fn_ca_autoledger()",
+      "name": "trg_ca_autoledger",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('chip_balance=player_wallet', 'promo_balance=promo_wallet')",
+      "enabled": "O",
+      "function": "fn_ca_autoledger_delete()",
+      "name": "trg_ca_autoledger_delete",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON public.club_members FOR EACH ROW WHEN (((COALESCE(new.chip_balance, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.promo_balance, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet')",
+      "enabled": "O",
+      "function": "fn_ca_autoledger()",
+      "name": "trg_ca_autoledger_insert",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_member_notes_guard BEFORE UPDATE OF nickname, notes ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_member_notes_guard()",
+      "enabled": "O",
+      "function": "fn_club_member_notes_guard()",
+      "name": "trg_club_member_notes_guard",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_audit_chip_movement AFTER UPDATE OF chip_balance ON public.club_members FOR EACH ROW WHEN ((old.chip_balance IS DISTINCT FROM new.chip_balance)) EXECUTE FUNCTION fn_club_members_ledger_writer()",
+      "enabled": "O",
+      "function": "fn_club_members_ledger_writer()",
+      "name": "trg_club_members_audit_chip_movement",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_bot_follows_horse BEFORE INSERT OR UPDATE OF user_id, is_bot ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_bot_follows_horse()",
+      "enabled": "O",
+      "function": "fn_club_members_bot_follows_horse()",
+      "name": "trg_club_members_bot_follows_horse",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_emit_management_access AFTER INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()",
+      "enabled": "O",
+      "function": "fn_emit_management_access_event()",
+      "name": "trg_club_members_emit_management_access",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_guard_lifecycle_write BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_membership_lifecycle_write()",
+      "enabled": "O",
+      "function": "fn_guard_membership_lifecycle_write()",
+      "name": "trg_club_members_guard_lifecycle_write",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id, is_bot ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row()",
+      "name": "trg_club_members_human_user_club_only",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_level_sync AFTER INSERT OR DELETE OR UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION trg_auto_recompute_club_level()",
+      "enabled": "O",
+      "function": "trg_auto_recompute_club_level()",
+      "name": "trg_club_members_level_sync",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_ins BEFORE INSERT ON public.club_members FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION fn_club_members_no_agent_cycle()",
+      "enabled": "O",
+      "function": "fn_club_members_no_agent_cycle()",
+      "name": "trg_club_members_no_agent_cycle_ins",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_upd BEFORE UPDATE OF agent_id ON public.club_members FOR EACH ROW WHEN (((new.agent_id IS NOT NULL) AND (new.agent_id IS DISTINCT FROM old.agent_id))) EXECUTE FUNCTION fn_club_members_no_agent_cycle()",
+      "enabled": "O",
+      "function": "fn_club_members_no_agent_cycle()",
+      "name": "trg_club_members_no_agent_cycle_upd",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_require_explicit_join BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source()",
+      "enabled": "O",
+      "function": "fn_require_explicit_club_membership_source()",
+      "name": "trg_club_members_require_explicit_join",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_role_guard BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_role_guard()",
+      "enabled": "O",
+      "function": "fn_club_members_role_guard()",
+      "name": "trg_club_members_role_guard",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_club_members_staff_earn_no_rakeback BEFORE INSERT OR UPDATE ON public.club_members FOR EACH ROW WHEN (((new.role = ANY (ARRAY['co_owner'::text, 'admin'::text])) AND ((COALESCE(new.player_rakeback_pct, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.rakeback_rate, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.commission_rate, (0)::numeric) <> (0)::numeric)))) EXECUTE FUNCTION fn_club_members_staff_earn_no_rakeback()",
+      "enabled": "O",
+      "function": "fn_club_members_staff_earn_no_rakeback()",
+      "name": "trg_club_members_staff_earn_no_rakeback",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_deep_stack_members_are_protected BEFORE DELETE ON public.club_members FOR EACH ROW WHEN ((old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()",
+      "enabled": "O",
+      "function": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
+      "name": "trg_deep_stack_members_are_protected",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_four_club_limit_ins BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()",
+      "enabled": "O",
+      "function": "fn_enforce_four_club_limit()",
+      "name": "trg_four_club_limit_ins",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_four_club_limit_upd BEFORE UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()",
+      "enabled": "O",
+      "function": "fn_enforce_four_club_limit()",
+      "name": "trg_four_club_limit_upd",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation()",
+      "name": "trg_guard_retired_club_mutation",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_membership_starts_with_zero_chips BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_starts_with_zero_chips()",
+      "enabled": "O",
+      "function": "fn_membership_starts_with_zero_chips()",
+      "name": "trg_membership_starts_with_zero_chips",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_recompute_club_level_on_member_change AFTER INSERT OR DELETE OR UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_recompute_club_level_on_member_change()",
+      "enabled": "O",
+      "function": "fn_recompute_club_level_on_member_change()",
+      "name": "trg_recompute_club_level_on_member_change",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_sync_agent_player_counts AFTER INSERT OR DELETE OR UPDATE OF agent_id, club_id, is_active ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_agent_player_counts()",
+      "enabled": "O",
+      "function": "fn_sync_agent_player_counts()",
+      "name": "trg_sync_agent_player_counts",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_sync_club_member_count AFTER INSERT OR DELETE OR UPDATE OF status, club_id, role ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_club_member_count()",
+      "enabled": "O",
+      "function": "fn_sync_club_member_count()",
+      "name": "trg_sync_club_member_count",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_sync_mfa_required_on_club_role AFTER INSERT OR UPDATE OF role, user_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_mfa_required_on_club_role()",
+      "enabled": "O",
+      "function": "fn_sync_mfa_required_on_club_role()",
+      "name": "trg_sync_mfa_required_on_club_role",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_balance')",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "name": "zz_freeze_guard",
+      "table": "club_members"
+    },
+    {
+      "definition": "CREATE TRIGGER z_entry_purchase_receipt_is_immutable BEFORE DELETE OR UPDATE ON public.entry_purchase_idempotency_receipts FOR EACH ROW EXECUTE FUNCTION trg_entry_purchase_receipt_is_immutable()",
+      "enabled": "O",
+      "function": "trg_entry_purchase_receipt_is_immutable()",
+      "name": "z_entry_purchase_receipt_is_immutable",
+      "table": "entry_purchase_idempotency_receipts"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_rake_change_del AFTER DELETE ON public.rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_repair_changed_days()",
+      "name": "ca_reporting_rake_change_del",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_rake_change_upd AFTER UPDATE ON public.rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_repair_changed_days()",
+      "name": "ca_reporting_rake_change_upd",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_rake_insert AFTER INSERT ON public.rake_records FOR EACH ROW EXECUTE FUNCTION trg_ca_reporting_rake_insert()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_rake_insert()",
+      "name": "ca_reporting_rake_insert",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER satellite_target_rake_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_rake_is_immutable()",
+      "enabled": "O",
+      "function": "fn_satellite_target_rake_is_immutable()",
+      "name": "satellite_target_rake_is_immutable",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_unregistration_rake_evidence_is_immutable BEFORE DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_ca_unregistration_rake_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_ca_unregistration_rake_evidence_is_immutable()",
+      "name": "tournament_unregistration_rake_evidence_is_immutable",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_award_vip_points_from_rake AFTER INSERT ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_award_vip_points_from_rake()",
+      "enabled": "O",
+      "function": "fn_award_vip_points_from_rake()",
+      "name": "trg_award_vip_points_from_rake",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_del AFTER DELETE ON public.rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()",
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_change()",
+      "name": "trg_ca_club_rake_daily_del",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()",
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_insert()",
+      "name": "trg_ca_club_rake_daily_ins",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_upd AFTER UPDATE ON public.rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()",
+      "enabled": "O",
+      "function": "trg_ca_club_rake_daily_change()",
+      "name": "trg_ca_club_rake_daily_upd",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_rake_belongs_to_club BEFORE INSERT OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_guard_rake_belongs_to_club()",
+      "enabled": "O",
+      "function": "fn_guard_rake_belongs_to_club()",
+      "name": "trg_guard_rake_belongs_to_club",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournament_fee_names_its_player BEFORE INSERT ON public.rake_records FOR EACH ROW WHEN (((new.is_tournament IS TRUE) AND (new.player_contributions IS NULL) AND (new.rake_amount > (0)::numeric))) EXECUTE FUNCTION fn_tournament_fee_names_its_player()",
+      "enabled": "O",
+      "function": "fn_tournament_fee_names_its_player()",
+      "name": "trg_tournament_fee_names_its_player",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_escrow_rake_record AFTER INSERT ON public.rake_records FOR EACH ROW WHEN (((new.is_tournament IS TRUE) AND (new.tournament_id IS NOT NULL))) EXECUTE FUNCTION fn_ca_escrow_on_rake_record()",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_rake_record()",
+      "name": "zz_ca_escrow_rake_record",
+      "table": "rake_records"
+    },
+    {
+      "definition": "CREATE TRIGGER a0_tournament_live_seat_root_guard BEFORE INSERT OR UPDATE OF table_id, user_id, seat_number, left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_tournament_live_seat_acquisition_requires_authority()",
+      "enabled": "O",
+      "function": "fn_tournament_live_seat_acquisition_requires_authority()",
+      "name": "a0_tournament_live_seat_root_guard",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER aa_tournament_live_seat_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION trg_lock_and_validate_tournament_live_seat()",
+      "enabled": "O",
+      "function": "trg_lock_and_validate_tournament_live_seat()",
+      "name": "aa_tournament_live_seat_proof_lock",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER ab_refuse_live_seat_on_closed_tournament_table BEFORE INSERT OR UPDATE OF table_id, user_id, left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION trg_refuse_live_seat_on_closed_tournament_table()",
+      "enabled": "O",
+      "function": "trg_refuse_live_seat_on_closed_tournament_table()",
+      "name": "ab_refuse_live_seat_on_closed_tournament_table",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_seat_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_seat_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_seat_is_immutable()",
+      "name": "cancelled_tournament_seat_is_immutable",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER poker_arena_chip_seat_guard BEFORE INSERT OR UPDATE OF table_id ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_chip_seat()",
+      "enabled": "O",
+      "function": "fn_poker_guard_chip_seat()",
+      "name": "poker_arena_chip_seat_guard",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER poker_bind_diamond_seat AFTER INSERT ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_poker_bind_diamond_seat()",
+      "enabled": "O",
+      "function": "fn_poker_bind_diamond_seat()",
+      "name": "poker_bind_diamond_seat",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_seat_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_seat_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_seat_is_immutable()",
+      "name": "terminal_tournament_seat_is_immutable",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_live_seat_has_active_roster AFTER INSERT ON public.table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster()",
+      "name": "tournament_live_seat_has_active_roster",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_live_seat_update_has_active_roster AFTER UPDATE OF table_id, user_id, left_at ON public.table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster()",
+      "name": "tournament_live_seat_update_has_active_roster",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_arena_seat_is_same_asset AFTER INSERT ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_arena_seat_is_same_asset()",
+      "enabled": "O",
+      "function": "fn_ca_arena_seat_is_same_asset()",
+      "name": "trg_ca_arena_seat_is_same_asset",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_guard_seat_creation BEFORE INSERT OR UPDATE OF left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_seat_creation()",
+      "enabled": "O",
+      "function": "fn_ca_guard_seat_creation()",
+      "name": "trg_ca_guard_seat_creation",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_cash_game_roster_track AFTER INSERT OR UPDATE OF left_at, user_id ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_cash_game_roster_track()",
+      "enabled": "O",
+      "function": "fn_cash_game_roster_track()",
+      "name": "trg_cash_game_roster_track",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_clear_sitout_on_turnover BEFORE UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_clear_sitout_on_turnover()",
+      "enabled": "O",
+      "function": "fn_clear_sitout_on_turnover()",
+      "name": "trg_clear_sitout_on_turnover",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_enforce_four_table_limit BEFORE INSERT OR UPDATE OF left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_table_limit()",
+      "enabled": "O",
+      "function": "fn_enforce_four_table_limit()",
+      "name": "trg_enforce_four_table_limit",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation()",
+      "name": "trg_guard_retired_club_mutation",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_log_seat_stack_exit BEFORE DELETE OR UPDATE OF left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_log_seat_stack_exit()",
+      "enabled": "O",
+      "function": "fn_log_seat_stack_exit()",
+      "name": "trg_log_seat_stack_exit",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_new_seat_clear_sitout BEFORE INSERT ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_new_seat_clear_sitout()",
+      "enabled": "O",
+      "function": "fn_new_seat_clear_sitout()",
+      "name": "trg_new_seat_clear_sitout",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_no_live_seat_on_finished_game BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_no_live_seat_on_finished_game()",
+      "enabled": "O",
+      "function": "fn_no_live_seat_on_finished_game()",
+      "name": "trg_no_live_seat_on_finished_game",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_notify_blinding_off AFTER UPDATE OF is_sitting_out, is_away ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_notify_blinding_off()",
+      "enabled": "O",
+      "function": "fn_notify_blinding_off()",
+      "name": "trg_notify_blinding_off",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_one_live_seat_per_tournament BEFORE INSERT OR UPDATE OF user_id, left_at, table_id ON public.table_seats FOR EACH ROW WHEN ((new.left_at IS NULL)) EXECUTE FUNCTION fn_guard_one_live_tournament_seat()",
+      "enabled": "O",
+      "function": "fn_guard_one_live_tournament_seat()",
+      "name": "trg_one_live_seat_per_tournament",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_refuse_seat_on_closed_cluster_table BEFORE INSERT ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_seat_on_closed_cluster_table()",
+      "enabled": "O",
+      "function": "fn_refuse_seat_on_closed_cluster_table()",
+      "name": "trg_refuse_seat_on_closed_cluster_table",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_refuse_seat_revive_on_closed_cluster_table BEFORE UPDATE OF user_id, left_at, table_id ON public.table_seats FOR EACH ROW WHEN (((new.left_at IS NULL) AND ((old.left_at IS NOT NULL) OR (old.user_id IS DISTINCT FROM new.user_id) OR (old.table_id IS DISTINCT FROM new.table_id)))) EXECUTE FUNCTION fn_refuse_seat_on_closed_cluster_table()",
+      "enabled": "O",
+      "function": "fn_refuse_seat_on_closed_cluster_table()",
+      "name": "trg_refuse_seat_revive_on_closed_cluster_table",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_seat_change_syncs_seat_first_count AFTER INSERT OR DELETE OR UPDATE OF left_at ON public.table_seats FOR EACH ROW WHEN ((pg_trigger_depth() < 2)) EXECUTE FUNCTION fn_seat_change_syncs_seat_first_count()",
+      "enabled": "O",
+      "function": "fn_seat_change_syncs_seat_first_count()",
+      "name": "trg_seat_change_syncs_seat_first_count",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_seat_insert_cancel_waitlist AFTER INSERT ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_seat_insert_cancel_waitlist()",
+      "enabled": "O",
+      "function": "fn_seat_insert_cancel_waitlist()",
+      "name": "trg_seat_insert_cancel_waitlist",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_stamp_seat_horse_id BEFORE INSERT OR UPDATE OF user_id ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_horse_id()",
+      "enabled": "O",
+      "function": "fn_stamp_seat_horse_id()",
+      "name": "trg_stamp_seat_horse_id",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_stamp_sit_out_at BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_sit_out_at()",
+      "enabled": "O",
+      "function": "fn_stamp_sit_out_at()",
+      "name": "trg_stamp_sit_out_at",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_table_seats_human_user_club_only BEFORE INSERT OR UPDATE OF table_id, user_id, left_at ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row()",
+      "name": "trg_table_seats_human_user_club_only",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_table_seats_stamp_club BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_club()",
+      "enabled": "O",
+      "function": "fn_stamp_seat_club()",
+      "name": "trg_table_seats_stamp_club",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER zz_close_session_when_seat_vacated AFTER UPDATE OF left_at ON public.table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_fn_close_session_when_seat_vacated()",
+      "enabled": "O",
+      "function": "trg_fn_close_session_when_seat_vacated()",
+      "name": "zz_close_session_when_seat_vacated",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT OR UPDATE OF left_at, user_id ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()",
+      "enabled": "O",
+      "function": "fn_refuse_new_entries_while_frozen()",
+      "name": "zz_freeze_entry_guard",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('stack', 'left_at', 'sit_out_at')",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "name": "zz_freeze_guard",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_restriction_seat_guard BEFORE INSERT ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_refuse_restricted_entry('cash')",
+      "enabled": "O",
+      "function": "fn_ca_refuse_restricted_entry()",
+      "name": "zz_restriction_seat_guard",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_restriction_seat_revive_guard BEFORE UPDATE OF user_id, left_at ON public.table_seats FOR EACH ROW WHEN (((new.left_at IS NULL) AND ((old.left_at IS NOT NULL) OR (old.user_id IS DISTINCT FROM new.user_id)))) EXECUTE FUNCTION fn_ca_refuse_restricted_entry('cash')",
+      "enabled": "O",
+      "function": "fn_ca_refuse_restricted_entry()",
+      "name": "zz_restriction_seat_revive_guard",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER zzz_diamond_seat_keeps_custody AFTER INSERT OR DELETE OR UPDATE ON public.table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_poker_diamond_seat_keeps_custody()",
+      "enabled": "O",
+      "function": "fn_poker_diamond_seat_keeps_custody()",
+      "name": "zzz_diamond_seat_keeps_custody",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zzz_stamp_seat_occupancy BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_occupancy()",
+      "enabled": "O",
+      "function": "fn_stamp_seat_occupancy()",
+      "name": "zzz_stamp_seat_occupancy",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_stamp_active_seat_game_scope BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_active_seat_game_scope()",
+      "enabled": "O",
+      "function": "fn_stamp_active_seat_game_scope()",
+      "name": "zzzz_stamp_active_seat_game_scope",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzz_require_live_seat_parent BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_require_live_seat_parent()",
+      "enabled": "O",
+      "function": "fn_require_live_seat_parent()",
+      "name": "zzzzz_require_live_seat_parent",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzz_seat_parent_keys_match BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION trg_seat_parent_keys_match()",
+      "enabled": "O",
+      "function": "trg_seat_parent_keys_match()",
+      "name": "zzzzz_seat_parent_keys_match",
+      "table": "table_seats"
+    },
+    {
+      "definition": "CREATE TRIGGER aa_tournament_table_launch_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION trg_lock_and_classify_tournament_table()",
+      "enabled": "O",
+      "function": "trg_lock_and_classify_tournament_table()",
+      "name": "aa_tournament_table_launch_proof_lock",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER ab_tournament_table_close_requires_empty BEFORE UPDATE OF status, is_deleted ON public.tables FOR EACH ROW EXECUTE FUNCTION trg_tournament_table_close_requires_empty()",
+      "enabled": "O",
+      "function": "trg_tournament_table_close_requires_empty()",
+      "name": "ab_tournament_table_close_requires_empty",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER poker_arena_table_guard BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()",
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure()",
+      "name": "poker_arena_table_guard",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER tables_updated_at BEFORE UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+      "enabled": "O",
+      "function": "update_updated_at_column()",
+      "name": "tables_updated_at",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_table_terminal_close_is_irreversible BEFORE INSERT OR DELETE OR UPDATE OF id, tournament_id, status, current_players, lifecycle, terminal_closed_at ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tournament_table_terminal_close_is_irreversible()",
+      "enabled": "O",
+      "function": "fn_tournament_table_terminal_close_is_irreversible()",
+      "name": "tournament_table_terminal_close_is_irreversible",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation()",
+      "name": "trg_guard_retired_club_mutation",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_on_table_status_change AFTER UPDATE OF status ON public.tables FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION fn_on_table_status_change()",
+      "enabled": "O",
+      "function": "fn_on_table_status_change()",
+      "name": "trg_on_table_status_change",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_auto_cashout_on_close AFTER UPDATE OF status ON public.tables FOR EACH ROW WHEN (((new.status IS DISTINCT FROM old.status) AND (lower(COALESCE(new.status, ''::text)) = ANY (ARRAY['closed'::text, 'completed'::text, 'cancelled'::text, 'finished'::text])))) EXECUTE FUNCTION trg_auto_cashout_on_table_close()",
+      "enabled": "O",
+      "function": "trg_auto_cashout_on_table_close()",
+      "name": "trg_tables_auto_cashout_on_close",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_autostart_guard BEFORE INSERT OR UPDATE OF auto_start_players, max_players ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tables_autostart_guard()",
+      "enabled": "O",
+      "function": "fn_tables_autostart_guard()",
+      "name": "trg_tables_autostart_guard",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_block_deleted_revival BEFORE UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_block_deleted_table_revival()",
+      "enabled": "O",
+      "function": "fn_block_deleted_table_revival()",
+      "name": "trg_tables_block_deleted_revival",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_capture_management_contract AFTER INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_capture_managed_game_contract()",
+      "enabled": "O",
+      "function": "fn_capture_managed_game_contract()",
+      "name": "trg_tables_capture_management_contract",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_closed_main_releases_index BEFORE INSERT OR UPDATE OF lifecycle, is_deleted, main_index, cluster_id ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_closed_cluster_main_releases_index()",
+      "enabled": "O",
+      "function": "fn_closed_cluster_main_releases_index()",
+      "name": "trg_tables_closed_main_releases_index",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_cluster_table_ceiling BEFORE INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_cluster_table_ceiling()",
+      "enabled": "O",
+      "function": "fn_cluster_table_ceiling()",
+      "name": "trg_tables_cluster_table_ceiling",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_creation_guard BEFORE INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tables_creation_guard()",
+      "enabled": "O",
+      "function": "fn_tables_creation_guard()",
+      "name": "trg_tables_creation_guard",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_emit_game_management_event AFTER INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_emit_managed_game_row_event()",
+      "enabled": "O",
+      "function": "fn_emit_managed_game_row_event()",
+      "name": "trg_tables_emit_game_management_event",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_managed_delete_guard BEFORE DELETE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_delete()",
+      "enabled": "O",
+      "function": "fn_guard_managed_game_delete()",
+      "name": "trg_tables_managed_delete_guard",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_managed_lifecycle_guard BEFORE UPDATE OF status, is_deleted ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle()",
+      "enabled": "O",
+      "function": "fn_guard_managed_game_lifecycle()",
+      "name": "trg_tables_managed_lifecycle_guard",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_sync_club_counts_del AFTER DELETE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_sync_club_table_counts()",
+      "enabled": "O",
+      "function": "fn_sync_club_table_counts()",
+      "name": "trg_tables_sync_club_counts_del",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_sync_club_counts_ins AFTER INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_sync_club_table_counts()",
+      "enabled": "O",
+      "function": "fn_sync_club_table_counts()",
+      "name": "trg_tables_sync_club_counts_ins",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_sync_club_counts_upd AFTER UPDATE OF status, is_deleted, club_id, union_id, tournament_id ON public.tables FOR EACH ROW WHEN (((new.status IS DISTINCT FROM old.status) OR (new.is_deleted IS DISTINCT FROM old.is_deleted) OR (new.club_id IS DISTINCT FROM old.club_id) OR (new.union_id IS DISTINCT FROM old.union_id) OR (new.tournament_id IS DISTINCT FROM old.tournament_id))) EXECUTE FUNCTION fn_sync_club_table_counts()",
+      "enabled": "O",
+      "function": "fn_sync_club_table_counts()",
+      "name": "trg_tables_sync_club_counts_upd",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_sync_rit BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_tables_sync_rit()",
+      "enabled": "O",
+      "function": "fn_tables_sync_rit()",
+      "name": "trg_tables_sync_rit",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_union_ownership BEFORE INSERT ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_union_ownership()",
+      "enabled": "O",
+      "function": "fn_stamp_table_union_ownership()",
+      "name": "trg_tables_union_ownership",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tables_union_ownership_upd BEFORE UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_enforce_table_union_ownership_update()",
+      "enabled": "O",
+      "function": "fn_enforce_table_union_ownership_update()",
+      "name": "trg_tables_union_ownership_upd",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_cancel_cash_seat_moves_on_table_close AFTER UPDATE OF status, seat_admission_key ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_cancel_cash_seat_moves_on_table_close()",
+      "enabled": "O",
+      "function": "fn_cancel_cash_seat_moves_on_table_close()",
+      "name": "zz_cancel_cash_seat_moves_on_table_close",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_close_sessions_when_table_closes AFTER UPDATE OF status, is_deleted ON public.tables FOR EACH ROW EXECUTE FUNCTION trg_fn_close_sessions_when_table_closes()",
+      "enabled": "O",
+      "function": "trg_fn_close_sessions_when_table_closes()",
+      "name": "zz_close_sessions_when_table_closes",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_stamp_table_game_scope BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_game_scope()",
+      "enabled": "O",
+      "function": "fn_stamp_table_game_scope()",
+      "name": "zzzz_stamp_table_game_scope",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_stamp_table_seat_admission BEFORE INSERT OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_stamp_table_seat_admission()",
+      "enabled": "O",
+      "function": "fn_stamp_table_seat_admission()",
+      "name": "zzzz_stamp_table_seat_admission",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzz_table_parent_keys_guard BEFORE UPDATE ON public.tables FOR EACH ROW WHEN ((old.seat_admission_key IS DISTINCT FROM new.seat_admission_key)) EXECUTE FUNCTION trg_table_parent_keys_guard()",
+      "enabled": "O",
+      "function": "trg_table_parent_keys_guard()",
+      "name": "zzzzz_table_parent_keys_guard",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzz_table_scope_cascade AFTER UPDATE ON public.tables FOR EACH ROW WHEN ((old.seat_game_scope IS DISTINCT FROM new.seat_game_scope)) EXECUTE FUNCTION trg_table_scope_cascade()",
+      "enabled": "O",
+      "function": "trg_table_scope_cascade()",
+      "name": "zzzzz_table_scope_cascade",
+      "table": "tables"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_escrow FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "tournament_escrow"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_escrow_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_escrow FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_escrow_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_escrow_is_immutable()",
+      "name": "terminal_tournament_escrow_is_immutable",
+      "table": "tournament_escrow"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_escrow FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation()",
+      "name": "trg_guard_retired_club_mutation",
+      "table": "tournament_escrow"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_spin_escrow_is_enforced BEFORE INSERT ON public.tournament_escrow FOR EACH ROW EXECUTE FUNCTION fn_spin_escrow_is_enforced()",
+      "enabled": "O",
+      "function": "fn_spin_escrow_is_enforced()",
+      "name": "zz_spin_escrow_is_enforced",
+      "table": "tournament_escrow"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_launch_receipt_is_immutable BEFORE DELETE OR UPDATE ON public.tournament_launch_receipts FOR EACH ROW EXECUTE FUNCTION trg_tournament_launch_receipt_is_immutable()",
+      "enabled": "O",
+      "function": "trg_tournament_launch_receipt_is_immutable()",
+      "name": "tournament_launch_receipt_is_immutable",
+      "table": "tournament_launch_receipts"
+    },
+    {
+      "definition": "CREATE TRIGGER aa_serialize_tournament_player_insert BEFORE INSERT ON public.tournament_players FOR EACH STATEMENT EXECUTE FUNCTION fn_serialize_entry_statement()",
+      "enabled": "O",
+      "function": "fn_serialize_entry_statement()",
+      "name": "aa_serialize_tournament_player_insert",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER aa_tournament_player_launch_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_lock_tournament_player_launch_proof()",
+      "enabled": "O",
+      "function": "trg_lock_tournament_player_launch_proof()",
+      "name": "aa_tournament_player_launch_proof_lock",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER satellite_target_player_provenance_is_immutable BEFORE INSERT OR DELETE OR UPDATE OF id, tournament_id, user_id, is_satellite_qualifier, source_satellite_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_player_provenance_is_immutable()",
+      "enabled": "O",
+      "function": "fn_satellite_target_player_provenance_is_immutable()",
+      "name": "satellite_target_player_provenance_is_immutable",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER seed_bounty_head AFTER INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_seed_bounty_head()",
+      "enabled": "O",
+      "function": "trg_seed_bounty_head()",
+      "name": "seed_bounty_head",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_place_collision_watch BEFORE INSERT OR UPDATE OF \"position\" ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_tournament_place_collision()",
+      "enabled": "O",
+      "function": "trg_tournament_place_collision()",
+      "name": "tournament_place_collision_watch",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_player_name BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_tournament_player_name()",
+      "enabled": "O",
+      "function": "trg_tournament_player_name()",
+      "name": "tournament_player_name",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_roster_cannot_orphan_live_seat AFTER DELETE ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster()",
+      "name": "tournament_roster_cannot_orphan_live_seat",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_roster_update_cannot_orphan_live_seat AFTER UPDATE OF tournament_id, user_id, status ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "enabled": "O",
+      "function": "trg_assert_live_tournament_seat_has_roster()",
+      "name": "tournament_roster_update_cannot_orphan_live_seat",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_tournament_entry_gate BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_entry_gate()",
+      "enabled": "O",
+      "function": "fn_ca_tournament_entry_gate()",
+      "name": "trg_ca_tournament_entry_gate",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_daily_missions_tournament_registered AFTER UPDATE ON public.tournament_players REFERENCING OLD TABLE AS previous_rows NEW TABLE AS updated_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_daily_missions_tournament_registered_updated()",
+      "enabled": "O",
+      "function": "fn_daily_missions_tournament_registered_updated()",
+      "name": "trg_daily_missions_tournament_registered",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_daily_missions_tournament_registered_insert AFTER INSERT ON public.tournament_players REFERENCING NEW TABLE AS inserted_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_daily_missions_tournament_registered_inserted()",
+      "enabled": "O",
+      "function": "fn_daily_missions_tournament_registered_inserted()",
+      "name": "trg_daily_missions_tournament_registered_insert",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_enforce_booking_game_cap BEFORE INSERT OR UPDATE OF status ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_enforce_booking_game_cap()",
+      "enabled": "O",
+      "function": "fn_enforce_booking_game_cap()",
+      "name": "trg_enforce_booking_game_cap",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_enforce_tournament_capacity BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_enforce_tournament_capacity()",
+      "enabled": "O",
+      "function": "fn_enforce_tournament_capacity()",
+      "name": "trg_enforce_tournament_capacity",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation()",
+      "name": "trg_guard_retired_club_mutation",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_refuse_reentry_with_pending_bounty BEFORE UPDATE OF status ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_reentry_with_pending_bounty()",
+      "enabled": "O",
+      "function": "fn_refuse_reentry_with_pending_bounty()",
+      "name": "trg_refuse_reentry_with_pending_bounty",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_refuse_zero_chip_field_elimination BEFORE UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_zero_chip_field_elimination()",
+      "enabled": "O",
+      "function": "fn_refuse_zero_chip_field_elimination()",
+      "name": "trg_refuse_zero_chip_field_elimination",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players()",
+      "enabled": "O",
+      "function": "fn_sync_tournament_current_players()",
+      "name": "trg_sync_tournament_current_players",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournament_players_human_user_club_only BEFORE INSERT OR UPDATE OF tournament_id, user_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+      "enabled": "O",
+      "function": "fn_ca_reject_automated_user_club_row()",
+      "name": "trg_tournament_players_human_user_club_only",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournament_players_stamp_club BEFORE INSERT OR UPDATE ON public.tournament_players FOR EACH ROW WHEN ((new.club_id IS NULL)) EXECUTE FUNCTION fn_stamp_entry_club()",
+      "enabled": "O",
+      "function": "fn_stamp_entry_club()",
+      "name": "trg_tournament_players_stamp_club",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()",
+      "enabled": "O",
+      "function": "fn_refuse_new_entries_while_frozen()",
+      "name": "zz_freeze_entry_guard",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_restriction_tourney_guard BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_ca_refuse_restricted_entry('tournaments')",
+      "enabled": "O",
+      "function": "fn_ca_refuse_restricted_entry()",
+      "name": "zz_restriction_tourney_guard",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_stamp_tournament_elimination_sequence BEFORE INSERT OR UPDATE OF status, elimination_sequence ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_elimination_sequence()",
+      "enabled": "O",
+      "function": "fn_stamp_tournament_elimination_sequence()",
+      "name": "zz_stamp_tournament_elimination_sequence",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_freeze_batched_tournament_result BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_freeze_batched_tournament_result()",
+      "enabled": "O",
+      "function": "trg_freeze_batched_tournament_result()",
+      "name": "zzzz_freeze_batched_tournament_result",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_refuse_finalized_tournament_entry BEFORE INSERT ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION trg_refuse_finalized_tournament_entry()",
+      "enabled": "O",
+      "function": "trg_refuse_finalized_tournament_entry()",
+      "name": "zzzz_refuse_finalized_tournament_entry",
+      "table": "tournament_players"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "tournament_refund_entitlements"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "table": "tournament_refund_entitlements"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_refund_entitlement_commit_valid AFTER INSERT ON public.tournament_refund_entitlements DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_refund_entitlement_commit_valid()",
+      "enabled": "O",
+      "function": "fn_ca_refund_entitlement_commit_valid()",
+      "name": "tournament_refund_entitlement_commit_valid",
+      "table": "tournament_refund_entitlements"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_refund_entitlement_locks_parent_contract AFTER INSERT ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_ca_lock_tournament_contract_from_entitlement()",
+      "enabled": "O",
+      "function": "fn_ca_lock_tournament_contract_from_entitlement()",
+      "name": "tournament_refund_entitlement_locks_parent_contract",
+      "table": "tournament_refund_entitlements"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_refund_entitlements_append_only BEFORE DELETE OR UPDATE ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()",
+      "enabled": "O",
+      "function": "fn_satellite_settlement_receipts_are_append_only()",
+      "name": "tournament_refund_entitlements_append_only",
+      "table": "tournament_refund_entitlements"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "table": "tournament_refund_tranches"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "table": "tournament_refund_tranches"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_refund_tranches_append_only BEFORE DELETE OR UPDATE ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()",
+      "enabled": "O",
+      "function": "fn_satellite_settlement_receipts_are_append_only()",
+      "name": "tournament_refund_tranches_append_only",
+      "table": "tournament_refund_tranches"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_unregistration_receipts_append_only BEFORE DELETE OR UPDATE ON public.tournament_unregistration_receipts FOR EACH ROW EXECUTE FUNCTION fn_satellite_settlement_receipts_are_append_only()",
+      "enabled": "O",
+      "function": "fn_satellite_settlement_receipts_are_append_only()",
+      "name": "tournament_unregistration_receipts_append_only",
+      "table": "tournament_unregistration_receipts"
+    },
+    {
+      "definition": "CREATE TRIGGER aa_guard_tournament_completing_claim BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_completing_claim()",
+      "enabled": "D",
+      "function": "fn_guard_tournament_completing_claim()",
+      "name": "aa_guard_tournament_completing_claim",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER aaa_guard_atomic_satellite_completion BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_guard_atomic_satellite_completion()",
+      "enabled": "D",
+      "function": "trg_guard_atomic_satellite_completion()",
+      "name": "aaa_guard_atomic_satellite_completion",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_parent_is_immutable BEFORE DELETE OR UPDATE OF status, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats, prize_pool, prize_pool_finalized, bounty_pool, bounty_pool_paid, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_pool_cents, club_id, ended_at, total_rake, current_players, on_break, break_started_at, break_ends_at ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_parent_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_parent_is_immutable()",
+      "name": "cancelled_tournament_parent_is_immutable",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER non_satellite_completed_requires_terminal_receipt AFTER INSERT OR UPDATE OF status ON public.tournaments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_non_satellite_completed_requires_terminal_receipt()",
+      "enabled": "O",
+      "function": "fn_non_satellite_completed_requires_terminal_receipt()",
+      "name": "non_satellite_completed_requires_terminal_receipt",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER poker_arena_tournament_guard BEFORE INSERT OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()",
+      "enabled": "O",
+      "function": "fn_poker_guard_arena_structure()",
+      "name": "poker_arena_tournament_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER receipted_tournament_is_immutable BEFORE DELETE OR UPDATE OF status, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats, prize_pool, prize_pool_finalized, bounty_pool, bounty_pool_paid, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_pool_cents, club_id, ended_at, current_players, on_break, break_started_at, break_ends_at ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_receipted_tournament_is_immutable()",
+      "enabled": "O",
+      "function": "fn_receipted_tournament_is_immutable()",
+      "name": "receipted_tournament_is_immutable",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER satellite_target_contract_is_immutable BEFORE UPDATE OF buy_in_amount, buy_in_fee, bounty_amount, rebuy_cost, addon_cost, is_bounty, is_pko, is_mystery_bounty, is_premium_spin, variant, tournament_type, club_id, entry_contract_locked ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_contract_is_immutable()",
+      "enabled": "O",
+      "function": "fn_satellite_target_contract_is_immutable()",
+      "name": "satellite_target_contract_is_immutable",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER spin_tournament_contract_is_draw BEFORE UPDATE OF spin_multiplier, prize_pool, spin_locked_tiers ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_spin_tournament_contract_is_draw()",
+      "enabled": "O",
+      "function": "fn_spin_tournament_contract_is_draw()",
+      "name": "spin_tournament_contract_is_draw",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER stamp_tournament_terminal_evidence_markers AFTER INSERT OR UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_terminal_evidence_markers()",
+      "enabled": "O",
+      "function": "fn_stamp_tournament_terminal_evidence_markers()",
+      "name": "stamp_tournament_terminal_evidence_markers",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_completed_stats AFTER UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_tournament_completed_stats()",
+      "enabled": "O",
+      "function": "trg_tournament_completed_stats()",
+      "name": "tournament_completed_stats",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournament_start_time_locked_during_launch BEFORE UPDATE OF start_time ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_lock_tournament_start_time_during_launch()",
+      "enabled": "O",
+      "function": "trg_lock_tournament_start_time_during_launch()",
+      "name": "tournament_start_time_locked_during_launch",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE CONSTRAINT TRIGGER tournaments_cancel_must_refund AFTER UPDATE ON public.tournaments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((upper(COALESCE(new.status, ''::text)) = ANY (ARRAY['CANCELLED'::text, 'CANCELED'::text])) AND (upper(COALESCE(old.status, ''::text)) IS DISTINCT FROM upper(COALESCE(new.status, ''::text))))) EXECUTE FUNCTION trg_tournaments_cancel_must_refund()",
+      "enabled": "O",
+      "function": "trg_tournaments_cancel_must_refund()",
+      "name": "tournaments_cancel_must_refund",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournaments_creation_guard BEFORE INSERT ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournaments_creation_guard()",
+      "enabled": "O",
+      "function": "fn_tournaments_creation_guard()",
+      "name": "tournaments_creation_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournaments_guarantee_affordable_ins BEFORE INSERT ON public.tournaments FOR EACH ROW WHEN ((COALESCE(new.guaranteed_prize, (0)::numeric) > (0)::numeric)) EXECUTE FUNCTION trg_tournaments_guarantee_affordable()",
+      "enabled": "O",
+      "function": "trg_tournaments_guarantee_affordable()",
+      "name": "tournaments_guarantee_affordable_ins",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournaments_guarantee_affordable_upd BEFORE UPDATE ON public.tournaments FOR EACH ROW WHEN (((COALESCE(new.guaranteed_prize, (0)::numeric) > (0)::numeric) AND (new.guaranteed_prize IS DISTINCT FROM old.guaranteed_prize))) EXECUTE FUNCTION trg_tournaments_guarantee_affordable()",
+      "enabled": "O",
+      "function": "trg_tournaments_guarantee_affordable()",
+      "name": "tournaments_guarantee_affordable_upd",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournaments_rank_before_complete BEFORE UPDATE ON public.tournaments FOR EACH ROW WHEN (((new.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM 'COMPLETED'::text))) EXECUTE FUNCTION trg_tournaments_rank_before_complete()",
+      "enabled": "O",
+      "function": "trg_tournaments_rank_before_complete()",
+      "name": "tournaments_rank_before_complete",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournaments_short_formats_never_break BEFORE INSERT OR UPDATE OF tournament_type, variant, synchronized_breaks ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_short_formats_never_break()",
+      "enabled": "O",
+      "function": "fn_short_formats_never_break()",
+      "name": "tournaments_short_formats_never_break",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER tournaments_spin_completed_guard BEFORE UPDATE ON public.tournaments FOR EACH ROW WHEN (((new.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM 'COMPLETED'::text))) EXECUTE FUNCTION trg_spin_completed_guard()",
+      "enabled": "O",
+      "function": "trg_spin_completed_guard()",
+      "name": "tournaments_spin_completed_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_clear_seats_on_game_end AFTER UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_clear_seats_on_game_end()",
+      "enabled": "O",
+      "function": "fn_clear_seats_on_game_end()",
+      "name": "trg_clear_seats_on_game_end",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+      "enabled": "O",
+      "function": "fn_guard_retired_club_mutation()",
+      "name": "trg_guard_retired_club_mutation",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_receipt_mystery_activation AFTER UPDATE OF mystery_bounty_stage ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_receipt_mystery_activation()",
+      "enabled": "O",
+      "function": "fn_receipt_mystery_activation()",
+      "name": "trg_receipt_mystery_activation",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_refuse_completed_with_pending_bounties BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_refuse_completed_with_pending_bounties()",
+      "enabled": "O",
+      "function": "fn_refuse_completed_with_pending_bounties()",
+      "name": "trg_refuse_completed_with_pending_bounties",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_refuse_mystery_activation_with_pending_heads BEFORE UPDATE OF mystery_bounty_stage, mystery_bounty_activation_generation ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_refuse_mystery_activation_with_pending_heads()",
+      "enabled": "O",
+      "function": "fn_refuse_mystery_activation_with_pending_heads()",
+      "name": "trg_refuse_mystery_activation_with_pending_heads",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_release_seats_on_tournament_finish AFTER UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_release_seats_on_tournament_finish()",
+      "enabled": "O",
+      "function": "fn_release_seats_on_tournament_finish()",
+      "name": "trg_release_seats_on_tournament_finish",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_retire_manager_wakes_after_terminal_status AFTER UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_retire_manager_wakes_after_terminal_status()",
+      "enabled": "O",
+      "function": "fn_retire_manager_wakes_after_terminal_status()",
+      "name": "trg_retire_manager_wakes_after_terminal_status",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_capture_management_contract AFTER INSERT OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_capture_managed_game_contract()",
+      "enabled": "O",
+      "function": "fn_capture_managed_game_contract()",
+      "name": "trg_tournaments_capture_management_contract",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_emit_game_management_event AFTER INSERT OR DELETE OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_emit_managed_game_row_event()",
+      "enabled": "O",
+      "function": "fn_emit_managed_game_row_event()",
+      "name": "trg_tournaments_emit_game_management_event",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_managed_delete_guard BEFORE DELETE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_delete()",
+      "enabled": "O",
+      "function": "fn_guard_managed_game_delete()",
+      "name": "trg_tournaments_managed_delete_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_managed_lifecycle_guard BEFORE UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle()",
+      "enabled": "O",
+      "function": "fn_guard_managed_game_lifecycle()",
+      "name": "trg_tournaments_managed_lifecycle_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_publish_readiness AFTER INSERT OR UPDATE OF guaranteed_prize, club_id, union_id, is_private, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_publish_readiness()",
+      "enabled": "O",
+      "function": "fn_guard_tournament_publish_readiness()",
+      "name": "trg_tournaments_publish_readiness",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_refuse_unbuilt_multi_day BEFORE INSERT OR UPDATE OF is_multi_day, total_days, day_number, parent_tournament_id, survivors_advance_to, flight_number, flight_end_chips_snapshot ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournaments_refuse_unbuilt_multi_day()",
+      "enabled": "O",
+      "function": "fn_tournaments_refuse_unbuilt_multi_day()",
+      "name": "trg_tournaments_refuse_unbuilt_multi_day",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_registered_contract_lock BEFORE UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_registered_tournament_contract()",
+      "enabled": "O",
+      "function": "fn_guard_registered_tournament_contract()",
+      "name": "trg_tournaments_registered_contract_lock",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_start_readiness BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_start_readiness()",
+      "enabled": "O",
+      "function": "fn_guard_tournament_start_readiness()",
+      "name": "trg_tournaments_start_readiness",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_union_ownership BEFORE INSERT ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_union_ownership()",
+      "enabled": "O",
+      "function": "fn_stamp_tournament_union_ownership()",
+      "name": "trg_tournaments_union_ownership",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_tournaments_union_ownership_upd BEFORE UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_enforce_tournament_union_ownership_update()",
+      "enabled": "O",
+      "function": "fn_enforce_tournament_union_ownership_update()",
+      "name": "trg_tournaments_union_ownership_upd",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_whole_dollar_buyin BEFORE INSERT OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_enforce_whole_dollar_buyin()",
+      "enabled": "O",
+      "function": "fn_enforce_whole_dollar_buyin()",
+      "name": "trg_whole_dollar_buyin",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_fund_overlay_on_lock BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_fund_overlay_on_lock()",
+      "enabled": "O",
+      "function": "fn_ca_fund_overlay_on_lock()",
+      "name": "zz_ca_fund_overlay_on_lock",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freerolls_are_free_buy BEFORE INSERT OR UPDATE OF buy_in_amount, buy_in_fee, tournament_type, variant, is_rebuy, add_on_available, rebuy_cost, addon_cost, rebuy_chips, addon_chips, rebuy_levels, addon_levels, max_rebuys ON public.tournaments FOR EACH ROW WHEN ((COALESCE(new.buy_in_amount, (0)::numeric) = (0)::numeric)) EXECUTE FUNCTION fn_freerolls_are_free_buy()",
+      "enabled": "O",
+      "function": "fn_freerolls_are_free_buy()",
+      "name": "zz_freerolls_are_free_buy",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_launch_guard BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW WHEN (((new.status = 'RUNNING'::text) AND (old.status IS DISTINCT FROM new.status))) EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()",
+      "enabled": "O",
+      "function": "fn_refuse_new_entries_while_frozen()",
+      "name": "zz_freeze_launch_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzz_spin_ladder_is_the_drawn_one BEFORE INSERT OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_spin_ladder_is_the_drawn_one()",
+      "enabled": "O",
+      "function": "fn_spin_ladder_is_the_drawn_one()",
+      "name": "zzz_spin_ladder_is_the_drawn_one",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzy_lock_atomic_place_tournament_status BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW WHEN ((new.status IS DISTINCT FROM old.status)) EXECUTE FUNCTION trg_lock_atomic_place_tournament_status()",
+      "enabled": "O",
+      "function": "trg_lock_atomic_place_tournament_status()",
+      "name": "zzzy_lock_atomic_place_tournament_status",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_capture_satellite_economics_on_start BEFORE INSERT OR UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_capture_satellite_economics_on_start()",
+      "enabled": "O",
+      "function": "trg_capture_satellite_economics_on_start()",
+      "name": "zzzz_capture_satellite_economics_on_start",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_freeze_finalized_tournament_prize_pool BEFORE UPDATE OF prize_pool, guaranteed_prize, prize_pool_finalized, payout_structure, spin_multiplier ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_freeze_finalized_tournament_prize_pool()",
+      "enabled": "D",
+      "function": "trg_freeze_finalized_tournament_prize_pool()",
+      "name": "zzzz_freeze_finalized_tournament_prize_pool",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_freeze_registered_tournament_settlement_contract BEFORE UPDATE OF variant, tournament_type, satellite_target_id, bubble_protection, buy_in_amount, guaranteed_prize ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_freeze_registered_tournament_settlement_contract()",
+      "enabled": "O",
+      "function": "trg_freeze_registered_tournament_settlement_contract()",
+      "name": "zzzz_freeze_registered_tournament_settlement_contract",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_refuse_normal_tournament_completed_insert BEFORE INSERT ON public.tournaments FOR EACH ROW WHEN ((new.status = 'COMPLETED'::text)) EXECUTE FUNCTION trg_refuse_normal_tournament_completed_insert()",
+      "enabled": "O",
+      "function": "trg_refuse_normal_tournament_completed_insert()",
+      "name": "zzzz_refuse_normal_tournament_completed_insert",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_tournament_pool_finalization_window_guard BEFORE UPDATE OF prize_pool_finalized ON public.tournaments FOR EACH ROW EXECUTE FUNCTION trg_tournament_pool_finalization_window_guard()",
+      "enabled": "D",
+      "function": "trg_tournament_pool_finalization_window_guard()",
+      "name": "zzzz_tournament_pool_finalization_window_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzz_tournaments_atomic_place_completion_guard BEFORE UPDATE ON public.tournaments FOR EACH ROW WHEN (((new.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM 'COMPLETED'::text))) EXECUTE FUNCTION trg_tournament_atomic_place_completion_guard()",
+      "enabled": "D",
+      "function": "trg_tournament_atomic_place_completion_guard()",
+      "name": "zzzz_tournaments_atomic_place_completion_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzy_lock_atomic_final_table_deal_status BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW WHEN ((new.status IS DISTINCT FROM old.status)) EXECUTE FUNCTION trg_lock_atomic_final_table_deal_status()",
+      "enabled": "O",
+      "function": "trg_lock_atomic_final_table_deal_status()",
+      "name": "zzzzy_lock_atomic_final_table_deal_status",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW WHEN (((new.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM 'COMPLETED'::text))) EXECUTE FUNCTION trg_atomic_final_table_deal_completion_guard()",
+      "enabled": "D",
+      "function": "trg_atomic_final_table_deal_completion_guard()",
+      "name": "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER zzzzzz_tournaments_financial_certificate BEFORE UPDATE OF status ON public.tournaments FOR EACH ROW WHEN (((new.status = 'COMPLETED'::text) AND (old.status IS DISTINCT FROM 'COMPLETED'::text))) EXECUTE FUNCTION fn_guard_tournament_completed_certificate()",
+      "enabled": "D",
+      "function": "fn_guard_tournament_completed_certificate()",
+      "name": "zzzzzz_tournaments_financial_certificate",
+      "table": "tournaments"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_wallet_change AFTER DELETE OR UPDATE OF user_id, amount, type, category, table_id, related_entity_id, created_at ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION trg_ca_reporting_follows_a_changed_fact()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_follows_a_changed_fact()",
+      "name": "ca_reporting_wallet_change",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_wallet_change_del AFTER DELETE ON public.wallet_transactions REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_repair_changed_days()",
+      "name": "ca_reporting_wallet_change_del",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_wallet_change_upd AFTER UPDATE ON public.wallet_transactions REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_repair_changed_days()",
+      "name": "ca_reporting_wallet_change_upd",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER ca_reporting_wallet_insert AFTER INSERT ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION trg_ca_reporting_wallet_insert()",
+      "enabled": "O",
+      "function": "trg_ca_reporting_wallet_insert()",
+      "name": "ca_reporting_wallet_insert",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER cancelled_tournament_wallet_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_wallet_is_immutable()",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_wallet_is_immutable()",
+      "name": "cancelled_tournament_wallet_is_immutable",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER terminal_wallet_transaction_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_terminal_wallet_transaction_is_immutable()",
+      "enabled": "O",
+      "function": "fn_terminal_wallet_transaction_is_immutable()",
+      "name": "terminal_wallet_transaction_is_immutable",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "name": "trg_ca_append_only",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER trg_ca_money_path_log AFTER INSERT ON public.wallet_transactions FOR EACH ROW WHEN (((new.type = 'credit'::text) AND ((lower(COALESCE(new.category, ''::text)) = ANY (ARRAY['prize'::text, 'bounty'::text, 'refund'::text, 'tournament_prize'::text, 'tournament_refund'::text])) OR (lower(COALESCE(new.category, ''::text)) ~~ 'tourney%'::text)))) EXECUTE FUNCTION fn_ca_money_path_log()",
+      "enabled": "O",
+      "function": "fn_ca_money_path_log()",
+      "name": "trg_ca_money_path_log",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_ca_escrow_wallet_tx AFTER INSERT ON public.wallet_transactions FOR EACH ROW WHEN ((new.related_entity_id IS NOT NULL)) EXECUTE FUNCTION fn_ca_escrow_on_wallet_tx()",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_wallet_tx()",
+      "name": "zz_ca_escrow_wallet_tx",
+      "table": "wallet_transactions"
+    },
+    {
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "name": "zz_freeze_guard",
+      "table": "wallet_transactions"
+    }
+  ]
+}

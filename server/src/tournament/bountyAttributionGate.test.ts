@@ -157,3 +157,72 @@ describe('durable bounty recovery plan', () => {
     ).toEqual({ missing: [], pendingAwards: [] });
   });
 });
+
+describe('exact per-pot awards at the bounty gate', () => {
+  const mainWinner = '00000000-0000-4000-8000-000000000006';
+  function row(awards: unknown) {
+    return {
+      ...history(),
+      winners: [{ userId: winner, amount: 600, potIndex: 0 }],
+      pots: [
+        { index: 0, eligible: [busted, winner, mainWinner] },
+        { index: 1, eligible: [busted, winner, mainWinner], awards },
+      ],
+    };
+  }
+  it('finds a later pot won by the same player as the main pot', () => {
+    expect(
+      persistedKnockoutEvidence(
+        settlement(),
+        row([{ userId: winner, amount: 300, potIndex: 1 }]),
+        busted
+      )
+    ).toMatchObject({
+      ready: true,
+      attribution: { potIndex: 1, claimants: [{ userId: winner, weight: 1 }] },
+    });
+  });
+  it.each([
+    null,
+    [],
+    {},
+    [{ userId: winner, potIndex: 0 }],
+    [{ userId: winner }],
+    [{ userId: busted, potIndex: 1 }],
+    [{ userId: 'outsider', potIndex: 1 }],
+  ])('does not replace unusable exact awards with merged totals: %j', (awards) => {
+    expect(persistedKnockoutEvidence(settlement(), row(awards), busted)).toMatchObject({
+      ready: false,
+      reason: 'knocker_not_attributable',
+    });
+  });
+  it('preserves equal sharing and distinct people across high/low award rows', () => {
+    expect(
+      persistedKnockoutEvidence(
+        settlement(),
+        row([
+          { userId: winner, amount: 75, potIndex: 1, low: false },
+          { userId: mainWinner, amount: 75, potIndex: 1, low: false },
+          { userId: winner, amount: 150, potIndex: 1, low: true },
+        ]),
+        busted
+      )
+    ).toMatchObject({
+      ready: true,
+      attribution: {
+        claimants: [
+          { userId: winner, weight: 1 },
+          { userId: mainWinner, weight: 1 },
+        ],
+      },
+    });
+  });
+  it('uses array position for a null index exactly as the database reader does', () => {
+    const value = row([{ userId: winner, amount: 300, potIndex: 1 }]);
+    (value.pots[1] as any).index = null;
+    expect(persistedKnockoutEvidence(settlement(), value, busted)).toMatchObject({
+      ready: true,
+      attribution: { potIndex: 1, knockerUserId: winner },
+    });
+  });
+});

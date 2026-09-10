@@ -16,6 +16,8 @@ CREATE TABLE public.ca_cash_commission_sources (
  requested_club_id uuid NOT NULL, accepted_payload_hash text NOT NULL,
  rake_total numeric NOT NULL CHECK(rake_total>=0 AND rake_total=round(rake_total,2)
    AND rake_total::text NOT IN ('NaN','Infinity','-Infinity')),
+ funding_union_id uuid, funding_route text NOT NULL, bank_leg_key uuid NOT NULL,
+ funding_context jsonb NOT NULL,
  rake_method text NOT NULL, contributions jsonb NOT NULL, returned_uncalled jsonb NOT NULL,
  contributor_count integer NOT NULL CHECK(contributor_count>=0),
  accepted_at timestamptz NOT NULL, settled_at timestamptz NOT NULL,
@@ -30,6 +32,8 @@ CREATE TABLE public.ca_cash_commission_facts (
  assignment_state text NOT NULL CHECK(assignment_state IN
    ('assigned','self_agent','unassigned','assigned_invalid','membership_unavailable','seat_unavailable')),
  direct_commission_rate numeric, player_rebate_rate numeric, player_rebate_entitlement numeric,
+ funding_union_id uuid, funding_club_rate numeric, funding_state text NOT NULL,
+ funding_terms jsonb NOT NULL,
  player_terms jsonb NOT NULL, hierarchy jsonb NOT NULL, errors jsonb NOT NULL,
  PRIMARY KEY(hand_id,player_id)
 );

@@ -1,123 +1,103 @@
 # Prospective Cash Commission Source Authority
 
-This is a locally verified proposal, not an applied migration. The production
-commission primitive still has its original body. The existing three-stage
-proposal remains a prerequisite, and this source cutover requires the payer
-proposal before release. No historical accrual, backpay, wallet write, production
-DDL, push, or deployment was performed by this lane.
+This is a verified local proposal, not an applied migration. There has been no
+production DDL, historical accrual, backpay, wallet repair, push or deployment by
+this lane. Bank funding and the complete Union cascade remain release gates.
 
-## What Changed
+## Source Capture
 
-The prior draft read seats, assignment and hierarchy separately for each
-contributor. A concurrent change could combine the first player's old terms
-with the second player's new terms. It also converted an explicitly assigned
-but missing or inactive agent into an apparently genuine no-agent result.
+The accepted hand's exact seat generations, booking clubs, complete agent
+hierarchy, player rebate terms, game Union/private stamp and Union club funding
+rates are read in one SQL statement for the whole hand. Later inserts use only
+that statement's snapshot. Missing or inactive assigned agents remain explicit
+invalid assignments. Missing seats never borrow a current occupant.
 
-The capture helper now reads the whole hand's seat generations, booking clubs,
-membership assignments, full hierarchy and player terms in one SQL statement.
-Subsequent inserts use only that statement's snapshot. Exact accepted seat
-identity is mandatory; a missing generation never borrows a current occupant.
-The source is captured only by the pinned accepted-hand owner's first envelope
-write, after its legacy replay refusal. The helper has no API-role execution.
+The source stores the accepted envelope hash and original
+`hand_atomic_commits.committed_at` as both `accepted_at` and `settled_at`.
+The installed receipt column defaults to `clock_timestamp()`. It is not the
+transaction-start timestamp. Capture time is diagnostic, not earning identity.
 
-Source rake credit comes from the captured current PostgreSQL allocator, whose
-body is pinned in the owner cutover. Admission also requires a matching banked
-rake record, including club, table, amount, method, contributions and returned
-uncalled amounts. Caller-supplied identities and amounts cannot manufacture a
-prospective source. Old banked sources with no immutable source facts receive
-no new accrual or adopted receipt.
+Player rebate entitlement remains exact, unrounded
+`rake_credit * player_rebate_rate`. Cash commission receipt allocations now
+also preserve `exact_cumulative_entitlement`, `exact_entitlement` and
+`downline_contract_rate`. Their old rounded `amount` is marked
+`compatibility_projection_only`; it cannot fund the prospective settlement
+path because rounding every hand loses or exaggerates fractional liabilities.
 
-Configured player rates retain the installed positive negotiated-deal, then
-positive agent-default precedence. Missing assigned terms do not fall back to
-an invented volume ladder. Rates are preserved, with invalid terms or deficient
-margins recorded for review, rather than silently clipped. Genuine unassigned
-players have a separate `legacy_volume_unbound` player-policy state; they may
-have a zero commission allocation but are never declared paid a zero rebate.
-Their rebate policy remains unresolved.
+## Receipt Boundary
 
-Player rebate entitlement is stored as exact, unrounded
-`rake_credit * player_rebate_rate`. The payer must aggregate fractional
-entitlements by period and captured payer/terms and retain the unspent fraction
-across incremental payments. Rounding each hand would erase small entitlements.
-Staff or self-agent rebate exclusions have a separate explicit policy marker.
+`03-receipt-source-boundary.sql` is the reviewed local successor to the older
+owner-body patch proposal. It keeps the accepted owner's body and signature.
 
-Sources, facts and final commission receipts reject mutation and truncation.
-The new contributor column has its own immutable guard because the actual
-existing journal trigger does not inspect newly added columns. The prospective
-commission writer is a service-only SECURITY DEFINER function; receipt and
-source tables grant service SELECT only. The earlier additive stage explicitly
-revokes DELETE and TRUNCATE even under broad default privileges.
+It adds `hand_atomic_commits.commission_capture_version` without a default,
+then sets default 1 in the activation transaction. Historical rows keep NULL.
+The marker cannot be changed after insertion. An owner-only trigger captures
+the first complete cash envelope from its exact durable stack request.
+Generation 1, matching `post_commit_payload_hash` and source facts define
+admission. An activation timestamp alone is not the source identity.
 
-## Source Interface
+Actual PostgreSQL races prove that a writer already touching the receipt blocks
+the bounded activation DDL, which times out and rolls back completely. An old
+owner already running but waiting before receipt insertion sees the new trigger
+after activation. Historical NULL and non-NULL envelopes never acquire source
+facts. Direct service writes cannot promote an old marker, forge a first
+captured envelope or rewrite a captured envelope.
 
-`ca_cash_commission_sources` stores hand identity, accepted payload hash,
-requested club, table, rake envelope, contributor count and occurrence time.
-Both `settled_at` and `accepted_at` preserve the original
-`hand_atomic_commits.committed_at`; `captured_at` is diagnostic only.
+The older `03-accepted-owner-patch.sql` remains historical proposal evidence
+and supports the smaller helper fixture. It is not the selected rolling
+activation mechanism.
 
-`ca_cash_commission_facts` is keyed by `(hand_id, player_id)` and stores
-booking club, seat generation, rake credit, assignment state, direct agent
-identity, payer user, direct commission rate, player rebate rate, exact
-`player_rebate_entitlement`, raw player terms, complete hierarchy and errors.
+## Funding Snapshot Interface
 
-`ca_cash_commission_authority` is an immutable singleton containing contract
-version 1, activation time and accepted owner before/after MD5. The owner patch
-and singleton commit together. Its timestamp is not a calendar-period finality
-guarantee. An empty query cannot permanently settle a period.
+Sources add `funding_union_id`, `funding_route`, `bank_leg_key` and
+`funding_context`. The route is `union_rake_wallet` or
+`club_chip_treasury`; bank leg key equals the accepted hand ID. Context keeps
+the actual table/private/Union stamp and host-club Union fallback.
+
+Facts add `funding_union_id`, `funding_club_rate`, `funding_state` and
+`funding_terms`. Cash rates preserve the installed precedence:
+`union_clubs.rate_cash`, then `club_commission_rate`, then .90 only when the
+Union membership exists. Missing membership and invalid rates are explicit.
+Private or standalone host-club funding and the Union's own retained club are
+separate states. A private foreign booking is unbound, not silently paid.
+
+These are immutable expected funding terms. They do not claim that a wallet
+has been credited. The bank owner must still consume them and atomically emit
+an immutable receipt after the actual wallet and ledger credit succeeds.
 
 ## Verification
 
-Run `bash docs/audits/2026-09-10-union-accounting-proposal/source-authority/run-local.sh`.
-The runner starts PostgreSQL 17 on a disposable Unix socket with no network
-listener. It exercises the real capture/admission SQL and all five captured
-`agent_commissions` triggers, including transition-table rollups and the actual
-append-only journal guard.
+- `bash source-authority/run-local.sh`: 49 helper/admission checks, including
+  actual commission triggers, observed duplicate-accrual and whole-hand
+  snapshot overlap, strict grants, fractional entitlements, funding rate
+  precedence, private routing, missing membership and invalid rate evidence.
+- `bash source-authority/owner-composition/run-local.sh`: 15 actual-owner
+  checks using 118 captured table schemas, 195 function definitions and 132
+  installed triggers, plus their captured indexes, checks and foreign keys.
+  This runs the real cash stack/lease/history/receipt/outbox owner, proves
+  activation overlap and last-fact whole-owner rollback, and replays an exact
+  lost-response request after membership terms change.
 
-Forty checks passed, including two observed PostgreSQL lock waits: concurrent
-duplicate accrual creates one contributor's three rows once; and an assignment
-mutation committed while capture is paused before its first fact insert cannot
-mix terms across contributors. The next hand sees the newly committed terms.
-Other checks cover source matching, exact seat identity, wrong amount, missing
-and inactive assignments, fractional rebate entitlement, invalid margins,
-legacy boundaries, inherited broad grants, actual permission denials, middle
-tier rollback, whole-transaction rollback, and owner patch rollback.
+The owner fixture executes the chip cash path. Defined tournament, Diamond,
+BBJ and other conditional branches are not certified by those checks. Existing
+browser policies, complete operational flows and unrelated triggers are not
+claimed covered merely because their schemas are present.
 
-The original three-stage fixture also passed after the explicit receipt-grant
-correction. It remains an arithmetic/proposal test, not a production acceptance.
+## Remaining Release Gates
 
-## Explicit Release Gaps
+1. Actual rake-bank owner routing and post-credit source receipts, including
+   observed overlapping/replayed calls and late receipt failure rollback.
+2. Source-linked Union-to-club released cash capacity and its immutable
+   consumption by Round 2 and player payments. A bank leg or positive wallet
+   balance alone is not that bridge.
+3. Compatible provisional fractional carry across earning weeks and terms,
+   without premature finality, duplicate allocation or negative clawbacks.
+4. Actual full outer Union cascade with late Sunday sources banked Monday,
+   Pacific settlement/DST mapping, deactivated captured recipients, rollback,
+   concurrent claims and exact lost-response receipts.
+5. Tournament fee source authority, reporting, management notification delivery
+   and invalid configuration resolution.
 
-- This fixture seeds accepted envelopes synthetically. It installs and patches
-  the exact current 795-line accepted owner, proves its body and rollback, but
-  does not execute the full stack/lease/escrow owner dependency graph. Its
-  source identity and acceptance composition require that integrated rehearsal.
-- The captured inventory includes thirty triggers across agents, commissions,
-  accepted commits and rake records. Only the five commission triggers execute
-  here. Agent wallet sync/autoledger, rake escrow/reporting and all payer
-  triggers still require the combined production-shaped fixture.
-- The separate payer path must consume exact fractional entitlements and
-  captured payer groups, preserve one payment identity across claim/batch/
-  weekly close, and exclude unbound historical liabilities.
-- Existing commission reporting uses accrual `created_at` and period-wide
-  settlement markers. Late causal attribution across a period boundary is not
-  proved by this proposal.
-- In-flight calls holding the old accepted-owner body may finish around a
-  CREATE OR REPLACE. The activation timestamp alone cannot certify capture for
-  that overlapping tail. A reviewed release boundary with the existing
-  settlement coordination must prove the old callers drained before admission.
-- Tournament fee source authority is still outside this prospective cash
-  contract. The inherited tournament branch in the three-stage proposal remains
-  unverified and cannot be approved by these cash checks.
-- Configuration repair and management delivery for invalid captured terms
-  remain separate acceptance tasks. No table or club is locked by this capture.
-
-Current inspected source bodies: accepted owner
-`0ef3c57a6a31acc383ce4b95a0f9519f`; allocator
-`a63ce6760dc4178f000f2214a7cf7cd6`; original commission primitive
-`1583ac138b7687091e7c5a049f0639e9`.
-
-Supabase's current function/ACL guidance and changelog were consulted.
-Object grants and RLS are independent, and default function grants must be
-explicitly removed:
-https://supabase.com/docs/guides/database/functions
-https://supabase.com/docs/guides/database/postgres/row-level-security
+The production owner and commission functions still require a fresh source and
+ACL review before any forward migration. No existing historical source becomes
+eligible through this proposal.

@@ -1,0 +1,2608 @@
+[
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "union_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "period_start",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "period_end",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "rows_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "paid_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "settlement_ref",
+        "not_null": false,
+        "type": "text"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((amount >= (0)::numeric) AND (amount = round(amount, 2))))",
+        "name": "agent_commission_settlements_amount_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((period_end > period_start))",
+        "name": "agent_commission_settlements_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+        "name": "agent_commission_settlements_club_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "UNIQUE (club_id, user_id, period_start, period_end)",
+        "name": "agent_commission_settlements_club_id_user_id_period_start_p_key",
+        "type": "u"
+      },
+      {
+        "definition": "PRIMARY KEY (id)",
+        "name": "agent_commission_settlements_pkey",
+        "type": "p"
+      },
+      {
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "service_role=arwdDxtm/postgres",
+      "authenticated=r/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX agent_commission_settlements_pkey ON public.agent_commission_settlements USING btree (id)",
+        "name": "agent_commission_settlements_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX agent_commission_settlements_club_id_user_id_period_start_p_key ON public.agent_commission_settlements USING btree (club_id, user_id, period_start, period_end)",
+        "name": "agent_commission_settlements_club_id_user_id_period_start_p_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX agent_commission_settlements_pair_idx ON public.agent_commission_settlements USING btree (club_id, user_id, period_start, period_end)",
+        "name": "agent_commission_settlements_pair_idx",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "agent_commission_settlements",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "owed",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "rows_behind",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "oldest_unsettled",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (club_id, user_id)",
+        "name": "agent_commission_unsettled_rollup_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX agent_commission_unsettled_rollup_pkey ON public.agent_commission_unsettled_rollup USING btree (club_id, user_id)",
+        "name": "agent_commission_unsettled_rollup_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "agent_commission_unsettled_rollup",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "0.1",
+        "generated": "",
+        "identity": "",
+        "name": "commission_rate",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "'rake'::text",
+        "generated": "",
+        "identity": "",
+        "name": "source_type",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "source_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "notes",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "settled_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+        "name": "agent_commissions_club_id_fkey",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "agent_commissions_pkey", "type": "p" },
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+        "name": "agent_commissions_user_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID",
+        "name": "ck_whole_cents",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "service_role=arwdDxtm/postgres",
+      "authenticated=r/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX agent_commissions_pkey ON public.agent_commissions USING btree (id)",
+        "name": "agent_commissions_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agent_commissions_user ON public.agent_commissions USING btree (user_id)",
+        "name": "idx_agent_commissions_user",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX agent_commissions_user_recent_idx ON public.agent_commissions USING btree (user_id, created_at DESC)",
+        "name": "agent_commissions_user_recent_idx",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_agent_commissions_source ON public.agent_commissions USING btree (user_id, source_id, source_type) WHERE (source_id IS NOT NULL)",
+        "name": "uq_agent_commissions_source",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agent_commissions_club_id ON public.agent_commissions USING btree (club_id)",
+        "name": "idx_agent_commissions_club_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agent_commissions_source_lookup ON public.agent_commissions USING btree (source_id, source_type, club_id) WHERE (source_id IS NOT NULL)",
+        "name": "idx_agent_commissions_source_lookup",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX agent_commissions_unsettled_idx ON public.agent_commissions USING btree (club_id, user_id) INCLUDE (amount, created_at) WHERE (settled_at IS NULL)",
+        "name": "agent_commissions_unsettled_idx",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agent_commissions_club_created ON public.agent_commissions USING btree (club_id, created_at) INCLUDE (user_id, amount, settled_at)",
+        "name": "idx_agent_commissions_club_created",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX agent_commissions_open_idx ON public.agent_commissions USING btree (club_id, user_id, created_at) INCLUDE (amount, id) WHERE (settled_at IS NULL)",
+        "name": "agent_commissions_open_idx",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "agent_commissions",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "membership_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "role",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "'active'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "parent_agent_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "commission_rate",
+        "not_null": true,
+        "type": "numeric(5,4)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "player_rakeback_rate",
+        "not_null": true,
+        "type": "numeric(5,4)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "credit_limit",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "credit_used",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_prepaid",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "business_balance",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "player_balance",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "promo_balance",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_players",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "active_player_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "sub_agent_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "weekly_rake_generated",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "lifetime_earnings",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "joined_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_active_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "auto_rakeback_enabled",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "0.0000",
+        "generated": "",
+        "identity": "",
+        "name": "rakeback_percentage",
+        "not_null": false,
+        "type": "numeric(5,4)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "agent_wallet_balance",
+        "not_null": false,
+        "type": "numeric(18,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "player_wallet_balance",
+        "not_null": false,
+        "type": "numeric(18,4)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "promo_wallet_balance",
+        "not_null": false,
+        "type": "numeric(18,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "lifetime_rake_generated",
+        "not_null": false,
+        "type": "numeric(18,4)"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((agent_wallet_balance >= (0)::numeric))",
+        "name": "agents_agent_wallet_balance_nonneg",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+        "name": "agents_club_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "UNIQUE (club_id, user_id)",
+        "name": "agents_club_id_user_id_key",
+        "type": "u"
+      },
+      {
+        "definition": "CHECK (((commission_rate >= (0)::numeric) AND (commission_rate <= 0.70)))",
+        "name": "agents_commission_rate_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((credit_used >= (0)::numeric))",
+        "name": "agents_credit_used_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "agents_pkey", "type": "p" },
+      {
+        "definition": "CHECK (((player_rakeback_rate >= (0)::numeric) AND (player_rakeback_rate <= 0.50)))",
+        "name": "agents_player_rakeback_rate_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((promo_wallet_balance >= (0)::numeric))",
+        "name": "agents_promo_wallet_balance_nonneg",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text])))",
+        "name": "agents_role_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text])))",
+        "name": "agents_status_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((credit_used <= credit_limit) OR (is_prepaid = true)))",
+        "name": "check_credit",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((player_wallet_balance IS NULL) OR (player_wallet_balance = round(player_wallet_balance, 2))))",
+        "name": "chk_player_wallet_balance_is_two_decimal_places",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id)",
+        "name": "fk_agents_parent",
+        "type": "f"
+      },
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "name": "fk_agents_user_id_profiles",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=xtm/postgres",
+      "authenticated=rxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX agents_pkey ON public.agents USING btree (id)",
+        "name": "agents_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX agents_club_id_user_id_key ON public.agents USING btree (club_id, user_id)",
+        "name": "agents_club_id_user_id_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agents_club ON public.agents USING btree (club_id)",
+        "name": "idx_agents_club",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agents_user ON public.agents USING btree (user_id)",
+        "name": "idx_agents_user",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_agents_parent ON public.agents USING btree (parent_agent_id)",
+        "name": "idx_agents_parent",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "agents",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "actor_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "actor_role",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "action",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "target_type",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "target_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "agent_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": false,
+        "type": "numeric(20,4)"
+      },
+      {
+        "default": "'CHIPS'::text",
+        "generated": "",
+        "identity": "",
+        "name": "currency",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "before_state",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "after_state",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "reason",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "ip_address",
+        "not_null": false,
+        "type": "inet"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_agent",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "request_id",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (actor_id) REFERENCES auth.users(id) ON DELETE RESTRICT",
+        "name": "audit_trail_actor_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK ((actor_role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'super_agent'::text, 'agent'::text, 'sub_agent'::text, 'player'::text, 'host'::text, 'union_admin'::text, 'platform_admin'::text, 'system'::text])))",
+        "name": "audit_trail_actor_role_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE SET NULL",
+        "name": "audit_trail_club_id_fkey",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "audit_trail_pkey", "type": "p" },
+      {
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=rxtm/postgres",
+      "authenticated=rxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX audit_trail_pkey ON public.audit_trail USING btree (id)",
+        "name": "audit_trail_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_audit_trail_actor ON public.audit_trail USING btree (actor_id, created_at DESC)",
+        "name": "idx_audit_trail_actor",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_audit_trail_club_action ON public.audit_trail USING btree (club_id, action, created_at DESC)",
+        "name": "idx_audit_trail_club_action",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "audit_trail",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "nextval('bbj_hand_evidence_log_id_seq'::regclass)",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "kind",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "payout_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": false,
+        "type": "bigint"
+      },
+      {
+        "default": "CURRENT_USER",
+        "generated": "",
+        "identity": "",
+        "name": "db_role",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+        "generated": "",
+        "identity": "",
+        "name": "application",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "detail",
+        "not_null": true,
+        "type": "jsonb"
+      }
+    ],
+    "constraints": [
+      { "definition": "PRIMARY KEY (id)", "name": "bbj_hand_evidence_log_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=rm/postgres",
+      "authenticated=rm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_hand_evidence_log_pkey ON public.bbj_hand_evidence_log USING btree (id)",
+        "name": "bbj_hand_evidence_log_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "bbj_hand_evidence_log",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pool_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": false,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "winner_user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "loser_user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "total_amount",
+        "not_null": true,
+        "type": "numeric(20,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "winner_share",
+        "not_null": true,
+        "type": "numeric(20,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "loser_share",
+        "not_null": true,
+        "type": "numeric(20,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_share",
+        "not_null": true,
+        "type": "numeric(20,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_player_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "metadata",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "'main'::text",
+        "generated": "",
+        "identity": "",
+        "name": "kind",
+        "not_null": true,
+        "type": "text"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((kind = ANY (ARRAY['main'::text, 'mini'::text])))",
+        "name": "bbj_payouts_kind_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "bbj_payouts_pkey", "type": "p" },
+      {
+        "definition": "FOREIGN KEY (pool_id) REFERENCES bbj_pools(id) ON DELETE RESTRICT",
+        "name": "bbj_payouts_pool_id_fkey",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=rm/postgres",
+      "authenticated=rm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_payouts_pool_table_hand_uidx ON public.bbj_payouts USING btree (pool_id, table_id, hand_number)",
+        "name": "bbj_payouts_pool_table_hand_uidx",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_payouts_pkey ON public.bbj_payouts USING btree (id)",
+        "name": "bbj_payouts_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_bbj_payouts_table_hand ON public.bbj_payouts USING btree (table_id, hand_number)",
+        "name": "idx_bbj_payouts_table_hand",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "bbj_payouts",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "union_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "pool_amount",
+        "not_null": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands_contributed",
+        "not_null": false,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_hit_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "last_hit_amount",
+        "not_null": false,
+        "type": "numeric(14,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_winner_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "main_balance",
+        "not_null": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "backup_balance",
+        "not_null": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "promo_balance",
+        "not_null": true,
+        "type": "numeric(14,2)"
+      },
+      {
+        "default": "'active'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_contributed",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "0.00",
+        "generated": "",
+        "identity": "",
+        "name": "total_paid_out",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hit_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_loser_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "merged_into_pool_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "alloc_cum_amount",
+        "not_null": true,
+        "type": "numeric(14,4)"
+      },
+      {
+        "default": "5000.00",
+        "generated": "",
+        "identity": "",
+        "name": "mini_reserve_floor",
+        "not_null": true,
+        "type": "numeric(14,2)"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((backup_balance >= (0)::numeric))",
+        "name": "bbj_pools_backup_balance_nonneg",
+        "type": "c"
+      },
+      { "definition": "UNIQUE (club_id)", "name": "bbj_pools_club_id_key", "type": "u" },
+      {
+        "definition": "CHECK ((main_balance >= (0)::numeric))",
+        "name": "bbj_pools_main_balance_nonneg",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "bbj_pools_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((promo_balance >= (0)::numeric))",
+        "name": "bbj_pools_promo_balance_nonneg",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((alloc_cum_amount IS NULL) OR (alloc_cum_amount = round(alloc_cum_amount, 2))))",
+        "name": "chk_alloc_cum_amount_is_two_decimal_places",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=rm/postgres",
+      "authenticated=rm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_pools_pkey ON public.bbj_pools USING btree (id)",
+        "name": "bbj_pools_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX bbj_pools_club_id_key ON public.bbj_pools USING btree (club_id)",
+        "name": "bbj_pools_club_id_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_bbj_pools_union ON public.bbj_pools USING btree (union_id) WHERE (union_id IS NOT NULL)",
+        "name": "idx_bbj_pools_union",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_bbj_pools_union_active ON public.bbj_pools USING btree (union_id) WHERE ((club_id IS NULL) AND (union_id IS NOT NULL) AND (status = 'active'::text))",
+        "name": "uq_bbj_pools_union_active",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_bbj_pools_club_active ON public.bbj_pools USING btree (club_id) WHERE ((club_id IS NOT NULL) AND (status = 'active'::text))",
+        "name": "uq_bbj_pools_club_active",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "bbj_pools",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "a",
+        "name": "id",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_history_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pot_index",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "board",
+        "not_null": true,
+        "type": "smallint"
+      },
+      {
+        "default": "'high'::text",
+        "generated": "",
+        "identity": "",
+        "name": "side",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "UNIQUE (hand_history_id, pot_index, board, side, user_id)",
+        "name": "bomb_pot_award_units_idem",
+        "type": "u"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "bomb_pot_award_units_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((side = ANY (ARRAY['high'::text, 'low'::text])))",
+        "name": "bomb_pot_award_units_side_check",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=xtm/postgres",
+      "authenticated=rxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX bomb_pot_award_units_pkey ON public.bomb_pot_award_units USING btree (id)",
+        "name": "bomb_pot_award_units_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX bomb_pot_award_units_idem ON public.bomb_pot_award_units USING btree (hand_history_id, pot_index, board, side, user_id)",
+        "name": "bomb_pot_award_units_idem",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "bomb_pot_award_units",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "1",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "smallint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "14",
+        "generated": "",
+        "identity": "",
+        "name": "settlement_window_days",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "note",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "cash_games_enabled",
+        "not_null": true,
+        "type": "boolean"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE RESTRICT",
+        "name": "ca_arena_settings_club_id_fkey",
+        "type": "f"
+      },
+      { "definition": "CHECK ((id = 1))", "name": "ca_arena_settings_id_check", "type": "c" },
+      { "definition": "PRIMARY KEY (id)", "name": "ca_arena_settings_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((settlement_window_days >= 0))",
+        "name": "ca_arena_settings_settlement_window_days_check",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE INDEX idx_ca_arena_settings_club_id_fk ON public.ca_arena_settings USING btree (club_id)",
+        "name": "idx_ca_arena_settings_club_id_fk",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX ca_arena_settings_pkey ON public.ca_arena_settings USING btree (id)",
+        "name": "ca_arena_settings_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_arena_settings",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "reason",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "tagged_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "active",
+        "not_null": true,
+        "type": "boolean"
+      }
+    ],
+    "constraints": [
+      { "definition": "PRIMARY KEY (user_id)", "name": "ca_cert_accounts_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_cert_accounts_pkey ON public.ca_cert_accounts USING btree (user_id)",
+        "name": "ca_cert_accounts_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_cert_accounts",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stat_date",
+        "not_null": true,
+        "type": "date"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "rows_counted",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (club_id, stat_date)",
+        "name": "ca_club_commission_daily_pkey",
+        "type": "p"
+      },
+      {
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_club_commission_daily_pkey ON public.ca_club_commission_daily USING btree (club_id, stat_date)",
+        "name": "ca_club_commission_daily_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_club_commission_daily",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stat_date",
+        "not_null": true,
+        "type": "date"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "cash_net",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "tournament_net",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (club_id, user_id, stat_date)",
+        "name": "ca_club_player_daily_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_club_player_daily_pkey ON public.ca_club_player_daily USING btree (club_id, user_id, stat_date)",
+        "name": "ca_club_player_daily_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_ca_club_player_daily_range ON public.ca_club_player_daily USING btree (club_id, stat_date, user_id)",
+        "name": "idx_ca_club_player_daily_range",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "ca_club_player_daily",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stat_date",
+        "not_null": true,
+        "type": "date"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "rake",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "bbj",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "pot",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "source_rows",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (club_id, stat_date)",
+        "name": "ca_club_rake_daily_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_club_rake_daily_pkey ON public.ca_club_rake_daily USING btree (club_id, stat_date)",
+        "name": "ca_club_rake_daily_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_club_rake_daily",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tournament_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stat_date",
+        "not_null": true,
+        "type": "date"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "fee",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "winnings",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (club_id, tournament_id, stat_date)",
+        "name": "ca_club_tournament_daily_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_club_tournament_daily_pkey ON public.ca_club_tournament_daily USING btree (club_id, tournament_id, stat_date)",
+        "name": "ca_club_tournament_daily_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_ca_club_tournament_daily_range ON public.ca_club_tournament_daily USING btree (club_id, stat_date, tournament_id)",
+        "name": "idx_ca_club_tournament_daily_range",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "ca_club_tournament_daily",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tournament_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stat_date",
+        "not_null": true,
+        "type": "date"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (club_id, tournament_id, user_id, stat_date)",
+        "name": "ca_club_tournament_player_daily_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_club_tournament_player_daily_pkey ON public.ca_club_tournament_player_daily USING btree (club_id, tournament_id, user_id, stat_date)",
+        "name": "ca_club_tournament_player_daily_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_club_tournament_player_daily",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "source",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "owner",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "24",
+        "generated": "",
+        "identity": "",
+        "name": "sla_hours",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "'active'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "auto_resolve_hours",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "retired_by",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "''::text",
+        "generated": "",
+        "identity": "",
+        "name": "note",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((auto_resolve_hours IS NULL) OR (auto_resolve_hours > 0)))",
+        "name": "ca_detector_registry_auto_resolve_hours_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (source)", "name": "ca_detector_registry_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((sla_hours > 0))",
+        "name": "ca_detector_registry_sla_hours_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'retired'::text])))",
+        "name": "ca_detector_registry_status_check",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_detector_registry_pkey ON public.ca_detector_registry USING btree (source)",
+        "name": "ca_detector_registry_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_detector_registry",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "nextval('ca_diamond_incidents_id_seq'::regclass)",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "occurred_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "rule",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "'info'::text",
+        "generated": "",
+        "identity": "",
+        "name": "severity",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": false,
+        "type": "numeric(20,0)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "writer",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "CURRENT_USER",
+        "generated": "",
+        "identity": "",
+        "name": "db_role",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+        "generated": "",
+        "identity": "",
+        "name": "app_name",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "detail",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "resolved_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      { "definition": "PRIMARY KEY (id)", "name": "ca_diamond_incidents_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((severity = ANY (ARRAY['info'::text, 'warning'::text, 'critical'::text])))",
+        "name": "ca_diamond_incidents_severity_check",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_diamond_incidents_pkey ON public.ca_diamond_incidents USING btree (id)",
+        "name": "ca_diamond_incidents_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX ca_diamond_incidents_rule_idx ON public.ca_diamond_incidents USING btree (rule, occurred_at DESC)",
+        "name": "ca_diamond_incidents_rule_idx",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX ca_diamond_incidents_open_idx ON public.ca_diamond_incidents USING btree (occurred_at DESC) WHERE (resolved_at IS NULL)",
+        "name": "ca_diamond_incidents_open_idx",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "ca_diamond_incidents",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "type",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "balance_after",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "description",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "reference_id",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "transaction_type",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "source",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "metadata",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "counterparty",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "issuance_class",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "archived_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "deleted_profile_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "deletion_reason",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "CURRENT_USER",
+        "generated": "",
+        "identity": "",
+        "name": "archived_by_role",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+        "generated": "",
+        "identity": "",
+        "name": "archived_app",
+        "not_null": true,
+        "type": "text"
+      }
+    ],
+    "constraints": [
+      { "definition": "PRIMARY KEY (id)", "name": "ca_diamond_journal_archive_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_diamond_journal_archive_pkey ON public.ca_diamond_journal_archive USING btree (id)",
+        "name": "ca_diamond_journal_archive_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_ca_diamond_journal_archive_user ON public.ca_diamond_journal_archive USING btree (user_id, created_at DESC)",
+        "name": "idx_ca_diamond_journal_archive_user",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_ca_diamond_journal_archive_archived_at ON public.ca_diamond_journal_archive USING btree (archived_at DESC)",
+        "name": "idx_ca_diamond_journal_archive_archived_at",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "ca_diamond_journal_archive",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "rule",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "'log'::text",
+        "generated": "",
+        "identity": "",
+        "name": "mode",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "flip_after",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "7",
+        "generated": "",
+        "identity": "",
+        "name": "clean_days_required",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "flipped_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "flipped_by",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "ruling",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "note",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((clean_days_required >= 0))",
+        "name": "ca_diamond_rule_modes_clean_days_required_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((mode = ANY (ARRAY['log'::text, 'refuse'::text])))",
+        "name": "ca_diamond_rule_modes_mode_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (rule)", "name": "ca_diamond_rule_modes_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_diamond_rule_modes_pkey ON public.ca_diamond_rule_modes USING btree (rule)",
+        "name": "ca_diamond_rule_modes_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "ca_diamond_rule_modes",
+    "rls": true,
+    "schema": "public"
+  }
+]

@@ -149,8 +149,13 @@ BEGIN
     v_entitlement := round(p_rake_credit*v_floor,2);
     v_slice := v_entitlement-v_paid;
     v_paid := v_entitlement;
-    v_allocations := v_allocations || jsonb_build_object('agent_id',v_agent.id,'user_id',v_agent.user_id,
-      'depth',v_depth,'role',v_agent.role,'parent_agent_id',v_agent.parent_agent_id,'contract_rate',v_agent.commission_rate,'amount',v_slice);
+    v_allocations := v_allocations || (jsonb_build_object('agent_id',v_agent.id,'user_id',v_agent.user_id,
+      'depth',v_depth,'role',v_agent.role,'parent_agent_id',v_agent.parent_agent_id,'contract_rate',v_agent.commission_rate,'amount',v_slice)
+      || CASE WHEN p_source_type='rake_settlement' THEN jsonb_build_object(
+        'exact_cumulative_entitlement',p_rake_credit*v_agent.commission_rate,
+        'exact_entitlement',p_rake_credit*(v_agent.commission_rate-coalesce(v_previous_rate,0)),
+        'downline_contract_rate',coalesce(v_previous_rate,0),
+        'amount_authority','compatibility_projection_only') ELSE '{}'::jsonb END);
     v_previous_rate := v_agent.commission_rate;
     v_current := v_agent.parent_agent_id;
   END LOOP;

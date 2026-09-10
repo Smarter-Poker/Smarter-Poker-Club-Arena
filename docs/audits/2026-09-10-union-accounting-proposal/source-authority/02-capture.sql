@@ -4,6 +4,7 @@
 CREATE FUNCTION public.fn_ca_capture_cash_commission_source(p_hand_id uuid,p_stacks jsonb)
 RETURNS void LANGUAGE plpgsql SET search_path TO public,extensions,pg_temp AS $f$
 DECLARE
+ v_scope jsonb; v_funding_state text; v_funding_rate numeric; v_funding_terms jsonb;
  v_commit public.hand_atomic_commits%ROWTYPE; v_rake jsonb; v_snapshot jsonb; v_fact jsonb;
  v_errors jsonb; v_hash text; v_existing text; v_state text; v_chain jsonb;
  v_direct uuid; v_payer uuid; v_rate numeric; v_direct_rate numeric; v_terms jsonb;
@@ -25,16 +26,26 @@ BEGIN
    IF v_existing IS DISTINCT FROM v_hash THEN RAISE EXCEPTION 'Commission source hash conflict'; END IF;
    RETURN;
  END IF;
- WITH RECURSIVE shares AS MATERIALIZED (
+ WITH RECURSIVE scope AS MATERIALIZED (
+   SELECT t.id AS table_id,t.club_id AS table_club_id,coalesce(t.is_private,false) AS is_private,
+     t.union_id AS table_union_id,c.union_id AS host_club_union_id,
+     CASE WHEN coalesce(t.is_private,false) THEN NULL ELSE coalesce(t.union_id,c.union_id) END AS effective_union_id,
+     CASE WHEN coalesce(t.is_private,false) OR coalesce(t.union_id,c.union_id) IS NULL
+       THEN 'club_chip_treasury' ELSE 'union_rake_wallet' END AS funding_route
+   FROM public.tables t LEFT JOIN public.clubs c ON c.id=(v_rake->>'club_id')::uuid
+   WHERE t.id=v_commit.table_id
+ ), shares AS MATERIALIZED (
    SELECT * FROM public.fn_allocate_rake_credits((v_rake->>'amount')::numeric,
      v_rake->'contributions',v_rake->>'method')
  ), roster AS MATERIALIZED (
-   SELECT a.*,s.id AS seat_id,s.joined_at AS seat_joined_at,s.club_id AS booked_club_id,
+   SELECT a.*,sc.effective_union_id AS funding_union_id,bc.id AS funding_booked_club,
+     bc.union_id AS booked_club_union_id,uc.id AS union_membership_id,uc.rate_cash,uc.club_commission_rate,
+     s.id AS seat_id,s.joined_at AS seat_joined_at,s.club_id AS booked_club_id,
      cm.user_id AS member_user_id,cm.agent_id AS assigned_agent_user_id,cm.role AS member_role,
      cm.player_rakeback_pct,cm.status AS member_status,cm.membership_lifecycle_status,
      d.id AS direct_id,d.user_id AS direct_user_id,d.commission_rate AS direct_rate,
      d.player_rakeback_rate AS default_player_rate,d.status AS direct_status
-   FROM shares a
+   FROM shares a CROSS JOIN scope sc
    LEFT JOIN LATERAL (SELECT value FROM jsonb_array_elements(p_stacks)
      WHERE value->>'user_id'=a.user_id::text) st ON true
    LEFT JOIN public.table_seats s ON s.table_id=v_commit.table_id AND s.user_id=a.user_id
@@ -43,6 +54,8 @@ BEGIN
    LEFT JOIN public.club_members cm ON cm.user_id=a.user_id AND cm.club_id=s.club_id
    -- An explicit assignment never falls back to the player when invalid.
    LEFT JOIN public.agents d ON d.user_id=coalesce(cm.agent_id,a.user_id) AND d.club_id=s.club_id
+   LEFT JOIN public.clubs bc ON bc.id=s.club_id
+   LEFT JOIN public.union_clubs uc ON uc.union_id=sc.effective_union_id AND uc.club_id=s.club_id
  ), chain AS (
    SELECT r.user_id AS player_id,a.id,a.user_id,a.club_id,a.commission_rate,a.parent_agent_id,a.role,a.status,
      1 AS depth,ARRAY[a.id] AS path,false AS cycle
@@ -57,15 +70,19 @@ BEGIN
      'club_id',c.club_id,'contract_rate',c.commission_rate,'parent_agent_id',c.parent_agent_id,
      'role',c.role,'status',c.status,'depth',c.depth,'cycle',c.cycle) ORDER BY depth)
      FROM chain c WHERE c.player_id=r.user_id),'[]'::jsonb)) ORDER BY r.user_id),'[]'::jsonb)
- INTO v_snapshot FROM roster r;
+ ,(SELECT to_jsonb(sc) FROM scope sc) INTO v_snapshot,v_scope FROM roster r;
+ IF v_scope IS NULL OR v_scope->>'table_club_id' IS DISTINCT FROM v_rake->>'club_id' THEN
+   RAISE EXCEPTION 'Accepted commission source lost its table and host club scope';
+ END IF;
  IF (SELECT coalesce(sum((f->>'credit')::numeric),0) FROM jsonb_array_elements(v_snapshot) f)
     IS DISTINCT FROM (v_rake->>'amount')::numeric THEN
    RAISE EXCEPTION 'Accepted rake allocator does not conserve source amount';
  END IF;
  INSERT INTO public.ca_cash_commission_sources(hand_id,table_id,hand_number,requested_club_id,
-   accepted_payload_hash,rake_total,rake_method,contributions,returned_uncalled,contributor_count,accepted_at,settled_at)
+   accepted_payload_hash,rake_total,funding_union_id,funding_route,bank_leg_key,funding_context,rake_method,contributions,returned_uncalled,contributor_count,accepted_at,settled_at)
  VALUES(p_hand_id,v_commit.table_id,v_commit.hand_number,(v_rake->>'club_id')::uuid,
-   v_hash,(v_rake->>'amount')::numeric,v_rake->>'method',v_rake->'contributions',
+   v_hash,(v_rake->>'amount')::numeric,(v_scope->>'effective_union_id')::uuid,
+   v_scope->>'funding_route',p_hand_id,v_scope,v_rake->>'method',v_rake->'contributions',
    coalesce(v_rake->'returned_uncalled','{}'::jsonb),jsonb_array_length(v_snapshot),v_commit.committed_at,v_commit.committed_at);
  FOR v_fact IN SELECT value FROM jsonb_array_elements(v_snapshot) LOOP
    v_errors:='[]'::jsonb; v_chain:=v_fact->'hierarchy';
@@ -75,6 +92,33 @@ BEGIN
      'member_status',v_fact->'member_status','membership_lifecycle_status',v_fact->'membership_lifecycle_status',
      'assigned_agent_user_id',v_fact->'assigned_agent_user_id',
      'negotiated_rate',v_fact->'player_rakeback_pct','agent_default_rate',v_fact->'default_player_rate','errors','[]'::jsonb);
+   v_funding_rate:=NULL;
+   v_funding_terms:=jsonb_build_object('union_membership_id',v_fact->'union_membership_id',
+     'booked_club_union_id',v_fact->'booked_club_union_id','raw_cash_rate',v_fact->'rate_cash',
+     'raw_club_commission_rate',v_fact->'club_commission_rate','errors','[]'::jsonb);
+   IF v_fact->>'funding_booked_club' IS NULL THEN
+     v_funding_state:='booked_club_unavailable';
+   ELSIF v_fact->>'funding_union_id' IS NULL THEN
+     IF v_fact->>'booked_club_id'=v_rake->>'club_id' THEN
+       v_funding_state:='club_treasury_owner';v_funding_rate:=1;
+       v_funding_terms:=v_funding_terms||jsonb_build_object('rate_source','private_or_standalone_owner');
+     ELSE v_funding_state:='private_foreign_booking_unbound'; END IF;
+   ELSIF v_fact->>'booked_club_id'=v_fact->>'funding_union_id' THEN
+     v_funding_state:='union_self_retained';
+   ELSIF v_fact->>'union_membership_id' IS NULL THEN
+     v_funding_state:='union_membership_unavailable';
+   ELSE
+     v_funding_rate:=coalesce((v_fact->>'rate_cash')::numeric,(v_fact->>'club_commission_rate')::numeric,.90);
+     v_funding_terms:=v_funding_terms||jsonb_build_object('rate_source',
+       CASE WHEN v_fact->>'rate_cash' IS NOT NULL THEN 'cash_game_rate'
+            WHEN v_fact->>'club_commission_rate' IS NOT NULL THEN 'club_rate' ELSE 'installed_default_90_percent' END);
+     IF v_funding_rate<0 OR v_funding_rate>1 OR v_funding_rate::text IN ('NaN','Infinity','-Infinity') THEN
+       v_funding_state:='union_rate_invalid';
+     ELSE v_funding_state:='union_member'; END IF;
+   END IF;
+   IF v_funding_state NOT IN ('club_treasury_owner','union_member','union_self_retained') THEN
+     v_funding_terms:=v_funding_terms||jsonb_build_object('errors',jsonb_build_array(v_funding_state));
+   END IF;
    IF (v_fact->>'player_rakeback_pct')::numeric<0
       OR (v_fact->>'default_player_rate')::numeric<0 THEN
      v_errors:=v_errors||jsonb_build_array('accepted_negative_rebate_terms');
@@ -130,12 +174,12 @@ BEGIN
    END IF;
    INSERT INTO public.ca_cash_commission_facts(hand_id,player_id,booked_club_id,seat_id,seat_joined_at,
      rake_credit,direct_agent_id,payer_user_id,assignment_state,direct_commission_rate,
-     player_rebate_rate,player_rebate_entitlement,player_terms,hierarchy,errors)
+     player_rebate_rate,player_rebate_entitlement,funding_union_id,funding_club_rate,funding_state,funding_terms,player_terms,hierarchy,errors)
    VALUES(p_hand_id,(v_fact->>'user_id')::uuid,(v_fact->>'booked_club_id')::uuid,
      (v_fact->>'seat_id')::uuid,(v_fact->>'seat_joined_at')::timestamptz,(v_fact->>'credit')::numeric,
      v_direct,v_payer,v_state,v_direct_rate,v_rate,
      CASE WHEN jsonb_array_length(v_errors)=0 THEN (v_fact->>'credit')::numeric*v_rate ELSE NULL END,
-     v_terms,v_chain,v_errors);
+     (v_fact->>'funding_union_id')::uuid,v_funding_rate,v_funding_state,v_funding_terms,v_terms,v_chain,v_errors);
  END LOOP;
 END $f$;
 REVOKE ALL ON FUNCTION public.fn_ca_capture_cash_commission_source(uuid,jsonb)

@@ -1,0 +1,347 @@
+[
+  {
+    "schema": "public",
+    "name": "bbj_contributions",
+    "rls": true,
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "pool_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(14,2)",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "big_blind",
+        "type": "numeric(10,2)",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "stakes_tier",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "main_portion",
+        "type": "numeric(10,4)",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "backup_portion",
+        "type": "numeric(10,4)",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "promo_portion",
+        "type": "numeric(10,4)",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      { "name": "bbj_contributions_pkey", "type": "p", "definition": "PRIMARY KEY (id)" }
+    ],
+    "indexes": [
+      {
+        "name": "idx_bbj_contrib_pool_nullhand",
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX idx_bbj_contrib_pool_nullhand ON public.bbj_contributions USING btree (pool_id, table_id, hand_number) WHERE (hand_id IS NULL)"
+      },
+      {
+        "name": "bbj_contributions_pkey",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX bbj_contributions_pkey ON public.bbj_contributions USING btree (id)"
+      },
+      {
+        "name": "idx_bbj_contrib_hand_id",
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX idx_bbj_contrib_hand_id ON public.bbj_contributions USING btree (hand_id) WHERE (hand_id IS NOT NULL)"
+      },
+      {
+        "name": "uq_bbj_contributions_pool_hand",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX uq_bbj_contributions_pool_hand ON public.bbj_contributions USING btree (pool_id, hand_id) WHERE (hand_id IS NOT NULL)"
+      },
+      {
+        "name": "idx_bbj_contrib_table_hand_number",
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX idx_bbj_contrib_table_hand_number ON public.bbj_contributions USING btree (table_id, hand_number)"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "insurance_transactions",
+    "rls": true,
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "player_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "equity_percent",
+        "type": "numeric(5,2)",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "premium",
+        "type": "numeric(10,2)",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "insured_amount",
+        "type": "numeric(10,2)",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "payout",
+        "type": "numeric(10,2)",
+        "default": "0.00",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "player_won",
+        "type": "boolean",
+        "default": "false",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "net_result",
+        "type": "numeric(10,2)",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "bank_type",
+        "type": "character varying(10)",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "bank_entity_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "kind",
+        "type": "character varying(16)",
+        "default": "'insurance'::character varying",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "insurance_transactions_bank_type_check",
+        "type": "c",
+        "definition": "CHECK (((bank_type)::text = ANY ((ARRAY['union'::character varying, 'club'::character varying])::text[])))"
+      },
+      {
+        "name": "insurance_transactions_club_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+      },
+      { "name": "insurance_transactions_pkey", "type": "p", "definition": "PRIMARY KEY (id)" },
+      {
+        "name": "insurance_transactions_player_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "insurance_transactions_table_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "insurance_transactions_union_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE SET NULL"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "insurance_transactions_table_hand_player_uidx",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX insurance_transactions_table_hand_player_uidx ON public.insurance_transactions USING btree (table_id, hand_number, player_id)"
+      },
+      {
+        "name": "insurance_transactions_pkey",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX insurance_transactions_pkey ON public.insurance_transactions USING btree (id)"
+      },
+      {
+        "name": "idx_insurance_tx_player",
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX idx_insurance_tx_player ON public.insurance_transactions USING btree (player_id)"
+      },
+      {
+        "name": "idx_insurance_tx_club",
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX idx_insurance_tx_club ON public.insurance_transactions USING btree (club_id)"
+      },
+      {
+        "name": "idx_insurance_tx_created",
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX idx_insurance_tx_created ON public.insurance_transactions USING btree (created_at DESC)"
+      }
+    ]
+  }
+]

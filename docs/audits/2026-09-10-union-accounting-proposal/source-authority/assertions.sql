@@ -134,3 +134,60 @@ SELECT test_accept('00000000-0000-4000-8000-000000001012',.01,
 SELECT test_assert('Sub-cent rebate entitlement is never rounded away per hand',
  (SELECT rake_credit=.01 AND player_rebate_rate=.10 AND player_rebate_entitlement=.001
  FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001012'));
+
+SELECT test_bank('00000000-0000-4000-8000-000000001012');
+SELECT test_accrue('00000000-0000-4000-8000-000000001012','00000000-0000-4000-8000-000000000201',.01);
+SELECT test_assert('Cash receipt preserves exact differential and cumulative fractions',
+ (SELECT count(*)=3 AND bool_and((j->>'exact_cumulative_entitlement')::numeric=.01*(j->>'contract_rate')::numeric)
+ AND sum((j->>'exact_entitlement')::numeric)=.007
+ AND bool_and(j->>'amount_authority'='compatibility_projection_only')
+ FROM ca_commission_contributor_receipts r CROSS JOIN LATERAL jsonb_array_elements(r.allocations) j
+ WHERE r.source_id='00000000-0000-4000-8000-000000001012'));
+
+-- Funding terms are source facts, never a substitute for a bank receipt.
+UPDATE tables SET union_id='00000000-0000-4000-8000-000000000901';
+INSERT INTO union_clubs(club_id,union_id,rate_cash,club_commission_rate)
+VALUES('00000000-0000-4000-8000-000000000900','00000000-0000-4000-8000-000000000901',.88,.90);
+SELECT test_accept('00000000-0000-4000-8000-000000001113');
+UPDATE union_clubs SET rate_cash=.77;
+SELECT test_accept('00000000-0000-4000-8000-000000001114');
+SELECT test_assert('Union rates retain the exact source-time game rate',
+ (SELECT bool_and(funding_union_id='00000000-0000-4000-8000-000000000901' AND funding_club_rate=.88 AND funding_state='union_member')
+ FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001113')
+ AND (SELECT bool_and(funding_club_rate=.77) FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001114'));
+SELECT test_assert('Funding route binds the accepted hand bank leg identity',
+ (SELECT funding_route='union_rake_wallet' AND bank_leg_key=hand_id AND funding_context->>'table_union_id'='00000000-0000-4000-8000-000000000901'
+ FROM ca_cash_commission_sources WHERE hand_id='00000000-0000-4000-8000-000000001113'));
+UPDATE tables SET is_private=true;
+SELECT test_accept('00000000-0000-4000-8000-000000001115');
+SELECT test_assert('Private game excludes the Union even with a game Union stamp',
+ (SELECT funding_union_id IS NULL AND funding_route='club_chip_treasury' FROM ca_cash_commission_sources WHERE hand_id='00000000-0000-4000-8000-000000001115')
+ AND (SELECT bool_and(funding_club_rate=1 AND funding_state='club_treasury_owner') FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001115'));
+UPDATE tables SET is_private=false,union_id=NULL;
+UPDATE clubs SET union_id='00000000-0000-4000-8000-000000000901' WHERE id='00000000-0000-4000-8000-000000000900';
+SELECT test_accept('00000000-0000-4000-8000-000000001116');
+SELECT test_assert('Standalone game fallback preserves the accepted host club Union',
+ (SELECT funding_union_id='00000000-0000-4000-8000-000000000901' AND funding_context->>'table_union_id' IS NULL
+ FROM ca_cash_commission_sources WHERE hand_id='00000000-0000-4000-8000-000000001116'));
+DELETE FROM union_clubs;
+SELECT test_accept('00000000-0000-4000-8000-000000001117');
+SELECT test_assert('Missing Union membership is explicit and never a default-rate payment',
+ (SELECT bool_and(funding_state='union_membership_unavailable' AND funding_club_rate IS NULL)
+ FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001117'));
+INSERT INTO union_clubs(club_id,union_id,rate_cash,club_commission_rate)
+VALUES('00000000-0000-4000-8000-000000000900','00000000-0000-4000-8000-000000000901',1.2,.90);
+SELECT test_accept('00000000-0000-4000-8000-000000001118');
+SELECT test_assert('Invalid Union rate is preserved without clipping or silent fallback',
+ (SELECT bool_and(funding_state='union_rate_invalid' AND funding_club_rate=1.2)
+ FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001118'));
+UPDATE union_clubs SET rate_cash=NULL,club_commission_rate=.91;
+SELECT test_accept('00000000-0000-4000-8000-000000001119');
+SELECT test_assert('Configured Union club fallback preserves its fractional rate',
+ (SELECT bool_and(funding_club_rate=.91 AND funding_terms->>'rate_source'='club_rate')
+ FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001119'));
+UPDATE union_clubs SET club_commission_rate=NULL;
+SELECT test_accept('00000000-0000-4000-8000-000000001120');
+SELECT test_assert('Installed default rate is explicit only for existing Union membership',
+ (SELECT bool_and(funding_club_rate=.90 AND funding_terms->>'rate_source'='installed_default_90_percent')
+ FROM ca_cash_commission_facts WHERE hand_id='00000000-0000-4000-8000-000000001120'));
+UPDATE clubs SET union_id=NULL;DELETE FROM union_clubs;

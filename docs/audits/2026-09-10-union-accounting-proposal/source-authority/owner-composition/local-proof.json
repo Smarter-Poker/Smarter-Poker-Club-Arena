@@ -1,0 +1,30 @@
+{
+  "checks": {
+    "count": 15,
+    "passed": true
+  },
+  "observed_waits": {
+    "old_before_envelope": [
+      {
+        "pid": 62016,
+        "event": "advisory",
+        "blockers": [62010]
+      }
+    ],
+    "activation_receipt_relation": [
+      {
+        "pid": 62024,
+        "event": "relation",
+        "blockers": [62016]
+      }
+    ],
+    "old_before_receipt": [
+      {
+        "pid": 62094,
+        "event": "advisory",
+        "blockers": [62088]
+      }
+    ]
+  },
+  "scope": "Actual accepted owner and capture boundary. Rake banking, full payer and Round2 cascade not yet composed."
+}

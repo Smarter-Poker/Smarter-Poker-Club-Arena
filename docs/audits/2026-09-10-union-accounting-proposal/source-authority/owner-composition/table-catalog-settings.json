@@ -1,0 +1,203 @@
+[
+  {
+    "schema": "public",
+    "name": "ca_bbj_policy",
+    "rls": true,
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "pivot_threshold",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "standard_main",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "standard_backup",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "pivot_main",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "pivot_backup",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "note",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_bbj_policy_check",
+        "type": "c",
+        "definition": "CHECK (((standard_main + standard_backup) <= (1)::numeric))"
+      },
+      {
+        "name": "ca_bbj_policy_check1",
+        "type": "c",
+        "definition": "CHECK (((pivot_main + pivot_backup) <= (1)::numeric))"
+      },
+      { "name": "ca_bbj_policy_id_check", "type": "c", "definition": "CHECK ((id = 1))" },
+      {
+        "name": "ca_bbj_policy_pivot_backup_check",
+        "type": "c",
+        "definition": "CHECK (((pivot_backup >= (0)::numeric) AND (pivot_backup <= (1)::numeric)))"
+      },
+      {
+        "name": "ca_bbj_policy_pivot_main_check",
+        "type": "c",
+        "definition": "CHECK (((pivot_main >= (0)::numeric) AND (pivot_main <= (1)::numeric)))"
+      },
+      {
+        "name": "ca_bbj_policy_pivot_threshold_check",
+        "type": "c",
+        "definition": "CHECK ((pivot_threshold > (0)::numeric))"
+      },
+      { "name": "ca_bbj_policy_pkey", "type": "p", "definition": "PRIMARY KEY (id)" },
+      {
+        "name": "ca_bbj_policy_standard_backup_check",
+        "type": "c",
+        "definition": "CHECK (((standard_backup >= (0)::numeric) AND (standard_backup <= (1)::numeric)))"
+      },
+      {
+        "name": "ca_bbj_policy_standard_main_check",
+        "type": "c",
+        "definition": "CHECK (((standard_main >= (0)::numeric) AND (standard_main <= (1)::numeric)))"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_bbj_policy_pkey",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX ca_bbj_policy_pkey ON public.ca_bbj_policy USING btree (id)"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "ca_financial_epochs",
+    "rls": true,
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "default": null,
+        "identity": "a",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "started_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "ended_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "is_current",
+        "type": "boolean",
+        "default": "false",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      { "name": "ca_financial_epochs_name_key", "type": "u", "definition": "UNIQUE (name)" },
+      { "name": "ca_financial_epochs_pkey", "type": "p", "definition": "PRIMARY KEY (id)" }
+    ],
+    "indexes": [
+      {
+        "name": "ca_financial_epochs_pkey",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX ca_financial_epochs_pkey ON public.ca_financial_epochs USING btree (id)"
+      },
+      {
+        "name": "ca_financial_epochs_name_key",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX ca_financial_epochs_name_key ON public.ca_financial_epochs USING btree (name)"
+      },
+      {
+        "name": "ux_ca_financial_epochs_current",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX ux_ca_financial_epochs_current ON public.ca_financial_epochs USING btree (is_current) WHERE is_current"
+      }
+    ]
+  }
+]

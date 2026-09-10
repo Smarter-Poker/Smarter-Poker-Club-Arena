@@ -10,6 +10,10 @@ ALTER TABLE public.club_members ADD COLUMN membership_lifecycle_status text DEFA
 ALTER TABLE public.table_seats ADD COLUMN id uuid DEFAULT gen_random_uuid();
 ALTER TABLE public.table_seats ADD COLUMN joined_at timestamptz DEFAULT '2026-09-10 00:00:00Z';
 ALTER TABLE public.clubs ADD COLUMN asset text DEFAULT 'chips';
+
+CREATE TABLE public.tables(id uuid PRIMARY KEY,club_id uuid,is_private boolean,union_id uuid);
+INSERT INTO public.tables VALUES('00000000-0000-4000-8000-000000000950','00000000-0000-4000-8000-000000000900',false,NULL);
+ALTER TABLE public.union_clubs ADD COLUMN id uuid DEFAULT gen_random_uuid(), ADD COLUMN rate_cash numeric, ADD COLUMN club_commission_rate numeric;
 CREATE TABLE public.hand_atomic_commits (
  hand_id uuid PRIMARY KEY,table_id uuid,hand_number bigint,
  post_commit_payload jsonb,post_commit_payload_hash text,committed_at timestamptz DEFAULT clock_timestamp()

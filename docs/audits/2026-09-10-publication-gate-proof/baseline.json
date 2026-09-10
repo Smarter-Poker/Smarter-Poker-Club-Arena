@@ -1,0 +1,9 @@
+{
+  "baseline_source": "904171acc4f143da4c8c6619ba73cfbc12293753",
+  "successful_standdown": {
+    "baseline_ota_eligible": true,
+    "candidate_ota_eligible": false
+  },
+  "baseline_origin_sha_output": null,
+  "candidate_origin_sha_output": "${{ steps.verified.outputs.sha }}"
+}

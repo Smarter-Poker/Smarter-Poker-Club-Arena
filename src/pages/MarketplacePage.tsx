@@ -26,7 +26,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -74,6 +74,7 @@ export default function MarketplacePage() {
   const { user } = useAuthUser();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const qClubParam = searchParams.get('club') || searchParams.get('clubId');
   const qTabParam = searchParams.get('tab');
@@ -578,6 +579,7 @@ export default function MarketplacePage() {
         description="Acquire Table Upgrades, Player Perks, Club Exclusives, Diamond Packages, And VIP Access Through The Existing Server-Priced Storefront."
         art="market"
         status="PLAYER EXCHANGE // LIVE"
+        crest="club"
         metrics={[
           {
             label: 'Diamonds',
@@ -590,21 +592,16 @@ export default function MarketplacePage() {
           },
           { label: 'Owned', value: ownedCount, tone: 'live' },
         ]}
-        actions={
-          <>
-            <Link to="/" className={styles.btnGhost}>
-              Back To Lobby
-            </Link>
-            <button
-              onClick={refreshAll}
-              className={styles.btnGhost}
-              disabled={refreshing}
-              aria-busy={refreshing}
-            >
-              {refreshing ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </>
-        }
+        plates={{
+          secondary: { label: 'Back To Lobby', onClick: () => navigate('/') },
+          primary: {
+            label: refreshing ? 'Refreshing' : 'Refresh',
+            ink: 'white',
+            onClick: refreshAll,
+            disabled: refreshing,
+            'aria-busy': refreshing,
+          },
+        }}
       />
 
       <div className={styles.marketStatusBar} aria-label="Marketplace Wallet Status">

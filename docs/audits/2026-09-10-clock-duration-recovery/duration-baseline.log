@@ -1,0 +1,183 @@
+
+ RUN  v2.1.9 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/server
+
+ ❯ src/tournament/LevelDurationComposition.test.ts (61 tests | 27 failed) 13ms
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 0.5 minutes, accelerated false, entry closed false 4ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 0.5 minutes, accelerated false, entry closed true 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 0.5 minutes, accelerated true, entry closed false 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 1 minutes, accelerated false, entry closed false 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 1 minutes, accelerated false, entry closed true 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 1 minutes, accelerated true, entry closed false 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 5 minutes, accelerated true, entry closed true 0ms
+     → expected 120000 to be 180000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 10 minutes, accelerated true, entry closed true 0ms
+     → expected 180000 to be 300000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > durationMinutes 15 minutes, accelerated true, entry closed true 0ms
+     → expected 240000 to be 480000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 0.5 minutes, accelerated false, entry closed false 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 0.5 minutes, accelerated false, entry closed true 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 0.5 minutes, accelerated true, entry closed false 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 1 minutes, accelerated false, entry closed false 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 1 minutes, accelerated false, entry closed true 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 1 minutes, accelerated true, entry closed false 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 5 minutes, accelerated true, entry closed true 0ms
+     → expected 120000 to be 180000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 10 minutes, accelerated true, entry closed true 0ms
+     → expected 180000 to be 300000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration_minutes 15 minutes, accelerated true, entry closed true 0ms
+     → expected 240000 to be 480000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 0.5 minutes, accelerated false, entry closed false 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 0.5 minutes, accelerated false, entry closed true 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 0.5 minutes, accelerated true, entry closed false 0ms
+     → expected 120000 to be 30000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 1 minutes, accelerated false, entry closed false 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 1 minutes, accelerated false, entry closed true 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 1 minutes, accelerated true, entry closed false 0ms
+     → expected 120000 to be 60000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 5 minutes, accelerated true, entry closed true 0ms
+     → expected 120000 to be 180000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 10 minutes, accelerated true, entry closed true 0ms
+     → expected 180000 to be 300000 // Object.is equality
+   × the actual manager resolves raw level duration before applying acceleration once > duration 15 minutes, accelerated true, entry closed true 0ms
+     → expected 240000 to be 480000 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 27 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 0.5 minutes, accelerated false, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 0.5 minutes, accelerated false, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 0.5 minutes, accelerated true, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 0.5 minutes, accelerated false, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 0.5 minutes, accelerated false, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 0.5 minutes, accelerated true, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 0.5 minutes, accelerated false, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 0.5 minutes, accelerated false, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 0.5 minutes, accelerated true, entry closed false
+AssertionError: expected 120000 to be 30000 // Object.is equality
+
+- Expected
++ Received
+
+- 30000
++ 120000
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:57:52
+     55|             for (const index of [0, 1, 3, 9]) {
+     56|               const level = state.resolveBlindLevel(structure, index);
+     57|               expect(state.levelDurationMs(level)).toBe(expected * 600…
+       |                                                    ^
+     58|             }
+     59|             expect(structure).toHaveLength(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/27]⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 1 minutes, accelerated false, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 1 minutes, accelerated false, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 1 minutes, accelerated true, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 1 minutes, accelerated false, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 1 minutes, accelerated false, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 1 minutes, accelerated true, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 1 minutes, accelerated false, entry closed false
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 1 minutes, accelerated false, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 1 minutes, accelerated true, entry closed false
+AssertionError: expected 120000 to be 60000 // Object.is equality
+
+- Expected
++ Received
+
+- 60000
++ 120000
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:57:52
+     55|             for (const index of [0, 1, 3, 9]) {
+     56|               const level = state.resolveBlindLevel(structure, index);
+     57|               expect(state.levelDurationMs(level)).toBe(expected * 600…
+       |                                                    ^
+     58|             }
+     59|             expect(structure).toHaveLength(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/27]⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 5 minutes, accelerated true, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 5 minutes, accelerated true, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 5 minutes, accelerated true, entry closed true
+AssertionError: expected 120000 to be 180000 // Object.is equality
+
+- Expected
++ Received
+
+- 180000
++ 120000
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:57:52
+     55|             for (const index of [0, 1, 3, 9]) {
+     56|               const level = state.resolveBlindLevel(structure, index);
+     57|               expect(state.levelDurationMs(level)).toBe(expected * 600…
+       |                                                    ^
+     58|             }
+     59|             expect(structure).toHaveLength(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/27]⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 10 minutes, accelerated true, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 10 minutes, accelerated true, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 10 minutes, accelerated true, entry closed true
+AssertionError: expected 180000 to be 300000 // Object.is equality
+
+- Expected
++ Received
+
+- 300000
++ 180000
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:57:52
+     55|             for (const index of [0, 1, 3, 9]) {
+     56|               const level = state.resolveBlindLevel(structure, index);
+     57|               expect(state.levelDurationMs(level)).toBe(expected * 600…
+       |                                                    ^
+     58|             }
+     59|             expect(structure).toHaveLength(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/27]⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > durationMinutes 15 minutes, accelerated true, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration_minutes 15 minutes, accelerated true, entry closed true
+ FAIL  src/tournament/LevelDurationComposition.test.ts > the actual manager resolves raw level duration before applying acceleration once > duration 15 minutes, accelerated true, entry closed true
+AssertionError: expected 240000 to be 480000 // Object.is equality
+
+- Expected
++ Received
+
+- 480000
++ 240000
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:57:52
+     55|             for (const index of [0, 1, 3, 9]) {
+     56|               const level = state.resolveBlindLevel(structure, index);
+     57|               expect(state.levelDurationMs(level)).toBe(expected * 600…
+       |                                                    ^
+     58|             }
+     59|             expect(structure).toHaveLength(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/27]⎯
+
+ Test Files  1 failed (1)
+      Tests  27 failed | 34 passed (61)
+   Start at  13:12:53
+   Duration  524ms (transform 44ms, setup 10ms, collect 247ms, tests 13ms, environment 0ms, prepare 35ms)
+

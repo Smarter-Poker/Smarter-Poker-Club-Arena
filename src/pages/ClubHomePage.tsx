@@ -913,6 +913,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * reset effect below.
    */
   const listsPaintedRef = useRef(false);
+  // A newer joinable row contradicts an in-flight query's empty snapshot.
+  const tournamentRevisionRef = useRef(0);
   const loadingRef = useRef(false);
   const reloadPendingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -1252,12 +1254,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (!belongsInTournamentList(updated)) {
             setTournaments((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
+            tournamentRevisionRef.current += 1;
             setTournaments((prev) =>
               prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
             );
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           if (!belongsInTournamentList(payload.new)) return;
+          tournamentRevisionRef.current += 1;
           setTournaments((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];
@@ -2388,10 +2392,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * often than showing it an empty room.
        */
       const unionCacheKey = `ca_union_of_${resolvedId}`;
+      let unionCacheReadable = true;
       const readCachedUnion = (): string | null => {
         try {
           return sessionStorage.getItem(unionCacheKey) || null;
         } catch {
+          unionCacheReadable = false;
           return null;
         }
       };
@@ -2407,6 +2413,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // Check if this club is inside a union
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
+      let tournamentScopeConfirmed = false;
       try {
         const { data: ucRow, error: ucErr } = await unionRowPromise;
         if (ucErr) {
@@ -2416,6 +2423,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fallback) {
             unionId = fallback;
+            tournamentScopeConfirmed = fallback === clubData.union_id;
             if (getIsMounted && !getIsMounted()) return;
             setIsInUnion(true);
             setUnionIdForCreate(fallback);
@@ -2448,11 +2456,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fromClubRow) {
             unionId = fromClubRow;
+            tournamentScopeConfirmed = fromClubRow === clubData.union_id;
             if (getIsMounted && !getIsMounted()) return;
             setIsInUnion(true);
             setUnionIdForCreate(fromClubRow);
             // Same reasoning as the error branch above: no inline read here.
           } else {
+            tournamentScopeConfirmed =
+              ucRow === null &&
+              clubData.union_id === null &&
+              clubData.is_union !== true &&
+              unionCacheReadable;
             cacheUnion(null); // genuinely standalone, on positive evidence
             setUnionIdForCreate(null);
           }
@@ -2461,6 +2475,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
+          tournamentScopeConfirmed = Boolean(unionId);
           setUnionIdForCreate(ucRow.union_id);
           // Remember it: the next load survives a timeout without emptying.
           cacheUnion(ucRow.union_id);
@@ -2706,6 +2721,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         siblingClubIds: unionClubIds,
       });
 
+      const tournamentRevisionAtRead = tournamentRevisionRef.current;
       const [tableResult, clubTournamentResult, bbjResult] = await Promise.all([
         tableQuery,
         clubTournamentQuery,
@@ -2781,48 +2797,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (clubTournamentResult.error)
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
 
-      if (!clubTournamentResult.error) {
-        const allTournaments: TournamentData[] = clubTournamentResult.data
-          ? [...clubTournamentResult.data]
-          : [];
+      if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
+        const allTournaments: TournamentData[] = [...clubTournamentResult.data];
 
-        /**
-         * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
-         *
-         * Two writers fill this list: the get_club_home fast path, which is
-         * union-scoped in SQL and cannot get the scope wrong, and this chain,
-         * whose scope depends on `unionId` resolving from a separate read.
-         * When that read comes back empty the chain narrows to the club's own
-         * PRIVATE tournaments -- of which a union club has none -- and then
-         * overwrites a good list with zero.
-         *
-         * Measured live 2026-08-24: get_club_home returned 161 tournaments and
-         * the lobby showed none, with "44 Games Are Open In This Club"
-         * underneath, 44 being the table count on its own.
-         *
-         * So the chain may replace this list with anything it actually found,
-         * and may not replace it with nothing. A genuinely empty club paints
-         * empty from the fast path, which had the same answer; the only case
-         * this changes is where the two disagree and one is a degraded read.
-         */
-        /* The chain has answered with real rows. From here the fast path has
-           nothing to add and could only narrow them (see listsPaintedRef). */
+        // The warm fast path cannot remove old rows. A confirmed empty read
+        // may do so, but a failed or cache-only scope cannot prove absence.
         listsPaintedRef.current = true;
         if (allTournaments.length > 0) {
           setTournaments(allTournaments);
+        } else if (!tournamentScopeConfirmed) {
+          reportError(
+            new Error(
+              `[ClubHomePage] cannot confirm empty tournaments with unresolved scope (unionId=${unionId ?? 'null'})`
+            ),
+            'ClubHomePage.emptyTournamentOverwrite'
+          );
+        } else if (tournamentRevisionAtRead !== tournamentRevisionRef.current) {
+          // A realtime change can be newer than this query's empty snapshot.
+          // Keep it and let the existing coalesced owner read again.
+          reloadPendingRef.current = true;
         } else {
-          setTournaments((prev) => {
-            if (prev.length > 0) {
-              reportError(
-                new Error(
-                  `[ClubHomePage] chain found 0 tournaments while ${prev.length} were painted - keeping them (unionId=${unionId ?? 'null'})`
-                ),
-                'ClubHomePage.emptyTournamentOverwrite'
-              );
-              return prev;
-            }
-            return allTournaments;
-          });
+          setTournaments(allTournaments);
         }
       }
       setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);

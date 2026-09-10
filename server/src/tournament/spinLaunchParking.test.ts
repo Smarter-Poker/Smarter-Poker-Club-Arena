@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceCall, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import {
   SPIN_DRAW_TERMINAL_REASONS,
   SPIN_DRAW_TRANSIENT_REASONS,
@@ -531,7 +532,10 @@ describe('the wiring', () => {
     const call = BASE.lastIndexOf('proveSpinDrawWithParking<FundedSpinDraw>({', site);
     expect(call).toBeGreaterThan(0);
     expect(site - call).toBeLessThan(400);
-    expect(BASE.slice(call, site + 1200)).toContain('raiseAlert: raiseFinancialAlert');
+    // The whole call, however many deps it grows: bounded by its closing paren.
+    expect(sliceCall(BASE, 'proveSpinDrawWithParking<FundedSpinDraw>(')).toContain(
+      'raiseAlert: raiseFinancialAlert'
+    );
     // The hand-rolled three-attempt loop is gone.
     expect(BASE).not.toContain('attempt <= 3 && !fundedSpin');
   });
@@ -565,17 +569,16 @@ describe('the wiring', () => {
   });
 
   it('the fully-paid stall watchdog leaves a parked id alone without dropping its clock', () => {
-    const watchdog = SERVER.indexOf("'GameServer.seat_first_fully_paid_never_started'");
-    expect(watchdog).toBeGreaterThan(0);
-    const gate = SERVER.lastIndexOf(
-      'if (spinLaunchParks.isParked(id, stallNow)) continue;',
-      watchdog
-    );
-    const rearm = SERVER.lastIndexOf('this.seatFirstFullSince.set(id, stallNow);', watchdog);
+    // The loop body the watchdog judges each fully-paid game in, bounded by
+    // its own braces.
+    const body = sliceEnclosingBlock(SERVER, "'GameServer.seat_first_fully_paid_never_started'");
+    const gate = body.indexOf('if (spinLaunchParks.isParked(id, stallNow)) continue;');
+    const armed = body.indexOf('this.seatFirstFullSince.set(id, stallNow);');
+    const report = body.indexOf("'GameServer.seat_first_fully_paid_never_started'");
     expect(gate).toBeGreaterThan(0);
     // The gate sits after the clock is armed and before the force-start is reported.
-    expect(gate).toBeGreaterThan(rearm);
-    expect(watchdog - gate).toBeLessThan(1500);
+    expect(gate).toBeGreaterThan(armed);
+    expect(gate).toBeLessThan(report);
   });
 
   it('an operator can see a parked Spin on /metrics and /health without reading logs', () => {
@@ -594,7 +597,8 @@ describe('the wiring', () => {
     const field = SERVER.indexOf('spinLaunchParks: (() => {', status);
     expect(field).toBeGreaterThan(status);
     expect(field).toBeLessThan(scrape);
-    expect(SERVER.slice(field, field + 900)).toContain('oldestAgeMs: m.oldestAgeMs');
+    // The field's own IIFE, bounded by the paren that wraps it.
+    expect(sliceCall(SERVER, 'spinLaunchParks: (() => {')).toContain('oldestAgeMs: m.oldestAgeMs');
   });
 
   it('the one admission front door refuses a parked start, so the watchdog and the main loop hold too', () => {

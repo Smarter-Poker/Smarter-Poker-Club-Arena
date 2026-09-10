@@ -739,6 +739,11 @@ BEGIN
   RAISE EXCEPTION 'Hand writer changed since inspected exact-seat composition';
  END IF;
  EXECUTE v_replacement;
+ -- The preserved core is owner-only in the wrapped layout. State its ACL
+ -- explicitly even though CREATE OR REPLACE retains the existing privileges.
+ IF to_regprocedure('public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)') IS NOT NULL THEN
+  REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric) FROM PUBLIC, anon, authenticated, service_role;
+ END IF;
 END $restore_hand_stack_core$;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid, p_post_commit_obligations jsonb)

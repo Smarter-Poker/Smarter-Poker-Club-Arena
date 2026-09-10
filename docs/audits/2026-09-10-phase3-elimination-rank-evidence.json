@@ -1,0 +1,83 @@
+{
+  "control": "T08",
+  "requirement": "Persist elimination rank from authoritative hands. Test same-hand ties, simultaneous tables and final-table transitions.",
+  "status": "partial_persistence_boundary_verified_forward_guard_unapplied",
+  "migration": "supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+  "source_body_md5": "04a2e93dd8afe35fbc0cdd2829daf0f8",
+  "candidate_body_md5": "b4937067d9bf337e1466095b9e1d5424",
+  "catalog_recheck_utc": "2026-09-10T05:07:54Z",
+  "change": "Add p_position IS NULL to the public atomic wrapper's existing invalid_place_or_prize condition. No rank ordering rule, supplied positive rank, legacy core, accepted-hand gate, or historical row is changed.",
+  "baseline": {
+    "log": "/tmp/codex-phase3-elimination-baseline.log",
+    "exit_code": 1,
+    "runtime_seconds": 7.5,
+    "passed_groups": 5,
+    "passed": [
+      "accepted same-hand candidates persist supplied distinct ranks and monotonic sequences once without money movement",
+      "overlapping exact elimination requests persist one rank and one sequence",
+      "a replay cannot change an already persisted finishing rank",
+      "missing or contradictory hand, receipt, decision and seat evidence cannot persist a rank",
+      "seat release failure rolls back rank, sequence row and candidate mutation together"
+    ],
+    "reproduced_defect": {
+      "request_position": null,
+      "response": {
+        "ok": true,
+        "claimed": true,
+        "position": null
+      },
+      "persisted": {
+        "player_status": "eliminated",
+        "position": null,
+        "elimination_sequence": 1,
+        "seat_closed": true,
+        "candidate_state": "eliminated"
+      }
+    }
+  },
+  "fixed": {
+    "log": "/tmp/codex-phase3-elimination-fixed-null.log",
+    "results": "/tmp/ca-registration-funding-pg17-gsmhex4t/results.json",
+    "exit_code": 0,
+    "runtime_seconds": 1.71,
+    "changed_groups_run": 1,
+    "unchanged_baseline_groups_reused": 5,
+    "check": "NULL rank is refused without changing roster, seat, candidate or sequence; subsequent valid rank claim succeeds.",
+    "migration_checks": "Candidate applied twice in the isolated cluster; body hash asserted after application and replay.",
+    "cleanup": "private cluster stopped normally"
+  },
+  "execution": {
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "module": "scripts/dev/tournament_elimination_rank_cases.py",
+    "focused_arguments": [
+      "--eliminations-only",
+      "--elimination-null-rank-only"
+    ],
+    "reused_fixture": "scripts/dev/fixtures/tournament-purchase-funding",
+    "actual_functions": [
+      "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)",
+      "fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)",
+      "fn_ca_latest_committed_knockout_candidate(uuid,uuid)",
+      "fn_stamp_tournament_elimination_sequence()"
+    ],
+    "actual_mutations": "Installed roster, seat, seat-count and sequence functions/triggers, plus candidate state mutation. Real funding fixtures are reused; elimination itself moves no spendable money.",
+    "transport": "The shared runner selector was added to its source in memory for this lane's run; root owns tracked composed selector integration."
+  },
+  "manager_source_review": {
+    "path": "server/src/tournament/TournamentManagerEliminations.ts",
+    "observed": "Current manager orders pending candidates by hand_number, stack_before, refusal streak and UUID, chooses free positive places and passes that rank to the atomic RPC. The RPC persists supplied rank after exact candidate/atomic/settlement identity checks; a database trigger stamps sequence.",
+    "manager_behavior_executed": false
+  },
+  "remaining_acceptance": [
+    "Accepted-hand and settlement rows in this fixture are synthetic, so execution of the real hand-commit writer through elimination remains unverified.",
+    "No versioned synchronized-hand epoch or approved simultaneous-bust equal-stack/cross-table tie policy is established. Existing moves-lane blocker is retained; this guard does not choose a policy.",
+    "Simultaneous tables with reversed delivery and final-table transitions remain outside this persistence fixture.",
+    "Shared runner selector integration, reviewed migration application and installed-body verification remain required before production completion."
+  ],
+  "production": {
+    "applied": false,
+    "money_writes": false,
+    "history_repairs": false
+  },
+  "scope_preservation": "Cash ladder 15 groups and T09 cumulative obligation 10 groups are preserved and not repeated."
+}

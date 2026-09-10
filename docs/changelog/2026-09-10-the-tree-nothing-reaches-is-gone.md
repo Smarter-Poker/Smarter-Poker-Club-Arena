@@ -49,11 +49,11 @@ script's header asks.
   imported by nothing. `tests/e2e-page-load-audit.ts` no longer lists routes
   the router does not serve; the discarded-error ratchet rows are removed;
   `tests/promo-is-owner-money-and-nothing-else-pays-it.law.test.ts` reads the
-  one page that still disburses promo chips. `BASELINE_ORPHANS` 34 -> 30.
+  one page that still disburses promo chips. `BASELINE_ORPHANS` 34 -> 30 (32 after merging main: #4116 added a law that reads `SortableTable.tsx` and `AnimatedCounter.tsx` by path, so both stay).
 
 **Commit 3:** the law and this record.
 
-## What was deliberately NOT deleted (82 files, 17,033 lines)
+## What was deliberately NOT deleted (86 files)
 
 Each is read by path by a test, a law, a ratchet, a CI script or a
 `docs/laws.d` entry, and is listed in the law's `RETAINED` map with that

@@ -60,6 +60,9 @@ const RETAINED: Record<string, string> = {
     'read by path: tests/unit/managedGameLifecycleAuthority.test.ts',
   'src/components/customization/index.ts':
     'read by path: tests/config/cardBackIdsAreReal.test.ts tests/unit/noUnreachableSettingsUi.test.ts',
+  'src/components/counters/AnimatedCounter.css': 'imported only by another retained file',
+  'src/components/counters/AnimatedCounter.tsx':
+    'read by path: tests/a-stale-read-never-lands.law.test.ts',
   'src/components/emoji/EmojiPicker.css': 'read by path: scripts/ci/check-no-emoji.mjs',
   'src/components/emoji/EmojiPicker.tsx':
     'read by path: scripts/ci/check-no-emoji.mjs tests/no-emoji-gate.test.ts',
@@ -110,6 +113,9 @@ const RETAINED: Record<string, string> = {
   'src/components/support/FAQPanel.css': 'imported only by another retained file',
   'src/components/support/FAQPanel.tsx': 'read by path: scripts/ci/check-title-case.mjs',
   'src/components/table/EmojiPicker.css': 'read by path: scripts/ci/check-no-emoji.mjs',
+  'src/components/tables/SortableTable.css': 'imported only by another retained file',
+  'src/components/tables/SortableTable.tsx':
+    'read by path: tests/a-stale-read-never-lands.law.test.ts',
   'src/components/table/EmojiPicker.tsx':
     'read by path: scripts/ci/check-no-emoji.mjs tests/config/realtimePurchaseFulfillment.test.ts tests/no-emoji-gate.test.ts',
   'src/components/table/MiniStatsCard.css': 'imported only by another retained file',

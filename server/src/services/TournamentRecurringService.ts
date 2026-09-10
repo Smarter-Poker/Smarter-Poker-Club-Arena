@@ -1529,6 +1529,169 @@ export function isExpectedSeatRefusal(message: string | null | undefined): boole
   );
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A SEAT THE HORSE ALREADY HOLDS IS NOT A CALL WORTH QUEUEING FOR
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * fn_seat_horse_in_seat_first_game begins, before it reads a single row of the
+ * game, with fn_ca_lock_tournament_seat_acquisition: an EXCLUSIVE advisory lock
+ * on one platform-wide key ('ca:tournament-terminal-settlement:v1') that every
+ * hand settlement holds SHARED for the whole of its commit. Heavyweight-lock
+ * queueing is FIFO, so each call waits for every in-flight hand commit and
+ * every hand commit arriving after it queues behind the call. Measured
+ * 2026-09-10 03:05-03:40 UTC on the 2XL box (pg_stat_statements): 1,533 calls,
+ * mean 590 ms against a 2.4 ms minimum, max 5,889 ms - the same figure as the
+ * hand-commit max, because it is the same convoy - and 572 shared blocks per
+ * call, which is under 5 ms of real work. pg_stat_activity sampled at 100 ms
+ * during a seeding burst showed the RPC in a Lock wait 100 samples out of 110.
+ *
+ * And most of those calls seat nobody. The same window produced at most 579
+ * seats for 1,533 calls; 02:34-04:04 produced 266 live horse seats at
+ * seat-first tables for 4,025 calls. The RPC answers `{ok:true,
+ * already_seated:true}` when the horse already holds a live seat at the game's
+ * primary table, and `{ok:false, reason:'table_full'}` when no seat number in
+ * 1..capacity is free - after it has taken the lock and stalled the hand path.
+ *
+ * The lock cannot be narrowed on the database side without changing what a
+ * concurrent settlement can observe, so the fix is on this side of the wire.
+ * topUpWithHorses already reads the game's live seats before it fills, so it
+ * now keeps what it read - who is seated, which seat numbers are taken, and
+ * the table's capacity - and asks these two functions before each call. A
+ * horse the ledger shows seated is skipped; a table the ledger shows full is
+ * skipped. Every other horse goes through the SAME RPC with the SAME
+ * arguments, and the RPC remains the authority: it re-checks both conditions
+ * under its lock, so a stale ledger costs at most one wasted call, never a
+ * wrong seat. The one difference a horse can observe is that a seat it
+ * vacated between the read and the (now skipped) call is offered again on the
+ * next five-second pass instead of this one.
+ *
+ * The race the read cannot see is the other one: on 2026-09-10 every one of
+ * the 199 open seat-first games had a table capacity equal to its tournament
+ * capacity, so a `table_full` answer today is always another service filling
+ * the last seat on the same five-second tick (GameServer discovery, the
+ * scheduler and the overlay guard each own a seeder). The loop carries three
+ * candidates per seat to absorb refusals, so one such answer used to be
+ * followed by two more calls for the same answer. Once the RPC has said
+ * `table_full` under its lock, the ledger believes it for the rest of the pass.
+ *
+ * HORSES ARE PLAYERS (CLAUDE.md 10.5). Nothing here filters on is_horse and
+ * nothing here denies a horse a seat it would have received: the only calls
+ * removed are the ones whose answer was already `already_seated` or
+ * `table_full`. A horse that needs a seat still gets it through the same door.
+ *
+ * The capacity expression is the RPC's own, copied rather than approximated:
+ * COALESCE(NULLIF(tables.max_players, 0), tournaments.max_players, 3). When
+ * the table row cannot be read the capacity is UNKNOWN and the table-full skip
+ * is disabled - an unknown never skips a call. Pure, so the decision is pinned
+ * without a database.
+ */
+export interface SeatFirstSeatLedger {
+  /** Holders of live seats at the game's primary table, as read before the fill. */
+  seatedUsers: Set<string>;
+  /** Seat numbers with a live occupant at that table. */
+  occupiedSeats: Set<number>;
+  /** The RPC's capacity expression, or null when the table row was unreadable. */
+  capacity: number | null;
+  /**
+   * Set once the RPC itself has answered `table_full` this pass. The authority
+   * has spoken: the spare candidates behind that answer (three per seat, see
+   * seatFirstCandidateCount) would each queue for the lock to hear it again.
+   * A seat freed in the same five seconds is offered on the next pass.
+   */
+  rpcSaidFull: boolean;
+}
+
+export type SeatFirstPrecheck = 'call' | 'already_seated' | 'table_full';
+
+export function seatFirstSeatLedger(
+  seatRows: Array<{ user_id?: string | null; seat_number?: number | null }> | null | undefined,
+  /** tables.max_players; null for a NULL column, undefined when the row could not be read. */
+  tableMaxPlayers: number | null | undefined,
+  tournamentMaxPlayers: number | null | undefined
+): SeatFirstSeatLedger {
+  const seatedUsers = new Set<string>();
+  const occupiedSeats = new Set<number>();
+  for (const row of seatRows ?? []) {
+    const id = String(row?.user_id ?? '');
+    if (id.length > 0) seatedUsers.add(id);
+    const n = Number(row?.seat_number);
+    if (Number.isInteger(n) && n > 0) occupiedSeats.add(n);
+  }
+  let capacity: number | null;
+  if (tableMaxPlayers === undefined) {
+    capacity = null;
+  } else if (tableMaxPlayers !== null && Number(tableMaxPlayers) !== 0) {
+    capacity = Math.floor(Number(tableMaxPlayers));
+  } else if (tournamentMaxPlayers !== null && tournamentMaxPlayers !== undefined) {
+    capacity = Math.floor(Number(tournamentMaxPlayers));
+  } else {
+    capacity = 3;
+  }
+  if (capacity !== null && !Number.isFinite(capacity)) capacity = null;
+  return { seatedUsers, occupiedSeats, capacity, rpcSaidFull: false };
+}
+
+export function seatFirstSeatPrecheck(
+  ledger: SeatFirstSeatLedger,
+  horse: string
+): SeatFirstPrecheck {
+  // The RPC's order: the seat the horse already holds is checked before the
+  // free-seat search, so a seated horse at a full table reads already_seated.
+  if (ledger.seatedUsers.has(horse)) return 'already_seated';
+  if (ledger.rpcSaidFull) return 'table_full';
+  if (ledger.capacity !== null) {
+    let free = false;
+    for (let s = 1; s <= ledger.capacity; s++) {
+      if (!ledger.occupiedSeats.has(s)) {
+        free = true;
+        break;
+      }
+    }
+    if (!free) return 'table_full';
+  }
+  return 'call';
+}
+
+/** Record a seat the RPC just granted, so the rest of this pass sees it. */
+export function seatFirstNoteSeated(
+  ledger: SeatFirstSeatLedger,
+  horse: string,
+  seatNumber: unknown
+): void {
+  ledger.seatedUsers.add(horse);
+  const n = Number(seatNumber);
+  if (Number.isInteger(n) && n > 0) ledger.occupiedSeats.add(n);
+}
+
+/** Record that the RPC answered `table_full`, so the rest of this pass believes it. */
+export function seatFirstNoteTableFull(ledger: SeatFirstSeatLedger): void {
+  ledger.rpcSaidFull = true;
+}
+
+/** The grep-able production evidence for the skip. One line per fill pass that had candidates. */
+export function seatFirstPrecheckLogLine(
+  tournamentId: string,
+  tally: {
+    rpcCalled: number;
+    skippedAlreadySeated: number;
+    skippedTableFull: number;
+    seated: number;
+    rpcAlreadySeated: number;
+    rpcTableFull: number;
+    rpcRefused: number;
+    rpcOtherNoop: number;
+  }
+): string {
+  return (
+    `[TournamentRecurring] seat-first-precheck ${tournamentId.slice(0, 8)}: ` +
+    `rpc_called=${tally.rpcCalled} skipped_already_seated=${tally.skippedAlreadySeated} ` +
+    `skipped_table_full=${tally.skippedTableFull} seated=${tally.seated} ` +
+    `rpc_already_seated=${tally.rpcAlreadySeated} rpc_table_full=${tally.rpcTableFull} ` +
+    `rpc_refused=${tally.rpcRefused} rpc_other_noop=${tally.rpcOtherNoop}`
+  );
+}
+
 export const SEAT_FIRST_START_STALL_MS = 3 * 60 * 1000;
 
 /**
@@ -5045,6 +5208,11 @@ export class TournamentRecurringService {
          */
         let liveCount = 0;
         let primaryTableId: string | null = null;
+        /* THE SEATS AS READ, kept for the fill loop. See seatFirstSeatPrecheck:
+           the loop skips the RPC for a horse this shows seated and for a table
+           this shows full, so the read below returns the rows rather than a
+           bare count. Same rows, same index, same liveCount. */
+        let liveSeatRows: Array<{ user_id?: string | null; seat_number?: number | null }> = [];
         if (seatFirst) {
           const { data: primaryId, error: primErr } = await supabase.rpc(
             'fn_tournament_primary_table',
@@ -5066,11 +5234,12 @@ export class TournamentRecurringService {
           }
           if (primaryId) {
             primaryTableId = String(primaryId);
-            const { count: seatCount, error: seatErr } = await supabase
+            const { data: seatRows, error: seatErr } = await supabase
               .from('table_seats')
-              .select('table_id', { count: 'exact', head: true })
+              .select('user_id, seat_number')
               .eq('table_id', primaryTableId)
-              .is('left_at', null);
+              .is('left_at', null)
+              .limit(1000);
             if (seatErr) {
               reportError(
                 new Error(`[TournamentRecurring] seat count read failed: ${seatErr.message}`),
@@ -5078,7 +5247,8 @@ export class TournamentRecurringService {
               );
               return 0;
             }
-            liveCount = seatCount || 0;
+            liveSeatRows = (seatRows ?? []) as typeof liveSeatRows;
+            liveCount = liveSeatRows.length;
           }
         } else {
           const { count: regCount, error: countErr } = await supabase
@@ -5149,6 +5319,43 @@ export class TournamentRecurringService {
             poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
           const candidates = seatFirstFillOrder(wantCandidates, own, pool);
 
+          /* THE LEDGER (see seatFirstSeatPrecheck). The table's capacity is the
+             one value the seat read above does not carry; it is a lock-free
+             primary-key read, paid only when there are candidates to seat. An
+             unreadable row leaves the capacity UNKNOWN, which disables the
+             table-full skip and nothing else - an unknown never skips a call. */
+          let tableMaxPlayers: number | null | undefined = undefined;
+          if (candidates.length > 0 && primaryTableId) {
+            const { data: tblRow, error: tblErr } = await supabase
+              .from('tables')
+              .select('max_players')
+              .eq('id', primaryTableId)
+              .maybeSingle();
+            if (tblErr || !tblRow) {
+              console.warn(
+                `[TournamentRecurring] seat-first-precheck ${tournamentId.slice(0, 8)}: table capacity unreadable (${tblErr?.message ?? 'no row'}) - every candidate goes to the RPC this pass`
+              );
+            } else {
+              const raw = (tblRow as { max_players?: number | null }).max_players;
+              tableMaxPlayers = raw === null || raw === undefined ? null : Number(raw);
+            }
+          }
+          const ledger = seatFirstSeatLedger(
+            liveSeatRows,
+            tableMaxPlayers,
+            (tRow as { max_players?: number | null } | null)?.max_players ?? null
+          );
+          const tally = {
+            rpcCalled: 0,
+            skippedAlreadySeated: 0,
+            skippedTableFull: 0,
+            seated: 0,
+            rpcAlreadySeated: 0,
+            rpcTableFull: 0,
+            rpcRefused: 0,
+            rpcOtherNoop: 0,
+          };
+
           for (const horse of candidates) {
             // The slack above is there to absorb REFUSALS, not to seat extras: a
             // 3-handed spin takes three. Stop as soon as the seats are covered.
@@ -5157,6 +5364,22 @@ export class TournamentRecurringService {
             // opening-seat loop above and the one-refusal pin in
             // seatFirstFillOrder.test.ts.
             if (isMaintenanceFrozen()) continue;
+            /* SKIP THE CALL WHOSE ANSWER IS ALREADY KNOWN. The RPC would return
+               already_seated / table_full for exactly these rows - after taking
+               the global exclusive lock every hand settlement waits on. The RPC
+               still decides for everybody else. A skipped already_seated is not
+               a covered seat (it never was, see the note under the RPC result
+               below), so the loop moves on to the next candidate. */
+            const precheck = seatFirstSeatPrecheck(ledger, horse);
+            if (precheck === 'already_seated') {
+              tally.skippedAlreadySeated++;
+              continue;
+            }
+            if (precheck === 'table_full') {
+              tally.skippedTableFull++;
+              continue;
+            }
+            tally.rpcCalled++;
             const { data: res, error: seatRpcErr } = await supabase.rpc(
               'fn_seat_horse_in_seat_first_game',
               { p_tournament_id: tournamentId, p_user_id: horse }
@@ -5177,6 +5400,7 @@ export class TournamentRecurringService {
             // refusals that do need reading. isExpectedSeatRefusal names them;
             // everything else is still reported, unchanged.
             if (seatRpcErr) {
+              tally.rpcRefused++;
               if (!isExpectedSeatRefusal(seatRpcErr.message)) {
                 reportError(
                   new Error(
@@ -5187,7 +5411,42 @@ export class TournamentRecurringService {
               }
               continue;
             }
-            if ((res as { ok?: boolean } | null)?.ok === true) added++;
+            const outcome = res as {
+              ok?: boolean;
+              already_seated?: boolean;
+              reason?: string;
+              seat_number?: number;
+            } | null;
+            if (outcome?.ok === true && outcome.already_seated === true) {
+              /* The ledger was stale: the horse took its seat between the read
+                 and this call. `ok:true` here covered NO seat - it used to be
+                 counted as one, which stopped a pass one seat short whenever a
+                 seated horse was drawn first, and a small club fleet draws the
+                 same seated horse pass after pass. Note it, seat nobody, and let
+                 the next candidate have the seat. */
+              tally.rpcAlreadySeated++;
+              seatFirstNoteSeated(ledger, horse, undefined);
+              continue;
+            }
+            if (outcome?.ok === true) {
+              added++;
+              tally.seated++;
+              seatFirstNoteSeated(ledger, horse, outcome.seat_number);
+              continue;
+            }
+            if (outcome?.reason === 'table_full') {
+              /* The race the ledger cannot see: another service filled the last
+                 seat on this same tick. The RPC has now said so under its lock;
+                 the spare candidates behind this one skip the queue. */
+              tally.rpcTableFull++;
+              seatFirstNoteTableFull(ledger);
+              continue;
+            }
+            tally.rpcOtherNoop++;
+          }
+
+          if (candidates.length > 0) {
+            console.log(seatFirstPrecheckLogLine(tournamentId, tally));
           }
 
           if (added === 0 && candidates.length > 0) {

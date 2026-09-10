@@ -1,0 +1,268 @@
+{
+  "scope": "Exact source compatibility audit for the isolated hook upgrade; no production activation or rollout claim.",
+  "live_build_source": "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04",
+  "main_compared": "d6a032d8d3de237f7371e4ea28101e7824569e7a",
+  "hook_body_md5": "d21a055b448febe83c1637371b150100",
+  "manager_route_frontend_calls": {
+    "f1992eeb825918d6614d72a10c66988d0cdd292c": {
+      "fn_ack_tournament_capacity_tables": [],
+      "fn_begin_tournament_launch_atomic": [],
+      "fn_bounty_obligation_has_complete_marker": [],
+      "fn_claim_tournament_bounty_elimination": [],
+      "fn_close_tournament_addon_period": [],
+      "fn_close_empty_tournament_table": [],
+      "fn_close_tournament_entry_window": [],
+      "fn_collect_bounty": [],
+      "fn_complete_tournament_entry_reprice": [],
+      "fn_complete_tournament_launch_atomic": [],
+      "fn_complete_tournament_terminal_proposal": [],
+      "fn_begin_tournament_deal_review": [],
+      "fn_close_tournament_deal_review": [],
+      "fn_decline_tournament_rebuy": [],
+      "fn_eliminate_tournament_player_atomic": [],
+      "fn_ensure_late_registration_capacity": [],
+      "fn_get_tournament_satellite_entitlement_depth": [],
+      "fn_mystery_bounty_pay": [],
+      "fn_mystery_bounty_reserve": [],
+      "fn_mystery_bounty_reveal": ["src/pages/TablePage.tsx"],
+      "fn_mystery_bounty_seed": [],
+      "fn_move_tournament_player": [],
+      "fn_move_tournament_player_atomic": [],
+      "fn_open_tournament_rebuy_decisions": [],
+      "fn_settle_final_table_deal_atomic": [],
+      "fn_spin_draw_and_settle_atomic": [],
+      "fn_spin_draw_multiplier": [],
+      "fn_spin_settle_game": [],
+      "fn_sync_tournament_live_seat_chips": [],
+      "fn_tournament_has_unsettled_bounties": [],
+      "process_tournament_rebuy": ["src/services/TournamentService.ts"]
+    },
+    "d6a032d8d3de237f7371e4ea28101e7824569e7a": {
+      "fn_ack_tournament_capacity_tables": [],
+      "fn_begin_tournament_launch_atomic": [],
+      "fn_bounty_obligation_has_complete_marker": [],
+      "fn_claim_tournament_bounty_elimination": [],
+      "fn_close_tournament_addon_period": [],
+      "fn_close_empty_tournament_table": [],
+      "fn_close_tournament_entry_window": [],
+      "fn_collect_bounty": [],
+      "fn_complete_tournament_entry_reprice": [],
+      "fn_complete_tournament_launch_atomic": [],
+      "fn_complete_tournament_terminal_proposal": [],
+      "fn_begin_tournament_deal_review": [],
+      "fn_close_tournament_deal_review": [],
+      "fn_decline_tournament_rebuy": [],
+      "fn_eliminate_tournament_player_atomic": [],
+      "fn_ensure_late_registration_capacity": [],
+      "fn_get_tournament_satellite_entitlement_depth": [],
+      "fn_mystery_bounty_pay": [],
+      "fn_mystery_bounty_reserve": [],
+      "fn_mystery_bounty_reveal": ["src/pages/TablePage.tsx"],
+      "fn_mystery_bounty_seed": [],
+      "fn_move_tournament_player": [],
+      "fn_move_tournament_player_atomic": [],
+      "fn_open_tournament_rebuy_decisions": [],
+      "fn_settle_final_table_deal_atomic": [],
+      "fn_spin_draw_and_settle_atomic": [],
+      "fn_spin_draw_multiplier": [],
+      "fn_spin_settle_game": [],
+      "fn_sync_tournament_live_seat_chips": [],
+      "fn_tournament_has_unsettled_bounties": [],
+      "process_tournament_rebuy": ["src/services/TournamentService.ts"]
+    },
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04": {
+      "fn_ack_tournament_capacity_tables": [],
+      "fn_begin_tournament_launch_atomic": [],
+      "fn_bounty_obligation_has_complete_marker": [],
+      "fn_claim_tournament_bounty_elimination": [],
+      "fn_close_tournament_addon_period": [],
+      "fn_close_empty_tournament_table": [],
+      "fn_close_tournament_entry_window": [],
+      "fn_collect_bounty": [],
+      "fn_complete_tournament_entry_reprice": [],
+      "fn_complete_tournament_launch_atomic": [],
+      "fn_complete_tournament_terminal_proposal": [],
+      "fn_begin_tournament_deal_review": [],
+      "fn_close_tournament_deal_review": [],
+      "fn_decline_tournament_rebuy": [],
+      "fn_eliminate_tournament_player_atomic": [],
+      "fn_ensure_late_registration_capacity": [],
+      "fn_get_tournament_satellite_entitlement_depth": [],
+      "fn_mystery_bounty_pay": [],
+      "fn_mystery_bounty_reserve": [],
+      "fn_mystery_bounty_reveal": ["src/pages/TablePage.tsx"],
+      "fn_mystery_bounty_seed": [],
+      "fn_move_tournament_player": [],
+      "fn_move_tournament_player_atomic": [],
+      "fn_open_tournament_rebuy_decisions": [],
+      "fn_settle_final_table_deal_atomic": [],
+      "fn_spin_draw_and_settle_atomic": [],
+      "fn_spin_draw_multiplier": [],
+      "fn_spin_settle_game": [],
+      "fn_sync_tournament_live_seat_chips": [],
+      "fn_tournament_has_unsettled_bounties": [],
+      "process_tournament_rebuy": ["src/services/TournamentService.ts"]
+    }
+  },
+  "server_manager_route_calls": [
+    {
+      "route": "fn_decline_tournament_rebuy",
+      "path": "server/src/engine/ServerTableEngineBase.ts"
+    },
+    {
+      "route": "fn_ack_tournament_capacity_tables",
+      "path": "server/src/tournament/TournamentManager.ts"
+    },
+    {
+      "route": "fn_close_empty_tournament_table",
+      "path": "server/src/tournament/TournamentManager.ts"
+    },
+    {
+      "route": "fn_ensure_late_registration_capacity",
+      "path": "server/src/tournament/TournamentManager.ts"
+    },
+    {
+      "route": "fn_begin_tournament_launch_atomic",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_close_tournament_addon_period",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_close_tournament_entry_window",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_complete_tournament_entry_reprice",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_complete_tournament_launch_atomic",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_mystery_bounty_seed",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_spin_draw_and_settle_atomic",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "process_tournament_rebuy",
+      "path": "server/src/tournament/TournamentManagerBase.ts"
+    },
+    {
+      "route": "fn_bounty_obligation_has_complete_marker",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_claim_tournament_bounty_elimination",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_collect_bounty",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_eliminate_tournament_player_atomic",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_get_tournament_satellite_entitlement_depth",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_mystery_bounty_pay",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_mystery_bounty_reserve",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_mystery_bounty_reveal",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_open_tournament_rebuy_decisions",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_tournament_has_unsettled_bounties",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "process_tournament_rebuy",
+      "path": "server/src/tournament/TournamentManagerEliminations.ts"
+    },
+    {
+      "route": "fn_move_tournament_player",
+      "path": "server/src/tournament/tournamentSeatMoveRpc.ts"
+    }
+  ],
+  "source_sha256": {
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:server/src/services/supabase/client.ts": "4dc90b3306b11182076548328fd9fd234934d85f077269ca125547ab66d5df53",
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:server/src/services/supabase/dataActorContext.ts": "c0bf50f1aa619fcf795b62062ec453671136ea78abecefd77c52ee8cfc89b89e",
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:server/src/GameServer.ts": "bc93b12d75165593ac1ee6c194d548bac585dc1dccf691b4d6acbce871ebbab2",
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:server/src/tournament/TournamentManagerBase.ts": "af221392a763987ff5a2cd45d257ce50bf2b62d304e121d3df02ddafdf4c3696",
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:server/src/tournament/TournamentManagerEliminations.ts": "878307741de445f2ee920cd462f740fe2db51b95081a2b1e030c8d067f4ab733",
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:src/pages/TablePage.tsx": "17587808ac73c1fb888e55d838fef285962405728591345257bf092aa1b92952",
+    "f1992eeb825918d6614d72a10c66988d0cdd292c:src/services/TournamentService.ts": "d14f8fc1abf7fe17f68d88b16ac7f7c4b12f2c03ff4dd4717339e7b146e65ca6",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/services/supabase/client.ts": "4dc90b3306b11182076548328fd9fd234934d85f077269ca125547ab66d5df53",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/services/supabase/dataActorContext.ts": "c0bf50f1aa619fcf795b62062ec453671136ea78abecefd77c52ee8cfc89b89e",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/GameServer.ts": "bc93b12d75165593ac1ee6c194d548bac585dc1dccf691b4d6acbce871ebbab2",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/tournament/TournamentManager.ts": "43d1fb8706c796903a3563080f2ef4dbfbbc3010b6a296e597278f31b0cfbd01",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/tournament/TournamentManagerBase.ts": "cee059d76cdfcdbcf2834ff7bfd817699c4b429f3502fa41d62362ed8330db86",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/tournament/TournamentManagerEliminations.ts": "dc738e9ceda7f9aa53d8379c12e52cd9428f15fb3d6b62e3f13577a5d945d39d",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/engine/ServerTableEngineBase.ts": "3a6e9ac49356a07840f127f41453ee3ba29bc199cac071e0bbb88ad246f1c48e",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/tournament/tournamentSeatMoveRpc.ts": "3f7403380021733161fdeea76a0dc22c8012771c2ab9786ce0dc3c50095151ef",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/services/tournamentLease.ts": "df20ed68e08d2700972c265e0b2cc4f1e323050078720b3b0755ce54145d1054",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:server/src/services/tableLease.ts": "672f76fd96a3a8036c335d0a831998de81274d833ddfd8cfae11666b12870ed6",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:src/pages/TablePage.tsx": "17587808ac73c1fb888e55d838fef285962405728591345257bf092aa1b92952",
+    "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04:src/services/TournamentService.ts": "d14f8fc1abf7fe17f68d88b16ac7f7c4b12f2c03ff4dd4717339e7b146e65ca6"
+  },
+  "authority_findings": [
+    "Shared normal and maintenance service clients stamp dataActorHeaders at actual fetch, on every retry.",
+    "Unbound engine calls receive service/protocol-1; manager bound methods receive tournament-manager/protocol-2 with exact tournament and generation.",
+    "GameServer binds every manager instance/prototype method immediately after its granted lease and before manager publication or lifecycle invocation.",
+    "TournamentManagerBase binds each managed dealer with the same verified authority; standalone seat-move RPC helper executes from bound manager methods.",
+    "Only unmarked authenticated rebuy, decline and mystery reveal receive the player exception; service reveal still requires exact manager authority.",
+    "Live reveal 5578ec53c8a531eeba47d448ae9af1b1 matches tracked hardening, uses auth.uid for browser identity, ignores supplied actor and ignores browser auto bypass.",
+    "Live rebuy 3db2678ad2b17093ba8dd85ab6af2339 refuses browser calls for another user and requires a prompt token for non-addon requests.",
+    "Live decline 776ded27a18b807bf06b12448294eae8 checks own user identity for PostgREST callers; explicit operator database principals remain supported.",
+    "d6a032d8d changes the bounty-ledger obligation attach predicate and manager lifecycle re-registration. It does not alter reveal authorization, client RPC identity, or actor-header plumbing."
+  ],
+  "previous_live_build_source": "f1992eeb825918d6614d72a10c66988d0cdd292c",
+  "current_live_delta": {
+    "compared_from": "f1992eeb825918d6614d72a10c66988d0cdd292c",
+    "compared_to": "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04",
+    "unchanged_files": [
+      "server/src/services/supabase/client.ts",
+      "server/src/services/supabase/dataActorContext.ts",
+      "server/src/GameServer.ts",
+      "server/src/tournament/TournamentManager.ts",
+      "server/src/tournament/tournamentSeatMoveRpc.ts",
+      "server/src/services/tournamentLease.ts",
+      "server/src/services/tableLease.ts",
+      "src/pages/TablePage.tsx",
+      "src/services/TournamentService.ts"
+    ],
+    "changed_files": {
+      "server/src/engine/ServerTableEngineBase.ts": "Maps SNG table-feel metrics to the existing MTT label; no actor binding or RPC changes.",
+      "server/src/tournament/TournamentManagerBase.ts": "Adds the refusal retry threshold constant; manager and dealer authority binding unchanged.",
+      "server/src/tournament/TournamentManagerEliminations.ts": "Continues past a repeatedly refused bust and adjusts configured horse rebuy/re-entry policy. The existing process_tournament_rebuy call remains inside the bound manager; no new manager-only route or reveal caller is introduced."
+    },
+    "admission_compatibility_changed": false,
+    "frontend_route_map_reused_because": "Both complete frontend source files containing actual manager-only calls are byte-identical to the prior audited build; actor/client and manager entry binding files also match exactly."
+  },
+  "topology_limits": {
+    "single_health_response": "Root observed healthy 6aee0b67 with no stalled/blocked settlements; this identifies the answering process only.",
+    "process_identity_source": "tableLease.ts creates INSTANCE_ID from process.pid and randomUUID at module initialization. Tournament and table claim helpers share that process identity and publish INSTANCE_VERSION on claims.",
+    "mixed_live_owners_verified": false,
+    "reason": "No live owner/lease rows were queried after root chose to defer the optional admission upgrade. Source compatibility of one build is not evidence that every running process uses it.",
+    "future_apply_requirement": "At eventual Stage B adoption, verify active owner builds/processes across the deployment before enforcing manager-only route admission, including any drain or rolling deployment overlap."
+  },
+  "release_disposition": "Prepared only, not applied. The currently deployed ab227 hook already preserves KEY SHARE heartbeat renewal. Additional route restrictions are deferred with Stage B and are not required for this compatibility publication."
+}

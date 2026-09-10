@@ -872,6 +872,11 @@ describe('a tournament pays every place or none', () => {
     expect(REQUEST_TERMINAL).toContain("supabase.rpc('fn_complete_tournament_terminal'");
     expect(REQUEST_TERMINAL).toContain('verifyTournamentCompletionReceipt(');
     expect(REQUEST_TERMINAL).toContain("supabase.rpc('fn_resolve_tournament_terminal_outcome'");
-    expect(REQUEST_TERMINAL).toMatch(/if \(receipt\) return receipt/);
+    expect(REQUEST_TERMINAL).toMatch(
+      /if \(receipt && proposalIdentityIsExact\(data\)\) return receipt/
+    );
+    expect(REQUEST_TERMINAL).toMatch(
+      /if \(receipt && proposalIdentityIsExact\(outcome\.receipt\)\) return receipt/
+    );
   });
 });

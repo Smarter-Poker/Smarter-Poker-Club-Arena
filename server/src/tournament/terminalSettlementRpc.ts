@@ -58,6 +58,9 @@ interface TerminalSettlementRetryOptions {
   /** Bounded reads of the stored receipt after a proven disagreement. */
   receiptReadAttempts?: number;
   wait?: (delayMs: number) => Promise<void>;
+  dealProposal?: { proposalId: string; revision: string };
+  /** Enables a fresh authoritative inactivity check, never an unconditional downgrade. */
+  legacyDealAuthority?: 'proposal_authority_not_active';
 }
 
 const defaultWait = (delayMs: number): Promise<void> =>
@@ -213,6 +216,34 @@ export async function requestTournamentTerminalReceipt(
   observedWinnerId: string | null,
   options: TerminalSettlementRetryOptions = {}
 ): Promise<VerifiedTournamentCompletionReceipt> {
+  const dealProposal = options.dealProposal ? { ...options.dealProposal } : undefined;
+  const legacyDeal = options.legacyDealAuthority === 'proposal_authority_not_active';
+  if (legacyDeal && (settlementMode !== 'final_table_deal' || dealProposal))
+    throw new TerminalSettlementRefusedError('Legacy authority cannot replace proposal consent');
+  if (settlementMode === 'final_table_deal' && !legacyDeal) {
+    if (
+      !dealProposal ||
+      typeof dealProposal.proposalId !== 'string' ||
+      !UUID.test(dealProposal.proposalId) ||
+      typeof dealProposal.revision !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(dealProposal.revision)
+    ) {
+      throw new TerminalSettlementRefusedError(
+        'Final-table settlement requires exact proposal consent'
+      );
+    }
+  } else if (dealProposal) {
+    throw new TerminalSettlementRefusedError(
+      'Proposal consent cannot change ordinary place settlement'
+    );
+  }
+  const proposalIdentityIsExact = (raw: unknown): boolean => {
+    if (!dealProposal) return true;
+    const value = record(raw);
+    return (
+      value.proposal_id === dealProposal.proposalId && value.revision === dealProposal.revision
+    );
+  };
   const attempts = Math.max(1, Math.min(8, Math.trunc(options.attempts ?? 5)));
   const receiptReadAttempts = Math.max(
     1,
@@ -228,11 +259,48 @@ export async function requestTournamentTerminalReceipt(
     p_observed_winner_id: observedWinnerId,
     p_settlement_mode: settlementMode,
   };
+  const proposalRequest = dealProposal
+    ? {
+        ...request,
+        p_proposal_id: dealProposal.proposalId,
+        p_revision: dealProposal.revision,
+      }
+    : null;
   let lastFailure = 'terminal settlement returned no receipt';
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (legacyDeal) {
+      let inactive = false;
+      try {
+        const capability = await supabase.rpc('fn_get_tournament_deal_consensus', {
+          p_tournament_id: tournamentId,
+        });
+        const data = capability?.data;
+        inactive =
+          !capability?.error &&
+          data &&
+          typeof data === 'object' &&
+          !Array.isArray(data) &&
+          data.ok === false &&
+          data.reason === 'proposal_authority_not_active';
+      } catch {
+        /* No authoritative response means no legacy money call. */
+      }
+      if (!inactive) {
+        if (attempt === 1)
+          throw new TerminalSettlementRefusedError(
+            'Legacy deal authority is not confirmed inactive'
+          );
+        // A prior attempt may already have committed. Resolve its immutable
+        // outcome before releasing a dealer; activation is not a proven miss.
+        lastFailure = 'Legacy deal authority changed after an attempted settlement';
+        break;
+      }
+    }
     try {
-      const { data, error } = await supabase.rpc('fn_complete_tournament_terminal', request);
+      const { data, error } = proposalRequest
+        ? await supabase.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
+        : await supabase.rpc('fn_complete_tournament_terminal', request);
       if (!error) {
         const receipt = verifyTournamentCompletionReceipt(
           data,
@@ -240,7 +308,7 @@ export async function requestTournamentTerminalReceipt(
           settlementMode,
           observedWinnerId
         );
-        if (receipt) return receipt;
+        if (receipt && proposalIdentityIsExact(data)) return receipt;
         lastFailure = 'terminal settlement returned an invalid stored receipt';
       } else {
         if (isTerminalReplayDisagreement(error)) {
@@ -267,11 +335,9 @@ export async function requestTournamentTerminalReceipt(
   // resolver acquires the exact global terminal lock first, so it waits for
   // that transaction and only then reports committed receipt or proven miss.
   try {
-    const { data, error } = await supabase.rpc('fn_resolve_tournament_terminal_outcome', {
-      p_tournament_id: tournamentId,
-      p_observed_winner_id: observedWinnerId,
-      p_settlement_mode: settlementMode,
-    });
+    const { data, error } = proposalRequest
+      ? await supabase.rpc('fn_resolve_tournament_terminal_proposal_outcome', proposalRequest)
+      : await supabase.rpc('fn_resolve_tournament_terminal_outcome', request);
     if (error) {
       if (isTerminalReplayDisagreement(error)) {
         // The receipt committed under different parameters while this request
@@ -291,7 +357,8 @@ export async function requestTournamentTerminalReceipt(
       const identityIsExact =
         outcome.ok === true &&
         outcome.tournament_id === tournamentId &&
-        outcome.mode === settlementMode;
+        outcome.mode === settlementMode &&
+        proposalIdentityIsExact(outcome);
       if (
         identityIsExact &&
         outcome.terminal_committed === true &&
@@ -304,7 +371,7 @@ export async function requestTournamentTerminalReceipt(
           settlementMode,
           observedWinnerId
         );
-        if (receipt) return receipt;
+        if (receipt && proposalIdentityIsExact(outcome.receipt)) return receipt;
         lastFailure = `${lastFailure}; serialized committed receipt was invalid`;
       } else if (
         identityIsExact &&

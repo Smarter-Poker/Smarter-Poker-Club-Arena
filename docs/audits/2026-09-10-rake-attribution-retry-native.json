@@ -1,0 +1,26 @@
+{
+  "status": "native_rollback_proof_passed",
+  "assertions_passed": 35,
+  "native_exit_code": 0,
+  "scope": "Settlement and attribution with synthetic opening custody and trigger-injected transient SQLSTATEs",
+  "restoration": "scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql",
+  "preimage": "scripts/ci/probes/rake-attribution-retry-native-preimage.sql",
+  "composer": "scripts/ci/compose-rake-attribution-retry-native.py",
+  "executed_sql_sha256": "d312357e1037b4c6d9fd912b14c92dac07851b37939645d380e7ba6793861601",
+  "checks": [
+    "Original lost-attribution failure reproduced",
+    "55P03 and 40P01 retry exactly once before success",
+    "Transient exhaustion stops at four attempts",
+    "Permanent failure runs once",
+    "Escrow plus treasury conserved",
+    "Failed attribution state rolls back",
+    "Exact replay preserves financial and attribution state",
+    "Existing function and trigger metadata preserved",
+    "Original fixture state restored after rollback"
+  ],
+  "limits": [
+    "Synthetic opening custody is not registration acceptance",
+    "Injected SQLSTATEs are not naturally occurring two-session deadlocks",
+    "Prepared source is not deployment evidence"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-09-10T14:59:28.739946+00:00",
+  "build_info": {
+    "ca_sha": "7732b971982bb888e6c0b455e73568bae1d7bbf1",
+    "built_at": "2026-09-10T14:54:59Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34491803594"
+  },
+  "public_origin_match": true,
+  "entry_url": "https://smarter.poker/hub/club-arena/assets/index-DtqA7vEY-v6.js",
+  "entry_sha256": "7919ec7b056a6e9f3deaa7a591deb59283e42c8f8f16fd0e87a651f5409a8e50",
+  "page_urls": [
+    "https://smarter.poker/hub/club-arena/assets/DailyChallengesPage-BKNfPKEa-v6.js",
+    "https://ca-static.smarter.poker/assets/DailyChallengesPage-BKNfPKEa-v6.js"
+  ],
+  "page_sha256": "495df07fdec47e92df4881080c616fcd9c41364d7a0b48594acbc79a4b0c7927",
+  "freeze_pending_label_present": true,
+  "dashboard_revision_call_sites": 2,
+  "revision_read_snippets": [
+    ")return;let n=!1,c;const u=async()=>{try{if(document.visibilityState===\"visible\"&&Je.current){const x=await pe.getDashboardRevision(o);!n&&x>Ce.current&&Fe()}}catch{}finally{n||(c=setTimeout(u,15e3))}};return c=setTimeout(u,15e3),()=>{n=!0,clearTimeout(c)}},[o,Fe]),d.useEffect(()=>()=>{te.current&&clearTimeout(te.current)},[]),d.useEffect(()=>()=>{qe.current+=1},[o]),hs({channelName:o?`d",
+    " u=ea.current===\"degraded\";ea.current=\"live\",M(\"live\"),u?(q({userId:o,event:\"realtime_recovered\"}),Fe()):o&&pe.getDashboardRevision(o).then(x=>{!r.current||c!==qe.current||x>Ce.current&&Fe({revision:x})}).catch(()=>{})}}),d.useEffect(()=>{if(!xe)return;const n=E.find(c=>c.id===xe);(!n||n.completed||n.claimed)&&ie(null)},[E,xe]);const Xa=d.useCallback(async n=>{if(!o||Ie.current.has(n.id)"
+  ]
+}

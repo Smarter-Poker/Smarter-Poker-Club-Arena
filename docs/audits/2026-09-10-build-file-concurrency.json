@@ -1,0 +1,80 @@
+{
+  "recorded_at": "2026-09-10T14:44:46.807799+00:00",
+  "status": "isolated_build_configuration_candidate_no_push",
+  "base_head": "f297e962b2f79b114e84efbb3eb755e984789328",
+  "installed": {
+    "vite": "6.4.3",
+    "rollup": "4.63.1"
+  },
+  "problem": "maxParallelFileOps was placed at the Vite build root, so TypeScript rejected it and Rollup did not receive it.",
+  "baseline_proof": {
+    "typecheck": "TS2769: maxParallelFileOps does not exist in BuildEnvironmentOptions",
+    "real_vite_builds": 4,
+    "rollup_observed_override": null,
+    "result": "all four original limit cases failed because Rollup observed undefined"
+  },
+  "change": {
+    "location": "build.rollupOptions.maxParallelFileOps",
+    "local_default": 20,
+    "ci_default": "max(4, floor(actual host CPU count / 2))",
+    "override": "preserve positive safe integer values; reject nonpositive, nonfinite, fractional and unsafe values before constructing plugins",
+    "ci_gate": "existing TypeScript Check step now runs application and node-config typechecks"
+  },
+  "installed_rollup_findings": {
+    "default": 1000,
+    "nonpositive": "normalizes to Infinity",
+    "NaN": "passes through numeric normalization and defeats workerCount >= maxParallel comparison",
+    "fractional": "does not validate whole numbers"
+  },
+  "verification": {
+    "focused_tests": {
+      "passed": 44,
+      "files": 4,
+      "breakdown": {
+        "actual_vite_builds": 5,
+        "invalid_override_refusals": 9,
+        "sentry_identity": 17,
+        "source_map_laws": 7,
+        "build_typecheck_laws": 6
+      }
+    },
+    "actual_vite_limits": [20, 14, 4, 7, 20],
+    "actual_host_cpus": 28,
+    "ci_step": "Parsed actual ci.yml typecheck step and executed its run body using bash -e. Both npx tsc --noEmit and npx tsc -p tsconfig.node.json --noEmit passed.",
+    "full_app_build": {
+      "command": "CA_SENTRY_UPLOAD= SENTRY_AUTH_TOKEN= ROLLUP_MAX_FILE_OPS=4 npm run build",
+      "exit_code": 0,
+      "vite_seconds": 9.08,
+      "typecheck_and_build_sequence_seconds": 16.23,
+      "low_cap_stall": false,
+      "external_uploads": "explicitly disabled",
+      "provenance": "local dirty source, behind origin/main by 5; compatibility proof only, not a release artifact"
+    },
+    "eslint": "passed for config and new concurrency tests",
+    "final_edit": "After validation, replaced only the old speculative load-cause comment with factual option-location and limit documentation."
+  },
+  "source_sha256": {
+    "vite.config.ts": "175fb034abb94174ca8a61e0b37bcca241dc41b51ba1cdc6fcaaa10197639d1b",
+    "tests/unit/buildConcurrency.test.ts": "3ea336fbb2417ee1ed36d7385261afe6c358976b1668b816333a656cb94e9d8f",
+    ".github/workflows/ci.yml": "e10a53a12bdfdf3d80cd426c8f442a64e6500423daa0b6c163803a4b4e372f37",
+    "tests/the-build-typechecks-where-it-ships.law.test.ts": "910520e2d8698be89016ad50a23552aea15ee6bc2ca74d17dfa5ab9945332c7a"
+  },
+  "evidence_log_sha256": {
+    "/tmp/codex-build-concurrency-baseline.log": "5cdeb836e54e3f3ee01d6e5927f2665a2ec85b9ab0c38cc6621d57c5036961ec",
+    "/tmp/codex-build-concurrency-fixed.log": "8b529ae902dcbc4cb96794a245386a56508f09265abf13143194798a879d0b3b",
+    "/tmp/codex-build-config-ci-typecheck.log": "d66158196451bb8c3609c7563918325a47bee59e9dc43c4be6de50972a22adfc",
+    "/tmp/codex-build-concurrency-min4.log": "c96968eaa713949b2482e902e92d6b7d44ea10c584c9ccf14962602e7526145c"
+  },
+  "primary_sources": [
+    "https://raw.githubusercontent.com/vitejs/vite/v6.4.3/docs/config/build-options.md",
+    "https://rollupjs.org/configuration-options/#maxparallelfileops",
+    "node_modules/vite/dist/node/index.d.ts",
+    "node_modules/rollup/dist/rollup.d.ts",
+    "node_modules/rollup/dist/es/shared/node-entry.js"
+  ],
+  "release_boundaries": [
+    "Root integrates and runs release gates on current main; this lane does not push.",
+    "The publisher Sentry 403 is a separate unresolved observation; no credentials or project permissions changed.",
+    "The captured-rakeback browser remains on its separate unpublished branch awaiting the revised accounting DTO."
+  ]
+}

@@ -154,6 +154,19 @@
   border-style: dashed;
 }
 
+/* The reasons rungs are struck: visible copy, not a tooltip. Indented under
+   the ladder with a lit rule so it reads as a consequence of the chips above
+   rather than a new section. */
+.cash-create__taken {
+  margin-top: 0.4rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--realism-gunmetal-lit, #3a4756);
+}
+
+.cash-create__taken .cash-create__note {
+  margin-top: 0.2rem;
+}
+
 .cash-create__note {
   margin: 0.4rem 0 0;
   color: var(--realism-muted, #7f8c9b);

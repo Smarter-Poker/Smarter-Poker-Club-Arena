@@ -37,6 +37,11 @@
  * lane deleted its half rather than have two migrations rewrite one statement.
  */
 import { describe, it, expect } from 'vitest';
+// Windows are bounded by the STRUCTURE they are about, never by a byte count:
+// a fixed window drifts off the code it guards as the code grows, and a
+// negative assertion inside one then passes while guarding nothing.
+// tests/helpers/sourceWindow explains the outage that rule was written after.
+import { sliceBetween, sliceSqlStatement } from './helpers/sourceWindow';
 import fs from 'fs';
 import path from 'path';
 
@@ -85,9 +90,11 @@ describe('the main game has no seat change, however a table got its number', () 
   });
 
   it('and the allowance comes back, like every other change the system made', () => {
-    const block = MIG.slice(MIG.indexOf("note = 'now_on_main_one'"));
-    expect(block.slice(0, 600)).toMatch(/SET seat_change_used_at = NULL/);
-    expect(block.slice(0, 900)).toMatch(/'seat_change_returned'[\s\S]{0,200}'now_on_main_one'/);
+    // The IF branch that handles a request from a table that became Main 1,
+    // bounded by the END IF that closes it.
+    const block = sliceBetween(MIG, "note = 'now_on_main_one'", 'END IF;');
+    expect(block).toMatch(/SET seat_change_used_at = NULL/);
+    expect(block).toMatch(/'seat_change_returned'[\s\S]{0,200}'now_on_main_one'/);
   });
 
   it('the 2026-09-07 left_table return survives the replacement', () => {
@@ -102,8 +109,12 @@ describe('a re-listed seat change follows the player', () => {
     expect(MIG).toMatch(/tb\.cluster_id = g\.id AND tb\.lifecycle <> 'closed'/);
     // The old predicate - "still in the table you asked from" - is what
     // stranded the request. It must not survive in this statement.
-    const stmt = MIG.slice(MIG.indexOf('THE REQUEST COMES BACK WHEREVER THEY ARE SITTING'));
-    expect(stmt.slice(0, 2400)).not.toMatch(/ts\.table_id = rq\.from_table_id/);
+    // The UPDATE that re-lists the request, bounded by the semicolon that ends
+    // it. `ts.table_id = rq.from_table_id` appears elsewhere in the migration
+    // and is legitimate there; what this pin forbids is its survival in THIS
+    // statement, so the statement is exactly the right window.
+    const stmt = sliceSqlStatement(MIG, 'THE REQUEST COMES BACK WHEREVER THEY ARE SITTING');
+    expect(stmt).not.toMatch(/ts\.table_id = rq\.from_table_id/);
   });
 
   it('rewrites from_table_id by a correlated subquery, never a LATERAL on the target', () => {
@@ -117,8 +128,8 @@ describe('a re-listed seat change follows the player', () => {
 
   it('never sets the NOT NULL from_table_id to NULL', () => {
     // A player with no chair at all in the game is the roster trigger's case.
-    const stmt = MIG.slice(MIG.indexOf('THE REQUEST COMES BACK WHEREVER THEY ARE SITTING'));
-    expect(stmt.slice(0, 2400)).toMatch(/AND EXISTS \(SELECT 1 FROM public\.table_seats ts/);
+    const stmt = sliceSqlStatement(MIG, 'THE REQUEST COMES BACK WHEREVER THEY ARE SITTING');
+    expect(stmt).toMatch(/AND EXISTS \(SELECT 1 FROM public\.table_seats ts/);
   });
 
   it('a re-listed request keeps the allowance spent - it is still in use', () => {

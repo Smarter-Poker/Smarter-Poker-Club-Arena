@@ -438,15 +438,68 @@ is live.
 
 ---
 
+## Reconciliation after the integrator merged origin/main (171 commits)
+
+Two server tests went red on the merged tree, both mine, both **source-text
+pins on a spelling this lane deliberately changed**. Neither disagreed with
+the fix on intent; both were moved to the new mechanism in the same edit
+(CLAUDE.md 10.6), and both were made STRICTER, not weaker.
+
+**First, the thing worth recording:** `origin/main` never fixed this read.
+#3982 disambiguated the LOBBY (`src/pages/ClubHomePage.tsx`), and migration
+`20260909205508` dropped the composite foreign keys. `origin/main`'s
+`HorseSessionRotator.ts` still carries the unqualified `tables!inner(...)` at
+line 272 and the bare `if (error || !chunk) return;` at line 282 - it works
+only because the constraints were removed, and it is one migration away from
+being dark again. This lane's fix is the only one on that path.
+
+| test | asserted | why red | moved to |
+| ---- | -------- | ------- | -------- |
+| `PagedReadsCannotLieAboutBeingComplete` > "declines the pass on a failed page rather than rotating half a room" | the literal one-liner `if (error \|\| !chunk) return;` | the branch is now a block that reports before returning | the guard still exists, its branch still `return;`s, **and** it must carry `seat_read_failed` and a `console.warn` - the silence is now pinned as a defect |
+| `theClubProgrammeMirrorsTheHouse` > "the rotator walks one horse out per cycle through the engine" | `tables!inner(id, big_blind, ... created_at)` | the embed names its foreign key now | the same full column list, against the **qualified** embed - strictly stronger, since the read can no longer be broken by a migration in another lane |
+
+`PagedReadsCannotLieAboutBeingComplete` also gained a new pin - the read names
+its foreign key and no unqualified `tables!inner(` may come back - because
+that file's whole subject is a paged read that cannot lie about being
+complete, and a read that returns nothing because PostgREST refused it is the
+purest form of that lie.
+
+### Proof the law can still fail
+
+Two mutations, applied to `HorseSessionRotator.ts`, run, then reverted:
+
+| mutation | red |
+| -------- | --- |
+| the reporting block -> `if (error \|\| !chunk) return;` (a silent decline) | **3 failed**: `aDeadReadIsNotAnEmptyRoom` "reports and warns before it declines the pass" + "throttles the report", and `PagedReads` "declines the pass on a failed page" |
+| `tables!table_seats_table_id_fkey!inner(` -> `tables!inner(` (the actual 2026-09-09 outage condition) | **4 failed**: `aDeadReadIsNotAnEmptyRoom` "embeds tables through table_seats_table_id_fkey by name" + "carries NO unqualified tables embed", `PagedReads` "names its foreign key", and `theClubProgrammeMirrorsTheHouse` "the rotator walks one horse out per cycle" |
+
+The file was restored from a byte copy taken before the first mutation and
+re-verified afterwards (qualified embed present once, `seat_read_failed`
+present once, zero occurrences of the bare-return form).
+
+---
+
 ## Gate
 
 Run on the host, in the worktree, after every change above.
+
+Before the merge:
 
 ```
 server/  npx tsc --noEmit                                   EXIT=0
 server/  npx vitest run <21 files>        21 passed (21)    501 passed (501)
 root/    npx vitest run <4 files>          4 passed (4)     316 passed (316)
 ```
+
+After the integrator's origin/main merge and the two pin moves above:
+
+```
+server/  npx tsc --noEmit -p .                              EXIT=0
+server/  npx vitest run <12 files>        12 passed (12)    259 passed (259)
+```
+
+The 12 include both previously-red files, this lane's law, and the horse
+suites the changes touch.
 
 The 21 server files: `aDeadReadIsNotAnEmptyRoom.law`, `HorseSeatChange`,
 `HorseStakeBands`, `HorseFleetRetireSurplus`, `aDisabledGameIsNotSeeded`,
@@ -477,6 +530,8 @@ probing. Nothing was committed, pushed or applied.
 | `docs/laws.d/a-dead-read-is-not-an-empty-room.md` | **new** - its registry entry |
 | `server/src/engine/HorseVpipFloor.test.ts` | pins moved to the derived cushion, with the derivation |
 | `tests/a-vpip-floor-must-be-reachable.law.test.ts` | calls the real function instead of a local copy; new sigma pin |
+| `server/src/services/PagedReadsCannotLieAboutBeingComplete.test.ts` | pin moved to the reporting branch; new pin on the named foreign key |
+| `server/src/services/theClubProgrammeMirrorsTheHouse.test.ts` | the same column list, pinned against the qualified embed |
 
 **Shared files touched: none.** Every file above is lane F's. The tournament
 and client paths carrying the same dead embed are listed under P0-F1 with line

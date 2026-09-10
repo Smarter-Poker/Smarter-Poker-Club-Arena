@@ -218,7 +218,7 @@ const VARIANT_GROUP_ORDER: Record<string, number> = {
    chain selected the cluster identity columns (2026-09-05) paints one row per
    FEEDER table for the ~300 ms until the chain answers - the exact leak R10
    forbids. The key change orphans those entries once, for everyone. */
-const CLUB_HOME_CACHE_VER = 'v4';
+export const CLUB_HOME_CACHE_VER = 'v4';
 const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getClubHomeCache(clubId: string) {

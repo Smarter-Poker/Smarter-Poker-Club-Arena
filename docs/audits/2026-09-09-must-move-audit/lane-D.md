@@ -587,6 +587,48 @@ $ cd server && npx vitest run <the three above> src/cluster src/engine/PresenceF
 
 Nothing was committed; the merge is the integrator's to drive.
 
+### Merge follow-up: the pin that caught a stale COMMENT of mine
+
+`TournamentGhostSeat.test.ts` went red on the merged tree against my file. The
+reference was **prose, not code**: my own D5 comment said the block is cash-only
+because "a tournament chair is released by `releaseDeadTournamentSeats` with its
+own teardown". I wrote that on 2026-09-09 against the pre-merge tree, where the
+method existed; main deleted it, moving tournament seat release to one committed
+database authority, and the pin forbids the file even NAMING the retired
+watcher.
+
+The pin is right and I did not touch it. A comment that names a mechanism which
+no longer exists is the 10.86 failure the estate keeps paying for - the next
+agent reads it as current and goes looking for a poll that is gone. Fixed at the
+root by rewriting the comment to name the real authority:
+
+- `20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt`
+  - the accepted hand closes the exact seat generation in the same transaction
+  as the zero stack and the knockout evidence;
+- `20260909014545_tournament_seat_exits_stay_inside_tournament_authority` -
+  every ordinary and bounty elimination holds a scoped seat-exit capability.
+
+**D5's teardown is unchanged and still carried by the same code**: the
+gone-player prune in `ServerTableEngineDealing`, `if (!this.isTournamentTable())`,
+tearing down DisconnectEngine / time bank / straddle / pre-action /
+`leaveHeldByClock` for a cash player who left through a path this engine never
+ran (a swap landed by the other table, the tab-close beacon, the controller
+cashing out a second chair). It was cash-only before the merge and is cash-only
+after it; only the stated REASON changed. Nothing needed to move to the root
+authority, because nothing in D5 releases a seat - it only drops this process's
+mirrors of a chair the database has already closed.
+
+**One observation for the integrator, NOT fixed here.** With
+`releaseDeadTournamentSeats` gone there is no longer any engine-side teardown of
+the in-process mirrors (DisconnectEngine entry, time bank, straddle,
+pre-action) for an ELIMINATED tournament player; the seat row is closed in the
+database and the engine simply stops seeing the player on the next
+`loadSeatedPlayers`. I did not extend my cash teardown to cover it: doing so
+would put an engine-side repair back into the one file whose pin exists to keep
+repairs out, which is 10.12's rule, and it is main's tournament refactor to
+answer for rather than my merge resolution. Flagging it rather than acting on
+it.
+
 ## What I could not do, precisely
 
 1. **Nothing was applied to production, committed or pushed** - per the brief.

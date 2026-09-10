@@ -394,8 +394,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                disconnected on a chair nobody sat in, a time bank, a straddle
                and a pre-action - and getFsmStatesForTable wrote the phantom
                into every snapshot and into the :55 park. Same teardown as the
-               other leave paths, cash only: a tournament chair is released by
-               releaseDeadTournamentSeats with its own teardown. */
+               other leave paths.
+
+               CASH ONLY, and the reason changed at the 2026-09-10 merge. It
+               used to be "a tournament chair has its own engine-side release";
+               that watcher is GONE. Tournament seat release now has ONE
+               transactional authority and it is in the database: the accepted
+               hand closes the exact seat generation in the same transaction as
+               the zero stack and the knockout evidence
+               (20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt),
+               and every elimination holds a scoped seat-exit capability
+               (20260909014545_tournament_seat_exits_stay_inside_tournament_authority).
+               An engine-side poll or repair here would be exactly the split
+               transaction that removal closed, and
+               TournamentGhostSeat.law pins this file against re-growing one.
+               So: this teardown stays cash-only, and a tournament seat that
+               closes is simply absent from the next loadSeatedPlayers. */
             if (!this.isTournamentTable()) {
               this.disconnectEngine.unregisterPlayer(this.tableId, id);
               this.timeBankEngine.removePlayer(this.tableId, id);

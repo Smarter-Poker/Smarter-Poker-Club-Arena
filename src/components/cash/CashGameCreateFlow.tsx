@@ -36,7 +36,7 @@
  * stakes) is greyed with the reason before the database has to refuse it.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -113,6 +113,9 @@ export default function CashGameCreateFlow({
   /* Two taps inside one render tick both see busy === null; the ref is the
      guard that makes a network failure mid-create a single create, not two. */
   const inFlight = useRef(false);
+  /* The id the struck stakes chips point at, so the reason they are struck is
+     associated with them rather than hidden in a tooltip. */
+  const takenReasonsId = useId();
 
   const limitGame = isFixedLimitVariant(variant);
   const presets = useMemo(() => presetsFor(limitGame), [limitGame]);
@@ -211,6 +214,21 @@ export default function CashGameCreateFlow({
     const p = presets[blindsIndex];
     if (p && rungTaken(p.sb, p.bb)) setBlindsIndex(null);
   }, [blindsIndex, presets, rungTaken]);
+
+  /* Every reason a rung on THIS ladder is closed, each said once. Several
+     rungs of one band share a reason, so the list is short: at most one per
+     band for Action and Madness, one per exact stakes for a must-move game. */
+  const takenReasons = useMemo(() => {
+    // No stepModeDone guard: rungTaken already answers null until the
+    // template, variant and mode are all chosen, so this is [] until then -
+    // and reading stepModeDone here would be reading it before it is declared.
+    const seen = new Set<string>();
+    for (const p of presets) {
+      const why = rungTaken(p.sb, p.bb);
+      if (why) seen.add(why);
+    }
+    return [...seen];
+  }, [presets, rungTaken]);
 
   const usualStakesIndex = useMemo(() => {
     const start = Math.min(DEFAULT_BLINDS_INDEX, presets.length - 1);
@@ -440,7 +458,7 @@ export default function CashGameCreateFlow({
                 disabled={!stepModeDone || taken !== null}
                 onClick={() => setBlindsIndex(i)}
                 aria-pressed={blindsIndex === i}
-                title={taken ?? undefined}
+                aria-describedby={taken ? takenReasonsId : undefined}
                 data-taken={taken ? 'true' : undefined}
               >
                 {stakesLabel(p.sb, p.bb, variant)}
@@ -453,6 +471,25 @@ export default function CashGameCreateFlow({
             {templateLabel(template)} Runs One Game Per Blind Band Per Variant. A Greyed Rung Is
             One This Club Already Holds.
           </p>
+        )}
+        {/* WHY A RUNG IS GREY, WHERE A HOST CAN ACTUALLY READ IT (2026-09-09).
+            This was a `title` on the disabled chip. A title is the passive
+            help this page threw out in 2026-08-31
+            (tests/unit/createTableHelpAndSwitches.test.tsx): it does not exist
+            on touch, and a `disabled` button is not focusable, so the reason
+            reached nobody but a desktop mouse. The page already has the right
+            pattern for a control a rule has locked - the Free Buy lock states
+            its rule as visible `role="status"` copy beside the locked control
+            - so the reasons are printed, deduplicated, and the struck chips
+            point at them with aria-describedby. */}
+        {takenReasons.length > 0 && (
+          <div className="cash-create__taken" id={takenReasonsId} role="status">
+            {takenReasons.map((why) => (
+              <p key={why} className="cash-create__note">
+                {why}.
+              </p>
+            ))}
+          </div>
         )}
         {stepModeDone && blindsIndex === null && usualStakesIndex !== null && (
           <button

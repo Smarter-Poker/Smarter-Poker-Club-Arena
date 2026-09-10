@@ -216,6 +216,58 @@ contains no `activeIndex`, as `must-move-lobby.test.tsx` already pinned).
 The seat-change / listed / Request states on a feeder were already covered by
 `tests/must-move-lobby.test.tsx` (17) and stay green.
 
+## 6b. After the integrator merged origin/main (2026-09-10)
+
+Two reds in this surface, both ours, both now settled.
+
+**`must-move-lobby.test.tsx` > "re-points the tab in place and never touches
+activeIndex".** Main added a one-line `if (updates.movedToTableId &&
+updates.movedToTableId !== tableId) requestSeatResync();` guard above the
+branch, and the pin anchored on that same opening text, so the scanned window
+silently grew to cover the resync guard, my URL-follow block and its comment.
+The comment discusses the law by name, so the pin tripped on PROSE.
+
+Fixed by making the pin precise, not by deleting the sentence: the window is
+now the re-point branch taken by its own braces (`sliceEnclosingBlock`, the
+house helper `noFixedSizeSourceWindows` exists to enforce), and comments and
+strings are blanked (`blankNonCode`, offsets preserved) before the assertions.
+
+**And the pin could not fail, which is the bigger finding.** `not.toMatch(
+/activeIndex/)` is case sensitive, so it never matched `setActiveIndex(` - the
+one spelling 10.6 is about. Proved: `setActiveIndex(idx);` inserted into that
+very branch left the test GREEN. It was tripping on a word in a comment while
+blind to the call beside it, which is 10.86 exactly. The assertion is kept and
+two more added: `/setActiveIndex\s*\(/` names the manipulation, and
+`/activeIndex/i` catches the identifier in any casing.
+
+Falsifiability, both directions, run and then reverted (MultiTablePage.tsx
+verified byte-identical afterwards, md5 f055e005666dd7724a4ce24e57cd5fc0):
+
+| probe, inserted into the scanned branch | required | observed |
+| --- | --- | --- |
+| `setActiveIndex(idx);` (code) | FAIL | FAIL at line 573 |
+| `// probe B: activeIndex mentioned in prose only` (comment) | PASS | PASS |
+
+**`tests/unit/noFixedSizeSourceWindows.test.ts`** names ONLY another lane's
+file and no file of mine, so it is untouched here and reported to the
+integrator: `tests/a-leave-cancels-the-move.law.test.ts` lines **89**
+(`block.slice(0, 600)`), **90** (`block.slice(0, 900)`), **106** and **121**
+(`stmt.slice(0, 2400)`). Four hardcoded byte windows to convert to
+`tests/helpers/sourceWindow`.
+
+Re-run after the fix:
+
+```
+npx vitest run tests/must-move-lobby.test.tsx tests/unit/noFixedSizeSourceWindows.test.ts \
+  tests/unit/mustMoveLobbyAudit.test.tsx tests/unit/heroVpipTrackerAndFeltStyle.test.tsx
+ ✓ tests/unit/heroVpipTrackerAndFeltStyle.test.tsx (17 tests)
+ ✓ tests/must-move-lobby.test.tsx (17 tests)
+ ✓ tests/unit/mustMoveLobbyAudit.test.tsx (20 tests)
+ FAIL tests/unit/noFixedSizeSourceWindows.test.ts   (a-leave-cancels-the-move, another lane)
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 55 passed (56)
+```
+
 ## 7. Could not do, and why
 
 - H5b: the painted #ClubArenaConsole rebuild - the kit is on another agent's

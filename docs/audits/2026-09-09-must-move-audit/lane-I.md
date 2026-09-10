@@ -508,5 +508,74 @@ card too. The selectors are anchored (`/^Action/`) now.
   `TablePage`, `MultiTablePage`, `ServerTableEngineBase.ts` or
   `fn_cash_cluster_tick` was touched by this lane.
 
+## 9. After the integrator merged origin/main (171 commits), 2026-09-10
+
+Two tests in `tests/unit/createTableHelpAndSwitches.test.tsx` went red, both
+caused by this lane's rebuild. That file passes on pristine `origin/main`, so
+both were ours.
+
+### 9.1 "Explains The Bomb Schedule Without An Unexplained N" - the PIN moved
+
+It read the cadence strings out of `CashGameCreateFlow.tsx`, because the flow
+used to OFFER a bomb-trigger radio. I1 removed the controls, so the copy moved
+to `templatePromiseLines` in `src/config/cashGames.ts`. The behaviour the pin
+protects - a host is told the bomb cadence in words, never a bare N - is still
+true, so the pin moved with its mechanism (CLAUDE.md 5.8) and was strengthened
+rather than relocated verbatim: it now calls `templatePromiseLines` for each
+template and asserts the real strings (`Double Board, 2 BB Ante, Every 15
+Minutes`, `Double Board, 3 BB Ante, Every Orbit`, `No Bomb Pots`), asserts the
+same words on the template cards a host picks from, and bans a bare `N` in the
+vocabulary file and in every blurb. Asserting the produced words rather than
+grepping a file means it survives the copy moving again.
+
+### 9.2 "Leaves No Passive Tooltip Spans On The Create-Table Page" - the COMPONENT was wrong
+
+The test bans `title=` within 80 characters of a `?`, and my greyed stakes chip
+carried `title={taken ?? undefined}`. The `??` tripped it, but the test's rule
+applies for real and the fix belonged in the component, not the test:
+
+* a `title` does not exist on touch, and this is a mobile-first app;
+* a `disabled` button is not focusable, so a keyboard user never reached it
+  either;
+* so the reason a rung was struck reached nobody but a desktop mouse.
+
+The sanctioned pattern is already on this page: a rule that locks a control is
+stated as VISIBLE `role="status"` copy beside it (the Free Buy lock,
+`config-free-buy` / `config-free-buy-lock` + `FREE_BUY_HELPER`), never a
+tooltip. So the chips now print their reasons under the ladder, deduplicated
+(several rungs of one band share one reason, said once), inside a
+`role="status"` block, and every struck chip points at it with
+`aria-describedby`. The reason was not lost - it became readable. New CSS:
+`.cash-create__taken`. The law test now asserts the visible copy, the
+`aria-describedby` association, the absence of `title`, and that the reason is
+said exactly once.
+
+The one surviving `title` in the flow is pre-existing on `origin/main` - the
+undealt-variant chip - and there the reason is also its visible label
+(`NLHE - Not Available Yet`), so the title is redundant rather than
+load-bearing. Left alone, recorded.
+
+A first pass at 9.2 put the `takenReasons` memo above `stepModeDone`'s
+declaration: `tsc` caught it (TS2448/TS2454) and every render in the law test
+threw. The guard was redundant anyway - `rungTaken` already answers null until
+the template, variant and mode are all chosen - so it is gone rather than
+moved.
+
+### 9.3 Re-run after the two fixes
+
+```
+npx vitest run tests/unit/createTableHelpAndSwitches.test.tsx \
+  tests/cash-games-are-created-from-a-template.law.test.tsx \
+  tests/unit/cashGamesVocabulary.test.ts tests/unit/cashGameCard.test.tsx \
+  tests/unit/bombPotGuards.test.ts
+  -> Test Files  5 passed (5)        Tests  158 passed (158)
+npx tsc --noEmit  -> TSC_EXIT:0
+
+and the whole lane set again, on the merged tree:
+  -> Test Files  22 passed (22)      Tests  687 passed (687)
+  check-title-case / check-ui-text / check-painted-text-case /
+  check-nav-title-case -> EXIT:0
+```
+
 ---
-Last updated 2026-09-09 23:45 UTC. Nothing committed, pushed or applied.
+Last updated 2026-09-10. Nothing committed, pushed or applied.

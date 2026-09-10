@@ -507,9 +507,20 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
       expect((screen.getByRole('button', { name: '0.50/1' }) as HTMLButtonElement).disabled).toBe(true)
     );
     expect((screen.getByRole('button', { name: '1/2' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByRole('button', { name: '1/2' }).getAttribute('title')).toBe(
-      'This Club Already Runs NLH 1/2 Action As Its Action Small Stakes Game'
+    /* The reason is VISIBLE copy, not a title: a disabled button is not
+       focusable and a phone has no hover, so a tooltip would have told nobody
+       (tests/unit/createTableHelpAndSwitches.test.tsx bans exactly that on this
+       page). The struck chips point at it with aria-describedby. */
+    const reason = screen.getByText(
+      'This Club Already Runs NLH 1/2 Action As Its Action Small Stakes Game.'
     );
+    expect(reason.closest('[role="status"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: '1/2' }).getAttribute('aria-describedby')).toBe(
+      reason.closest('[role="status"]')!.id
+    );
+    expect(screen.getByRole('button', { name: '1/2' }).hasAttribute('title')).toBe(false);
+    // Said once, however many rungs of the band it closes.
+    expect(screen.getAllByText(/Already Runs NLH 1\/2 Action/)).toHaveLength(1);
     expect((screen.getByRole('button', { name: '0.25/0.50' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: '2/5' }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText(/Action Runs One Game Per Blind Band Per Variant/)).toBeTruthy();

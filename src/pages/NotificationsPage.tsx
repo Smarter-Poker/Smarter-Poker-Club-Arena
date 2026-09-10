@@ -334,7 +334,8 @@ function NotificationFeed({ userId }: { userId: string | null }) {
         do {
           owner.pending = false;
           try {
-            const { data: sessionData } = await supabase.auth.getSession();
+            const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError) throw sessionError;
             if (!isCurrent() || owner.pending || owner.mutations.size > 0) continue;
             const session = sessionData?.session;
             if (!session?.access_token || session.user.id !== userId) {
@@ -393,7 +394,8 @@ function NotificationFeed({ userId }: { userId: string | null }) {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
         const token = data?.session?.access_token;
         if (!token || cancelled || !userId || data?.session?.user.id !== userId) return;
         await fetch('/api/notifications/mark-seen', {
@@ -458,7 +460,8 @@ function NotificationFeed({ userId }: { userId: string | null }) {
         false
       );
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
         if (!owner.active || ownerRef.current !== owner) return;
         const session = data?.session;
         if (!session?.access_token || session.user.id !== userId) {
@@ -536,7 +539,8 @@ function NotificationFeed({ userId }: { userId: string | null }) {
       const synthetic = id.startsWith('poker-');
       try {
         if (!synthetic) {
-          const { data } = await supabase.auth.getSession();
+          const { data, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) throw sessionError;
           if (!owner.active || ownerRef.current !== owner) return;
           const session = data?.session;
           if (!session?.access_token || session.user.id !== userId) {

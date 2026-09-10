@@ -152,6 +152,17 @@ afterEach(() => {
 });
 
 describe('The mounted notification feed owns recovery and account state', () => {
+  it('rejects an auth read error even if the SDK also returns cached session data', async () => {
+    fixture.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'account-a' }, access_token: 'cached-token' } },
+      error: new Error('Session Read Refused'),
+    });
+    mount();
+    await flush();
+    expect(fixture.fetch).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/Could Not Be Loaded/);
+  });
+
   it('stops claiming a live feed when its subscription closes', async () => {
     feeds.push(response([row('confirmed')]), response([row('confirmed')]));
     mount();

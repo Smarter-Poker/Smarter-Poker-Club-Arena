@@ -37,14 +37,15 @@ verification when it lands.
 | 11    | Tournament lobby snapshot recovery               | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open                   |
 | 12    | Notification feed recovery and account isolation | Coalesced fresh reads, owned cache and mutations, truthful failure states, safe server feed queries, and restored notification publication                                                | published; natural-event and device acceptance open |
 
-Phase 17: Daily Missions subscription handoff. Seven mounted cases pass,
+Phase 17: Daily Missions subscription handoff. Nine mounted cases pass,
 including recovery of an update missed between the first read and channel
 acknowledgement. Current cursors avoid a duplicate dashboard read and retired
 subscriptions cannot apply late replies. Implementation and build verification:
 `docs/changelog/2026-09-10-realtime-phase17-mission-subscription-handoff.md`.
 PR4175 is published; exact public/origin bytes were verified at 14:59:28 UTC.
 Release evidence: `docs/audits/2026-09-10-realtime-phase17-release.md`.
-Full post-release UI, natural-event and physical-device acceptance remain open.
+The full Daily Missions production canary subsequently passed in run 34501771061. Broader programme, natural-event and physical-device acceptance
+remain open; the release receipt records the remaining failures.
 
 Phase 16: Cashier directory readiness. Five mounted failures reproduced and
 repaired. All eight new cases and 41 existing Cashier/membership contracts pass.

@@ -1,4 +1,4 @@
-import { isDiamondArenaClubPath } from '../../lib/constants';
+import { isDiamondArenaClubKey, isDiamondArenaClubPath } from '../../lib/constants';
 
 /** Routes whose own immersive or public chrome must not be covered by the
  * authenticated Club Arena navigation footer. Every other application route
@@ -29,7 +29,13 @@ export function shouldShowClubFooter(pathname: string): boolean {
  * the URL stays /table/<id>, so the route gate alone hid it. The second input
  * is the multi-table container saying "the tab on screen is a lobby".
  */
-export function shouldShowClubFooterFor(pathname: string, inTabLobbyActive: boolean): boolean {
+export function shouldShowClubFooterFor(
+  pathname: string,
+  inTabLobbyActive: boolean,
+  selectedClubId?: string | null
+): boolean {
+  if (inTabLobbyActive && (selectedClubId === null || isDiamondArenaClubKey(selectedClubId)))
+    return false;
   if (isDiamondArenaClubPath(pathname)) return false;
   return inTabLobbyActive || shouldShowClubFooter(pathname);
 }

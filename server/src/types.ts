@@ -291,6 +291,9 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
+  /** Required by the dealt-hand boundary; preserved from the authoritative roster read. */
+  seat_id?: string;
+  seat_joined_at?: string;
   /** Database-generated seating identity, required at every cashout boundary. */
   occupancy_id?: string;
   /** Server-only, authoritative membership used by disconnect protection. */

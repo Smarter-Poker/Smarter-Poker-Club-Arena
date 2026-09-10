@@ -102,16 +102,11 @@ describe('a busted tournament seat is vacated the moment the hand settles', () =
     );
   });
 
-  it('the seating sweep never hands a zero-chip playing entrant a free stack', () => {
-    // The old fallback seated chips<=0 'playing' entrants with startingChips —
-    // unreachable while busted players kept their seats, a chip mint the
-    // moment they do not.
-    const block = sliceBlockAfter(MANAGER, 'for (const player of unseated)');
-    expect(block).toMatch(/continue;/);
-    expect(block.indexOf("player.status !== 'registered'")).toBeLessThan(
-      block.indexOf('assignTournamentPlayerSeatAtomically')
-    );
-    expect(block).not.toMatch(/<= 0\s*\?\s*startingChips/);
-    expect(block).not.toMatch(/stack:\s*startingChips/);
+  it('there is no process-side seating sweep that can mint a replacement stack', () => {
+    expect(MANAGER).not.toContain('ensureLateRegSeated');
+    expect(MANAGER).not.toContain('for (const player of unseated)');
+    expect(MANAGER).not.toContain('assignTournamentPlayerSeatAtomically');
+    expect(MANAGER).not.toMatch(/<= 0\s*\?\s*startingChips/);
+    expect(MANAGER).not.toMatch(/stack:\s*startingChips/);
   });
 });

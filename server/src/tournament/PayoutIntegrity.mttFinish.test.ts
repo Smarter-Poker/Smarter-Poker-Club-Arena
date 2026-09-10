@@ -383,8 +383,8 @@ describe('finishing places must be distinct - in the rescue path too', () => {
  * blinds escalating, table dead, champion uncrowned, first prize unpaid.
  *
  * The ladder was one place short from the very first bust because it was
- * seeded off a live `playing` count, which does not include an entrant still
- * sitting in `registered` while ensureLateRegSeated catches up.
+ * seeded off a live `playing` count, which can miss an entrant whose atomic
+ * late-registration transaction has not yet become visible to that snapshot.
  */
 describe('the finishing ladder cannot drift, and cannot strand a busted player', () => {
   it('seeds the ladder from players who hold no place yet, not from a live playing count', () => {

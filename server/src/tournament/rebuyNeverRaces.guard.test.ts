@@ -65,6 +65,18 @@ describe('a busted player holds an open decision window, and the felt rolls on',
     expect(ELIM).toMatch(/answered\.has\(b\.user_id\)/);
   });
 
+  it('consumes the atomic rebuy result without a later manager reseat', () => {
+    const block = sliceBetween(
+      ELIM,
+      'const { rebought, answered } = await this.tryTournamentRebuys(',
+      'THE REBUY DECISION WINDOW'
+    );
+    expect(block).toContain('The rebuy transaction owns its exact playable chair and stack.');
+    expect(block).not.toContain('ensureLateRegSeated');
+    expect(block).not.toContain('assignTournamentPlayerSeatAtomically');
+    expect(block).not.toContain("from('table_seats')");
+  });
+
   it('re-drives an unresolved bust every five seconds until acceptance or expiry', () => {
     const wakeAt = ELIM.indexOf('TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS');
     const emptyReturnAt = ELIM.indexOf('if (busted.length === 0) return', wakeAt);

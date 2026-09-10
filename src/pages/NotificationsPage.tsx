@@ -26,14 +26,12 @@
  * ───────────────────────────────────────────────────────────────────────
  *  1. The list renders natively in this SPA. No second document, no second
  *     hydration — a route change and a render, like every other CA page.
- *  2. First paint comes from the `sp-notif-cache` entry in localStorage,
- *     read SYNCHRONOUSLY in the useState initializer so rows are present on
- *     frame one rather than after an effect. This is a Vite SPA with no SSR,
- *     so there is no hydration mismatch to guard against.
- *  3. That cache key is the SAME one the World Hub page writes, and we are
- *     same-origin with it, so a user who has opened notifications anywhere on
- *     smarter.poker arrives here with a warm list. We rewrite it on every
- *     successful fetch, keeping the sharing symmetrical.
+ *  2. First paint reads the current account's local cache synchronously.
+ *     The account key also remounts the feed, so another account's rows never
+ *     become its first frame while authentication or a request is pending.
+ *  3. The legacy World Hub cache carries no account owner. It cannot safely
+ *     warm this page. Club Arena now uses an account-scoped cache and only
+ *     writes it from the current owner's confirmed feed response.
  *  4. The network refresh runs behind the painted list and reconciles.
  *
  * "ONE DISPLAY" IS STILL TRUE WHERE IT MATTERS
@@ -78,12 +76,11 @@ const CA_BASE = '/hub/club-arena';
 const DEFAULT_AVATAR = `${import.meta.env.BASE_URL || '/hub/club-arena/'}default-avatar.png`;
 
 /**
- * Shared with the World Hub notifications page, which writes the same shape
- * to the same key. Same origin, so both surfaces warm each other's first
- * paint. Element 0 carries `_cache_ts`; that is the hub's convention and
- * changing it here would silently halve the sharing.
+ * Private to the account and this surface. The legacy shared cache has no
+ * account provenance, so it is intentionally not imported or overwritten.
+ * Element 0 carries the cache timestamp; only confirmed feed reads persist.
  */
-const CACHE_KEY = 'sp-notif-cache';
+const CACHE_KEY = 'ca-notif-cache:v1:';
 const CACHE_TTL_MS = 300_000; // 5 minutes, matching the hub page.
 const CACHE_MAX = 30;
 
@@ -203,9 +200,10 @@ function CategoryIcon({ glyph, size = 13 }: { glyph: Glyph; size?: number }) {
    ═══════════════════════════════════════════════════════════════════════ */
 
 /** Synchronous, so the first render already has rows. Never throws. */
-function readCache(): FeedNotification[] {
+function readCache(userId: string | null): FeedNotification[] {
+  if (!userId) return [];
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(CACHE_KEY + userId);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return [];
@@ -219,11 +217,12 @@ function readCache(): FeedNotification[] {
   }
 }
 
-function writeCache(rows: FeedNotification[]): void {
+function writeCache(userId: string | null, rows: FeedNotification[]): void {
+  if (!userId) return;
   try {
     const now = Date.now();
     localStorage.setItem(
-      CACHE_KEY,
+      CACHE_KEY + userId,
       JSON.stringify(
         rows.slice(0, CACHE_MAX).map((n, i) => (i === 0 ? { ...n, _cache_ts: now } : n))
       )
@@ -255,23 +254,60 @@ function dayBucket(iso: string, now = new Date()): 'Today' | 'Yesterday' | 'This
    PAGE
    ═══════════════════════════════════════════════════════════════════════ */
 
+interface FeedOwner {
+  active: boolean;
+  pending: boolean;
+  inFlight: Promise<void> | null;
+  controller: AbortController;
+  mutations: Set<string>;
+  dismissedSynthetic: Set<string>;
+  hasSnapshot: boolean;
+}
+
 export default function NotificationsPage() {
-  const navigate = useNavigate();
   const { user } = useAuthUser();
+  // A different account gets a different component instance before first paint.
+  return <NotificationFeed key={user?.id ?? 'signed-out'} userId={user?.id ?? null} />;
+}
+
+function NotificationFeed({ userId }: { userId: string | null }) {
+  const navigate = useNavigate();
 
   // Painted on frame one. See the header note: synchronous by design.
-  const [notifications, setNotifications] = useState<FeedNotification[]>(readCache);
-  const [loading, setLoading] = useState(() => readCache().length === 0);
+  const [notifications, setNotifications] = useState<FeedNotification[]>(() => readCache(userId));
+  const [loading, setLoading] = useState(() => !!userId && readCache(userId).length === 0);
+  const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState('Connecting');
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const mounted = useRef(true);
+  const ownerRef = useRef<FeedOwner | null>(null);
+  const rowsRef = useRef(notifications);
+  const applyRows = useCallback(
+    (rows: FeedNotification[], cache = true) => {
+      rowsRef.current = rows;
+      setNotifications(rows);
+      if (cache) writeCache(userId, rows);
+    },
+    [userId]
+  );
+
   useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
+    const owner: FeedOwner = {
+      active: true,
+      pending: false,
+      inFlight: null,
+      controller: new AbortController(),
+      mutations: new Set(),
+      dismissedSynthetic: new Set(),
+      hasSnapshot: rowsRef.current.length > 0,
     };
-  }, []);
+    ownerRef.current = owner;
+    return () => {
+      owner.active = false;
+      owner.controller.abort();
+    };
+  }, [userId]);
 
   useEffect(() => {
     document.title = 'Notifications | Smarter Poker';
@@ -285,49 +321,67 @@ export default function NotificationsPage() {
 
   /* ── Refresh from the one feed endpoint ──────────────────────────── */
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) {
-        if (mounted.current) setLoading(false);
-        return;
-      }
+  const refresh = useCallback(async () => {
+    const owner = ownerRef.current;
+    if (!userId || !owner?.active) return;
+    const isCurrent = () => owner.active && ownerRef.current === owner;
+    owner.pending = true;
+    if (owner.inFlight) return owner.inFlight;
+    if (owner.mutations.size > 0) return;
 
-      const res = await fetch('/api/notifications/feed?limit=50', {
-        headers: { Authorization: `Bearer ${token}` },
-        signal,
-      });
-      if (!res.ok) {
-        // Keep whatever is already on screen; a stale list beats a blank one.
-        if (mounted.current) setLoading(false);
-        return;
+    const run = async () => {
+      try {
+        do {
+          owner.pending = false;
+          try {
+            const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError) throw sessionError;
+            if (!isCurrent() || owner.pending || owner.mutations.size > 0) continue;
+            const session = sessionData?.session;
+            if (!session?.access_token || session.user.id !== userId) {
+              throw new Error('The Feed Could Not Verify Your Sign In.');
+            }
+            const res = await fetch('/api/notifications/feed?limit=50&bust=1', {
+              cache: 'no-store',
+              headers: { Authorization: `Bearer ${session.access_token}` },
+              signal: owner.controller.signal,
+            });
+            if (!isCurrent() || owner.pending || owner.mutations.size > 0) continue;
+            if (!res.ok) throw new Error('Notification Feed Read Refused');
+            const json = await res.json();
+            if (!isCurrent() || owner.pending || owner.mutations.size > 0) continue;
+            if (!json?.success || !Array.isArray(json.notifications)) {
+              throw new Error('Notification Feed Response Was Invalid');
+            }
+            applyRows(
+              (json.notifications as FeedNotification[]).filter(
+                (row) => !owner.dismissedSynthetic.has(row.id)
+              )
+            );
+            owner.hasSnapshot = true;
+            setError(null);
+            setLoading(false);
+          } catch (err) {
+            if (!isCurrent() || owner.pending || owner.mutations.size > 0) continue;
+            console.warn('[Notifications] refresh failed:', (err as Error)?.message || err);
+            setError(
+              owner.hasSnapshot
+                ? 'Notifications Could Not Be Refreshed. Showing The Last Confirmed Feed.'
+                : 'Notifications Could Not Be Loaded.'
+            );
+            setLoading(false);
+          }
+        } while (isCurrent() && owner.pending && owner.mutations.size === 0);
+      } finally {
+        owner.inFlight = null;
       }
-
-      const json = await res.json();
-      if (!json?.success || !Array.isArray(json.notifications)) {
-        if (mounted.current) setLoading(false);
-        return;
-      }
-
-      const rows = json.notifications as FeedNotification[];
-      if (mounted.current) {
-        setNotifications(rows);
-        setLoading(false);
-      }
-      writeCache(rows);
-    } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') {
-        console.warn('[Notifications] refresh failed:', (err as Error)?.message || err);
-        if (mounted.current) setLoading(false);
-      }
-    }
-  }, []);
+    };
+    owner.inFlight = run();
+    return owner.inFlight;
+  }, [userId, applyRows]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    refresh(controller.signal);
-    return () => controller.abort();
+    void refresh();
   }, [refresh]);
 
   // A tab left open through a session and brought back should not show the
@@ -340,9 +394,10 @@ export default function NotificationsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
         const token = data?.session?.access_token;
-        if (!token || cancelled) return;
+        if (!token || cancelled || !userId || data?.session?.user.id !== userId) return;
         await fetch('/api/notifications/mark-seen', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -355,133 +410,179 @@ export default function NotificationsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
-  /* ── Realtime INSERT ─────────────────────────────────────────────────
-   * A row arriving straight from Postgres has NOT passed through the feed
-   * API, so nothing has resolved a destination for it. It carries whatever
-   * `link` / `action_url` the producer wrote and nothing more. Rather than
-   * re-deriving a route here — which is exactly the duplicate-resolver bug
-   * that made 1219 rows dead — we prepend it for visibility and let the
-   * next refresh replace it with the resolved version. */
-
-  const handleInsert = useCallback(
-    (payload: { new: Record<string, unknown> }) => {
-      const n = payload?.new as unknown as FeedNotification | undefined;
-      if (!n?.id || !mounted.current) return;
-      setNotifications((prev) => {
-        if (prev.some((p) => p.id === n.id)) return prev;
-        return [{ ...n, actor_name: n.actor_name || n.title || 'New Notification' }, ...prev];
-      });
-      // Pull the resolved row in so the newest notification is not the only
-      // one in the list that cannot be tapped.
-      refresh();
+  // Events invalidate the canonical feed. Raw event rows have not passed
+  // through its destination resolver and must not overwrite resolved rows.
+  const handleChange = useCallback(
+    (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+      const changed = payload?.new?.id ? payload.new : payload?.old;
+      if (!changed?.id || (changed.user_id && changed.user_id !== userId)) return;
+      void refresh();
     },
-    [refresh]
+    [refresh, userId]
   );
 
   useMasterBusChannel({
-    // Distinct from NotificationDropdown's `notifications:${id}` channel —
-    // two subscribers on one channel name would fight over the same handle.
-    channelName: user?.id ? `ca-notif-page:${user.id}` : null,
+    channelName: userId ? `ca-notif-page:${userId}` : null,
     table: 'notifications',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: 'INSERT',
-    onPayload: handleInsert,
-    enabled: !!user?.id,
+    filter: userId ? `user_id=eq.${userId}` : null,
+    event: '*',
+    onPayload: handleChange,
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') {
+        setConnectionStatus('Live Feed');
+        void refresh();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        setConnectionStatus('Reconnecting');
+      }
+    },
+    enabled: !!userId,
   });
 
   /* ── Read / dismiss ──────────────────────────────────────────────── */
 
-  const markAsRead = useCallback((id: string) => {
-    let wasUnread = false;
-    setNotifications((prev) => {
-      wasUnread = prev.some((n) => n.id === id && isUnread(n));
-      if (!wasUnread) return prev;
-      const next = prev.map((n) => (n.id === id ? { ...n, read: true, is_read: true } : n));
-      writeCache(next);
-      return next;
-    });
-    if (!wasUnread) return;
-
-    masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
-    supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', id)
-      .then(({ error }) => {
-        if (error) console.warn('[Notifications] mark read failed:', error.message);
-      });
-  }, []);
+  const markAsRead = useCallback(
+    async (id: string | null) => {
+      const owner = ownerRef.current;
+      if (!userId || !owner?.active) return;
+      const before = new Map(
+        rowsRef.current
+          .filter((n) => isUnread(n) && (id === null || n.id === id))
+          .map((n) => [n.id, n])
+      );
+      const key = id === null ? 'read-all' : `read:${id}`;
+      if (before.size === 0 || owner.mutations.has(key)) return;
+      owner.mutations.add(key);
+      owner.pending = true;
+      applyRows(
+        rowsRef.current.map((n) => (before.has(n.id) ? { ...n, read: true, is_read: true } : n)),
+        false
+      );
+      try {
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!owner.active || ownerRef.current !== owner) return;
+        const session = data?.session;
+        if (!session?.access_token || session.user.id !== userId) {
+          throw new Error('The Read Could Not Verify Your Sign In.');
+        }
+        const send = async (url: string, method: string, body: Record<string, unknown>) => {
+          const res = await fetch(url, {
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok || !(await res.json())?.success) {
+            throw new Error('Notification Read Refused');
+          }
+        };
+        const writes: Promise<void>[] = [];
+        if ([...before.keys()].some((key) => !key.startsWith('poker-'))) {
+          writes.push(
+            send('/api/notifications/mark-read', 'POST', id === null ? {} : { notificationId: id })
+          );
+        }
+        if ([...before.keys()].some((key) => key.startsWith('poker-'))) {
+          writes.push(
+            send(
+              '/api/poker/notifications',
+              'PUT',
+              id === null ? { mark_all: true } : { notification_id: id.slice('poker-'.length) }
+            )
+          );
+        }
+        // Both owners must settle before refreshing after a partial refusal.
+        const results = await Promise.allSettled(writes);
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+        if (owner.active && ownerRef.current === owner) {
+          masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: id === null });
+        }
+      } catch (err) {
+        if (owner.active && ownerRef.current === owner) {
+          // Keep the last confirmed marker until the feed resolves the outcome.
+          applyRows(
+            rowsRef.current.map((n) => {
+              const previous = before.get(n.id);
+              return previous ? { ...n, read: previous.read, is_read: previous.is_read } : n;
+            }),
+            false
+          );
+          console.warn('[Notifications] mark read failed:', (err as Error)?.message || err);
+        }
+      } finally {
+        owner.mutations.delete(key);
+        if (owner.active && ownerRef.current === owner) void refresh();
+      }
+    },
+    [userId, applyRows, refresh]
+  );
 
   const markAllAsRead = useCallback(() => {
-    if (!user?.id) return;
-    setNotifications((prev) => {
-      const next = prev.map((n) => ({ ...n, read: true, is_read: true }));
-      writeCache(next);
-      return next;
-    });
-    masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
-    supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('user_id', user.id)
-      .eq('read', false)
-      .then(({ error }) => {
-        if (error) console.warn('[Notifications] mark all read failed:', error.message);
-      });
-  }, [user?.id]);
+    void markAsRead(null);
+  }, [markAsRead]);
 
   const handleDelete = useCallback(
     async (id: string) => {
-      // Fade out first so the row does not vanish under the finger.
+      const owner = ownerRef.current;
+      if (!userId || !owner?.active) return;
+      const key = `delete:${id}`;
+      if (owner.mutations.has(key)) return;
+      owner.mutations.add(key);
+      owner.pending = true;
       setDeletingIds((prev) => new Set(prev).add(id));
-
-      let wasUnread = false;
-      setNotifications((prev) => {
-        wasUnread = prev.some((n) => n.id === id && isUnread(n));
-        return prev;
-      });
-      if (wasUnread) masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
-
-      window.setTimeout(() => {
-        if (!mounted.current) return;
-        setNotifications((prev) => {
-          const next = prev.filter((n) => n.id !== id);
-          writeCache(next);
-          return next;
-        });
-        setDeletingIds((prev) => {
-          const s = new Set(prev);
-          s.delete(id);
-          return s;
-        });
-      }, 300);
-
-      // Synthetic poker-prefixed ids have no row to delete.
-      if (id.startsWith('poker-')) return;
-
+      const wasUnread = rowsRef.current.some((n) => n.id === id && isUnread(n));
+      const synthetic = id.startsWith('poker-');
       try {
-        const { data } = await supabase.auth.getSession();
-        const token = data?.session?.access_token;
-        const res = await fetch('/api/notifications/delete', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ id }),
-        });
-        // The server refused. Re-sync rather than guess — the row may still
-        // exist, and inventing a rollback here would be a second source of
-        // truth about what the list contains.
-        if (!res.ok) refresh();
+        if (!synthetic) {
+          const { data, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) throw sessionError;
+          if (!owner.active || ownerRef.current !== owner) return;
+          const session = data?.session;
+          if (!session?.access_token || session.user.id !== userId) {
+            throw new Error('The Dismissal Could Not Verify Your Sign In.');
+          }
+          const res = await fetch('/api/notifications/delete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ id }),
+          });
+          if (!res.ok || !(await res.json())?.success) {
+            throw new Error('Notification Dismissal Refused');
+          }
+        }
+        if (!owner.active || ownerRef.current !== owner) return;
+        if (synthetic) owner.dismissedSynthetic.add(id);
+        // Remove only after confirmation. A refused response cannot race a fade timer.
+        applyRows(
+          rowsRef.current.filter((n) => n.id !== id),
+          false
+        );
+        if (wasUnread) masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
       } catch (err) {
-        console.warn('[Notifications] delete failed:', (err as Error)?.message || err);
-        refresh();
+        if (owner.active && ownerRef.current === owner) {
+          console.warn('[Notifications] delete failed:', (err as Error)?.message || err);
+        }
+      } finally {
+        owner.mutations.delete(key);
+        if (owner.active && ownerRef.current === owner) {
+          setDeletingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+          void refresh();
+        }
       }
     },
-    [refresh]
+    [userId, applyRows, refresh]
   );
 
   /* ── Tap ─────────────────────────────────────────────────────────────
@@ -540,7 +641,15 @@ export default function NotificationsPage() {
         eyebrow="Signal Inbox // Live Player Network"
         title="Notifications"
         description="Seat Calls, Tournament Starts, Settlements, Messages And Club Announcements. Tap A Signal To Go Straight To It."
-        status={loading ? 'Synchronizing' : 'Live Feed'}
+        status={
+          error
+            ? 'Refresh Needed'
+            : loading
+              ? 'Synchronizing'
+              : userId
+                ? connectionStatus
+                : 'Sign In Required'
+        }
       >
         <span className="ca-notif__heroMetric">
           <small>Unread</small>
@@ -584,6 +693,19 @@ export default function NotificationsPage() {
         subscribed or the player has explicitly turned push off. */}
       <PushEnableBanner />
 
+      {error && (
+        <div className="ca-notif__empty" role="alert">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void refresh();
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
       <div className="ca-notif__list">
         {showSkeleton ? (
           [0, 1, 2, 3, 4].map((i) => (
@@ -595,7 +717,7 @@ export default function NotificationsPage() {
               </div>
             </div>
           ))
-        ) : notifications.length === 0 ? (
+        ) : error && notifications.length === 0 ? null : notifications.length === 0 ? (
           <div className="ca-notif__empty">
             <h3>No Signals Yet</h3>
             <p>

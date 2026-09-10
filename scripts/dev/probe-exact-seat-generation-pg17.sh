@@ -27,6 +27,7 @@ obligations_migration="$(resolve_migration post_commit_obligations_are_atomic_an
 exact_generation_migration="$(resolve_migration hand_settlement_targets_exact_seat_generation.sql)"
 departed_time_bank_migration="$(resolve_migration a_seat_that_has_left_cannot_hold_a_time_bank.sql)"
 terminal_receipt_migration="$(resolve_migration non_satellite_terminal_settlement_commits_one_stored_receipt.sql)"
+restore_exact_receipt_migration="$(resolve_migration restore_exact_hand_generation_after_terminal_writer.sql)"
 strict_generation_migration="$(resolve_migration hand_settlement_requires_exact_seat_generation.sql)"
 
 pg17_bin="${PG17_BINDIR:-}"
@@ -186,6 +187,17 @@ assert_md5 \
   'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)' \
   '8ddb91f5f7bb5f27b609ec83cb69fa66'
 
+# Rehearse the current production preimage exactly. The production repair
+# restores the rolling exact-seat generation over the receipt-aware bodies;
+# the strict contraction must retain all receipt and terminal zero-stack work.
+"${psql_cmd[@]}" -f "$restore_exact_receipt_migration" >/dev/null
+assert_md5 \
+  'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)' \
+  '9be5d1da12d8f674a47a50ffb9a6df81'
+assert_md5 \
+  'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)' \
+  'f93a85ebe5a509ccb7dfedb9be1ed3fa'
+
 # Model the preceding Stage-B authority contraction without copying its large,
 # independently probed tournament surface into this focused fixture. The strict
 # exact-seat migration itself verifies that both rolling hand doors are absent.
@@ -199,6 +211,12 @@ assert_md5 \
 ' >/dev/null
 
 "${psql_cmd[@]}" -f "$strict_generation_migration" >/dev/null
+assert_md5 \
+  'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)' \
+  '1aae3840a65744563c5a18c5bb0da35b'
+assert_md5 \
+  'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)' \
+  '022f0de6ed0fb51ff3fbe5f3ff36f6d0'
 "${psql_cmd[@]}" -f \
   "$repo_dir/scripts/dev/probe-exact-seat-generation-strict-pg17.sql"
 "${psql_cmd[@]}" -f "$strict_generation_migration" >/dev/null

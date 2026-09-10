@@ -152,12 +152,24 @@ BEGIN
          )
     INTO STRICT v_settlement_door;
 
-  IF position('seat_joined_at' IN v_settlement_door) = 0
-     OR position('time_bank_seat_generation_mismatch' IN v_settlement_door) = 0 THEN
-    SELECT pg_get_functiondef(
-             'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
-           )
-      INTO STRICT v_settlement_core;
+  SELECT pg_get_functiondef(
+           'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+         )
+    INTO STRICT v_settlement_core;
+
+  IF position('seat_joined_at' IN v_settlement_door) > 0
+     AND position('time_bank_seat_generation_mismatch' IN v_settlement_door) > 0 THEN
+    IF md5(v_settlement_core) <> '9be5d1da12d8f674a47a50ffb9a6df81'
+       OR md5(v_settlement_door) <> 'f93a85ebe5a509ccb7dfedb9be1ed3fa'
+       OR position('v_exact_seat_generation' IN v_settlement_core) = 0
+       OR position('v_exact_seat_generation' IN v_settlement_door) = 0
+       OR position('tournament_zero_stack_seat_generations' IN v_settlement_core) = 0
+       OR position('post_commit_request_hash' IN v_settlement_door) = 0
+       OR position('ca:tournament-terminal-settlement:v1' IN v_settlement_door) = 0 THEN
+      RAISE EXCEPTION
+        'Stage-B manager fencing found an unknown restored exact hand-settlement source';
+    END IF;
+  ELSE
     IF md5(v_settlement_core) <> '2e322bc7dfee3cf5cb6548ed3a587095'
        OR md5(v_settlement_door) <> '8ddb91f5f7bb5f27b609ec83cb69fa66'
        OR position('tournament_zero_stack_seat_generations' IN v_settlement_core) = 0

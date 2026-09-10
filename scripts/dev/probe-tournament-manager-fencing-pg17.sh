@@ -39,6 +39,7 @@ stage_a_request_migration="$(migration_by_suffix tournament_manager_requests_car
 seat_first_atomic_migration="$(migration_by_suffix seat_first_board_creation_is_one_transaction.sql)"
 post_commit_migration="$(migration_by_suffix post_commit_obligations_are_atomic_and_resumable.sql)"
 seat_first_retirement_migration="$(migration_by_suffix seat_first_inventory_is_created_atomically.sql)"
+restore_exact_receipt_migration="$(migration_by_suffix restore_exact_hand_generation_after_terminal_writer.sql)"
 stage_b_migration="$(optional_migration_by_suffix tournament_manager_request_fencing_is_strict.sql)"
 
 if [[ "$stage_a_request_migration" > "$seat_first_atomic_migration" ]] ||
@@ -89,6 +90,30 @@ psql_cmd=("${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 -h "$socket_dir" -p "$port" -
 
 "${psql_cmd[@]}" -f \
   "$repo_dir/scripts/dev/fixtures/tournament-manager-fencing-pg17-bootstrap.sql" >/dev/null
+
+# Install the two complete definitions from the production repair. Stage B
+# must recognize the byte-exact receipt-aware rolling source now live, not a
+# fixture-only marker stub.
+extract_restored_function() {
+  local function_name="$1"
+  awk -v function_name="$function_name" '
+    !capture && index($0, "CREATE OR REPLACE FUNCTION public." function_name "(") == 1 {
+      capture = 1
+    }
+    capture { print }
+    capture && /^\$function\$;$/ { exit }
+    capture && /^END \$function\$$/ { split_end = 1; next }
+    capture && split_end && /^;$/ { exit }
+  ' "$restore_exact_receipt_migration"
+}
+extract_restored_function fn_ca_settle_hand_stacks_absolute | "${psql_cmd[@]}" >/dev/null
+extract_restored_function fn_ca_commit_hand_settlement | "${psql_cmd[@]}" >/dev/null
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT md5(pg_get_functiondef('public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure)) || '|' || md5(pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure));")" != \
+  '9be5d1da12d8f674a47a50ffb9a6df81|f93a85ebe5a509ccb7dfedb9be1ed3fa' ]]; then
+  echo 'The Stage-B fixture did not install the current production settlement preimage.' >&2
+  exit 1
+fi
 "${psql_cmd[@]}" -f \
   "$tournament_lease_migration" >/dev/null
 "${psql_cmd[@]}" -f \

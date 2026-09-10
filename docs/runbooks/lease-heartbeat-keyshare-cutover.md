@@ -46,6 +46,15 @@ The sixth migration refuses while either Stage-A/rolling settlement door is
 still installed. Do not patch the six Stage-A locks in place: doing so would
 invalidate Stage B's exact source precondition and leave a mixed protocol.
 
+Production migration `20260909234808_restore_exact_hand_generation_after_terminal_writer`
+is an already-applied prerequisite, not a seventh cutover write. Before taking
+the host lock, require its unique one-statement ledger receipt and require the
+live seven- and twelve-argument settlement definitions to be
+`9be5d1da12d8f674a47a50ffb9a6df81` and
+`f93a85ebe5a509ccb7dfedb9be1ed3fa`. Stage B pins those bytes before
+retiring either rolling door, and the immediately following strict contraction
+preserves terminal receipts while removing the legacy payload fallback.
+
 ## Preflight
 
 From the reviewed, still-unmerged release branch:

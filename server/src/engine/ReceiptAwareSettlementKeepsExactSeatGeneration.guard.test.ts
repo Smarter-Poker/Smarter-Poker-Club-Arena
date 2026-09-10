@@ -16,6 +16,7 @@ const migration = (suffix: string): { basename: string; source: string } => {
 };
 
 const receipt = migration('_non_satellite_terminal_settlement_commits_one_stored_receipt.sql');
+const restoredExact = migration('_restore_exact_hand_generation_after_terminal_writer.sql');
 const stageB = migration('_tournament_manager_request_fencing_is_strict.sql');
 const strict = migration('_hand_settlement_requires_exact_seat_generation.sql');
 
@@ -25,9 +26,14 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
     expect(receipt.source).toContain('tournament_zero_stack_seat_generations');
     expect(receipt.source).toContain('post_commit_request_hash');
     expect(receipt.source).not.toContain('v_exact_seat_generation');
+    expect(restoredExact.source).toContain('9be5d1da12d8f674a47a50ffb9a6df81');
+    expect(restoredExact.source).toContain('f93a85ebe5a509ccb7dfedb9be1ed3fa');
+    expect(restoredExact.source).toContain('v_exact_seat_generation');
 
     expect(stageB.source).toContain("md5(v_settlement_core) <> '2e322bc7dfee3cf5cb6548ed3a587095'");
     expect(stageB.source).toContain("md5(v_settlement_door) <> '8ddb91f5f7bb5f27b609ec83cb69fa66'");
+    expect(stageB.source).toContain("md5(v_settlement_core) <> '9be5d1da12d8f674a47a50ffb9a6df81'");
+    expect(stageB.source).toContain("md5(v_settlement_door) <> 'f93a85ebe5a509ccb7dfedb9be1ed3fa'");
     expect(stageB.source).toContain(
       "'Stage-B manager fencing found an unknown hand-settlement source'"
     );
@@ -40,7 +46,10 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
     for (const hash of [
       '2e322bc7dfee3cf5cb6548ed3a587095',
       '8ddb91f5f7bb5f27b609ec83cb69fa66',
+      '9be5d1da12d8f674a47a50ffb9a6df81',
+      'f93a85ebe5a509ccb7dfedb9be1ed3fa',
       'ddb1762cff2ffe38369d542ff76f27b8',
+      '1aae3840a65744563c5a18c5bb0da35b',
       '022f0de6ed0fb51ff3fbe5f3ff36f6d0',
     ]) {
       expect(strict.source).toContain(hash);
@@ -67,7 +76,8 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
     expect(strict.source).toContain("AND s.id = (v_item->>'seat_id')::uuid");
     expect(strict.source).toContain("AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz");
     expect(strict.source).toContain('A SEAT THAT HAS LEFT CANNOT HOLD A TIME BANK');
-    expect(strict.source).not.toContain('OR (NOT v_exact_seat_generation');
+    expect(strict.source).toContain("OR position('v_exact_seat_generation' in v_outer) > 0");
+    expect(strict.source).toContain('restored exact outer contraction produced an unknown source');
   });
 
   it('keeps the direct stack core owner-only and the receipt door service-only', () => {

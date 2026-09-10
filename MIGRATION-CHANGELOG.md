@@ -17262,7 +17262,6 @@ Correct below-half wager completion and counted-wager caps across engine validat
 
 Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets and resumes from the final break end. Nine behavioral cases and the 1343-test tournament/maintenance/pause suite pass; no database migration. See docs/audits/2026-09-09-phase3-tournament-lifecycle.md. Phase 3 remains in progress.
 
-
 ## Change: Authenticate The Native Final Deal Cash Leaves (2026-09-10)
 
 **File:** `scripts/dev/build-versioned-final-deal-probe.py` (before lines 49-72, 164-171).
@@ -17271,3 +17270,17 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 **Why:** A green native result must not silently accept an older raw payer that bypasses the current public obligation boundary. Source and catalog mismatch must stop the probe before writes.
 **Verified:** YES. Diff reread, Python composer imported successfully, 68 native assertions passed in each paid/unpaid/partial fixture with rollback. Four altered source definitions and six read-only catalog mismatch cases refused before writes. Empty fixture state and original authority/helper state restored. No production or whole-terminal acceptance is claimed.
 **TypeScript:** Not applicable to Python composer and audit documentation only.
+
+## Change: Verify Current Zero-Default Spin Projection Natively
+
+**Files:** `scripts/ci/probes/spin-zero-projection-native.sql`, `scripts/ci/rehearse-spin-zero-projection.py`, `docs/audits/2026-09-10-spin-zero-projection-native-evidence.json`.
+
+**What Existed:** `spin-funded-launch-native.sql` pinned the prior 1c911 wrapper, seeded a NULL multiplier, and projected the funded row with a modeled engine UPDATE. That evidence did not establish the current 20260910034412 zero-default and automatic at_draw projection behavior.
+
+**What Changed:** Added a separate exact-current probe and a source-hash-pinned runner. The runner composes the complete migration, retaining all source guards, into one local rollback transaction. The probe uses the real zero column default, refuses positive unfunded projections, proves SQL-owned row stamping, and injects independent late receipt and later row-stamp faults. Existing real native reserve, escrow, rake, replay, lease and played recovery assertions remain. The runner compares the entire saved authority/trigger catalog and all rows in 19 fixture tables after rollback.
+
+**Why:** Verify both newly deployed Spin fixes against real native money functions without substituting engine presentation writes or relabeling historical acceptance.
+
+**Verified:** Exact `AUDIT_TEST_PASS` rollback exception, native exit 3, complete catalog and fixture state restored. Existing 8 baseline events preserved. No production writes, no money-function stubs, no disabled guards during money calls. Full terminal and current concurrent acceptance remain open.
+
+**TypeScript:** Not applicable, SQL rehearsal, Python runner and evidence only.

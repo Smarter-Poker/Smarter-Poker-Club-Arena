@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Final Deal Review Binds Consent To The Displayed Proposal
+
+The final-table screen now displays the server's versioned recipient allocations and submits only the reviewed proposal. Exact strings, actor and proposal identity, total consistency, stale responses, ambiguous readback, and account/event changes are verified. Seventy-four focused tests and full client TypeScript pass; two account/event regressions failed before correction. Re-read: yes. This source requires the matching SQL expansion and engine before coordinated activation. No production mutation or publication; full Phase 3 remains open. See docs/changelog/2026-09-10-final-deal-review-binds-consent.md.
+
 ## 2026-09-10: Final Deal Review Parks Before Consent
 
 An exact deal proposal could expire while the engine waited for the active hand to finish, repeatedly preventing unanimous consent. Explicit review requests now park the exact dealer before the stable proposal is published. The current roster is refreshed after the hand, partial consent retains the owned fence through the shared scheduler, and only serialized database closure permits normal play to resume. Detached running engines and unknown money outcomes remain fenced. Nine failing regression cases exposed the liveness, roster and release edges; 175 focused tests and full server TypeScript pass after correction. Re-read: yes. Paired SQL/native composition and ordered publication remain open; no production mutation. See docs/changelog/2026-09-10-final-deal-review-parks-before-consent.md.

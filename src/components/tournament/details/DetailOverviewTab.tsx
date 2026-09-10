@@ -44,7 +44,7 @@
  * announces itself once a second is a screen-reader denial-of-service.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { TournamentTabProps, NormalisedBlindLevel } from './types';
 import {
   chips,
@@ -59,12 +59,11 @@ import {
   resolvePayoutStructure,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
-import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
-import { useToast } from '../../common/Toast';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
+import TournamentDealReview from '../TournamentDealReview';
 import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import {
@@ -172,8 +171,6 @@ export default function DetailOverviewTab({
     retry: satRetry,
   } = useSatellites(tournament?.id, currentUserId);
 
-  const toast = useToast();
-
   /* ── The one-second heartbeat. Only runs when something on screen actually
         moves: a running level clock, or a countdown to a start time. ── */
   const [tick, setTick] = useState(0);
@@ -215,92 +212,9 @@ export default function DetailOverviewTab({
     () => (Array.isArray(entries) ? entries : []).filter(isPlayerLive),
     [entries]
   );
-  const aliveCount = aliveList.length;
 
-  /* ── Final-table deal votes. Own state, own poll: the tab contract does not
-        carry them and no other tab needs them. ── */
+  /* The review panel reads the exact proposal only for a remaining player. */
   const dealEnabled = Boolean(tournament?.final_table_deal_enabled) && isRunning;
-  const [dealVoteCount, setDealVoteCount] = useState(0);
-  const [hasVotedDeal, setHasVotedDeal] = useState(false);
-  const [votingDeal, setVotingDeal] = useState(false);
-
-  /**
-   * The poll only runs once the panel it feeds can actually appear.
-   *
-   * It used to be gated on `dealEnabled` alone -- `final_table_deal_enabled &&
-   * isRunning` -- while the PANEL additionally requires the field to be down to
-   * one table. So a 500-runner event with final-table deals turned on polled
-   * `tournament_deal_votes` every fifteen seconds from level one, for hours,
-   * for a number nothing on screen was reading. `dealPanel` is declared below
-   * this effect, so the gate is recomputed here rather than referenced.
-   */
-  const ftSize = Number(tournament?.table_size) || 9;
-  const dealPanelPossible = dealEnabled && aliveCount >= 2 && aliveCount <= ftSize;
-
-  useEffect(() => {
-    if (!dealPanelPossible || !tournament?.id) return;
-    let alive = true;
-    /* Request ordering. Two loads can be in flight across a vote -- the
-       optimistic +1 in handleVoteForDeal and a poll issued just before the
-       insert landed -- and whichever RESOLVES last used to win. A sequence
-       number means a stale response is dropped instead of overwriting a fresher
-       count with an older one. */
-    let seq = 0;
-    const load = async () => {
-      const mine = ++seq;
-      const { data, error } = await supabase
-        .from('tournament_deal_votes')
-        .select('user_id')
-        .eq('tournament_id', tournament.id);
-      if (!alive || mine !== seq) return;
-      if (error) {
-        /* Was `if (!alive || error || !data) return;` -- a permission failure
-           left the panel showing "0/6 Votes", which is a factual claim about a
-           real vote count, with nothing reported anywhere. */
-        reportError(error, 'DetailOverviewTab.dealVotes');
-        return;
-      }
-      if (!data) return;
-      setDealVoteCount(data.length);
-      setHasVotedDeal(Boolean(currentUserId && data.some((v) => v.user_id === currentUserId)));
-    };
-    void load();
-    const iv = setInterval(load, 15_000);
-    return () => {
-      alive = false;
-      clearInterval(iv);
-    };
-  }, [dealPanelPossible, tournament?.id, currentUserId]);
-
-  const handleVoteForDeal = useCallback(async () => {
-    if (!currentUserId || !tournament?.id || votingDeal) return;
-    setVotingDeal(true);
-    try {
-      const { data, error } = await supabase.rpc('fn_cast_tournament_deal_vote', {
-        p_tournament_id: tournament.id,
-      });
-      if (error) {
-        throw error;
-      }
-      const result = (data ?? {}) as { ok?: boolean; voted?: boolean; reason?: string };
-      if (result.ok !== true || result.voted !== true) {
-        throw new Error(result.reason || 'The deal vote was refused');
-      }
-      setHasVotedDeal(true);
-      if ((result as { already?: boolean }).already !== true) {
-        setDealVoteCount((n) => n + 1);
-        toast.success('Your deal vote is in.');
-      } else {
-        toast.success('Your deal vote is already in.');
-      }
-    } catch (e) {
-      reportError(e, 'DetailOverviewTab.voteForDeal');
-      toast.error('Could not record your vote.');
-    } finally {
-      setVotingDeal(false);
-    }
-  }, [currentUserId, tournament?.id, votingDeal, toast]);
-
   /* ── Field figures. ──
         Counted with the SHARED predicate. This block used to define "still in"
         as `playing | registered` while Ranking used `not out`, so a completed
@@ -835,33 +749,20 @@ export default function DetailOverviewTab({
         </div>
       )}
 
-      {/* Final-table deal vote. Only at one table, only on an FT-deal event. */}
-      {dealPanel && (
-        <div className="tl-panel dov-deal">
-          <div className="dov-deal__head">
+      {dealPanel &&
+        (dealPanel.amSeated && currentUserId ? (
+          <TournamentDealReview
+            key={`${tournament.id}:${currentUserId}`}
+            tournamentId={tournament.id}
+            actorId={currentUserId}
+            players={entries || []}
+          />
+        ) : (
+          <div className="tl-panel dov-deal">
             <span className="dov-deal__label">Final Table Deal</span>
-            <span className="dov-deal__count">
-              {chips(dealVoteCount)}/{chips(dealPanel.remaining)} Votes
-            </span>
+            <p className="dov-deal__note">Only Remaining Players Can Review And Vote On A Deal.</p>
           </div>
-          {dealPanel.amSeated &&
-            (hasVotedDeal ? (
-              <p className="dov-deal__note">
-                Your Vote Is In. A Deal Happens When Every Remaining Player Votes.
-              </p>
-            ) : (
-              <button
-                type="button"
-                className="dov-deal__btn"
-                onClick={handleVoteForDeal}
-                disabled={votingDeal}
-                aria-label="Vote To Split The Remaining Prize Pool"
-              >
-                {votingDeal ? 'Voting...' : 'Vote For Deal'}
-              </button>
-            ))}
-        </div>
-      )}
+        ))}
 
       {/* ── BAND 4 — the definition grid the long list became ──
            Every value in this band used to be an inline style, and three of

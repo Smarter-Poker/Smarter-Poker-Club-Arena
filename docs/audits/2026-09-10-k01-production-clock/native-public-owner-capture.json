@@ -1,0 +1,6912 @@
+[
+  {
+    "relname": "_pps_backfill_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "abuse_logs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "action_audit_logs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "action_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "active_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_advertiser",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_campaign",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_event",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_event_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_event_retention_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_placement",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ad_rate_card",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "admin_audit_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "agent_commission_settlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "agent_commission_unsettled_rollup",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "agent_commissions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "agent_commissions_unsettled",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "agents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "anti_cheat_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "anti_cheat_flags",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "anti_farming_ips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "api_idempotency",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arcade_duel_queue",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arcade_duels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arcade_games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arcade_jackpot",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arcade_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arena_matches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arena_orbs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "arena_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "article_bookmarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "article_bookmarks_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "audit_trail",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "auth_health_view",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "autofix_attempts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "autofix_attempts_summary",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "autofix_budget",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "autofix_config",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "autofix_projects",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "avatar_shop_aliases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "avatar_shop_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "avatar_style_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "avatar_unlocks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bad_beat_jackpots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_assistant_memory",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_goals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_locations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_rule_violations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_rules",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_segments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_transfers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bankroll_trips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_conservation_baseline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_contributions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_daily_user",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_drill_arms",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_hand_evidence_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_hand_evidence_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_ledger_deletions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_mini_tiers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_near_misses",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_notify_thresholds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_payout_recipients",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_payouts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_pool_restorations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_pools",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_qualifying_hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_snapshot_alert_collapse_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_stakes_tiers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_threshold_crossings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_unclaimed_shares",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bbj_winners",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "blacklists",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "blocked_users",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bomb_pot_award_units",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bomb_pot_award_units_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bomb_pot_manual_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bomb_pot_manual_requests_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bot_number_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bot_profiles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "bus_event_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_account_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_account_snapshots_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_alarm_drills",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_alarm_drills_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_arena_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bbj_alloc_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bbj_bucket_moves",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bbj_bucket_moves_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bbj_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bbj_pool_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bbj_pool_snapshots_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_break_scorecards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bridge_rate",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bridge_rate_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_bridge_rate_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_broke_seat_sightings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_browser_definer_allowlist",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_cert_accounts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_check_sweep_exemptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_chip_baseline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_bomb_pot_complete",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_bomb_pot_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_commission_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_data_export_rows",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_data_exports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_player_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_rake_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_rake_daily_user",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_tournament_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_club_tournament_player_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_collusion_scan_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_collusion_signals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_collusion_signals_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_currency_meter",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_currency_meter_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_calendar",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_calendar_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_calendar_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_calendar_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_days",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_refusals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_daily_bonus_refusals_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ddl_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ddl_events_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_declared_money_triggers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_deploy_dispatch_config",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_deploy_dispatch_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_deploy_dispatch_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_detector_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_detector_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_detector_runs_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_balance_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_balance_audit_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_dead_store_writes",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_engine_spend",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_engine_spend_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_house",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_house_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_house_ledger_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_incidents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_incidents_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_journal_archive",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_rule_modes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_diamond_snapshots_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_direct_balance_writes",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_drift_incidents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_dropped_index_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_dropped_index_ledger_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_engine_deploy_attempts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_engine_deploy_attempts_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_engine_deploy_runs_started",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_engine_deploy_watch_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_epoch_closing_positions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_epoch_closing_positions_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_escrow_shadow_results",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_escrow_shadow_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_escrow_shadow_runs_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_financial_epochs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_financial_epochs_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_freeroll_free_buy_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_freeroll_free_buy_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_freeze_circulation_marks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_frozen_pool_baseline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_frozen_pool_baseline_changes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_frozen_pool_baseline_changes_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_frozen_pool_deletions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_frozen_pool_deletions_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_gate_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_gate_runs_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_guard_def_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_guard_def_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_guard_defs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_guard_inventory",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_guard_inventory_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_facts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_financial_facts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_flags",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_notes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_player_idx",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_player_idx_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_player_stat",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_player_stat_repair_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_player_stat_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_hand_transfers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_horse_fleet_heartbeat",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_horse_fleet_heartbeat_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_horse_fleet_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_horse_fleet_register",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_horse_fleet_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_idx_every_seat_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_incident_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_incident_events_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_incident_file_failures",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_incident_notify_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_incident_recipients",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_integrity_case_items",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_integrity_cases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_integrity_sanctions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_kill_switch_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_accounts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_day_manifest_restatements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_day_manifest_restatements_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_day_manifests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_maintenance_kinds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_mutation_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_mutation_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_write_failures",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ledger_write_failures_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_manual_adjustments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_mint_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_mint_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_mint_policy_changes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_mint_policy_changes_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_money_path_enforcement",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_money_path_violations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_money_rpc_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_noop_update_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_op_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_approvals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_grants",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_player_notes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_player_tags",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_role_permissions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_operator_roles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_payout_freeze",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_pending_promo_accruals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_pgrst_reload_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_pgrst_reload_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_player_restrictions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_profile_deletions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_profile_deletions_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_rake_rules",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_rake_schedule",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_rake_schedule_caps",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_rake_tier",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_rakeback_baseline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_ratchet_baselines",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_restriction_observations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_restriction_observations_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_retired_cron_jobs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_seat_guard_dryrun",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_seat_guard_dryrun_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_seat_stack_exits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_seat_stack_exits_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_seat_stack_rebases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_seat_stack_rebases_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_settle_sources",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_settlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_stat_distribution",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_stats_witness_audit_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_stats_witness_audit_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_supply_breach_ack",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_supply_snapshot_classifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_supply_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_supply_snapshots_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_test_account_audit_archive",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_tournament_conservation_samples",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_treasury_baseline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ca_union_rake_attribution",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "card_slide_usage",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_cluster_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_cluster_events_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_game_roster",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_game_waitlist",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_player_session",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_rejoin_constraints",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_seat_change_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_seat_move_ledger",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_seat_move_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cash_seat_moves",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cashier_operations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cashier_operations_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cashout_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "celebration_queue",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "challenge_streak_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "charity_events_schedule",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "charity_events_schedule_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chat_filter_words",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chat_moderation_actions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chat_mutes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_escrow",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_escrow_holds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_ledger_chain_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_ledger_idem",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_supply_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "chip_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "clawbot_audit_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "clawbot_audit_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "clawbot_task_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "client_crash_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "client_crash_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "client_shell_telemetry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "client_shell_telemetry_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "clip_library",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "clip_usage_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_agents",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_announcements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_arena_audit_logs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_arena_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_chat",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_creation_bonuses",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_creation_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_daily_stats",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_diamond_wallets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_entry_daily_metrics",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_entry_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_entry_events_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_entry_feature_flags",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_financial_quarantine",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_financial_summary",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_game_seats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_hand_daily",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_hand_daily_shard",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_join_idempotency",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_leaderboard_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_level_thresholds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_live_games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_member_daily_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_member_table_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_members",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_memberships",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_message_dismissals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_opening_setup_funding",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_opening_setups",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_profit_reconcile_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_profit_reconcile_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_rake_daily_user",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_rake_rollup_complete",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_shop_inventory",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_shop_items",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_shop_purchases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_stats_rebuild_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_table_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_wallet_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "club_wallets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "clubs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "collusion_tracking",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_activity_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_admin_pins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_admin_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_analytics_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_api_keys",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_audit_logs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_buyin_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_cash_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_checkins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_clock_presets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_club_announcements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_comp_balances",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_comp_rates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_comp_redemptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_comp_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_day_closes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_dealer_bookings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_dealer_marketplace",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_dealer_rotations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_dealers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_equipment_rental_orders",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_equipment_rentals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_escrow_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_export_jobs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_floor_calls",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_freeroll_qualifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_freerolls",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_game_types",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_hand_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_high_hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_audit_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_ban_appeals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_content_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_game_photos",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_game_reviews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_game_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_game_templates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_follows",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_promotion_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_share_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_share_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_view_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_view_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_group_weekly_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_groups",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_invite_tokens",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_join_attempts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_join_attempts_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_members",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_poll_votes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_polls",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_post_comments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_post_likes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_posts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_rsvps",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_seat_reservations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_home_seats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_incidents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_leaderboard_entries",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_leaderboards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_leads",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_league_standings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_leagues",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_member_comp_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_members",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_membership_plans",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_notification_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_notifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_onboarding_leads",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_pilot_venues",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_player_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_player_reputation",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_player_reputation_scores",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_player_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_player_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_post_comments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_print_jobs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_progressive_jackpots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_promotion_awards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_promotions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_push_subscriptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_rate_limits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_room_presets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_seat_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_seats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_self_exclusions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_service_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_shift_handoffs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_spending_limits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_staff",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_staff_shifts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_streams",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_subscriptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_system_health",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_system_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_table_displays",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_table_ratings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_table_seats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_table_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tax_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_time_clock",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_time_purchases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_time_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tournament_entries",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tournament_leaderboards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tournament_points",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tournament_templates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_tournaments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_followers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_photos",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_posts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_review_flags",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_review_helpful",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_reviews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_venue_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_wait_time_predictions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_waitlist",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_waitlist_group_members",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_waitlist_groups",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commander_waitlist_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "commission_rate_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "competitive_quarantine",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_asset_use",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_asset_use_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_authors",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_authors_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_schedule",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_sources",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "content_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "conversations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cosmetic_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "crash_rounds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "credit_assignments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "credit_invoices",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "credit_payments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "credit_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "crew_members",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "crews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cron_execution_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cron_health_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "cron_locks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "custom_avatar_gallery",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "customization_operations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "customization_operations_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daemon_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_catalog_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_catalog_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_claim_batches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_dashboard_revisions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_event_outbox",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_freeze_entitlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_milestone_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_milestones",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_progress_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenge_reroll_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_mission_operations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_mission_operations_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_spins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "daily_trivia_plays",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "data_audit_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "db_saturation_selftest_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "db_saturation_selftest_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "dealer_calendar_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "dealer_documents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "deep_stack_delete_attempts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "deep_stack_delete_attempts_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "deploy_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "deprecated_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_arena_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_debts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_engine_daily_caps",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_game_commits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_game_config_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_game_config_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_game_configs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_game_pools",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_packages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_platform_budget",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_purchase_disputes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_purchase_lots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_purchases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_reward_budgets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_reward_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_reward_catalog_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_reward_catalog_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_reward_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_user_daily_awards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_wallet_transfers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "diamond_wallets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "digital_purchase_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "direct_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "disputes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "employee_number_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "endless_high_scores",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_alerts_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_leader",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_maintenance_break",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_maintenance_break_faults",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_maintenance_break_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_maintenance_thaw_targets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_maintenance_thaws",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_presence_parked",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_recovery_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_state_snapshot",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_table_leases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "engine_tournament_leases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "entry_purchase_idempotency_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "execution_audit_logs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "favorite_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "fct_portfolio",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "feature_pricing",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "feature_purchases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "fee_requeue_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "financial_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "financial_health_checks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "flash_pool_players",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "flash_pools",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "follows",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "friend_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "friend_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "friendships",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_action_idempotency_keys",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_formats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_live_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_live_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_management_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_management_events_sequence_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "game_ticker_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gdpr_deletion_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_analytics",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_answer_ratings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_conversations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_knowledge_cache",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_missed_questions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geeves_missed_questions_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "geofence_visits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "global_hand_number_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "god_mode_hand_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "god_mode_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "god_mode_user_session",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "grok_explanation_cache",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_agg_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_agg_progress_v31",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_combo_map",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_postflop_compact",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_postflop_v31",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_scenarios",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_v31_cell_source_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_v31_datasets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_v31_input_bundles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_v31_release_evaluations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_v31_runtime_cells",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "gto_v31_source_artifacts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_actions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_atomic_commits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_audit_decisions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_discards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_histories",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_history_compaction_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_history_retention_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_players",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_private_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_projection_outbox",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hand_state_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "hendon_scrape_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "home_game_groups",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "home_game_members",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "home_game_vouches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_analytics",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_brain_telemetry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_bug_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_daily_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_daily_nets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_daily_play",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_data_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_decision_latency",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_error_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_hand_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_hand_results",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_hand_reviews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_hand_reviews_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_job_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_league_results",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_league_results_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_memory",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_mind_pairs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_mind_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_mind_stats_scoped",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_opponent_journals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_opponent_reads",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_personality",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_phrase_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_phrase_ledger_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_post_modes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_relationships",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_review_rollup",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_self_tune_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_self_tune_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_session_analytics",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_session_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_solver_agreement",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_solver_agreement_decisions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_solver_agreement_v31_decisions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_source_assignments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_sports_source_assignments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_style_performance",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_thread_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_thread_state_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_threat_intel",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_topic_cooldowns",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "horse_tournament_daily",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "iap_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "iap_products",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "idempotency_keys",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "index_usage_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "insurance_offer_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "insurance_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "jarvis_conversations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "jarvis_leak_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "jarvis_response_cache",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "jarvis_training_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "jarvis_user_training_profile",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "jarvis_weekly_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "kyc_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leaderboard_entries",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leaderboard_payout_batches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leaderboard_payout_failures",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leaderboard_payout_failures_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leaderboard_payouts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leaderboard_reward_program_versions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leak_drill_answers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leak_drill_attempts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leak_drill_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leak_hand_examples",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leak_review_operations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "leak_review_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "ledger_reconcile_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_ban_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_bans",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_comments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_game_confirmations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_games",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_gifts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_guest_revocations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_help_analytics",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_help_conversations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_help_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_help_reactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_help_tickets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_pins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_reactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_signaling",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_stream_analytics",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_streams",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "live_viewers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "lucky_wheel_segments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "managed_game_command_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "managed_game_contract_versions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "managed_game_contract_versions_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "managed_game_schedules",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "member_fee_lifetime",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "member_fee_rollup",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "member_fee_rollup_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "memory_achievement_definitions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "memory_challenge_completions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "memory_charts_gold",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "memory_daily_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "memory_game_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "memory_leaderboards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "mentions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "merchandise_item_variants",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "merchandise_items",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "merchandise_order_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "merchandise_orders",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "message_reactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_admin_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_blocked",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_bookmarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_call_signals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_conversation_labels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_conversations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_favorites",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_labels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_participants",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_reactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_reminders",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_scheduled",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_templates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "messenger_themes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "money_check_heartbeat",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "money_flow_checkpoint",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "mv_active_poker_locations",
+    "relkind": "m",
+    "owner": "postgres"
+  },
+  {
+    "relname": "mv_hand_histories",
+    "relkind": "m",
+    "owner": "postgres"
+  },
+  {
+    "relname": "mv_home_groups_trending",
+    "relkind": "m",
+    "owner": "postgres"
+  },
+  {
+    "relname": "news_articles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "news_bookmarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "news_push_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "news_read_later",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "newsletter_campaigns",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "newsletter_subscribers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "notification_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "notification_prompt_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "notification_prompt_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "notification_reads",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "notifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "opponent_profiles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "orb1_idempotency_keys",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "orbs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "orders",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pa_coach_feedback",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pa_coaching_goals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pa_coaching_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pa_data_lifecycle_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pa_leak_audit_jobs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "page_activity",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "page_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "page_followers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "page_followers_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "page_notifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pb_calibration_profiles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pb_hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pb_profiles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pb_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pb_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pending_calls",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pending_fee_distributions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "personas",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "personas_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pgrst_reload_watchdog_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pgrst_reload_watchdog_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_remediation_playbook",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_rls_table_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_rls_table_audit_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_secdef_grant_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_secdef_grant_audit_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_view_security_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phase22_view_security_audit_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "phone_verification_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pipeline_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pipeline_stats",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "platform_policies",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_agent_assignments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_notes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_number_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_position_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_search_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_sessions",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "player_stats_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "plinko_drops",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "plinko_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_clips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_diamond_custody",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_diamond_hand_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_diamond_lot_reservations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_diamond_movements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_goals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_near_me_favorites",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_near_me_search_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_news",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_reels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_seat_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_series",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_series_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_session_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_table_layouts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_tour_series_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_tour_series_events_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_venues",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_venues_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poker_videos",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "post_briefs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "posted_clips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "posted_sports_clips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "poy_leaderboard",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "premium_feature_access",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "privileged_function_lock",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "probe_heartbeats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "probe_heartbeats_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "profile_picture_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "profiles",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "profiles_player_number_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_code_redemptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_codes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_codes_used",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_distributions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_vault_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_vault_inventory",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_vault_records",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promo_wagering_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promotion_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promotion_leaderboards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "promotions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "public_player_number_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "purchase_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "push_dispatch_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "push_outbox",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "push_subscriptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "pwa_prompt_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "qr_code_scans",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "qr_code_scans_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rabbit_hunt_offers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rabbit_hunt_reveals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rake_attributions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rake_distribution_legs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rake_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rake_rate_audit",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rake_records",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rakeback_daily_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rakeback_daily_user",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rakeback_distributions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rakeback_period_payouts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rakeback_periods",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rakeback_stats_applied",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rate_limit_buckets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "rate_limits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "referral_codes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "referral_milestone_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "referral_redemptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "referrals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "responsible_gaming_limits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "responsible_gaming_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "reward_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "reward_definitions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "role_changes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_analytics",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_bookmarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_coach_accuracy",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_coach_results",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_equity_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_quiz_results",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_results",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_saved_hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_shared_scenarios",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_templates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sandbox_weekly_spots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "saved_reels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scheduled_lives",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scrape_evidence",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scrape_source_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scrape_source_registry_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scraper_metrics",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scraper_metrics_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scraper_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "scraper_watchdog_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "seat_admin_departure_authorizations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "seat_cashout_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "seat_departure_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "seed_reveals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "seeded_content",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sentry_error_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sentry_error_log_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sentry_event_budget",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sentry_event_fingerprints",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "session_chat_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "session_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "settlement_idempotency_keys",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "settlement_invoices",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "settlement_journal",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "settlement_locks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "settlement_periods",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "seven_deuce_bounties",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "share_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "share_streak_rewards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "share_streaks",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "signup_abuse_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "signup_errors",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "signup_errors_archive",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "signup_errors_archive_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "signup_errors_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "signup_health_view",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "slug_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sms_otp_codes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_comment_likes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_comments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_connections",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_conversation_participants",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_conversations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_follows",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_interactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_likes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_media",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_media_library",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_message_reads",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_comment_likes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_followers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_post_comments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_post_likes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_posts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_page_reviews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_pages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_pages_orphan_archive",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_post_comments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_posts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_reels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_stories",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "social_story_views",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solution_bookmarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solved_spots_gold",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_compact_heartbeats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_compact_liveness",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_ingress_nonces",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_manifest",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_pipeline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_queue",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_status",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_worker_heartbeats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "solver_worker_liveness",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sp_combo_class",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sp_pending_family_cache",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "special_bonuses",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_bonus_pools",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_draw_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_fill_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_payout_ladder",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_reserve_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_tier_spec",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "spin_unpaid_backpay_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sports_clips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sso_bridge_tokens",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stable_hand_beats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stable_hand_beats_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stable_hand_horse_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stable_hand_membership_tags",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stack_depth_configs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "staff_claim_tokens",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "staking_arrangements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "staking_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sticker_assets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stories",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "stripe_webhook_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "study_rooms",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "sub_agents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "survival_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "system_cache",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "system_logs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_activity",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_addon_idempotency",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_cashout_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_chat",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_chat_mutes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_hole_cards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_pending_addons",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_seats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_settings_changes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_settings_changes_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_templates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "table_waitlist",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "theme_asset_unlocks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "theme_preset_aliases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "theme_preset_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "theme_unlocks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "throw_usage",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "throwable_use_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tilt_journal",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "time_bank",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "toke_downs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "toke_entries",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "toke_expenses",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "toke_gig_days",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "toke_gigs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "topic_cooldowns",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_event_details",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_event_details_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_events_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_schedule_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_schedule_registry_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_schedule_sources",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_schedule_sources_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_scrape_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_source_registry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tour_stop_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_alert_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_bounties",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_bounty_award_recipients",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_bounty_awards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_bounty_chests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_bounty_completion_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_bounty_obligations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_cancellation_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_capacity_table_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_conservation_baseline",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_deal_proposal_consents",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_deal_proposal_executions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_deal_proposals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_deal_review_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_deal_reviews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_deal_votes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_entry_close_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_escrow",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_escrow_shadow",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_final_table_deal_batches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_final_table_deal_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_finish_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_guarantee_overlays",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_knockout_candidates",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_launch_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_manager_wakes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_manager_wakes_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_mystery_activation_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_obligation_retirements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_obligations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_payout_backfill_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_payout_source_corrections",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_payouts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_pko_settlement_watermarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_place_collisions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_place_overpay_charges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_place_renumbers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_place_settlement_batches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_player_elimination_sequence",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_players",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_players_position_repair_20260901",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_rake_settlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_refund_authorizations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_refund_entitlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_refund_tranches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_registration_approvals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_registrations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_reminder_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_reminders_sent",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_results",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_awards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_economic_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_entitlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_remainders",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_settlement_batches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_settlement_cutover",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_satellite_settlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_schedule_spawns",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_schedule_spawns_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_schedules",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_seat_exit_authorizations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_seat_move_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_series",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_series_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_spin_cancellation_unwinds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_spin_settlement_cutover",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_survivor_rank_backfill",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_table_origins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_terminal_settlement_cutover",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_terminal_settlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_ticket_admission_authorizations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_tickets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_unregistration_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournament_waitlists",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tournaments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "tours_due_for_refresh",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_achievement_definitions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_achievements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_answers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_attempt_decision_slots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_attempt_hands",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_attempts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_cache_audit_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_challenge_definitions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_custom_drills",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_daily_bonus",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_daily_challenge",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_daily_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_daily_question_conflicts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_daily_question_seals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_delivery_authority_attestations",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_delivery_authority_cutover",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_drills",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_hand_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_hand_replay",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_leaderboard",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_leaderboard_top",
+    "relkind": "m",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_level_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_levels",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_moves",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_question_cache",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_question_cache_quarantine",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_question_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_question_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_question_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_questions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_scenarios",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_solver_artifact_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_solver_provenance_authority",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_solver_worker_receipts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_spaced_repetition",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_streak_activity_days",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_streak_milestone_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_streaks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_study_group_members",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_study_group_messages",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_study_groups",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_tool_records",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_tournament_entries",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_tournaments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_user_achievements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_user_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_user_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "training_verified_leaderboard",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "transaction_idempotency_keys",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_category_health",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_category_mastery",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_diamond_award_limits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_diamond_award_limits_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_diamond_award_limits_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_economy_audit_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_item_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_prize_wheel_spins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_pvp_active_seats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_pvp_matches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_pvp_queue",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_pvp_session_links",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_pvp_settlement_decisions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_pvp_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_quality_audits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_question_player_stats",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_question_pool_stats",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_question_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_question_result_events",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_questions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_questions_public",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_regression_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_scores",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_streaks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_survival_runs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_tournament_entries",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_tournament_notifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_tournament_rounds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_tournaments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_tournaments_public",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_user_items",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "trivia_user_question_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "unified_events_calendar",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_admins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_announcements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_applications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_club_terms",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_clubs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_creators",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_eco_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_invoice_counters",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_leave_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_pnl_settlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_presettlements",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_rake_basis_snapshot",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_rake_ledger_checkpoint",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_rake_paid_daily_user",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_rake_rollup_days",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_rake_weekly",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_rakeback_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_settlement_floor",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_settlement_rounds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_wallet_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "union_wallets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "unions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_albums",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_assistant_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_avatars",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_badges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_blocks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_bonus_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_bookmarks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_daily_challenges",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_daily_rewards",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_daily_streaks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_devices",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_diamond_balance",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_diamonds",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_feedback",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_leaks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_level_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_lobby_filters",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_lucky_wheel_spins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_media",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_mfa_factors",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_notification_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_notifications",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_poker_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_progress",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_pwa_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_question_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_reports",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_seen_questions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_sessions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_stats",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_streaks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_table_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_table_studio_preferences",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_theme_settings",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_tos_acceptances",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_training_leaks",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "user_venue_checkins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "users",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_agent_commissions",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_backtest_summary",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_bomb_pot_daily",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_bomb_pot_outcomes",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_bomb_pot_vs_normal",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_ca_alert_board",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_ca_suspense_balance",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_cashier_failures_daily",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_cashier_health_hourly",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_chip_ledger",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_customization_health_daily",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_customization_health_hourly",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_daily_challenge_event_outbox_health",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_daily_mission_health_daily",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_daily_mission_health_hourly",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_insurance_activity",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_insurance_pnl",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_openclaw_job_staleness",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_shell_reload_lateness",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_shell_staleness_rate",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_draw_booking_gaps",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_draw_distribution_7d",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_draw_fairness",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_reserve_health",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_reveal_latency",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_tier_availability",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_unfilled_waits",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_spin_unpaid_settlements",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_system_health_cron",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_tournament_rake_attribution_gaps",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_yt_jobs_health",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "v_yt_pipeline_health",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_aliases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_checkins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_daily_tournaments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_directory_enrichment_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_duplicate_retirement_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_game_alerts",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_game_schedules",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_game_schedules_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_game_snapshots",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_live_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_live_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_live_tables",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_live_tables_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_location_integrity_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_location_integrity_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_managers",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_news",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_news_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_reviews",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_tournament_schedules",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venue_verification_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "venues",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_analysis",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_clips",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_favorites",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_generation_queue",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_library_health",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_library_public_catalog",
+    "relkind": "v",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_library_videos",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_playlist_items",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_playlists",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_reels_legacy_transition_rows",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_reels_legacy_transition_state",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_reels_pipeline_config",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_reels_pipeline_controls",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_transcode_jobs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_watch_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "video_watch_later",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "villain_archetypes",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_diamond_purchase_requests",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_feature_dismissals",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_feature_usage",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_feature_usage_monthly",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_lifetime_purchases",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_plan_switches",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_points",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_points_carry",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_points_ledger",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_pricing",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_reward_catalog",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_reward_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_subscription_checkout_claims",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "vip_subscriptions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "w2g_forms",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "waitlist_policy",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wallet_audit_backfill_log",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wallet_credit_idempotency",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wallet_transactions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wallets",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_config_history",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_config_history_id_seq",
+    "relkind": "S",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_configs",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_free_segments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_free_spins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_pools",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_seed_commits",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_segment_versions",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_segments",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wheel_spins",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "wishlists",
+    "relkind": "r",
+    "owner": "postgres"
+  },
+  {
+    "relname": "youtube_embed_failures",
+    "relkind": "r",
+    "owner": "postgres"
+  }
+]

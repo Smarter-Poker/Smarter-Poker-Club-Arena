@@ -1,0 +1,142 @@
+{
+  "source_refusals": [
+    "changed_source_acl",
+    "changed_source_owner",
+    "changed_source_path",
+    "changed_source_body"
+  ],
+  "scope": "Actual current snapshot/checkpoint/suffix/five-argument owner plus epoch-bound credit candidate; local activation and prior-local-credit fixtures are explicit",
+  "cases": [
+    {
+      "case": "ordinary_epoch",
+      "checks": [
+        "parent gate precedes all captured blocking row triggers",
+        "actual owner refuses early thaw without checkpoint",
+        "actual ownership token refusal leaves no checkpoint",
+        "three-argument thaw cannot mutate activated epoch",
+        "freeze bypass setting cannot forge clock authority",
+        "failure after actual epoch credit rolls back heads coverage native targets and ownership witness",
+        "actual service role executes verified public owner through private postgres authority",
+        "actual snapshot and broad checkpoint bind exact epoch and clean context",
+        "actual suffix credits only uncovered epoch-clipped time",
+        "native cumulative receipt and epoch binding agree after suffix",
+        "actual release certificate keeps platform frozen after break deletion",
+        "completed owner replay cannot repeat clock credit",
+        "private ownership context is removed on completion",
+        "next epoch admission respects future certified release",
+        "actual service role cannot bypass wrapper through retained private worker",
+        "actual authenticated role cannot call service thaw owner"
+      ],
+      "passed": 16
+    },
+    {
+      "case": "future_level_hold",
+      "checks": [
+        "parent gate precedes all captured blocking row triggers",
+        "actual owner refuses early thaw without checkpoint",
+        "actual ownership token refusal leaves no checkpoint",
+        "three-argument thaw cannot mutate activated epoch",
+        "freeze bypass setting cannot forge clock authority",
+        "failure after actual epoch credit rolls back heads coverage native targets and ownership witness",
+        "actual service role executes verified public owner through private postgres authority",
+        "actual snapshot and broad checkpoint bind exact epoch and clean context",
+        "actual suffix credits only uncovered epoch-clipped time",
+        "native cumulative receipt and epoch binding agree after suffix",
+        "actual release certificate keeps platform frozen after break deletion",
+        "completed owner replay cannot repeat clock credit",
+        "private ownership context is removed on completion",
+        "next epoch admission respects future certified release",
+        "actual service role cannot bypass wrapper through retained private worker",
+        "actual authenticated role cannot call service thaw owner"
+      ],
+      "passed": 16
+    },
+    {
+      "case": "maintenance_after_prior_local_credit",
+      "checks": [
+        "parent gate precedes all captured blocking row triggers",
+        "actual owner refuses early thaw without checkpoint",
+        "actual ownership token refusal leaves no checkpoint",
+        "three-argument thaw cannot mutate activated epoch",
+        "freeze bypass setting cannot forge clock authority",
+        "failure after actual epoch credit rolls back heads coverage native targets and ownership witness",
+        "actual service role executes verified public owner through private postgres authority",
+        "actual snapshot and broad checkpoint bind exact epoch and clean context",
+        "actual suffix credits only uncovered epoch-clipped time",
+        "native cumulative receipt and epoch binding agree after suffix",
+        "actual release certificate keeps platform frozen after break deletion",
+        "completed owner replay cannot repeat clock credit",
+        "private ownership context is removed on completion",
+        "next epoch admission respects future certified release",
+        "actual service role cannot bypass wrapper through retained private worker",
+        "actual authenticated role cannot call service thaw owner"
+      ],
+      "passed": 16
+    },
+    {
+      "case": "future_release_rebase",
+      "checks": [
+        "parent gate precedes all captured blocking row triggers",
+        "actual owner refuses early thaw without checkpoint",
+        "actual ownership token refusal leaves no checkpoint",
+        "three-argument thaw cannot mutate activated epoch",
+        "freeze bypass setting cannot forge clock authority",
+        "failure after actual epoch credit rolls back heads coverage native targets and ownership witness",
+        "actual service role executes verified public owner through private postgres authority",
+        "actual snapshot and broad checkpoint bind exact epoch and clean context",
+        "actual owner rebases missed future release without repeating credited prefix",
+        "actual suffix credits only uncovered epoch-clipped time",
+        "native cumulative receipt and epoch binding agree after suffix",
+        "actual release certificate keeps platform frozen after break deletion",
+        "completed owner replay cannot repeat clock credit",
+        "private ownership context is removed on completion",
+        "next epoch admission respects future certified release",
+        "actual service role cannot bypass wrapper through retained private worker",
+        "actual authenticated role cannot call service thaw owner"
+      ],
+      "passed": 17
+    },
+    {
+      "case": "two_freezes_one_epoch",
+      "checks": [
+        "parent gate precedes all captured blocking row triggers",
+        "actual owner refuses early thaw without checkpoint",
+        "actual ownership token refusal leaves no checkpoint",
+        "three-argument thaw cannot mutate activated epoch",
+        "freeze bypass setting cannot forge clock authority",
+        "failure after actual epoch credit rolls back heads coverage native targets and ownership witness",
+        "actual service role executes verified public owner through private postgres authority",
+        "actual snapshot and broad checkpoint bind exact epoch and clean context",
+        "actual suffix credits only uncovered epoch-clipped time",
+        "native cumulative receipt and epoch binding agree after suffix",
+        "actual release certificate keeps platform frozen after break deletion",
+        "completed owner replay cannot repeat clock credit",
+        "private ownership context is removed on completion",
+        "next epoch admission respects future certified release",
+        "actual service role cannot bypass wrapper through retained private worker",
+        "actual authenticated role cannot call service thaw owner",
+        "two actual maintenance windows retain one epoch and independent cumulative receipts"
+      ],
+      "passed": 17
+    }
+  ],
+  "passed": 82,
+  "production_writes": false,
+  "limits": [
+    "No public clock activation/advance/pause/resume owner yet",
+    "No local pause owner proof: earlier local credit is injected as a private fixture",
+    "No complete member/paid-capacity lock graph or rollback proof yet",
+    "Native full satellite fixture includes local Stage-B prerequisite and seven observed disabled guards"
+  ],
+  "files": {
+    "docs/audits/2026-09-10-k01-production-clock/clock-maintenance.sql": "2bcc49b49f97fc5658f6310cd69b569d3e841e9589eb1aa724b633a21b2db115",
+    "docs/audits/2026-09-10-k01-production-clock/clock-epochs.sql": "2bb920a356335ca753f4dad80cadd8c9042a0777461ee5daa2ffd21ceeef35b7",
+    "docs/audits/2026-09-10-k01-production-clock/native-maintenance-supplement.sql": "85bb738ff684ad5dd53aa3a9a359a836759481df71f3d320fa9a5d90a1eabb05",
+    "docs/audits/2026-09-10-k01-production-clock/maintenance-source-capture.json": "252bfb7cb1250dd25cbe836542f1278f9ebc5f9f917d01f3ae62772c34b10c2c",
+    "docs/audits/2026-09-10-k01-production-clock/native-maintenance-ownership.sql": "39ed4688fd79effaa3cae5dfa77f8d2c83da8b32cdc23f67bb93d9bb819ac04a",
+    "docs/audits/2026-09-10-k01-production-clock/maintenance-relation-acl.json": "369c1d98956140ee68cb56c2efea508dbb9f8c0d1cee994a97f9d6dd9b973676",
+    "docs/audits/2026-09-10-k01-production-clock/native-public-owners.sql": "db0653cdd4c91fbd1fac22235d1bb10507113baf81aeadb480f26fad3f9924b9",
+    "docs/audits/2026-09-10-k01-production-clock/native-public-owner-capture.json": "60d9f5af72d819012b64fad280c6982187e4e17eac2751b84ee8d00bfceef511",
+    "scripts/dev/probe-clock-maintenance-native.py": "674584ba5d365ec82e6f0d3a9e3f9f7fbaa00e5748fdb60f16d273ef0e3a6be8"
+  }
+}

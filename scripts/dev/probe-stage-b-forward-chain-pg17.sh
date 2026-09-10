@@ -7,7 +7,7 @@ archive_dir="$repo_dir/supabase/retired-unapplied"
 manifest="$archive_dir/MANIFEST.sha256"
 resolver="$repo_dir/scripts/ops/lib/resolve-staged-or-promoted-migration.sh"
 diamond_fixture="$repo_dir/scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql"
-current_live_ledger_head='20260910151228'
+current_live_ledger_head='20260910164655'
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
 busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
@@ -647,7 +647,14 @@ WITH expected_anchors(version,name) AS (
     ('20260910143032','a_declared_guard_change_is_recorded_not_raised'),
     ('20260910143719','the_guard_declaration_is_not_reachable_from_a_browser'),
     ('20260910145833','a_place_is_not_a_bounty'),
-    ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking')
+    ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking'),
+    ('20260910154446','the_database_refuses_migrations_inside_the_break_window'),
+    ('20260910154537','the_busts_the_door_can_now_accept_are_recorded'),
+    ('20260910154858','every_player_who_busted_has_a_place'),
+    ('20260910160413','a_finished_event_holds_no_pending_bust'),
+    ('20260910160841','the_break_window_refusal_names_its_rule_and_explains_list_migrations'),
+    ('20260910161619','training_solver_bounded_canary_authority'),
+    ('20260910164655','stage_b_break_window_bootstrap_compatibility')
 ), exact_body_rows(version,name,statement_sha256) AS (
   VALUES
     ('20260910051447','the_seat_move_door_the_engine_calls_exists',
@@ -688,7 +695,14 @@ WITH expected_anchors(version,name) AS (
     ('20260910143032','a_declared_guard_change_is_recorded_not_raised',1),
     ('20260910143719','the_guard_declaration_is_not_reachable_from_a_browser',1),
     ('20260910145833','a_place_is_not_a_bounty',1),
-    ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking',1)
+    ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking',1),
+    ('20260910154446','the_database_refuses_migrations_inside_the_break_window',1),
+    ('20260910154537','the_busts_the_door_can_now_accept_are_recorded',1),
+    ('20260910154858','every_player_who_busted_has_a_place',1),
+    ('20260910160413','a_finished_event_holds_no_pending_bust',1),
+    ('20260910160841','the_break_window_refusal_names_its_rule_and_explains_list_migrations',1),
+    ('20260910161619','training_solver_bounded_canary_authority',1),
+    ('20260910164655','stage_b_break_window_bootstrap_compatibility',1)
 ), audited_tail_statements(version,name,ordinal,statement_bytes,statement_sha256) AS (
   VALUES
     ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1,13334,
@@ -746,7 +760,21 @@ WITH expected_anchors(version,name) AS (
     ('20260910145833','a_place_is_not_a_bounty',1,14907,
      '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4'),
     ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking',1,4857,
-     '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee')
+     '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee'),
+    ('20260910154446','the_database_refuses_migrations_inside_the_break_window',1,20519,
+     '772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082'),
+    ('20260910154537','the_busts_the_door_can_now_accept_are_recorded',1,7080,
+     '2cf00803afc5bc6dc14cf7aa1c3a0b3284e1c34d1dd008a6945e4bacb4978f55'),
+    ('20260910154858','every_player_who_busted_has_a_place',1,4795,
+     'c6c6bf4bbad5212af762d5f5f3312e09688915ae4d1191199ac779ab967dd373'),
+    ('20260910160413','a_finished_event_holds_no_pending_bust',1,6134,
+     'cf7b45f9ef4f960a25ba03c9f0903366e1f5641adeb54ba55c3b162a03e218f3'),
+    ('20260910160841','the_break_window_refusal_names_its_rule_and_explains_list_migrations',1,9261,
+     '7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d'),
+    ('20260910161619','training_solver_bounded_canary_authority',1,54632,
+     'f94a331102a359f2ffa8625f07aa2c0c6ba67191833c56aaeede7a0baab74653'),
+    ('20260910164655','stage_b_break_window_bootstrap_compatibility',1,27550,
+     '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6')
 ), journal_trigger_bindings(table_name,trigger_name,trigger_type,triggerdef_md5) AS (
   VALUES
     ('agent_commissions','trg_ca_append_only',27,
@@ -1270,8 +1298,8 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$anchor_receipts" != '41' || "$ledger_head" != "$current_live_ledger_head" ]]; then
-  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/41 anchors, head ${ledger_head:-<missing>}." >&2
+if [[ "$anchor_receipts" != '48' || "$ledger_head" != "$current_live_ledger_head" ]]; then
+  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/48 anchors, head ${ledger_head:-<missing>}." >&2
   exit 65
 fi
 if [[ "$exact_body_receipts" != '3' ]]; then
@@ -1282,8 +1310,8 @@ if [[ "$descriptor_receipts" != '2' ]]; then
   echo 'The donor does not contain the observed descriptor-only 055857 and 060034 ledger metadata.' >&2
   exit 65
 fi
-if [[ "$audited_tail_receipts" != '25' || "$audited_tail_statements" != '28' ]]; then
-  echo 'The donor does not contain the byte-authenticated 072322-151228 live ledger tail.' >&2
+if [[ "$audited_tail_receipts" != '32' || "$audited_tail_statements" != '35' ]]; then
+  echo 'The donor does not contain the byte-authenticated 072322-164655 live ledger tail.' >&2
   exit 65
 fi
 echo 'STAGE_B_CURRENT_LIVE_SCHEMA_MANIFEST_OK'

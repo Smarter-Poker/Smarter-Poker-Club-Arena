@@ -2112,6 +2112,20 @@ export abstract class TournamentManagerBase {
    * declaring one that is not there chops a tournament.
    */
   protected async countLiveTablesWithPlayers(): Promise<number | null> {
+    const ids = await this.liveTournamentTableIdsWithPlayers();
+    return ids === null ? null : ids.length;
+  }
+
+  /**
+   * Return live tournament tables that actually hold a seated player.
+   *
+   * `tableEngines` contains only tables that can deal. A table reduced to one
+   * player has no dealing engine, but it still has to remain visible to the
+   * balancer so that player can be consolidated onto another table. The
+   * database seat projection is therefore the authority for this list. A read
+   * failure is `null` (unknown), never an empty/balanced answer.
+   */
+  protected async liveTournamentTableIdsWithPlayers(): Promise<string[] | null> {
     const { data: liveTables, error: tablesErr } = await supabase
       .from('tables')
       .select('id')
@@ -2119,7 +2133,7 @@ export abstract class TournamentManagerBase {
       .in('status', ['running', 'waiting']);
     if (tablesErr || !liveTables) return null;
     const ids = liveTables.map((t: { id: string }) => t.id).filter(Boolean);
-    if (ids.length === 0) return 0;
+    if (ids.length === 0) return [];
     // The seat query runs even for a single table, deliberately. "One table
     // exists" and "one table holds players" are different statements, and this
     // function is asked the second one — an empty adopted table must not read
@@ -2130,7 +2144,8 @@ export abstract class TournamentManagerBase {
       .in('table_id', ids)
       .is('left_at', null);
     if (seatsErr || !seats) return null;
-    return new Set(seats.map((s: { table_id: string }) => s.table_id)).size;
+    const holding = new Set(seats.map((s: { table_id: string }) => s.table_id));
+    return ids.filter((id) => holding.has(id));
   }
 
   /** Late registration state is owned by fn_close_tournament_entry_window. */

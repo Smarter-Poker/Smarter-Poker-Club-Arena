@@ -26,6 +26,7 @@ BEGIN;
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
 SET LOCAL transaction_timeout = '150s';
+SET LOCAL ca.break_window_migration_override = 'Stage-B 20260910042112 runs only inside its enforced :55 stopped-engine freeze; outside that window its authority is absent';
 
 -- A committed stopped-engine proof cannot authorize this transaction. Take the
 -- terminal root and durable maintenance key again, authenticate the platform
@@ -597,16 +598,16 @@ $assert_phase_three_125453$;
 
 SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
 
--- Production advanced through thirteen more byte-authenticated migrations after
+-- Production advanced through sixteen more byte-authenticated migrations after
 -- the Phase-Three expansion. Prove their complete durable postimage before
 -- touching any Stage-B authority and again at the transaction boundary. The
 -- incident rows closed by three of these migrations are operational history;
 -- their identities and timestamps deliberately are not frozen here.
-CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_151228_postimage()
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_164655_postimage()
 RETURNS void
 LANGUAGE plpgsql
 SET search_path TO 'pg_catalog','public','extensions','pg_temp'
-AS $assert_current_live_tail_151228$
+AS $assert_current_live_tail_164655$
 DECLARE
   v_count integer;
   v_bad integer;
@@ -638,7 +639,21 @@ BEGIN
       ('20260910145833','a_place_is_not_a_bounty',14907,
        '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4'),
       ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking',4857,
-       '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee')
+       '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee'),
+      ('20260910154446','the_database_refuses_migrations_inside_the_break_window',20519,
+       '772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082'),
+      ('20260910154537','the_busts_the_door_can_now_accept_are_recorded',7080,
+       '2cf00803afc5bc6dc14cf7aa1c3a0b3284e1c34d1dd008a6945e4bacb4978f55'),
+      ('20260910154858','every_player_who_busted_has_a_place',4795,
+       'c6c6bf4bbad5212af762d5f5f3312e09688915ae4d1191199ac779ab967dd373'),
+      ('20260910160413','a_finished_event_holds_no_pending_bust',6134,
+       'cf7b45f9ef4f960a25ba03c9f0903366e1f5641adeb54ba55c3b162a03e218f3'),
+      ('20260910160841','the_break_window_refusal_names_its_rule_and_explains_list_migrations',9261,
+       '7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d'),
+      ('20260910161619','training_solver_bounded_canary_authority',54632,
+       'f94a331102a359f2ffa8625f07aa2c0c6ba67191833c56aaeede7a0baab74653'),
+      ('20260910164655','stage_b_break_window_bootstrap_compatibility',27550,
+       '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6')
   )
   SELECT count(*)::integer,
          count(*) FILTER (
@@ -656,13 +671,13 @@ BEGIN
     FROM expected
     LEFT JOIN supabase_migrations.schema_migrations m
       ON m.version=expected.version AND m.name=expected.name;
-  IF v_count<>13 OR v_bad<>0 OR (
+  IF v_count<>20 OR v_bad<>0 OR (
        SELECT max(m.version)
          FROM supabase_migrations.schema_migrations m
         WHERE m.version ~ '^[0-9]{14}$'
-     ) IS DISTINCT FROM '20260910151228' THEN
+     ) IS DISTINCT FROM '20260910164655' THEN
     RAISE EXCEPTION
-      'Stage-B requires all thirteen byte-exact 130319-151228 live-tail migrations and the exact 151228 ledger head; % rows drifted',
+      'Stage-B requires all twenty byte-exact 130319-164655 live-tail migrations and the exact 164655 ledger head; % rows drifted',
       v_bad USING ERRCODE='55000';
   END IF;
 
@@ -731,6 +746,30 @@ BEGIN
        '590f0f782e127288f33763bbab8c89f0','plpgsql',true,'v','u',
        false,false,'f',false,'jsonb',12,2,
        ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres}'),
+      ('public.fn_ca_break_window_ddl_guard()',
+       '6ea4dfd3876346b309a06db40ee8fadd',
+       'b698de4b9ae596b1814928e78ee668c9','plpgsql',true,'v','u',
+       false,false,'f',false,'event_trigger',0,0,
+       ARRAY['search_path=pg_catalog, public, pg_temp']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_break_window_governs(text,text)',
+       '2b30cf850c450681f97b90e7598f0412',
+       '9bc3e63d54109b30f4ad808e36843b82','sql',false,'s','u',
+       false,false,'f',false,'boolean',2,0,
+       ARRAY['search_path=pg_catalog, pg_temp']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_break_window_refuses_migrations(timestamp with time zone)',
+       '0c5f501b57d8d704edbe24a036630e2d',
+       '79b467b435ed6d368f9da32d5908cc79','plpgsql',false,'s','s',
+       false,false,'f',false,'text',1,0,
+       ARRAY['search_path=pg_catalog, pg_temp']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_stage_b_ledger_bootstrap_allowed(text,text,text)',
+       '8cbd9ea1c1dbc24c24be02fb9d447b20',
+       'ac9d5cdc943e88aa0c0bb6cd2410fbdc','plpgsql',true,'v','u',
+      false,false,'f',false,'boolean',3,0,
+      ARRAY['search_path=pg_catalog, public, pg_temp']::text[],
        '{postgres=X/postgres}')
   )
   SELECT count(*)::integer,
@@ -758,9 +797,209 @@ BEGIN
     FROM expected
     LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
     LEFT JOIN pg_language l ON l.oid=p.prolang;
-  IF v_count<>10 OR v_bad<>0 THEN
+  IF v_count<>14 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B found % missing or drifted 151228 live-tail function catalogs',
+      'Stage-B found % missing or drifted 164655 live-tail function catalogs',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+   WHERE n.nspname='public'
+     AND c.relname='ca_break_window_migration_overrides'
+     AND c.relkind='r'
+     AND c.relpersistence='p'
+     AND c.relowner='postgres'::regrole
+     AND c.relrowsecurity AND NOT c.relforcerowsecurity
+     AND c.relreplident='d'
+     AND c.relacl::text=
+         '{postgres=arwdDxtm/postgres,service_role=r/postgres}'
+     AND obj_description(c.oid,'pg_class')=
+         'One row per transaction that applied DDL inside the maintenance break window under ca.break_window_migration_override, with the reason it gave.';
+  IF v_count<>1 OR EXISTS (
+       SELECT 1
+         FROM pg_policy policy
+        WHERE policy.polrelid=to_regclass(
+                'public.ca_break_window_migration_overrides')
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B found a drifted break-window override relation catalog'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    attnum,attname,data_type,not_null,identity_kind,generation_kind,
+    default_expression,collation_name
+  ) AS (
+    VALUES
+      (1,'id','bigint',true,'a','',NULL::text,NULL::text),
+      (2,'occurred_at','timestamp with time zone',true,'','',
+       'clock_timestamp()',NULL::text),
+      (3,'txid','bigint',true,'','',NULL::text,NULL::text),
+      (4,'reason','text',true,'','',NULL::text,'"default"'),
+      (5,'session_role','text',true,'','',NULL::text,'"default"'),
+      (6,'application_name','text',false,'','',NULL::text,'"default"'),
+      (7,'first_command','text',true,'','',NULL::text,'"default"'),
+      (8,'query_snippet','text',false,'','',NULL::text,'"default"')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE a.attnum IS NULL
+              OR a.attname IS DISTINCT FROM expected.attname
+              OR format_type(a.atttypid,a.atttypmod) IS DISTINCT FROM
+                   expected.data_type
+              OR a.attnotnull IS DISTINCT FROM expected.not_null
+              OR a.attidentity::text IS DISTINCT FROM expected.identity_kind
+              OR a.attgenerated::text IS DISTINCT FROM
+                   expected.generation_kind
+              OR pg_get_expr(d.adbin,d.adrelid,true) IS DISTINCT FROM
+                   expected.default_expression
+              OR CASE
+                   WHEN a.attcollation=0 THEN NULL::text
+                   ELSE a.attcollation::regcollation::text
+                 END IS DISTINCT FROM expected.collation_name
+              OR col_description(a.attrelid,a.attnum) IS NOT NULL
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_attribute a
+      ON a.attrelid=to_regclass(
+           'public.ca_break_window_migration_overrides')
+     AND a.attnum=expected.attnum AND NOT a.attisdropped
+    LEFT JOIN pg_attrdef d
+      ON d.adrelid=a.attrelid AND d.adnum=a.attnum;
+  IF v_count<>8 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_attribute a
+        WHERE a.attrelid=to_regclass(
+                'public.ca_break_window_migration_overrides')
+          AND a.attnum>0 AND NOT a.attisdropped
+     )<>8 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted break-window override columns',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    constraint_name,constraint_type,no_inherit,definition
+  ) AS (
+    VALUES
+      ('ca_break_window_migration_overrides_pkey','p',true,
+       'PRIMARY KEY (id)'),
+      ('ca_break_window_migration_overrides_reason_check','c',false,
+       'CHECK (btrim(reason) <> ''''::text)')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE con.oid IS NULL
+              OR con.contype::text IS DISTINCT FROM expected.constraint_type
+              OR con.condeferrable
+              OR con.condeferred
+              OR NOT con.convalidated
+              OR con.connoinherit IS DISTINCT FROM expected.no_inherit
+              OR NOT con.conislocal
+              OR con.coninhcount<>0
+              OR pg_get_constraintdef(con.oid,true) IS DISTINCT FROM
+                   expected.definition
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_constraint con
+      ON con.conrelid=to_regclass(
+           'public.ca_break_window_migration_overrides')
+     AND con.conname=expected.constraint_name;
+  IF v_count<>2 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_constraint con
+        WHERE con.conrelid=to_regclass(
+                'public.ca_break_window_migration_overrides')
+     )<>2 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted break-window override constraints',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_index i
+    JOIN pg_class index_catalog ON index_catalog.oid=i.indexrelid
+   WHERE i.indrelid=to_regclass(
+           'public.ca_break_window_migration_overrides')
+     AND index_catalog.relname='ca_break_window_migration_overrides_pkey'
+     AND index_catalog.relkind='i'
+     AND index_catalog.relowner='postgres'::regrole
+     AND i.indisunique AND i.indisprimary AND NOT i.indisexclusion
+     AND i.indimmediate AND i.indisvalid AND i.indisready AND i.indislive
+     AND NOT i.indnullsnotdistinct
+     AND i.indnkeyatts=1 AND i.indnatts=1
+     AND pg_get_indexdef(i.indexrelid)=
+         'CREATE UNIQUE INDEX ca_break_window_migration_overrides_pkey ON public.ca_break_window_migration_overrides USING btree (id)'
+     AND pg_get_expr(i.indpred,i.indrelid,true) IS NULL;
+  IF v_count<>1 OR (
+       SELECT count(*)
+         FROM pg_index i
+        WHERE i.indrelid=to_regclass(
+                'public.ca_break_window_migration_overrides')
+     )<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B found a missing, extra or drifted break-window override index'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_class c
+    JOIN pg_sequence sequence_catalog ON sequence_catalog.seqrelid=c.oid
+   WHERE c.oid=to_regclass(
+           'public.ca_break_window_migration_overrides_id_seq')
+     AND c.relkind='S'
+     AND c.relpersistence='p'
+     AND c.relowner='postgres'::regrole
+     AND c.relacl::text=
+         '{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}'
+     AND sequence_catalog.seqtypid='bigint'::regtype
+     AND sequence_catalog.seqstart=1
+     AND sequence_catalog.seqincrement=1
+     AND sequence_catalog.seqmax=9223372036854775807
+     AND sequence_catalog.seqmin=1
+     AND sequence_catalog.seqcache=1
+     AND NOT sequence_catalog.seqcycle
+     AND obj_description(c.oid,'pg_class') IS NULL
+     AND pg_get_serial_sequence(
+           'public.ca_break_window_migration_overrides','id')=
+         'public.ca_break_window_migration_overrides_id_seq';
+  IF v_count<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B found a drifted break-window override identity sequence'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(event_name,event_kind) AS (
+    VALUES
+      ('ca_break_window_refuses_ddl','ddl_command_end'),
+      ('ca_break_window_refuses_drops','sql_drop')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE event_trigger.oid IS NULL
+              OR event_trigger.evtevent IS DISTINCT FROM expected.event_kind
+              OR event_trigger.evtenabled IS DISTINCT FROM 'O'::"char"
+              OR event_trigger.evttags IS NOT NULL
+              OR event_trigger.evtfoid IS DISTINCT FROM
+                   to_regprocedure('public.fn_ca_break_window_ddl_guard()')
+              OR event_trigger.evtowner IS DISTINCT FROM 'postgres'::regrole
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_event_trigger event_trigger
+      ON event_trigger.evtname=expected.event_name;
+  IF v_count<>2 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_event_trigger event_trigger
+        WHERE event_trigger.evtfoid=
+              to_regprocedure('public.fn_ca_break_window_ddl_guard()')
+     )<>2 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted break-window event triggers',
       v_bad USING ERRCODE='55000';
   END IF;
 
@@ -1125,13 +1364,13 @@ BEGIN
           ])
      )<>11 THEN
     RAISE EXCEPTION
-      'Stage-B found % missing, extra or drifted 151228 live-tail trigger bindings',
+      'Stage-B found % missing, extra or drifted 164655 live-tail trigger bindings',
       v_bad USING ERRCODE='55000';
   END IF;
 END;
-$assert_current_live_tail_151228$;
+$assert_current_live_tail_164655$;
 
-SELECT pg_temp.assert_stage_b_current_live_tail_151228_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_164655_postimage();
 
 
 -- ===========================================================================
@@ -11252,6 +11491,6 @@ COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(
   'Owner-only felt-aware forensic implementation retained for exact production postimage parity. No API grant, scheduler, detector, or runtime caller exists.';
 
 SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
-SELECT pg_temp.assert_stage_b_current_live_tail_151228_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_164655_postimage();
 
 COMMIT;

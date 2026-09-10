@@ -28,6 +28,8 @@ BEGIN;
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
 SET LOCAL transaction_timeout = '150s';
+SET LOCAL ca.break_window_migration_override =
+  'Stage-B 20260910042020 runs only inside its enforced :55 stopped-engine freeze; outside that window its authority is absent';
 
 -- Terminal settlement is the root of every tournament identity mutation.
 -- Take that root before the historical reconciler lock or any relation lock:

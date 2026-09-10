@@ -151,6 +151,14 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(harness).not.toContain('first_stage_b_version');
     expect(harness).not.toContain('Stage-B starts at or before the current ledger head');
     expect(harness).not.toContain('does not follow the applied seat-move hotfix');
+    const breakWindowOverride =
+      "SET LOCAL ca.break_window_migration_override = 'Stage-B 20260910042112 runs only inside its enforced :55 stopped-engine freeze; outside that window its authority is absent';";
+    expect(contraction.match(/^SET LOCAL ca\.break_window_migration_override = .*;$/gm)).toEqual([
+      breakWindowOverride,
+    ]);
+    expect(contraction.indexOf(breakWindowOverride)).toBeLessThan(
+      contraction.indexOf('SELECT pg_advisory_xact_lock(')
+    );
     expect(spinPostimage).toContain(
       '-- 20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql'
     );
@@ -244,7 +252,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     ).toBe(2);
   });
 
-  it('requires the byte-authenticated 151228 live schema and a zero-player-data donor', () => {
+  it('requires the byte-authenticated 164655 live schema and a zero-player-data donor', () => {
     const currentLiveSources = [
       ['20260910034411', 'seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'],
       ['20260910034412', 'spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'],
@@ -287,9 +295,16 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       ['20260910143719', 'the_guard_declaration_is_not_reachable_from_a_browser'],
       ['20260910145833', 'a_place_is_not_a_bounty'],
       ['20260910151228', 'the_door_was_fixed_after_the_manager_stopped_asking'],
+      ['20260910154446', 'the_database_refuses_migrations_inside_the_break_window'],
+      ['20260910154537', 'the_busts_the_door_can_now_accept_are_recorded'],
+      ['20260910154858', 'every_player_who_busted_has_a_place'],
+      ['20260910160413', 'a_finished_event_holds_no_pending_bust'],
+      ['20260910160841', 'the_break_window_refusal_names_its_rule_and_explains_list_migrations'],
+      ['20260910161619', 'training_solver_bounded_canary_authority'],
+      ['20260910164655', 'stage_b_break_window_bootstrap_compatibility'],
     ] as const;
 
-    expect(currentLiveSources).toHaveLength(41);
+    expect(currentLiveSources).toHaveLength(48);
     for (const [version, name] of currentLiveSources) {
       expect(harness).toContain(version);
       expect(harness).toContain(name);
@@ -373,18 +388,108 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         4857,
         '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee',
       ],
+      [
+        '20260910154446',
+        'the_database_refuses_migrations_inside_the_break_window',
+        20519,
+        '772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082',
+      ],
+      [
+        '20260910154537',
+        'the_busts_the_door_can_now_accept_are_recorded',
+        7080,
+        '2cf00803afc5bc6dc14cf7aa1c3a0b3284e1c34d1dd008a6945e4bacb4978f55',
+      ],
+      [
+        '20260910154858',
+        'every_player_who_busted_has_a_place',
+        4795,
+        'c6c6bf4bbad5212af762d5f5f3312e09688915ae4d1191199ac779ab967dd373',
+      ],
+      [
+        '20260910160413',
+        'a_finished_event_holds_no_pending_bust',
+        6134,
+        'cf7b45f9ef4f960a25ba03c9f0903366e1f5641adeb54ba55c3b162a03e218f3',
+      ],
+      [
+        '20260910160841',
+        'the_break_window_refusal_names_its_rule_and_explains_list_migrations',
+        9261,
+        '7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d',
+      ],
+      [
+        '20260910161619',
+        'training_solver_bounded_canary_authority',
+        54632,
+        'f94a331102a359f2ffa8625f07aa2c0c6ba67191833c56aaeede7a0baab74653',
+      ],
+      [
+        '20260910164655',
+        'stage_b_break_window_bootstrap_compatibility',
+        27550,
+        '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6',
+      ],
     ] as const) {
       expect(harness).toContain(`('${version}','${name}',1,${bytes},`);
       expect(harness).toContain(sha256);
     }
-    expect(harness).toContain("current_live_ledger_head='20260910151228'");
+    for (const [version, name, bytes, sha256] of [
+      [
+        '20260910154446',
+        'the_database_refuses_migrations_inside_the_break_window',
+        20519,
+        '772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082',
+      ],
+      [
+        '20260910154537',
+        'the_busts_the_door_can_now_accept_are_recorded',
+        7080,
+        '2cf00803afc5bc6dc14cf7aa1c3a0b3284e1c34d1dd008a6945e4bacb4978f55',
+      ],
+      [
+        '20260910154858',
+        'every_player_who_busted_has_a_place',
+        4795,
+        'c6c6bf4bbad5212af762d5f5f3312e09688915ae4d1191199ac779ab967dd373',
+      ],
+      [
+        '20260910160413',
+        'a_finished_event_holds_no_pending_bust',
+        6134,
+        'cf7b45f9ef4f960a25ba03c9f0903366e1f5641adeb54ba55c3b162a03e218f3',
+      ],
+      [
+        '20260910160841',
+        'the_break_window_refusal_names_its_rule_and_explains_list_migrations',
+        9261,
+        '7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d',
+      ],
+      [
+        '20260910161619',
+        'training_solver_bounded_canary_authority',
+        54632,
+        'f94a331102a359f2ffa8625f07aa2c0c6ba67191833c56aaeede7a0baab74653',
+      ],
+      [
+        '20260910164655',
+        'stage_b_break_window_bootstrap_compatibility',
+        27550,
+        '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6',
+      ],
+    ] as const) {
+      const source = migration(`${version}_${name}.sql`);
+      expect(Buffer.byteLength(source), `${version} bytes`).toBe(bytes);
+      expect(createHash('sha256').update(source).digest('hex'), `${version} SHA-256`).toBe(sha256);
+    }
+    expect(harness).toContain("current_live_ledger_head='20260910164655'");
     expect(harness).toContain(
-      `if [[ "$anchor_receipts" != '41' || "$ledger_head" != "$current_live_ledger_head" ]]`
+      `if [[ "$anchor_receipts" != '48' || "$ledger_head" != "$current_live_ledger_head" ]]`
     );
     expect(harness).toContain(`if [[ "$exact_body_receipts" != '3' ]]`);
     expect(harness).toContain(`if [[ "$descriptor_receipts" != '2' ]]`);
     expect(harness).toContain(
-      `if [[ "$audited_tail_receipts" != '25' || "$audited_tail_statements" != '28' ]]`
+      `if [[ "$audited_tail_receipts" != '32' || "$audited_tail_statements" != '35' ]]`
     );
     expect(harness).toContain(`if [[ "$player_id_functions_exact" != '2' ]]`);
     expect(harness).toContain(`if [[ "$tail_functions_exact" != '9' ]]`);
@@ -601,11 +706,11 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(harness).toContain('STAGE_B_125453_PHASE3_POSTIMAGE_OK');
   });
 
-  it('authenticates the complete 151228 live tail at both contraction boundaries', () => {
-    const guard = dollarBlock(contraction, 'assert_current_live_tail_151228');
-    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_151228_postimage();';
+  it('authenticates the complete 164655 live tail at both contraction boundaries', () => {
+    const guard = dollarBlock(contraction, 'assert_current_live_tail_164655');
+    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_164655_postimage();';
     const definition = contraction.indexOf(
-      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_151228_postimage()'
+      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_164655_postimage()'
     );
     const firstCall = contraction.indexOf(call);
     const finalCall = contraction.lastIndexOf(call);
@@ -616,13 +721,13 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(
       occurrences(
         contraction,
-        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_151228_postimage\(\)/g
+        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_164655_postimage\(\)/g
       )
     ).toBe(1);
     expect(
       occurrences(
         contraction,
-        /^SELECT pg_temp\.assert_stage_b_current_live_tail_151228_postimage\(\);$/gm
+        /^SELECT pg_temp\.assert_stage_b_current_live_tail_164655_postimage\(\);$/gm
       )
     ).toBe(2);
     expect(definition).toBeGreaterThanOrEqual(0);
@@ -714,12 +819,54 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         4857,
         '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee',
       ],
+      [
+        '20260910154446',
+        'the_database_refuses_migrations_inside_the_break_window',
+        20519,
+        '772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082',
+      ],
+      [
+        '20260910154537',
+        'the_busts_the_door_can_now_accept_are_recorded',
+        7080,
+        '2cf00803afc5bc6dc14cf7aa1c3a0b3284e1c34d1dd008a6945e4bacb4978f55',
+      ],
+      [
+        '20260910154858',
+        'every_player_who_busted_has_a_place',
+        4795,
+        'c6c6bf4bbad5212af762d5f5f3312e09688915ae4d1191199ac779ab967dd373',
+      ],
+      [
+        '20260910160413',
+        'a_finished_event_holds_no_pending_bust',
+        6134,
+        'cf7b45f9ef4f960a25ba03c9f0903366e1f5641adeb54ba55c3b162a03e218f3',
+      ],
+      [
+        '20260910160841',
+        'the_break_window_refusal_names_its_rule_and_explains_list_migrations',
+        9261,
+        '7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d',
+      ],
+      [
+        '20260910161619',
+        'training_solver_bounded_canary_authority',
+        54632,
+        'f94a331102a359f2ffa8625f07aa2c0c6ba67191833c56aaeede7a0baab74653',
+      ],
+      [
+        '20260910164655',
+        'stage_b_break_window_bootstrap_compatibility',
+        27550,
+        '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6',
+      ],
     ] as const) {
       expect(guard).toContain(`('${version}','${name}',${bytes},`);
       expect(guard).toContain(sha256);
     }
-    expect(guard).toContain("IS DISTINCT FROM '20260910151228' THEN");
-    expect(guard).toContain('all thirteen byte-exact 130319-151228 live-tail migrations');
+    expect(guard).toContain("IS DISTINCT FROM '20260910164655' THEN");
+    expect(guard).toContain('all twenty byte-exact 130319-164655 live-tail migrations');
     expect(guard).toContain('cardinality(m.statements) IS DISTINCT FROM 1');
     expect(guard).toContain('octet_length(m.statements[1]) IS DISTINCT FROM');
     expect(guard).toContain("convert_to(m.statements[1],'UTF8'),'sha256'");
@@ -775,12 +922,32 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         '5437a59dbe68a08e9df13baa422a903c',
         '590f0f782e127288f33763bbab8c89f0',
       ],
+      [
+        'public.fn_ca_break_window_ddl_guard()',
+        '6ea4dfd3876346b309a06db40ee8fadd',
+        'b698de4b9ae596b1814928e78ee668c9',
+      ],
+      [
+        'public.fn_ca_break_window_governs(text,text)',
+        '2b30cf850c450681f97b90e7598f0412',
+        '9bc3e63d54109b30f4ad808e36843b82',
+      ],
+      [
+        'public.fn_ca_break_window_refuses_migrations(timestamp with time zone)',
+        '0c5f501b57d8d704edbe24a036630e2d',
+        '79b467b435ed6d368f9da32d5908cc79',
+      ],
+      [
+        'public.fn_ca_stage_b_ledger_bootstrap_allowed(text,text,text)',
+        '8cbd9ea1c1dbc24c24be02fb9d447b20',
+        'ac9d5cdc943e88aa0c0bb6cd2410fbdc',
+      ],
     ] as const) {
       expect(guard).toContain(identity);
       expect(guard).toContain(definitionMd5);
       expect(guard).toContain(sourceMd5);
     }
-    expect(guard).toContain('IF v_count<>10 OR v_bad<>0 THEN');
+    expect(guard).toContain('IF v_count<>14 OR v_bad<>0 THEN');
     expect(guard).toContain(
       'md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM\n                   expected.definition_md5'
     );
@@ -790,6 +957,19 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(guard).toContain("ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[]");
     expect(guard).toContain("'{postgres=X/postgres,service_role=X/postgres}'");
     expect(guard).toContain("'{postgres=X/postgres}'");
+    for (const breakWindowCatalogEntry of [
+      'ca_break_window_migration_overrides',
+      'ca_break_window_migration_overrides_reason_check',
+      'ca_break_window_migration_overrides_id_seq',
+      'ca_break_window_refuses_ddl',
+      'ca_break_window_refuses_drops',
+      'ddl_command_end',
+      'sql_drop',
+      '{postgres=arwdDxtm/postgres,service_role=r/postgres}',
+      '{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}',
+    ]) {
+      expect(guard).toContain(breakWindowCatalogEntry);
+    }
 
     for (const guardDefinitionCatalogEntry of [
       'ca_guard_defs',

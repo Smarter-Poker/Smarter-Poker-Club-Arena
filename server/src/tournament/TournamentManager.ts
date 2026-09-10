@@ -605,13 +605,18 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
     }
 
-    if (this.tableEngines.size <= 1) return;
+    // A one-player table cannot deal, so it has no table engine. It still has
+    // to remain in the balancer's input or its last player can never be moved.
+    const liveTableIds = await this.liveTournamentTableIdsWithPlayers();
+    if (!this.eliminationMutationAllowed()) return;
+    if (liveTableIds === null) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    if (liveTableIds.length <= 1) return;
 
     // ── FIX 154: Build BalancerTable[] from a bounded live DB snapshot ──
-    const balancerTables = await this.loadBalancerTables(
-      [...this.tableEngines.keys()],
-      'balanceInitial'
-    );
+    const balancerTables = await this.loadBalancerTables(liveTableIds, 'balanceInitial');
     if (!balancerTables) return;
 
     // ── STEP 1: Check if any table should be broken (merged into others) ──
@@ -720,12 +725,16 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
 
     // ── STEP 2: Standard gap-1 rebalancing across remaining tables ──
-    // Re-fetch after potential break (tables may have changed)
-    if (this.tableEngines.size > 1) {
-      const freshTables = await this.loadBalancerTables(
-        [...this.tableEngines.keys()],
-        'balanceFresh'
-      );
+    // Re-fetch after a possible break. Database seats remain authoritative;
+    // an engine-less one-player source is still outstanding balance work.
+    const freshTableIds = await this.liveTournamentTableIdsWithPlayers();
+    if (!this.eliminationMutationAllowed()) return;
+    if (freshTableIds === null) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    if (freshTableIds.length > 1) {
+      const freshTables = await this.loadBalancerTables(freshTableIds, 'balanceFresh');
       if (!freshTables) return;
 
       if (this.tableBalancer.shouldRebalance(freshTables)) {

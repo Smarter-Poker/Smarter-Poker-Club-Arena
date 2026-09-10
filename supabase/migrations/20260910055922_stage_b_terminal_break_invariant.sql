@@ -16,6 +16,8 @@ BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '30s';
 SET LOCAL transaction_timeout = '60s';
+SET LOCAL ca.break_window_migration_override =
+  'Stage-B 20260910042033 runs only inside its enforced :55 stopped-engine freeze; outside that window its authority is absent';
 
 SELECT pg_advisory_xact_lock(
   hashtextextended('ca:tournament-terminal-settlement:v1', 0)

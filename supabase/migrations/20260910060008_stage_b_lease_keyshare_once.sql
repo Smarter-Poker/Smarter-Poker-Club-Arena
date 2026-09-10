@@ -33,6 +33,8 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 SET LOCAL transaction_timeout = '150s';
+SET LOCAL ca.break_window_migration_override =
+  'Stage-B 20260910042137 runs only inside its enforced :55 stopped-engine freeze; outside that window its authority is absent';
 
 -- This transaction must prove the stopped-engine boundary for itself. A prior
 -- migration's committed proof and an operator-held host mutex do not block a

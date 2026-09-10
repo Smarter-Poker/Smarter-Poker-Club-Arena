@@ -37,6 +37,13 @@ verification when it lands.
 | 11    | Tournament lobby snapshot recovery               | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open                   |
 | 12    | Notification feed recovery and account isolation | Coalesced fresh reads, owned cache and mutations, truthful failure states, safe server feed queries, and restored notification publication                                                | published; natural-event and device acceptance open |
 
+Phase 13: Club lobby recovery ownership. Eight mounted regressions reproduced
+and repaired; 71 focused tests pass. PR4085 is published; post-release browser,
+natural reconnect and physical-device acceptance remain open.
+Exact publication evidence: `docs/audits/2026-09-10-realtime-phase13-release.md`.
+Scope: `docs/changelog/2026-09-10-realtime-phase13-lobby-recovery.md`.
+Engine release sealing and Stage-B cutover remain with the coordinating task.
+
 Phase 12 scope: `docs/changelog/2026-09-10-realtime-phase12-notification-recovery.md`.
 Published client/API and controlled-browser evidence: `docs/audits/2026-09-10-realtime-phase12-release.md`.
 Supabase follow-through: `docs/audits/2026-09-10-supabase-email-follow-through.md`.

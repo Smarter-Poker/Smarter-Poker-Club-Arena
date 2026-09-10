@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-10",
+  "status": "verified_isolated_browser_candidate_not_published",
+  "scope": "Club Arena player rakeback page, service validation, durable recovery, and account-session isolation",
+  "source_base": "d6a032d8d",
+  "branch": "agent/codex-phase3-acceptance-sep10/fix/captured-rakeback-browser",
+  "release_gate": {
+    "publish_allowed": false,
+    "source_activation_allowed": false,
+    "backend_migration_in_this_candidate": false,
+    "requirements": [
+      "Real authenticated fn_get_captured_rakeback capability endpoint reviewed and deployed before this page can publish.",
+      "Explicit coordinated payer/funding/Union cutover witness before source_active:true; captured facts alone are not activation.",
+      "Legacy fn_claim_rakeback must refuse with 55000 at cutover; no mutation fallback once captured activation has been observed.",
+      "No bootstrap getter merely to publish this candidate early."
+    ],
+    "missing_getter_behavior": "Claims fail closed; previously recorded history remains readable. This is why independent publication is blocked."
+  },
+  "rpc_contract": {
+    "read": "fn_get_captured_rakeback()",
+    "read_activation": "Strict boolean source_active and source_final:false; inactive response has no captured periods.",
+    "claim": "fn_claim_captured_rakeback(p_request_id,p_expected_user_id,p_club_id)",
+    "scope": "New requests cover all captured clubs with p_club_id:null; recovery reuses the immutable saved actor and club scope.",
+    "receipt": "Strict matching request UUID; safe whole cents; unique normalized period UUIDs; sum(new_payout) equals total_payout and positive period count equals periods_claimed; normalized refusals remain explicit zero-paid deferrals."
+  },
+  "behavior": [
+    "Only captured pending_amount drives Unpaid Rakeback; legacy history and estimates are never added to captured earnings.",
+    "Pending whole cents do not promise funding availability. Fractions and unresolved periods remain visible; authoritative deferrals remain unpaid.",
+    "One durable, versioned localStorage record per account/request UUID is written and reread before any source mutation; ambiguous responses retain it across refresh.",
+    "Recover Claim remains available at zero pending or while the availability read fails.",
+    "Only validated authoritative receipt completion clears the matching UUID. Browser cleanup failures are distinguished from an unconfirmed payment.",
+    "Account and render-session fences suppress old loads, claims, messages, and bus events, including A-to-B-to-A during a pending claim.",
+    "UTC Monday-through-Sunday period validation and date display; duplicate club/week rows rejected."
+  ],
+  "validation": {
+    "rendered_and_service_contract_cases": 37,
+    "existing_route_family_checks": 23,
+    "total_passed": 60,
+    "unit_exit": 0,
+    "app_typecheck_exit": 0,
+    "targeted_eslint_exit": 0,
+    "normal_build_exit": 0,
+    "final_build_provenance": "d6a032d8 behind-main=0 DIRTY by=local; generated before candidate commit",
+    "final_build_sentry_uploads": "SENTRY_AUTH_TOKEN explicitly empty; no plugin upload ran.",
+    "limits": "Real page, hook, and service execute under the React DOM test harness with controlled RPC responses and the repository storage shim. This is not a live account payout, a native database proof, or full programme completion."
+  },
+  "independent_review": {
+    "reviewer": "payer_completion",
+    "verdict": "SQL/API browser contract approved as an isolated checkpoint; funding/cutover remain separate release blockers.",
+    "last_followup": "Generic deferred copy and render-session return race changed after API approval; no SQL ABI change."
+  },
+  "wiring": {
+    "route": "src/App.tsx lazy-loads and renders RakebackPage at the existing route.",
+    "page": "RakebackPage calls useRakeback; existing visibility, rakeback-period realtime, balance, and settlement refresh hooks remain.",
+    "hook": "useRakeback calls the read/claim/storage service and emits RAKEBACK_CLAIMED only for current-account validated positive payouts.",
+    "service": "Only server RPCs can mutate money; no client amount is supplied."
+  },
+  "observations": {
+    "initial_local_build": "The first normal local build used existing configured Sentry integration and successfully uploaded maps. Parent was notified. No credentials were read or changed. Final verification disabled external uploads.",
+    "phase_controls_closed": 0,
+    "production_payouts_tested": 0,
+    "push_performed": false,
+    "no_verify_used": false,
+    "production_database_or_runtime_writes": 0
+  },
+  "source_sha256": {
+    "src/services/CapturedRakebackService.ts": "98eec660767ada6ab441dc4daf64b9364c0509ad68ecdc6b1357a640d4cb4684",
+    "src/hooks/useRakeback.ts": "2d696031b27310409f81bc4e8c30f8ec7a53d7b407adac8437e3d86ca269c9e9",
+    "src/pages/RakebackPage.tsx": "b9fab3adc5f154441415d7849d57e4d7a53df28668c48d7e7f78713a93ac74dc",
+    "tests/unit/capturedRakebackBrowser.test.tsx": "1735ef965f05692758e8aeb588c546b50904a9b69023e0279aac5ba5e8f9284c"
+  }
+}

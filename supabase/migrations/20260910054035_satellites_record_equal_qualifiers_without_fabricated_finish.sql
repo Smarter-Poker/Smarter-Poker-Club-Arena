@@ -5,6 +5,26 @@ BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';
 
+DO $qualification_lease_gate$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM (VALUES
+      ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)','d1b5100c2b9f92bec5fd1680b0b4f230'),
+      ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)','5e6c99545e07c21efcb50e5cb3441c14')
+    ) expected(signature,body_md5)
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.signature)
+    WHERE p.oid IS NULL OR md5(p.prosrc) IS DISTINCT FROM expected.body_md5
+       OR p.proowner IS DISTINCT FROM 'postgres'::regrole
+       OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'
+       OR p.prosecdef IS DISTINCT FROM true
+       OR p.proconfig IS DISTINCT FROM ARRAY['search_path=public, pg_temp']
+  ) THEN
+    RAISE EXCEPTION 'qualification preparation requires the reviewed takeover fence and compatible heartbeat'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$qualification_lease_gate$;
+
 DO $source_gate$
 BEGIN
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=to_regprocedure(
@@ -2754,9 +2774,11 @@ BEGIN
     RAISE EXCEPTION 'satellite boundary requires service authority' USING ERRCODE='28000';
   END IF;
   PERFORM public.fn_ca_lock_settlement_lane_global();
-  -- Acquire before evaluating freshness; a blocked row can outlive its lease.
+  -- Fence the reviewed claimant's FOR UPDATE while allowing the owner's
+  -- FOR NO KEY UPDATE heartbeat. No prepare path mutates or upgrades this row.
+  -- Re-evaluate freshness after admission and again after later cohort locks.
   PERFORM 1 FROM public.engine_tournament_leases l
-   WHERE l.tournament_id=p_tournament_id FOR UPDATE;
+   WHERE l.tournament_id=p_tournament_id FOR KEY SHARE;
   IF NOT EXISTS (
     SELECT 1 FROM public.engine_tournament_leases l
      WHERE l.tournament_id=p_tournament_id AND l.lease_generation=p_lease_generation

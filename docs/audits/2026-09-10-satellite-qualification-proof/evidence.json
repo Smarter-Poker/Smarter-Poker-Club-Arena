@@ -1,6 +1,6 @@
 {
-  "captured_at": "2026-09-10T13:49:03.900091+00:00",
-  "worktree_head": "3a392a57346c7d5baba244aafd146f27d1b2e71e",
+  "captured_at": "2026-09-10T14:11:52.511942+00:00",
+  "worktree_head": "61c83e5644beaa41adef7c152dfc10455c1e59ea",
   "status": "local_proposal_not_deployed",
   "native_cases": [
     {
@@ -124,8 +124,8 @@
       "case": "Negative Control",
       "pass": true,
       "observed_lock": {
-        "worker_pid": 77246,
-        "blocking_pids": [77236],
+        "worker_pid": 19340,
+        "blocking_pids": [19337],
         "wait_event": "transactionid",
         "wait_type": "Lock"
       },
@@ -139,8 +139,8 @@
       "case": "Corrected Write Boundary",
       "pass": true,
       "observed_lock": {
-        "worker_pid": 77858,
-        "blocking_pids": [77855],
+        "worker_pid": 19760,
+        "blocking_pids": [19756],
         "wait_event": "transactionid",
         "wait_type": "Lock"
       },
@@ -148,7 +148,7 @@
       "expired_owner_accepted": false,
       "expired_owner_refused": true,
       "rollback_state": "RUNNING:0:0",
-      "error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 23 at assignment\n"
+      "error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 25 at assignment\n"
     }
   ],
   "server_tests": {
@@ -164,7 +164,9 @@
     "rank_md5": "db9fa6b2c0fbd4e5e4f4ba804722a75c",
     "required_final_wrapper_md5": "6babe5451efa9bc2bfa12cb0fede27e2",
     "observed_live_wrapper_md5": "486d0e6729de8d518d7faf0c253b65d3",
-    "missing_live_private_core": "fn_settle_satellite_tournament_seat_exit_core_v2(uuid,uuid)"
+    "missing_live_private_core": "fn_settle_satellite_tournament_seat_exit_core_v2(uuid,uuid)",
+    "claim_tournament_lease_v2_md5": "d1b5100c2b9f92bec5fd1680b0b4f230",
+    "heartbeat_tournament_leases_v4_md5": "5e6c99545e07c21efcb50e5cb3441c14"
   },
   "fixture_limits": [
     "Source600 liability is seeded through real escrow helper; initial purchase collection is not tested here.",
@@ -172,13 +174,14 @@
     "Five source-manager/seat-exit triggers belong to explicit isolated Stage-B prerequisite; they are absent from current live schema.",
     "Current live legacy completion claim and six other historical tournament guards are disabled; the fixture mirrors this and the proposal does not reactivate or rewrite them.",
     "Running-target exact-K physical assignment and process-level cold-recovery integration remain to be verified before full B11 acceptance.",
-    "Threshold crossing below K and nonzero remainder remain outside this exact-K contract.",
-    "Preparation holds the lease row FOR UPDATE. That fences replacement but blocks the current owner's NO KEY UPDATE heartbeat while later cohort/target locks wait. The final clock_timestamp freshness check safely refuses an expired owner; this can cause avoidable expiry and is not equivalent to the platform's KEY SHARE request fence. Heartbeat-compatible lock alignment remains a separately verified availability improvement."
+    "Threshold crossing below K and nonzero remainder remain outside this exact-K contract."
   ],
   "files": {
-    "README.md": "f795c6340b34996c273bdd0037e102ce7a4e9b922ad2f0db58d83efec7840cde",
+    "README.md": "34894f8fd7e14f2a88824f410d01b5ae06ba633f577a987ac68999b63dcc270a",
     "catalog/current-clear-seat-helpers.json": "9d03810ce3ba65071f39882bbd373b0d5fb79c0b265e62f9ac33bc6985023d12",
     "catalog/current-clear-seat-helpers.sql": "b080f99f9d1286c30b1b111c66bd8f0ef420aa9ae4a21dc3658914df54fc97e8",
+    "catalog/current-lease-owners.json": "fffd1b8dfd51c97741f23cfd3a34223b349c1527c3b822f15d8485dd750bab78",
+    "catalog/current-lease-owners.sql": "7669e90ef78d3845f2ad3b3a521e78ed65c38ff16e576cba5e78f37dc854e05c",
     "catalog/current-native-metadata.json": "107b9fc6248b3bcb51dece545d17f13256ef4765946a2efc0ea84d1b9374825e",
     "catalog/current-native-parity.sql": "949d00b7fb180552857b469cb08609e556c4533b333779f6315da3c5550f4a7a",
     "catalog/current-native-trigger-functions.json": "08eed9d95e6003ec4483a6ef0e1df53638bc0d1a83d2f7ba6362c173f6e71c48",
@@ -192,8 +195,14 @@
     "integrated-ui-build.log": "300cd7445387b979902ec00b60ac7423360591227744ca797601aab73b05a944",
     "integrated-ui-tests.log": "38ca281fd0913686722a2b1bb46f1312b13d0b7103f9a07e50c4198969b78dee",
     "integrated-ui-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "lease-lock-race-results.json": "33360e18962b0395880f16a67cbf8c35f622029db47bc3353a5c03409a173a18",
+    "lease-liveness-race-results.json": "a7c2ea2bb9d030cbc9f5508c99fe89bcf23437a5c59cb0448546e928ca611b7b",
+    "lease-liveness-races.py": "605130ab86a3b30ff85789dc37375536a0381e3ea9e182e038e95b14555fa04b",
+    "lease-liveness.log": "faea6e1ba62ddd65a73501f201bbb02337df8e0c7b2960fe144bc3cbe9b5771f",
+    "lease-lock-race-results.json": "141b41a8eb9b97274dad1d2a6df5ea7bb45ced6fac2e824dfc080c9ed7905e3b",
     "lease-lock-race.py": "eb8ba74d9b7e5d326560d8f96437c13b9447fd6f6db6e7bd0e8b94df3d1a0b8c",
+    "lease-prerequisite-gate-results.json": "4e642961c0f74833d74d5411885c9d45561200e5f7145e2ede351a58706f21e4",
+    "lease-prerequisite-gate.log": "d864c1b16258d8ee2a4c4c05cfc2371a1a5c198bae20916ee7d48039c2bf2c36",
+    "lease-prerequisite-gate.py": "86204ca1af90f374e9563880a3c2794a786eb2223b7d7da5b4e8fe153fee3d98",
     "lease-race.log": "0ad80847809bbb8201bccd4abebe540002793f94ac4baafa25b6257eb689d191",
     "native-case-results.json": "0166afcf9a47629a83d9a53b05dac5a164e566c8bea2e4fe88b6d38700c76cac",
     "native-cases.log": "17fa4072637efb761e3d91c640b6cafc0ee686e34be289d5637394f48f00c328",
@@ -220,8 +229,194 @@
     "server/src/tournament/satelliteSettlementReceipt.ts": "fe8fc55df0db932c8d777906c829eb49dec29d6bd9076f4bea2ff80ae8ea7faf",
     "server/src/tournament/satelliteSettlementRpc.ts": "c7c1fc45f6f703f80e6a3234cafc2cae41ed697a672dc707c596a87564ed41d6",
     "server/src/tournament/tournamentRecovery.ts": "06bc2eb6db20686c68fc72e96df312f0815d37c3c81699239adf4b3878e1a1ee",
-    "supabase/migrations/20260910054035_satellites_record_equal_qualifiers_without_fabricated_finish.sql": "5043de388024def959bfb248f6db9ffc737ea79d1e6f0e43c1177f64f02d7b24",
+    "supabase/migrations/20260910054035_satellites_record_equal_qualifiers_without_fabricated_finish.sql": "da1042481338c381ca83344e81d3dda246c8d4be718918de749da4abee4c4276",
     "src/services/satelliteQualification.ts": "94553c69797f672943b349904b4f282985bbc4c69de6499e4a824ed9dd45cca5",
     "src/pages/TablePage.tsx": "080f32131f9bb1bff26b35d83fd0e3910007654c77297edd0d176f57210de4bd"
-  }
+  },
+  "lease_liveness_races": [
+    {
+      "case": "Negative FOR UPDATE control makes actual heartbeat busy",
+      "pass": true,
+      "target_wait": {
+        "pid": 13241,
+        "blocking_pids": [13237],
+        "wait_type": "Lock",
+        "wait_event": "transactionid"
+      },
+      "heartbeat": {
+        "tournament_id": "e1000000-0000-4000-8000-000000000001",
+        "state": "busy",
+        "lease_generation": "e1000000-0000-4000-8000-000000000051",
+        "elapsed_seconds": 0.014163207961246371,
+        "timestamp_before": "2026-09-10 09:04:44.308656-05",
+        "timestamp_after": "2026-09-10 09:04:44.308656-05"
+      },
+      "claim_wait": null,
+      "claim_result": null,
+      "prepare_refused": false,
+      "prepare_error": null,
+      "rollback_state": {
+        "source_status": "RUNNING",
+        "boundaries": 0,
+        "headers": 0,
+        "payouts": 0,
+        "qualifiers": 0,
+        "awards": 0,
+        "source_liability": 600.0,
+        "source_seats": 3,
+        "target_entries": 0,
+        "target_liability": 0,
+        "tickets": 0,
+        "club_balances": 0.0
+      }
+    },
+    {
+      "case": "KEY SHARE permits actual heartbeat and fences fresh claimant",
+      "pass": true,
+      "target_wait": {
+        "pid": 13264,
+        "blocking_pids": [13261],
+        "wait_type": "Lock",
+        "wait_event": "transactionid"
+      },
+      "heartbeat": {
+        "tournament_id": "e1000000-0000-4000-8000-000000000001",
+        "state": "kept",
+        "lease_generation": "e1000000-0000-4000-8000-000000000051",
+        "elapsed_seconds": 0.015987041988410056,
+        "timestamp_before": "2026-09-10 09:04:44.513508-05",
+        "timestamp_after": "2026-09-10 09:05:08.611629-05"
+      },
+      "claim_wait": {
+        "pid": 13278,
+        "blocking_pids": [13264],
+        "wait_type": "Lock",
+        "wait_event": "transactionid"
+      },
+      "claim_result": {
+        "granted": false,
+        "holder": "qualification-native-probe",
+        "holder_age_seconds": 0.1,
+        "lease_generation": "e1000000-0000-4000-8000-000000000051",
+        "protocol_version": 2
+      },
+      "prepare_refused": false,
+      "prepare_error": null,
+      "rollback_state": {
+        "source_status": "RUNNING",
+        "boundaries": 0,
+        "headers": 0,
+        "payouts": 0,
+        "qualifiers": 0,
+        "awards": 0,
+        "source_liability": 600.0,
+        "source_seats": 3,
+        "target_entries": 0,
+        "target_liability": 0,
+        "tickets": 0,
+        "club_balances": 0.0
+      }
+    },
+    {
+      "case": "Expired owner refuses after wait before stale takeover",
+      "pass": true,
+      "target_wait": {
+        "pid": 13297,
+        "blocking_pids": [13294],
+        "wait_type": "Lock",
+        "wait_event": "transactionid"
+      },
+      "heartbeat": null,
+      "claim_wait": {
+        "pid": 13303,
+        "blocking_pids": [13297],
+        "wait_type": "Lock",
+        "wait_event": "transactionid"
+      },
+      "claim_result": {
+        "granted": true,
+        "holder": "qualification-new-owner",
+        "holder_age_seconds": 0,
+        "lease_generation": "e1000000-0000-4000-8000-000000000052",
+        "protocol_version": 2
+      },
+      "prepare_refused": true,
+      "prepare_error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 25 at assignment\n",
+      "rollback_state": {
+        "source_status": "RUNNING",
+        "boundaries": 0,
+        "headers": 0,
+        "payouts": 0,
+        "qualifiers": 0,
+        "awards": 0,
+        "source_liability": 600.0,
+        "source_seats": 3,
+        "target_entries": 0,
+        "target_liability": 0,
+        "tickets": 0,
+        "club_balances": 0.0
+      }
+    },
+    {
+      "case": "Generation changed during later wait refuses preparation",
+      "pass": true,
+      "target_wait": {
+        "pid": 14735,
+        "blocking_pids": [14716],
+        "wait_type": "Lock",
+        "wait_event": "transactionid"
+      },
+      "heartbeat": null,
+      "claim_wait": null,
+      "claim_result": null,
+      "prepare_refused": true,
+      "prepare_error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 25 at assignment\n",
+      "rollback_state": {
+        "source_status": "RUNNING",
+        "boundaries": 0,
+        "headers": 0,
+        "payouts": 0,
+        "qualifiers": 0,
+        "awards": 0,
+        "source_liability": 600.0,
+        "source_seats": 3,
+        "target_entries": 0,
+        "target_liability": 0,
+        "tickets": 0,
+        "club_balances": 0.0
+      }
+    }
+  ],
+  "lease_prerequisite_cases": [
+    {
+      "case": "Exact current claimant and heartbeat accepted",
+      "pass": true
+    },
+    {
+      "case": "Actual autorevoke guard repairs attempted public grant",
+      "pass": true,
+      "catalog_fully_restored": true
+    },
+    {
+      "case": "Missing claimant refused",
+      "pass": true,
+      "catalog_fully_restored": true
+    },
+    {
+      "case": "Weakened takeover lock refused",
+      "pass": true,
+      "catalog_fully_restored": true
+    },
+    {
+      "case": "Service execute removal refused",
+      "pass": true,
+      "catalog_fully_restored": true
+    },
+    {
+      "case": "Owner drift refused",
+      "pass": true,
+      "catalog_fully_restored": true
+    }
+  ],
+  "lease_preparation_lock": "FOR KEY SHARE; actual owner heartbeat succeeds and claimant FOR UPDATE waits. Exact current helpers/owner/ACL/search_path pinned. No called preparation path mutates or upgrades lease."
 }

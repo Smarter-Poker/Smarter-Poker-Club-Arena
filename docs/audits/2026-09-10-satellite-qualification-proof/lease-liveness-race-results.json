@@ -1,0 +1,154 @@
+[
+  {
+    "case": "Negative FOR UPDATE control makes actual heartbeat busy",
+    "pass": true,
+    "target_wait": {
+      "pid": 13241,
+      "blocking_pids": [13237],
+      "wait_type": "Lock",
+      "wait_event": "transactionid"
+    },
+    "heartbeat": {
+      "tournament_id": "e1000000-0000-4000-8000-000000000001",
+      "state": "busy",
+      "lease_generation": "e1000000-0000-4000-8000-000000000051",
+      "elapsed_seconds": 0.014163207961246371,
+      "timestamp_before": "2026-09-10 09:04:44.308656-05",
+      "timestamp_after": "2026-09-10 09:04:44.308656-05"
+    },
+    "claim_wait": null,
+    "claim_result": null,
+    "prepare_refused": false,
+    "prepare_error": null,
+    "rollback_state": {
+      "source_status": "RUNNING",
+      "boundaries": 0,
+      "headers": 0,
+      "payouts": 0,
+      "qualifiers": 0,
+      "awards": 0,
+      "source_liability": 600.0,
+      "source_seats": 3,
+      "target_entries": 0,
+      "target_liability": 0,
+      "tickets": 0,
+      "club_balances": 0.0
+    }
+  },
+  {
+    "case": "KEY SHARE permits actual heartbeat and fences fresh claimant",
+    "pass": true,
+    "target_wait": {
+      "pid": 13264,
+      "blocking_pids": [13261],
+      "wait_type": "Lock",
+      "wait_event": "transactionid"
+    },
+    "heartbeat": {
+      "tournament_id": "e1000000-0000-4000-8000-000000000001",
+      "state": "kept",
+      "lease_generation": "e1000000-0000-4000-8000-000000000051",
+      "elapsed_seconds": 0.015987041988410056,
+      "timestamp_before": "2026-09-10 09:04:44.513508-05",
+      "timestamp_after": "2026-09-10 09:05:08.611629-05"
+    },
+    "claim_wait": {
+      "pid": 13278,
+      "blocking_pids": [13264],
+      "wait_type": "Lock",
+      "wait_event": "transactionid"
+    },
+    "claim_result": {
+      "granted": false,
+      "holder": "qualification-native-probe",
+      "holder_age_seconds": 0.1,
+      "lease_generation": "e1000000-0000-4000-8000-000000000051",
+      "protocol_version": 2
+    },
+    "prepare_refused": false,
+    "prepare_error": null,
+    "rollback_state": {
+      "source_status": "RUNNING",
+      "boundaries": 0,
+      "headers": 0,
+      "payouts": 0,
+      "qualifiers": 0,
+      "awards": 0,
+      "source_liability": 600.0,
+      "source_seats": 3,
+      "target_entries": 0,
+      "target_liability": 0,
+      "tickets": 0,
+      "club_balances": 0.0
+    }
+  },
+  {
+    "case": "Expired owner refuses after wait before stale takeover",
+    "pass": true,
+    "target_wait": {
+      "pid": 13297,
+      "blocking_pids": [13294],
+      "wait_type": "Lock",
+      "wait_event": "transactionid"
+    },
+    "heartbeat": null,
+    "claim_wait": {
+      "pid": 13303,
+      "blocking_pids": [13297],
+      "wait_type": "Lock",
+      "wait_event": "transactionid"
+    },
+    "claim_result": {
+      "granted": true,
+      "holder": "qualification-new-owner",
+      "holder_age_seconds": 0,
+      "lease_generation": "e1000000-0000-4000-8000-000000000052",
+      "protocol_version": 2
+    },
+    "prepare_refused": true,
+    "prepare_error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 25 at assignment\n",
+    "rollback_state": {
+      "source_status": "RUNNING",
+      "boundaries": 0,
+      "headers": 0,
+      "payouts": 0,
+      "qualifiers": 0,
+      "awards": 0,
+      "source_liability": 600.0,
+      "source_seats": 3,
+      "target_entries": 0,
+      "target_liability": 0,
+      "tickets": 0,
+      "club_balances": 0.0
+    }
+  },
+  {
+    "case": "Generation changed during later wait refuses preparation",
+    "pass": true,
+    "target_wait": {
+      "pid": 14735,
+      "blocking_pids": [14716],
+      "wait_type": "Lock",
+      "wait_event": "transactionid"
+    },
+    "heartbeat": null,
+    "claim_wait": null,
+    "claim_result": null,
+    "prepare_refused": true,
+    "prepare_error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 25 at assignment\n",
+    "rollback_state": {
+      "source_status": "RUNNING",
+      "boundaries": 0,
+      "headers": 0,
+      "payouts": 0,
+      "qualifiers": 0,
+      "awards": 0,
+      "source_liability": 600.0,
+      "source_seats": 3,
+      "target_entries": 0,
+      "target_liability": 0,
+      "tickets": 0,
+      "club_balances": 0.0
+    }
+  }
+]

@@ -1,0 +1,31 @@
+[
+  {
+    "case": "Exact current claimant and heartbeat accepted",
+    "pass": true
+  },
+  {
+    "case": "Actual autorevoke guard repairs attempted public grant",
+    "pass": true,
+    "catalog_fully_restored": true
+  },
+  {
+    "case": "Missing claimant refused",
+    "pass": true,
+    "catalog_fully_restored": true
+  },
+  {
+    "case": "Weakened takeover lock refused",
+    "pass": true,
+    "catalog_fully_restored": true
+  },
+  {
+    "case": "Service execute removal refused",
+    "pass": true,
+    "catalog_fully_restored": true
+  },
+  {
+    "case": "Owner drift refused",
+    "pass": true,
+    "catalog_fully_restored": true
+  }
+]

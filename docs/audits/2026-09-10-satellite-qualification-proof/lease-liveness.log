@@ -1,0 +1,4 @@
+PASS Negative FOR UPDATE control makes actual heartbeat busy
+PASS KEY SHARE permits actual heartbeat and fences fresh claimant
+PASS Expired owner refuses after wait before stale takeover
+PASS Generation changed during later wait refuses preparation

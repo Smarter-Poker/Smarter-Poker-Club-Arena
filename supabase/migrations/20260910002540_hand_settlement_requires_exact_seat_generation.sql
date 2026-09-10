@@ -1,11 +1,11 @@
--- 20260908230003_hand_settlement_requires_exact_seat_generation
+-- 20260910002540_hand_settlement_requires_exact_seat_generation
 --
 -- STRICT CONTRACT AFTER THE ROLLING EXPANSION
 -- -------------------------------------------
 -- 20260908161534 taught the accepted-hand functions to settle the immutable
 -- `(table_seats.id, table_seats.joined_at)` generation while temporarily
 -- retaining all-legacy payloads for a zero-downtime engine rollout. The later
--- Stage-B authority cutover 20260908230002 removes the old 9- and 11-argument
+-- Stage-B authority cutover 20260910002530 removes the old 9- and 11-argument
 -- RPC doors, but its surviving 12-argument RPC and seven-argument stack core
 -- can still receive a generation-blind JSON roster. That compatibility path
 -- can target whichever active row happens to exist after a leave/rejoin.
@@ -14,7 +14,7 @@
 --
 --   1. 20260908161534 is installed;
 --   2. the exact engine is the sole live engine and old requests have drained;
---   3. 20260908230002 has removed both old hand-commit signatures.
+--   3. 20260910002530 has removed both old hand-commit signatures.
 --
 -- A later terminal-receipt migration was applied after the expansion from an
 -- older source snapshot and replaced both functions, losing the exact-seat
@@ -22,7 +22,13 @@
 -- close. Production then restored the rolling exact-seat expansion over those
 -- receipt-aware bodies. This contraction recognizes both byte-exact preimages:
 -- the repaired rolling source now live and the generation-blind receipt source
--- it replaced. Both paths retain every receipt, lifecycle, lock-order and
+-- it replaced. The seat-exit authority prerequisite then renamed that exact
+-- implementation core to
+-- fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority and installed an
+-- owner-only capability wrapper at the public name. This contraction edits
+-- the preserved private core in place; replacing the wrapper would silently
+-- remove zero-stack seat-exit authority. Both paths retain every receipt,
+-- lifecycle, lock-order and
 -- zero-seat behavior while removing the compatibility fallback.
 --
 -- Every nonempty stack and time-bank item must then name a valid seat_id plus
@@ -65,15 +71,18 @@ DECLARE
   v_outer_strict boolean;
 BEGIN
   IF to_regprocedure(
-       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'
+       'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'
      ) IS NULL
+     OR to_regprocedure(
+          'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'
+        ) IS NULL
      OR to_regprocedure(
        'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'
      ) IS NULL THEN
     RAISE EXCEPTION 'strict exact-seat contraction requires both expanded settlement functions';
   END IF;
 
-  -- These are the rolling public doors retired by 20260908230002. Refuse an
+  -- These are the rolling public doors retired by 20260910002530. Refuse an
   -- out-of-order contraction rather than breaking a still-draining engine.
   IF to_regprocedure(
        'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)'
@@ -86,7 +95,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(
-    'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+    'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
   ) INTO v_inner;
   SELECT pg_get_functiondef(
     'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
@@ -105,10 +114,7 @@ BEGIN
   END IF;
 
   IF v_inner_strict THEN
-    IF md5(v_inner) NOT IN (
-         'ddb1762cff2ffe38369d542ff76f27b8',
-         '1aae3840a65744563c5a18c5bb0da35b'
-       )
+    IF md5(v_inner) <> 'edfd095bae13ece6bedc989c3acd0467'
        OR md5(v_outer) <> '022f0de6ed0fb51ff3fbe5f3ff36f6d0' THEN
       RAISE EXCEPTION 'strict exact-seat settlement source changed after cutover';
     END IF;
@@ -116,17 +122,17 @@ BEGIN
   ELSE
     IF has_function_privilege(
          'anon',
-         'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+         'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
          'EXECUTE'
        )
        OR has_function_privilege(
          'authenticated',
-         'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+         'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
          'EXECUTE'
        )
        OR has_function_privilege(
          'service_role',
-         'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+         'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
          'EXECUTE'
        )
        OR has_function_privilege(
@@ -151,7 +157,7 @@ BEGIN
        rolling exact-seat expansion over the receipt-aware bodies. Contract
        that byte-exact source directly; do not replay or discard either
        terminal-receipt or zero-stack behavior. */
-    IF md5(v_inner) = '9be5d1da12d8f674a47a50ffb9a6df81'
+    IF md5(v_inner) = 'ba1cdf1b56e5bb0c1c199b65390ee1f2'
        AND md5(v_outer) = 'f93a85ebe5a509ccb7dfedb9be1ed3fa' THEN
       v_anchors := ARRAY[
       $old$  v_exact_seat_generation boolean;
@@ -345,7 +351,7 @@ $new$
         END IF;
         v_inner := replace(v_inner, v_anchors[v_i], v_replacements[v_i]);
       END LOOP;
-      IF md5(v_inner) <> '1aae3840a65744563c5a18c5bb0da35b'
+      IF md5(v_inner) <> 'edfd095bae13ece6bedc989c3acd0467'
          OR position('v_exact_seat_generation' in v_inner) > 0
          OR position('Exact seat generation is required for every hand settlement participant'
                      in v_inner) = 0
@@ -994,7 +1000,7 @@ END;
 $strict_contract$;
 
 -- The inner writer is an owner-only implementation detail after contraction.
-REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute(
+REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(
   uuid, bigint, jsonb, numeric, numeric, text, numeric
 ) FROM PUBLIC, anon, authenticated, service_role;
 
@@ -1002,20 +1008,24 @@ DO $postconditions$
 DECLARE
   v_inner text;
   v_outer text;
+  v_wrapper text;
 BEGIN
   SELECT pg_get_functiondef(
-    'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+    'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
   ) INTO STRICT v_inner;
   SELECT pg_get_functiondef(
     'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
   ) INTO STRICT v_outer;
+  SELECT p.prosrc
+    INTO STRICT v_wrapper
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+     AND p.prosecdef;
 
   IF position('Exact seat generation is required for every hand settlement participant'
               in v_inner) = 0
-     OR md5(v_inner) NOT IN (
-          'ddb1762cff2ffe38369d542ff76f27b8',
-          '1aae3840a65744563c5a18c5bb0da35b'
-        )
+     OR md5(v_inner) <> 'edfd095bae13ece6bedc989c3acd0467'
      OR position('v_exact_seat_generation' in v_inner) > 0
      OR position('ts.id = v_exact_seat_id' in v_inner) = 0
      OR position('ts.joined_at = v_exact_seat_joined_at' in v_inner) = 0
@@ -1041,6 +1051,17 @@ BEGIN
       md5(v_outer);
   END IF;
 
+  IF md5(v_wrapper) <> '9d6a12c82aa260c22e1c013e95faca0e'
+     OR position('fn_ca_open_tournament_hand_seat_exit_authority'
+                 in v_wrapper)=0
+     OR position('fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority'
+                 in v_wrapper)=0
+     OR position('fn_ca_close_tournament_seat_exit_authority'
+                 in v_wrapper)=0 THEN
+    RAISE EXCEPTION
+      'accepted-hand seat-exit wrapper changed during strict contraction';
+  END IF;
+
   IF to_regprocedure(
        'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)'
      ) IS NOT NULL
@@ -1052,17 +1073,17 @@ BEGIN
 
   IF has_function_privilege(
        'anon',
-       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+       'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
        'EXECUTE'
      )
      OR has_function_privilege(
        'authenticated',
-       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+       'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
        'EXECUTE'
      )
      OR has_function_privilege(
        'service_role',
-       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+       'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
        'EXECUTE'
      )
      OR has_function_privilege(
@@ -1090,11 +1111,24 @@ BEGIN
         COALESCE(p.proacl, acldefault('f', p.proowner))
       ) a
      WHERE p.oid =
-       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+       'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
        AND a.privilege_type = 'EXECUTE'
        AND a.grantee <> p.proowner
   ) THEN
     RAISE EXCEPTION 'the direct stack implementation core is not owner-only';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      CROSS JOIN LATERAL aclexplode(
+        COALESCE(p.proacl, acldefault('f', p.proowner))
+      ) a
+     WHERE p.oid =
+       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+       AND a.privilege_type = 'EXECUTE'
+       AND a.grantee <> p.proowner
+  ) THEN
+    RAISE EXCEPTION 'the accepted-hand seat-exit wrapper is not owner-only';
   END IF;
   IF EXISTS (
     SELECT 1

@@ -1,9 +1,9 @@
--- 20260908230002_tournament_manager_request_fencing_is_strict
+-- 20260910002530_tournament_manager_request_fencing_is_strict
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-09-08 15:50:43 UTC.
 --
 /*
- * 20260908230002 -- STAGE B strict activation of the tournament-manager
+ * 20260910002530 -- STAGE B strict activation of the tournament-manager
  * request fence.
  *
  * This is deliberately a separate, forward-only cutover from Stage A.  Apply
@@ -74,6 +74,7 @@ DECLARE
   v_source text;
   v_settlement_core text;
   v_settlement_door text;
+  v_settlement_wrapper text;
 BEGIN
   IF to_regprocedure(
        'smarter_private.fn_smarter_data_api_pre_request()'
@@ -140,44 +141,47 @@ BEGIN
       'Stage-B manager request fencing requires every tournament and table protocol-2 authority door';
   END IF;
 
-  /* This contraction deletes the rolling 11-argument hand door below. A later
-     terminal-receipt migration (20260909014534) was applied after the original
-     exact-seat expansion and replaced both settlement bodies from an older
-     generation-blind snapshot. Permit only that byte-exact, receipt-aware live
-     preimage here; the immediately following 20260908230003 boundary restores
-     the strict exact-seat contract before the stopped engine may restart.
-     Any other generation-blind body still aborts this transaction. */
+  /* This contraction deletes the rolling 11-argument hand door below. The
+     seat-exit authority prerequisite has already moved the receipt-aware,
+     rolling exact-seat implementation behind an owner-only name and installed
+     an owner-only capability wrapper at the canonical name. Inspect that real
+     composition rather than the wrapper as though it were still the inner
+     writer. The immediately following 20260910002540 boundary contracts the
+     preserved implementation to strict exact-seat input before the stopped
+     engine may restart. Any partial or unknown composition aborts whole. */
   SELECT pg_get_functiondef(
            'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
          )
     INTO STRICT v_settlement_door;
 
   SELECT pg_get_functiondef(
-           'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+           'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
          )
     INTO STRICT v_settlement_core;
 
-  IF position('seat_joined_at' IN v_settlement_door) > 0
-     AND position('time_bank_seat_generation_mismatch' IN v_settlement_door) > 0 THEN
-    IF md5(v_settlement_core) <> '9be5d1da12d8f674a47a50ffb9a6df81'
-       OR md5(v_settlement_door) <> 'f93a85ebe5a509ccb7dfedb9be1ed3fa'
-       OR position('v_exact_seat_generation' IN v_settlement_core) = 0
-       OR position('v_exact_seat_generation' IN v_settlement_door) = 0
-       OR position('tournament_zero_stack_seat_generations' IN v_settlement_core) = 0
-       OR position('post_commit_request_hash' IN v_settlement_door) = 0
-       OR position('ca:tournament-terminal-settlement:v1' IN v_settlement_door) = 0 THEN
-      RAISE EXCEPTION
-        'Stage-B manager fencing found an unknown restored exact hand-settlement source';
-    END IF;
-  ELSE
-    IF md5(v_settlement_core) <> '2e322bc7dfee3cf5cb6548ed3a587095'
-       OR md5(v_settlement_door) <> '8ddb91f5f7bb5f27b609ec83cb69fa66'
-       OR position('tournament_zero_stack_seat_generations' IN v_settlement_core) = 0
-       OR position('post_commit_request_hash' IN v_settlement_door) = 0
-       OR position('ca:tournament-terminal-settlement:v1' IN v_settlement_door) = 0 THEN
-      RAISE EXCEPTION
-        'Stage-B manager fencing found an unknown hand-settlement source';
-    END IF;
+  SELECT p.prosrc
+    INTO STRICT v_settlement_wrapper
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+     AND p.prosecdef;
+
+  IF md5(v_settlement_core) <> 'ba1cdf1b56e5bb0c1c199b65390ee1f2'
+     OR md5(v_settlement_door) <> 'f93a85ebe5a509ccb7dfedb9be1ed3fa'
+     OR md5(v_settlement_wrapper) <> '9d6a12c82aa260c22e1c013e95faca0e'
+     OR position('v_exact_seat_generation' IN v_settlement_core) = 0
+     OR position('v_exact_seat_generation' IN v_settlement_door) = 0
+     OR position('tournament_zero_stack_seat_generations' IN v_settlement_core) = 0
+     OR position('post_commit_request_hash' IN v_settlement_door) = 0
+     OR position('ca:tournament-terminal-settlement:v1' IN v_settlement_door) = 0
+     OR position('fn_ca_open_tournament_hand_seat_exit_authority'
+                 IN v_settlement_wrapper) = 0
+     OR position('fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority'
+                 IN v_settlement_wrapper) = 0
+     OR position('fn_ca_close_tournament_seat_exit_authority'
+                 IN v_settlement_wrapper) = 0 THEN
+    RAISE EXCEPTION
+      'Stage-B manager fencing found an unknown composed hand-settlement source';
   END IF;
 END;
 $require_stage_a_request_authority$;
@@ -793,7 +797,6 @@ DECLARE
     'rpc/fn_mystery_bounty_reserve',
     'rpc/fn_mystery_bounty_seed',
     'rpc/fn_move_tournament_player',
-    'rpc/fn_move_tournament_player_atomic',
     'rpc/fn_open_tournament_rebuy_decisions',
     'rpc/fn_prove_played_spin_launch_recovery',
     'rpc/fn_settle_final_table_deal_atomic',
@@ -1373,7 +1376,7 @@ BEGIN
      OR position('auth.role()' IN v_hook_source) = 0
      OR position('verified JWT role disagrees with request claims' IN v_hook_source) = 0
      OR position($needle$'rpc/fn_project_hand_side_effects'$needle$ IN v_hook_source) = 0
-     OR position($needle$'rpc/fn_move_tournament_player_atomic'$needle$ IN v_hook_source) = 0
+     OR position($needle$'rpc/fn_move_tournament_player'$needle$ IN v_hook_source) = 0
      OR position($needle$left(v_path, 8) = 'rest/v1/'$needle$ IN v_hook_source) = 0
      OR position($needle$'protocol-2'$needle$ IN v_scope_source) = 0
      OR position('p_tournament_id IS DISTINCT FROM v_tournament_id' IN v_scope_source) = 0

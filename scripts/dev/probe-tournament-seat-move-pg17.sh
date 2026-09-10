@@ -6,10 +6,12 @@ migration_matches=(
   "${repo_dir}"/supabase/migrations/*_tournament_seat_moves_are_one_atomic_receipt.sql
 )
 if [[ ${#migration_matches[@]} -ne 1 || ! -f "${migration_matches[0]}" ]]; then
-  echo 'Expected exactly one tournament-seat-move migration by stable suffix.' >&2
+  echo 'Expected exactly one tournament-seat-move contraction by stable suffix.' >&2
   exit 2
 fi
 migration="${migration_matches[0]}"
+fixture="${repo_dir}/scripts/dev/fixtures/tournament-seat-move-pg17-bootstrap.sql"
+postconditions="${repo_dir}/scripts/dev/probe-tournament-seat-move-pg17.sql"
 
 pg17_bin="${PG17_BINDIR:-}"
 if [[ -z "$pg17_bin" ]] && command -v brew >/dev/null 2>&1; then
@@ -21,7 +23,7 @@ if [[ ! -x "${pg17_bin}/initdb" ]] \
   exit 2
 fi
 
-probe_root="$(mktemp -d "${TMPDIR:-/tmp}/ca-tournament-move-pg17.XXXXXX")"
+probe_root="$(mktemp -d /tmp/ca-move-pg17.XXXXXX)"
 cluster_dir="${probe_root}/cluster"
 socket_dir="${probe_root}/socket"
 mkdir -p "$socket_dir"
@@ -31,212 +33,119 @@ cleanup() {
   if [[ -d "$cluster_dir" ]]; then
     "${pg17_bin}/pg_ctl" -D "$cluster_dir" -m immediate stop >/dev/null 2>&1 || true
   fi
-  if [[ "$probe_root" == "${TMPDIR:-/tmp}/ca-tournament-move-pg17."* ]]; then
+  if [[ "$probe_root" == /tmp/ca-move-pg17.* ]]; then
     rm -rf "$probe_root"
   fi
 }
 trap cleanup EXIT
 
 "${pg17_bin}/initdb" -D "$cluster_dir" -U postgres --auth=trust --no-locale >/dev/null
-"${pg17_bin}/pg_ctl" -D "$cluster_dir" -o "-k ${socket_dir} -p ${port}" -w start >/dev/null
-
-psql_cmd=(
-  "${pg17_bin}/psql" -X -v ON_ERROR_STOP=1
-  -U postgres -h "$socket_dir" -p "$port" -d postgres
-)
-
-# A same-named but structurally wrong partial index must abort the migration.
-# IF NOT EXISTS alone would otherwise turn this into a silent false guarantee.
-"${pg17_bin}/createdb" -U postgres -h "$socket_dir" -p "$port" wrong_index
-wrong_index_psql=(
-  "${pg17_bin}/psql" -X -v ON_ERROR_STOP=1
-  -U postgres -h "$socket_dir" -p "$port" -d wrong_index
-)
-"${wrong_index_psql[@]}" -f \
-  "$repo_dir/scripts/dev/fixtures/tournament-seat-move-pg17-bootstrap.sql" >/dev/null
-"${wrong_index_psql[@]}" -c "
-  CREATE UNIQUE INDEX idx_tournament_players_one_active_destination_pointer
-    ON public.tournament_players (tournament_id, user_id, seat_number)
-   WHERE status IN ('registered', 'playing')
-     AND table_id IS NOT NULL
-     AND seat_number IS NOT NULL;
-" >/dev/null
-if "${wrong_index_psql[@]}" -f "$migration" \
-  >"${probe_root}/wrong-index.log" 2>&1; then
-  echo 'Atomic move migration accepted a wrong same-named pointer index.' >&2
+if ! "${pg17_bin}/pg_ctl" -D "$cluster_dir" \
+  -l "${probe_root}/postgres.log" \
+  -o "-c listen_addresses= -k ${socket_dir} -p ${port}" -w start >/dev/null; then
+  cat "${probe_root}/postgres.log" >&2
   exit 1
 fi
-if ! grep -q 'Atomic tournament move uniqueness guards are missing' \
+
+create_scenario() {
+  local database="$1"
+  "${pg17_bin}/createdb" -U postgres -h "$socket_dir" -p "$port" "$database"
+  "${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 \
+    -U postgres -h "$socket_dir" -p "$port" -d "$database" \
+    -f "$fixture" >/dev/null
+}
+
+apply_migration() {
+  local database="$1"
+  "${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 \
+    -U postgres -h "$socket_dir" -p "$port" -d "$database" \
+    -f "$migration"
+}
+
+create_scenario canonical
+apply_migration canonical >/dev/null
+apply_migration canonical >/dev/null
+"${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 \
+  -U postgres -h "$socket_dir" -p "$port" -d canonical \
+  -f "$postconditions" >/dev/null
+
+create_scenario wrong_index
+"${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 \
+  -U postgres -h "$socket_dir" -p "$port" -d wrong_index -c "
+    CREATE UNIQUE INDEX idx_tournament_players_one_active_destination_pointer
+      ON public.tournament_players(tournament_id,user_id,seat_number)
+     WHERE status IN ('registered','playing')
+       AND table_id IS NOT NULL
+       AND seat_number IS NOT NULL;
+  " >/dev/null
+if apply_migration wrong_index >"${probe_root}/wrong-index.log" 2>&1; then
+  echo 'Move contraction accepted a wrong same-named pointer index.' >&2
+  exit 1
+fi
+if ! grep -q \
+  'Tournament move receipt immutability or active destination uniqueness is missing' \
   "${probe_root}/wrong-index.log"; then
   cat "${probe_root}/wrong-index.log" >&2
-  echo 'Wrong-index rehearsal failed outside the exact invariant.' >&2
-  exit 1
-fi
-"${pg17_bin}/dropdb" -U postgres -h "$socket_dir" -p "$port" wrong_index
-
-"${psql_cmd[@]}" -f \
-  "$repo_dir/scripts/dev/fixtures/tournament-seat-move-pg17-bootstrap.sql" >/dev/null
-"${psql_cmd[@]}" -f "$migration" >/dev/null
-"${psql_cmd[@]}" -f "$migration" >/dev/null
-"${psql_cmd[@]}" -f \
-  "$repo_dir/scripts/dev/probe-tournament-seat-move-pg17.sql" >/dev/null
-
-authority_sql="
-select set_config('app.smarter_data_actor','tournament-manager',false);
-select set_config('app.smarter_tournament_id','10000000-0000-4000-8000-000000000001',false);
-select set_config('app.smarter_tournament_lease_generation','90000000-0000-4000-8000-000000000001',false);
-select set_config('app.smarter_manager_request_fenced','protocol-2',false);
-"
-
-# The same advisory key as hand settlement owns the source. The move must
-# return busy immediately and leave its exact generation untouched.
-"${psql_cmd[@]}" -c "BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('atomic-table:20000000-0000-4000-8000-000000000001',0)); SELECT pg_sleep(2); COMMIT;" \
-  >"${probe_root}/hand-lock-owner.log" 2>&1 &
-hand_lock_pid=$!
-sleep 0.2
-hand_busy="$(${psql_cmd[@]} -Atc "${authority_sql}
-select fn_move_tournament_player_atomic(
- '60000000-0000-4000-8000-000000000008',
- '10000000-0000-4000-8000-000000000001',
- '40000000-0000-4000-8000-000000000008',
- '20000000-0000-4000-8000-000000000001',8,
- '50000000-0000-4000-8000-000000000008','2026-09-08T10:00:08Z',110,
- '20000000-0000-4000-8000-000000000002',8)->>'reason';")"
-wait "$hand_lock_pid"
-if [[ "$(printf '%s\n' "$hand_busy" | tail -n 1)" != 'table_hand_boundary_busy' ]]; then
-  echo "Hand advisory boundary was not respected: ${hand_busy}" >&2
+  echo 'Wrong-index scenario failed outside the exact invariant.' >&2
   exit 1
 fi
 
-# A concurrent destination writer owns the physical chair. The move's NOWAIT
-# seat lock must refuse without ever closing its source.
-"${psql_cmd[@]}" -c "BEGIN;
-UPDATE public.table_seats SET user_id='40000000-0000-4000-8000-000000000098', stack=1, left_at=NULL
- WHERE table_id='20000000-0000-4000-8000-000000000002' AND seat_number=6;
-SELECT pg_sleep(2); ROLLBACK;" >"${probe_root}/destination-owner.log" 2>&1 &
-destination_pid=$!
-sleep 0.2
-destination_busy="$(${psql_cmd[@]} -Atc "${authority_sql}
-select fn_move_tournament_player_atomic(
- '60000000-0000-4000-8000-000000000009',
- '10000000-0000-4000-8000-000000000001',
- '40000000-0000-4000-8000-000000000009',
- '20000000-0000-4000-8000-000000000001',9,
- '50000000-0000-4000-8000-000000000009','2026-09-08T10:00:09Z',120,
- '20000000-0000-4000-8000-000000000002',6)->>'reason';")"
-wait "$destination_pid"
-if [[ "$(printf '%s\n' "$destination_busy" | tail -n 1)" != 'seat_busy' ]]; then
-  echo "Concurrent destination race was not refused: ${destination_busy}" >&2
+create_scenario mutating_resolver
+"${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 \
+  -U postgres -h "$socket_dir" -p "$port" -d mutating_resolver -c "
+    CREATE OR REPLACE FUNCTION public.fn_resolve_committed_tournament_seat_move(
+      p_request_id uuid,p_tournament_id uuid,p_user_id uuid,
+      p_source_table_id uuid,p_destination_table_id uuid,
+      p_destination_seat_number integer,p_source_mode text
+    ) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public','pg_temp'
+    AS \$resolver\$
+    BEGIN
+      PERFORM current_setting('app.smarter_data_actor',true);
+      PERFORM pg_advisory_xact_lock(
+        hashtextextended('ca:tournament-terminal-settlement:v1',0));
+      UPDATE public.tournament_players SET status=status WHERE false;
+      RETURN public.fn_ca_tournament_seat_move_receipt(p_request_id);
+    END;
+    \$resolver\$;
+    REVOKE ALL ON FUNCTION public.fn_resolve_committed_tournament_seat_move(
+      uuid,uuid,uuid,uuid,uuid,integer,text)
+      FROM PUBLIC,anon,authenticated;
+    GRANT EXECUTE ON FUNCTION public.fn_resolve_committed_tournament_seat_move(
+      uuid,uuid,uuid,uuid,uuid,integer,text)
+      TO service_role;
+  " >/dev/null
+if apply_migration mutating_resolver >"${probe_root}/mutating-resolver.log" 2>&1; then
+  echo 'Move contraction accepted a mutating receipt resolver.' >&2
+  exit 1
+fi
+if ! grep -q 'Tournament move lease-loss resolver is not receipt-only' \
+  "${probe_root}/mutating-resolver.log"; then
+  cat "${probe_root}/mutating-resolver.log" >&2
+  echo 'Mutating-resolver scenario failed outside the exact invariant.' >&2
   exit 1
 fi
 
-# Two simultaneous identical invocations serialize on the operation id. The
-# first commits once; the second returns the immutable replay after commit.
-concurrent_sql="${authority_sql}
-select fn_move_tournament_player_atomic(
- '60000000-0000-4000-8000-000000000010',
- '10000000-0000-4000-8000-000000000001',
- '40000000-0000-4000-8000-000000000008',
- '20000000-0000-4000-8000-000000000001',8,
- '50000000-0000-4000-8000-000000000008','2026-09-08T10:00:08Z',110,
- '20000000-0000-4000-8000-000000000002',8);"
-"${psql_cmd[@]}" -Atc "BEGIN; ${concurrent_sql} SELECT pg_sleep(2); COMMIT;" \
-  >"${probe_root}/concurrent-first.log" 2>&1 &
-first_pid=$!
-sleep 0.2
-"${psql_cmd[@]}" -Atc "$concurrent_sql" >"${probe_root}/concurrent-replay.log"
-wait "$first_pid"
-if ! grep -Eq '"replayed"[[:space:]]*:[[:space:]]*true' \
-  "${probe_root}/concurrent-replay.log"; then
-  cat "${probe_root}/concurrent-replay.log" >&2
-  echo 'Concurrent identical operation did not return the durable replay.' >&2
+create_scenario second_writer
+"${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 \
+  -U postgres -h "$socket_dir" -p "$port" -d second_writer -c "
+    CREATE FUNCTION public.fn_move_tournament_player(uuid)
+    RETURNS jsonb LANGUAGE sql AS 'SELECT ''{}''::jsonb';
+    REVOKE ALL ON FUNCTION public.fn_move_tournament_player(uuid)
+      FROM PUBLIC,anon,authenticated;
+    GRANT EXECUTE ON FUNCTION public.fn_move_tournament_player(uuid)
+      TO service_role;
+  " >/dev/null
+if apply_migration second_writer >"${probe_root}/second-writer.log" 2>&1; then
+  echo 'Move contraction accepted a second service-callable writer.' >&2
   exit 1
 fi
-if [[ "$("${psql_cmd[@]}" -Atc "select count(*) from public.tournament_seat_move_receipts where operation_id='60000000-0000-4000-8000-000000000010';")" != '1' ]]; then
-  echo 'Concurrent identical operation wrote more than one receipt.' >&2
+if ! grep -q 'Tournament move mutation authority is not singular' \
+  "${probe_root}/second-writer.log"; then
+  cat "${probe_root}/second-writer.log" >&2
+  echo 'Second-writer scenario failed outside the exact invariant.' >&2
   exit 1
 fi
 
-# The receipt remains readable by the RPC after a later platform freeze, while
-# a brand-new move is refused. This is the ambiguous-response cutover edge.
-freeze_replay="$(${psql_cmd[@]} -Atc "${authority_sql}
-select set_config('probe.platform_frozen','on',false);
-select fn_move_tournament_player_atomic(
- '60000000-0000-4000-8000-000000000010',
- '10000000-0000-4000-8000-000000000001',
- '40000000-0000-4000-8000-000000000008',
- '20000000-0000-4000-8000-000000000001',8,
- '50000000-0000-4000-8000-000000000008','2026-09-08T10:00:08Z',110,
- '20000000-0000-4000-8000-000000000002',8)->>'replayed';")"
-if [[ "$(printf '%s\n' "$freeze_replay" | tail -n 1)" != 'true' ]]; then
-  echo "Frozen exact replay lost its committed proof: ${freeze_replay}" >&2
-  exit 1
-fi
-
-# Production installs this authority while tournament_players.chips is still
-# integer. The later one-shot normalization widens that column to bigint. Prove
-# the same function and its pre-cutover receipt survive that exact catalog
-# transition, then commit a genuinely >INT32 stack through the unchanged door.
-"${psql_cmd[@]}" -c "
-  ALTER TABLE public.tournament_players
-    ALTER COLUMN chips TYPE bigint USING chips::bigint;
-" >/dev/null
-"${psql_cmd[@]}" -f "$migration" >/dev/null
-
-if [[ "$("${psql_cmd[@]}" -Atc "
-  SELECT format_type(a.atttypid, a.atttypmod)
-    FROM pg_attribute a
-   WHERE a.attrelid='public.tournament_players'::regclass
-     AND a.attname='chips' AND NOT a.attisdropped;
-")" != 'bigint' ]]; then
-  echo 'Atomic move rehearsal did not reach the post-normalization bigint roster shape.' >&2
-  exit 1
-fi
-
-post_alter_replay="$("${psql_cmd[@]}" -Atc "${authority_sql}
-select fn_move_tournament_player_atomic(
- '60000000-0000-4000-8000-000000000001',
- '10000000-0000-4000-8000-000000000001',
- '40000000-0000-4000-8000-000000000001',
- '20000000-0000-4000-8000-000000000001',1,
- '50000000-0000-4000-8000-000000000001','2026-09-08T10:00:01Z',2147483647,
- '20000000-0000-4000-8000-000000000002',2)->>'replayed';")"
-if [[ "$(printf '%s\n' "$post_alter_replay" | tail -n 1)" != 'true' ]]; then
-  echo "Integer-era receipt did not replay after bigint normalization: ${post_alter_replay}" >&2
-  exit 1
-fi
-
-"${psql_cmd[@]}" -c "
-  INSERT INTO public.tournament_players(
-    id,tournament_id,user_id,status,table_id,seat_number,chips
-  ) VALUES (
-    '30000000-0000-4000-8000-000000000010',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000010','playing',
-    '20000000-0000-4000-8000-000000000003',9,2147483648
-  );
-  INSERT INTO public.table_seats(
-    id,table_id,seat_number,user_id,stack,joined_at
-  ) VALUES (
-    '50000000-0000-4000-8000-000000000010',
-    '20000000-0000-4000-8000-000000000003',9,
-    '40000000-0000-4000-8000-000000000010',2147483648,
-    '2026-09-08T10:00:10Z'
-  );
-" >/dev/null
-
-post_alter_move="$("${psql_cmd[@]}" -Atc "${authority_sql}
-select fn_move_tournament_player_atomic(
- '60000000-0000-4000-8000-000000000011',
- '10000000-0000-4000-8000-000000000001',
- '40000000-0000-4000-8000-000000000010',
- '20000000-0000-4000-8000-000000000003',9,
- '50000000-0000-4000-8000-000000000010','2026-09-08T10:00:10Z',2147483648,
- '20000000-0000-4000-8000-000000000002',9);")"
-if ! grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' <<<"$post_alter_move" \
-   || ! grep -Eq '"stack"[[:space:]]*:[[:space:]]*2147483648' <<<"$post_alter_move"; then
-  echo "Post-normalization bigint move failed: ${post_alter_move}" >&2
-  exit 1
-fi
-
-echo 'PostgreSQL 17 atomic tournament seat-move integer-to-bigint, replay, hand-lock, concurrency, destination-race, generation, whole-chip, and rollback probes passed.'
+echo 'PostgreSQL 17 tournament move contraction passed: canonical replay, wrong-index refusal, read-only resolver enforcement, and one-writer enforcement.'

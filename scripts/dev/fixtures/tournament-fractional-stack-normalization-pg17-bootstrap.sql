@@ -131,20 +131,17 @@ CREATE UNIQUE INDEX idx_tournament_players_one_active_destination_pointer
     AND seat_number IS NOT NULL;
 
 CREATE TABLE public.tournament_seat_move_receipts (
-  operation_id uuid PRIMARY KEY
+  request_id uuid PRIMARY KEY
 );
 
-CREATE OR REPLACE FUNCTION public.fn_move_tournament_player_atomic(
-  p_operation_id uuid,
+CREATE OR REPLACE FUNCTION public.fn_move_tournament_player(
   p_tournament_id uuid,
   p_user_id uuid,
   p_source_table_id uuid,
-  p_source_seat_number integer,
-  p_source_seat_id uuid,
-  p_source_joined_at timestamptz,
-  p_expected_stack bigint,
   p_destination_table_id uuid,
-  p_destination_seat_number integer
+  p_destination_seat_number integer,
+  p_request_id uuid,
+  p_source_mode text
 ) RETURNS jsonb
 LANGUAGE sql
 SET search_path = public, pg_temp

@@ -1,4 +1,4 @@
--- 20260909184623_precertify_stage_a_atomic_tournament_finishes
+-- 20260910002520_precertify_stage_a_atomic_tournament_finishes
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-09-09 18:46:23 UTC.
 --

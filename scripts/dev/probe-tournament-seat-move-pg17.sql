@@ -1,249 +1,83 @@
 \set ON_ERROR_STOP on
 
-SELECT set_config('app.smarter_data_actor', 'tournament-manager', false);
-SELECT set_config(
-  'app.smarter_tournament_id',
-  '10000000-0000-4000-8000-000000000001',
-  false
-);
-SELECT set_config(
-  'app.smarter_tournament_lease_generation',
-  '90000000-0000-4000-8000-000000000001',
-  false
-);
-SELECT set_config('app.smarter_manager_request_fenced', 'protocol-2', false);
-
-INSERT INTO public.tournaments(id, status)
-VALUES ('10000000-0000-4000-8000-000000000001', 'RUNNING');
-
-INSERT INTO public.tables(id, tournament_id, status, max_players)
-VALUES
-  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'running', 9),
-  ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000001', 'running', 9),
-  ('20000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000001', 'running', 9);
-
-INSERT INTO public.tournament_players(
-  id, tournament_id, user_id, status, table_id, seat_number, chips
-)
-VALUES
-  ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', 'playing', '20000000-0000-4000-8000-000000000001', 1, 2147483647),
-  ('30000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000002', 'playing', '20000000-0000-4000-8000-000000000001', 2, 100),
-  ('30000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000003', 'playing', '20000000-0000-4000-8000-000000000001', 3, 0),
-  ('30000000-0000-4000-8000-000000000004', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000004', 'playing', '20000000-0000-4000-8000-000000000001', 4, 10),
-  ('30000000-0000-4000-8000-000000000005', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000005', 'playing', '20000000-0000-4000-8000-000000000003', 5, 75),
-  ('30000000-0000-4000-8000-000000000006', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000006', 'playing', '20000000-0000-4000-8000-000000000001', 6, 80),
-  ('30000000-0000-4000-8000-000000000007', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000007', 'playing', '20000000-0000-4000-8000-000000000001', 7, 90),
-  ('30000000-0000-4000-8000-000000000008', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000008', 'playing', '20000000-0000-4000-8000-000000000001', 8, 110),
-  ('30000000-0000-4000-8000-000000000009', '10000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000009', 'playing', '20000000-0000-4000-8000-000000000001', 9, 120);
-
-INSERT INTO public.table_seats(
-  id, table_id, seat_number, user_id, stack, joined_at, left_at
-)
-VALUES
-  ('50000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 1, '40000000-0000-4000-8000-000000000001', 2147483647, '2026-09-08T10:00:01Z', NULL),
-  ('50000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000001', 2, '40000000-0000-4000-8000-000000000002', 100, '2026-09-08T10:00:02Z', NULL),
-  ('50000000-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000001', 3, '40000000-0000-4000-8000-000000000003', 0, '2026-09-08T10:00:03Z', NULL),
-  ('50000000-0000-4000-8000-000000000004', '20000000-0000-4000-8000-000000000001', 4, '40000000-0000-4000-8000-000000000004', 10.50, '2026-09-08T10:00:04Z', NULL),
-  ('50000000-0000-4000-8000-000000000005', '20000000-0000-4000-8000-000000000003', 5, '40000000-0000-4000-8000-000000000005', 75, '2026-09-08T10:00:05Z', NULL),
-  ('50000000-0000-4000-8000-000000000006', '20000000-0000-4000-8000-000000000001', 6, '40000000-0000-4000-8000-000000000006', 80, '2026-09-08T10:00:06Z', NULL),
-  ('50000000-0000-4000-8000-000000000007', '20000000-0000-4000-8000-000000000001', 7, '40000000-0000-4000-8000-000000000007', 90, '2026-09-08T10:00:07Z', NULL),
-  ('50000000-0000-4000-8000-000000000008', '20000000-0000-4000-8000-000000000001', 8, '40000000-0000-4000-8000-000000000008', 110, '2026-09-08T10:00:08Z', NULL),
-  ('50000000-0000-4000-8000-000000000009', '20000000-0000-4000-8000-000000000001', 9, '40000000-0000-4000-8000-000000000009', 120, '2026-09-08T10:00:09Z', NULL),
-  ('50000000-0000-4000-8000-000000000012', '20000000-0000-4000-8000-000000000002', 2, '40000000-0000-4000-8000-000000000099', 1, '2026-09-08T09:00:00Z', '2026-09-08T09:05:00Z'),
-  ('50000000-0000-4000-8000-000000000016', '20000000-0000-4000-8000-000000000002', 6, '40000000-0000-4000-8000-000000000099', 1, '2026-09-08T09:06:00Z', '2026-09-08T09:07:00Z');
-
-DO $probe$
+DO $postconditions$
 DECLARE
-  v jsonb;
+  v_receipt_shape text[];
 BEGIN
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000099',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000001',
-    '20000000-0000-4000-8000-000000000001', 1,
-    '50000000-0000-4000-8000-000000000001', '2026-09-08T10:00:01Z',
-    10000000000000,
-    '20000000-0000-4000-8000-000000000002', 2
-  );
-  IF v->>'reason' <> 'invalid_request' THEN
-    RAISE EXCEPTION 'out-of-domain expected stack was accepted: %', v;
+  IF (
+    SELECT count(*)
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE n.nspname='public'
+       AND p.proname IN ('fn_move_tournament_player',
+                         'fn_move_tournament_player_atomic')
+  )<>1
+     OR to_regprocedure(
+          'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)'
+        ) IS NULL
+     OR to_regprocedure(
+          'public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)'
+        ) IS NULL THEN
+    RAISE EXCEPTION 'one canonical tournament move writer did not survive';
   END IF;
 
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000001',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000001',
-    '20000000-0000-4000-8000-000000000001', 1,
-    '50000000-0000-4000-8000-000000000001', '2026-09-08T10:00:01Z', 2147483647,
-    '20000000-0000-4000-8000-000000000002', 2
-  );
-  IF NOT coalesce((v->>'ok')::boolean, false)
-     OR NOT coalesce((v->>'committed')::boolean, false)
-     OR coalesce((v->>'replayed')::boolean, true)
-     OR v->>'destination_seat_id' <> '50000000-0000-4000-8000-000000000012'
-     OR v->>'manager_actor' <> 'tournament-manager'
-     OR v->>'lease_generation' <> '90000000-0000-4000-8000-000000000001'
-     OR coalesce(v->>'request_hash', '') !~ '^[0-9a-f]{64}$' THEN
-    RAISE EXCEPTION 'initial atomic move failed: %', v;
+  SELECT array_agg(
+           a.attname||':'||format_type(a.atttypid,a.atttypmod)||':'||
+           CASE WHEN a.attnotnull THEN 'not-null' ELSE 'nullable' END
+           ORDER BY a.attnum)
+    INTO v_receipt_shape
+    FROM pg_attribute a
+   WHERE a.attrelid='public.tournament_seat_move_receipts'::regclass
+     AND a.attnum>0 AND NOT a.attisdropped;
+
+  IF v_receipt_shape IS DISTINCT FROM ARRAY[
+       'request_id:uuid:not-null',
+       'tournament_id:uuid:not-null',
+       'user_id:uuid:not-null',
+       'source_table_id:uuid:not-null',
+       'destination_table_id:uuid:not-null',
+       'source_seat_id:uuid:not-null',
+       'destination_seat_id:uuid:not-null',
+       'source_seat_number:integer:not-null',
+       'destination_seat_number:integer:not-null',
+       'source_mode:text:not-null',
+       'stack:numeric:not-null',
+       'moved_at:timestamp with time zone:not-null'
+     ]::text[] THEN
+    RAISE EXCEPTION 'canonical move receipt changed: %',v_receipt_shape;
   END IF;
 
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000001',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000001',
-    '20000000-0000-4000-8000-000000000001', 1,
-    '50000000-0000-4000-8000-000000000001', '2026-09-08T10:00:01Z', 2147483647,
-    '20000000-0000-4000-8000-000000000002', 2
-  );
-  IF NOT coalesce((v->>'replayed')::boolean, false) THEN
-    RAISE EXCEPTION 'exact response replay failed: %', v;
-  END IF;
-
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000001',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000001',
-    '20000000-0000-4000-8000-000000000001', 1,
-    '50000000-0000-4000-8000-000000000001', '2026-09-08T10:00:01Z', 2147483648,
-    '20000000-0000-4000-8000-000000000003', 2
-  );
-  IF v->>'reason' <> 'operation_id_conflict' THEN
-    RAISE EXCEPTION 'changed-payload replay was accepted: %', v;
-  END IF;
-
-  IF (SELECT count(*) FROM public.tournament_seat_move_receipts) <> 1
+  IF has_function_privilege(
+       'anon',
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
+       'EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
+       'EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)',
+       'EXECUTE')
+     OR has_table_privilege(
+       'service_role','public.tournament_seat_move_receipts','SELECT')
      OR NOT EXISTS (
-       SELECT 1 FROM public.table_seats
-        WHERE id = '50000000-0000-4000-8000-000000000001' AND left_at IS NOT NULL
-     )
+       SELECT 1 FROM pg_class c
+        WHERE c.oid='public.tournament_seat_move_receipts'::regclass
+          AND c.relrowsecurity)
      OR NOT EXISTS (
-       SELECT 1 FROM public.table_seats
-        WHERE id = '50000000-0000-4000-8000-000000000012'
-          AND left_at IS NULL
-          AND user_id = '40000000-0000-4000-8000-000000000001'
-          AND stack = 2147483647
-     )
+       SELECT 1 FROM pg_trigger t
+        WHERE t.tgrelid='public.tournament_seat_move_receipts'::regclass
+          AND t.tgname='tournament_seat_move_receipts_append_only'
+          AND t.tgenabled='O' AND NOT t.tgisinternal)
      OR NOT EXISTS (
-       SELECT 1 FROM public.tournament_players
-        WHERE user_id = '40000000-0000-4000-8000-000000000001'
-          AND table_id = '20000000-0000-4000-8000-000000000002'
-          AND seat_number = 2
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.tables
-        WHERE id = '20000000-0000-4000-8000-000000000001'
-          AND current_players = 7
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.tables
-        WHERE id = '20000000-0000-4000-8000-000000000002'
-          AND current_players = 1
-     ) THEN
-    RAISE EXCEPTION 'atomic move postimage is incomplete (source_count=%, destination_count=%)',
-      (SELECT current_players FROM public.tables WHERE id = '20000000-0000-4000-8000-000000000001'),
-      (SELECT current_players FROM public.tables WHERE id = '20000000-0000-4000-8000-000000000002');
-  END IF;
-
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000002',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000002',
-    '20000000-0000-4000-8000-000000000001', 2,
-    '50000000-0000-4000-8000-000000000002', '2026-09-08T10:00:02.001Z', 100,
-    '20000000-0000-4000-8000-000000000002', 3
-  );
-  IF v->>'reason' <> 'source_generation_mismatch' THEN
-    RAISE EXCEPTION 'wrong generation was accepted: %', v;
-  END IF;
-
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000003',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000003',
-    '20000000-0000-4000-8000-000000000001', 3,
-    '50000000-0000-4000-8000-000000000003', '2026-09-08T10:00:03Z', 1,
-    '20000000-0000-4000-8000-000000000002', 3
-  );
-  IF v->>'reason' <> 'source_stack_not_positive_whole' THEN
-    RAISE EXCEPTION 'zero stack was accepted: %', v;
-  END IF;
-
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000004',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000004',
-    '20000000-0000-4000-8000-000000000001', 4,
-    '50000000-0000-4000-8000-000000000004', '2026-09-08T10:00:04Z', 10,
-    '20000000-0000-4000-8000-000000000002', 4
-  );
-  IF v->>'reason' <> 'source_stack_not_positive_whole' THEN
-    RAISE EXCEPTION 'fractional stack was accepted: %', v;
-  END IF;
-
-  /* Stable destination collision: both the live chair and active roster
-     pointer are explicit, and the source stays untouched. */
-  INSERT INTO public.table_seats(
-    id, table_id, seat_number, user_id, stack, joined_at
-  ) VALUES (
-    '50000000-0000-4000-8000-000000000015',
-    '20000000-0000-4000-8000-000000000002', 5,
-    '40000000-0000-4000-8000-000000000005', 75,
-    '2026-09-08T10:05:00Z'
-  );
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000006',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000006',
-    '20000000-0000-4000-8000-000000000001', 6,
-    '50000000-0000-4000-8000-000000000006', '2026-09-08T10:00:06Z', 80,
-    '20000000-0000-4000-8000-000000000002', 5
-  );
-  IF v->>'reason' NOT IN ('destination_pointer_occupied', 'destination_seat_occupied')
-     OR NOT EXISTS (
-       SELECT 1 FROM public.table_seats
-        WHERE id = '50000000-0000-4000-8000-000000000006' AND left_at IS NULL
-     ) THEN
-    RAISE EXCEPTION 'destination collision changed the source: %', v;
-  END IF;
-
-  /* A destination guard throws after the source close. The PL/pgSQL
-     subtransaction must roll every core write back and emit no receipt. */
-  PERFORM set_config('probe.reject_destination', 'on', true);
-  v := public.fn_move_tournament_player_atomic(
-    '60000000-0000-4000-8000-000000000007',
-    '10000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000007',
-    '20000000-0000-4000-8000-000000000001', 7,
-    '50000000-0000-4000-8000-000000000007', '2026-09-08T10:00:07Z', 90,
-    '20000000-0000-4000-8000-000000000002', 7
-  );
-  PERFORM set_config('probe.reject_destination', 'off', true);
-  IF v->>'reason' <> 'atomic_move_refused'
-     OR EXISTS (
-       SELECT 1 FROM public.tournament_seat_move_receipts
-        WHERE operation_id = '60000000-0000-4000-8000-000000000007'
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.table_seats
-        WHERE id = '50000000-0000-4000-8000-000000000007' AND left_at IS NULL
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.tournament_players
-        WHERE user_id = '40000000-0000-4000-8000-000000000007'
-          AND table_id = '20000000-0000-4000-8000-000000000001'
-          AND seat_number = 7
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.tables
-        WHERE id = '20000000-0000-4000-8000-000000000001'
-          AND current_players = 7
-     )
-     OR NOT EXISTS (
-       SELECT 1 FROM public.tables
-        WHERE id = '20000000-0000-4000-8000-000000000002'
-          AND current_players = 1
-     ) THEN
-    RAISE EXCEPTION 'refused destination did not roll back whole: %', v;
+       SELECT 1
+         FROM pg_class c
+         JOIN pg_index i ON i.indexrelid=c.oid
+        WHERE c.oid=
+          'public.idx_tournament_players_one_active_destination_pointer'::regclass
+          AND i.indisunique AND i.indisvalid AND i.indisready) THEN
+    RAISE EXCEPTION 'canonical move ACL, immutability, or uniqueness is incomplete';
   END IF;
 END;
-$probe$;
+$postconditions$;

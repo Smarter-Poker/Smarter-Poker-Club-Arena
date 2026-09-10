@@ -1,4 +1,4 @@
--- 20260909183628_terminal_tournaments_cannot_reenter_a_break
+-- 20260910002510_terminal_tournaments_cannot_reenter_a_break
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-09-09 18:36:28 UTC.
 --
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS public.tournament_terminal_break_normalization_receip
   break_started_at_before timestamptz,
   break_ends_at_before timestamptz,
   normalization_version text NOT NULL
-    CHECK (normalization_version = '20260909183628_terminal_tournaments_cannot_reenter_a_break'),
+    CHECK (normalization_version = '20260910002510_terminal_tournaments_cannot_reenter_a_break'),
   normalized_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   CHECK (
     on_break_before
@@ -52,7 +52,7 @@ REVOKE ALL ON TABLE public.tournament_terminal_break_normalization_receipts
   FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON TABLE public.tournament_terminal_break_normalization_receipts IS
-  'Private immutable preimage of terminal tournament break state normalized once by the 20260909183628 integrity boundary. No runtime writer exists.';
+  'Private immutable preimage of terminal tournament break state normalized once by the 20260910002510 integrity boundary. No runtime writer exists.';
 
 CREATE OR REPLACE FUNCTION public.fn_tournament_terminal_break_normalization_receipt_immutable()
 RETURNS trigger
@@ -89,7 +89,7 @@ SELECT
   COALESCE(t.on_break,false),
   t.break_started_at,
   t.break_ends_at,
-  '20260909183628_terminal_tournaments_cannot_reenter_a_break'
+  '20260910002510_terminal_tournaments_cannot_reenter_a_break'
 FROM public.tournaments t
 WHERE upper(t.status::text) IN ('COMPLETED','CANCELLED')
   AND (

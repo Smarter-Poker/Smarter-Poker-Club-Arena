@@ -30,14 +30,16 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
     expect(restoredExact.source).toContain('f93a85ebe5a509ccb7dfedb9be1ed3fa');
     expect(restoredExact.source).toContain('v_exact_seat_generation');
 
-    expect(stageB.source).toContain("md5(v_settlement_core) <> '2e322bc7dfee3cf5cb6548ed3a587095'");
-    expect(stageB.source).toContain("md5(v_settlement_door) <> '8ddb91f5f7bb5f27b609ec83cb69fa66'");
-    expect(stageB.source).toContain("md5(v_settlement_core) <> '9be5d1da12d8f674a47a50ffb9a6df81'");
+    expect(stageB.source).toContain('fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority');
+    expect(stageB.source).toContain("md5(v_settlement_core) <> 'ba1cdf1b56e5bb0c1c199b65390ee1f2'");
     expect(stageB.source).toContain("md5(v_settlement_door) <> 'f93a85ebe5a509ccb7dfedb9be1ed3fa'");
     expect(stageB.source).toContain(
-      "'Stage-B manager fencing found an unknown hand-settlement source'"
+      "md5(v_settlement_wrapper) <> '9d6a12c82aa260c22e1c013e95faca0e'"
     );
-    expect(stageB.source.indexOf('2e322bc7dfee3cf5cb6548ed3a587095')).toBeLessThan(
+    expect(stageB.source).toContain(
+      "'Stage-B manager fencing found an unknown composed hand-settlement source'"
+    );
+    expect(stageB.source.indexOf('ba1cdf1b56e5bb0c1c199b65390ee1f2')).toBeLessThan(
       stageB.source.indexOf('DROP FUNCTION IF EXISTS public.fn_ca_commit_hand_settlement(')
     );
   });
@@ -46,11 +48,11 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
     for (const hash of [
       '2e322bc7dfee3cf5cb6548ed3a587095',
       '8ddb91f5f7bb5f27b609ec83cb69fa66',
-      '9be5d1da12d8f674a47a50ffb9a6df81',
+      'ba1cdf1b56e5bb0c1c199b65390ee1f2',
       'f93a85ebe5a509ccb7dfedb9be1ed3fa',
-      'ddb1762cff2ffe38369d542ff76f27b8',
-      '1aae3840a65744563c5a18c5bb0da35b',
+      'edfd095bae13ece6bedc989c3acd0467',
       '022f0de6ed0fb51ff3fbe5f3ff36f6d0',
+      '9d6a12c82aa260c22e1c013e95faca0e',
     ]) {
       expect(strict.source).toContain(hash);
     }

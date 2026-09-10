@@ -65,11 +65,11 @@ Release order:
 3. Prove the exact engine is the sole live process and all legacy requests have
    drained.
 4. Only then apply the already-reserved Stage-B contraction
-   `20260908230002_tournament_manager_request_fencing_is_strict.sql`, which
+   `20260910002530_tournament_manager_request_fencing_is_strict.sql`, which
    removes the legacy 9- and 11-argument doors. Do not batch that contraction
    ahead of the exact-engine cutover.
 5. Apply
-   `20260908230003_hand_settlement_requires_exact_seat_generation.sql`. It
+   `20260910002540_hand_settlement_requires_exact_seat_generation.sql`. It
    rejects any nonempty 12-argument or direct stack narrative missing either
    generation field, removes every legacy user-only lookup branch, and makes
    the seven-argument stack writer owner-only. The Stage-B door contraction

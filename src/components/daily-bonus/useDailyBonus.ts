@@ -204,6 +204,10 @@ export function useDailyBonus(enabled: boolean) {
             const hours = result.granted.hours ?? result.granted.quantity;
             const ends = result.granted.ends_at ? Date.parse(result.granted.ends_at) : NaN;
             boostEnds.current = Number.isFinite(ends) ? ends : Date.now() + hours * 3600 * 1000;
+            // The clock is set HERE, not left to the next tick. The readout is
+            // gated on it, and a boost that has just been claimed must never
+            // render as "not running" for the second before the interval fires.
+            setBoostSecondsLeft(Math.max(0, Math.ceil((boostEnds.current - Date.now()) / 1000)));
           }
           setStatus((prev) => (prev ? applyClaim(prev, tile.slot, result) : prev));
           return { slot: tile.slot, result, refusal: '' };

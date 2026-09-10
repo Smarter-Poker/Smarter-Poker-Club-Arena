@@ -134,6 +134,15 @@ const phase3Tiles = [
   }),
 ];
 
+/** The copy of one note under the tiles, by its label, whole - the clock and
+ *  the diamonds-so-far sit in their own spans inside it. */
+function noteText(container: HTMLElement, label: string): string {
+  const note = Array.from(container.querySelectorAll('.dbs__note')).find(
+    (n) => n.querySelector('dt')?.textContent?.trim() === label
+  );
+  return note?.querySelector('dd')?.textContent ?? '';
+}
+
 describe('DailyBonusSheet', () => {
   beforeEach(() => {
     mocks.getStatus.mockReset();
@@ -358,7 +367,9 @@ describe('DailyBonusSheet', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[3]);
     await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 4));
     expect(await screen.findByText('Running For 24 Hours')).toBeTruthy();
-    expect(screen.getByText(/2× Daily Mission Diamonds For Another/)).toBeTruthy();
+    // The boost readout is live the moment it is claimed, not a tick later.
+    expect(noteText(container, 'Boost')).toContain('2× Daily Mission Diamonds For Another');
+    expect(noteText(container, 'Boost')).toMatch(/2[34]:\d\d:\d\d/);
     expect(mocks.toast.success).toHaveBeenCalledWith(
       'Mission Boost Is Live, 2× Diamonds For 24 Hours'
     );
@@ -379,10 +390,10 @@ describe('DailyBonusSheet', () => {
       },
     });
     mocks.claim.mockResolvedValue({ success: false, reason: 'boost_already_live' });
-    render(<DailyBonusSheet mode="inline" />);
+    const { container } = render(<DailyBonusSheet mode="inline" />);
     await screen.findByText('Double Daily Mission Diamonds For 24 Hours');
     expect(screen.getByText('01:02:05')).toBeTruthy();
-    expect(screen.getByText(/\+12 Diamonds So Far/)).toBeTruthy();
+    expect(noteText(container, 'Boost')).toContain('+12 Diamonds So Far');
     fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[3]);
     await waitFor(() =>
       expect(mocks.toast.error).toHaveBeenCalledWith('A Mission Boost Is Already Running')

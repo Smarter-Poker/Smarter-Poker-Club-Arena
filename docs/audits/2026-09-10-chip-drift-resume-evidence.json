@@ -142,5 +142,17 @@
     "full_money_suite": "Not passing on the inherited Stage 1 schema. Dependency/layout and fixture-provenance failures make it unsuitable for live defect or acceptance claims. Guarantee overlay behavior alone passed. The rebuy assertion remains unresolved.",
     "schema_export": "Read-only direct schema export timed out. No row data exported.",
     "dispatch": "A compatible engine deployment was already active; this continuation did not create a duplicate or force a restart."
+  },
+  "publication": {
+    "status": "local_commits_only_auto_review_blocked_push",
+    "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+    "branch": "agent/codex-chip-drift-resume/fix/phase-three-acceptance",
+    "prepared_head": "f264cb86581b398487246cb1173bbea3247ca438",
+    "reason": "Automatic approval review rejected pushing potentially sensitive repository contents to an external remote without explicit publication authorization.",
+    "remote_verified": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git",
+    "push_completed": false,
+    "pr_created": false,
+    "required_ci": "not started; branch was not pushed",
+    "safe_work_complete": "Diff reviewed, clean committed worktree, PostgreSQL behavior and related source tests passed. Await explicit authorization for the normal feature-branch push; do not bypass review."
   }
 }

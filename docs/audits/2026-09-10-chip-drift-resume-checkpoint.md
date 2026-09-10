@@ -49,3 +49,14 @@ active, and the deployed runtime was then verified directly.
 Owned worktree: `codex-chip-drift-resume`. Owned isolated PostgreSQL cluster:
 `/tmp/codex-chip-drift-cutover-e2iav203`, port 55473, local socket only.
 Do not modify the earlier chat's donor cluster or another agent's worktree.
+
+## Publication Block
+
+The corrections and evidence are committed locally. Automatic approval review
+rejected the normal feature-branch push, stating that potentially sensitive
+repository contents could be published without explicit authorization.
+The canonical remote was verified as
+`https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git`.
+No push or PR creation occurred. Request approval for that exact destination
+and the prepared `agent/codex-chip-drift-resume/fix/phase-three-acceptance` branch.
+Required remote CI has therefore not started. Do not bypass the rejection.

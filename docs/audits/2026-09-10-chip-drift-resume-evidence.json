@@ -144,15 +144,44 @@
     "dispatch": "A compatible engine deployment was already active; this continuation did not create a duplicate or force a restart."
   },
   "publication": {
-    "status": "local_commits_only_auto_review_blocked_push",
+    "status": "merged_and_published",
     "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
     "branch": "agent/codex-chip-drift-resume/fix/phase-three-acceptance",
     "prepared_head": "f264cb86581b398487246cb1173bbea3247ca438",
-    "reason": "Automatic approval review rejected pushing potentially sensitive repository contents to an external remote without explicit publication authorization.",
     "remote_verified": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git",
-    "push_completed": false,
-    "pr_created": false,
-    "required_ci": "not started; branch was not pushed",
-    "safe_work_complete": "Diff reviewed, clean committed worktree, PostgreSQL behavior and related source tests passed. Await explicit authorization for the normal feature-branch push; do not bypass review."
+    "push_completed": true,
+    "pr_created": true,
+    "required_ci": "34428840067 passed",
+    "safe_work_complete": "Reviewed, tested, merged through required CI, and verified on public and origin publication stamps.",
+    "pr": 4084,
+    "merge_commit": "566b66e07582fd97b77d90abfd20e9f2068ea941",
+    "release": {
+      "origin": {
+        "ca_sha": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+        "built_at": "2026-09-10T02:26:33Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34429315574",
+        "contains_PR4084": true
+      },
+      "rewrite": {
+        "ca_sha": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+        "built_at": "2026-09-10T02:26:33Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34429315574",
+        "contains_PR4084": true
+      }
+    },
+    "user_authorization": "2026-09-10: User explicitly authorized pushing and publishing this work and future repository pushes/publications, and instructed no repeat confirmation.",
+    "previous_rejection": "Automatic approval review rejected pushing potentially sensitive repository contents to an external remote without explicit publication authorization."
+  },
+  "next_correction": {
+    "control": "CA-03-09",
+    "source": "scripts/deploy/phase-three-strict-tournament-cutover.sql",
+    "status": "source_corrected_local_verification_passed",
+    "defect": "Current fn_move_tournament_player missing from manager-exclusive route fence; reproduced unmarked service admission.",
+    "behavioral_scenarios": 32,
+    "full_script_installation": "passed on owned isolated schema; no full financial acceptance claim",
+    "production_cutover_applied": false,
+    "evidence": "docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md"
   }
 }

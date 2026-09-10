@@ -28,3 +28,5 @@ rebuy/decline still work. Run
 `python3 scripts/dev/probe-tournament-seat-move-fence-pg17.py`.
 No actual seat mutation or financial transaction is substituted into this test.
 The complete corrected cutover script also installs and passes its postflight on the owned isolated schema. This is installation evidence, not complete financial acceptance. Re-read: yes.
+
+Root TypeScript passes. No engine/client executable code changed.

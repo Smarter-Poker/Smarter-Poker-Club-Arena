@@ -1,0 +1,82 @@
+{
+  "scenarios_passed": 16,
+  "actual_engine_receipts_consumed": 16,
+  "source_hashes": [
+    {
+      "source": "server/src/config/spinSpec.ts",
+      "sha256": "5a30cbcc3089da4ae49232d3c50afdcc5f8c787817d39cd9d7361205d1446c54"
+    },
+    {
+      "source": "server/src/tournament/SpinDrawReceipt.ts",
+      "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
+    }
+  ],
+  "cases": [
+    {
+      "stack": 300,
+      "multiplier": 2
+    },
+    {
+      "stack": 300,
+      "multiplier": 3
+    },
+    {
+      "stack": 300,
+      "multiplier": 4
+    },
+    {
+      "stack": 300,
+      "multiplier": 5
+    },
+    {
+      "stack": 300,
+      "multiplier": 10
+    },
+    {
+      "stack": 300,
+      "multiplier": 25
+    },
+    {
+      "stack": 300,
+      "multiplier": 50
+    },
+    {
+      "stack": 300,
+      "multiplier": 100
+    },
+    {
+      "stack": 1000,
+      "multiplier": 2
+    },
+    {
+      "stack": 1000,
+      "multiplier": 3
+    },
+    {
+      "stack": 1000,
+      "multiplier": 4
+    },
+    {
+      "stack": 1000,
+      "multiplier": 5
+    },
+    {
+      "stack": 1000,
+      "multiplier": 10
+    },
+    {
+      "stack": 1000,
+      "multiplier": 25
+    },
+    {
+      "stack": 1000,
+      "multiplier": 50
+    },
+    {
+      "stack": 1000,
+      "multiplier": 100
+    }
+  ],
+  "scope": "actual tier rules, funded draw, frozen projection and engine receipt consumption",
+  "production_writes": false
+}

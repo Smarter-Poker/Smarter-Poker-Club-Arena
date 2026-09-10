@@ -73,6 +73,7 @@ vi.mock('../../engine/horseDecision/index.js', () => ({
 }));
 
 import { logHandHistory, buildHandHistoryTiers } from './handHistory.js';
+import { persistedKnockoutEvidence } from '../../tournament/bountyAttributionGate.js';
 
 const GLOBAL_HAND = 1_400_001;
 const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -738,5 +739,52 @@ describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
     expect(tiers.raw_events).toEqual([]);
     expect(tiers.player_summaries).toEqual([]);
     expect(tiers.audit_log.player_count).toBe(0);
+  });
+});
+
+describe('tournament bounty history keeps each winning pot', () => {
+  it('persists the exact side-pot winner even when the paid total is merged into the main pot', async () => {
+    const input = {
+      ...atomicParams(),
+      handId: historyId,
+      winners: [{ userId: 'u1', amount: 600, potIndex: 0 }],
+      players: [
+        { userId: 'u1', username: 'Winner', seat: 1, stack: 600, cards: [] },
+        { userId: 'u2', username: 'Short', seat: 2, stack: 0, cards: [] },
+        { userId: 'u3', username: 'Busted', seat: 3, stack: 0, cards: [] },
+      ],
+      pots: [
+        { index: 0, amount: 300, eligible: ['u1', 'u2', 'u3'] },
+        { index: 1, amount: 300, eligible: ['u1', 'u3'] },
+      ],
+      perPotAwards: [
+        { userId: 'u1', amount: 300, potIndex: 0, low: false },
+        { userId: 'u1', amount: 300, potIndex: 1, low: false },
+      ],
+    };
+    atomicRpcResults = [
+      {
+        data: { success: true, atomic_hand_commit: true, history_id: historyId, replay: false },
+        error: null,
+      },
+    ];
+    await logHandHistory(input);
+    const row = rpcCalls[0].args.p_hand_row as any;
+    expect(row.winners).toEqual(input.winners);
+    expect(row.pots[1].awards).toEqual([input.perPotAwards[1]]);
+    const result = persistedKnockoutEvidence(
+      {
+        success: true,
+        table_id: input.tableId,
+        hand_number: input.handNumber,
+        written: { u1: 600, u2: 0, u3: 0 },
+      },
+      row,
+      'u3'
+    );
+    expect(result).toMatchObject({
+      ready: true,
+      attribution: { potIndex: 1, claimants: [{ userId: 'u1', weight: 1 }] },
+    });
   });
 });

@@ -187,7 +187,7 @@ describe('every payout site shares the one rounding rule', () => {
     // top-up disagreed with the payment it was adjusting, wrote its own number
     // into `prize`, and left the row permanently at odds with
     // fn_tournament_payout_reconcile.
-    expect(code(ELIM)).toMatch(/computePlacePrize\(\s*finalPrizePool\s*,/);
+    expect(code(ELIM)).toMatch(/computePlacePrize\(\s*ladderPool\s*,/);
     expect(code(ELIM)).not.toMatch(/finalPrizePool\s*\*\s*payoutEntry\.percentage/);
   });
 

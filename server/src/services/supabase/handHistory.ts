@@ -256,6 +256,15 @@ export async function logHandHistory(params: {
    * fold-around hand look the same to a reader.
    */
   pots?: { index: number; amount: number; eligible: string[] }[];
+  /** Exact tournament pot/half awards; merged winner totals lose later pots. */
+  perPotAwards?: {
+    userId: string;
+    amount: number;
+    potIndex: number;
+    low: boolean;
+    board?: number;
+  }[];
+
   /**
    * THE BOMB POT'S OWN BREAKDOWN, WRITTEN WITH THE HAND AND NOT AFTER IT.
    *
@@ -471,7 +480,24 @@ export async function logHandHistory(params: {
     // Dan section 29. NULL rather than [] on a hand with no recorded
     // breakdown, so "this hand predates the column" and "this hand had one
     // uncontested pot" are not the same value to attributeKnockout().
-    pots: params.pots?.length ? params.pots : null,
+    pots: params.pots?.length
+      ? params.pots.map((pot) => ({
+          ...pot,
+          ...(params.perPotAwards?.length
+            ? {
+                awards: params.perPotAwards
+                  .filter((award) => award.potIndex === pot.index)
+                  .map((award) => ({
+                    userId: award.userId,
+                    amount: award.amount,
+                    potIndex: award.potIndex,
+                    low: award.low,
+                    ...(award.board == null ? {} : { board: award.board }),
+                  })),
+              }
+            : {}),
+        }))
+      : null,
     players: params.players,
     actions: params.actions,
     hole_cards: holeCardsPayload,

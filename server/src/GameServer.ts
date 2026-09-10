@@ -1723,6 +1723,8 @@ export class GameServer {
    * exactly the remainder rather than for a fresh five minutes.
    */
   private breakEndsAt = 0;
+  private breakCountdownStarted = false;
+  private synchronizedBreakGeneration = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
    * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
@@ -3922,6 +3924,8 @@ export class GameServer {
      * claim the window immediately using the worst case (grace + break) and
      * tighten it below once the real countdown begins.
      */
+    this.synchronizedBreakGeneration++;
+    this.breakCountdownStarted = false;
     this.breakEndsAt =
       Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
 
@@ -3950,19 +3954,21 @@ export class GameServer {
         `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
       );
     } else {
-      console.warn(
-        `[GameServer] Last hand did not land on every table within ${Math.round(lastHandMs / 1000)}s - starting the break anyway so play resumes near the hour`
-      );
+      // Shutdown/fencing can end the drain wait. It cannot prove a hand ended.
+      return;
     }
 
     // The countdown players see begins NOW, not at :55. Tighten the window
     // claimed above to the real end time, so a tournament starting during the
     // break is held for exactly as long as everyone else.
     this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
+    this.breakCountdownStarted = true;
+    const countdownEndsAt = this.breakEndsAt;
+    const countdownParticipants = new Set([...breakEngines, ...this.tournamentEngines.values()]);
 
-    for (const tm of breakEngines) {
+    for (const tm of countdownParticipants) {
       try {
-        await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
+        await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS, countdownEndsAt);
       } catch (err: any) {
         reportError(err, 'GameServer.Failed_to_begin_break_countdown');
       }
@@ -3982,13 +3988,16 @@ export class GameServer {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;
     }
-    this.breakResumeTimer = setTimeout(() => {
-      this.breakResumeTimer = null;
-      this.launchServerLifecycleJob(
-        this.resumeSynchronizedBreak(breakEngines, generation),
-        'GameServer.synchronized_break_resume_failed'
-      );
-    }, GameServer.BREAK_DURATION_MS);
+    this.breakResumeTimer = setTimeout(
+      () => {
+        this.breakResumeTimer = null;
+        this.launchServerLifecycleJob(
+          this.resumeSynchronizedBreak(breakEngines, generation),
+          'GameServer.synchronized_break_resume_failed'
+        );
+      },
+      Math.max(0, countdownEndsAt - Date.now())
+    );
     this.breakResumeTimer.unref?.();
   }
 
@@ -4000,6 +4009,7 @@ export class GameServer {
     // Close the window FIRST. Anything starting from here on is not in a
     // break and must not be held.
     this.breakEndsAt = 0;
+    this.breakCountdownStarted = false;
     console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
     // Resume everything on break, not just the :55 snapshot - a tournament
     // that started during the break was held by holdIfBreakIsRunning and is
@@ -4022,7 +4032,11 @@ export class GameServer {
    * to know this.
    */
   remainingBreakMs(): number {
-    return this.breakEndsAt > 0 ? Math.max(0, this.breakEndsAt - Date.now()) : 0;
+    if (this.breakEndsAt <= 0) return 0;
+    if (!this.breakCountdownStarted) {
+      return TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+    }
+    return Math.max(0, this.breakEndsAt - Date.now());
   }
 
   /**
@@ -4037,6 +4051,7 @@ export class GameServer {
   private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
     const remaining = this.remainingBreakMs();
     if (remaining <= 1000) return;
+    const breakGeneration = this.synchronizedBreakGeneration;
     // Same single gate as triggerSynchronizedBreak — a Spin or Heads-Up that
     // fills at :57 must sit on the break screen with everyone else, not open
     // its first level alone.
@@ -4046,28 +4061,38 @@ export class GameServer {
         `[GameServer] Tournament started during the break - holding it for the remaining ${Math.round(remaining / 1000)}s`
       );
       await tm.pauseForBreak(remaining);
-      await tm.beginBreakCountdown(remaining);
+      // This pause may finish after its owner released the field. Reconcile
+      // only that owner; an older completion cannot lift a newer break.
+      if (this.synchronizedBreakGeneration !== breakGeneration) return;
+      const remainingAfterPause = this.remainingBreakMs();
+      if (remainingAfterPause <= 0) {
+        await tm.resumeFromBreak();
+        return;
+      }
+      if (this.breakCountdownStarted) {
+        await tm.beginBreakCountdown(remainingAfterPause, this.breakEndsAt);
+      }
     } catch (err: any) {
       reportError(err, 'GameServer.hold_new_tournament_for_break');
     }
   }
 
   /**
-   * Poll until every table of every supplied tournament has finished the hand
-   * that was in flight, or until the grace window expires.
-   *
-   * Returns true if everyone parked, false if the grace window won. A wedged
-   * table must never hold the whole platform's break open — play resuming near
-   * the hour matters more than one stuck table.
+   * Wait until every participating hand has finished. The old grace estimate
+   * is not authority to start a break while an accepted hand is still active.
+   * Return false only when this server generation stops owning the drain.
    */
   private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
-    const deadline = Date.now() + TournamentManager.LAST_HAND_GRACE_MS;
-    while (Date.now() < deadline) {
-      if (!this.running) return false;
-      if (managers.every((tm) => tm.areAllTablesParked())) return true;
+    const generation = this.lifecycleGeneration;
+    while (this.running && this.directAdmissionIsCurrent(generation)) {
+      const participants = new Set(managers);
+      for (const manager of this.tournamentEngines.values()) {
+        if (manager.isRunning() && manager.takesSynchronizedBreaks()) participants.add(manager);
+      }
+      if ([...participants].every((tm) => tm.areAllTablesParked())) return true;
       await this.sleep(500);
     }
-    return managers.every((tm) => tm.areAllTablesParked());
+    return false;
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

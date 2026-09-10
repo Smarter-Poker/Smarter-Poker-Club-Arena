@@ -583,6 +583,15 @@ export class MaintenanceBreak {
   static readonly RESTORE_RETRY_MS = 1500;
 
   /**
+   * The longest freeze `fn_thaw_platform` will accept. Its own guard reads
+   * `p_frozen_seconds > 900 -> implausible_frozen_seconds`, on the reasoning
+   * that shifting every deadline on the platform by a wrong number is strictly
+   * worse than shifting by nothing. Checked here too so the refusal is a
+   * legible log line rather than a silent `ok: false` nobody reads.
+   */
+  static readonly MAX_THAWABLE_SECONDS = 900;
+
+  /**
    * Rotate a persisted row to this exact process generation.
    *
    * A lost HTTP response may hide a committed token rotation, just as it may
@@ -625,6 +634,181 @@ export class MaintenanceBreak {
 
     if (claimError) throw claimError;
     return null;
+  }
+
+  /**
+   * THE CLOCK IS THE LAST WITNESS (2026-09-08, from the 14:00 and 15:00 breaks
+   * that both "did not pass").
+   *
+   * `restoreFromStore` decided whether this process stood inside a break by
+   * reading one row, and when that row was missing or unreadable it returned
+   * and the fleet dealt. On 2026-09-08 the deploy cut the engine over INSIDE
+   * two consecutive breaks - `engine_leader.acquired_at` 13:55:48 and
+   * 14:56:33, both mid-window - and both replacements came up with nothing to
+   * read. Play resumed at 13:56:01 and at 14:57, four and three minutes before
+   * the hour the countdown on every screen was pointing at. 945 hands went out
+   * inside the first one across 111 tables, no thaw ran in either, and
+   * `engine_maintenance_break_log` recorded neither break - so the only thing
+   * that ever noticed was the scorecard, twelve minutes later.
+   *
+   * The row was never the only evidence available. CLAUDE.md 13's timeline is
+   * fixed and carries no time zone - announce at :53, park at :55, resume at
+   * :00 - so a process booting at 14:56:33 can tell from the wall clock alone
+   * that it is standing in the middle of a break. `msUntilNextAnnouncement`
+   * has always derived the NEXT window this way. This derives the CURRENT one.
+   *
+   * It returns null everywhere outside [:53, :00), and the window it returns
+   * can never be longer than LAST_HAND_LEAD_MS + BREAK_DURATION_MS because
+   * both ends are anchored to the CURRENT hour's :53. That is deliberate, and
+   * it is why this does not ask for "the next :00": the deleted
+   * `nextHourBoundary()` did exactly that and would have parked the whole
+   * fleet for sixty minutes on a boot at :00:00.000. A false positive here is
+   * a fleet-wide freeze, so the derivation has to have no boundary case at
+   * all, and anchoring to the announcement has none.
+   */
+  private scheduledBreakWindowAt(at: number): { announcedAt: number; endsAt: number } | null {
+    const announceMinute =
+      MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
+    // UTC setters, the same as `msUntilNextAnnouncement` (#4063): in a
+    // fractional-hour zone a LOCAL :53 is not the deployment window's :53, and
+    // the two derivations of the same timeline must never disagree.
+    const announced = new Date(at);
+    announced.setUTCMinutes(announceMinute, 0, 0);
+    const announcedAt = announced.getTime();
+    const endsAt =
+      announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
+    if (at < announcedAt || at >= endsAt) return null;
+    return { announcedAt, endsAt };
+  }
+
+  /**
+   * Give back the frozen minutes of a break that ENDED while nobody was alive
+   * to end it (2026-09-08).
+   *
+   * `end()` is the only caller of the thaw, and `end()` only ever runs on a
+   * process still holding the break when its own timer fires. So when the
+   * engine that declared a break dies inside it and its replacement arrives
+   * after the hour, this path deleted the row, started dealing, and the frozen
+   * minutes were never handed back to anything.
+   *
+   * That is not a reporting gap. `fn_thaw_platform` is what moves every
+   * in-flight absolute deadline forward by the frozen duration - sit-out
+   * clocks, seat holds, rebuy prompts, blind levels, bomb-pot timers,
+   * reconnect windows. Skipping it burns all of them, for every player who was
+   * mid-decision at :55. On 2026-09-08 it was skipped three hours running:
+   * 14:00, 15:00 and 16:00 all recorded `thaw_ran: false`, and by 16:00 the
+   * break was otherwise perfect - zero hands in the window, the fleet held
+   * from 15:54 to 16:00 - with the missing thaw the only remaining fault.
+   *
+   * SAFE ON A BREAK SOMEBODY ELSE MAY ALREADY HAVE THAWED.
+   * `engine_maintenance_thaws` is keyed `PRIMARY KEY (freeze_started_at)`, and
+   * the function claims that row with `ON CONFLICT DO NOTHING`, returning
+   * `already_thawed` once it is complete. A second call for the same freeze
+   * therefore cannot shift the platform's clocks twice. This was read out of
+   * the deployed function before relying on it, not assumed.
+   *
+   * ONLY A COUNTDOWN IS EVIDENCE. A `last_hand` row that expired never began
+   * its five minutes, so there is no frozen interval to return and this
+   * declines. Inventing one would shift every deadline on the platform for a
+   * freeze that never ran.
+   */
+  private async thawAnAbandonedBreak(
+    abandoned: PersistedMaintenanceBreak,
+    endsAt: number
+  ): Promise<void> {
+    if (!this.deps.thaw) return;
+    if (abandoned.phase !== 'counting_down' || !abandoned.breakStartedAt) return;
+
+    const startedAt = abandoned.breakStartedAt;
+    const frozenSeconds = Math.round((endsAt - startedAt) / 1000);
+    if (frozenSeconds <= 0 || frozenSeconds > MaintenanceBreak.MAX_THAWABLE_SECONDS) {
+      console.warn(
+        `[MaintenanceBreak] an abandoned break claims ${frozenSeconds}s of freeze, outside what ` +
+          'fn_thaw_platform accepts. Leaving every clock alone rather than shifting the whole ' +
+          'platform by a number nobody can defend.'
+      );
+      return;
+    }
+
+    /* The same marker end() sets, so engines built during the rehydration that
+       follows still get their reconnect deadlines shifted. */
+    completeReconnectFreeze(startedAt, frozenSeconds * 1000);
+    try {
+      await this.deps.thaw(startedAt, frozenSeconds);
+      console.warn(
+        `[MaintenanceBreak] thawed a break nobody was alive to end (+${frozenSeconds}s) - the ` +
+          'engine that declared it did not survive to its own resume.'
+      );
+    } catch (err) {
+      /* end() makes the same call: a failed thaw costs the clocks their
+         minutes, but refusing to clear the row would leave the platform
+         frozen, which is strictly worse. */
+      console.error('[MaintenanceBreak] THAW FAILED for an abandoned break', err);
+    }
+  }
+
+  /**
+   * Hold the fleet for the rest of a break the clock says is running, when
+   * there was no durable row to adopt.
+   *
+   * NEVER FAIL OPEN ON THE CLOCK. Failing open on the ROW is still right - see
+   * the retry loop in restoreFromStore - because an unreadable database must
+   * not become a platform outage. Failing open on the SCHEDULE is what dealt
+   * 945 hands under a break screen, and there is no blip to blame for that
+   * one: the engine knew what time it was.
+   *
+   * `breakStartedAt` is `now()`, NOT the scheduled :55, and that is the single
+   * place this deliberately differs from the adoption path. An adopted row is
+   * evidence that a break was declared and the platform held from :55; a
+   * derived break has no such evidence - the engine may simply have been down
+   * across the announcement, in which case nothing was ever frozen.
+   * `fn_thaw_platform` shifts every in-flight deadline by the duration it is
+   * handed, so claiming a freeze that cannot be evidenced would move every
+   * clock on the platform on an assumption, on every cold boot inside the
+   * window. This claims only what this process actually held. The END is still
+   * the scheduled hour, so nothing resumes early either way.
+   */
+  private async enterBreakFromTheClock(generation: number, because: string): Promise<void> {
+    if (this.isActive()) return;
+    const window = this.scheduledBreakWindowAt(this.now());
+    if (!window) return;
+    const remaining = window.endsAt - this.now();
+    if (remaining <= 1000) return;
+
+    this.announcedAt = window.announcedAt;
+    this.phase = 'counting_down';
+    this.breakStartedAt = this.now();
+    this.breakEndsAt = window.endsAt;
+    this.resumeWaves = null;
+    setMaintenanceFrozen(true);
+
+    console.warn(
+      `[MaintenanceBreak] ${because}, but the clock says a break is running - ` +
+        `parking every table until the hour on the schedule alone. ` +
+        `${Math.round(remaining / 1000)}s remaining.`
+    );
+
+    this.parkEveryEngine();
+
+    const derived = this.persistedState();
+    try {
+      await this.persist(derived);
+    } catch (error) {
+      /* The same call beginCountdown makes, for the same reason: a break
+         nobody else can see is worse than no break, because the database half
+         stays disarmed - fn_platform_frozen reads this row - while the engine
+         half holds. Resume, and let the next hour try. */
+      console.error(
+        '[MaintenanceBreak] could not durably declare the clock-derived break; cancelling it',
+        error
+      );
+      await this.cancelBreakAfterPersistenceFailure(false, derived);
+      return;
+    }
+    if (!this.lifecycleIsCurrent(generation)) return;
+
+    this.broadcast('counting_down');
+    this.armEndTimer();
   }
 
   private async restoreFromStore(generation: number): Promise<void> {
@@ -670,6 +854,8 @@ export class MaintenanceBreak {
     if (!saved) {
       if (releaseBoundary !== null) {
         this.holdCompletedReleaseCertificate(releaseBoundary, generation);
+      } else {
+        await this.enterBreakFromTheClock(generation, 'there was no persisted break to adopt');
       }
       return;
     }

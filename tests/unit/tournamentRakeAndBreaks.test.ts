@@ -144,10 +144,12 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
     expect(waitAt).toBeLessThan(timerAt);
   });
 
-  it('a wedged table cannot hold the break open forever', () => {
-    const waiter = GAME_SERVER.slice(GAME_SERVER.indexOf('private async waitForAllTablesParked'));
-    expect(waiter).toMatch(/LAST_HAND_GRACE_MS/);
-    expect(waiter).toMatch(/deadline/);
+  it('the break waits for its hands while this server owns the drain', () => {
+    const start = GAME_SERVER.indexOf('private async waitForAllTablesParked');
+    const waiter = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  }\n', start) + 5);
+    expect(waiter).toContain('while (this.running && this.directAdmissionIsCurrent(generation))');
+    expect(waiter).toContain('return false;');
+    expect(waiter).not.toMatch(/Date\.now\(\)\s*</);
   });
 
   it('all-tables-parked reads the real between-hands park signal', () => {

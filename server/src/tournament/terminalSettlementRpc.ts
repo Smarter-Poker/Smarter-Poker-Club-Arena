@@ -1,4 +1,5 @@
 import { supabase } from '../services/supabase.js';
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import {
   verifyTournamentCompletionReceipt,
   type TournamentTerminalSettlementMode,
@@ -22,6 +23,7 @@ export class TerminalSettlementOutcomeUnknownError extends Error {
 interface TerminalSettlementRetryOptions {
   attempts?: number;
   wait?: (delayMs: number) => Promise<void>;
+  dealProposal?: { proposalId: string; revision: string };
 }
 
 const defaultWait = (delayMs: number): Promise<void> =>
@@ -62,6 +64,31 @@ export async function requestTournamentTerminalReceipt(
   observedWinnerId: string | null,
   options: TerminalSettlementRetryOptions = {}
 ): Promise<VerifiedTournamentCompletionReceipt> {
+  const dealProposal = options.dealProposal ? { ...options.dealProposal } : undefined;
+  if (settlementMode === 'final_table_deal') {
+    if (
+      !dealProposal ||
+      typeof dealProposal.proposalId !== 'string' ||
+      !UUID.test(dealProposal.proposalId) ||
+      typeof dealProposal.revision !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(dealProposal.revision)
+    ) {
+      throw new TerminalSettlementRefusedError(
+        'Final-table settlement requires exact proposal consent'
+      );
+    }
+  } else if (dealProposal) {
+    throw new TerminalSettlementRefusedError(
+      'Proposal consent cannot change ordinary place settlement'
+    );
+  }
+  const proposalIdentityIsExact = (raw: unknown): boolean => {
+    if (!dealProposal) return true;
+    const value = record(raw);
+    return (
+      value.proposal_id === dealProposal.proposalId && value.revision === dealProposal.revision
+    );
+  };
   const attempts = Math.max(1, Math.min(8, Math.trunc(options.attempts ?? 5)));
   const wait = options.wait ?? defaultWait;
   const request = {
@@ -69,11 +96,20 @@ export async function requestTournamentTerminalReceipt(
     p_observed_winner_id: observedWinnerId,
     p_settlement_mode: settlementMode,
   };
+  const proposalRequest = dealProposal
+    ? {
+        ...request,
+        p_proposal_id: dealProposal.proposalId,
+        p_revision: dealProposal.revision,
+      }
+    : null;
   let lastFailure = 'terminal settlement returned no receipt';
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const { data, error } = await supabase.rpc('fn_complete_tournament_terminal', request);
+      const { data, error } = proposalRequest
+        ? await supabase.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
+        : await supabase.rpc('fn_complete_tournament_terminal', request);
       if (!error) {
         const receipt = verifyTournamentCompletionReceipt(
           data,
@@ -81,7 +117,7 @@ export async function requestTournamentTerminalReceipt(
           settlementMode,
           observedWinnerId
         );
-        if (receipt) return receipt;
+        if (receipt && proposalIdentityIsExact(data)) return receipt;
         lastFailure = 'terminal settlement returned an invalid stored receipt';
       } else {
         lastFailure = errorMessage(error);
@@ -98,11 +134,9 @@ export async function requestTournamentTerminalReceipt(
   // resolver acquires the exact global terminal lock first, so it waits for
   // that transaction and only then reports committed receipt or proven miss.
   try {
-    const { data, error } = await supabase.rpc('fn_resolve_tournament_terminal_outcome', {
-      p_tournament_id: tournamentId,
-      p_observed_winner_id: observedWinnerId,
-      p_settlement_mode: settlementMode,
-    });
+    const { data, error } = proposalRequest
+      ? await supabase.rpc('fn_resolve_tournament_terminal_proposal_outcome', proposalRequest)
+      : await supabase.rpc('fn_resolve_tournament_terminal_outcome', request);
     if (error) {
       lastFailure = `${lastFailure}; serialized outcome check failed: ${errorMessage(error)}`;
     } else {
@@ -110,7 +144,8 @@ export async function requestTournamentTerminalReceipt(
       const identityIsExact =
         outcome.ok === true &&
         outcome.tournament_id === tournamentId &&
-        outcome.mode === settlementMode;
+        outcome.mode === settlementMode &&
+        proposalIdentityIsExact(outcome);
       if (
         identityIsExact &&
         outcome.terminal_committed === true &&
@@ -123,7 +158,7 @@ export async function requestTournamentTerminalReceipt(
           settlementMode,
           observedWinnerId
         );
-        if (receipt) return receipt;
+        if (receipt && proposalIdentityIsExact(outcome.receipt)) return receipt;
         lastFailure = `${lastFailure}; serialized committed receipt was invalid`;
       } else if (
         identityIsExact &&

@@ -133,8 +133,12 @@ describe('terminal means complete, not merely ok', () => {
       /Boolean\(t\.satellite_target_id \|\| t\.satellite_target\)/
     );
     expect(poll.slice(0, launch)).toMatch(/if \(isSatelliteDeal\) return/);
-    expect(code(sliceMethod(SOURCE, 'private async completeFinalTableDealAtBoundary'))).toMatch(
-      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null\s*\)/
+    const boundary = code(sliceMethod(SOURCE, 'private async completeFinalTableDealAtBoundary'));
+    expect(boundary).toMatch(
+      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null,/
+    );
+    expect(boundary).toContain(
+      'dealProposal: { proposalId: consensus.proposalId, revision: consensus.revision }'
     );
   });
 });

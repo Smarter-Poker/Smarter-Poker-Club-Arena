@@ -26,7 +26,7 @@ describe('a final-table deal is settled only from a physically parked table', ()
     const authority = check.indexOf('authoritativeFinalTableDealEngine()');
     const latch = check.indexOf('this.finalTableDealHandled = true', authority);
     const boundary = check.indexOf(
-      'completeFinalTableDealAtBoundary(tableId, engine, tableSize)',
+      'completeFinalTableDealAtBoundary(tableId, engine, tableSize, consensus)',
       latch
     );
     expect(authority).toBeGreaterThanOrEqual(0);
@@ -41,7 +41,7 @@ describe('a final-table deal is settled only from a physically parked table', ()
     );
     const park = boundary.indexOf('parkForTerminalCloseout(');
     const finalInputs = boundary.indexOf(".select('user_id, chips')", park);
-    const votes = boundary.indexOf(".from('tournament_deal_votes')", finalInputs);
+    const votes = boundary.indexOf('this.readFinalTableDealConsensus(alive)', finalInputs);
     const money = boundary.indexOf('requestTournamentTerminalReceipt(', votes);
     expect(park).toBeGreaterThanOrEqual(0);
     expect(finalInputs).toBeGreaterThan(park);

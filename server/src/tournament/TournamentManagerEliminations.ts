@@ -9,6 +9,7 @@
  */
 
 import nodeCrypto from 'node:crypto';
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -51,6 +52,14 @@ import {
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
+
+interface FinalTableDealConsensus {
+  proposalId: string | null;
+  revision: string | null;
+  voters: Set<string>;
+  required: number;
+  ready: boolean;
+}
 
 interface QueuedBountyReveal {
   awardId: string;
@@ -3662,9 +3671,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /**
    * FINAL TABLE DEAL (2026-08-22 parity). When the tournament opted in
    * (final_table_deal_enabled) and the field is down to one table
-   * (remaining <= table_size), every remaining player may vote a deal via
-   * tournament_deal_votes (RLS restricts inserts to seated, alive players of a
-   * RUNNING deal-enabled tournament). Unanimity executes the one terminal
+   * (remaining <= table_size), every remaining player may accept the exact current proposal through
+   * the versioned deal authority. Proposal-bound unanimity executes the one terminal
    * receipt authority. The database preserves earned structure places,
    * divides the exact remainder by the parked stacks, settles every component,
    * closes every source seat/table, and commits COMPLETED as one transaction.
@@ -3712,6 +3720,64 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
   }
 
+  /** Read only consent attached to the database's exact current proposal. */
+  private async readFinalTableDealConsensus(
+    alive: ReadonlyArray<{ user_id: string }>
+  ): Promise<FinalTableDealConsensus | null> {
+    let result;
+    try {
+      result = await supabase.rpc('fn_get_tournament_deal_consensus', {
+        p_tournament_id: this.tournamentId,
+      });
+    } catch {
+      // No terminal writer has run. A failed consent read proves admission
+      // unavailable and must release a parked dealer through the refusal path.
+      return null;
+    }
+    const { data, error } = result;
+    if (
+      error ||
+      !data ||
+      typeof data !== 'object' ||
+      Array.isArray(data) ||
+      data.ok !== true ||
+      typeof data.ready !== 'boolean' ||
+      !Number.isSafeInteger(data.required) ||
+      data.required !== alive.length ||
+      data.required < 2 ||
+      !Array.isArray(data.voter_ids)
+    )
+      return null;
+
+    if (alive.some((player) => typeof player.user_id !== 'string' || !UUID.test(player.user_id)))
+      return null;
+    const aliveIds = new Set(alive.map((player) => player.user_id.toLowerCase()));
+    if (aliveIds.size !== alive.length) return null;
+    if (data.voter_ids.some((id: unknown) => typeof id !== 'string' || !UUID.test(id))) return null;
+    const voters = new Set<string>(data.voter_ids.map((id: string) => id.toLowerCase()));
+    if (voters.size !== data.voter_ids.length || [...voters].some((id) => !aliveIds.has(id)))
+      return null;
+
+    const hasProposal =
+      typeof data.proposal_id === 'string' &&
+      UUID.test(data.proposal_id) &&
+      typeof data.revision === 'string' &&
+      /^[0-9a-f]{64}$/.test(data.revision);
+    if (
+      !hasProposal &&
+      (data.proposal_id !== null || data.revision !== null || voters.size !== 0 || data.ready)
+    )
+      return null;
+    if (data.ready && voters.size !== data.required) return null;
+    return {
+      proposalId: hasProposal ? data.proposal_id.toLowerCase() : null,
+      revision: hasProposal ? data.revision : null,
+      voters,
+      required: data.required,
+      ready: data.ready,
+    };
+  }
+
   /**
    * Once unanimity is observed, await the engine-owned no-new-hand gate in
    * this admission. No poll or timer is allowed to infer a physical boundary.
@@ -3754,21 +3820,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('status', 'playing');
       if (aliveError || !alive || alive.length < 2 || alive.length > tableSize) return true;
 
-      const { data: votes, error: votesError } = await supabase
-        .from('tournament_deal_votes')
-        .select('user_id')
-        .eq('tournament_id', this.tournamentId);
-      if (votesError || !votes) return true;
-
-      const voters = new Set(votes.map((vote: { user_id: string }) => vote.user_id));
+      const consensus = await this.readFinalTableDealConsensus(alive);
+      if (!consensus) return true;
+      const { voters } = consensus;
       if (voters.size !== this.lastDealVoteCount) {
         this.lastDealVoteCount = voters.size;
         await this.broadcast('final_table_deal_votes', {
           votes: voters.size,
-          required: alive.length,
+          required: consensus.required,
+          proposal_id: consensus.proposalId,
+          revision: consensus.revision,
         });
       }
-      if (!alive.every((player: { user_id: string }) => voters.has(player.user_id))) return true;
+      if (!consensus.ready) return true;
       if (isMaintenanceFrozen() || this.isOnBreak() || this.handForHandActive) return false;
 
       const held = await this.authoritativeFinalTableDealEngine();
@@ -3778,7 +3842,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.tournamentFinished = true;
       const { tableId, engine } = held;
       try {
-        return await this.completeFinalTableDealAtBoundary(tableId, engine, tableSize);
+        return await this.completeFinalTableDealAtBoundary(tableId, engine, tableSize, consensus);
       } catch (err) {
         const committedReceipt =
           err instanceof TerminalSettlementCommittedError
@@ -3841,7 +3905,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async completeFinalTableDealAtBoundary(
     tableId: string,
     engine: ServerTableEngine,
-    tableSize: number
+    tableSize: number,
+    expectedConsensus: FinalTableDealConsensus
   ): Promise<boolean> {
     const parked = await engine.parkForTerminalCloseout(
       TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS
@@ -3880,16 +3945,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       throw new TerminalSettlementRefusedError('Final-table deal live stack snapshot is invalid');
     }
 
-    const { data: votes, error: votesError } = await supabase
-      .from('tournament_deal_votes')
-      .select('user_id')
-      .eq('tournament_id', this.tournamentId);
-    const voters = new Set((votes ?? []).map((vote: { user_id: string }) => vote.user_id));
+    const consensus = await this.readFinalTableDealConsensus(alive);
     if (
-      votesError ||
-      !votes ||
-      voters.size !== alive.length ||
-      !alive.every((player: { user_id: string }) => voters.has(player.user_id)) ||
+      !consensus?.ready ||
+      !consensus.proposalId ||
+      !consensus.revision ||
+      consensus.proposalId !== expectedConsensus.proposalId ||
+      consensus.revision !== expectedConsensus.revision ||
       isMaintenanceFrozen() ||
       this.isOnBreak() ||
       this.handForHandActive ||
@@ -3903,7 +3965,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const receipt = await requestTournamentTerminalReceipt(
       this.tournamentId,
       'final_table_deal',
-      null
+      null,
+      { dealProposal: { proposalId: consensus.proposalId, revision: consensus.revision } }
     );
     const aliveUsers = new Set(alive.map((player: { user_id: string }) => player.user_id));
     const payoutShapeIsExact =

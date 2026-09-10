@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Engine Deals Bind The Current Proposal
+
+Final-table deal admission previously counted unversioned tournament vote rows before and after parking, then called an unversioned terminal writer. Both reads now require the exact current proposal, roster and revision. Terminal retries and the serialized outcome resolver retain that same proposal identity and reject mismatched receipts. The prepared database RPC contract is confirmed; SQL deployment must precede this engine integration. The focused suite passes 154 tests in nine files, and full server TypeScript passes. Re-read: yes. No production write or deployment in this lane; native composition and Phase 3 acceptance remain open. See docs/changelog/2026-09-10-engine-deals-bind-current-proposal.md.
+
 ## 2026-09-10: Final Deal Proposal Records Ordered Rollout Gates
 
 Documentation-only proposal records SQL expansion, compatible engine/client verification, then owner-controlled activation for versioned final-deal consent. It specifies a configurable server-owned 120-second review deadline and requires current M5, lease, native rollback/replay and production identity evidence. No SQL, engine, client or production state changed; Phase 3 remains open. Re-read: yes. See docs/audits/2026-09-10-final-deal-rollout-gates.md.

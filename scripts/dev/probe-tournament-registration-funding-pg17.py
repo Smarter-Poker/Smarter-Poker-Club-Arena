@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Rehearse installed pre-start funding and its corrected club-wallet receipt.
+"""Rehearse installed registration, rebuy, re-entry and add-on funding.
 
 Creates its own local PostgreSQL 17 cluster; accepts no database URL.
 Use --cross-club --baseline to reproduce the old receipt failure.
-Fixture limits are in fixtures/registration-funding/README.md.
+Use --purchases-only for the rebuy/re-entry/add-on groups.
+Fixture limits are in fixtures/registration-funding/README.md and
+fixtures/tournament-purchase-funding/README.md.
 """
 from pathlib import Path
 import concurrent.futures
@@ -163,7 +165,10 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses=','-w','start'])
         started=True
 
-        if '--cross-club' in sys.argv:
+        if '--purchases-only' in sys.argv:
+            from tournament_purchase_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--cross-club' in sys.argv:
             cross_club()
         else:
             fresh('single')
@@ -203,6 +208,8 @@ with (root/'results.log').open('w') as log:
             check('registration waiting behind pool closure rechecks eligibility without charging')
 
             cross_club()
+            from tournament_purchase_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
 
     finally:
         if started:

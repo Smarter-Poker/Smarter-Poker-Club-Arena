@@ -197,6 +197,34 @@ describe('an engine that boots inside the window with nothing to adopt', () => {
     expect(declared, 'the clock-derived break was never written down').not.toBeNull();
     expect(declared?.phase).toBe('counting_down');
     expect(declared?.breakEndsAt).toBe(HOUR);
+    expect(mb.snapshot().durableConfirmed).toBe(true);
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
+  it('keeps the fleet frozen until exact absence is proved when the declaration is ambiguous', async () => {
+    vi.setSystemTime(CUTOVER);
+    const { mb, engines, store, thaws } = build();
+    vi.spyOn(store, 'save').mockRejectedValue(new Error('PGRST002'));
+
+    await mb.start();
+
+    expect(mb.snapshot()).toMatchObject({
+      active: true,
+      phase: 'counting_down',
+      durableConfirmed: false,
+      readyForRestart: false,
+    });
+    for (const [id, engine] of engines) {
+      expect(engine.paused, `${id} resumed under an ambiguously committed row`).toBe(true);
+    }
+
+    await vi.advanceTimersByTimeAsync(HOUR - Date.now() + 1_000);
+
+    expect(store.row).toBeNull();
+    expect(thaws, 'an authoritative no-row receipt shifted database clocks').toHaveLength(0);
+    for (const [id, engine] of engines) {
+      expect(engine.paused, `${id} stayed frozen after exact absence was proved`).toBe(false);
+    }
   });
 
   it('runs the thaw, and measures only the freeze it can actually evidence', async () => {

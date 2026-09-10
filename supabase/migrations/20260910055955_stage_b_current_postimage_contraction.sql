@@ -301,6 +301,836 @@ BEGIN
 END;
 $require_scoped_settlement_lane_postimage$;
 
+-- The live ledger advanced after this contraction was prepared. Authenticate
+-- the exact inert Phase-Three expansion before replacing any of its callees,
+-- and reuse the same proof at the final transaction boundary. Keeping this in
+-- pg_temp avoids adding another durable runtime or reconciliation surface.
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_phase_three_125453_postimage()
+RETURNS void
+LANGUAGE plpgsql
+SET search_path TO 'pg_catalog','public','extensions','pg_temp'
+AS $assert_phase_three_125453$
+DECLARE
+  v_count integer;
+  v_bad integer;
+BEGIN
+  SELECT count(*)::integer INTO v_count
+    FROM supabase_migrations.schema_migrations m
+   WHERE m.version='20260910125453'
+     AND m.name='phase_three_versioned_final_deal_expansion'
+     AND cardinality(m.statements)=1
+     AND octet_length(m.statements[1])=45658
+     AND encode(
+           extensions.digest(convert_to(m.statements[1],'UTF8'),'sha256'),
+           'hex'
+         )='6a122c52afea42df937c9f41e6845c49362d783beb1fdcd375a6b8aa402ab636';
+  IF v_count<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B requires the byte-exact 20260910125453 Phase-Three expansion'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    identity,definition_md5,source_md5,language_name,security_definer,
+    volatility,return_type,nargs,argdefaults,configuration,granted_role,
+    acl_entries
+  ) AS (
+    VALUES
+      ('public.fn_begin_tournament_deal_review(uuid,uuid)',
+       '38ef591da01466c0a69a2e43e41ef218','5f4e9ba1a3adcc84fcf62b3e22253b25',
+       'plpgsql',true,'v','jsonb',2,0,
+       ARRAY['search_path=public, pg_temp']::text[],'service_role',2),
+      ('public.fn_ca_tournament_deal_hand_revision(uuid)',
+       '0f3792bef9717828edffe96fb7ad1b74','1af5fcc1e105b514e6d9998fac7c46fc',
+       'sql',true,'s','text',1,0,
+       ARRAY['search_path=public, pg_temp']::text[],NULL::text,1),
+      ('public.fn_ca_tournament_deal_proposals_active()',
+       'abd816b6cb742e9706953052eed1dcc8','6fa3e31adb6fa1ff7c7564d70cb9f62a',
+       'sql',false,'s','boolean',0,0,
+       ARRAY['search_path=public, pg_temp']::text[],NULL::text,1),
+      ('public.fn_ca_tournament_deal_review_result(uuid,uuid,uuid)',
+       'cf149f21926c50a03f21c6a854f075d2','6f266e527ecd674ab4aeccfe72305a52',
+       'plpgsql',true,'v','jsonb',3,1,
+       ARRAY['search_path=public, pg_temp']::text[],NULL::text,1),
+      ('public.fn_ca_tournament_deal_snapshot(uuid)',
+       '42cc7f84771a104957d2429311e983cb','6eee1f2e33f6a62bbc0dd59086c98c1c',
+       'plpgsql',true,'v','jsonb',1,0,
+       ARRAY['search_path=public, extensions, pg_temp','TimeZone=UTC']::text[],
+       NULL::text,1),
+      ('public.fn_cancel_tournament_deal_review(uuid,uuid,uuid)',
+       'b9f41b13612f793729a9409511fea48f','036efbd357a591f69e5727b790b87cd8',
+       'plpgsql',true,'v','jsonb',3,0,
+       ARRAY['search_path=public, pg_temp']::text[],'authenticated',2),
+      ('public.fn_cast_tournament_deal_vote(uuid,uuid,uuid)',
+       '69b11537b8bdb96dfb90cc783cffad3c','fdf96aac6d5d5e089b92638aa48fb49f',
+       'plpgsql',true,'v','jsonb',3,0,
+       ARRAY['search_path=public, pg_temp']::text[],'authenticated',2),
+      ('public.fn_close_tournament_deal_review(uuid,uuid,text)',
+       'caf796a4fd545a1c1e68a5c0c1de3af4','27471182d604538bb1a9562871b5870c',
+       'plpgsql',true,'v','jsonb',3,0,
+       ARRAY['search_path=public, pg_temp']::text[],'service_role',2),
+      ('public.fn_complete_tournament_terminal_proposal(uuid,uuid,text,uuid,text)',
+       '20a359f0554e5eaaa58dd0ae4be14864','5d796d4b26601b4fe6e1d30b1531c6e2',
+       'plpgsql',true,'v','jsonb',5,0,
+       ARRAY['search_path=public, pg_temp']::text[],'service_role',2),
+      ('public.fn_get_tournament_deal_consensus(uuid)',
+       'f799fdcd4c862cbf288dcb03e12a5534','0d2c4b7ac54354ab0501337e0e2364fc',
+       'plpgsql',true,'v','jsonb',1,0,
+       ARRAY['search_path=public, pg_temp']::text[],'service_role',2),
+      ('public.fn_get_tournament_deal_proposal(uuid)',
+       'f80c399d809b61af09ea15afcc243059','b9176e96f19f8b76f91e797f21e23334',
+       'plpgsql',true,'v','jsonb',1,0,
+       ARRAY['search_path=public, pg_temp']::text[],'authenticated',2),
+      ('public.fn_get_tournament_deal_review(uuid)',
+       '1dcfeb7ee1c3187eb95b9f97a88348fd','9db8d596c585990444b2e15f42e0a4e2',
+       'plpgsql',true,'v','jsonb',1,0,
+       ARRAY['search_path=public, pg_temp']::text[],'authenticated',2),
+      ('public.fn_request_tournament_deal_review(uuid,uuid)',
+       '3613e972d0785e1ab253396b684c2c58','48ddc5818b9105059c37151cf78f52ce',
+       'plpgsql',true,'v','jsonb',2,0,
+       ARRAY['search_path=public, pg_temp']::text[],'authenticated',2),
+      ('public.fn_require_exact_final_deal_proposal()',
+       '5620064e558543f74406009edee27082','35f32e6768be09006753ba07f994a93b',
+       'plpgsql',true,'v','trigger',0,0,
+       ARRAY['search_path=public, pg_temp']::text[],NULL::text,1),
+      ('public.fn_resolve_tournament_terminal_proposal_outcome(uuid,uuid,text,uuid,text)',
+       '3b9c4472cf38ac7e622b0fa7b3625c4f','8b9acfb4802f04723d87069607225588',
+       'plpgsql',true,'v','jsonb',5,0,
+       ARRAY['search_path=public, pg_temp']::text[],'service_role',2),
+      ('public.fn_tournament_deal_proposal_is_immutable()',
+       '829f49d66f1599f77eee9832d3ce2ec4','1dfcaac9540ad15c6de981c8c443d0bc',
+       'plpgsql',false,'v','trigger',0,0,
+       ARRAY['search_path=public, pg_temp']::text[],NULL::text,1)
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE p.oid IS NULL
+              OR NOT (
+                md5(pg_get_functiondef(p.oid))=expected.definition_md5
+                AND md5(p.prosrc)=expected.source_md5
+                AND p.proowner='postgres'::regrole
+                AND l.lanname=expected.language_name
+                AND p.prosecdef=expected.security_definer
+                AND p.provolatile=expected.volatility::"char"
+                AND p.proparallel='u'
+                AND NOT p.proisstrict AND NOT p.proleakproof
+                AND p.prokind='f' AND NOT p.proretset
+                AND p.prorettype=to_regtype(expected.return_type)
+                AND p.pronargs=expected.nargs
+                AND p.pronargdefaults=expected.argdefaults
+                AND p.proconfig=expected.configuration
+                AND (
+                  SELECT count(*)
+                    FROM aclexplode(
+                      COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+                )=expected.acl_entries
+                AND (
+                  SELECT count(*)
+                    FROM aclexplode(
+                      COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+                   WHERE acl.grantor=p.proowner
+                     AND acl.grantee=p.proowner
+                     AND acl.privilege_type='EXECUTE'
+                     AND NOT acl.is_grantable
+                )=1
+                AND (
+                  expected.granted_role IS NULL
+                  OR (
+                    SELECT count(*)
+                      FROM aclexplode(
+                        COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+                     WHERE acl.grantor=p.proowner
+                       AND acl.grantee=to_regrole(expected.granted_role)
+                       AND acl.privilege_type='EXECUTE'
+                       AND NOT acl.is_grantable
+                  )=1
+                )
+              )
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
+    LEFT JOIN pg_language l ON l.oid=p.prolang;
+  IF v_count<>16 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing or drifted Phase-Three function catalogs',v_bad
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(identity) AS (
+    VALUES
+      ('public.tournament_deal_proposals'),
+      ('public.tournament_deal_proposal_consents'),
+      ('public.tournament_deal_proposal_executions'),
+      ('public.tournament_deal_review_policy'),
+      ('public.tournament_deal_reviews')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE c.oid IS NULL
+              OR c.relkind<>'r'
+              OR c.relowner<>'postgres'::regrole
+              OR NOT c.relrowsecurity OR c.relforcerowsecurity
+              OR c.relacl::text<>'{postgres=arwdDxtm/postgres}'
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_class c ON c.oid=to_regclass(expected.identity);
+  IF v_count<>5 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing or drifted Phase-Three relation catalogs',v_bad
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_index i
+    JOIN pg_class index_catalog ON index_catalog.oid=i.indexrelid
+   WHERE i.indexrelid=to_regclass('public.tournament_deal_one_active_review')
+     AND i.indrelid='public.tournament_deal_reviews'::regclass
+     AND index_catalog.relowner='postgres'::regrole
+     AND i.indisunique AND i.indisvalid AND i.indisready AND i.indislive
+     AND NOT i.indisprimary AND NOT i.indisexclusion
+     AND i.indimmediate AND NOT i.indnullsnotdistinct
+     AND i.indnkeyatts=1 AND i.indnatts=1
+     AND i.indexprs IS NULL
+     AND (
+       SELECT array_agg(a.attname::text ORDER BY key_position.ordinality)
+         FROM unnest(i.indkey::smallint[]) WITH ORDINALITY
+              AS key_position(attnum,ordinality)
+         JOIN pg_attribute a
+           ON a.attrelid=i.indrelid AND a.attnum=key_position.attnum
+     )=ARRAY['tournament_id']::text[]
+     AND pg_get_expr(i.indpred,i.indrelid,true)=
+         'state = ANY (ARRAY[''requested''::text, ''reviewing''::text])';
+  IF v_count<>1 THEN
+    RAISE EXCEPTION 'Stage-B Phase-Three active-review index drifted'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(trigger_name,relation_identity) AS (
+    VALUES
+      ('tournament_deal_proposal_is_immutable',
+       'public.tournament_deal_proposals'),
+      ('tournament_deal_consent_is_immutable',
+       'public.tournament_deal_proposal_consents'),
+      ('tournament_deal_execution_is_immutable',
+       'public.tournament_deal_proposal_executions')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE tg.oid IS NULL
+              OR tg.tgfoid<>
+                   'public.fn_tournament_deal_proposal_is_immutable()'::regprocedure
+              OR tg.tgenabled<>'O' OR tg.tgisinternal OR tg.tgtype<>27
+              OR tg.tgattr::text<>'' OR tg.tgqual IS NOT NULL
+              OR tg.tgnargs<>0
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_trigger tg
+      ON tg.tgrelid=to_regclass(expected.relation_identity)
+     AND tg.tgname=expected.trigger_name;
+  IF v_count<>3 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_trigger tg
+        WHERE tg.tgrelid=ANY(ARRAY[
+          'public.tournament_deal_proposals'::regclass::oid,
+          'public.tournament_deal_proposal_consents'::regclass::oid,
+          'public.tournament_deal_proposal_executions'::regclass::oid,
+          'public.tournament_deal_review_policy'::regclass::oid,
+          'public.tournament_deal_reviews'::regclass::oid])
+          AND NOT tg.tgisinternal
+     )<>3 THEN
+    RAISE EXCEPTION 'Stage-B Phase-Three immutability trigger catalog drifted'
+      USING ERRCODE='55000';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+         FROM pg_trigger tg
+        WHERE tg.tgrelid='public.tournament_obligations'::regclass
+          AND NOT tg.tgisinternal
+          AND (
+            tg.tgname='require_exact_final_deal_proposal'
+            OR tg.tgfoid=
+                 'public.fn_require_exact_final_deal_proposal()'::regprocedure
+          )
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B found the separately gated Phase-Three activation trigger'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM public.tournament_deal_review_policy p
+   WHERE p.singleton
+     AND p.request_seconds=120
+     AND p.consent_seconds=120;
+  IF v_count<>1
+     OR (SELECT count(*) FROM public.tournament_deal_review_policy)<>1 THEN
+    RAISE EXCEPTION 'Stage-B Phase-Three review policy drifted'
+      USING ERRCODE='55000';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.tournament_deal_proposals)
+     OR EXISTS (SELECT 1 FROM public.tournament_deal_proposal_consents)
+     OR EXISTS (SELECT 1 FROM public.tournament_deal_proposal_executions)
+     OR EXISTS (SELECT 1 FROM public.tournament_deal_reviews) THEN
+    RAISE EXCEPTION 'Stage-B requires an inert zero-row Phase-Three expansion'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM public.ca_money_rpc_registry r
+   WHERE r.proname='fn_complete_tournament_terminal_proposal'
+     AND r.status='approved'
+     AND r.notes=
+         'Service-only exact review/proposal wrapper; preserves the native terminal money transaction and binds its durable receipt. Activation and compatible engine adoption are separate gates.'
+     AND r.added_at=
+         '2026-09-10T12:54:53.650568Z'::timestamptz;
+  IF v_count<>1 THEN
+    RAISE EXCEPTION 'Stage-B Phase-Three money registry row drifted'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$assert_phase_three_125453$;
+
+SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
+
+-- Production advanced through twelve more byte-authenticated migrations after
+-- the Phase-Three expansion. Prove their complete durable postimage before
+-- touching any Stage-B authority and again at the transaction boundary. The
+-- incident rows closed by three of these migrations are operational history;
+-- their identities and timestamps deliberately are not frozen here.
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_145833_postimage()
+RETURNS void
+LANGUAGE plpgsql
+SET search_path TO 'pg_catalog','public','extensions','pg_temp'
+AS $assert_current_live_tail_145833$
+DECLARE
+  v_count integer;
+  v_bad integer;
+BEGIN
+  WITH expected(version,name,statement_bytes,statement_sha256) AS (
+    VALUES
+      ('20260910130319','restore_rake_attribution_retries',8151,
+       'f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c'),
+      ('20260910130421','a_revealed_mystery_bounty_may_name_its_own_obligation',6558,
+       '2236fdbd5ce9f765dba5e9e5dc2cdb5ae5590f6e3b1f5e5180145b9918b9d400'),
+      ('20260910132341','two_nets_that_are_reporting_history_are_answered',6738,
+       '94b9bb3b748e6fe65308a4d8e69418e6afc1b3cd4461684ec655e1595bbf45b7'),
+      ('20260910132644','the_supply_meter_swing_did_not_repeat_and_the_ledger_balances',5495,
+       '4824de6d021b3e3e692aa2c061b9e3cd92bd0fd4909bb443f229d6867ecae680'),
+      ('20260910132747','the_break_scorecard_names_why_a_break_never_started',30503,
+       '6e21f8eaa025be6a16c13c55e1c691fcd00e0235ec5e6c19fb3f55114d54b413'),
+      ('20260910132833','a_maintenance_kind_registered_as_info_is_recorded_not_raised',5510,
+       '93b2edc2cc08effd21f00e66d960046c11077fe0c65278f9ec86526fa502a961'),
+      ('20260910134429','every_seat_means_every_seat',6589,
+       '0a460a25ee1948abf643d3067866f5173cb495b80bd395d9c234422cd140ddea'),
+      ('20260910140538','a_detector_does_not_report_what_it_already_answered_for',7356,
+       '0fd60dfb93f570c2eb9a718a675fcbc3afdd03d6302688cc99c17eb495074204'),
+      ('20260910141101','booked_spin_continuation_preserves_floating_point_rounding',12053,
+       '5965e38e5bafa0568b263332ad448d84340ebc4d50317983474f684ef1529e6f'),
+      ('20260910143032','a_declared_guard_change_is_recorded_not_raised',10216,
+       'b8dcbf1388dda22db434f144da18ef3fcbb5a4842850172704fecd20a86db19f'),
+      ('20260910143719','the_guard_declaration_is_not_reachable_from_a_browser',2650,
+       '07a00604216e201f811309ab3a07dac65a3f732ef1694e7beeaee40bfd219617'),
+      ('20260910145833','a_place_is_not_a_bounty',14907,
+       '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE m.version IS NULL
+              OR cardinality(m.statements) IS DISTINCT FROM 1
+              OR octet_length(m.statements[1]) IS DISTINCT FROM
+                   expected.statement_bytes
+              OR encode(
+                   extensions.digest(
+                     convert_to(m.statements[1],'UTF8'),'sha256'),
+                   'hex'
+                 ) IS DISTINCT FROM expected.statement_sha256
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN supabase_migrations.schema_migrations m
+      ON m.version=expected.version AND m.name=expected.name;
+  IF v_count<>12 OR v_bad<>0 OR (
+       SELECT max(m.version)
+         FROM supabase_migrations.schema_migrations m
+        WHERE m.version ~ '^[0-9]{14}$'
+     ) IS DISTINCT FROM '20260910145833' THEN
+    RAISE EXCEPTION
+      'Stage-B requires all twelve byte-exact 130319-145833 live-tail migrations and the exact 145833 ledger head; % rows drifted',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    identity,definition_md5,source_md5,language_name,security_definer,
+    volatility,parallel_safety,is_strict,is_leakproof,kind,returns_set,
+    return_type,nargs,argdefaults,configuration,acl_text
+  ) AS (
+    VALUES
+      ('public.fn_settle_tournament_rake(uuid,text)',
+       '657781a399203068a1a4888354757878',
+       'be08a61e1a867519048c4692b41ab1fd','plpgsql',true,'v','u',
+       false,false,'f',false,'jsonb',2,1,
+       ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_attach_bounty_ledger_obligation()',
+       '324f9f652d501cc93daacec52e1b3246',
+       'e2028269240a041e38fdc1cb0853e64f','plpgsql',true,'v','u',
+       false,false,'f',false,'trigger',0,0,
+       ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres}'),
+      ('public.fn_ca_journal_append_only()',
+       'ac9d66e60d077d886981c428c71e5c3c',
+       'c19c4314bcb44b29f5d15e32e4dacccd','plpgsql',true,'v','u',
+       false,false,'f',false,'trigger',0,0,
+       ARRAY['search_path=public']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_record_break_scorecard(timestamp with time zone)',
+       '0d9eb4d63244cfc69879f87596439c99',
+       '00c4e6cb5cba2a4550e332c1f7d33746','plpgsql',true,'v','u',
+       false,false,'f',false,'public.ca_break_scorecards',1,1,
+       ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_break_scorecard_push(public.ca_break_scorecards)',
+       '0de54de4eee0f2cfee9a5fd9e1e368ff',
+       'b76e912f943f096c2fd8ab2ab04e25e1','plpgsql',true,'v','u',
+       false,false,'f',false,'void',1,0,
+       ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.ca_index_every_seat(integer)',
+       '0cb93b8670db03efd2b582269fcd9e54',
+       '9cf7d1857d41e1c95a8ed1151dff3c0a','plpgsql',true,'v','u',
+       false,false,'f',false,'jsonb',1,1,
+       ARRAY['search_path=public']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_hand_commit_refusals(integer)',
+       '9ba446c4741c6a7d6cd18d717f4418bb',
+       '39f7a321222bef7f0e26e2d224a59f46','sql',true,'s','u',
+       false,false,'f',true,'record',1,1,
+       ARRAY['search_path=public']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)',
+       '8545c67dc20be918ada9027d88f46312',
+       '4f83c09a69eecc766a1f3984feeb9823','plpgsql',true,'v','u',
+       false,false,'f',false,'jsonb',5,1,
+       ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres}'),
+      ('public.fn_ca_declare_guard_redefinition(text,text)',
+       '3a3746dc6e0a5b7a1db97805588c0eb8',
+       '9d10bbc7e34373e82ce9e92e563297bc','plpgsql',true,'v','u',
+       false,false,'f',false,'text',2,0,
+       ARRAY['search_path=public']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       '5437a59dbe68a08e9df13baa422a903c',
+       '590f0f782e127288f33763bbab8c89f0','plpgsql',true,'v','u',
+       false,false,'f',false,'jsonb',12,2,
+       ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres}')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE p.oid IS NULL
+              OR md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM
+                   expected.definition_md5
+              OR md5(p.prosrc) IS DISTINCT FROM expected.source_md5
+              OR p.proowner IS DISTINCT FROM 'postgres'::regrole
+              OR l.lanname IS DISTINCT FROM expected.language_name
+              OR p.prosecdef IS DISTINCT FROM expected.security_definer
+              OR p.provolatile IS DISTINCT FROM expected.volatility::"char"
+              OR p.proparallel IS DISTINCT FROM expected.parallel_safety::"char"
+              OR p.proisstrict IS DISTINCT FROM expected.is_strict
+              OR p.proleakproof IS DISTINCT FROM expected.is_leakproof
+              OR p.prokind IS DISTINCT FROM expected.kind::"char"
+              OR p.proretset IS DISTINCT FROM expected.returns_set
+              OR p.prorettype IS DISTINCT FROM to_regtype(expected.return_type)
+              OR p.pronargs IS DISTINCT FROM expected.nargs
+              OR p.pronargdefaults IS DISTINCT FROM expected.argdefaults
+              OR p.proconfig IS DISTINCT FROM expected.configuration
+              OR p.proacl::text IS DISTINCT FROM expected.acl_text
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
+    LEFT JOIN pg_language l ON l.oid=p.prolang;
+  IF v_count<>10 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing or drifted 145833 live-tail function catalogs',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+   WHERE n.nspname='public'
+     AND c.relname='ca_guard_defs'
+     AND c.relkind='r'
+     AND c.relpersistence='p'
+     AND c.relowner='postgres'::regrole
+     AND c.relrowsecurity AND NOT c.relforcerowsecurity
+     AND c.relreplident='d'
+     AND c.relacl::text=
+         '{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}'
+     AND obj_description(c.oid,'pg_class')=
+         'Hardening round 2: checksums of the alarm stack''s own function bodies. fn_ca_guard_defs_watch notices any change once, files a dashboard incident, and re-baselines.';
+  IF v_count<>1 OR EXISTS (
+       SELECT 1
+         FROM pg_policy policy
+        WHERE policy.polrelid=to_regclass('public.ca_guard_defs')
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B found a drifted guard-definition relation catalog'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    attnum,attname,data_type,not_null,identity_kind,generation_kind,
+    default_expression,collation_name,column_comment
+  ) AS (
+    VALUES
+      (1,'proname','text',true,'','',NULL::text,'"default"',
+       NULL::text),
+      (2,'def_hash','text',true,'','',NULL::text,'"default"',
+       NULL::text),
+      (3,'updated_at','timestamp with time zone',true,'','',
+       'now()',NULL::text,NULL::text),
+      (4,'declared_ref','text',false,'','',NULL::text,'"default"',
+       'The migration that deliberately redefined this guard and moved the baseline in its own transaction. NULL means the baseline was moved by fn_ca_guard_defs_watch after observing a change nobody declared - which is the case the watcher exists for.'),
+      (5,'declared_at','timestamp with time zone',false,'','',
+       NULL::text,NULL::text,NULL::text)
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE a.attnum IS NULL
+              OR a.attname IS DISTINCT FROM expected.attname
+              OR format_type(a.atttypid,a.atttypmod) IS DISTINCT FROM
+                   expected.data_type
+              OR a.attnotnull IS DISTINCT FROM expected.not_null
+              OR a.attidentity::text IS DISTINCT FROM expected.identity_kind
+              OR a.attgenerated::text IS DISTINCT FROM
+                   expected.generation_kind
+              OR pg_get_expr(d.adbin,d.adrelid,true) IS DISTINCT FROM
+                   expected.default_expression
+              OR CASE
+                   WHEN a.attcollation=0 THEN NULL::text
+                   ELSE a.attcollation::regcollation::text
+                 END IS DISTINCT FROM expected.collation_name
+              OR col_description(a.attrelid,a.attnum) IS DISTINCT FROM
+                   expected.column_comment
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_attribute a
+      ON a.attrelid=to_regclass('public.ca_guard_defs')
+     AND a.attnum=expected.attnum AND NOT a.attisdropped
+    LEFT JOIN pg_attrdef d
+      ON d.adrelid=a.attrelid AND d.adnum=a.attnum;
+  IF v_count<>5 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_attribute a
+        WHERE a.attrelid=to_regclass('public.ca_guard_defs')
+          AND a.attnum>0 AND NOT a.attisdropped
+     )<>5 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted guard-definition columns',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_constraint con
+   WHERE con.conrelid=to_regclass('public.ca_guard_defs')
+     AND con.conname='ca_guard_defs_pkey'
+     AND con.contype='p'
+     AND NOT con.condeferrable
+     AND NOT con.condeferred
+     AND con.convalidated
+     AND con.connoinherit
+     AND con.conislocal
+     AND con.coninhcount=0
+     AND pg_get_constraintdef(con.oid,true)='PRIMARY KEY (proname)';
+  IF v_count<>1 OR (
+       SELECT count(*)
+         FROM pg_constraint con
+        WHERE con.conrelid=to_regclass('public.ca_guard_defs')
+     )<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B found a missing, extra or drifted guard-definition constraint'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_index i
+    JOIN pg_class index_catalog ON index_catalog.oid=i.indexrelid
+   WHERE i.indrelid=to_regclass('public.ca_guard_defs')
+     AND index_catalog.relname='ca_guard_defs_pkey'
+     AND index_catalog.relkind='i'
+     AND index_catalog.relowner='postgres'::regrole
+     AND i.indisunique
+     AND i.indisprimary
+     AND NOT i.indisexclusion
+     AND i.indimmediate
+     AND i.indisvalid
+     AND i.indisready
+     AND i.indislive
+     AND NOT i.indnullsnotdistinct
+     AND i.indnkeyatts=1
+     AND i.indnatts=1
+     AND pg_get_indexdef(i.indexrelid)=
+         'CREATE UNIQUE INDEX ca_guard_defs_pkey ON public.ca_guard_defs USING btree (proname)'
+     AND pg_get_expr(i.indpred,i.indrelid,true) IS NULL;
+  IF v_count<>1 OR (
+       SELECT count(*)
+         FROM pg_index i
+        WHERE i.indrelid=to_regclass('public.ca_guard_defs')
+     )<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B found a missing, extra or drifted guard-definition index'
+      USING ERRCODE='55000';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+   WHERE n.nspname='public'
+     AND c.relname='engine_maintenance_break_faults'
+     AND c.relkind='r'
+     AND c.relpersistence='p'
+     AND c.relowner='postgres'::regrole
+     AND c.relrowsecurity AND NOT c.relforcerowsecurity
+     AND c.relreplident='d'
+     AND c.relacl::text=
+         '{postgres=arwdDxtm/postgres,service_role=ar/postgres}'
+     AND obj_description(c.oid,'pg_class')=
+         'One row per maintenance-break fault, written by the engine through PostgREST as service_role at the moment a break could not proceed. announced_at is the :53 instant of that hour''s break; stage is where it failed (announcement, countdown, adoption, boot); outcome is what the engine did about it (cancelled the break, or held it without restarting); error is the engine''s own message. fn_ca_record_break_scorecard copies the newest fault for an hour whose break never started into the scorecard detail, and fn_ca_break_scorecard_push names it. Insert-only evidence: service_role may SELECT and INSERT; no browser role may do either.';
+  IF v_count<>1 OR EXISTS (
+       SELECT 1
+         FROM pg_policy policy
+        WHERE policy.polrelid=to_regclass(
+                'public.engine_maintenance_break_faults')
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B found a drifted maintenance-break fault relation catalog'
+      USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    attnum,attname,data_type,not_null,identity_kind,generation_kind,
+    default_expression,collation_name
+  ) AS (
+    VALUES
+      (1,'id','uuid',true,'','', 'gen_random_uuid()',NULL::text),
+      (2,'announced_at','timestamp with time zone',true,'','',NULL::text,NULL::text),
+      (3,'stage','text',true,'','',NULL::text,'"default"'),
+      (4,'outcome','text',true,'','',NULL::text,'"default"'),
+      (5,'error','text',false,'','',NULL::text,'"default"'),
+      (6,'engine_version','text',false,'','',NULL::text,'"default"'),
+      (7,'recorded_at','timestamp with time zone',true,'','', 'now()',NULL::text)
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE a.attnum IS NULL
+              OR a.attname IS DISTINCT FROM expected.attname
+              OR format_type(a.atttypid,a.atttypmod) IS DISTINCT FROM
+                   expected.data_type
+              OR a.attnotnull IS DISTINCT FROM expected.not_null
+              OR a.attidentity::text IS DISTINCT FROM expected.identity_kind
+              OR a.attgenerated::text IS DISTINCT FROM
+                   expected.generation_kind
+              OR col_description(a.attrelid,a.attnum) IS NOT NULL
+              OR pg_get_expr(d.adbin,d.adrelid,true) IS DISTINCT FROM
+                   expected.default_expression
+              OR CASE
+                   WHEN a.attcollation=0 THEN NULL::text
+                   ELSE a.attcollation::regcollation::text
+                 END IS DISTINCT FROM expected.collation_name
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_attribute a
+      ON a.attrelid=to_regclass('public.engine_maintenance_break_faults')
+     AND a.attnum=expected.attnum AND NOT a.attisdropped
+    LEFT JOIN pg_attrdef d
+      ON d.adrelid=a.attrelid AND d.adnum=a.attnum;
+  IF v_count<>7 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_attribute a
+        WHERE a.attrelid=to_regclass(
+                'public.engine_maintenance_break_faults')
+          AND a.attnum>0 AND NOT a.attisdropped
+     )<>7 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted maintenance-break fault columns',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    constraint_name,constraint_type,is_deferrable,is_deferred,is_validated,no_inherit,
+    is_local,inheritance_count,definition
+  ) AS (
+    VALUES
+      ('engine_maintenance_break_faults_outcome_check','c',false,false,true,
+       false,true,0,
+       'CHECK (outcome = ANY (ARRAY[''cancelled''::text, ''held_without_restart''::text]))'),
+      ('engine_maintenance_break_faults_pkey','p',false,false,true,
+       true,true,0,'PRIMARY KEY (id)'),
+      ('engine_maintenance_break_faults_stage_check','c',false,false,true,
+       false,true,0,
+       'CHECK (stage = ANY (ARRAY[''announcement''::text, ''countdown''::text, ''adoption''::text, ''boot''::text]))')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE con.oid IS NULL
+              OR con.contype::text IS DISTINCT FROM expected.constraint_type
+              OR con.condeferrable IS DISTINCT FROM expected.is_deferrable
+              OR con.condeferred IS DISTINCT FROM expected.is_deferred
+              OR con.convalidated IS DISTINCT FROM expected.is_validated
+              OR con.connoinherit IS DISTINCT FROM expected.no_inherit
+              OR con.conislocal IS DISTINCT FROM expected.is_local
+              OR con.coninhcount IS DISTINCT FROM expected.inheritance_count
+              OR pg_get_constraintdef(con.oid,true) IS DISTINCT FROM
+                   expected.definition
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_constraint con
+      ON con.conrelid=to_regclass('public.engine_maintenance_break_faults')
+     AND con.conname=expected.constraint_name;
+  IF v_count<>3 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_constraint con
+        WHERE con.conrelid=to_regclass(
+                'public.engine_maintenance_break_faults')
+     )<>3 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted maintenance-break fault constraints',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    index_name,is_unique,is_primary,index_definition
+  ) AS (
+    VALUES
+      ('engine_maintenance_break_faults_pkey',true,true,
+       'CREATE UNIQUE INDEX engine_maintenance_break_faults_pkey ON public.engine_maintenance_break_faults USING btree (id)'),
+      ('idx_engine_maintenance_break_faults_announced_at',false,false,
+       'CREATE INDEX idx_engine_maintenance_break_faults_announced_at ON public.engine_maintenance_break_faults USING btree (announced_at)')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE i.indexrelid IS NULL
+              OR index_catalog.relkind IS DISTINCT FROM 'i'::"char"
+              OR index_catalog.relowner IS DISTINCT FROM 'postgres'::regrole
+              OR i.indisunique IS DISTINCT FROM expected.is_unique
+              OR i.indisprimary IS DISTINCT FROM expected.is_primary
+              OR i.indisexclusion IS DISTINCT FROM false
+              OR i.indimmediate IS DISTINCT FROM true
+              OR i.indisvalid IS DISTINCT FROM true
+              OR i.indisready IS DISTINCT FROM true
+              OR i.indislive IS DISTINCT FROM true
+              OR i.indnullsnotdistinct IS DISTINCT FROM false
+              OR i.indnkeyatts IS DISTINCT FROM 1
+              OR i.indnatts IS DISTINCT FROM 1
+              OR pg_get_indexdef(i.indexrelid) IS DISTINCT FROM
+                   expected.index_definition
+              OR pg_get_expr(i.indpred,i.indrelid,true) IS NOT NULL
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_class index_catalog
+      ON index_catalog.relname=expected.index_name
+     AND index_catalog.relnamespace='public'::regnamespace
+    LEFT JOIN pg_index i
+      ON i.indexrelid=index_catalog.oid
+     AND i.indrelid=to_regclass('public.engine_maintenance_break_faults');
+  IF v_count<>2 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_index i
+        WHERE i.indrelid=to_regclass(
+                'public.engine_maintenance_break_faults')
+     )<>2 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted maintenance-break fault indexes',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  WITH expected(
+    function_identity,relation_identity,trigger_name,definition_md5,trigger_type
+  ) AS (
+    VALUES
+      ('public.fn_attach_bounty_ledger_obligation()',
+       'public.tournament_bounties','trg_attach_bounty_ledger_obligation',
+       'ff3e9305edae93d151545b1e39f519c3',7),
+      ('public.fn_ca_journal_append_only()',
+       'public.agent_commissions','trg_ca_append_only',
+       'b160761b00f1575419c4480048433924',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.chip_ledger','trg_ca_append_only',
+       '15d2fb7366e29ca4dcc19a5afb55dfab',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.chip_transactions','trg_ca_append_only',
+       '1dcaece880bcbb143e869a3456e53065',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.club_wallet_transactions','trg_ca_append_only',
+       '5da93870ace9289608f1de7190d872c0',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.diamond_transactions','trg_ca_append_only',
+       '416cec9117a036d12f0ddde4db64b6a5',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.diamond_wallet_transfers','wallet_transfers_append_only',
+       'eb1d6ab69891abfa2a4fc11aaff723d8',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.rakeback_period_payouts','trg_ca_append_only',
+       'd7d02bd075ff3fd1a917e50535e1bdd7',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.union_wallet_transactions','trg_ca_append_only',
+       '06a711ff9e0e0d5f33cb5bb891d6257c',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.vip_points_ledger','trg_ca_append_only',
+       'c1c67e4ef2138481fd9176346e53b332',27),
+      ('public.fn_ca_journal_append_only()',
+       'public.wallet_transactions','trg_ca_append_only',
+       'b434a15ef432e8562fa6c6df4f0f3cec',27)
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE tg.oid IS NULL
+              OR tg.tgfoid IS DISTINCT FROM
+                   to_regprocedure(expected.function_identity)
+              OR md5(pg_get_triggerdef(tg.oid,true)) IS DISTINCT FROM
+                   expected.definition_md5
+              OR tg.tgenabled IS DISTINCT FROM 'O'::"char"
+              OR tg.tgisinternal IS DISTINCT FROM false
+              OR tg.tgtype IS DISTINCT FROM expected.trigger_type
+              OR tg.tgattr::text IS DISTINCT FROM ''
+              OR tg.tgqual IS NOT NULL
+              OR tg.tgnargs IS DISTINCT FROM 0
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_trigger tg
+      ON tg.tgrelid=to_regclass(expected.relation_identity)
+     AND tg.tgname=expected.trigger_name;
+  IF v_count<>11 OR v_bad<>0 OR (
+       SELECT count(*)
+         FROM pg_trigger tg
+        WHERE NOT tg.tgisinternal
+          AND tg.tgfoid=ANY(ARRAY[
+            to_regprocedure('public.fn_attach_bounty_ledger_obligation()')::oid,
+            to_regprocedure('public.fn_ca_journal_append_only()')::oid
+          ])
+     )<>11 THEN
+    RAISE EXCEPTION
+      'Stage-B found % missing, extra or drifted 145833 live-tail trigger bindings',
+      v_bad USING ERRCODE='55000';
+  END IF;
+END;
+$assert_current_live_tail_145833$;
+
+SELECT pg_temp.assert_stage_b_current_live_tail_145833_postimage();
+
 
 -- ===========================================================================
 -- FORWARD-COMPOSED BOUNDARY: M6 SEAT-EXIT RUNTIME AUTHORITY
@@ -7832,6 +8662,9 @@ DECLARE
     'rpc/fn_collect_bounty',
     'rpc/fn_complete_tournament_entry_reprice',
     'rpc/fn_complete_tournament_launch_atomic',
+    'rpc/fn_complete_tournament_terminal_proposal',
+    'rpc/fn_begin_tournament_deal_review',
+    'rpc/fn_close_tournament_deal_review',
     'rpc/fn_eliminate_tournament_player_atomic',
     'rpc/fn_ensure_late_registration_capacity',
     'rpc/fn_get_tournament_satellite_entitlement_depth',
@@ -8438,6 +9271,9 @@ BEGIN
      OR position('verified JWT role disagrees with request claims' IN v_hook_source) = 0
      OR position($needle$'rpc/fn_project_hand_side_effects'$needle$ IN v_hook_source) = 0
      OR position($needle$'rpc/fn_move_tournament_player'$needle$ IN v_hook_source) = 0
+     OR position($needle$'rpc/fn_complete_tournament_terminal_proposal'$needle$ IN v_hook_source) = 0
+     OR position($needle$'rpc/fn_begin_tournament_deal_review'$needle$ IN v_hook_source) = 0
+     OR position($needle$'rpc/fn_close_tournament_deal_review'$needle$ IN v_hook_source) = 0
      OR position($needle$left(v_path, 8) = 'rest/v1/'$needle$ IN v_hook_source) = 0
      OR position($needle$'protocol-2'$needle$ IN v_scope_source) = 0
      OR position('p_tournament_id IS DISTINCT FROM v_tournament_id' IN v_scope_source) = 0
@@ -10412,5 +11248,8 @@ $verify_cashout_occupancy_authority_preserved$;
 COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(
   integer,integer,boolean) IS
   'Owner-only felt-aware forensic implementation retained for exact production postimage parity. No API grant, scheduler, detector, or runtime caller exists.';
+
+SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_145833_postimage();
 
 COMMIT;

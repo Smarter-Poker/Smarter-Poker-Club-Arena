@@ -20,7 +20,7 @@ sock.mkdir()
 port = str(35000 + os.getpid() % 10000)
 result_path = Path('/tmp/codex-booked-spin-authority-results.json')
 log_path = Path('/tmp/codex-booked-spin-authority-pg17.log')
-proposal = repo / 'supabase/migrations/20260910132723_booked_spin_continuation_preserves_floating_point_rounding.sql'
+proposal = repo / 'supabase/migrations/20260910141101_booked_spin_continuation_preserves_floating_point_rounding.sql'
 captured = json.loads(subprocess.check_output(
     [os.environ.get('POKER_AUDIT_NODE', 'node'), str(repo / 'scripts/dev/booked-spin-authority-runtime.mjs')],
     text=True))

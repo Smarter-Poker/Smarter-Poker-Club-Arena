@@ -1,7 +1,7 @@
 {
   "scope": "Spin-only private helper correction; no tournament, seat, wallet or historical rows rewritten",
   "project_id": "kuklfnapbkmacvwxktbh",
-  "migration_file": "supabase/migrations/20260910132723_booked_spin_continuation_preserves_floating_point_rounding.sql",
+  "migration_file": "supabase/migrations/20260910141101_booked_spin_continuation_preserves_floating_point_rounding.sql",
   "migration_sha256": "5965e38e5bafa0568b263332ad448d84340ebc4d50317983474f684ef1529e6f",
   "applied_migration_version": "20260910141101",
   "before_body_md5": "b5769b647e5b106caaf51982ac245ee8",

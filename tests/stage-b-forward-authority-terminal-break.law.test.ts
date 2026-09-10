@@ -61,6 +61,7 @@ const seatMoveHotfix = migration(seatMoveHotfixFile);
 const expansion = migration(expansionFile);
 const repair = migration(repairFile);
 const invariant = migration(invariantFile);
+const contraction = migration(stageBFiles[4]);
 const forwardBoundaries = `${expansion}\n${invariant}`;
 const harness = readFileSync(
   resolve(root, 'scripts/dev/probe-stage-b-forward-chain-pg17.sh'),
@@ -68,6 +69,10 @@ const harness = readFileSync(
 );
 const diamondFixture = readFileSync(
   resolve(root, 'scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql'),
+  'utf8'
+);
+const cutoverRunbook = readFileSync(
+  resolve(root, 'docs/runbooks/tournament-fractional-stack-cutover.md'),
   'utf8'
 );
 
@@ -98,6 +103,31 @@ function dollarBlock(source: string, tag: string): string {
 }
 
 describe('the reserved Stage-B forward authority boundaries stay split', () => {
+  it('fences every host restart authority for the continuously locked cutover', () => {
+    const stopAutoheal = cutoverRunbook.indexOf('docker stop -t 15 sp-autoheal');
+    const stopEngine = cutoverRunbook.indexOf('docker stop -t 45 club-arena-engine');
+    const canonicalStart = cutoverRunbook.indexOf(
+      '/usr/local/lib/club-arena/engine-control/engine-up.sh'
+    );
+    const startAutoheal = cutoverRunbook.indexOf('docker start sp-autoheal', canonicalStart);
+    const startTimer = cutoverRunbook.indexOf(
+      'systemctl start club-arena-supervisor.timer',
+      startAutoheal
+    );
+
+    expect(stopAutoheal).toBeGreaterThanOrEqual(0);
+    expect(stopEngine).toBeGreaterThan(stopAutoheal);
+    expect(canonicalStart).toBeGreaterThan(stopEngine);
+    expect(startAutoheal).toBeGreaterThan(canonicalStart);
+    expect(startTimer).toBeGreaterThan(startAutoheal);
+    expect(cutoverRunbook).toContain(
+      `test "$(docker inspect -f '{{.State.Status}}' sp-autoheal)" = exited`
+    );
+    expect(cutoverRunbook).toContain(
+      `test "$(docker inspect -f '{{.State.Status}}' sp-autoheal)" = running`
+    );
+  });
+
   it('uses semantic chain order and all six immutable logical IDs', () => {
     expect(stageBFiles).toHaveLength(6);
     stageBChain.forEach(([, logicalId], index) => {
@@ -214,7 +244,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     ).toBe(2);
   });
 
-  it('requires the byte-authenticated 080728 live schema and a zero-player-data donor', () => {
+  it('requires the byte-authenticated 145833 live schema and a zero-player-data donor', () => {
     const currentLiveSources = [
       ['20260910034411', 'seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'],
       ['20260910034412', 'spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'],
@@ -241,21 +271,237 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       ['20260910080137', 'the_outbox_leaves_the_realtime_publication'],
       ['20260910080242', 'the_guard_that_stopped_five_satellites_is_answered_for'],
       ['20260910080728', 'three_money_doors_are_audited_and_registered'],
+      ['20260910124023', 'a_player_id_is_a_uuid_not_a_uuid_version'],
+      ['20260910124524', 'a_bust_the_player_came_back_from_is_a_rebought_bust'],
+      ['20260910125453', 'phase_three_versioned_final_deal_expansion'],
+      ['20260910130319', 'restore_rake_attribution_retries'],
+      ['20260910130421', 'a_revealed_mystery_bounty_may_name_its_own_obligation'],
+      ['20260910132341', 'two_nets_that_are_reporting_history_are_answered'],
+      ['20260910132644', 'the_supply_meter_swing_did_not_repeat_and_the_ledger_balances'],
+      ['20260910132747', 'the_break_scorecard_names_why_a_break_never_started'],
+      ['20260910132833', 'a_maintenance_kind_registered_as_info_is_recorded_not_raised'],
+      ['20260910134429', 'every_seat_means_every_seat'],
+      ['20260910140538', 'a_detector_does_not_report_what_it_already_answered_for'],
+      ['20260910141101', 'booked_spin_continuation_preserves_floating_point_rounding'],
+      ['20260910143032', 'a_declared_guard_change_is_recorded_not_raised'],
+      ['20260910143719', 'the_guard_declaration_is_not_reachable_from_a_browser'],
+      ['20260910145833', 'a_place_is_not_a_bounty'],
     ] as const;
 
-    expect(currentLiveSources).toHaveLength(25);
+    expect(currentLiveSources).toHaveLength(40);
     for (const [version, name] of currentLiveSources) {
       expect(harness).toContain(version);
       expect(harness).toContain(name);
     }
-    expect(harness).toContain("current_live_ledger_head='20260910080728'");
+    for (const [version, name, bytes, sha256] of [
+      [
+        '20260910130319',
+        'restore_rake_attribution_retries',
+        8151,
+        'f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c',
+      ],
+      [
+        '20260910130421',
+        'a_revealed_mystery_bounty_may_name_its_own_obligation',
+        6558,
+        '2236fdbd5ce9f765dba5e9e5dc2cdb5ae5590f6e3b1f5e5180145b9918b9d400',
+      ],
+      [
+        '20260910132341',
+        'two_nets_that_are_reporting_history_are_answered',
+        6738,
+        '94b9bb3b748e6fe65308a4d8e69418e6afc1b3cd4461684ec655e1595bbf45b7',
+      ],
+      [
+        '20260910132644',
+        'the_supply_meter_swing_did_not_repeat_and_the_ledger_balances',
+        5495,
+        '4824de6d021b3e3e692aa2c061b9e3cd92bd0fd4909bb443f229d6867ecae680',
+      ],
+      [
+        '20260910132747',
+        'the_break_scorecard_names_why_a_break_never_started',
+        30503,
+        '6e21f8eaa025be6a16c13c55e1c691fcd00e0235ec5e6c19fb3f55114d54b413',
+      ],
+      [
+        '20260910132833',
+        'a_maintenance_kind_registered_as_info_is_recorded_not_raised',
+        5510,
+        '93b2edc2cc08effd21f00e66d960046c11077fe0c65278f9ec86526fa502a961',
+      ],
+      [
+        '20260910134429',
+        'every_seat_means_every_seat',
+        6589,
+        '0a460a25ee1948abf643d3067866f5173cb495b80bd395d9c234422cd140ddea',
+      ],
+      [
+        '20260910140538',
+        'a_detector_does_not_report_what_it_already_answered_for',
+        7356,
+        '0fd60dfb93f570c2eb9a718a675fcbc3afdd03d6302688cc99c17eb495074204',
+      ],
+      [
+        '20260910141101',
+        'booked_spin_continuation_preserves_floating_point_rounding',
+        12053,
+        '5965e38e5bafa0568b263332ad448d84340ebc4d50317983474f684ef1529e6f',
+      ],
+      [
+        '20260910143032',
+        'a_declared_guard_change_is_recorded_not_raised',
+        10216,
+        'b8dcbf1388dda22db434f144da18ef3fcbb5a4842850172704fecd20a86db19f',
+      ],
+      [
+        '20260910143719',
+        'the_guard_declaration_is_not_reachable_from_a_browser',
+        2650,
+        '07a00604216e201f811309ab3a07dac65a3f732ef1694e7beeaee40bfd219617',
+      ],
+      [
+        '20260910145833',
+        'a_place_is_not_a_bounty',
+        14907,
+        '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4',
+      ],
+    ] as const) {
+      expect(harness).toContain(`('${version}','${name}',1,${bytes},`);
+      expect(harness).toContain(sha256);
+    }
+    expect(harness).toContain("current_live_ledger_head='20260910145833'");
     expect(harness).toContain(
-      `if [[ "$anchor_receipts" != '25' || "$ledger_head" != "$current_live_ledger_head" ]]`
+      `if [[ "$anchor_receipts" != '40' || "$ledger_head" != "$current_live_ledger_head" ]]`
     );
     expect(harness).toContain(`if [[ "$exact_body_receipts" != '3' ]]`);
     expect(harness).toContain(`if [[ "$descriptor_receipts" != '2' ]]`);
     expect(harness).toContain(
-      `if [[ "$audited_tail_receipts" != '9' || "$audited_tail_statements" != '12' ]]`
+      `if [[ "$audited_tail_receipts" != '24' || "$audited_tail_statements" != '27' ]]`
+    );
+    expect(harness).toContain(`if [[ "$player_id_functions_exact" != '2' ]]`);
+    expect(harness).toContain(`if [[ "$tail_functions_exact" != '9' ]]`);
+    expect(harness).toContain("'public.fn_settle_tournament_rake(uuid,text)'");
+    expect(harness).toContain('657781a399203068a1a4888354757878');
+    expect(harness).toContain('be08a61e1a867519048c4692b41ab1fd');
+    expect(harness).toContain('AND p.proconfig=ARRAY[');
+    expect(harness).toContain("'search_path=public, pg_temp','statement_timeout=30s']::text[]");
+    expect(harness).toContain("'{postgres=X/postgres,service_role=X/postgres}'");
+    expect(harness).toContain("'public.fn_attach_bounty_ledger_obligation()'");
+    expect(harness).toContain('324f9f652d501cc93daacec52e1b3246');
+    expect(harness).toContain('e2028269240a041e38fdc1cb0853e64f');
+    expect(harness).toContain("p.proacl::text='{postgres=X/postgres}'");
+    expect(harness).toContain("'public.fn_ca_journal_append_only()'");
+    expect(harness).toContain('ac9d66e60d077d886981c428c71e5c3c');
+    expect(harness).toContain('c19c4314bcb44b29f5d15e32e4dacccd');
+    expect(harness).toContain('4a8621f91936630918ecf638130db22089a7b73b343bd10fc33037b63ffae771');
+    expect(harness).toContain('b5acbe01ca773e3de3521abf897f37a9cc9d2cb1db36388d2ef6482d21d8792e');
+    expect(harness).toContain("p.proconfig=ARRAY['search_path=public']::text[]");
+    for (const [table, trigger, triggerType, definitionMd5] of [
+      ['agent_commissions', 'trg_ca_append_only', 27, 'b160761b00f1575419c4480048433924'],
+      ['chip_ledger', 'trg_ca_append_only', 27, '15d2fb7366e29ca4dcc19a5afb55dfab'],
+      ['chip_transactions', 'trg_ca_append_only', 27, '1dcaece880bcbb143e869a3456e53065'],
+      ['club_wallet_transactions', 'trg_ca_append_only', 27, '5da93870ace9289608f1de7190d872c0'],
+      ['diamond_transactions', 'trg_ca_append_only', 27, '416cec9117a036d12f0ddde4db64b6a5'],
+      [
+        'diamond_wallet_transfers',
+        'wallet_transfers_append_only',
+        27,
+        'eb1d6ab69891abfa2a4fc11aaff723d8',
+      ],
+      ['rakeback_period_payouts', 'trg_ca_append_only', 27, 'd7d02bd075ff3fd1a917e50535e1bdd7'],
+      ['union_wallet_transactions', 'trg_ca_append_only', 27, '06a711ff9e0e0d5f33cb5bb891d6257c'],
+      ['vip_points_ledger', 'trg_ca_append_only', 27, 'c1c67e4ef2138481fd9176346e53b332'],
+      ['wallet_transactions', 'trg_ca_append_only', 27, 'b434a15ef432e8562fa6c6df4f0f3cec'],
+    ] as const) {
+      expect(harness).toContain(`('${table}','${trigger}',${triggerType},`);
+      expect(harness).toContain(definitionMd5);
+    }
+    expect(harness).toContain("('tournament_bounties','trg_attach_bounty_ledger_obligation',7,");
+    expect(harness).toContain('ff3e9305edae93d151545b1e39f519c3');
+    expect(harness).toContain(`if [[ "$journal_trigger_bindings_exact" != '10'`);
+    expect(harness).toContain(`|| "$bounty_trigger_binding_exact" != '1' ]]`);
+    for (const [identity, definitionMd5, sourceMd5, definitionBytes] of [
+      [
+        'public.fn_ca_record_break_scorecard(timestamptz)',
+        '0d9eb4d63244cfc69879f87596439c99',
+        '00c4e6cb5cba2a4550e332c1f7d33746',
+        10536,
+      ],
+      [
+        'public.fn_ca_break_scorecard_push(public.ca_break_scorecards)',
+        '0de54de4eee0f2cfee9a5fd9e1e368ff',
+        'b76e912f943f096c2fd8ab2ab04e25e1',
+        4479,
+      ],
+      [
+        'public.ca_index_every_seat(integer)',
+        '0cb93b8670db03efd2b582269fcd9e54',
+        '9cf7d1857d41e1c95a8ed1151dff3c0a',
+        3022,
+      ],
+      [
+        'public.fn_ca_hand_commit_refusals(integer)',
+        '9ba446c4741c6a7d6cd18d717f4418bb',
+        '39f7a321222bef7f0e26e2d224a59f46',
+        2562,
+      ],
+      [
+        'public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)',
+        '8545c67dc20be918ada9027d88f46312',
+        '4f83c09a69eecc766a1f3984feeb9823',
+        10360,
+      ],
+    ] as const) {
+      expect(harness).toContain(`'${identity}'`);
+      expect(harness).toContain(definitionMd5);
+      expect(harness).toContain(sourceMd5);
+      expect(harness).toContain(`octet_length(pg_get_functiondef(p.oid))=${definitionBytes}`);
+    }
+    expect(harness).toContain(
+      "maintenance_fault_catalog_sha256='085fe4bf17888519604ad3fea787339a9e178c3a1af9ea0aa4d5449512ba8d6d'"
+    );
+    const breakFaultCatalogStart = harness.indexOf('emit_break_fault_catalog_functions() {');
+    const breakFaultCatalogEnd = harness.indexOf('\npreflight="$({', breakFaultCatalogStart);
+    expect(breakFaultCatalogStart).toBeGreaterThanOrEqual(0);
+    expect(breakFaultCatalogEnd).toBeGreaterThan(breakFaultCatalogStart);
+    const breakFaultCatalog = harness.slice(breakFaultCatalogStart, breakFaultCatalogEnd);
+    for (const catalogField of [
+      "'owner',pg_get_userbyid(c.relowner)",
+      "'rls',c.relrowsecurity",
+      "'force_rls',c.relforcerowsecurity",
+      "'acl',c.relacl",
+      "'comment',obj_description(c.oid,'pg_class')",
+      "'columns',COALESCE((",
+      "'constraints',COALESCE((",
+      "'indexes',COALESCE((",
+      "'comment',col_description(a.attrelid,a.attnum)",
+      "'comment',obj_description(con.oid,'pg_constraint')",
+      "'comment',obj_description(idx.oid,'pg_class')",
+    ]) {
+      expect(breakFaultCatalog).toContain(catalogField);
+    }
+    expect(breakFaultCatalog).toContain('octet_length(v_fingerprint)<>3421');
+    expect(breakFaultCatalog).not.toContain('count(*) FROM public.engine_maintenance_break_faults');
+    expect(harness).toContain(
+      `if [[ "$break_fault_catalog_exact" != 'STAGE_B_132747_BREAK_FAULT_CATALOG_OK' ]]`
+    );
+    const donorFingerprint = harness.slice(harness.indexOf('donor_state_fingerprint() {'));
+    expect(donorFingerprint).toContain("'volatility',p.provolatile");
+    expect(donorFingerprint).toContain("'parallel',p.proparallel");
+    expect(donorFingerprint).toContain("'return_type',p.prorettype::regtype::text");
+    expect(donorFingerprint).toContain("'public.fn_ca_journal_append_only()'");
+    expect(donorFingerprint).toContain("'public.fn_ca_record_break_scorecard(timestamptz)'");
+    expect(donorFingerprint).toContain(
+      "'public.fn_ca_break_scorecard_push(public.ca_break_scorecards)'"
+    );
+    expect(donorFingerprint).toContain("'public.ca_index_every_seat(integer)'");
+    expect(donorFingerprint).toContain('tail_trigger_bindings AS (');
+    expect(donorFingerprint).toContain(
+      "'tail_trigger_bindings',(SELECT fingerprint FROM tail_trigger_bindings)"
+    );
+    expect(donorFingerprint).toContain(
+      "'break_fault_catalog',\n           pg_temp.stage_b_132747_break_fault_catalog_fingerprint()"
     );
     expect(harness).toContain('emit_zero_player_data_assertion_function() {');
     expect(harness).toContain(
@@ -278,6 +524,326 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(harness).toContain('use a production-schema zero-data clone');
     expect(harness).toContain("echo 'STAGE_B_CURRENT_LIVE_SCHEMA_MANIFEST_OK'");
     expect(harness).toContain("echo 'STAGE_B_ZERO_PLAYER_DATA_BASELINE_OK'");
+  });
+
+  it('authenticates and fingerprints the complete inactive Phase-3 postimage', () => {
+    const phase3Start = harness.indexOf('emit_phase3_postimage_functions() {');
+    const phase3End = harness.indexOf('\npreflight="$({', phase3Start);
+    expect(phase3Start).toBeGreaterThanOrEqual(0);
+    expect(phase3End).toBeGreaterThan(phase3Start);
+    const phase3 = harness.slice(phase3Start, phase3End);
+    const functionTargets = phase3.match(
+      /WITH target_functions\(identity\) AS \(([\s\S]*?)\n\), function_objects AS/
+    )?.[1];
+    const relationTargets = phase3.match(
+      /target_relations\(identity\) AS \(([\s\S]*?)\n\), relation_objects AS/
+    )?.[1];
+
+    expect(functionTargets, 'Phase-3 function targets').toBeDefined();
+    expect(functionTargets!.match(/^ {4}\('public\./gm)).toHaveLength(16);
+    expect(relationTargets, 'Phase-3 relation targets').toBeDefined();
+    expect(relationTargets!.match(/^ {4}\('public\./gm)).toHaveLength(5);
+    for (const identity of [
+      'public.fn_ca_tournament_deal_snapshot(uuid)',
+      'public.fn_get_tournament_deal_consensus(uuid)',
+      'public.fn_complete_tournament_terminal_proposal(uuid,uuid,text,uuid,text)',
+      'public.fn_resolve_tournament_terminal_proposal_outcome(uuid,uuid,text,uuid,text)',
+      'public.fn_begin_tournament_deal_review(uuid,uuid)',
+      'public.fn_close_tournament_deal_review(uuid,uuid,text)',
+    ]) {
+      expect(functionTargets).toContain(identity);
+      expect(harness.slice(harness.indexOf('donor_state_fingerprint() {'))).toContain(identity);
+    }
+    for (const relation of [
+      'public.tournament_deal_proposals',
+      'public.tournament_deal_proposal_consents',
+      'public.tournament_deal_proposal_executions',
+      'public.tournament_deal_review_policy',
+      'public.tournament_deal_reviews',
+    ]) {
+      expect(relationTargets).toContain(relation);
+    }
+
+    expect(harness).toContain(
+      "phase3_postimage_sha256='ba43e834350c2f3039413520c174bded6481709eb92ba50363be0c9a4578fb73'"
+    );
+    expect(phase3).toContain('octet_length(v_fingerprint)<>60578');
+    expect(phase3).toContain("'public.tournament_deal_one_active_review'::regclass");
+    expect(contraction).toContain(
+      "pg_get_expr(i.indpred,i.indrelid,true)=\n         'state = ANY (ARRAY[''requested''::text, ''reviewing''::text])'"
+    );
+    expect(contraction).not.toContain(
+      "'(state = ANY (ARRAY[''requested''::text, ''reviewing''::text]))'"
+    );
+    expect(phase3).toContain("'tournament_deal_proposal_is_immutable'");
+    expect(phase3).toContain("'tournament_deal_consent_is_immutable'");
+    expect(phase3).toContain("'tournament_deal_execution_is_immutable'");
+    expect(phase3).toContain('WHERE singleton AND request_seconds=120 AND consent_seconds=120');
+    expect(phase3).toContain("trg.tgname='require_exact_final_deal_proposal'");
+    expect(phase3).toContain("status='approved'");
+    expect(phase3).toContain('STAGE_B_125453_PHASE3_PREPARED_TABLES_ARE_NOT_EMPTY');
+
+    expect(harness).toContain(
+      "money_control_sha256='32b913b609d9e73469b78bb457845b26785c6c33edcb69131791f83bf0ac0558'"
+    );
+    expect(harness).toContain(
+      "current_money_control_sha256='30f335e1b3770504c9e128ed5c5512c06f4ba440c4cea9b6f25a36bf3c933cc7'"
+    );
+    expect(phase3).toContain('v_money_rows<>4 OR octet_length(v_money_value)<>1671');
+    expect(harness).toContain("'phase3_postimage',(SELECT fingerprint FROM phase3_postimage)");
+    expect(harness).toContain('STAGE_B_125453_PHASE3_POSTIMAGE_OK');
+  });
+
+  it('authenticates the complete 145833 live tail at both contraction boundaries', () => {
+    const guard = dollarBlock(contraction, 'assert_current_live_tail_145833');
+    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_145833_postimage();';
+    const definition = contraction.indexOf(
+      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_145833_postimage()'
+    );
+    const firstCall = contraction.indexOf(call);
+    const finalCall = contraction.lastIndexOf(call);
+    const durableMutation = contraction.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_open_tournament_seat_exit_authority('
+    );
+
+    expect(
+      occurrences(
+        contraction,
+        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_145833_postimage\(\)/g
+      )
+    ).toBe(1);
+    expect(
+      occurrences(
+        contraction,
+        /^SELECT pg_temp\.assert_stage_b_current_live_tail_145833_postimage\(\);$/gm
+      )
+    ).toBe(2);
+    expect(definition).toBeGreaterThanOrEqual(0);
+    expect(firstCall).toBeGreaterThanOrEqual(0);
+    expect(firstCall).toBeGreaterThan(definition);
+    expect(firstCall).toBeLessThan(durableMutation);
+    expect(finalCall).toBeGreaterThan(firstCall);
+    expect(contraction.trimEnd().endsWith(`${call}\n\nCOMMIT;`)).toBe(true);
+    expect(contraction.slice(definition, firstCall)).toContain(
+      "RETURNS void\nLANGUAGE plpgsql\nSET search_path TO 'pg_catalog','public','extensions','pg_temp'"
+    );
+
+    for (const [version, name, bytes, sha256] of [
+      [
+        '20260910130319',
+        'restore_rake_attribution_retries',
+        8151,
+        'f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c',
+      ],
+      [
+        '20260910130421',
+        'a_revealed_mystery_bounty_may_name_its_own_obligation',
+        6558,
+        '2236fdbd5ce9f765dba5e9e5dc2cdb5ae5590f6e3b1f5e5180145b9918b9d400',
+      ],
+      [
+        '20260910132341',
+        'two_nets_that_are_reporting_history_are_answered',
+        6738,
+        '94b9bb3b748e6fe65308a4d8e69418e6afc1b3cd4461684ec655e1595bbf45b7',
+      ],
+      [
+        '20260910132644',
+        'the_supply_meter_swing_did_not_repeat_and_the_ledger_balances',
+        5495,
+        '4824de6d021b3e3e692aa2c061b9e3cd92bd0fd4909bb443f229d6867ecae680',
+      ],
+      [
+        '20260910132747',
+        'the_break_scorecard_names_why_a_break_never_started',
+        30503,
+        '6e21f8eaa025be6a16c13c55e1c691fcd00e0235ec5e6c19fb3f55114d54b413',
+      ],
+      [
+        '20260910132833',
+        'a_maintenance_kind_registered_as_info_is_recorded_not_raised',
+        5510,
+        '93b2edc2cc08effd21f00e66d960046c11077fe0c65278f9ec86526fa502a961',
+      ],
+      [
+        '20260910134429',
+        'every_seat_means_every_seat',
+        6589,
+        '0a460a25ee1948abf643d3067866f5173cb495b80bd395d9c234422cd140ddea',
+      ],
+      [
+        '20260910140538',
+        'a_detector_does_not_report_what_it_already_answered_for',
+        7356,
+        '0fd60dfb93f570c2eb9a718a675fcbc3afdd03d6302688cc99c17eb495074204',
+      ],
+      [
+        '20260910141101',
+        'booked_spin_continuation_preserves_floating_point_rounding',
+        12053,
+        '5965e38e5bafa0568b263332ad448d84340ebc4d50317983474f684ef1529e6f',
+      ],
+      [
+        '20260910143032',
+        'a_declared_guard_change_is_recorded_not_raised',
+        10216,
+        'b8dcbf1388dda22db434f144da18ef3fcbb5a4842850172704fecd20a86db19f',
+      ],
+      [
+        '20260910143719',
+        'the_guard_declaration_is_not_reachable_from_a_browser',
+        2650,
+        '07a00604216e201f811309ab3a07dac65a3f732ef1694e7beeaee40bfd219617',
+      ],
+      [
+        '20260910145833',
+        'a_place_is_not_a_bounty',
+        14907,
+        '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4',
+      ],
+    ] as const) {
+      expect(guard).toContain(`('${version}','${name}',${bytes},`);
+      expect(guard).toContain(sha256);
+    }
+    expect(guard).toContain("IS DISTINCT FROM '20260910145833' THEN");
+    expect(guard).toContain('all twelve byte-exact 130319-145833 live-tail migrations');
+    expect(guard).toContain('cardinality(m.statements) IS DISTINCT FROM 1');
+    expect(guard).toContain('octet_length(m.statements[1]) IS DISTINCT FROM');
+    expect(guard).toContain("convert_to(m.statements[1],'UTF8'),'sha256'");
+
+    for (const [identity, definitionMd5, sourceMd5] of [
+      [
+        'public.fn_settle_tournament_rake(uuid,text)',
+        '657781a399203068a1a4888354757878',
+        'be08a61e1a867519048c4692b41ab1fd',
+      ],
+      [
+        'public.fn_attach_bounty_ledger_obligation()',
+        '324f9f652d501cc93daacec52e1b3246',
+        'e2028269240a041e38fdc1cb0853e64f',
+      ],
+      [
+        'public.fn_ca_journal_append_only()',
+        'ac9d66e60d077d886981c428c71e5c3c',
+        'c19c4314bcb44b29f5d15e32e4dacccd',
+      ],
+      [
+        'public.fn_ca_record_break_scorecard(timestamp with time zone)',
+        '0d9eb4d63244cfc69879f87596439c99',
+        '00c4e6cb5cba2a4550e332c1f7d33746',
+      ],
+      [
+        'public.fn_ca_break_scorecard_push(public.ca_break_scorecards)',
+        '0de54de4eee0f2cfee9a5fd9e1e368ff',
+        'b76e912f943f096c2fd8ab2ab04e25e1',
+      ],
+      [
+        'public.ca_index_every_seat(integer)',
+        '0cb93b8670db03efd2b582269fcd9e54',
+        '9cf7d1857d41e1c95a8ed1151dff3c0a',
+      ],
+      [
+        'public.fn_ca_hand_commit_refusals(integer)',
+        '9ba446c4741c6a7d6cd18d717f4418bb',
+        '39f7a321222bef7f0e26e2d224a59f46',
+      ],
+      [
+        'public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)',
+        '8545c67dc20be918ada9027d88f46312',
+        '4f83c09a69eecc766a1f3984feeb9823',
+      ],
+      [
+        'public.fn_ca_declare_guard_redefinition(text,text)',
+        '3a3746dc6e0a5b7a1db97805588c0eb8',
+        '9d10bbc7e34373e82ce9e92e563297bc',
+      ],
+      [
+        'public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+        '5437a59dbe68a08e9df13baa422a903c',
+        '590f0f782e127288f33763bbab8c89f0',
+      ],
+    ] as const) {
+      expect(guard).toContain(identity);
+      expect(guard).toContain(definitionMd5);
+      expect(guard).toContain(sourceMd5);
+    }
+    expect(guard).toContain('IF v_count<>10 OR v_bad<>0 THEN');
+    expect(guard).toContain(
+      'md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM\n                   expected.definition_md5'
+    );
+    expect(guard).toContain('md5(p.prosrc) IS DISTINCT FROM expected.source_md5');
+    expect(guard).toContain('p.proconfig IS DISTINCT FROM expected.configuration');
+    expect(guard).toContain('p.proacl::text IS DISTINCT FROM expected.acl_text');
+    expect(guard).toContain("ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[]");
+    expect(guard).toContain("'{postgres=X/postgres,service_role=X/postgres}'");
+    expect(guard).toContain("'{postgres=X/postgres}'");
+
+    for (const guardDefinitionCatalogEntry of [
+      'ca_guard_defs',
+      'declared_ref',
+      'declared_at',
+      'ca_guard_defs_pkey',
+      '{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}',
+      'The migration that deliberately redefined this guard and moved the baseline',
+    ]) {
+      expect(guard).toContain(guardDefinitionCatalogEntry);
+    }
+    expect(guard).toContain('IF v_count<>5 OR v_bad<>0 OR (');
+
+    for (const catalogEntry of [
+      'engine_maintenance_break_faults',
+      'announced_at',
+      'engine_version',
+      'engine_maintenance_break_faults_outcome_check',
+      'engine_maintenance_break_faults_stage_check',
+      'engine_maintenance_break_faults_pkey',
+      'idx_engine_maintenance_break_faults_announced_at',
+      '{postgres=arwdDxtm/postgres,service_role=ar/postgres}',
+      'no browser role may do either.',
+    ]) {
+      expect(guard).toContain(catalogEntry);
+    }
+    expect(guard).toContain('FROM pg_policy policy');
+    expect(guard).toContain('IF v_count<>7 OR v_bad<>0 OR (');
+    expect(guard).toContain('IF v_count<>3 OR v_bad<>0 OR (');
+    expect(guard).toContain('IF v_count<>2 OR v_bad<>0 OR (');
+    expect(guard).toContain('format_type(a.atttypid,a.atttypmod)');
+    expect(guard).toContain('pg_get_constraintdef(con.oid,true)');
+    expect(guard).toContain(
+      'constraint_name,constraint_type,is_deferrable,is_deferred,is_validated,no_inherit'
+    );
+    expect(guard).not.toContain(
+      'constraint_name,constraint_type,deferrable,deferred,validated,no_inherit'
+    );
+    expect(guard).toContain('pg_get_indexdef(i.indexrelid)');
+
+    for (const triggerHash of [
+      'ff3e9305edae93d151545b1e39f519c3',
+      'b160761b00f1575419c4480048433924',
+      '15d2fb7366e29ca4dcc19a5afb55dfab',
+      '1dcaece880bcbb143e869a3456e53065',
+      '5da93870ace9289608f1de7190d872c0',
+      '416cec9117a036d12f0ddde4db64b6a5',
+      'eb1d6ab69891abfa2a4fc11aaff723d8',
+      'd7d02bd075ff3fd1a917e50535e1bdd7',
+      '06a711ff9e0e0d5f33cb5bb891d6257c',
+      'c1c67e4ef2138481fd9176346e53b332',
+      'b434a15ef432e8562fa6c6df4f0f3cec',
+    ]) {
+      expect(guard).toContain(triggerHash);
+    }
+    expect(guard).toContain('md5(pg_get_triggerdef(tg.oid,true))');
+    expect(guard).toContain('IF v_count<>11 OR v_bad<>0 OR (');
+    expect(guard).toContain('tg.tgfoid=ANY(ARRAY[');
+    expect(guard).toContain('tg.tgenabled IS DISTINCT FROM');
+    expect(guard).toContain('tg.tgisinternal IS DISTINCT FROM false');
+    expect(guard).toContain('tg.tgtype IS DISTINCT FROM expected.trigger_type');
+    expect(guard).toContain("tg.tgattr::text IS DISTINCT FROM ''");
+    expect(guard).toContain('tg.tgqual IS NOT NULL');
+    expect(guard).toContain('tg.tgnargs IS DISTINCT FROM 0');
+    expect(guard).toContain(')<>11 THEN');
+    expect(guard).not.toContain('ca_drift_incidents');
+    expect(guard).not.toContain('resolved_at');
   });
 
   it('makes each finalized behavioral rehearsal contract part of the default run', () => {
@@ -315,6 +881,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     for (const marker of [
       'STAGE_B_DIAMOND_ACCEPTED_HAND_SUCCESS_REPLAY_ROLLBACK_OK',
       'STAGE_B_DIAMOND_ACCEPTED_HAND_CURRENT_SCHEMA_OK',
+      'STAGE_B_125453_PHASE3_POSTIMAGE_OK',
       'STAGE_B_080728_CONTROL_POSTIMAGE_OK',
     ]) {
       expect(preparation).toContain(marker);

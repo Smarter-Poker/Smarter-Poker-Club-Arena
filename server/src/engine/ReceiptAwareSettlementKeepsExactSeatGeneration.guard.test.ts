@@ -32,10 +32,10 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
       'fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority'
     );
     expect(contraction.source).toContain(
-      "md5(v_settlement_core) <> 'ba1cdf1b56e5bb0c1c199b65390ee1f2'"
+      "md5(v_settlement_core) <> '2c5f04ae307d38f187b8b72a3f557738'"
     );
     expect(contraction.source).toContain(
-      "md5(v_settlement_door) <> 'a7744092d35a022996a61d9de10e982d'"
+      "md5(v_settlement_door) <> 'a1738adaf943656868e68a7bf7ce8d1e'"
     );
     expect(contraction.source).toContain(
       "md5(v_settlement_wrapper) <> '9d6a12c82aa260c22e1c013e95faca0e'"
@@ -43,26 +43,32 @@ describe('the receipt-aware accepted-hand path retains exact seat generations', 
     expect(contraction.source).toContain(
       "'Stage-B manager fencing found an unknown composed hand-settlement source'"
     );
-    expect(contraction.source.indexOf('ba1cdf1b56e5bb0c1c199b65390ee1f2')).toBeLessThan(
+    expect(contraction.source.indexOf('2c5f04ae307d38f187b8b72a3f557738')).toBeLessThan(
       contraction.source.indexOf('DROP FUNCTION IF EXISTS public.fn_ca_commit_hand_settlement(')
     );
   });
 
   it('pins the receipt preimages and their complete strict postimages', () => {
     for (const hash of [
-      'ba1cdf1b56e5bb0c1c199b65390ee1f2',
-      'a7744092d35a022996a61d9de10e982d',
-      'edfd095bae13ece6bedc989c3acd0467',
-      'c22ec3b288898efa319a384850d41ba7',
+      '2c5f04ae307d38f187b8b72a3f557738',
+      'a1738adaf943656868e68a7bf7ce8d1e',
       '9d6a12c82aa260c22e1c013e95faca0e',
     ]) {
       expect(contraction.source).toContain(hash);
+    }
+    for (const [catalogValue, hash] of [
+      ['v_inner', '9d1376a2b2e13e4dc1d25025b2d2e403'],
+      ['v_inner_source', '3c2d594f08f52a66436f9a766947a1f1'],
+      ['v_outer', '242f8a9d3ad57dac46cd8aa5b395b430'],
+      ['v_outer_source', '9a3e7fccb42d396b4004b45672634e4f'],
+    ]) {
+      expect(contraction.source).toContain(`md5(${catalogValue}) <> '${hash}'`);
     }
     expect(contraction.source).toContain(
       'strict exact-seat settlement source changed after cutover'
     );
     expect(contraction.source).toContain(
-      'strict exact-seat contraction requires the measured 20260910035435 production postimage'
+      'strict exact-seat contraction requires the measured 20260910054712 production postimage'
     );
     expect(contraction.source).toContain('tournament_zero_stack_seat_generations');
     expect(contraction.source).toContain('post_commit_request_hash');

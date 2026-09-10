@@ -125,6 +125,7 @@ exec 9>/var/lock/club-arena-engine-up.lock
 flock -n 9
 systemctl stop club-arena-supervisor.timer
 systemctl stop club-arena-supervisor.service || true
+docker stop -t 15 sp-autoheal
 docker stop -t 45 club-arena-engine
 ```
 
@@ -133,6 +134,7 @@ All of these readbacks must pass in the same shell:
 ```sh
 test "$(systemctl is-active club-arena-supervisor.timer)" = inactive
 test "$(systemctl is-active club-arena-supervisor.service)" = inactive
+test "$(docker inspect -f '{{.State.Status}}' sp-autoheal)" = exited
 test "$(docker ps -q --filter label=sp.role=engine | wc -l)" -eq 0
 test "$(docker inspect -f '{{.State.Running}}' club-arena-engine)" = false
 ! curl -sf --max-time 3 http://127.0.0.1:8080/health
@@ -150,7 +152,10 @@ scripts/ops/verify-tournament-fractional-stack-zero-authority.sh "$SHA8"
 
 Record that output, the host command output, UTC time, and SHA8.
 Any fresh lease, another `sp.role=engine` container, a running supervisor, a
-live local health endpoint, or an active deployment aborts the cutover.
+running `sp-autoheal` sidecar, a live local health endpoint, or an active
+deployment aborts the cutover. Recheck the deployment queue and the held host
+lock immediately before every `apply_migration` call; neither proof may be
+inferred from the start of the window.
 
 ## 3. Render and verify one immutable artifact
 
@@ -224,7 +229,7 @@ is already a uniquely ledgered prerequisite and its application caller is
 already the exact running build; it must not be submitted again here. A timeout
 from the normalization apply is an unknown outcome. Re-read the global name
 count and exact ledger bytes before any retry; never submit a second named
-migration speculatively. Repeat section 2's timer/service/container/process
+migration speculatively. Repeat section 2's timer/service/autoheal/container/process
 readbacks and the checked-in zero-authority verifier immediately before the MCP
 apply. The same host lock remains held throughout; a changing or stale proof
 aborts.
@@ -263,16 +268,19 @@ ENGINE_UP_LOCK_HELD=1 \
 IMAGE="club-arena-engine:$FULL_SHA" \
 CONTAINER=club-arena-engine \
 ENV_FILE=/opt/club-arena/server/.env \
-/opt/club-arena/server/scripts/engine-up.sh
+/usr/local/lib/club-arena/engine-control/engine-up.sh
 ```
 
 Poll the container-local `/health` until `running=true`, `version=SHA8`, and its
 maintenance state has adopted the same break. Prove the public health endpoint
 also reports SHA8, only one `sp.role=engine` container exists, and all fresh
 leader/table/tournament leases report SHA8 with the current protocol. Then
-restart the installed recovery timer and release the lock:
+restart the fenced autoheal sidecar and installed recovery timer, prove both
+recovery authorities are active, and release the lock:
 
 ```sh
+docker start sp-autoheal
+test "$(docker inspect -f '{{.State.Status}}' sp-autoheal)" = running
 systemctl start club-arena-supervisor.timer
 systemctl is-active --quiet club-arena-supervisor.timer
 flock -u 9
@@ -337,8 +345,11 @@ The release is not complete while the live receipt and source filename disagree.
 
 The cutover migration is one transaction. Any SQL exception means no cohort,
 type, trigger, or function write committed. Preserve the error and artifact,
-restart the same exact image, restart the supervisor timer, and investigate the
-failed invariant. Never weaken a guard to fit the window.
+restart the same exact image through section 5's locked engine-up path, then
+restart and prove `sp-autoheal` is running before restarting and proving the
+supervisor timer active. Release descriptor 9 only after all three recovery
+authorities are confirmed. Investigate the failed invariant; never weaken a
+guard to fit the window.
 
 After a confirmed commit, rollback means a reviewed forward migration; it does
 not mean restoring fractional chips or deleting the ledger row. If source

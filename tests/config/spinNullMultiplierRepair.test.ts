@@ -138,9 +138,12 @@ describe('the engine no longer starts a Spin on an unchecked write', () => {
   const engine = tsCode(read('server/src/tournament/TournamentManagerBase.ts'));
 
   it('validates the immutable funded-rule receipt, then reads back presentation separately', () => {
+    // 2026-09-10: the three-attempt loop moved into spinLaunchParking.ts so a
+    // refusal can be classified; the call site hands it the RPC and the
+    // receipt reader.
     const settlementLoop = sliceBlockAfter(
       engine,
-      'for (let attempt = 1; attempt <= 3 && !fundedSpin; attempt++)'
+      'const proven = await proveSpinDrawWithParking<FundedSpinDraw>('
     );
     expect(settlementLoop).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle_atomic'/);
     expect(settlementLoop).toMatch(/const \{ data, error \}/);
@@ -158,7 +161,7 @@ describe('the engine no longer starts a Spin on an unchecked write', () => {
   });
 
   it('stands down before cards when money or presentation cannot be proven', () => {
-    for (const anchor of ['if (!fundedSpin)', 'if (!spinPresentationWritten)']) {
+    for (const anchor of ['if (!proven.ok)', 'if (!spinPresentationWritten)']) {
       const standDown = sliceBlockAfter(engine, anchor);
       expect(standDown).toMatch(/this\.running = false/);
       expect(standDown).toMatch(/return;/);

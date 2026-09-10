@@ -1,0 +1,147 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { HandController } from './HandController.js';
+
+const { loadTable, loadSeatedPlayers } = vi.hoisted(() => ({
+  loadTable: vi.fn(),
+  loadSeatedPlayers: vi.fn(),
+}));
+vi.mock('../services/supabase/client.js', () => ({
+  supabase: {
+    from: () => {
+      throw new Error('Unexpected database write');
+    },
+    rpc: () => {
+      throw new Error('Unexpected database RPC');
+    },
+  },
+  maintenanceSupabase: {},
+}));
+vi.mock('../services/supabase.js', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  loadTable,
+  loadSeatedPlayers,
+}));
+vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+import { ServerTableEngine } from './ServerTableEngine.js';
+
+const engines: any[] = [];
+afterEach(() => {
+  for (const engine of engines.splice(0)) engine.preciseTimer.dispose();
+  loadTable.mockReset();
+  loadSeatedPlayers.mockReset();
+  vi.restoreAllMocks();
+});
+
+const levelOne = { small_blind: 10, big_blind: 20, ante: 2 };
+const levelTwo = { small_blind: 20, big_blind: 40, ante: 4 };
+
+function fixture() {
+  const engine = new ServerTableEngine('tournament-level-snapshot') as any;
+  engines.push(engine);
+  engine.tableInfo = {
+    id: engine.tableId,
+    game_variant: 'nlh',
+    game_type: 'tournament',
+    tournament_id: 'tournament-level-boundary',
+    max_players: 6,
+    ...levelOne,
+    ante_enabled: false,
+  };
+  const seats = [1, 2, 3].map((seat) => ({
+    seat_number: seat,
+    user_id: 'u' + seat,
+    username: 'Player ' + seat,
+    occupancy_id: 'occupancy-' + seat,
+    stack: 1000,
+    seat_id: '00000000-0000-4000-8000-00000000000' + seat,
+    seat_joined_at: '2026-09-10T00:00:00.123456Z',
+  }));
+  engine.seatedPlayers = seats;
+  engine.takePreparedHandNumber = () => 100 + engine.handsDealtThisSession;
+  engine.bombPotSchedPersistedJson = 'null';
+  engine.eventShadowEnabled = false;
+  engine.hub = { emitEvent: vi.fn() };
+  // Cash rake is outside this tournament blind-boundary rehearsal.
+  engine.refreshRakeConfig = async () => {};
+  loadSeatedPlayers.mockResolvedValue(seats);
+  loadTable.mockResolvedValue({ ...engine.tableInfo });
+  // Run the real deal through configuration and HandController creation.
+  // Stop at the first unrelated time-bank read, before settlement or transport.
+  const prepared = new Error('hand controller prepared');
+  engine.fetchTimeBankExtras = async () => {
+    throw prepared;
+  };
+  async function deal(): Promise<HandController> {
+    await expect(engine.dealHand(seats)).rejects.toBe(prepared);
+    expect(engine.handController).not.toBeNull();
+    return engine.handController;
+  }
+  return { engine, seats, deal };
+}
+
+describe('tournament levels belong to the hand that was created with them', () => {
+  it('keeps an active hand at its old stakes and gives the next hand the new blinds and ante', async () => {
+    const { engine, deal } = fixture();
+    await engine.readNextHandInputs();
+    const first = await deal();
+    const completed = vi.fn();
+    first.onEvent((event) => {
+      if (event.type === 'HAND_COMPLETE') completed(event);
+    });
+    first.start();
+    expect(first.getState()).toMatchObject({ stage: 'preflop', currentBet: 20, pot: 36 });
+
+    // A level update arrives while this hand is still taking actions.
+    loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    await engine.refreshBlinds();
+    expect(engine.tableInfo).toMatchObject(levelTwo);
+    expect(first.getState()).toMatchObject({ currentBet: 20, pot: 36 });
+    // The minimum legal opening raise still uses the old 20-chip big blind.
+    expect(first.performAction(first.getState().currentPlayerSeat, 'raise', 40)).toBe(true);
+    for (let folds = 0; folds < 2; folds++) {
+      expect(first.performAction(first.getState().currentPlayerSeat, 'fold')).toBe(true);
+    }
+    expect(completed).toHaveBeenCalledOnce();
+    expect(first.getState().players.reduce((sum, player) => sum + player.stack, 0)).toBe(3000);
+
+    await engine.readNextHandInputs();
+    const second = await deal();
+    expect(second).not.toBe(first);
+    second.start();
+    expect(second.getState()).toMatchObject({ stage: 'preflop', currentBet: 40, pot: 72 });
+    expect(second.performAction(second.getState().currentPlayerSeat, 'raise', 40)).toBe(false);
+    expect(second.performAction(second.getState().currentPlayerSeat, 'raise', 80)).toBe(true);
+  });
+
+  it('waits for the new blind read before a prepared roster can start the next hand', async () => {
+    const { engine, seats, deal } = fixture();
+    let release!: (row: unknown) => void;
+    loadTable.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+    let ready = false;
+    const inputs = engine.readNextHandInputs().then((rows: unknown) => {
+      ready = true;
+      return rows;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    expect(engine.handController).toBeNull();
+    release({ ...engine.tableInfo, ...levelTwo });
+    await expect(inputs).resolves.toEqual(seats);
+    const hand = await deal();
+    hand.start();
+    expect(hand.getState()).toMatchObject({ currentBet: 40, pot: 72 });
+  });
+
+  it('refuses the next-hand input set when the blind authority cannot be read', async () => {
+    const { engine } = fixture();
+    const unavailable = new Error('blind authority rejected the read');
+    loadTable.mockRejectedValue(unavailable);
+    await expect(engine.readNextHandInputs()).rejects.toBe(unavailable);
+    expect(engine.handController).toBeNull();
+  });
+});

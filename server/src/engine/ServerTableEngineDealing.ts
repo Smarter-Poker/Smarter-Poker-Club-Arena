@@ -2373,6 +2373,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       }
 
       const config: HandConfig = {
+        asset: this.tableInfo.arena?.asset ?? 'chips',
         tableId: this.tableId,
         handNumber,
         /* Dan 2026-08-28, binding: a tournament showdown is always face up, so

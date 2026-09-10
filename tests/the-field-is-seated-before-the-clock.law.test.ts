@@ -101,7 +101,10 @@ describe('ITEM 2 — seating moves, the poker does not', () => {
     // held felt, and every level after it runs a minute out of step with the
     // structure the lobby printed.
     expect(start).toMatch(
-      /if\s*\(this\.preStartLeadMs\s*>\s*0\)\s*\{\s*const structure[\s\S]{0,200}?setLifecycleTimeout\([\s\S]{0,160}?startBlindTimer\(/
+      /const blindStartDelayMs =\s*spinFirstDealHoldUntil > 0\s*\? Math\.max\(0, spinFirstDealHoldUntil - Date\.now\(\)\)\s*: this\.preStartLeadMs;/
+    );
+    expect(start).toMatch(
+      /if\s*\(blindStartDelayMs\s*>\s*0\)\s*\{\s*const structure[\s\S]{0,200}?setLifecycleTimeout\(\(\) => \{\s*this\.startBlindTimer\(structure\);\s*\}, blindStartDelayMs\);/
     );
   });
 

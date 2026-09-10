@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from played_spin_proof_cases import run_played_proof_cases
 
 repo = Path(__file__).resolve().parents[2]
 fixture = repo / 'scripts/dev/fixtures/spin-funding'
@@ -25,7 +26,7 @@ cluster = root / 'cluster'
 sock = root / 'socket'
 sock.mkdir()
 port = str(35000 + os.getpid() % 10000)
-log_path = Path('/tmp/codex-poker-audit-sep09-atomic-spin-pg17.log')
+log_path = Path(os.environ.get('POKER_AUDIT_SPIN_LOG', '/tmp/codex-poker-audit-sep09-atomic-spin-pg17.log'))
 club = 'aaaaaaaa-0000-0000-0000-000000000001'
 passed = []
 processes = []
@@ -116,12 +117,15 @@ with log_path.open('w') as log:
             log.write(q("SELECT pg_get_functiondef('public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)'::regprocedure)"))
             log.write('\nATOMIC_SPIN_DRAW_SOURCE_END\n')
         log.flush()
-        q("CREATE FUNCTION public.fn_prove_played_spin_launch_recovery(uuid) RETURNS jsonb "
-          "LANGUAGE sql STABLE AS $$ SELECT jsonb_build_object('ok',false) $$")
+        load_sql(fixture/'played-proof-bootstrap.sql')
+        load_sql(fixture/'installed-played-proof.sql')
+        check('played recovery uses the installed proof body, without a verdict stub',
+              q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_prove_played_spin_launch_recovery(uuid)'::regprocedure")
+              == 'b7bc1bb46141fb6bd415b3658e622a3b')
         load_sql(played_replay_migration)
         played_replay_source_md5 = q("SELECT md5(pg_get_functiondef('public.fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)'::regprocedure))")
-        check('played Spin replay composes into the one funded draw authority',
-              played_replay_source_md5 != atomic_source_md5 and len(played_replay_source_md5) == 32)
+        check('played Spin replay matches the installed funded draw authority',
+              played_replay_source_md5 == '1c911e3ada50ffe0493b9b375e3fa9ae')
         log.write('ATOMIC_SPIN_DRAW_PLAYED_REPLAY_MD5: ' + played_replay_source_md5 + '\n')
         if os.environ.get('POKER_AUDIT_DUMP_ATOMIC_SOURCE') == '1':
             log.write('ATOMIC_SPIN_DRAW_PATCHED_SOURCE_BEGIN\n')
@@ -325,8 +329,8 @@ with log_path.open('w') as log:
           f"UPDATE public.tournament_players SET status='eliminated' WHERE id=(SELECT id FROM public.tournament_players WHERE tournament_id='{uid(20)}' ORDER BY id LIMIT 1)")
         check('two active rows still fail closed when played-Spin proof is absent',
               json.loads(q('SELECT ' + rpc(20)))['reason'] == 'spin_field_unproven')
-        q("CREATE OR REPLACE FUNCTION public.fn_prove_played_spin_launch_recovery(uuid) RETURNS jsonb "
-          "LANGUAGE sql STABLE AS $$ SELECT jsonb_build_object('ok',true) $$")
+        q(f"SELECT public.probe_played_spin_evidence('{uid(20)}')")
+        run_played_proof_cases(q, check, rpc, uid, 20)
         played_replay = json.loads(q('SELECT ' + rpc(20)))
         log.write('PLAYED_SPIN_REPLAY_RECEIPT: ' + json.dumps(played_replay, sort_keys=True) + '\n')
         log.flush()
@@ -346,6 +350,7 @@ with log_path.open('w') as log:
           + literal(adopted_tier['payout_structure']) + f" WHERE id='{uid(21)}';"
           f"UPDATE public.tournament_players SET status='playing' WHERE tournament_id='{uid(21)}';"
           f"UPDATE public.tournament_players SET status='eliminated' WHERE id=(SELECT id FROM public.tournament_players WHERE tournament_id='{uid(21)}' ORDER BY id LIMIT 1)")
+        q(f"SELECT public.probe_played_spin_evidence('{uid(21)}')")
         adopted_played = json.loads(q('SELECT ' + rpc(21)))
         check('a proved pre-receipt played Spin adopts its original funded draw once',
               adopted_played['rule_provenance'] == 'legacy_projection'

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   cancelTournamentDealReview,
   castTournamentDealVote,
@@ -16,6 +16,7 @@ interface Props {
   tournamentId: string;
   actorId: string;
   players: Array<{ user_id: string; username?: string | null }>;
+  children?: ReactNode;
 }
 type Action = 'request' | 'vote' | 'cancel' | 'legacyVote';
 const statusText = {
@@ -28,7 +29,7 @@ const statusText = {
   expired: 'Deal Review Expired. Play Resumes When The Table Confirms.',
 };
 
-export default function TournamentDealReview({ tournamentId, actorId, players }: Props) {
+export default function TournamentDealReview({ tournamentId, actorId, players, children }: Props) {
   const [review, setReview] = useState<TournamentDealReviewState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Action | null>(null);
@@ -165,6 +166,7 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
           </span>
         )}
       </div>
+      {children}
       {loading && <p role="status">Checking The Current Review...</p>}
       {error && <p role="alert">{error}</p>}
       {notice && (

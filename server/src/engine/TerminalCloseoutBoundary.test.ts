@@ -156,7 +156,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
 
     const attemptedStart = (async () => {
       await preparation;
-      if (!engine.discardPreparedHandForTerminalCloseout()) start();
+      if (!engine.discardPreparedHandForPause()) start();
     })();
     engine.terminalCloseoutPaused = true;
     finishPreparation();
@@ -240,10 +240,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
       announce
     );
     const rest = source.indexOf('await this.awaitNextHandRest();', announceGate);
-    const restGate = source.indexOf(
-      'if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0)',
-      rest
-    );
+    const restGate = source.indexOf('if (this.isNextHandPaused())', rest);
     const deal = source.indexOf('await this.dealHand(activePlayers)', announce);
     expect(announceGate).toBeGreaterThan(announce);
     expect(rest).toBeGreaterThan(announceGate);
@@ -252,11 +249,11 @@ describe('the terminal tournament boundary owns the next deal', () => {
 
     const method = source.slice(source.indexOf('protected async dealHand('));
     const allocate = method.indexOf('await this.allocateGlobalHandNumber()');
-    const allocatedGate = method.indexOf('discardPreparedHandForTerminalCloseout()', allocate);
+    const allocatedGate = method.indexOf('discardPreparedHandForPause()', allocate);
     const timeBanks = method.indexOf('await this.fetchTimeBankExtras(');
-    const timeBankGate = method.indexOf('discardPreparedHandForTerminalCloseout()', timeBanks);
+    const timeBankGate = method.indexOf('discardPreparedHandForPause()', timeBanks);
     const generation = method.indexOf('this.beginTerminalBoundaryPersistence()');
-    const finalGate = method.lastIndexOf('discardPreparedHandForTerminalCloseout()', generation);
+    const finalGate = method.lastIndexOf('discardPreparedHandForPause()', generation);
     const start = method.indexOf('controllerForHand.start()', generation);
     expect(allocatedGate).toBeGreaterThan(allocate);
     expect(timeBankGate).toBeGreaterThan(timeBanks);

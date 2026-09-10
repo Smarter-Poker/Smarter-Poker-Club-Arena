@@ -70,6 +70,14 @@ Documentation-only proposal records SQL expansion, compatible engine/client veri
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Reprice Access And Release Verification
+
+The reprice writer remains service-only through an explicit forward ACL declaration, applied as 20260910071131 and independently read back without any body or money change. Its previously applied migration stays byte-identical. Native PostgreSQL acceptance passes 24 groups; 91 source/gate assertions and 24 existing reserved-pool/actual-first-deal behavioral tests pass. Two obsolete source pins now enforce the corrected pool and deadline. Re-read: yes. See docs/changelog/2026-09-10-reprice-access-and-release-checks.md. Normal push and deployment verification remain open.
+
+## 2026-09-10: Resume Audit Swarm Database Reader Corrections
+
+The accepted hand history now retains exact per-pot awards for bounty claimants. Its database reader was independently reviewed and installed as 20260910055857; the integrated engine writer still awaits normal publication. The cash entry-close verifier now proves unpaid cached results against the canonical Bubble-reserved ladder, with no wallet or payout writes; installed as 20260910060034. Both installed bodies, fixed search paths and service-only execution were read back and matched the reviewed source. Exact transaction rehearsals passed 17 and 20 PostgreSQL groups respectively. The reserved repository files exactly mirror the applied SQL; the MCP assigned the recorded application versions. Re-read: yes. Detailed source hashes, peer tests and limits: docs/audits/2026-09-10-resume-swarm-release.json. The programme remains Phase 3 of 12 with four of the original 58 controls fully verified.
+
 ## 2026-09-10: Diamond Shared Cash Lifecycle Integration
 
 The shared table buy-in, accepted-hand settlement and occupancy cash-out now have a distinct whole-Diamond custody branch; existing chip contracts remain separate. Three forward migrations and exact isolated database acceptance are recorded in docs/changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md. Client departure summaries retain the already verified original occupancy instead of performing a second network read before leave. Re-read: yes. The client regression repair passed 72 focused cases and the engine SELECT contract passed 48. Exact user approval was received; all three financial migrations applied once as 20260910050142, 20260910050156 and 20260910050209. Eighteen function bodies, access controls, triggers and closed public admission were verified. Complete Phase 6 publication and live acceptance are not yet claimed. Final integrated client build and server TypeScript passed on clean source 71f57c9585. Connected real-engine/SQL play conserved all 2000 fixture Diamonds; current settlement-lane compatibility passed 50 SQL assertions. Normal push and production release checks remain required.

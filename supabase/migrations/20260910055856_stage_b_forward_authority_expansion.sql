@@ -248,7 +248,7 @@ BEGIN
           ('fn_deliver_satellite_ticket_exact', 'fn_ca_lock_settlement_lane_global'),
           ('fn_execute_managed_game_command', 'fn_ca_lock_settlement_lane_global'),
           ('fn_finalize_bounty_pool', 'fn_ca_lock_settlement_lane_global'),
-          ('fn_mystery_bounty_pay', 'fn_ca_lock_settlement_lane_global'),
+          ('fn_mystery_bounty_pay', 'fn_ca_lock_settlement_lane_for_tournament'),
           ('fn_mystery_bounty_settle', 'fn_ca_lock_settlement_lane_global'),
           ('fn_resolve_satellite_settlement_outcome', 'fn_ca_lock_settlement_lane_global'),
           ('fn_resolve_tournament_terminal_outcome', 'fn_ca_lock_settlement_lane_global'),

@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-09-10T14:37:58.115030+00:00",
+  "build_info": {
+    "ca_sha": "cb11503fd0d6bf45433ef0a364361652b8ce0170",
+    "built_at": "2026-09-10T14:29:04Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34489048445"
+  },
+  "entry": "assets/index-DJUVYpMm-v6.js",
+  "entry_sha256": "4971588dac23a38d85a8b1192cb0a04bbcc6fca00499d1c8c22dc55ed4ba7dd5",
+  "table_assets": [
+    {
+      "path": "assets/TablePage-BlTtm-BK-v6.js",
+      "sha256": "7bb6971572e4117b3ea07bce1b43b479e6025d701506ca931750ce7ff723bfd0",
+      "has_qualification_event": false,
+      "has_qualification_rpc": false,
+      "has_winner_event": true
+    }
+  ],
+  "stable_capture": true,
+  "reference_legacy_commit": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a"
+}

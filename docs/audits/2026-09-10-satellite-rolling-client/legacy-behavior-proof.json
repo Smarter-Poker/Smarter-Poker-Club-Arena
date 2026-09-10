@@ -1,0 +1,86 @@
+{
+  "source_ref": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
+  "source_sha256": "17587808ac73c1fb888e55d838fef285962405728591345257bf092aa1b92952",
+  "actual_legacy_callback_sha256": "66b1f2bedb62bab0fd90860977ba3c4c8c240e47d3e61d1726ef0cf77fb4b4cd",
+  "legacy_has_qualification_event": false,
+  "legacy_has_qualification_rpc": false,
+  "terminal_callbacks": [
+    {
+      "label": "placeless qualifier",
+      "row": {
+        "status": "winner",
+        "position": null,
+        "prize": 200
+      },
+      "observed": {
+        "retries": 1,
+        "exits": [],
+        "winners": [],
+        "errors": []
+      }
+    },
+    {
+      "label": "ranked winner control",
+      "row": {
+        "status": "winner",
+        "position": 1,
+        "prize": 200
+      },
+      "observed": {
+        "retries": 0,
+        "exits": [[1, 200, 7000]],
+        "winners": [
+          {
+            "prize": 200,
+            "name": "Legacy Satellite"
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "label": "ranked loser control",
+      "row": {
+        "status": "eliminated",
+        "position": 2,
+        "prize": 0
+      },
+      "observed": {
+        "retries": 0,
+        "exits": [[2, 0, 2500]],
+        "winners": [],
+        "errors": []
+      }
+    }
+  ],
+  "seat_removal": {
+    "state": {
+      "heroSeat": 0,
+      "players": [null]
+    },
+    "notices": [],
+    "exits": []
+  },
+  "successful_empty_seat_read": {
+    "tableMutations": 0,
+    "readyCalls": 0
+  },
+  "multi_source_sha256": "63142f6f6c674767e805da225ab58a1c00b13c1f6ddca5c435404759c365974d",
+  "seat_removal_callback_sha256": "68d747555183b6bb9719e193a2301824cfbe878d428cdd6dd6c2cc900eb7b4c0",
+  "rebuild_callback_sha256": "164a09384cbd2b67dd21f18c6dacce79b2d5b4d9ddd13f31c09b3a09391eef3a",
+  "reload_gate": [
+    {
+      "pathname": "/hub/club-arena/table/old-source",
+      "allowed": false
+    },
+    {
+      "pathname": "/table/old-source",
+      "allowed": false
+    },
+    {
+      "pathname": "/hub/club-arena/lobby",
+      "allowed": true
+    }
+  ],
+  "limit": "Actual source-extracted callbacks with mocked read transport; not an authenticated browser or live settlement claim."
+}

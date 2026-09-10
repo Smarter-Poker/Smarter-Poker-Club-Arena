@@ -29,6 +29,7 @@ INSERT INTO friendships(user_id,friend_id,status) VALUES('10000000-0000-0000-000
 fixture+='\n\\ir '+str(ROOT/'tests/sql/poker-diamond-production-wallet-fixture.sql')
 fixture+='\n\\ir '+str(ROOT/'tests/sql/diamond-transfer-cap-fixture.sql')
 fixture+='\n\\ir '+str(ROOT/'supabase/migrations/20260909200327_atomic_wallet_diamond_transfers.sql')
+fixture+='\n\\ir '+str(ROOT/'tests/sql/diamond-session-fixture.sql')
 r=subprocess.run(BASE+['-d',DB],input=fixture,text=True,capture_output=True)
 if r.returncode: raise AssertionError(r.stderr)
 A='10000000-0000-0000-0000-000000000001'; B='10000000-0000-0000-0000-000000000002'; C='10000000-0000-0000-0000-000000000003'
@@ -37,14 +38,40 @@ def check(c,label):
  global passed
  assert c,label
  passed+=1;print('PASS',label,flush=True)
-def send(amount=100,request=None,sender=A,recipient=B):
+LIVE_CLAIMS=json.dumps({'session_id':'60000000-0000-0000-0000-000000000001'})
+def send(amount=100,request=None,sender=A,recipient=B,claims=LIVE_CLAIMS):
  ref=request or str(uuid.uuid4())
- r=sql("SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub','"+sender+"',false); SELECT send_wallet_diamond_transfer('"+recipient+"',"+str(amount)+",NULL,'"+ref+"')",False)
+ r=sql("SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub','"+sender+"',false); SELECT set_config('request.jwt.claims','"+claims.replace("'","''")+"',false); SELECT send_wallet_diamond_transfer('"+recipient+"',"+str(amount)+",NULL,'"+ref+"')",False)
  if r.returncode:return r
  return json.loads(r.stdout.strip().splitlines()[-1])
+# Negative control: the old writer spends with a revoked session. Roll back
+# this fixture-only call before applying the repair and exercising its contract.
+negative=sql("BEGIN; SET LOCAL ROLE authenticated; SELECT set_config('request.jwt.claim.sub','"+A+"',true); SELECT set_config('request.jwt.claims','{}',true); SELECT send_wallet_diamond_transfer('"+B+"',1,NULL,'negative-control-session'); ROLLBACK")
+check(any(line.startswith('{') and json.loads(line).get('success') for line in negative.splitlines()),'old writer reproduces missing live-session check')
+migration=ROOT/'supabase/migrations/20260910012514_diamond_wallet_transfers_require_a_live_session.sql'
+sql(migration.read_text())
+before=sql('SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM profiles p')
+for claims,label in [
+ ('{}','missing session'),
+ (json.dumps({'session_id':'60000000-0000-0000-0000-000000000003'}),'revoked session'),
+ (json.dumps({'session_id':'60000000-0000-0000-0000-000000000002'}),'expired session'),
+ ('broken-json','malformed claims'),
+ (json.dumps({'session_id':'invalid'}),'malformed session ID'),
+]:
+ result=send(amount=1,claims=claims)
+ check(not isinstance(result,dict) and 'authentication_required' in result.stderr,label+' refused')
+check(before==sql('SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM profiles p') and sql('SELECT count(*) FROM diamond_wallet_transfers')=='0' and sql('SELECT count(*) FROM diamond_transactions')=='0','session refusals leave balances, journals and receipts untouched')
 ref=str(uuid.uuid4()); first=send(request=ref)
+
 check(isinstance(first,dict) and first['success'],'authenticated friend transfer')
 check(first==send(request=ref),'response-loss replay exact receipt')
+sql("DELETE FROM auth.sessions WHERE id='60000000-0000-0000-0000-000000000001'")
+check('authentication_required' in send(request=ref).stderr,'revoked session cannot replay a receipt')
+sql("INSERT INTO auth.sessions VALUES('60000000-0000-0000-0000-000000000004',NULL)")
+renewed=json.dumps({'session_id':'60000000-0000-0000-0000-000000000004'})
+check(first==send(request=ref,claims=renewed),'new live session replays original receipt without another transfer')
+sql("INSERT INTO auth.sessions VALUES('60000000-0000-0000-0000-000000000001',NULL)")
+
 check(send(amount=101,request=ref).returncode!=0,'changed replay refused')
 check(send(recipient=C).returncode!=0,'nonfriend refused')
 check(send(recipient=A).returncode!=0,'self transfer refused')

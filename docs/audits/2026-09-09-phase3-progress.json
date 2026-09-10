@@ -8,7 +8,8 @@
       "id": "T01",
       "requirement": "Atomic registration binds one funded entry to one player/event. Race duplicate requests, last seat and registration closure.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_prestart_funding_and_receipts_verified",
+      "evidence": "registration_funding_and_receipt_correction"
     },
     {
       "id": "T02",
@@ -75,7 +76,7 @@
       "id": "T12",
       "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
       "priority": "P1",
-      "status": "payment_projection_verified_pending_frontend_publication",
+      "status": "verified_and_deployed",
       "evidence": "tournament_payment_status_correction"
     },
     {
@@ -89,19 +90,22 @@
       "id": "K02",
       "requirement": "Snapshot level/blinds at hand creation; advance only the next eligible hand when a level boundary occurs mid-hand.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_actual_hand_boundary_verified",
+      "evidence": "blind_snapshot_rehearsal"
     },
     {
       "id": "K03",
       "requirement": "Define registration wall time separately from blind time and maintenance extensions. Test daylight saving and UTC conversion.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_utc_cadence_correction_deployed",
+      "evidence": "utc_break_cadence_correction"
     },
     {
       "id": "K04",
       "requirement": "Publish break cadence, duration and exceptions. Track requested, draining, on-break and resumed states explicitly.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_utc_cadence_correction_deployed",
+      "evidence": "utc_break_cadence_correction"
     },
     {
       "id": "K05",
@@ -145,13 +149,15 @@
       "id": "K11",
       "requirement": "Tournament sit-outs still follow tournament blinds/antes policy. Cash sit-out rules must not remove tournament obligations.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "verified_existing_deployed_behavior",
+      "evidence": "sit_out_obligation_verification"
     },
     {
       "id": "K12",
       "requirement": "Test missed scheduler ticks, engine failover and long-running hands at :53/:55/:00 without restarting active settlement.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_utc_cadence_correction_deployed",
+      "evidence": "utc_break_cadence_correction"
     },
     {
       "id": "S01",
@@ -629,7 +635,7 @@
     }
   },
   "publication": {
-    "status": "pushed_ci_database_gate_corrected",
+    "status": "initial_correction_merged_and_engine_verified",
     "source_pushed": true,
     "authorization": "User explicitly authorized pushing and publishing Phase 3 changes to Smarter-Poker/Smarter-Poker-Club-Arena in this chat.",
     "recovered_local_commit": "165ec0ce03012ce8b3f548b4b6895a415e73f4a9",
@@ -639,7 +645,10 @@
     "initial_ci_run": 34381252398,
     "initial_ci_failure": "Supabase Invariants: A Club Stays Deletable, three unindexed refund-table club foreign keys",
     "initial_ci_server_and_client_suites": "passed",
-    "live_engine_adoption": "pending"
+    "live_engine_adoption": "verified",
+    "initial_correction_merge": "5dd902e978006d736b90df5261e949a7e07657cd",
+    "initial_correction_ci_run": 34382881384,
+    "initial_correction_engine_run": 34383629239
   },
   "open_source_findings": [
     {
@@ -749,6 +758,16 @@
       "target": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
       "shipped": false,
       "reason": "Image staged; next announced break outside run budget"
+    },
+    "current_composition_review": {
+      "observed_at": "2026-09-10T01:45:38.605105Z",
+      "migration": "20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql",
+      "atomic_body_md5": "b303d83aadd381950dfe658578767a4c",
+      "atomic_definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+      "played_proof_body_md5": "b7bc1bb46141fb6bd415b3658e622a3b",
+      "played_proof_definition_md5": "8bc978cc105c18b2e3350016b48a50eb",
+      "scope": "A separate merged programme composed played-Spin recovery. Catalog hashes match its exact post-guard. The earlier 36 audit checks describe the original correction; they are not claimed as execution of the expanded played-recovery suite. The Python composition probe stubs the played proof; the real SQL proof needs a disposable full-schema rehearsal.",
+      "full_control_closed": false
     }
   },
   "expiry_correction": {
@@ -836,7 +855,7 @@
     "continue_audit_during_deployment": true
   },
   "satellite_cash_correction": {
-    "status": "production_database_applied_verified_source_followup_blocked",
+    "status": "production_database_verified_source_followup_merged",
     "controls": ["T06", "B08"],
     "policy_source": "docs/LAWS.md and preserved Club Arena audit decision: eligible satellite unregisters use approved cash treatment",
     "baseline_observed": {
@@ -972,6 +991,23 @@
       "terminal_outcome_resolver_present": true,
       "terminal_resolver_body_md5": "4c151073f56b53e4b0363bdd916b78d4",
       "terminal_service_only": true
+    },
+    "cutover_prerequisite_review": {
+      "observed_at": "2026-09-10T00:05:49Z",
+      "exact_twelve_argument_hand_commit_present": true,
+      "exact_hand_body_md5": "6685f27ebb50bc05afc04b106353714c",
+      "seat_joined_at_marker": true,
+      "time_bank_seat_generation_mismatch_marker": true,
+      "staged_freeze_body_md5": "cff283a255830f34ad7488bbfbf70bc6",
+      "installed_freeze_body_md5": "a29498531e4b7d3889532e80fafc8d57",
+      "freeze_pin_matches": false,
+      "scope": "The staged historical cutover remains unapplied. Its freeze precondition requires reconciliation and complete rehearsal; no marker or predicate was changed to bypass it."
+    },
+    "latest_move_authority_recheck": {
+      "observed_at": "2026-09-10T00:42:11.899153Z",
+      "move_writer_present": false,
+      "move_resolver_present": false,
+      "move_receipt_table_present": false
     }
   },
   "entry_fee_disclosure": {
@@ -1040,12 +1076,10 @@
   },
   "result_payment_disclosure_review": {
     "controls": ["T12"],
-    "status": "confirmed_results_projection_gap",
+    "status": "resolved_by_tournament_payment_status_correction",
     "source": "src/pages/tournament/TournamentResultsPage.tsx",
-    "finding": "Results read tournament_players prize, bounty_winnings and participation status. They do not read tournament_obligations amount_owed/amount_paid or expose paid, partially paid and owed states.",
-    "database_evidence": "Installed tournament_obligations contains amount_owed, amount_paid, settled_at and terminal_closed_at. No src caller of tournament_obligations was found.",
-    "limit": "Source/schema gap only. No historical player debts were recalculated and no new public obligation access policy was introduced.",
-    "full_controls_closed": false,
+    "limit": "Original source/schema review is retained as historical evidence. Current acceptance and its limits are in tournament_payment_status_correction.",
+    "full_controls_closed": true,
     "database_access": {
       "rls_enabled": true,
       "select_policies": 0,
@@ -1053,10 +1087,11 @@
       "authenticated_select": false,
       "service_select": true
     },
-    "next_step": "Implement an authorized player-results payment projection from the canonical obligations, then wire actual paid/partial/owed amounts into results and statements. A direct browser query to the protected ledger is not an available path."
+    "historical_finding": "Results read tournament_players prize, bounty_winnings and participation status. They do not read tournament_obligations amount_owed/amount_paid or expose paid, partially paid and owed states.",
+    "historical_database_evidence": "Installed tournament_obligations contains amount_owed, amount_paid, settled_at and terminal_closed_at. No src caller of tournament_obligations was found."
   },
   "tournament_payment_status_correction": {
-    "status": "database_deployed_frontend_pending_publication",
+    "status": "verified_and_deployed",
     "control": "T12",
     "behavior": "Caller-owned paid, partially paid, owed and zero-due records in results and player statements; absent records remain unconfirmed. Satellite seat values are identified as transferred.",
     "migration": "20260909235308_players_can_read_their_tournament_payment_status.sql",
@@ -1080,6 +1115,217 @@
       "synthetic_responses": true
     },
     "limits": "No production player session, payout mutation, historical correction or settlement certification. Other Phase 3 controls remain separate.",
+    "full_control_closed": true,
+    "pull_request": 4058,
+    "source_commit": "4334e642fe1b8d6560867629a1dad95cd216850d",
+    "merge_commit": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+    "ci_run": 34420844586,
+    "ci_conclusion": "success",
+    "live_frontend": {
+      "verified_at": "2026-09-10T00:31:06.383675+00:00",
+      "builds": {
+        "https://ca-static.smarter.poker/build-info.json": {
+          "ca_sha": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+          "built_at": "2026-09-10T00:29:00Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34421278289"
+        },
+        "https://smarter.poker/hub/club-arena/build-info.json": {
+          "ca_sha": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+          "built_at": "2026-09-10T00:29:00Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34421278289"
+        }
+      }
+    },
+    "shipped_bundle_proof": {
+      "verified_at": "2026-09-10T00:34:05.750440+00:00",
+      "chunks": [
+        {
+          "chunk": "https://smarter.poker/hub/club-arena/assets/TournamentResultsPage-C_vtmzB2-v6.js",
+          "sha256": "9ac87e58f022db4af1de14949389927b5e7166984288f4b75e9ac6805c455f18",
+          "rpc_present": false,
+          "partial_state_present": false,
+          "unconfirmed_present": false
+        },
+        {
+          "chunk": "https://smarter.poker/hub/club-arena/assets/ChipStatement-CrHyK-WZ-v6.js",
+          "sha256": "798664d8bd428a016a4d75b2962918793ff734fa858651e9b4a85f52cd62403b",
+          "rpc_present": false,
+          "partial_state_present": false,
+          "unconfirmed_present": false
+        },
+        {
+          "chunk": "https://smarter.poker/hub/club-arena/assets/TournamentPaymentStatus-eTibxjf9-v6.js",
+          "sha256": "bdf14220af9cc5d03602b942b4ba70f2e9b16c80f47f281a923e127829ad1822",
+          "rpc_present": true,
+          "partial_state_present": true,
+          "unconfirmed_present": true
+        }
+      ]
+    },
+    "latest_database_body_check": {
+      "checked_at": "2026-09-10T00:42:11.899153Z",
+      "body_md5": "6aafec6408d9653967eaa6b367fee764",
+      "matches_reviewed_body": true
+    },
+    "acceptance": "Paid, partially paid and owed states are projected from caller-owned obligations in both requested surfaces; completed tournament status never substitutes for payment state. No live payout execution is inferred from this display control."
+  },
+  "utc_break_cadence_correction": {
+    "controls": ["K03", "K04", "K12"],
+    "status": "merged_engine_adoption_verified",
+    "pull_request": 4063,
+    "merge_commit": "9eac7cab76d90bcaabefcdb932169d5f0ab60781",
+    "ci_run": 34421219592,
+    "ci_conclusion": "success",
+    "behavior": "The synchronized :55 break and :53 maintenance announcement use UTC setters across daylight-saving repeated hours and fractional UTC offsets.",
+    "baseline_failures": {
+      "synchronized_break": 4,
+      "maintenance_announcement": 3
+    },
+    "verified_tests": {
+      "SynchronizedBreakUtcCadence.test.ts": 9,
+      "maintenance/MaintenanceBreak.test.ts": 66
+    },
+    "dispatch": {
+      "requested_at": "2026-09-10T00:32:34.295945+00:00",
+      "status": 204,
+      "sha": "9eac7cab76d90bcaabefcdb932169d5f0ab60781",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml"
+    },
+    "dispatch_run": 34421732550,
+    "queue_state": "Original request was superseded by later main deployments that include this merge; no force restart or repeated dispatch was used.",
+    "latest_engine_observation": {
+      "observed_at": "2026-09-10T02:00:29.440806+00:00",
+      "url": "https://engine.smarter.poker/health",
+      "version": "b4c427a6",
+      "running": true,
+      "maintenance": {
+        "active": false,
+        "phase": "idle",
+        "durableConfirmed": false,
+        "breakEndsAt": null,
+        "remainingMs": 0,
+        "unparkedTables": 0,
+        "readyForRestart": false,
+        "reason": "Scheduled Engine Maintenance",
+        "resumeWaves": {
+          "total": 8,
+          "done": 8,
+          "startedAt": 1789005606130,
+          "finishedAt": 1789005616632,
+          "tables": 282,
+          "tablesResumed": 282,
+          "gapMs": 1500
+        },
+        "dbClockSkewMs": -33
+      }
+    },
+    "full_controls_closed": false,
+    "limits": "UTC cadence only. Registration extensions, all break states, missed-tick failover and active settlement remain separate acceptance boundaries.",
+    "deferred_staged_deployment": {
+      "run": 34423465001,
+      "target": "3ed5b7d59f407fb0d9cb8d9324c6fdb03b3ff359",
+      "shipped": false,
+      "reason": "Next break 2351 seconds away exceeded 2192-second remaining run budget; image was staged."
+    },
+    "leader_witness": {
+      "observed_at": "2026-09-10T02:01:20.410600Z",
+      "engine_version": "b4c427a6",
+      "acquired_at": "2026-09-10T01:56:08.686453Z",
+      "heartbeat_at": "2026-09-10T02:01:19.420514Z",
+      "heartbeat_age_seconds": 0.990086
+    },
+    "adopted_commit": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "ancestry_command_passed": true
+  },
+  "registration_evidence_review": {
+    "control": "T01",
+    "source_commit": "043b9e0c6674b5dcb84f2209adc780dcce89bab0",
+    "receipt_probe": "scripts/ci/probes/chip-journal-atomicity/test_registration_receipts.py",
+    "receipt_probe_limit": "Executes the receipt wrapper with a simulated funding core. Its replay assertions do not prove real debit atomicity or last-seat races.",
+    "admission_probe": "scripts/ci/probes/tournament-registration-admission-contract.sql",
+    "admission_probe_limit": "References the retired unbound one-argument registration API. It was not run against production or counted as current admission proof.",
+    "full_control_closed": false,
+    "current_rehearsal": "registration_funding_and_receipt_correction"
+  },
+  "verified_control_count": 2,
+  "blind_snapshot_rehearsal": {
+    "control": "K02",
+    "test": "server/src/engine/TournamentBlindSnapshot.test.ts",
+    "tests_passed": 3,
+    "production_method": "ServerTableEngineDealing.readNextHandInputs, refreshBlinds and dealHand with the real HandController",
+    "source_base": "043b9e0c6674b5dcb84f2209adc780dcce89bab0",
+    "observed": "An active 10/20/2 hand keeps its original legal raise and finishes after a 20/40/4 table update. A separate next hand posts 20/40/4. An unresolved or failed blind read cannot supply a ready input set.",
+    "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Does not exercise the entire dealing loop or a level tick during its prefetched between-hand rest. No production money writes or new blind-policy behavior.",
     "full_control_closed": false
+  },
+  "registration_funding_and_receipt_correction": {
+    "control": "T01",
+    "status": "merged_and_database_verified",
+    "migration": "20260910012633_tournament_entry_receipts_use_the_charged_club_wallet.sql",
+    "migration_sha256": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+    "baseline_body_md5": "14d25f13e1ceca68cf4da1e231cc342b",
+    "installed_body_md5": "f9d423ecda16d49d698a1b3735baf7cb",
+    "database_verified_at": "2026-09-10T01:27:55.978132Z",
+    "permissions": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    "baseline": {
+      "charged_wallet_after": 300,
+      "other_club_wallet": 1000,
+      "recorded_balance_after": 1000
+    },
+    "corrected_receipt_balance_after": 300,
+    "change": "Future tournament entry debit receipts read the charged tournament club wallet. No amount, wallet balance or historical receipt is rewritten.",
+    "isolated_postgres_groups": 7,
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "fixture_manifest": "scripts/dev/fixtures/registration-funding/source-manifest.json",
+    "ci_entry": "scripts/ci/probes/chip-journal-atomicity/run-isolated.sh",
+    "cases": [
+      "one real registration binds one debit, journal, entitlement, escrow and operation receipt",
+      "late operation receipt failure rolls back every funding and entry write",
+      "overlapping retry requests fund one entry",
+      "overlapping duplicate requests fund one entry",
+      "two real contenders for the last place commit one funded entry",
+      "registration waiting behind pool closure rechecks eligibility without charging",
+      "entry receipt balance belongs to the club wallet actually charged"
+    ],
+    "limits": "Ordinary pre-start standalone-club entries with synthetic auth/session and maintenance state. Full HTTP/RLS, membership-management triggers, late-entry seating, union funding, promotions, re-entry and SNG launch remain separate.",
+    "full_control_closed": false,
+    "pull_request": 4075,
+    "merge_commit": "37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2",
+    "merged_at": "2026-09-10T01:47:07Z",
+    "ci_run": 34426615230,
+    "ci_conclusion": "success",
+    "ci_client": "Existing pinned pg 8.16.3 client; seven groups pass locally through that client and in required CI."
+  },
+  "evidence_checkpoint_publication": {
+    "pull_request": 4068,
+    "merge_commit": "8935fd2e823a6604c9adb30d40f0e2fdb2532ff3",
+    "ci_run": 34423832389,
+    "ci_conclusion": "success",
+    "merged_at": "2026-09-10T01:14:59Z"
+  },
+  "sit_out_obligation_verification": {
+    "control": "K11",
+    "status": "verified_existing_deployed_behavior",
+    "source_commit": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "test_file": "server/src/engine/TournamentBlindSnapshot.test.ts",
+    "new_behavioral_cases": 5,
+    "total_tests_passed": 8,
+    "server_types": "passed",
+    "cases": [
+      "Heads-up, three-player and six-player all-absent tournament rosters retain every entrant and pay the configured blinds and antes.",
+      "Ten-minute sit-outs remain seated when the real cash-eviction sweep is called.",
+      "An absent entrant with one chip posts that chip as an all-in ante.",
+      "The real cash deal path still excludes sit-outs."
+    ],
+    "scope": "The real dealable count, blind predictors, eviction method, deal configuration and HandController are exercised. External reads are synthetic and the fixture stops before time-bank transport and settlement. This closes forced-bet eligibility only; persistence across table moves and settlement remain separate controls.",
+    "deployed_code_comparison": "No difference in ServerTableEngineBase, ServerTableEngineDealing, DisconnectEngine or HandController between the observed engine build and tested source.",
+    "full_control_closed": true
   }
 }

@@ -228,17 +228,26 @@ export function createIcmEquityEstimator(
   };
 
   for (let trial = 0; trial < trials; trial++) {
-    const clocks: number[] = [];
+    // Native Float64Array sorting is numeric and avoids constructing, sorting,
+    // then copying a boxed-number Array for every trial. At 200-1,000 live
+    // players this is the dominant Phase 7 action-clock cost. The RNG draw
+    // order and every clock value remain identical; only the container used
+    // for the same ascending sort changes.
+    const clocks = new Float64Array(fixed.length);
+    let clockIndex = 0;
     for (let index = 0; index < reference.length; index++) {
       const stack = reference[index];
       if (stack <= 0 && !mutableSet.has(index)) continue;
       const exponential = -Math.log(rand());
       const slot = mutableSlot.get(index);
       if (slot !== undefined) mutableDraws[slot][trial] = exponential;
-      else clocks.push(exponential / stack);
+      else clocks[clockIndex++] = exponential / stack;
     }
-    clocks.sort((left, right) => left - right);
-    remoteClocks[trial] = Float64Array.from(clocks);
+    if (clockIndex !== clocks.length) {
+      throw new Error('ICM fixed-clock workspace did not match its live remote field');
+    }
+    clocks.sort();
+    remoteClocks[trial] = clocks;
   }
 
   const heroSlot = mutableSlot.get(heroIdx);

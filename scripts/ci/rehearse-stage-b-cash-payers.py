@@ -221,9 +221,12 @@ def main():
     output = Path(tempfile.mkdtemp(prefix="codex-stage-b-cash-payers-"))
     lane_name = "20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
     lane_path = output / lane_name
-    lane_path.write_bytes(subprocess.check_output(
-        ["git", "show", "d7f6f0fd02b0a8fb353e792ef675bb8bd813cd14:supabase/migrations/" + lane_name],
-        cwd=root))
+    lane_source = root / "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+    lane_bytes = lane_source.read_bytes()
+    if hashlib.sha256(lane_bytes).hexdigest() != "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe":
+        raise RuntimeError("tracked settlement lane source differs")
+    # Preserve the original provenance filename so composed rehearsal SQL is unchanged.
+    lane_path.write_bytes(lane_bytes)
     for variant in ("paid", "unpaid", "partial"):
         text = compose(root, variant, lane_path)
         path = output / (variant + ".sql")

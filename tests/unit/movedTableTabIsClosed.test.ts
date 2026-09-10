@@ -115,13 +115,16 @@ describe('the seat rebuild prunes, not just adds', () => {
 
   it('still returns the same array reference when nothing changed', () => {
     // The P1-2 render-loop fix depends on this identity bail-out.
-    expect(CODE).toMatch(/if \(prunedRef\.current === 0 && additions\.length === 0\) return prev;/);
+    expect(CODE).toMatch(
+      /prunedCount === 0 &&\s*additions\.length === 0 &&\s*confirmed\.every\(\(tab, index\) => tab === prev\[index\]\)\s*\)\s*return prev;/
+    );
   });
 
   it('tells the player instead of closing a table silently', () => {
-    expect(SRC).toMatch(/You were moved to a new table/);
+    expect(CODE).toContain('Closed A Table You Are No Longer Seated At.');
+    expect(CODE).toContain('seatRebuildNotice.previousSeatedIds');
     // House popup rule: no em dashes in popup text.
-    const toastArgs = SRC.match(/'You were moved[^']*'/g) ?? [];
+    const toastArgs = CODE.match(/'Closed A Table[^']*'/g) ?? [];
     expect(toastArgs.length).toBeGreaterThan(0);
     for (const t of toastArgs) expect(t).not.toMatch(/—/);
   });
@@ -132,19 +135,19 @@ describe('the rebuild runs again on reconnect', () => {
     // The one moment this client's picture of "which tables am I at" is most
     // likely to be stale was the one moment it never re-read server truth.
     expect(CODE).toMatch(
-      /useMasterBusSubscription\('WS_CONNECTED',[\s\S]{0,300}?setSeatResyncToken\(\(n\) => n \+ 1\)/
+      /useMasterBusSubscription\('WS_CONNECTED', \(\) => \{[\s\S]*?requestSeatResync\(\);\s*\}\)/
     );
   });
 
   it('and the effect actually depends on that token', () => {
-    expect(CODE).toMatch(/\[user\?\.id, seatResyncToken\]/);
+    expect(CODE).toMatch(/\[user\?\.id, seatResyncToken, requestSeatResync\]/);
   });
 
   it('an unreadable seat list prunes nothing', () => {
     // UNKNOWN is not "you hold no seats". Without this the first failed read
     // would close every table the player is sitting at.
     expect(CODE).toMatch(
-      /if \(cancelled \|\| seatErr \|\| !seatRows \|\| seatRows\.length === 0\) return;/
+      /if \(!isCurrent\(\) \|\| seatErr \|\| !Array\.isArray\(seatRows\)\) return;/
     );
   });
 });

@@ -37,6 +37,15 @@ verification when it lands.
 | 11    | Tournament lobby snapshot recovery               | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open                   |
 | 12    | Notification feed recovery and account isolation | Coalesced fresh reads, owned cache and mutations, truthful failure states, safe server feed queries, and restored notification publication                                                | published; natural-event and device acceptance open |
 
+Phase 17: Daily Missions subscription handoff. Seven mounted cases pass,
+including recovery of an update missed between the first read and channel
+acknowledgement. Current cursors avoid a duplicate dashboard read and retired
+subscriptions cannot apply late replies. Implementation and build verification:
+`docs/changelog/2026-09-10-realtime-phase17-mission-subscription-handoff.md`.
+PR4175 is published; exact public/origin bytes were verified at 14:59:28 UTC.
+Release evidence: `docs/audits/2026-09-10-realtime-phase17-release.md`.
+Full post-release UI, natural-event and physical-device acceptance remain open.
+
 Phase 16: Cashier directory readiness. Five mounted failures reproduced and
 repaired. All eight new cases and 41 existing Cashier/membership contracts pass.
 Pending reads cannot give false Join guidance or trigger competing retries;
@@ -52,6 +61,16 @@ it and both unchanged production Cashier cases passed at exact release f1992eeb
 in run 34457185978. Fresh public/origin bytes still contained the repair at
 13:03 UTC. See `docs/audits/2026-09-10-realtime-phase16-cashier-acceptance.md`.
 Natural reconnect, physical iPad/PWA, and broader programme acceptance remain open.
+
+Phase 16 follow-through: the Cashier, mobile and freeze repairs are published
+and covered by production acceptance. Run 34488597022 passed 288 of 292
+executed tests, including both Cashier cases, full Daily Missions certification,
+all seven Club Data cases and all 259 sweep cases. The cash selector advances
+past its old fixture failure. Four continuity tests remain blocked by the
+coordinated engine release prerequisite; physical-device/natural reconnect and
+detailed Supabase log/egress evidence remain open.
+Evidence: `docs/audits/2026-09-10-realtime-phase16-final-software-acceptance.md`.
+Earlier mobile receipt: `docs/audits/2026-09-10-realtime-phase16-mobile-follow-through.md`.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
 failures reproduced and repaired. All 26 mounted cases and 39 existing scope

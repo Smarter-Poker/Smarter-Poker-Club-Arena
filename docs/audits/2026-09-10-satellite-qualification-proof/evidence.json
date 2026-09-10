@@ -172,10 +172,11 @@
     "Five source-manager/seat-exit triggers belong to explicit isolated Stage-B prerequisite; they are absent from current live schema.",
     "Current live legacy completion claim and six other historical tournament guards are disabled; the fixture mirrors this and the proposal does not reactivate or rewrite them.",
     "Running-target exact-K physical assignment and process-level cold-recovery integration remain to be verified before full B11 acceptance.",
-    "Threshold crossing below K and nonzero remainder remain outside this exact-K contract."
+    "Threshold crossing below K and nonzero remainder remain outside this exact-K contract.",
+    "Preparation holds the lease row FOR UPDATE. That fences replacement but blocks the current owner's NO KEY UPDATE heartbeat while later cohort/target locks wait. The final clock_timestamp freshness check safely refuses an expired owner; this can cause avoidable expiry and is not equivalent to the platform's KEY SHARE request fence. Heartbeat-compatible lock alignment remains a separately verified availability improvement."
   ],
   "files": {
-    "README.md": "92ecc596a3d6d5843baf4ad4d152b5b7c78461342f5e4baf9265af134d6fcb4b",
+    "README.md": "f795c6340b34996c273bdd0037e102ce7a4e9b922ad2f0db58d83efec7840cde",
     "catalog/current-clear-seat-helpers.json": "9d03810ce3ba65071f39882bbd373b0d5fb79c0b265e62f9ac33bc6985023d12",
     "catalog/current-clear-seat-helpers.sql": "b080f99f9d1286c30b1b111c66bd8f0ef420aa9ae4a21dc3658914df54fc97e8",
     "catalog/current-native-metadata.json": "107b9fc6248b3bcb51dece545d17f13256ef4765946a2efc0ea84d1b9374825e",

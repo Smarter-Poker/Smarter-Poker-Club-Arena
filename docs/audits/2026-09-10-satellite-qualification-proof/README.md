@@ -10,6 +10,8 @@ The proposal is local and is not production-ready while the separately owned fin
 
 `lease-lock-race.py` proves a real target-row lock wait can outlive the initial lease check. The negative control accepts that expired owner; the final-write check refuses it. Both leave RUNNING with no boundary or payout after rollback. The corrected body is restored in a finally block.
 
+Preparation holds the lease row FOR UPDATE. That fences replacement but blocks the current owner's NO KEY UPDATE heartbeat while later cohort/target locks wait. The final clock_timestamp freshness check safely refuses an expired owner; this can cause avoidable expiry and is not equivalent to the platform's KEY SHARE request fence. Heartbeat-compatible lock alignment remains a separately verified availability improvement.
+
 `catalog` preserves the current definitions and exact trigger enable states used to repair the old full-schema fixture. Its explicit final-seat prerequisite is a local test dependency, never authorization to install Stage-B in production. Seven currently disabled live tournament guards remain disabled, including the financial-certificate guard. This is not full financial-certificate acceptance. The source escrow's initial 600-chip liability is a fixture setup; this suite does not claim to test its original purchase collection.
 
 ## Remaining Acceptance

@@ -104,7 +104,7 @@ waited for a countdown the platform had not agreed to.
 
 Expected effect: a tournament table deals again when its maintenance resume
 wave fires, in the same thaw-plus-10.5 s spread as a cash table, instead of
-starting about 14 s behind it.
+starting behind every one of them (at 17:00: from 30.7 s, against 6.5 s).
 
 ## Tests
 
@@ -139,32 +139,51 @@ starting about 14 s behind it.
   harness cases cannot load, because the wait they drive does not exist. With
   only the wait taken out of `resumeFromBreak`, five of the seven new manager
   cases fail; the two that pass pin the no-wait paths and the single resume.
-- Existing suites: the maintenance, break, clock and recovery suites under
-  `server/src` (22 files, 296 tests), every root test that reads
-  `GameServer.ts`, `TournamentManagerBase.ts` or `MaintenanceBreak.ts`
-  (including `tests/unit/tournamentRakeAndBreaks.test.ts`,
+- Existing suites, after merging current `main`: every server test under
+  `src/tournament` and `src/maintenance` plus the synchronized-break and
+  engine-recovery suites (150 files, 1785 tests); every root test that reads
+  `GameServer.ts`, `TournamentManagerBase.ts` or `MaintenanceBreak.ts`,
+  including `tests/unit/tournamentRakeAndBreaks.test.ts`,
   `tests/unit/handCompletionLaw.test.ts` and
-  `tests/the-break-clocks-agree.law.test.ts`, 42 files, 1003 tests), and
-  `tsc --noEmit -p server/tsconfig.json`.
+  `tests/the-break-clocks-agree.law.test.ts` (42 files, 1009 tests); and
+  `tsc --noEmit -p server/tsconfig.json`. Before the merge the whole server
+  suite passed as well (660 files, 8955 tests, 145 skipped).
 
 ## How to check it on production
 
-The engine only runs this after the publish and the next hourly restart. In
-the first hour after that, `tournaments.break_ends_at` for the break should be
-exactly `:00:00` (read it during the countdown), and the first hand after the
-hour for tables of events that took the break should fall inside the same
-spread as cash tables. The first-hand query used above:
+Nothing here is live until the hourly restart brings up an engine built from
+it. That engine adopts the break it restarts inside (and its adoption timer
+already waits for the thaw); the first break it TRIGGERS is the next :55, and
+that is the hour to read. During the countdown, `tournaments.break_ends_at`
+for every event on the break should be the hour exactly. After it, tables of
+those events should come back inside the cash tables' spread, which is what
+this measured at 17:00. `<day>` is the UTC date; read it before the next :55
+overwrites `break_started_at`:
 
 ```sql
-with first_hand as (
-  select table_id, (tournament_id is not null) as is_tourney,
-         min(started_at) as first_at
-  from hand_history
-  where started_at >= '<hour>' and started_at < '<hour>'::timestamptz + interval '1 minute'
-  group by 1, 2
+with broke as (
+  select id from tournaments
+  where break_started_at >= '<day> <HH>:55:00+00' and break_started_at < '<day> <HH>:56:00+00'
+), t_first as (
+  select h.table_id, min(h.started_at) as first_at
+  from hand_history h join broke b on b.id = h.tournament_id
+  where h.started_at >= '<day> <HH+1>:00:00+00' and h.started_at < '<day> <HH+1>:05:00+00'
+  group by h.table_id
+), c_first as (
+  select table_id, min(started_at) as first_at from hand_history
+  where tournament_id is null
+    and started_at >= '<day> <HH+1>:00:00+00' and started_at < '<day> <HH+1>:05:00+00'
+  group by table_id
 )
-select is_tourney, count(*),
-  percentile_cont(0.5) within group (order by extract(epoch from first_at - '<hour>'::timestamptz)) as p50_s,
-  percentile_cont(0.9) within group (order by extract(epoch from first_at - '<hour>'::timestamptz)) as p90_s
-from first_hand group by 1;
+select 'tables of events on the break' as kind, count(*),
+  min(extract(epoch from first_at - '<day> <HH+1>:00:00+00'::timestamptz)) as min_s,
+  percentile_cont(0.5) within group
+    (order by extract(epoch from first_at - '<day> <HH+1>:00:00+00'::timestamptz)) as p50_s
+from t_first
+union all
+select 'cash tables', count(*),
+  min(extract(epoch from first_at - '<day> <HH+1>:00:00+00'::timestamptz)),
+  percentile_cont(0.5) within group
+    (order by extract(epoch from first_at - '<day> <HH+1>:00:00+00'::timestamptz))
+from c_first;
 ```

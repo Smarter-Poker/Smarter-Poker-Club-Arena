@@ -97,12 +97,20 @@ export function scaleWinnerCentsForRake(
   preRakeAmounts: readonly number[],
   totalWinnings: number
 ): number[] {
+  return scaleWinnerUnitsForRake(preRakeAmounts, totalWinnings, 100);
+}
+
+function scaleWinnerUnitsForRake(
+  preRakeAmounts: readonly number[],
+  totalWinnings: number,
+  unitsPerAmount: 1 | 100
+): number[] {
   // Round 40 audit Pass 3 fix: integer-cents arithmetic with Math.round (NOT
   // Math.trunc) for the float->cents conversion. IEEE 754 drift can make a pot
   // of "$140.30" actually be 140.29999..., and Math.trunc(140.299... * 100) is
   // 13479 rather than 13480 — exactly 1c lost per chop pot with any drift.
-  const totalCents = Math.round(totalWinnings * 100);
-  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * 100));
+  const totalCents = Math.round(totalWinnings * unitsPerAmount);
+  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * unitsPerAmount));
   const totalWinnerCents = entitlementCents.reduce((s, c) => s + c, 0) || 1;
 
   const adjusted = entitlementCents.map((c) => Math.round((c * totalCents) / totalWinnerCents));
@@ -188,6 +196,30 @@ export class HandController {
   private handFSM = createHandStateMachine('idle');
 
   constructor(config: HandConfig, players: SeatPlayer[], dealerSeat: number) {
+    if (config.asset === 'diamonds') {
+      const amounts = [
+        config.smallBlind,
+        config.bigBlind,
+        config.ante ?? 0,
+        ...players.map((player) => player.stack),
+        ...(config.straddles ?? []).map((straddle) => straddle.amount),
+      ];
+      if (amounts.some((amount) => !Number.isSafeInteger(amount) || amount < 0)) {
+        throw new Error('Diamond Hands Require Nonnegative Whole Units');
+      }
+      // Phase 6 certifies plain NLH cash. Later variants and paid deductions
+      // stay closed until their own accounting and release gates are approved.
+      if (
+        config.isTournament ||
+        config.gameVariant !== 'nlh' ||
+        config.bombPot ||
+        config.rakeConfig.percent !== 0 ||
+        config.rakeConfig.cap !== 0 ||
+        config.bbjConfig?.enabled
+      ) {
+        throw new Error('Diamond Cash Certification Requires Plain NLH With No Deductions');
+      }
+    }
     this.config = config;
 
     const deck = new Deck();
@@ -227,6 +259,8 @@ export class HandController {
   }
 
   private emit(event: HandEvent): void {
+    // Late runout callbacks must not distribute an already completed pot again.
+    if (event.type === 'HAND_COMPLETE') this.handCompleted = true;
     for (const handler of this.eventHandlers) {
       // 2026-08-22: per-listener guard. An unguarded throw here aborted the
       // remaining listeners AND unwound back into the middle of
@@ -867,6 +901,9 @@ export class HandController {
   }
 
   performAction(seat: number, action: ActionType, amount?: number): boolean {
+    if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
+      return false;
+    }
     const player = this.state.players.find((p) => p.seat === seat);
     if (!player || seat !== this.state.currentPlayerSeat) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
@@ -1730,6 +1767,7 @@ export class HandController {
   /** True once start() has run. A controller that has not started has no
    *  blinds, no hole cards and no hand - nothing about it may be run out. */
   private handStarted = false;
+  private handCompleted = false;
 
   /**
    * ═══ RUNOUT CALLS ARE ONLY LEGAL DURING A RUNOUT (2026-08-31) ═══════════
@@ -1752,6 +1790,7 @@ export class HandController {
    * call must be refused.
    */
   private refuseUnlessRunout(op: string): boolean {
+    if (this.handCompleted) return true;
     const live = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
     const canStillBet = live.filter((p) => !p.is_all_in);
     const inRunout = this.handStarted && (live.length <= 1 || canStillBet.length <= 1);
@@ -1800,6 +1839,19 @@ export class HandController {
    * the database move by the same number and cannot drift apart.
    */
   public applyStackDeltas(deltas: Map<string, number>): void {
+    if (this.config.asset === 'diamonds') {
+      for (const [userId, amount] of deltas) {
+        const player = this.state.players.find((p) => p.user_id === userId);
+        if (
+          !Number.isSafeInteger(amount) ||
+          !player ||
+          !Number.isSafeInteger(player.stack + amount) ||
+          player.stack + amount < 0
+        ) {
+          throw new Error('Diamond Stack Deltas Must Preserve Nonnegative Whole Units');
+        }
+      }
+    }
     for (const [userId, amount] of deltas) {
       if (!amount) continue;
       const player = this.state.players.find((p) => p.user_id === userId);
@@ -2259,7 +2311,7 @@ export class HandController {
           perPot,
           undefined,
           // A tournament chip does not divide (2026-09-08).
-          this.config.isTournament ? 1 : 0.01
+          this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
         );
         winnersPerBoard.push(boardWinners);
         this.pendingPerPotAwards.push(
@@ -2320,7 +2372,7 @@ export class HandController {
             'HandController.pot_eligibility_snapshot_stale'
           ),
         // A tournament chip does not divide (2026-09-08).
-        this.config.isTournament ? 1 : 0.01
+        this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
       );
       this.pendingPerPotAwards = perPot;
     }
@@ -2386,7 +2438,7 @@ export class HandController {
           recoveredPerPot,
           undefined,
           // A tournament chip does not divide (2026-09-08).
-          this.config.isTournament ? 1 : 0.01
+          this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
         );
         if (winners.length > 0) this.pendingPerPotAwards = recoveredPerPot;
       }
@@ -2404,14 +2456,15 @@ export class HandController {
 
       // 3. Still nothing: split among the contenders. Never by list position.
       if (winners.length === 0 && contenders.length > 0) {
-        const cents = Math.round(totalPot * 100);
+        const unitsPerAmount = this.config.asset === 'diamonds' ? 1 : 100;
+        const cents = Math.round(totalPot * unitsPerAmount);
         const share = Math.floor(cents / contenders.length);
         const remainder = cents - share * contenders.length;
         winners = contenders.map((p, i) => ({
           userId: p.user_id,
           // The odd cents go to the earliest seats, the same rule the split-pot
           // path uses, so the total is exact and the choice is not arbitrary.
-          amount: (share + (i < remainder ? 1 : 0)) / 100,
+          amount: (share + (i < remainder ? 1 : 0)) / unitsPerAmount,
         }));
         reportError(
           new Error(
@@ -2472,11 +2525,14 @@ export class HandController {
     // After Math.round, adjustedCents.sum may be over OR under totalCents.
     // Two separate distribute loops handle both directions so the post
     // condition `sum(adjustedCents) === totalCents` always holds.
-    const adjustedCents = scaleWinnerCentsForRake(
+    const adjustedCents = scaleWinnerUnitsForRake(
       winners.map((w) => w.amount),
-      totalWinnings
+      totalWinnings,
+      this.config.asset === 'diamonds' ? 1 : 100
     );
-    const adjustedAmounts = adjustedCents.map((c) => c / 100);
+    const adjustedAmounts = adjustedCents.map(
+      (c) => c / (this.config.asset === 'diamonds' ? 1 : 100)
+    );
     const adjustedWinners = winners.map((w, i) => ({ ...w, amount: adjustedAmounts[i] }));
 
     for (const winner of adjustedWinners) {

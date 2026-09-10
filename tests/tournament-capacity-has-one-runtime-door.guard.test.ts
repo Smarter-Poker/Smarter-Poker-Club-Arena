@@ -13,19 +13,34 @@ const retired = [
   'fn_ca_move_tournament_seat',
 ];
 
+/**
+ * ONE PASS OVER THE MIGRATIONS, NOT ONE PER FUNCTION (2026-09-10).
+ *
+ * This read the whole migration directory once for EACH retired function -
+ * three full passes, and the directory only grows. At 2,849 files it crossed
+ * vitest's 5s default and the guard started failing on work that had not
+ * changed a character, which is the shape `noFixedSizeSourceWindows` was
+ * written about: a cost that grows with the repo until it fails for everyone.
+ * Read each file once and index all three.
+ */
+const provenance = new Map<string, Array<{ name: string; action: string }>>(
+  retired.map((functionName) => [functionName, []])
+);
+for (const name of names) {
+  const sql = readFileSync(resolve(migrations, name), 'utf8');
+  for (const functionName of retired) {
+    if (sql.includes(`CREATE OR REPLACE FUNCTION public.${functionName}(`)) {
+      provenance.get(functionName)!.push({ name, action: 'create' });
+    } else if (sql.includes(`DROP FUNCTION public.${functionName}(`)) {
+      provenance.get(functionName)!.push({ name, action: 'drop' });
+    }
+  }
+}
+
 describe('tournament capacity has one runtime door', () => {
   it('leaves each incident-only function retired after every migration', () => {
     for (const functionName of retired) {
-      const definitions = names.flatMap((name) => {
-        const sql = readFileSync(resolve(migrations, name), 'utf8');
-        if (sql.includes(`CREATE OR REPLACE FUNCTION public.${functionName}(`)) {
-          return [{ name, action: 'create' }];
-        }
-        if (sql.includes(`DROP FUNCTION public.${functionName}(`)) {
-          return [{ name, action: 'drop' }];
-        }
-        return [];
-      });
+      const definitions = provenance.get(functionName)!;
       expect(definitions.length, `${functionName} has provenance`).toBeGreaterThan(1);
       expect(definitions.at(-1), `${functionName} final migration action`).toEqual({
         name: '20260909230135_tournament_capacity_has_one_runtime_door.sql',

@@ -90,6 +90,17 @@ interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
   candidateId: string;
   seatId: string;
   seatJoinedAt: string;
+  /**
+   * A PLACE IS NOT A BOUNTY (2026-09-10). True when the bust itself is fully
+   * proven - accepted zero-stack settlement, matching atomic receipt, the
+   * player at zero in the history roster - but the hand cannot name who won
+   * the pot holding their last chips. The elimination is still recorded and
+   * the place still assigned; the head is left in the pool for
+   * fn_finalize_bounty_pool to resolve as residual, and no obligation is
+   * written. `attribution` is the empty 'none' attribution in this case, so
+   * nothing downstream can mistake it for a payable claim.
+   */
+  attributionUnavailable?: boolean;
 }
 
 /**
@@ -1822,7 +1833,38 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       const evidence = persistedKnockoutEvidence(settlement, hand, userId);
       if (!evidence.ready) {
-        return defer(`knockout hand #${handNumber} is not authoritative (${evidence.reason})`);
+        /* A PLACE IS NOT A BOUNTY (2026-09-10).
+           `knocker_not_attributable` is the ONE deferral reason that says
+           nothing about whether the player busted. Everything above it - the
+           accepted zero-stack settlement, the matching atomic receipt, the
+           player at zero in the history roster - has already passed, so the
+           bust is proven; what is missing is only the pot ledger that would
+           name who takes the head. Deferring on it withheld the finishing
+           place too, and an unranked player keeps the event from finishing:
+           27 busts across nine events sat unrecorded for up to 44 hours,
+           holding prize escrow that had nothing to do with bounties.
+
+           Admit the elimination on the candidate's own evidence and mark the
+           attribution unavailable. The door records the place, writes no
+           obligation, and leaves the head in the pool as residual. Every
+           other reason still defers, because every other reason means the
+           bust itself is not proven. */
+        if (evidence.reason !== 'knocker_not_attributable') {
+          return defer(`knockout hand #${handNumber} is not authoritative (${evidence.reason})`);
+        }
+        this.bountyEvidenceDeferred.delete(userId);
+        return {
+          ready: true,
+          tableId,
+          handId,
+          handNumber,
+          settledAt: String(atomic?.committed_at ?? ''),
+          candidateId,
+          seatId,
+          seatJoinedAt,
+          attribution: { knockerUserId: null, claimants: [], basis: 'none', potIndex: null },
+          attributionUnavailable: true,
+        };
       }
       if (evidence.handId !== handId) {
         return defer(`knockout hand #${handNumber} does not match its candidate hand id`);
@@ -2083,6 +2125,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (hasBounty) {
       if (!this.eliminationMutationAllowed()) return false;
       const attribution = bountyEvidence!.attribution;
+      /* A PLACE IS NOT A BOUNTY (2026-09-10). With no attribution there is no
+         claimant to propose. NULL means "you work it out"; an EMPTY ARRAY is
+         refused by the door as `invalid_claimants`, which is the freeze this
+         change exists to end. */
+      const headNotAttributable = bountyEvidence!.attributionUnavailable === true;
       const { data: claimData, error: claimErr } = await supabase.rpc(
         'fn_claim_tournament_bounty_elimination',
         {
@@ -2094,11 +2141,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           p_hand_id: bountyEvidence!.handId,
           p_hand_number: bountyEvidence!.handNumber,
           p_seat_joined_at: bountyEvidence!.seatJoinedAt,
-          p_knocker_user_id: attribution.knockerUserId!,
-          p_claimants: attribution.claimants.map((claimant) => ({
-            user_id: claimant.userId,
-            weight: claimant.weight,
-          })),
+          p_knocker_user_id: headNotAttributable ? null : attribution.knockerUserId!,
+          p_claimants: headNotAttributable
+            ? null
+            : attribution.claimants.map((claimant) => ({
+                user_id: claimant.userId,
+                weight: claimant.weight,
+              })),
           p_bubble_refund: bubbleRefund,
           // The ordinary sweep claims only RUNNING. finishTournament already
           // owns RUNNING->COMPLETING and may discover a zero survivor whose
@@ -2113,9 +2162,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         already?: boolean;
         mode?: string;
         reason?: string;
+        /** Set by the door when it placed the player but could not settle the head. */
+        bounty_blocked?: string | null;
       };
       const semanticClaimAccepted =
         !claimErr && claim.ok === true && (claim.claimed === true || claim.already === true);
+      /* A PLACE IS NOT A BOUNTY (2026-09-10). The door reports, in the same
+         accepted response, that it recorded the elimination and deliberately
+         wrote NO obligation because the head could not be settled. There is
+         therefore no obligation row to reconcile against, and demanding one
+         would reject a commit that already happened. */
+      const bountyHeadNotAttributed =
+        semanticClaimAccepted &&
+        typeof claim.bounty_blocked === 'string' &&
+        claim.bounty_blocked.length > 0;
 
       // Every continuation, including an HTTP response-loss recovery, reloads
       // the exact generation-bound record. The local attribution is only a
@@ -2168,9 +2228,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // A logical `{ok:false}` is an authoritative refusal, not an ambiguous
       // response. Only a transport error may be recovered from a matching
       // durable commit marker.
-      const durableClaim = semanticClaimAccepted
-        ? durableRecordMatches
-        : !!claimErr && durableRecordMatches;
+      const durableClaim = bountyHeadNotAttributed
+        ? true
+        : semanticClaimAccepted
+          ? durableRecordMatches
+          : !!claimErr && durableRecordMatches;
       if (!durableClaim) {
         reportError(
           new Error(
@@ -2181,9 +2243,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         return false;
       }
-      bountyMode = String(row!.mode || '');
-      durableBountyKnocker = String(row!.knocker_user_id || '');
-      durableBountyClaimants = canonicalClaims;
+      if (bountyHeadNotAttributed) {
+        // There is no obligation, by design, and therefore no knocker and no
+        // claimants. The head stays in the pool; nothing here may pay it.
+        bountyMode = String(claim.mode || '');
+        durableBountyKnocker = null;
+        durableBountyClaimants = [];
+      } else {
+        bountyMode = String(row!.mode || '');
+        durableBountyKnocker = String(row!.knocker_user_id || '');
+        durableBountyClaimants = canonicalClaims;
+      }
       // An `already` row is the replay of that exact generation, not permission
       // to run a place or Bubble payer here.
     } else {
@@ -2271,7 +2341,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     // ── BOUNTY / PKO / MYSTERY BOUNTY COLLECTION ──
     // Determine who knocked this player out by finding the last hand winner at their table
-    if (bountyEvidence) {
+    /* A PLACE IS NOT A BOUNTY (2026-09-10). An unattributable head has no
+       knocker to pay and no obligation to settle, and processBountyCollection
+       requires both. The place is already recorded; the head stays in the pool
+       for fn_finalize_bounty_pool to resolve as residual. */
+    if (bountyEvidence && bountyEvidence.attributionUnavailable !== true) {
       try {
         const { attribution } = bountyEvidence;
         if (attribution.basis === 'largest_winner') {

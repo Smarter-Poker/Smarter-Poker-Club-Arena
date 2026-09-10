@@ -26,7 +26,7 @@
   "files": {
     "docs/audits/2026-09-10-k01-production-clock/clock-epochs.sql": "2bb920a356335ca753f4dad80cadd8c9042a0777461ee5daa2ffd21ceeef35b7",
     "docs/audits/2026-09-10-k01-production-clock/clock-duration.sql": "004807d9c1027328c71c29ca956c43cc0ac106b2b66b619feabdfb50ebc09207",
-    "docs/audits/2026-09-10-k01-production-clock/maintenance-source-capture.json": "b19c9cdda4e032f154900c0231469201fef27e98d7ed3b4c312d51fa7aef2135",
+    "docs/audits/2026-09-10-k01-production-clock/maintenance-source-capture.json": "252bfb7cb1250dd25cbe836542f1278f9ebc5f9f917d01f3ae62772c34b10c2c",
     "docs/audits/2026-09-10-k01-production-clock/native-maintenance-supplement.sql": "85bb738ff684ad5dd53aa3a9a359a836759481df71f3d320fa9a5d90a1eabb05"
   }
 }

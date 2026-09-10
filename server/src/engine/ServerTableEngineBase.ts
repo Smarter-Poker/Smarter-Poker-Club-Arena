@@ -4887,7 +4887,11 @@ export abstract class ServerTableEngineBase {
     try {
       const id = this.tableInfo?.tournament_id;
       const ctx = id ? peekTournamentBrainContext(String(id)) : null;
-      return ctx?.format ?? 'mtt';
+      // Phase 7 distinguishes multi-seat SNG utility from MTT utility inside
+      // the horse snapshot. The table-feel metric deliberately keeps its
+      // established four-value cardinality, so those SNG tables share the MTT
+      // transport series rather than creating an unbounded label change.
+      return ctx?.format === 'sng' ? 'mtt' : (ctx?.format ?? 'mtt');
     } catch {
       return 'mtt';
     }

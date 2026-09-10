@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
-import { applyTableCommitmentCap, ServerTableEngineTurns } from './ServerTableEngineTurns.js';
+import {
+  applyAllInOrFoldActionState,
+  applyTableCommitmentCap,
+  ServerTableEngineTurns,
+} from './ServerTableEngineTurns.js';
 import { calculateContestablePot } from './PokerEngine.js';
 import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
 import type { HorseDecision, RakeConfig, SeatPlayer } from '../types.js';
@@ -90,6 +94,84 @@ describe('Phase 5 canonical legality boundary', () => {
     expect(bounded.legalActions).toEqual(['fold']);
     expect(bounded.minRaiseTo).toBeNull();
     expect(bounded.maxRaiseTo).toBeNull();
+  });
+
+  it('gives Phase 7 only fold and jam on an all-in-or-fold preflop decision', () => {
+    const bounded = applyTableCommitmentCap(
+      {
+        schemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        canAct: true,
+        legalActions: ['fold', 'call', 'raise', 'all_in'],
+        toCall: 10,
+        minRaiseTo: 30,
+        maxRaiseTo: 100,
+        structure: 'no_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+      },
+      { stack: 100, bet: 10, totalInvested: 10 },
+      false,
+      0,
+      2
+    );
+
+    expect(applyAllInOrFoldActionState(bounded, true, 'preflop')).toMatchObject({
+      legalActions: ['fold', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+    });
+  });
+
+  it('never resurrects a cap-forbidden jam on an all-in-or-fold table', () => {
+    const capped = applyTableCommitmentCap(
+      {
+        schemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        canAct: true,
+        legalActions: ['fold', 'call', 'raise', 'all_in'],
+        toCall: 10,
+        minRaiseTo: 30,
+        maxRaiseTo: 100,
+        structure: 'no_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+      },
+      { stack: 100, bet: 10, totalInvested: 95 },
+      true,
+      50,
+      2
+    );
+
+    expect(applyAllInOrFoldActionState(capped, true, 'preflop').legalActions).toEqual(['fold']);
+  });
+
+  it('preserves a free check alongside jam in all-in-or-fold preflop state', () => {
+    const source = applyTableCommitmentCap(
+      {
+        schemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        canAct: true,
+        legalActions: ['fold', 'check', 'bet', 'all_in'],
+        toCall: 0,
+        minRaiseTo: 2,
+        maxRaiseTo: 100,
+        structure: 'no_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+      },
+      { stack: 100, bet: 0, totalInvested: 0 },
+      false,
+      0,
+      2
+    );
+    expect(applyAllInOrFoldActionState(source, true, 'preflop').legalActions).toEqual([
+      'check',
+      'all_in',
+    ]);
   });
 
   it.each(['call', 'all_in'])('rejects a cap-breaking %s before chips move', (action) => {

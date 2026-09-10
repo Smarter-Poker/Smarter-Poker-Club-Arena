@@ -2515,15 +2515,16 @@
 }
 
 .cashierSwitchMenu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
+  position: fixed;
+  bottom: var(--quick-link-anchor-bottom);
+  left: var(--quick-link-anchor-x);
   transform: translateX(-50%);
   z-index: 960;
   min-width: 160px;
   max-width: 230px;
   max-height: 240px;
   overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: rgba(10, 16, 28, 0.97);
   border: 1px solid rgba(0, 212, 255, 0.35);
   border-radius: 10px;
@@ -2763,12 +2764,4 @@
   text-align: center;
   font-size: clamp(20px, 3vw, 28px);
   color: #f4f7ff;
-}
-.diamondArenaCard {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 2 / 3;
-  object-fit: contain;
-  user-select: none;
 }

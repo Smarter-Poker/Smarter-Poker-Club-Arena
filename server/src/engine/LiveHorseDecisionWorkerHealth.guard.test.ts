@@ -31,6 +31,8 @@ describe('live horse compute health has one authority', () => {
     for (const metric of [
       'poker_horse_decision_worker_ready',
       'poker_horse_decision_worker_queue_depth',
+      'poker_horse_decision_worker_expired_jobs',
+      'poker_horse_decision_worker_recoverable_request_errors',
       'poker_horse_decision_worker_active_job_age_ms',
       'poker_horse_decision_worker_oldest_queued_age_ms',
       'poker_horse_decision_worker_last_completion_age_ms',
@@ -46,6 +48,10 @@ describe('live horse compute health has one authority', () => {
     const metrics = sliceMethod(gameServer, 'getPrometheusMetrics()');
     expect(metrics).toContain('const worker = liveHorseDecisionWorkerStatus()');
     expect(metrics).toContain('horseDecisionWorkerQueueDepth.set(worker.queueDepth)');
+    expect(metrics).toContain('horseDecisionWorkerExpiredJobs.set(worker.expiredJobs)');
+    expect(metrics).toContain(
+      'horseDecisionWorkerRecoverableRequestErrors.set(worker.recoverableRequestErrors)'
+    );
     expect(metrics).toContain('worker.activeJobAgeMs ?? 0');
     expect(metrics).toContain('worker.oldestQueuedAgeMs ?? 0');
     expect(metrics).toContain('Date.now() - worker.lastCompletedAt');

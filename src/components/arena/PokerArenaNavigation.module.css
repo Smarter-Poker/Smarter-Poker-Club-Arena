@@ -1,0 +1,6 @@
+/* The shared button face stays intact; the navigation owns its touch size. */
+@media (pointer: coarse) {
+  .button {
+    min-height: 44px;
+  }
+}

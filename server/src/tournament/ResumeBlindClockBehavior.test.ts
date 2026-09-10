@@ -16,9 +16,17 @@ const restore = sliceBetween(
 const methods = [
   'protected startBlindTimer(',
   'protected suspendLevelClock(',
+  'protected async waitForMaintenanceThaw(',
   'async resumeFromBreak()',
   'private async beginAddOnBreak(',
 ].map((signature) => sliceMethod(source, signature).replace(/^(protected|private)\s+/, ''));
+
+/** A numeric static as the source declares it, so the harness runs on the real value. */
+function staticNumber(name: string): number {
+  const match = new RegExp(`static readonly ${name} = ([0-9_]+);`).exec(source);
+  if (!match) throw new Error(`TournamentManagerBase.${name} is not a numeric literal any more`);
+  return Number(match[1].replace(/_/g, ''));
+}
 const runtime = ts.transpileModule(
   'return { async restore(tournament: any) { const lifecycle = 1;\n' +
     restore +
@@ -40,7 +48,10 @@ function fixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function harness(tournament: ReturnType<typeof fixture>) {
+function harness(
+  tournament: ReturnType<typeof fixture>,
+  opts: { maintenanceFrozen?: boolean | (() => boolean) } = {}
+) {
   const writes: Record<string, unknown>[] = [];
   const timers = new Set<{ callback: () => unknown; delay: number; unref: () => void }>();
   const supabase = {
@@ -54,13 +65,28 @@ function harness(tournament: ReturnType<typeof fixture>) {
       }),
     }),
   };
+  const reportError = vi.fn();
+  const maintenanceFrozen = () =>
+    typeof opts.maintenanceFrozen === 'function'
+      ? opts.maintenanceFrozen()
+      : Boolean(opts.maintenanceFrozen);
   const actual = new Function(
     'supabase',
     'TournamentManagerBase',
     'reportError',
     'isMaintenanceFrozen',
     runtime
-  )(supabase, { LAST_HAND_GRACE_MS: 120000, BREAK_DURATION_MS: 300000 }, vi.fn(), () => false);
+  )(
+    supabase,
+    {
+      LAST_HAND_GRACE_MS: 120000,
+      BREAK_DURATION_MS: 300000,
+      MAINTENANCE_THAW_POLL_MS: staticNumber('MAINTENANCE_THAW_POLL_MS'),
+      MAINTENANCE_THAW_WAIT_CEILING_MS: staticNumber('MAINTENANCE_THAW_WAIT_CEILING_MS'),
+    },
+    reportError,
+    maintenanceFrozen
+  );
   const state: any = {
     ...actual,
     tournamentId: 'clock-restart',
@@ -98,7 +124,7 @@ function harness(tournament: ReturnType<typeof fixture>) {
     },
     clearLifecycleTimeout: (timer: any) => timers.delete(timer),
   };
-  return { state, writes, timers };
+  return { state, writes, timers, reportError };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -131,6 +157,24 @@ describe('the persisted blind clock survives an engine restart during a break', 
     expect(second.state.blindTimer.delay).toBe(300000);
     expect(second.state.savedBlindTimerRemaining).toBe(0);
     expect(second.writes).toEqual([{ level_started_at: '2026-09-09T12:55:00.000Z' }]);
+  });
+
+  it('ends a break whose countdown was never written with the maintenance break (2026-09-10)', async () => {
+    // A deploy cutover lands inside the break before the old engine writes
+    // the tournament countdown. With the maintenance break holding the fleet,
+    // every table had finished its hand by :55, so the adopted break ends at
+    // :00 with the cash tables - not at :02 on the last-hand grace.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));
+    const tournament = fixture({ break_ends_at: null });
+    const held = harness(tournament, { maintenanceFrozen: true });
+    await held.state.restore(tournament);
+    expect(held.state.onBreak).toBe(true);
+    expect([...held.timers].map((timer) => timer.delay)).toContain(180000);
+
+    const unheld = harness(fixture({ break_ends_at: null }));
+    await unheld.state.restore(fixture({ break_ends_at: null }));
+    expect([...unheld.timers].map((timer) => timer.delay)).toContain(300000);
   });
 
   it('keeps the remainder during the existing last-hand grace fallback', async () => {
@@ -206,5 +250,167 @@ describe('the persisted blind clock survives an engine restart during a break', 
     expect(state.blindTimer).toBeNull();
     expect(state.onBreak).toBe(false);
     expect(state.addOnBreakOwnsLevelClock).toBe(true);
+  });
+});
+
+/*
+ * 2026-09-10: A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW.
+ *
+ * The tournament countdown now ends on the hour with the maintenance break,
+ * the same instant MaintenanceBreak.end() starts fn_thaw_platform. The thaw's
+ * first call snapshots every RUNNING tournament with on_break = false and
+ * moves its level_started_at forward by the frozen minutes. A tournament that
+ * came off its break (on_break = false, then a freshly persisted
+ * level_started_at) before that snapshot would be credited for a clock that
+ * was suspended through the freeze, and the next engine to adopt it would
+ * hand its level that much extra time. So resumeFromBreak waits while the
+ * freeze is on - MaintenanceBreak.end() lifts it only after the thaw.
+ */
+describe('a running tournament comes off its break only after the maintenance thaw', () => {
+  const ceilingMs = staticNumber('MAINTENANCE_THAW_WAIT_CEILING_MS');
+  const pollMs = staticNumber('MAINTENANCE_THAW_POLL_MS');
+
+  function table() {
+    return { pauseAfterHand: vi.fn(), resumeDealing: vi.fn() };
+  }
+
+  it('waits for the thaw when an adopted break ends at :00 while the platform is still frozen', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));
+    let frozen = true;
+    const tournament = fixture();
+    const { state, writes, timers } = harness(tournament, { maintenanceFrozen: () => frozen });
+    const engine = table();
+    state.tableEngines = new Map([['t1', engine]]);
+    // A replacement engine adopts the break at :57, inside the freeze.
+    await state.restore(tournament);
+    expect(state.onBreak).toBe(true);
+    const rebreak = [...timers].find((timer) => timer.delay === 180000);
+    expect(rebreak).toBeDefined();
+
+    // :00. The adopted countdown ends while the thaw is still running.
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    const resuming = rebreak!.callback() as Promise<void>;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(state.onBreak).toBe(true);
+    expect(tournament.on_break).toBe(true);
+    expect(state.clearPersistedBreak).not.toHaveBeenCalled();
+    expect(state.broadcast).not.toHaveBeenCalled();
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+    expect(state.blindTimer).toBeNull();
+    expect(writes).toEqual([]);
+
+    // MaintenanceBreak.end(): the thaw has committed, the freeze lifts.
+    frozen = false;
+    await vi.advanceTimersByTimeAsync(pollMs);
+    await resuming;
+    expect(state.onBreak).toBe(false);
+    expect(tournament.on_break).toBe(false);
+    expect(state.broadcast).toHaveBeenCalledWith('break_ended', expect.anything());
+    expect(engine.resumeDealing).toHaveBeenCalledOnce();
+    // The level clock resumes with exactly what it had at :55, anchored now.
+    expect(state.blindTimer.delay).toBe(300000);
+    expect(writes).toEqual([{ level_started_at: new Date(Date.now() - 300000).toISOString() }]);
+  });
+
+  it('resumes after the ceiling when the freeze never lifts, naming the event', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    const tournament = fixture();
+    const { state, reportError } = harness(tournament, { maintenanceFrozen: true });
+    const engine = table();
+    state.tableEngines = new Map([['t1', engine]]);
+    state.onBreak = true;
+    state.savedBlindTimerRemaining = 300000;
+
+    const resuming = state.resumeFromBreak();
+    await vi.advanceTimersByTimeAsync(ceilingMs - pollMs);
+    expect(state.onBreak).toBe(true);
+    expect(reportError).not.toHaveBeenCalled();
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(pollMs);
+    await resuming;
+    expect(reportError).toHaveBeenCalledOnce();
+    const [error, context] = reportError.mock.calls[0];
+    expect(context).toBe('TournamentManagerBase.resumeFromBreak_thaw_wait_ceiling');
+    expect(String((error as Error).message)).toContain('clock-restart');
+    expect(state.onBreak).toBe(false);
+    expect(state.clearPersistedBreak).toHaveBeenCalledOnce();
+    // Released by the tournament; the table's own maintenance pause still
+    // refuses to deal until the break's resume wave clears it.
+    expect(engine.resumeDealing).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the break for its next owner when this lifecycle ends during the wait', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    const tournament = fixture();
+    const { state, writes, reportError } = harness(tournament, { maintenanceFrozen: true });
+    const engine = table();
+    state.tableEngines = new Map([['t1', engine]]);
+    state.onBreak = true;
+    let current = true;
+    state.lifecycleIsCurrent = () => current;
+
+    const resuming = state.resumeFromBreak();
+    await vi.advanceTimersByTimeAsync(1_000);
+    // stop() fenced the manager: a deploy cutover, or a lost lease.
+    current = false;
+    await vi.advanceTimersByTimeAsync(pollMs);
+    await resuming;
+    expect(state.onBreak).toBe(true);
+    expect(tournament.on_break).toBe(true);
+    expect(state.clearPersistedBreak).not.toHaveBeenCalled();
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('takes the event off its break once when two resumes wait on the same thaw', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    let frozen = true;
+    const tournament = fixture();
+    const { state } = harness(tournament, { maintenanceFrozen: () => frozen });
+    const engine = table();
+    state.tableEngines = new Map([['t1', engine]]);
+    state.onBreak = true;
+    state.savedBlindTimerRemaining = 300000;
+
+    // The shared resume timer and the adoption timer can both land at :00.
+    const first = state.resumeFromBreak();
+    const second = state.resumeFromBreak();
+    await vi.advanceTimersByTimeAsync(2_000);
+    frozen = false;
+    await vi.advanceTimersByTimeAsync(pollMs);
+    await Promise.all([first, second]);
+    expect(state.clearPersistedBreak).toHaveBeenCalledOnce();
+    expect(state.broadcast).toHaveBeenCalledOnce();
+    expect(engine.resumeDealing).toHaveBeenCalledOnce();
+  });
+
+  it('does not wait at all when the platform is not frozen, or for a stopped tournament', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    const live = harness(fixture());
+    live.state.onBreak = true;
+    await live.state.resumeFromBreak();
+    expect(live.state.onBreak).toBe(false);
+    expect(live.state.clearPersistedBreak).toHaveBeenCalledOnce();
+
+    // A tournament that stopped on its break only clears its flags, exactly
+    // as before, frozen or not.
+    const tournament = fixture();
+    const stopped = harness(tournament, { maintenanceFrozen: true });
+    const engine = table();
+    stopped.state.tableEngines = new Map([['t1', engine]]);
+    stopped.state.onBreak = true;
+    stopped.state.running = false;
+    await stopped.state.resumeFromBreak();
+    expect(stopped.state.clearPersistedBreak).toHaveBeenCalledOnce();
+    expect(tournament.on_break).toBe(false);
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+    expect(stopped.state.blindTimer).toBeNull();
   });
 });

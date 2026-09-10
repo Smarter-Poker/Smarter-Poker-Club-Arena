@@ -1,6 +1,139 @@
+## 2026-09-10: Restore Bounded Rake Attribution Retries
+
+Prepare an exact-source guarded restoration of the committed attribution retry loop while preserving settlement lane exclusion and function metadata. Thirty-five native rollback assertions passed; the tracked composer reproduces the executed proof exactly. See docs/changelog/2026-09-10-rake-attribution-retry-restoration.md for scope and limits. Application remains separate from source publication.
+
+## 2026-09-10: Final Deal CSS Dependency And Terminal Contracts
+
+Declare the existing overview stylesheet used by the standalone deal review. Update terminal source contracts to require parked roster validation and exact proposal identity through completion and recovery. The affected client suite passed 81 tests and the server suite passed 75 tests. No schema change. See docs/changelog/2026-09-10-final-deal-ci-contracts.md.
+
+## 2026-09-10: Agent Transfer Source Contracts
+
+Align the existing money-path law with durable reservations and strict receipt confirmation, and reduce the financial portal discarded-error baseline after handling its lookup error. Seventy-two affected tests passed. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.
+
+## 2026-09-10: Phase Four Agent Transfer Integrity
+
+Bind portal wallet and commission responses to their current identity and read generation. Preserve durable operation IDs across dashboard and modal retries, and validate exact transfer receipts. Add deferred-response component regressions. No SQL migration. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.
+
 # MIGRATION CHANGELOG
 
+## 2026-09-10: Prepared deal consent follows the current hand barrier
+
+All eight prepared deal locking entries and the separate activation now acquire the current G then B settlement helper before tournament rows. Exact tracked source reproduces current terminal/resolver/rake hashes. The rollback fixture additionally advances only its cash payer to verified current body 141c723b5225bcec588b8957cf039184; 68 assertions pass for each fixed-tail variant. Six helper-holder assertions pass, and the old G-only statement fails the new shared-hand regression. Whole-terminal composition and production activation remain separate gates.
+
+## 2026-09-10: Terminal Receipt Law Retains Exact Proposal Checks
+
+The pre-push law still required a receipt-only return and rejected the stronger exact-proposal return guard. Its source assertions now require both receipt validation and matching proposal identity on direct and recovered receipts. No runtime or financial policy changed; the complete law test and existing terminal RPC behavior tests are the verification gate. Re-read: yes. Prepared consent remains draft and Phase3 remains open.
+
+## 2026-09-10: Phase Three Records Verified Publication And Prepared Consent
+
+PR4096 is merged and both frontend build stamps match its merge commit. The automatic engine release failed its current-main control check, so engine adoption is explicitly open. Integrated draft consent SQL, engine and client pass 143 client tests, 175 engine tests and both TypeScript checks. Native cash rollback/replay, bounded review and Spin reserve contention evidence are recorded without claiming unmatched terminal authority or production acceptance. A fresh read confirms seat functions now exist, seven guards remain disabled and bounty-rebuy generation remains absent. Re-read: yes. Phase3 stays open; Phase4 has not started. See docs/audits/2026-09-10-chip-drift-phase-three-swarm.json.
+
+## 2026-09-10: Deal Review Operations Have A Complete Request Deadline
+
+Deal operations reuse the extracted shared roster deadline across auth, RPC, and response parsing. Abort reaches the request and is checked after auth before any late mutation; unknown responses use readback with no mutation retry. All 143 focused tests pass, including actual PostgREST stalled-operation UI tests and the existing 29 roster resilience tests; full TypeScript passes. Re-read: yes. No production publication or activation. See docs/changelog/2026-09-10-deal-review-operations-have-a-deadline.md.
+
+## 2026-09-10: Native Spin Contention Cannot Overbook Its Reserve
+
+Observed same-event races preserve the immutable funded receipt through changed rules and exact retries. A separate two-event native race starts with 3.28 available against four chips of minimum prizes: one funds two, the other refuses after waiting, leaving 1.28 and no losing draw receipt. Exact retries preserve the complete financial snapshot. Scarcity comes from actual entry bookings and a prior native draw, with no balance rewrite or stub. Owned local fixtures remain available; production is untouched. Re-read: yes. See docs/changelog/2026-09-10-native-spin-concurrency-keeps-funded-receipts.md.
+
+## 2026-09-10: Native Spin Funding Reaches Played Launch Completion
+
+The immutable draw wrapper now has a native rehearsal with actual entry/reserve/journal/escrow functions and a final receipt failure. Exact retry, changed-rule replay, stale-owner refusal, receipt immutability and played/vacated recovery pass, then the lease-bound completion RPC commits RUNNING without moving money. Every tracked prerequisite guard remains intact and all DDL/fixtures roll back. Native concurrency, final winner settlement and production adoption remain open. Re-read: yes. See docs/changelog/2026-09-10-native-spin-funded-launch-recovery.md.
+
+## 2026-09-10: Final Deals Require A Bounded Review Of Exact Server Amounts
+
+Prepared SQL creates actor-bound review requests, immutable post-hand proposals, exact consent and proposal-bound terminal receipts. A central 120-second policy bounds requests and reviews, while consumed hand identity prevents repeated pauses. GET never starts review; request/vote/cancel compare the displayed actor before any mutation. Engine begin/close/complete routes use the existing manager fence. Verification: 68 native assertions passed for each paid/unpaid/partial fixed tail, plus 3 two-session terminal-lock assertions; all local transactions rolled back. Actual cash authority, journal, escrow and payout replay were exercised. Native full-terminal recovery and production activation remain open because live terminal/resolver/rake hashes differ from tracked candidates. No mismatching body or production DDL applied. Re-read: yes. See docs/changelog/2026-09-10-versioned-final-deal-consent.md and docs/audits/2026-09-10-versioned-final-deal-native-acceptance.json.
+
+## 2026-09-10: Deal Review Mutations Bind The Displayed Actor
+
+Requests, cancellation, and votes now send the displayed actor as a mandatory server precondition, closing the account-switch gap between auth preflight and request token acquisition. Three client regressions failed before correction; 109 focused client tests and full TypeScript pass. Re-read: yes. Matching SQL rejects actor mismatch before writes; native proof remains with the payout lane. No production publication or activation. See docs/changelog/2026-09-10-deal-review-mutations-bind-the-actor.md.
+
+## 2026-09-10: Players Explicitly Request A Bounded Deal Review
+
+The client now reads review state before exposing a proposal, explicitly requests a safe-boundary pause, displays the server deadline, and cancels only the displayed review identity. Unknown responses only trigger readback; terminal states never reuse consent or automatically request another pause. One hundred six focused tests and full client TypeScript pass. Re-read: yes. Requires matching lifecycle SQL and engine; no production publication or activation. See docs/changelog/2026-09-10-explicit-bounded-deal-review.md.
+
+## 2026-09-10: Final Deal Review Binds Consent To The Displayed Proposal
+
+The final-table screen now displays the server's versioned recipient allocations and submits only the reviewed proposal. Exact strings, actor and proposal identity, total consistency, stale responses, ambiguous readback, and account/event changes are verified. Seventy-four focused tests and full client TypeScript pass; two account/event regressions failed before correction. Re-read: yes. This source requires the matching SQL expansion and engine before coordinated activation. No production mutation or publication; full Phase 3 remains open. See docs/changelog/2026-09-10-final-deal-review-binds-consent.md.
+
+## 2026-09-10: Final Deal Review Parks Before Consent
+
+An exact deal proposal could expire while the engine waited for the active hand to finish, repeatedly preventing unanimous consent. Explicit review requests now park the exact dealer before the stable proposal is published. The current roster is refreshed after the hand, partial consent retains the owned fence through the shared scheduler, and only serialized database closure permits normal play to resume. Detached running engines and unknown money outcomes remain fenced. Nine failing regression cases exposed the liveness, roster and release edges; 175 focused tests and full server TypeScript pass after correction. Re-read: yes. Paired SQL/native composition and ordered publication remain open; no production mutation. See docs/changelog/2026-09-10-final-deal-review-parks-before-consent.md.
+
+## 2026-09-10: Engine Deals Bind The Current Proposal
+
+Final-table deal admission previously counted unversioned tournament vote rows before and after parking, then called an unversioned terminal writer. Both reads now require the exact current proposal, roster and revision. Terminal retries and the serialized outcome resolver retain that same proposal identity and reject mismatched receipts. The prepared database RPC contract is confirmed; SQL deployment must precede this engine integration. The focused suite passes 154 tests in nine files, and full server TypeScript passes. Re-read: yes. No production write or deployment in this lane; native composition and Phase 3 acceptance remain open. See docs/changelog/2026-09-10-engine-deals-bind-current-proposal.md.
+
+## 2026-09-10: Final Deal Proposal Records Ordered Rollout Gates
+
+Documentation-only proposal records SQL expansion, compatible engine/client verification, then owner-controlled activation for versioned final-deal consent. It specifies a configurable server-owned 120-second review deadline and requires current M5, lease, native rollback/replay and production identity evidence. No SQL, engine, client or production state changed; Phase 3 remains open. Re-read: yes. See docs/audits/2026-09-10-final-deal-rollout-gates.md.
+
 ## Every Change, Documented. No Exceptions.
+
+## 2026-09-10: Reprice Access And Release Verification
+
+The reprice writer remains service-only through an explicit forward ACL declaration, applied as 20260910071131 and independently read back without any body or money change. Its previously applied migration stays byte-identical. Native PostgreSQL acceptance passes 24 groups; 91 source/gate assertions and 24 existing reserved-pool/actual-first-deal behavioral tests pass. Two obsolete source pins now enforce the corrected pool and deadline. Re-read: yes. See docs/changelog/2026-09-10-reprice-access-and-release-checks.md. Normal push and deployment verification remain open.
+
+## 2026-09-10: Resume Audit Swarm Database Reader Corrections
+
+The accepted hand history now retains exact per-pot awards for bounty claimants. Its database reader was independently reviewed and installed as 20260910055857; the integrated engine writer still awaits normal publication. The cash entry-close verifier now proves unpaid cached results against the canonical Bubble-reserved ladder, with no wallet or payout writes; installed as 20260910060034. Both installed bodies, fixed search paths and service-only execution were read back and matched the reviewed source. Exact transaction rehearsals passed 17 and 20 PostgreSQL groups respectively. The reserved repository files exactly mirror the applied SQL; the MCP assigned the recorded application versions. Re-read: yes. Detailed source hashes, peer tests and limits: docs/audits/2026-09-10-resume-swarm-release.json. The programme remains Phase 3 of 12 with four of the original 58 controls fully verified.
+
+## 2026-09-10: Diamond Shared Cash Lifecycle Integration
+
+The shared table buy-in, accepted-hand settlement and occupancy cash-out now have a distinct whole-Diamond custody branch; existing chip contracts remain separate. Three forward migrations and exact isolated database acceptance are recorded in docs/changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md. Client departure summaries retain the already verified original occupancy instead of performing a second network read before leave. Re-read: yes. The client regression repair passed 72 focused cases and the engine SELECT contract passed 48. Exact user approval was received; all three financial migrations applied once as 20260910050142, 20260910050156 and 20260910050209. Eighteen function bodies, access controls, triggers and closed public admission were verified. Complete Phase 6 publication and live acceptance are not yet claimed. Final integrated client build and server TypeScript passed on clean source 71f57c9585. Connected real-engine/SQL play conserved all 2000 fixture Diamonds; current settlement-lane compatibility passed 50 SQL assertions. Normal push and production release checks remain required.
+
+## 2026-09-10: Mystery CI Uses Its Available PostgreSQL Client
+
+The embedded CI runtime has no psql, so the mystery probe now uses the existing PGNODE client when configured. All thirteen groups pass in both client modes, including observed concurrent reservation, isolated role identity and rollback. Node mode was verified with no psql binary and invalid inherited connection variables. Client failure still stops execution. No financial assertion, shared client, application runtime or production change. Re-read: yes. See docs/changelog/2026-09-10-mystery-ci-uses-the-available-postgres-client.md.
+
+## 2026-09-10: Cancellation Acceptance Uses The Approved Origin-Wallet Policy
+
+The cancellation probe still used a retired registration alias, an obsolete wallet-routing assumption and satellite-ticket refund expectations. Its prepared assertions now use request-bound host-club registration and require exact origin-wallet cash refunds with no new ticket. A synthetic native run restored only the exact tracked platform-source seed, then refused the mixed-schema ticket outcome. Current downstream parity is unproved and a known satellite receipt fingerprint/ACL gap remains; no live defect is inferred. All temporary changes and synthetic rows rolled back. Source guards are not native acceptance. CA-03-11 and Phase 3 stay open. Re-read: yes. See docs/audits/2026-09-10-entry-refund-cancellation-acceptance-gate.json.
+
+## 2026-09-10: Native Spin Draw Survives A Late Receipt Failure
+
+The replay rehearsal now injects failure after actual entry/rake, draw journals, reserve receipts and escrow writes, proves complete rollback, then retries the same event once. Current saved function fingerprints and real accounting triggers pass the full direct-draw replay probe on PostgreSQL 17.11; function hashes and fixture state are restored afterward. No runtime or production change. Final winner settlement, immutable launch-wrapper composition and complete Phase 3 acceptance remain separate gates. Re-read: yes. See docs/changelog/2026-09-10-native-spin-draw-rollback-and-replay.md.
+
+## 2026-09-10: Release Fixtures Own Their Git Configuration And Drain Archive Padding
+
+The disposable release Git fixture now clears inherited Git repository and configuration selectors and uses sandbox-owned global configuration. Three adversarial cases prove caller configuration, HEAD and index stay unchanged. A separate pre-push failure exposed BSD tar closing the archive pipe before Git finished zero block padding. The image builder now consumes through EOF while retaining pipefail. A deterministic real-archive padding regression fails before the change and passes after; a producer that exits 47 after extraction still blocks Docker and cleans staging. All 30 release-seal law tests pass. No live engine, host checkout, image, tag or release mutation was performed. Re-read: yes. See docs/changelog/2026-09-10-release-fixtures-own-their-git-configuration.md.
+
+## 2026-09-10: Registration Rehearsal Preserves JSON Strings Across Clients
+
+The current-dependency rehearsal parsed PostgreSQL JSON scalar text with json.loads. psql retained the JSON quotes, while the CI Node client decoded the scalar first, failing before the accounting assertions. Both scalar projections now cast their JSON encoding to PostgreSQL text so each client returns identical encoded text. All source fingerprints and financial assertions remain in force. Verified: all 23 native PostgreSQL behavior groups passed independently through psql and PGNODE, including rollback, concurrent replay and exact charged-wallet receipts. Re-read: yes; no application money function or production database changed.
+
+## 2026-09-10: Played Spin Recovery Requires A Real Hand Count
+
+`server/src/tournament/playedSpinLaunchRecovery.ts` previously admitted missing or malformed hand evidence through `Number(hand_count) < 1`. The parser now requires a positive safe integer JSON number before the played-game recovery exception. Ten failing adversarial regressions reproduced the hole; 27 parser tests and 170 focused Spin/launch tests pass. The separate compact funding proof passes 42 PostgreSQL checks, with its atomic authority definition verified against production. Full current lower-money-function composition and ordinary engine publication remain open. Re-read: yes. Full server TypeScript: pass. No database or financial mutation. See docs/changelog/2026-09-10-played-spin-recovery-requires-a-real-hand-count.md.
+
+## 2026-09-10: Accounting CI Runs The Mystery Reservation Probe
+
+Before: the compact mystery probe was not called by the existing accounting PostgreSQL CI runner, whose PGUSER also differed from its local initdb default. The runner now invokes it with the existing PostgreSQL binary path, and initdb/psql explicitly share one local test role. Thirteen groups pass under inherited CI connection variables. An unavailable-binary fault proves nonzero propagation with no following command execution. Re-read: yes. Shell syntax and diff checks pass; no TypeScript or runtime source changed.
+
+## 2026-09-10: Mystery Reservation Replays Its Exact Generation
+
+Before: Phase 3 had source guards and inventory unit tests but no bounded actual-function PostgreSQL seed/reserve/reveal runner. Added the current catalog fixture and thirteen behavior groups proving exact inventory, immutable retry, persisted recipient binding, authorization and observed concurrent reservation. Eight existing satellite origin-wallet refund groups also pass. No application function, financial policy or production database changed. Re-read: yes. Full wallet payout/terminal and pending bounty rebuy acceptance remain open. See docs/changelog/2026-09-10-mystery-generation-reservation-rehearsal.md.
+
+## 2026-09-10: Terminal Rehearsals Start After Published Entry Windows Close
+
+**Files:** scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql (prior lines 40-50), scripts/ci/probes/atomic-terminal-rehearsal-entry-windows.sql.
+**What existed:** terminal fixtures inherited current_level 0 and a level 4 registration cutoff, so financial rollback/replay probes failed at an unrelated valid guard.
+**What changed:** the shared template explicitly closes its promised level and timed entry windows; a temporary-table probe exercises the real guard without modifying it. Rebuy hand probes retain their explicit open-window overrides.
+**Why:** meaningful terminal acceptance must reach its actual money assertions while keeping early-finalization refusals intact.
+**Verified:** YES, re-read; six native PostgreSQL scenarios pass and roll back. All 61 existing source assertions passed across the main and isolated resource-timeout retry.
+**TypeScript:** NOT CERTIFIED, incomplete dependencies and full disk prevented a reliable run; no TypeScript source changed. See docs/audits/2026-09-10-payout-cutover-swarm-evidence.md for the blocked full cutover and unresolved deal consent binding.
+
+## 2026-09-10: Current Tournament Seat Moves Require Manager Authority
+
+The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.
+
+## 2026-09-10: Maintenance Rehearsal Uses The Release-Aware Authority
+
+The isolated Stage 1 probe loaded an obsolete predicate while migration preflight correctly demanded the current body. The fixture now uses the exact live release-aware functions without changing the migration checks. Real PostgreSQL passes eight admission/release behaviors and seven refusal cases, including the old predicate. The tournament and hand-generation suite passes 1,398 tests. Re-read: yes. No production DDL or financial mutation. Complete Phase 3 acceptance remains open. See docs/changelog/2026-09-10-accounting-cutover-rehearsal-maintenance-authority.md.
+
+## 2026-09-09: Hand Settlement Retains Its Dealt Seat Generation
+
+A later terminal writer replaced the earlier exact-seat checks. The forward restoration preserves current terminal behavior and binds stack/time-bank writes to the dealt row and join timestamp. Database expansion applied as 20260909234808 with exact definitions and ACLs verified. Real PostgreSQL regression, rollback, replay and full hand-boundary checks pass. Engine identity capture is built; publication and complete accounting Phase 3 acceptance remain pending. Re-read: yes. See docs/audits/2026-09-09-hand-generation-overwrite-checkpoint.md.
 
 ## 2026-09-09: Unbound Initial Registration Is Retired
 
@@ -17148,3 +17281,54 @@ Correct below-half wager completion and counted-wager caps across engine validat
 ## 2026-09-09: Phase 3 Tournament Break Ownership
 
 Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets and resumes from the final break end. Nine behavioral cases and the 1343-test tournament/maintenance/pause suite pass; no database migration. See docs/audits/2026-09-09-phase3-tournament-lifecycle.md. Phase 3 remains in progress.
+
+## Change: Authenticate The Native Final Deal Cash Leaves (2026-09-10)
+
+**File:** `scripts/dev/build-versioned-final-deal-probe.py` (before lines 49-72, 164-171).
+**What existed:** The rollback composer checked the calculator and top cash payer, but did not authenticate the raw place/share helpers, public obligation wrapper, or renamed settlement core before exercising real credits.
+**What changes:** Require exact tracked function definition SHA256 and body MD5 for those four cash leaves, and check their catalog signature, body, owner, language, security mode and search path before any fixture or authority writes. Read only the shared obligation definition from its containing migration; do not replay that migration or install any leaf.
+**Why:** A green native result must not silently accept an older raw payer that bypasses the current public obligation boundary. Source and catalog mismatch must stop the probe before writes.
+**Verified:** YES. Diff reread, Python composer imported successfully, 68 native assertions passed in each paid/unpaid/partial fixture with rollback. Four altered source definitions and six read-only catalog mismatch cases refused before writes. Empty fixture state and original authority/helper state restored. No production or whole-terminal acceptance is claimed.
+**TypeScript:** Not applicable to Python composer and audit documentation only.
+
+## Change: Verify Current Zero-Default Spin Projection Natively
+
+**Files:** `scripts/ci/probes/spin-zero-projection-native.sql`, `scripts/ci/rehearse-spin-zero-projection.py`, `docs/audits/2026-09-10-spin-zero-projection-native-evidence.json`.
+
+**What Existed:** `spin-funded-launch-native.sql` pinned the prior 1c911 wrapper, seeded a NULL multiplier, and projected the funded row with a modeled engine UPDATE. That evidence did not establish the current 20260910034412 zero-default and automatic at_draw projection behavior.
+
+**What Changed:** Added a separate exact-current probe and a source-hash-pinned runner. The runner composes the complete migration, retaining all source guards, into one local rollback transaction. The probe uses the real zero column default, refuses positive unfunded projections, proves SQL-owned row stamping, and injects independent late receipt and later row-stamp faults. Existing real native reserve, escrow, rake, replay, lease and played recovery assertions remain. The runner compares the entire saved authority/trigger catalog and all rows in 19 fixture tables after rollback.
+
+**Why:** Verify both newly deployed Spin fixes against real native money functions without substituting engine presentation writes or relabeling historical acceptance.
+
+**Verified:** Exact `AUDIT_TEST_PASS` rollback exception, native exit 3, complete catalog and fixture state restored. Existing 8 baseline events preserved. No production writes, no money-function stubs, no disabled guards during money calls. Full terminal and current concurrent acceptance remain open.
+
+**TypeScript:** Not applicable, SQL rehearsal, Python runner and evidence only.
+
+## Change: Preserve The Current Spin Terminal Acceptance Blocker
+
+**Files:** `scripts/ci/rehearse-spin-current-terminal.py`, `scripts/ci/probes/spin-current-terminal-native.sql`, `docs/audits/2026-09-10-spin-current-terminal-native-evidence.json`.
+
+**What Existed:** The current zero-default native Spin draw and lease-bound launch passed. Whole terminal completion still used older local wrappers and unverified lower cash routing.
+
+**What Changed:** Added a reproducible source-pinned, rollback-only composer for the exact current non-satellite terminal, resolver, rake, place wrapper, raw payer and shared obligation function. It keeps the current native core, attribution and treasury leaves and all seven enabled tournament guards. The extension models the accepted final hand, uses the real finish claim, and contains late-terminal-fault, exact payout, escrow, closure and replay assertions.
+
+**Verified:** The actual native call refused at seat release with `TOURNAMENT_SEAT_EXIT_REQUIRES_TOURNAMENT_AUTHORITY`. This is recorded as a failed acceptance gate. All function definition/owner/ACL metadata, all triggers and all rows in 33 compared fixture tables were exactly restored after rollback. No terminal-success claim, guard bypass, production write, satellite receipt restoration or previously denied guard-source inspection.
+
+**Why:** Keep an executable record of the real remaining incompatibility instead of accepting a payout-only pass as terminal acceptance. Live seat-guard parity remains unverified.
+
+**TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only.
+
+## Change: Verify Current Spin Concurrency And Restore The Local Schema
+
+**Files:** `scripts/ci/rehearse-spin-current-concurrency.py`, `scripts/ci/probes/spin-current-concurrency-fixture.sql`, `docs/audits/2026-09-10-spin-current-concurrency-native-evidence.json`.
+
+**What Existed:** Native concurrent Spin evidence pinned the prior b303/1c911 wrapper. Current zero-default and row-projection changes had only sequential acceptance.
+
+**What Changed:** Reviewed all active effects of complete34412, saved an explicit restore journal before DDL, temporarily installed its exact current wrapper in the owned local database, and exercised three overlapping native races. Three new approved synthetic events funded the pool through actual entry booking and a prior native draw. Every money call retained origin and all native guards.
+
+**Verified:** Shared reserve contender waited, then refused `no_eligible_tiers` after the winner funded exactly two chips. Changed-rules and exact same-event rivals waited and replayed the identical immutable receipt. All three races preserved the full financial snapshot after the rival finished. Actual contributions8.28, prior draw5, winner2, final balance1.28 and total drawn7. Full schema catalog including function definitions/owners/ACLs, defaults and all triggers matched exactly after restoring the prior wrapper. The first restoration attempt lacked a statement terminator and failed transactionally; the saved restore script and journal were corrected and exact restoration independently verified. The checked-in runner contains this correction.
+
+**Why:** Establish current concurrent conservation and immutable replay without treating historical wrapper evidence as current or leaving temporary schema changes behind. Three960fixture events remain as approved; no production or resource-cleanup actions.
+
+**TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.

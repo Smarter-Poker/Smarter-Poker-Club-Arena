@@ -11,6 +11,7 @@
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
+import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
@@ -807,8 +808,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // this waits out whatever of it is left, records how long the felt
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
-        if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
-          await this.awaitPauseGate();
+        // A pause may arrive while the roster, rest or blind read is pending.
+        // Return through the owner's gate before using the prepared hand.
+        if (this.isNextHandPaused()) {
+          if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
           if (!this.running) break;
           continue;
         }
@@ -1275,13 +1278,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async awaitNextHandRest(): Promise<void> {
     await this.settlePreparedHandNumber();
-    if (this.nextHandNotBeforeMs === null) return;
-    const remaining = this.nextHandNotBeforeMs - Date.now();
-    if (remaining > 0) {
-      this.setLoopPhase('next_hand_rest');
-      await this.sleep(remaining);
+    if (this.nextHandNotBeforeMs !== null) {
+      const remaining = this.nextHandNotBeforeMs - Date.now();
+      if (remaining > 0) {
+        this.setLoopPhase('next_hand_rest');
+        await this.sleep(remaining);
+      }
+      this.nextHandNotBeforeMs = null;
     }
-    this.nextHandNotBeforeMs = null;
+    // A level may advance while the prepared roster waits under the rest.
+    // Read the tournament stakes here, before the caller rechecks its lease
+    // and pause gates. This replaces the earlier prefetched blind read.
+    if (this.isTournamentTable()) {
+      await this.withStepBudget(
+        'refresh_blinds',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshBlinds()
+      );
+    }
     if (this.lastCompletionAtMs !== null && !this.gapSawIdle) {
       const now = Date.now();
       this.accrueGapPhase(now);
@@ -1341,7 +1355,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   /**
    * EVERYTHING THE NEXT HAND NEEDS FROM THE DATABASE, IN ONE ROUND (2026-09-07).
    *
-   * Three independent reads and one allocation used to run one after another
+   * The independent reads and hand allocation used to run one after another
    * at the top of the iteration: the roster (itself two round trips), the
    * leave-pending sweep, and - inside dealHand - the global hand number. At
    * the 250-700ms a PostgREST call costs from the engine box that was two to
@@ -1349,7 +1363,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * slept. They now start together, under the rest.
    *
    * Independence, stated so it can be checked:
-   * - readNextHandInputs reads seats, blinds and rake; nothing here writes them.
+   * - readNextHandInputs reads seats and rake; nothing here writes them.
+   *   Tournament blinds are read after the rest, at the next-deal boundary.
    * - processLeavePending marks leaving seats left and cashes them out. It is
    *   raced with the roster read ONLY when no add-on is pending (an add-on
    *   must credit a seat before that seat can leave, so the serial order
@@ -1459,20 +1474,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
-    // These reads have no dependency on each other. Blinds update tournament
-    // settings; rake refresh updates cash settings; neither uses the roster.
-    // Keep every existing query and budget, but pay the slowest read instead
-    // of adding their round trips to the gap between hands.
+    // Seats and cash rake can be prepared in parallel under the rest.
+    // Tournament blinds must wait until that rest ends: a level may advance
+    // after this prepared roster is ready but before its hand is created.
     const reads = [
       this.withStepBudget(
         'load_seats',
         ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
         loadSeatedPlayers(this.tableId)
-      ),
-      this.withStepBudget(
-        'refresh_blinds',
-        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-        this.refreshBlinds()
       ),
       this.withStepBudget(
         'refresh_rake',
@@ -1483,9 +1492,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.setLoopPhase('load_next_hand_inputs');
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
-    const [seats, blinds, rake] = await Promise.allSettled(reads);
+    const [seats, rake] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
-    if (blinds.status === 'rejected') throw blinds.reason;
     if (rake.status === 'rejected') throw rake.reason;
     return seats.value;
   }
@@ -1578,7 +1586,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // about to be dealt; a number held for longer than that is discarded and a
       // fresh one taken here, so the ascending-by-deal-order property holds.
       this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());
-      if (this.discardPreparedHandForTerminalCloseout()) return;
+      if (this.discardPreparedHandForPause()) return;
       this.handsDealtThisSession++;
       const handNumber = this.handCount;
       const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
@@ -2372,6 +2380,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       }
 
       const config: HandConfig = {
+        asset: this.tableInfo.arena?.asset ?? 'chips',
         tableId: this.tableId,
         handNumber,
         /* Dan 2026-08-28, binding: a tournament showdown is always face up, so
@@ -2483,6 +2492,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // say plo4 on a PLO4 bomb hand even at an NLH table.
       this.currentHandVariant = config.gameVariant;
 
+      this.currentHandSeatGenerations = captureHandSeatGenerations(players);
       this.handController = new HandController(config, hcPlayers, dealerSeat);
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
@@ -2609,7 +2619,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
       );
       const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
-      if (this.discardPreparedHandForTerminalCloseout()) return;
+      if (this.discardPreparedHandForPause()) return;
       /**
        * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
        *
@@ -2863,7 +2873,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
           // inherit a stale all-in reveal flag from an abnormal exit.
           this.runoutRevealActive = false;
-          if (this.discardPreparedHandForTerminalCloseout()) {
+          if (this.discardPreparedHandForPause()) {
             releaseHandWait('terminal_closeout_before_start');
             return;
           }
@@ -3102,6 +3112,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * cost of a wrong `false` is taking a rebuy away from someone who could pay.
    */
   protected async anyBustedPlayerCanAffordARebuy(busted: SeatedPlayer[]): Promise<boolean> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return false;
     if (busted.length === 0) return false;
 
     const minBuyIn = cashMinBuyIn(this.tableInfo);
@@ -3269,6 +3280,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async recoverBustedSeatedHorses(): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return;
     if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
     if (bustHorses.length === 0) return;

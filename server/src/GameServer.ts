@@ -48,8 +48,12 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { seatFirstPrecheckPrometheusLines } from './services/seatFirstPrecheckMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
+import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
+import { handProjectionWakesToPrometheus } from './services/supabase/handProjection.js';
 import {
   wsAuthRefusalPrometheusLines,
   wsProtocolRefusalPrometheusLines,
@@ -74,6 +78,8 @@ import {
   horseDecisionWorkerLastComputeMs,
   horseDecisionWorkerOldestQueuedAgeMs,
   horseDecisionWorkerQueueDepth,
+  horseDecisionWorkerExpiredJobs,
+  horseDecisionWorkerRecoverableRequestErrors,
   horseDecisionWorkerReady,
   equityWorkerPoolReady,
   equityWorkerPoolConfiguredWorkers,
@@ -144,6 +150,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // the database terminal authority to settle completed play; operator-managed
 // cancellation enters through the authenticated database command authority.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';
 import { resolvePayoutStructure } from './tournament/payoutStructure.js';
@@ -1234,6 +1241,14 @@ export class GameServer {
       this.clearTournamentManagerAdmissionRetry(tournamentId);
       return Promise.resolve();
     }
+    /* The one front door every start passes through, so the park holds for
+       the main discovery loop and the fully-paid stall watchdog as well as
+       the fast lane. Only 'start' is gated: a RUNNING game being resumed was
+       never parked by the draw path, and the registry only ever holds ids the
+       draw path put there. */
+    if (mode === 'start' && spinLaunchParks.isParked(tournamentId)) {
+      return Promise.resolve();
+    }
     const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
     if (existing) return existing;
 
@@ -1472,6 +1487,19 @@ export class GameServer {
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
   private replicationMetrics = new ReplicationMetrics();
+  /**
+   * LISTEN hand_projection_outbox (2026-09-10). Wakes the projection worker
+   * from the insert trigger's NOTIFY instead of Realtime WAL decoding. Disabled
+   * (warns once) when ENGINE_PG_LISTEN_URL is unset; the worker's poll and the
+   * local commit wakes still run. See services/supabase/handOutboxListener.ts.
+   */
+  private handOutboxListener = new HandOutboxListener();
+  /**
+   * Outbox depth and oldest-row age, one cheap query a minute, so the
+   * projection backlog is on /metrics (2026-09-10: it was 100k rows deep and
+   * nothing said so). See services/supabase/handOutboxMetrics.ts.
+   */
+  private handOutboxMetrics = new HandOutboxMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -1583,6 +1611,22 @@ export class GameServer {
         this.requestPendingTournamentBountyRecovery();
       }
     },
+    // WHY A BREAK DID NOT RUN (2026-09-10): the 00:00 and 07:00 breaks were
+    // cancelled by a :53 save that timed out, and the reason lived only in a
+    // container log the next deploy deleted. One row per fault, read by
+    // fn_ca_record_break_scorecard so the page names the cause. Best-effort:
+    // MaintenanceBreak has already acted before this is called.
+    recordFault: async (fault) => {
+      const { error } = await supabase.from('engine_maintenance_break_faults').insert({
+        announced_at: new Date(fault.announcedAtMs).toISOString(),
+        stage: fault.stage,
+        outcome: fault.outcome,
+        error: fault.error,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
     // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
     // checkpoints each completed step in engine_maintenance_thaws.shifted and
     // returns complete:false when it has used its own ~4s budget, so no single
@@ -1673,6 +1717,14 @@ export class GameServer {
    * exactly the remainder rather than for a fresh five minutes.
    */
   private breakEndsAt = 0;
+  private breakCountdownStarted = false;
+  /**
+   * True when the maintenance break fixed this break's end at the trigger
+   * (2026-09-10), so `breakEndsAt` is the real end even before the countdown
+   * starts. See triggerSynchronizedBreak and remainingBreakMs.
+   */
+  private breakEndsWithMaintenance = false;
+  private synchronizedBreakGeneration = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
    * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
@@ -2059,6 +2111,12 @@ export class GameServer {
       // one database transaction. The projection worker drains that durable
       // outbox; there is no process-local hand-history recovery owner.
       startHandProjectionWorker();
+      this.handOutboxMetrics.start();
+      // Step 8c: LISTEN hand_projection_outbox. Started after the worker so
+      // its first (re)connect resync wake lands on a live worker. Disabled
+      // (warns once) while ENGINE_PG_LISTEN_URL is unset on the engine host;
+      // the local commit wake and the worker's 5 s poll carry every hand.
+      this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
       this.leaderBootComplete = true;
@@ -2508,6 +2566,8 @@ export class GameServer {
       reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
       ownershipFailures.push(error);
     }
+    await this.handOutboxListener.stop();
+    this.handOutboxMetrics.stop();
     await stopHandProjectionWorker();
 
     /**
@@ -2975,6 +3035,29 @@ export class GameServer {
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       activeTables: this.tableEngines.size,
       activeTournaments: this.tournamentEngines.size,
+      // Spin launches the atomic authority refused and the engine parked
+      // (2026-09-10, tournament/spinLaunchParking.ts). Same numbers as the
+      // poker_spin_launches_parked* gauges, plus the ids and reasons so the
+      // operator reading /health can go straight to the row.
+      spinLaunchParks: (() => {
+        const m = spinLaunchParks.metrics(now);
+        return {
+          count: m.parked,
+          terminal: m.terminal,
+          oldestAgeMs: m.oldestAgeMs,
+          parked: spinLaunchParks
+            .snapshot(now)
+            .slice(0, 20)
+            .map((p) => ({
+              tournamentId: p.tournamentId,
+              reason: p.reason,
+              kind: p.kind,
+              strikes: p.strikes,
+              parkedUntil: new Date(p.until).toISOString(),
+              ageMs: now - p.since,
+            })),
+        };
+      })(),
       totalHandsDealt: totalHands,
       telemetry: {
         avgHandDurationMs,
@@ -3140,10 +3223,45 @@ export class GameServer {
       // EQUALITY the Spin format is sold on, and watch the punctuality of
       // the wheel that sells it. See services/SpinMetrics.ts.
       ...this.spinMetrics.toPrometheus(),
+      // ── PARKED SPIN LAUNCHES (2026-09-10) ────────────────────────────
+      // A Spin whose draw the atomic authority refused for a terminal
+      // reason is parked instead of retried every second
+      // (tournament/spinLaunchParking.ts). Three paid seats are waiting on
+      // every one of these, so the count and the age of the oldest are on
+      // the scrape: an operator sees a parked Spin without reading logs.
+      ...(() => {
+        const parks = spinLaunchParks.metrics(now);
+        return [
+          '# HELP poker_spin_launches_parked Spin launches inside a park window right now because fn_spin_draw_and_settle_atomic refused the draw; each one holds three paid seats',
+          '# TYPE poker_spin_launches_parked gauge',
+          `poker_spin_launches_parked ${parks.parked}`,
+          '# HELP poker_spin_launches_parked_terminal Of the parked launches, those refused for a reason only a data change can lift',
+          '# TYPE poker_spin_launches_parked_terminal gauge',
+          `poker_spin_launches_parked_terminal ${parks.terminal}`,
+          '# HELP poker_spin_launch_park_oldest_age_ms Milliseconds since the longest-parked launch was first refused; 0 when nothing is parked',
+          '# TYPE poker_spin_launch_park_oldest_age_ms gauge',
+          `poker_spin_launch_park_oldest_age_ms ${parks.oldestAgeMs}`,
+        ];
+      })(),
+      // ── SEAT-FIRST FILL PRE-CHECK (2026-09-10) ───────────────────────
+      // How many fn_seat_horse_in_seat_first_game calls the fill loop made,
+      // and how many the seat rows made unnecessary. That RPC takes the
+      // platform-wide exclusive lock every hand settlement waits on, so a
+      // skipped call is time off the hand path. Counted in the process because
+      // three services drive the same top-up. See services/seatFirstPrecheckMetrics.ts.
+      ...seatFirstPrecheckPrometheusLines(),
       // ── REPLICATION OBSERVABILITY (2026-09-04) ───────────────────────
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── HAND PROJECTION WAKES (2026-09-10) ───────────────────────────
+      // Which signal wakes the outbox drain. During the Realtime -> LISTEN
+      // cutover, {source="listen"} must be >= {source="realtime"} and
+      // listener_connected must read 1 before the table leaves the
+      // publication. See services/supabase/handOutboxListener.ts.
+      ...handProjectionWakesToPrometheus(),
+      ...this.handOutboxListener.toPrometheus(),
+      ...this.handOutboxMetrics.toPrometheus(),
       // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
       //
       // THE BLIND SPOT THESE FILL. On 2026-09-03 a cron revoked Dan's session
@@ -3228,6 +3346,8 @@ export class GameServer {
         // healthy scale.
         horseDecisionWorkerReady.set(worker.phase === 'ready' ? 1 : 0);
         horseDecisionWorkerQueueDepth.set(worker.queueDepth);
+        horseDecisionWorkerExpiredJobs.set(worker.expiredJobs);
+        horseDecisionWorkerRecoverableRequestErrors.set(worker.recoverableRequestErrors);
         horseDecisionWorkerActiveJobAgeMs.set(worker.activeJobAgeMs ?? 0);
         horseDecisionWorkerOldestQueuedAgeMs.set(worker.oldestQueuedAgeMs ?? 0);
         horseDecisionWorkerLastCompletionAgeMs.set(
@@ -3416,10 +3536,11 @@ export class GameServer {
      */
     const now = new Date();
     const nextBreak = new Date(now);
-    nextBreak.setMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
+    // The shared hourly boundary uses UTC, including repeated DST hours.
+    nextBreak.setUTCMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
     // Already past :55 this hour — go to :55 of the next hour.
     if (nextBreak.getTime() <= now.getTime()) {
-      nextBreak.setHours(nextBreak.getHours() + 1);
+      nextBreak.setUTCHours(nextBreak.getUTCHours() + 1);
     }
     const msUntilNextBreak = nextBreak.getTime() - now.getTime();
 
@@ -3783,24 +3904,66 @@ export class GameServer {
     );
 
     /**
+     * THE TOURNAMENT BREAK ENDS WHEN THE PLATFORM'S BREAK ENDS (2026-09-10).
+     *
+     * CLAUDE.md 13, Dan: "EVERYTHING JUST FREEZES, THEN PICKS BACK UP EXACTLY
+     * AS IT WAS", every table together. The maintenance break has held every
+     * table since :53 and hands the platform back at :00, but this break
+     * counted its own five minutes from whenever the pause loop below had
+     * finished. At 16:55 on 2026-09-10 that loop paused 47 tournaments one
+     * after another (break_started_at 16:55:00.012 to 16:55:18.8), so their
+     * countdown ran to about 17:00:19, and they were then resumed one after
+     * another as well. The thaw was done at 17:00:04.7 and cash tables dealt
+     * from 6.5s after the hour; not one of the 46 tables of those events
+     * dealt before 30.7s (p50 31.7s).
+     *
+     * So while a maintenance break is on, its end IS this break's end, read
+     * once, here, at the trigger. Nothing that runs after this can move it:
+     * not the pauses, not the drain, not the countdown writes. Without one (it
+     * failed to announce, or there is none) this is exactly the old two-phase
+     * rule: five minutes from the moment every table has parked.
+     *
+     * Ending at :00 is safe for the level clocks only because resumeFromBreak
+     * waits for the maintenance thaw before it takes a running tournament off
+     * its break. See the comment there.
+     */
+    const maintenanceEndsAt = this.maintenanceBreak.endsAt();
+
+    /**
      * The break window opens NOW, at :55, not when the countdown starts. A
      * tournament that begins during the last-hand wait must be held too, so
-     * claim the window immediately using the worst case (grace + break) and
-     * tighten it below once the real countdown begins.
+     * claim the window immediately - with the platform's end when a
+     * maintenance break has fixed it, otherwise the worst case (grace + break)
+     * - and tighten it below once the real countdown begins.
      */
+    this.synchronizedBreakGeneration++;
+    this.breakCountdownStarted = false;
+    this.breakEndsWithMaintenance = maintenanceEndsAt > 0;
     this.breakEndsAt =
-      Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+      maintenanceEndsAt > 0
+        ? Math.max(maintenanceEndsAt, Date.now())
+        : Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of breakEngines) {
-      try {
-        await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_pause_tournament');
-      }
-      if (!this.directAdmissionIsCurrent(generation)) {
-        this.breakEndsAt = 0;
-        return;
-      }
+    /**
+     * EVERY TOURNAMENT IS TOLD AT ONCE (2026-09-10). One after another, the
+     * 47 pauses at 16:55 took 18.8s: the last event stamped its break that
+     * much after the first and, with no maintenance break holding its tables,
+     * would have gone on dealing that much longer. Each manager fences its own continuations on
+     * its own lifecycle, so this server's generation is checked once, after
+     * every pause has settled, and a fenced server still goes no further.
+     */
+    await Promise.all(
+      breakEngines.map(async (tm) => {
+        try {
+          await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_pause_tournament');
+        }
+      })
+    );
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
     }
 
     const waitStartedAt = Date.now();
@@ -3811,31 +3974,47 @@ export class GameServer {
       return;
     }
 
-    if (allParked) {
-      console.log(
-        `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
-      );
-    } else {
-      console.warn(
-        `[GameServer] Last hand did not land on every table within ${Math.round(lastHandMs / 1000)}s - starting the break anyway so play resumes near the hour`
-      );
+    if (!allParked) {
+      // Shutdown/fencing can end the drain wait. It cannot prove a hand ended.
+      return;
     }
 
     // The countdown players see begins NOW, not at :55. Tighten the window
     // claimed above to the real end time, so a tournament starting during the
-    // break is held for exactly as long as everyone else.
-    this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
+    // break is held for exactly as long as everyone else. A maintenance break
+    // fixed that end at the trigger; the drain can have run past it (then the
+    // break is simply over), but it can never have moved it.
+    const countdownStartsAt = Date.now();
+    const countdownEndsAt =
+      maintenanceEndsAt > 0
+        ? Math.max(maintenanceEndsAt, countdownStartsAt)
+        : countdownStartsAt + GameServer.BREAK_DURATION_MS;
+    // What is actually left, for the minutes the break frame carries: exactly
+    // BREAK_DURATION_MS without a maintenance break, as before.
+    const countdownMs = countdownEndsAt - countdownStartsAt;
+    this.breakEndsAt = countdownEndsAt;
+    this.breakCountdownStarted = true;
+    console.log(
+      `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - ` +
+        `the break runs ${Math.round(countdownMs / 1000)}s, to ${new Date(countdownEndsAt).toISOString()}` +
+        (maintenanceEndsAt > 0 ? ', the end of the maintenance break' : '')
+    );
+    const countdownParticipants = new Set([...breakEngines, ...this.tournamentEngines.values()]);
 
-    for (const tm of breakEngines) {
-      try {
-        await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_begin_break_countdown');
-      }
-      if (!this.directAdmissionIsCurrent(generation)) {
-        this.breakEndsAt = 0;
-        return;
-      }
+    // Stamped on every event at once, for the reason the pauses above are: the
+    // deadline is shared, and so is the moment players are shown it.
+    await Promise.all(
+      [...countdownParticipants].map(async (tm) => {
+        try {
+          await tm.beginBreakCountdown(countdownMs, countdownEndsAt);
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_begin_break_countdown');
+        }
+      })
+    );
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
     }
 
     // Never leave two resume timers pending. If a previous break's last-hand
@@ -3848,13 +4027,16 @@ export class GameServer {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;
     }
-    this.breakResumeTimer = setTimeout(() => {
-      this.breakResumeTimer = null;
-      this.launchServerLifecycleJob(
-        this.resumeSynchronizedBreak(breakEngines, generation),
-        'GameServer.synchronized_break_resume_failed'
-      );
-    }, GameServer.BREAK_DURATION_MS);
+    this.breakResumeTimer = setTimeout(
+      () => {
+        this.breakResumeTimer = null;
+        this.launchServerLifecycleJob(
+          this.resumeSynchronizedBreak(breakEngines, generation),
+          'GameServer.synchronized_break_resume_failed'
+        );
+      },
+      Math.max(0, countdownEndsAt - Date.now())
+    );
     this.breakResumeTimer.unref?.();
   }
 
@@ -3866,29 +4048,49 @@ export class GameServer {
     // Close the window FIRST. Anything starting from here on is not in a
     // break and must not be held.
     this.breakEndsAt = 0;
+    this.breakCountdownStarted = false;
+    this.breakEndsWithMaintenance = false;
     console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
     // Resume everything on break, not just the :55 snapshot - a tournament
     // that started during the break was held by holdIfBreakIsRunning and is
     // not in breakEngines. resumeFromBreak no-ops on anything not on break.
     const toResume = new Set<TournamentManager>(breakEngines);
     for (const tm of this.tournamentEngines.values()) toResume.add(tm);
-    for (const tm of toResume) {
-      if (!this.directAdmissionIsCurrent(generation)) return;
-      try {
-        await tm.resumeFromBreak();
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_resume_tournament');
-      }
-    }
+    /**
+     * ALL AT ONCE (2026-09-10). This walked the managers one after another,
+     * so the last of 47 events came back seconds after the first, and since
+     * resumeFromBreak now waits out the maintenance thaw, one event waiting
+     * would have held every event queued behind it. Every manager resumes on
+     * its own; a failure is reported for that manager alone and holds nobody
+     * else. The generation was checked above, in the same tick that launches
+     * every resume; from here each manager answers to its own lifecycle fence.
+     */
+    await Promise.all(
+      [...toResume].map(async (tm) => {
+        try {
+          await tm.resumeFromBreak();
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_resume_tournament');
+        }
+      })
+    );
   }
 
   /**
    * How much of the platform-wide break is left, or 0 when none is running.
    * See the `breakEndsAt` field for why a tournament starting mid-break needs
    * to know this.
+   *
+   * Before the countdown the end is only known when a maintenance break fixed
+   * it at the trigger (2026-09-10); otherwise the worst case is claimed, as
+   * it always was.
    */
   remainingBreakMs(): number {
-    return this.breakEndsAt > 0 ? Math.max(0, this.breakEndsAt - Date.now()) : 0;
+    if (this.breakEndsAt <= 0) return 0;
+    if (!this.breakCountdownStarted && !this.breakEndsWithMaintenance) {
+      return TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+    }
+    return Math.max(0, this.breakEndsAt - Date.now());
   }
 
   /**
@@ -3903,6 +4105,7 @@ export class GameServer {
   private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
     const remaining = this.remainingBreakMs();
     if (remaining <= 1000) return;
+    const breakGeneration = this.synchronizedBreakGeneration;
     // Same single gate as triggerSynchronizedBreak — a Spin or Heads-Up that
     // fills at :57 must sit on the break screen with everyone else, not open
     // its first level alone.
@@ -3912,29 +4115,84 @@ export class GameServer {
         `[GameServer] Tournament started during the break - holding it for the remaining ${Math.round(remaining / 1000)}s`
       );
       await tm.pauseForBreak(remaining);
-      await tm.beginBreakCountdown(remaining);
+      // This pause may finish after its owner released the field. Reconcile
+      // only that owner; an older completion cannot lift a newer break.
+      if (this.synchronizedBreakGeneration !== breakGeneration) return;
+      const remainingAfterPause = this.remainingBreakMs();
+      if (remainingAfterPause <= 0) {
+        await tm.resumeFromBreak();
+        return;
+      }
+      if (this.breakCountdownStarted) {
+        await tm.beginBreakCountdown(remainingAfterPause, this.breakEndsAt);
+      }
     } catch (err: any) {
       reportError(err, 'GameServer.hold_new_tournament_for_break');
     }
   }
 
   /**
-   * Poll until every table of every supplied tournament has finished the hand
-   * that was in flight, or until the grace window expires.
-   *
-   * Returns true if everyone parked, false if the grace window won. A wedged
-   * table must never hold the whole platform's break open — play resuming near
-   * the hour matters more than one stuck table.
+   * Wait until every participating hand has finished. The old grace estimate
+   * is not authority to start a break while an accepted hand is still active.
+   * Return false only when this server generation stops owning the drain.
    */
   private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
-    const deadline = Date.now() + TournamentManager.LAST_HAND_GRACE_MS;
-    while (Date.now() < deadline) {
-      if (!this.running) return false;
-      if (managers.every((tm) => tm.areAllTablesParked())) return true;
+    const generation = this.lifecycleGeneration;
+    const startedAt = Date.now();
+    let nextReportAt = startedAt + GameServer.PARK_WAIT_REPORT_MS;
+    while (this.running && this.directAdmissionIsCurrent(generation)) {
+      const participants = new Set(managers);
+      for (const manager of this.tournamentEngines.values()) {
+        if (manager.isRunning() && manager.takesSynchronizedBreaks()) participants.add(manager);
+      }
+      const waitingOn = [...participants].filter((tm) => !tm.areAllTablesParked());
+      if (waitingOn.length === 0) return true;
+      const waitedMs = Date.now() - startedAt;
+      const names = waitingOn
+        .slice(0, 8)
+        .map((tm) =>
+          String((tm as unknown as { tournamentId?: string }).tournamentId ?? '?').slice(0, 8)
+        )
+        .join(', ');
+      /* A LIVENESS CEILING, NOT A GRACE ESTIMATE (2026-09-10).
+         #4105 was right that a guessed two minutes is no authority to start a
+         break over a hand that is still being played. But with no ceiling at
+         all, one wedged table holds every tournament on the platform on the
+         break screen for as long as it stays wedged - until a restart - and
+         nothing says which table it was. A hand still in the air a whole
+         break after :55 is not a slow hand; start the countdown, and say
+         loudly which events never parked. */
+      if (waitedMs >= GameServer.PARK_WAIT_CEILING_MS) {
+        reportError(
+          new Error(
+            `[GameServer] synchronized break: ${waitingOn.length} tournament(s) still had a table ` +
+              `in play ${Math.round(waitedMs / 1000)}s after the last hand was called (${names}); ` +
+              'starting the countdown so the platform is not held on a wedged table'
+          ),
+          'GameServer.synchronized_break_park_ceiling'
+        );
+        return true;
+      }
+      if (Date.now() >= nextReportAt) {
+        console.warn(
+          `[GameServer] synchronized break still waiting on ${waitingOn.length} tournament(s) ` +
+            `after ${Math.round(waitedMs / 1000)}s: ${names}`
+        );
+        nextReportAt = Date.now() + GameServer.PARK_WAIT_REPORT_MS;
+      }
       await this.sleep(500);
     }
-    return managers.every((tm) => tm.areAllTablesParked());
+    return false;
   }
+
+  /** How long the drain may run before it names who it is waiting on, and how often after. */
+  private static readonly PARK_WAIT_REPORT_MS = 15_000;
+  /**
+   * The drain's liveness ceiling: a whole break after the last hand was
+   * called. Far beyond any real hand (the maintenance break has had every
+   * table finishing since :53), so it only ever fires on a wedged table.
+   */
+  private static readonly PARK_WAIT_CEILING_MS = 5 * 60 * 1000;
 
   // ═════════════════════════════════════════════════════════════════════════════
   // STALE DATA CLEANUP — Run on startup
@@ -4659,6 +4917,7 @@ export class GameServer {
     while (this.directAdmissionIsCurrent(generation)) {
       try {
         // Find REGISTERING tournaments ready to start
+        const registeringReadAt = Date.now();
         const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
@@ -4967,6 +5226,12 @@ export class GameServer {
             ) {
               continue;
             }
+            /* A parked launch is not a stall this watchdog can cure: the
+               front door would refuse the force-start anyway, and reporting
+               "force-starting" every stall window for a game the authority
+               has refused would be a lie in Sentry. The clock is left
+               running, so the pass after the park ends acts at once. */
+            if (spinLaunchParks.isParked(id, stallNow)) continue;
 
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {
@@ -5066,11 +5331,16 @@ export class GameServer {
         // The ramp map only ever holds tournaments still in REGISTERING.
         // Without this it grows by every event the engine has ever seen and
         // is never freed for the life of the process.
-        if (this.lastMttRampAt.size > 0) {
+        if (this.lastMttRampAt.size > 0 || spinLaunchParks.size > 0) {
           const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
           for (const id of this.lastMttRampAt.keys()) {
             if (!stillRegistering.has(id)) this.lastMttRampAt.delete(id);
           }
+          // The park registry is bounded the same way (2026-09-10): a park
+          // gates a 'start', and a Spin that has left REGISTERING (RUNNING,
+          // COMPLETED, CANCELLED) can never be started again. Only entries
+          // older than this pass's board read are judged by it.
+          spinLaunchParks.retain(stillRegistering, registeringReadAt);
         }
 
         // Clean up completed tournaments
@@ -6528,6 +6798,18 @@ export class GameServer {
             }
 
             if (seats <= 0 || paid < seats) continue;
+
+            /**
+             * A PARKED LAUNCH IS LEFT ALONE (2026-09-10). The "stop the dead
+             * manager, start a fresh one" below is what turned one refused
+             * draw into ~87 database calls a second across the board: the
+             * manager stood down for a reason the database had just said was
+             * deterministic, and this pass restarted it a second later. The
+             * draw path (spinLaunchParking.ts) now parks the id with a
+             * doubling window; until that window ends, nothing here touches
+             * it, not even the stale-manager stop.
+             */
+            if (spinLaunchParks.isParked(id)) continue;
 
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {

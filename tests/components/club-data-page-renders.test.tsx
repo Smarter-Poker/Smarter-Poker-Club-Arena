@@ -832,6 +832,249 @@ describe('ClubDataPage', () => {
     }
   });
 
+  it('revalidates a cached player sort without accepting the previous sort response', async () => {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const start = new Date(endDate + 'T00:00:00Z');
+    start.setUTCDate(start.getUTCDate() - 13);
+    const loser = {
+      ...playerBreakdown.players[0],
+      user_id: 'loser-1',
+      username: 'Cached Loser',
+      net: -120,
+    };
+    const freshLoser = { ...loser, username: 'Verified Loser' };
+    const nextLoser = {
+      ...loser,
+      user_id: 'loser-2',
+      username: 'Next Loser',
+      is_horse: false,
+      net: -100,
+    };
+    const winnerRows = Array.from({ length: 100 }, (_, i) =>
+      i === 0
+        ? playerBreakdown.players[0]
+        : { ...playerBreakdown.players[0], user_id: 'winner-' + i, username: 'Winner ' + i }
+    );
+    const loserRows = Array.from({ length: 100 }, (_, i) =>
+      i === 0 ? loser : { ...loser, user_id: 'loser-other-' + i, username: 'Loser ' + i }
+    );
+    const winnerCursor = { value: 120, id: winnerRows[99].user_id };
+    const loserCursor = { value: -120, id: loserRows[99].user_id };
+    for (const [sort, rows, cursor] of [
+      ['winners', winnerRows, winnerCursor],
+      ['losers', loserRows, loserCursor],
+    ] as const) {
+      writeClubDataCache(
+        'owner-1',
+        CLUB_ID,
+        clubDataQueryKey({
+          kind: 'players',
+          startDate: start.toISOString().slice(0, 10),
+          endDate,
+          playerSort: sort,
+        }),
+        { players: { ...playerBreakdown, players: rows, player_count: 101 }, cursor, hasMore: true }
+      );
+    }
+    type Reply = { data: Record<string, unknown>; error: null };
+    let resolveWinners: ((result: Reply) => void) | undefined;
+    let resolveLosers: ((result: Reply) => void) | undefined;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_player_breakdown')
+        return { data: { ...playerBreakdown, player_count: 101 }, error: null };
+      if (fn === 'ca_club_player_page' && args?.p_cursor) {
+        return { data: { ...playerPage, rows: [nextLoser], filtered_count: 101 }, error: null };
+      }
+      if (fn === 'ca_club_player_page' && args?.p_sort === 'losers') {
+        return new Promise<Reply>((resolve) => {
+          resolveLosers = resolve;
+        });
+      }
+      if (fn === 'ca_club_player_page') {
+        return new Promise<Reply>((resolve) => {
+          resolveWinners = resolve;
+        });
+      }
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      await screen.findByText('Table Regular');
+      await waitFor(() => expect(resolveWinners).toBeTypeOf('function'));
+      fireEvent.click(screen.getByRole('button', { name: 'Biggest Losers' }));
+      await screen.findByText('Cached Loser');
+      await waitFor(() => expect(resolveLosers).toBeTypeOf('function'));
+
+      await act(async () => {
+        resolveWinners?.({
+          data: {
+            ...playerPage,
+            rows: [{ ...winnerRows[0], username: 'Retired Winner' }, ...winnerRows.slice(1)],
+            next_cursor: winnerCursor,
+            has_more: true,
+            filtered_count: 101,
+          },
+          error: null,
+        });
+      });
+      expect(screen.getByText('Cached Loser')).toBeInTheDocument();
+      expect(screen.queryByText('Retired Winner')).not.toBeInTheDocument();
+
+      await act(async () => {
+        resolveLosers?.({
+          data: {
+            ...playerPage,
+            rows: [freshLoser, ...loserRows.slice(1)],
+            next_cursor: loserCursor,
+            has_more: true,
+            filtered_count: 101,
+          },
+          error: null,
+        });
+      });
+      await screen.findByText('Verified Loser');
+      fireEvent.click(screen.getByRole('button', { name: 'Load More Players - 100 Of 101' }));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Load More Players|Loading More Players/ })
+        ).not.toBeInTheDocument()
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Hide Horses' }));
+      await screen.findByText('Next Loser');
+      expect(rpcMock).toHaveBeenCalledWith(
+        'ca_club_player_page',
+        expect.objectContaining({ p_sort: 'losers', p_cursor: loserCursor })
+      );
+      expect(
+        rpcMock.mock.calls.some(
+          ([fn, args]) =>
+            fn === 'ca_club_player_page' &&
+            args?.p_sort === 'losers' &&
+            args?.p_cursor?.id === winnerCursor.id
+        )
+      ).toBe(false);
+    } finally {
+      await act(async () => {
+        resolveWinners?.({ data: playerPage, error: null });
+        resolveLosers?.({ data: playerPage, error: null });
+      });
+    }
+  });
+
+  it('keeps the new player pagination owned when an old sort page settles', async () => {
+    const loser = {
+      ...playerBreakdown.players[0],
+      user_id: 'loser-1',
+      username: 'Current Loser',
+      net: -120,
+    };
+    const nextLoser = {
+      ...loser,
+      user_id: 'loser-2',
+      username: 'Next Loser',
+      is_horse: false,
+      net: -100,
+    };
+    const winnerRows = Array.from({ length: 100 }, (_, i) =>
+      i === 0
+        ? playerBreakdown.players[0]
+        : { ...playerBreakdown.players[0], user_id: 'winner-' + i, username: 'Winner ' + i }
+    );
+    const loserRows = Array.from({ length: 100 }, (_, i) =>
+      i === 0 ? loser : { ...loser, user_id: 'loser-other-' + i, username: 'Loser ' + i }
+    );
+    type Reply = { data: Record<string, unknown>; error: null };
+    let resolveOldPage: ((result: Reply) => void) | undefined;
+    let resolveCurrentPage: ((result: Reply) => void) | undefined;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_player_breakdown')
+        return { data: { ...playerBreakdown, player_count: 101 }, error: null };
+      if (fn === 'ca_club_player_page' && args?.p_cursor) {
+        return new Promise<Reply>((resolve) => {
+          if (args.p_sort === 'losers') resolveCurrentPage = resolve;
+          else resolveOldPage = resolve;
+        });
+      }
+      if (fn === 'ca_club_player_page') {
+        const rows = args?.p_sort === 'losers' ? loserRows : winnerRows;
+        const row = rows[99];
+        return {
+          data: {
+            ...playerPage,
+            rows,
+            next_cursor: { value: row.net, id: row.user_id },
+            has_more: true,
+            filtered_count: 101,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      const first = await screen.findByRole('button', { name: 'Load More Players - 100 Of 101' });
+      fireEvent.click(first);
+      await waitFor(() => expect(resolveOldPage).toBeTypeOf('function'));
+      fireEvent.click(screen.getByRole('button', { name: 'Biggest Losers' }));
+      await screen.findByText('Current Loser');
+      const current = await screen.findByRole('button', { name: 'Load More Players - 100 Of 101' });
+      await waitFor(() => expect(current).toBeEnabled());
+      fireEvent.click(current);
+      await waitFor(() => expect(resolveCurrentPage).toBeTypeOf('function'));
+      await act(async () => {
+        resolveOldPage?.({
+          data: {
+            ...playerPage,
+            rows: [
+              { ...playerBreakdown.players[0], user_id: 'retired-page', username: 'Retired Page' },
+            ],
+          },
+          error: null,
+        });
+      });
+
+      const pending = screen.getByRole('button', { name: 'Loading More Players' });
+      expect(pending).toBeDisabled();
+      fireEvent.click(pending);
+      expect(
+        rpcMock.mock.calls.filter(
+          ([fn, args]) =>
+            fn === 'ca_club_player_page' && args?.p_sort === 'losers' && args?.p_cursor
+        )
+      ).toHaveLength(1);
+      expect(screen.queryByText('Retired Page')).not.toBeInTheDocument();
+      await act(async () => {
+        resolveCurrentPage?.({
+          data: { ...playerPage, rows: [nextLoser], filtered_count: 101 },
+          error: null,
+        });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Load More Players|Loading More Players/ })
+        ).not.toBeInTheDocument()
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Hide Horses' }));
+      await screen.findByText('Next Loser');
+    } finally {
+      await act(async () => {
+        resolveOldPage?.({ data: playerPage, error: null });
+        resolveCurrentPage?.({ data: playerPage, error: null });
+      });
+    }
+  });
+
   it('asks the server for the selected player order before slicing the page', async () => {
     render(<ClubDataPage />);
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
@@ -1002,6 +1245,174 @@ describe('ClubDataPage', () => {
       await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('revalidates a cached game sort without accepting the previous sort response', async () => {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const start = new Date(endDate + 'T00:00:00Z');
+    start.setUTCDate(start.getUTCDate() - 13);
+    const cachedFee = { ...snapshot.rows[0], id: 'cached-fee', name: 'Cached Fee Game' };
+    for (const sort of ['recent', 'fee'] as const) {
+      writeClubDataCache(
+        'owner-1',
+        CLUB_ID,
+        clubDataQueryKey({
+          kind: 'games',
+          startDate: start.toISOString().slice(0, 10),
+          endDate,
+          game: 'ALL',
+          stakes: 'ALL',
+          search: '',
+          gameSort: sort,
+        }),
+        {
+          snapshot: { ...snapshot, rows: sort === 'fee' ? [cachedFee] : snapshot.rows },
+          cursor: null,
+          hasMore: false,
+        }
+      );
+    }
+    type Reply = { data: Record<string, unknown>; error: null };
+    let resolveRecent: ((result: Reply) => void) | undefined;
+    let resolveFee: ((result: Reply) => void) | undefined;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot' && args?.p_limit === 100) {
+        return new Promise<Reply>((resolve) => {
+          resolveRecent = resolve;
+        });
+      }
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') {
+        return new Promise<Reply>((resolve) => {
+          resolveFee = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      await waitFor(() => expect(resolveRecent).toBeTypeOf('function'));
+      fireEvent.click(screen.getByRole('button', { name: 'Highest Fee' }));
+      await screen.findByText('Cached Fee Game');
+      await waitFor(() => expect(resolveFee).toBeTypeOf('function'));
+      await act(async () => {
+        resolveRecent?.({
+          data: { ...snapshot, rows: [{ ...snapshot.rows[0], name: 'Retired Recent Game' }] },
+          error: null,
+        });
+      });
+      expect(screen.getByText('Cached Fee Game')).toBeInTheDocument();
+      expect(screen.queryByText('Retired Recent Game')).not.toBeInTheDocument();
+      await act(async () => {
+        resolveFee?.({
+          data: { ...gamePage, rows: [{ ...cachedFee, name: 'Verified Fee Game' }] },
+          error: null,
+        });
+      });
+      await screen.findByText('Verified Fee Game');
+    } finally {
+      await act(async () => {
+        resolveRecent?.({ data: snapshot, error: null });
+        resolveFee?.({ data: gamePage, error: null });
+      });
+    }
+  });
+
+  it('keeps new game pagination owned when an old sort prefetch settles', async () => {
+    const recentRows = Array.from({ length: 200 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: 'recent-owner-' + index,
+      name: 'Recent Owner ' + index,
+      started_at: new Date(Date.UTC(2026, 7, 30, 12) - index * 1_000).toISOString(),
+    }));
+    const feeRows = Array.from({ length: 250 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: 'fee-owner-' + index,
+      name: 'Fee Owner ' + index,
+      fee: 10_000 - index,
+    }));
+    const feeCursor = { value: 9_801, time: 1, kind: 'CASH', id: 'fee-owner-199' };
+    type Reply = { data: Record<string, unknown>; error: null };
+    let resolveRecent: ((result: Reply) => void) | undefined;
+    let resolveFeePage: ((result: Reply) => void) | undefined;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot')
+        return {
+          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          error: null,
+        };
+      if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
+        return new Promise<Reply>((resolve) => {
+          resolveRecent = resolve;
+        });
+      }
+      if (fn === 'ca_club_game_page' && args?.p_cursor) {
+        return new Promise<Reply>((resolve) => {
+          resolveFeePage = resolve;
+        });
+      }
+      if (fn === 'ca_club_game_page')
+        return {
+          data: {
+            ...gamePage,
+            rows: feeRows.slice(0, 200),
+            next_cursor: feeCursor,
+            has_more: true,
+            filtered_count: 250,
+          },
+          error: null,
+        };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+    try {
+      render(<ClubDataPage />);
+      const first = await screen.findByRole('button', { name: 'Load More Games - 100 Of 250' });
+      await waitFor(() => expect(resolveRecent).toBeTypeOf('function'));
+      fireEvent.click(first);
+      await screen.findByRole('button', { name: 'Loading More Games' });
+      fireEvent.click(screen.getByRole('button', { name: 'Highest Fee' }));
+      await screen.findByText('Fee Owner 0');
+      const cachedPage = screen.getByRole('button', { name: 'Load More Games - 100 Of 250' });
+      await waitFor(() => expect(cachedPage).toBeEnabled());
+      fireEvent.click(cachedPage);
+      fireEvent.click(await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }));
+      await waitFor(() => expect(resolveFeePage).toBeTypeOf('function'));
+      await act(async () => {
+        resolveRecent?.({
+          data: { ...gamePage, rows: recentRows.slice(100), has_more: true, filtered_count: 250 },
+          error: null,
+        });
+      });
+      const pending = screen.getByRole('button', { name: 'Loading More Games' });
+      expect(pending).toBeDisabled();
+      fireEvent.click(pending);
+      const feePages = rpcMock.mock.calls.filter(
+        ([fn, args]) => fn === 'ca_club_game_page' && args?.p_sort === 'fee' && args?.p_cursor
+      );
+      expect(feePages).toHaveLength(1);
+      expect(feePages[0][1].p_cursor).toEqual(feeCursor);
+      expect(screen.queryByText('Recent Owner 0')).not.toBeInTheDocument();
+      await act(async () => {
+        resolveFeePage?.({
+          data: { ...gamePage, rows: feeRows.slice(200), filtered_count: 250 },
+          error: null,
+        });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Load More Games|Loading More Games/ })
+        ).not.toBeInTheDocument()
+      );
+      expect(screen.getByText('Fee Owner 0')).toBeInTheDocument();
+    } finally {
+      await act(async () => {
+        resolveRecent?.({ data: gamePage, error: null });
+        resolveFeePage?.({ data: gamePage, error: null });
+      });
     }
   });
 

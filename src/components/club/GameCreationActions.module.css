@@ -84,7 +84,15 @@
     width: 100%;
   }
 
-  .actions button {
+  /* A PHONE BUTTON IS 44px TALL (audit CL-31, 2026-09-10). This block used to
+     re-flow the row to two columns and leave the height alone, so the
+     `.compact` variant (30px) and the base row (34px) both sat under a
+     thumb's minimum. CLAUDE.md rule 6 is 375px first, and the union and
+     game-management screens render this row as their ONLY route to creating
+     a game on a phone. Listed after `.compact button` so it wins the tie. */
+  .actions button,
+  .compact button {
     width: 100%;
+    min-height: 44px;
   }
 }

@@ -1,11 +1,11 @@
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
+
 export interface PlayedSpinLaunchRecoveryProof {
   tournamentId: string;
   originalPlayerIds: string[];
   activePlayerIds: string[];
   fundingFieldSize: 3;
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const exactIds = (raw: unknown, field: string, expectedLength: number): string[] => {
   if (!Array.isArray(raw) || raw.length !== expectedLength) {
@@ -44,7 +44,9 @@ export function parsePlayedSpinLaunchRecoveryProof(
     Number(value.paid_users) !== 3 ||
     Number(value.entitlement_users) !== 3 ||
     Number(value.live_seats) !== 2 ||
-    Number(value.hand_count) < 1
+    typeof value.hand_count !== 'number' ||
+    !Number.isSafeInteger(value.hand_count) ||
+    value.hand_count < 1
   ) {
     throw new Error('played Spin launch proof does not describe one exact paid three-seat game');
   }

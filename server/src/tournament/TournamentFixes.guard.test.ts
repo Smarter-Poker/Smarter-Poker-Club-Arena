@@ -88,7 +88,7 @@ describe('finishing places must be distinct', () => {
   it('places are taken from the FREE set, not from a live count (2026-08-27)', () => {
     // The `basePosition = Math.max(playingCount, n + 1)` arithmetic this test
     // used to pin made places distinct WITHIN one sweep, but playingCount is
-    // not monotonic — ensureLateRegSeated promotes registered entrants to
+    // not monotonic — atomic late registration can promote entrants to
     // playing after eliminations begin — so a later sweep could re-stamp a
     // place an earlier sweep had already PAID. Confirmed live: 206 duplicated
     // places across 138 tournaments, worst case 107% of a pool disbursed.
@@ -220,6 +220,23 @@ describe('rebuys and add-ons actually happen', () => {
     // was the SPA and there are no human players yet.
     expect(code(ELIM)).toMatch(/private async tryTournamentRebuys/);
     expect(code(ELIM)).toMatch(/await this\.tryTournamentRebuys\(/);
+  });
+
+  it('re-entry-only events send horses through the executable re-entry product', () => {
+    const rebuys = sliceMethod(code(ELIM), 'private async tryTournamentRebuys(');
+    expect(rebuys).toMatch(/!t\?\.is_rebuy\s*&&\s*!t\?\.is_reentry/);
+    expect(rebuys).toContain("const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry'");
+    expect(rebuys).toMatch(/p_rebuy_type:\s*recoveryType/);
+    expect(rebuys).not.toMatch(/p_rebuy_type:\s*'rebuy'/);
+  });
+
+  it('enforces the deterministic Free Buy horse allowance before the money RPC', () => {
+    const rebuys = sliceMethod(code(ELIM), 'private async tryTournamentRebuys(');
+    const allowance = rebuys.indexOf('horseRebuyAllowance(');
+    const rpc = rebuys.indexOf("supabase.rpc('process_tournament_rebuy'");
+    expect(allowance).toBeGreaterThanOrEqual(0);
+    expect(rpc).toBeGreaterThan(allowance);
+    expect(rebuys.slice(allowance, rpc)).toMatch(/answered\.add\(h\.id\)/);
   });
 
   it('add-ons are offered when the window opens', () => {
@@ -413,8 +430,6 @@ describe('no seating path may write a second live seat in the same tournament', 
    * snapshot, sees every not-yet-written player as unseated, and seats them
    * again — 72 players, 144 live seats, 46 of the pairs exactly 14 tables
    * apart, which is two round-robin cursors walking one table list.
-   * `ensureLateRegSeated` holds the same shape of snapshot beside it.
-   *
    * `idx_unique_active_user_per_table` is UNIQUE (table_id, user_id) WHERE
    * left_at IS NULL — per TABLE. It cannot object to the second seat, because
    * the second seat is at a different table.
@@ -459,14 +474,13 @@ describe('no seating path may write a second live seat in the same tournament', 
     expect(code(SEAT_ASSIGNMENT_RPC)).toMatch(/fn_assign_tournament_player_seat_atomic/);
   });
 
-  it('the late-reg sweep uses the same atomic seat receipt and no raw fallback', () => {
-    const src = code(MANAGER);
-    const fn = src.slice(src.indexOf('ensureLateRegSeated()'));
-    const assignment = fn.indexOf('assignTournamentPlayerSeatAtomically({');
-    expect(assignment).toBeGreaterThan(-1);
-    expect(fn.slice(assignment)).toMatch(/userId:\s*player\.user_id/);
-    expect(fn).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.(?:insert|update|delete)\(/);
-    expect(fn).not.toMatch(/restore|compensat/i);
+  it('has no periodic process-side late-registration seat writer', () => {
+    const manager = code(MANAGER);
+    const eliminations = code(ELIM);
+    expect(manager).not.toContain('ensureLateRegSeated');
+    expect(manager).not.toContain('atomic_late_reg_seat');
+    expect(eliminations).not.toContain('ensureLateRegSeated');
+    expect(manager).not.toContain('assignTournamentPlayerSeatAtomically');
   });
 
   it('a move has one database authority and no compensating seat writes', () => {
@@ -555,12 +569,9 @@ describe('seating a tournament twice must not build a second set of tables', () 
      * seatNumber++` — lowest free, with NO CEILING. Handed a full 9-max table
      * it returned seat 10, walking straight past the max_players that
      * clampSeatsForVariant had just clamped for deck safety (#782). The
-     * sibling scan in ensureLateRegSeated has always carried its ceiling
-     * (`if (seatNumber > occ.max) continue`); this one did not.
-     *
      * Lowest-free is still the rule. It is now bounded by the table's own
-     * capacity, and a player for whom no in-capacity seat exists is left
-     * unseated for the bounded recovery lane rather than given an illegal seat.
+     * capacity, and a launch with no in-capacity seat is refused for an exact
+     * lifecycle retry rather than given an illegal seat.
      */
     expect(fn).not.toMatch(/while\s*\(taken\.has\(seatNumber\)\)\s*seatNumber\+\+/);
     expect(fn).toMatch(/capacityOf/);

@@ -10,7 +10,8 @@
  */
 
 import { supabase } from './client.js';
-import { parseTableArenaIdentity, assertChipFundingArena } from '../../domain/ArenaContext.js';
+import { parseTableArenaIdentity } from '../../domain/ArenaContext.js';
+import { assertDiamondCashTable } from '../../domain/DiamondCashBoundary.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
 
@@ -28,7 +29,7 @@ export async function loadTable(tableId: string) {
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
       // tableInfo.bbj_percent, but this select never fetched it, so the gate
       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
-      'id, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle'
+      'id, club_id, union_id, status, is_template, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -39,9 +40,18 @@ export async function loadTable(tableId: string) {
   }
   if (!data) throw new Error(`Table ${tableId} not found`);
   const arena = parseTableArenaIdentity(data);
-  // This engine currently settles through chip RPCs. Never open a Diamond
-  // table on that financial path; dedicated custody is the next build phase.
-  assertChipFundingArena(arena);
+  if (arena.asset === 'diamonds') {
+    assertDiamondCashTable(data);
+    const settings = await supabase
+      .from('ca_arena_settings')
+      .select('club_id, cash_games_enabled')
+      .eq('id', 1)
+      .eq('club_id', arena.id)
+      .maybeSingle();
+    if (settings.error || settings.data?.cash_games_enabled !== true) {
+      throw new Error('Diamond Cash Games Are Not Open');
+    }
+  }
   return { ...data, arena };
 }
 
@@ -116,9 +126,11 @@ export async function loadSeatedPlayers(tableId: string) {
 }
 
 const SEAT_SELECT =
-  'user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
+  'id, joined_at, user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
 
 interface SeatRow {
+  id: string;
+  joined_at: string;
   user_id: string;
   occupancy_id: string;
   stack: number;
@@ -149,6 +161,8 @@ interface SeatedProfileRow {
 /** One seat + its profile -> the SeatedPlayer shape the engine deals from. Shared by both read paths. */
 function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
   return {
+    seat_id: seat.id,
+    seat_joined_at: seat.joined_at,
     user_id: seat.user_id,
     occupancy_id: seat.occupancy_id,
     username: profile.is_horse

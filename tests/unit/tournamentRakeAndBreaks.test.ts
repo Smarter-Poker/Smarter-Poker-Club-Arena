@@ -75,15 +75,15 @@ describe('synchronized breaks run :55 -> :00', () => {
   });
 
   it('the scheduler targets :55, not the top of the hour', () => {
-    expect(sched).toMatch(/setMinutes\(\s*GameServer\.BREAK_START_MINUTE\s*,\s*0\s*,\s*0\s*\)/);
+    expect(sched).toMatch(/setUTCMinutes\(\s*GameServer\.BREAK_START_MINUTE\s*,\s*0\s*,\s*0\s*\)/);
     // The old code snapped to :00 then added an hour.
-    expect(sched).not.toMatch(/setMinutes\(\s*0\s*,\s*0\s*,\s*0\s*\)/);
+    expect(sched).not.toMatch(/setUTCMinutes\(\s*0\s*,\s*0\s*,\s*0\s*\)/);
     expect(sched).not.toContain('msUntilNextHour');
   });
 
   it('rolls to the next hour when :55 has already passed', () => {
     expect(sched).toMatch(/nextBreak\.getTime\(\)\s*<=\s*now\.getTime\(\)/);
-    expect(sched).toMatch(/setHours\(nextBreak\.getHours\(\)\s*\+\s*1\)/);
+    expect(sched).toMatch(/setUTCHours\(nextBreak\.getUTCHours\(\)\s*\+\s*1\)/);
   });
 
   it('a causal replacement inherits the active break before it can deal', () => {
@@ -144,10 +144,12 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
     expect(waitAt).toBeLessThan(timerAt);
   });
 
-  it('a wedged table cannot hold the break open forever', () => {
-    const waiter = GAME_SERVER.slice(GAME_SERVER.indexOf('private async waitForAllTablesParked'));
-    expect(waiter).toMatch(/LAST_HAND_GRACE_MS/);
-    expect(waiter).toMatch(/deadline/);
+  it('the break waits for its hands while this server owns the drain', () => {
+    const start = GAME_SERVER.indexOf('private async waitForAllTablesParked');
+    const waiter = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  }\n', start) + 5);
+    expect(waiter).toContain('while (this.running && this.directAdmissionIsCurrent(generation))');
+    expect(waiter).toContain('return false;');
+    expect(waiter).not.toMatch(/Date\.now\(\)\s*</);
   });
 
   it('all-tables-parked reads the real between-hands park signal', () => {

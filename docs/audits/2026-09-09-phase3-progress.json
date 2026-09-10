@@ -8,13 +8,15 @@
       "id": "T01",
       "requirement": "Atomic registration binds one funded entry to one player/event. Race duplicate requests, last seat and registration closure.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_prestart_funding_and_receipts_verified",
+      "evidence": "registration_funding_and_receipt_correction"
     },
     {
       "id": "T02",
       "requirement": "Split total entry into disclosed prize, bounty and fee components. Verify all supported prices and promotional entries.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_behavioral_correction_deployed",
+      "evidence": "entry_fee_disclosure"
     },
     {
       "id": "T03",
@@ -26,43 +28,50 @@
       "id": "T04",
       "requirement": "Give each re-entry a distinct identity; enforce eliminated status, limits and deadline. Never mistake retries for another entry.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_atomic_purchase_and_generation_verified",
+      "evidence": "tournament_purchase_funding_rehearsal"
     },
     {
       "id": "T05",
       "requirement": "Process rebuy/add-on eligibility and funding atomically, with tournament chips separate from spendable cash.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_atomic_purchase_and_generation_verified",
+      "evidence": "tournament_purchase_funding_rehearsal"
     },
     {
       "id": "T06",
       "requirement": "Unregister/refund according to entry provenance and policy. Race refund with tournament start and satellite transfer.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_funded_entry_refund_composition_verified",
+      "evidence": "docs/audits/2026-09-10-phase3-funded-entry-unregistration.json"
     },
     {
       "id": "T07",
       "requirement": "Freeze the final payout ladder at the disclosed cutoff; distribute residual units once and store the resulting amounts.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_reserved_unpaid_result_proof_installed",
+      "evidence": "docs/audits/2026-09-10-phase3-reserved-result-reprice-evidence.json"
     },
     {
       "id": "T08",
       "requirement": "Persist elimination rank from authoritative hands. Test same-hand ties, simultaneous tables and final-table transitions.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_durable_terminal_witness_corrected",
+      "evidence": "docs/changelog/2026-09-10-terminal-winner-follows-durable-elimination-order.md"
     },
     {
       "id": "T09",
       "requirement": "Create unique finishing obligations and pay cumulative deltas once. Test early payouts and final incremental awards.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_reserved_unpaid_result_proof_installed",
+      "evidence": "docs/audits/2026-09-10-phase3-reserved-result-reprice-evidence.json"
     },
     {
       "id": "T10",
       "requirement": "Fund extra bubble protection separately or include its disclosed reserve before binding the ladder. Never overcommit the pool.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_reserved_unpaid_result_proof_installed",
+      "evidence": "docs/audits/2026-09-10-phase3-reserved-result-reprice-evidence.json"
     },
     {
       "id": "T11",
@@ -74,7 +83,8 @@
       "id": "T12",
       "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "verified_and_deployed",
+      "evidence": "tournament_payment_status_correction"
     },
     {
       "id": "K01",
@@ -87,19 +97,22 @@
       "id": "K02",
       "requirement": "Snapshot level/blinds at hand creation; advance only the next eligible hand when a level boundary occurs mid-hand.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "verified_and_deployed",
+      "evidence": "blind_snapshot_rehearsal"
     },
     {
       "id": "K03",
       "requirement": "Define registration wall time separately from blind time and maintenance extensions. Test daylight saving and UTC conversion.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_utc_cadence_correction_deployed",
+      "evidence": "utc_break_cadence_correction"
     },
     {
       "id": "K04",
       "requirement": "Publish break cadence, duration and exceptions. Track requested, draining, on-break and resumed states explicitly.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_utc_cadence_correction_deployed",
+      "evidence": "utc_break_cadence_correction"
     },
     {
       "id": "K05",
@@ -111,7 +124,8 @@
       "id": "K06",
       "requirement": "Keep maintenance, hand-for-hand, deal discussion and operator pauses independently owned. One resume cannot clear another.",
       "priority": "P1",
-      "status": "partial_behavioral_correction"
+      "status": "behavior_verified_pending_engine_adoption",
+      "evidence": "pause_ownership_correction"
     },
     {
       "id": "K07",
@@ -123,13 +137,15 @@
       "id": "K08",
       "requirement": "Balance tables with the published seat-selection rule. Transfer scoring stacks once and preserve in-progress hands.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_live_move_authority_installed_full_move_acceptance_open",
+      "evidence": "swarm_continuation_2026_09_10"
     },
     {
       "id": "K09",
       "requirement": "Break tables and form the final table without missing/duplicating players. Test moves alongside elimination and reconnect.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_live_move_authority_installed_full_move_acceptance_open",
+      "evidence": "swarm_continuation_2026_09_10"
     },
     {
       "id": "K10",
@@ -141,13 +157,15 @@
       "id": "K11",
       "requirement": "Tournament sit-outs still follow tournament blinds/antes policy. Cash sit-out rules must not remove tournament obligations.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "verified_existing_deployed_behavior",
+      "evidence": "sit_out_obligation_verification"
     },
     {
       "id": "K12",
       "requirement": "Test missed scheduler ticks, engine failover and long-running hands at :53/:55/:00 without restarting active settlement.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_utc_cadence_correction_deployed",
+      "evidence": "utc_break_cadence_correction"
     },
     {
       "id": "S01",
@@ -165,7 +183,8 @@
       "id": "S03",
       "requirement": "Define seating, blinds, time banks and payouts for each SNG size, including heads-up and special payout formats.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_supported_heads_up_start_verified_overflow_open",
+      "evidence": "docs/audits/2026-09-10-phase3-seat-first-actual-deal.md"
     },
     {
       "id": "S04",
@@ -197,14 +216,15 @@
       "id": "S08",
       "requirement": "Reveal multiplier/prize before the first deal and action timer. All participants must receive the same stored result.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_actual_reveal_deal_timer_verified_pending_release",
+      "evidence": "docs/audits/2026-09-10-phase3-seat-first-actual-deal.md"
     },
     {
       "id": "S09",
       "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
       "priority": "P0",
-      "status": "partial_behavioral_correction_deployed",
-      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
+      "status": "verified",
+      "evidence": "spin_every_tier_acceptance"
     },
     {
       "id": "S10",
@@ -234,7 +254,8 @@
       "id": "B02",
       "requirement": "Award eliminations by relevant-pot eligibility, including side pots, tied winners and split-pot variants.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_exact_pot_reader_installed_writer_pending_release",
+      "evidence": "docs/audits/2026-09-10-phase3-bounty-pot-evidence.json"
     },
     {
       "id": "B03",
@@ -246,7 +267,8 @@
       "id": "B04",
       "requirement": "Mystery activation follows the approved rebuy/add-on cutoff. A break alone must not enable early awards.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_source_and_catalog_verification",
+      "evidence": "mystery_activation_review"
     },
     {
       "id": "B05",
@@ -258,7 +280,8 @@
       "id": "B06",
       "requirement": "Update remaining mystery rewards and public winners once. Animation replay must not redraw, reorder or repay.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_event_ownership_corrected_pending_frontend_release",
+      "evidence": "docs/changelog/2026-09-10-mystery-bounty-event-ownership.md"
     },
     {
       "id": "B07",
@@ -312,7 +335,7 @@
       "id": "AX09",
       "requirement": "Recover a Spin after its draw commits but before the spinner appears. Preserve multiplier, payout ladder, starting stack and rule version.",
       "priority": "P0",
-      "status": "partial_behavioral_correction_pending_publication",
+      "status": "partial_behavioral_correction_deployed",
       "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
     },
     {
@@ -355,7 +378,8 @@
       "id": "BX14",
       "requirement": "Table balancing races blind posting and disconnect: player occupies one seat, stack transfers once, and forced bets are not duplicated.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_live_move_authority_installed_full_move_acceptance_open",
+      "evidence": "swarm_continuation_2026_09_10"
     }
   ],
   "first_correction": {
@@ -623,7 +647,7 @@
     }
   },
   "publication": {
-    "status": "pushed_ci_database_gate_corrected",
+    "status": "initial_correction_merged_and_engine_verified",
     "source_pushed": true,
     "authorization": "User explicitly authorized pushing and publishing Phase 3 changes to Smarter-Poker/Smarter-Poker-Club-Arena in this chat.",
     "recovered_local_commit": "165ec0ce03012ce8b3f548b4b6895a415e73f4a9",
@@ -633,13 +657,17 @@
     "initial_ci_run": 34381252398,
     "initial_ci_failure": "Supabase Invariants: A Club Stays Deletable, three unindexed refund-table club foreign keys",
     "initial_ci_server_and_client_suites": "passed",
-    "live_engine_adoption": "pending"
+    "live_engine_adoption": "verified",
+    "initial_correction_merge": "5dd902e978006d736b90df5261e949a7e07657cd",
+    "initial_correction_ci_run": 34382881384,
+    "initial_correction_engine_run": 34383629239
   },
   "open_source_findings": [
     {
       "controls": ["S07"],
-      "status": "requires_concurrent_funding_and_authority_proof",
-      "finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending."
+      "status": "confirmed_defect_corrected_deployed_full_control_open",
+      "initial_finding": "Installed draw and settle are separate transactions. Draw adds a hypothetical net contribution although fn_spin_book_entry can already have booked it. Installed shortfall trigger calls fn_ca_escrow_apply with overlay_in; that function changes only tournament_escrow and has no bank debit. Atomic funded selection and full concurrency proof remain pending.",
+      "finding": "The atomic_spin_correction replaced the separate draw/settle and unbacked shortfall path. Database and engine adoption are verified. The full S07 control remains open beyond that bounded correction."
     },
     {
       "controls": ["AX07", "AX10"],
@@ -742,6 +770,16 @@
       "target": "561eaa523829ef8ecbd6b11fffe946b6e53fd756",
       "shipped": false,
       "reason": "Image staged; next announced break outside run budget"
+    },
+    "current_composition_review": {
+      "observed_at": "2026-09-10T01:45:38.605105Z",
+      "migration": "20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql",
+      "atomic_body_md5": "b303d83aadd381950dfe658578767a4c",
+      "atomic_definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+      "played_proof_body_md5": "b7bc1bb46141fb6bd415b3658e622a3b",
+      "played_proof_definition_md5": "8bc978cc105c18b2e3350016b48a50eb",
+      "scope": "A separate merged programme composed played-Spin recovery. Catalog hashes match its exact post-guard. The earlier 36 audit checks describe the original correction; they are not claimed as execution of the expanded played-recovery suite. The Python composition probe stubs the played proof; the real SQL proof needs a disposable full-schema rehearsal.",
+      "full_control_closed": false
     }
   },
   "expiry_correction": {
@@ -826,10 +864,18 @@
     "dispatch_staged_hetzner_immediately": true,
     "passive_wait_for_engine_window": false,
     "engine_force_restart": false,
-    "continue_audit_during_deployment": true
+    "continue_audit_during_deployment": true,
+    "latest_staged_successor_dispatch": {
+      "requested_at": "2026-09-10T02:06:23.376326+00:00",
+      "status": 204,
+      "sha": "1695880b4a3fef292bba096c6604759cf167bc17",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "reason": "Continue the staged normal deployment toward the next maintenance window; no active or pending successor exists."
+    }
   },
   "satellite_cash_correction": {
-    "status": "source_ready_production_database_approval_blocked",
+    "status": "production_database_verified_source_followup_merged",
     "controls": ["T06", "B08"],
     "policy_source": "docs/LAWS.md and preserved Club Arena audit decision: eligible satellite unregisters use approved cash treatment",
     "baseline_observed": {
@@ -863,7 +909,7 @@
       "updated unapplied start migration plus repeated cash migration retains cash behavior"
     ],
     "fixture_limit": "23 captured table definitions and 19 real payment/escrow/ledger functions with selected actual money triggers; excludes production financial data, unrelated membership triggers and foreign keys. Not full database certification.",
-    "production_database_changed": false,
+    "production_database_changed": true,
     "publish_order": [
       "client accepts verified satellite cash receipt",
       "database correction after frontend adoption"
@@ -874,16 +920,15 @@
       "files": 4,
       "typescript_build_mode": "passed"
     },
-    "migration": "20260909214216_satellite_unregister_returns_its_funded_cash.sql",
-    "migration_sha256": "c0f87a2dc4e0392da09bba09ecc408a5f9b692045820113f84441d6f6da50ed6",
+    "migration": "20260909222303_satellite_unregister_returns_its_funded_cash.sql",
+    "migration_sha256": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
     "postgres17_scenario_groups_passed": 8,
-    "source_guard_tests_passed": 8,
     "reproducible_probe": "scripts/dev/probe-satellite-refund-pg17.py",
     "reserved_actual_start_migration": "20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
-    "reserved_actual_start_migration_applied": false,
+    "reserved_actual_start_migration_applied": true,
     "reserved_source_cash_compatibility_verified": true,
     "security_advisors_target_function_findings": 0,
-    "production_application_blocker": "Automatic approval review rejected apply_migration: repository publishing/deployment authorization did not explicitly authorize this production financial database mutation. No retry or indirect mutation performed.",
+    "production_application_blocker": null,
     "frontend": {
       "pr": 4029,
       "merge_commit": "6a2724ea096f6f69da8b17e2a789885bc30f896f",
@@ -892,6 +937,573 @@
       "sha": "65931a248c4f35b15e6dbd50aedd3b2f8d08a576",
       "publisher_run": 34408248982,
       "contains_client_merge": true
+    },
+    "actual_start_applied_version": "20260909215545",
+    "actual_start_applied_by_this_audit": false,
+    "historical_actual_start_source_modified": false,
+    "actual_start_cash_transform_matches_previously_tested_bodies": true,
+    "source_guard_tests_passed_before_restoring_applied_source": 8,
+    "source_publication": {
+      "pr": 4035,
+      "head": "fdcc2132e42421ec495c4c4cad6bd85ff6f2f524",
+      "merge_commit": "fb7d568b8b94ca96e7b391157a538eaeae7deb9c",
+      "passing_ci": 34410459871,
+      "forward_order_followup": "required after concurrent actual-start application"
+    },
+    "applied_version": "20260909222303",
+    "production_authorization": "User explicitly authorized applying the reviewed production cash-refund migration after the direct request in this audit chat, and instructed pushing and publishing without asking again.",
+    "production_verification": {
+      "observed_at": "2026-09-09T22:23:53.687172Z",
+      "all_three_bodies_match_reviewed_source": true,
+      "body_md5": {
+        "unregister": "ae14d16400db9481dd116bd251f7af83",
+        "receipt": "0fa946ec2bf3301db11465cd9b33fb9f",
+        "exact_payer": "0024ca5acfc4e4e12b51a4609349e98d"
+      },
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": false,
+      "new_ticket_issuance_removed": true,
+      "actual_start_rules_preserved": true
+    },
+    "source_followup": {
+      "pr": 4039,
+      "head": "ae407d799c3d8c3388257bcb0b8f61d4175fbbfe",
+      "passing_ci": 34416969935,
+      "reason": "The user explicitly authorized the exact restoration label; revert-approved was applied, the guard and required CI passed, and the PR merged normally.",
+      "ci_attempt": 2,
+      "ci_retry_reason": "PostgreSQL lost a shared-memory segment during the first run. The single failed job was retried through the normal API; attempt 2 passed without weakening source or assertions.",
+      "status": "merged",
+      "merge_commit": "8d6ab77102acd3547eafe08ccff155ba0ecd2c89",
+      "merged_at": "2026-09-09T23:45:46Z",
+      "ci_run": 34416969935,
+      "ci_conclusion": "success",
+      "revert_approved_authorization": "Explicitly authorized by the user for PR #4039 in this chat; label applied and Silent Revert Guard passed."
     }
+  },
+  "table_move_dependency_review": {
+    "observed_at": "2026-09-09T22:11:28.280556Z",
+    "engine_commit": "b53ad9b212cf586ffdc6fed888ad6b738c348191",
+    "controls": ["K08", "K09", "BX14"],
+    "installed_writer": false,
+    "installed_receipt_resolver": false,
+    "installed_receipt_table": false,
+    "writer": "fn_move_tournament_player",
+    "resolver": "fn_resolve_committed_tournament_seat_move",
+    "receipt_table": "tournament_seat_move_receipts",
+    "active_caller": "TournamentManager.executePlayerMovesOwned -> requestTournamentSeatMoveAtBoundary -> moveTournamentPlayerAtomically",
+    "source_migration": "20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql",
+    "resolver_migration": "20260909182952_a_committed_tournament_move_receipt_survives_lease_loss.sql",
+    "scope_boundary": "Existing writer migration also contains historical repairs and a maintenance cutover. It was not applied or split to evade those controls. No manual repair or alternate move writer introduced.",
+    "source_tests_reviewed": [
+      "TournamentMoveManagerBoundary.test.ts",
+      "tournamentSeatMoveRpc.test.ts",
+      "TournamentTableBreakRetirement.test.ts"
+    ],
+    "source_test_limit": "Manager and transport tests stub database effects; the separate PostgreSQL probe validates preseeded receipt lookup, not execution of a complete live move.",
+    "full_controls_closed": false,
+    "latest_catalog_read": {
+      "observed_at": "2026-09-09T22:29:42.145802Z",
+      "move_writer_present": false,
+      "move_resolver_present": false,
+      "terminal_writer_present": true,
+      "terminal_writer_body_md5": "589388ad7204fef460a1deebf32ecb69",
+      "terminal_outcome_resolver_present": true,
+      "terminal_resolver_body_md5": "4c151073f56b53e4b0363bdd916b78d4",
+      "terminal_service_only": true
+    },
+    "cutover_prerequisite_review": {
+      "observed_at": "2026-09-10T00:05:49Z",
+      "exact_twelve_argument_hand_commit_present": true,
+      "exact_hand_body_md5": "6685f27ebb50bc05afc04b106353714c",
+      "seat_joined_at_marker": true,
+      "time_bank_seat_generation_mismatch_marker": true,
+      "staged_freeze_body_md5": "cff283a255830f34ad7488bbfbf70bc6",
+      "installed_freeze_body_md5": "a29498531e4b7d3889532e80fafc8d57",
+      "freeze_pin_matches": false,
+      "scope": "The staged historical cutover remains unapplied. Its freeze precondition requires reconciliation and complete rehearsal; no marker or predicate was changed to bypass it."
+    },
+    "latest_move_authority_recheck": {
+      "observed_at": "2026-09-10T05:36:51Z",
+      "writer_body_md5": "466c39065b59cf7922a5859df9f26bd3",
+      "resolver_body_md5": "37bc550ccb878c042773d0789c8ef355",
+      "receipt_rows": 82,
+      "receipt_tournaments": 18,
+      "latest_receipt_at": "2026-09-10T05:35:17.979Z",
+      "installed_by_other_work": "PR #4108, forward move door",
+      "full_historical_stage_b_cutover_applied": false,
+      "limit": "Missing-function blocker is superseded. Existing ambiguous moves and complete move/rank/reconnect acceptance remain open."
+    }
+  },
+  "entry_fee_disclosure": {
+    "controls": ["T02"],
+    "status": "merged_frontend_adoption_verified",
+    "pr": 4047,
+    "head": "a9a18739f525d75c1e369ae91005a840a3b66933",
+    "source": "src/utils/buyIn.ts: formatBuyIn",
+    "defect": "Fractional entry fees rounded to whole chips in the lobby, signup and details surfaces.",
+    "correction": "Keep whole entry totals and use existing moneyExact for fee and remainder.",
+    "focused_tests_passed": 17,
+    "prepush_related_tests_passed": 596,
+    "prepush_source_pins_passed": 48,
+    "read_only_entry_split": {
+      "observed_at": "2026-09-09T22:52:57.200615Z",
+      "body_md5": "46074e04b60ecb97557b63ef25c5739d",
+      "cases": 161,
+      "failures": 0,
+      "price_points": 22,
+      "includes_zero_entry": true,
+      "formats": ["MTT", "SNG", "HU", "SPIN", "BOUNTY30", "PKO50", "MYSTERY40"]
+    },
+    "limit": "Calculator and published generator price/template matrix only. Does not certify complete admission, bank-funded promotions or every custom configuration.",
+    "full_controls_closed": false,
+    "merge_commit": "4149cfcd53650a05ac0be247f2bdad6cf5c0997d",
+    "passing_ci": 34415082179,
+    "frontend": {
+      "observed_at": "2026-09-09T23:20:10.590209+00:00",
+      "urls": {
+        "https://ca-static.smarter.poker/build-info.json": {
+          "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+          "built_at": "2026-09-09T23:16:14Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34415964089"
+        },
+        "https://smarter.poker/hub/club-arena/build-info.json": {
+          "ca_sha": "65f1f4eed01300459545332eb7d4a90bddffba2a",
+          "built_at": "2026-09-09T23:16:14Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34415964089"
+        }
+      },
+      "fee_source_blob": "66bdd353f0cd5daa3e7320abd98c2a087298be0d",
+      "merge_is_ancestor": true
+    }
+  },
+  "mystery_activation_review": {
+    "controls": ["B04"],
+    "status": "source_and_installed_guards_reviewed_full_control_open",
+    "observed_at": "2026-09-09T23:06:49.316874+00:00",
+    "engine_predicate": "shouldActivateMysteryBounty requires entryClosed plus the chosen field threshold and all tables between hands. A break alone cannot activate.",
+    "database_predicate": "fn_mystery_bounty_seed locks the tournament and refuses prize_pool_finalized=false, including when engine memory suggests otherwise.",
+    "installed_body_md5": {
+      "fn_mystery_bounty_seed": "f78272f535468f7399c78d5c4ec87e35",
+      "fn_receipt_mystery_activation": "96c4626eda4c43c3b355a752199f89bd",
+      "fn_refuse_mystery_activation_with_pending_heads": "0e2dc405aada5f99bfffe5738748d301",
+      "fn_close_tournament_addon_period": "b503380118722ce9a5b8b4467f3c48fd"
+    },
+    "existing_tests_reviewed": [
+      "server/src/tournament/mysteryBountyActivation.test.ts",
+      "server/src/tournament/AddOnFundingFinalization.test.ts"
+    ],
+    "test_limit": "Predicate tests execute pure logic; add-on tests execute the real close method with a mocked database RPC. No new whole-lifecycle PostgreSQL rehearsal or production activation was performed.",
+    "full_controls_closed": false,
+    "addon_close_deadline": "Installed fn_close_tournament_addon_period locks the row, requires a started window and refuses closure before addon_period_ends_at unless already finalized, then delegates to the locked pool finalizer."
+  },
+  "result_payment_disclosure_review": {
+    "controls": ["T12"],
+    "status": "resolved_by_tournament_payment_status_correction",
+    "source": "src/pages/tournament/TournamentResultsPage.tsx",
+    "limit": "Original source/schema review is retained as historical evidence. Current acceptance and its limits are in tournament_payment_status_correction.",
+    "full_controls_closed": true,
+    "database_access": {
+      "rls_enabled": true,
+      "select_policies": 0,
+      "anon_select": false,
+      "authenticated_select": false,
+      "service_select": true
+    },
+    "historical_finding": "Results read tournament_players prize, bounty_winnings and participation status. They do not read tournament_obligations amount_owed/amount_paid or expose paid, partially paid and owed states.",
+    "historical_database_evidence": "Installed tournament_obligations contains amount_owed, amount_paid, settled_at and terminal_closed_at. No src caller of tournament_obligations was found."
+  },
+  "tournament_payment_status_correction": {
+    "status": "verified_and_deployed",
+    "control": "T12",
+    "behavior": "Caller-owned paid, partially paid, owed and zero-due records in results and player statements; absent records remain unconfirmed. Satellite seat values are identified as transferred.",
+    "migration": "20260909235308_players_can_read_their_tournament_payment_status.sql",
+    "migration_sha256": "3d91ea7cb661ed7d5d75e6ab5367eed0abe5338966e99e3bce04d08517109944",
+    "database_verified_at": "2026-09-09T23:53:48.201116Z",
+    "body_md5": "6aafec6408d9653967eaa6b367fee764",
+    "permissions": {
+      "authenticated_execute": true,
+      "anon_execute": false,
+      "service_execute": false,
+      "authenticated_table_select": false
+    },
+    "affected_client_tests": 26,
+    "isolated_postgres_scenario_groups": 5,
+    "probe": "scripts/dev/probe-tournament-payments-pg17.py",
+    "browser_fixture": {
+      "width": 375,
+      "runtime_errors": 0,
+      "horizontal_overflow": false,
+      "refresh_verified": true,
+      "synthetic_responses": true
+    },
+    "limits": "No production player session, payout mutation, historical correction or settlement certification. Other Phase 3 controls remain separate.",
+    "full_control_closed": true,
+    "pull_request": 4058,
+    "source_commit": "4334e642fe1b8d6560867629a1dad95cd216850d",
+    "merge_commit": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+    "ci_run": 34420844586,
+    "ci_conclusion": "success",
+    "live_frontend": {
+      "verified_at": "2026-09-10T00:31:06.383675+00:00",
+      "builds": {
+        "https://ca-static.smarter.poker/build-info.json": {
+          "ca_sha": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+          "built_at": "2026-09-10T00:29:00Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34421278289"
+        },
+        "https://smarter.poker/hub/club-arena/build-info.json": {
+          "ca_sha": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+          "built_at": "2026-09-10T00:29:00Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34421278289"
+        }
+      }
+    },
+    "shipped_bundle_proof": {
+      "verified_at": "2026-09-10T00:34:05.750440+00:00",
+      "chunks": [
+        {
+          "chunk": "https://smarter.poker/hub/club-arena/assets/TournamentResultsPage-C_vtmzB2-v6.js",
+          "sha256": "9ac87e58f022db4af1de14949389927b5e7166984288f4b75e9ac6805c455f18",
+          "rpc_present": false,
+          "partial_state_present": false,
+          "unconfirmed_present": false
+        },
+        {
+          "chunk": "https://smarter.poker/hub/club-arena/assets/ChipStatement-CrHyK-WZ-v6.js",
+          "sha256": "798664d8bd428a016a4d75b2962918793ff734fa858651e9b4a85f52cd62403b",
+          "rpc_present": false,
+          "partial_state_present": false,
+          "unconfirmed_present": false
+        },
+        {
+          "chunk": "https://smarter.poker/hub/club-arena/assets/TournamentPaymentStatus-eTibxjf9-v6.js",
+          "sha256": "bdf14220af9cc5d03602b942b4ba70f2e9b16c80f47f281a923e127829ad1822",
+          "rpc_present": true,
+          "partial_state_present": true,
+          "unconfirmed_present": true
+        }
+      ]
+    },
+    "latest_database_body_check": {
+      "checked_at": "2026-09-10T00:42:11.899153Z",
+      "body_md5": "6aafec6408d9653967eaa6b367fee764",
+      "matches_reviewed_body": true
+    },
+    "acceptance": "Paid, partially paid and owed states are projected from caller-owned obligations in both requested surfaces; completed tournament status never substitutes for payment state. No live payout execution is inferred from this display control."
+  },
+  "utc_break_cadence_correction": {
+    "controls": ["K03", "K04", "K12"],
+    "status": "merged_engine_adoption_verified",
+    "pull_request": 4063,
+    "merge_commit": "9eac7cab76d90bcaabefcdb932169d5f0ab60781",
+    "ci_run": 34421219592,
+    "ci_conclusion": "success",
+    "behavior": "The synchronized :55 break and :53 maintenance announcement use UTC setters across daylight-saving repeated hours and fractional UTC offsets.",
+    "baseline_failures": {
+      "synchronized_break": 4,
+      "maintenance_announcement": 3
+    },
+    "verified_tests": {
+      "SynchronizedBreakUtcCadence.test.ts": 9,
+      "maintenance/MaintenanceBreak.test.ts": 66
+    },
+    "dispatch": {
+      "requested_at": "2026-09-10T00:32:34.295945+00:00",
+      "status": 204,
+      "sha": "9eac7cab76d90bcaabefcdb932169d5f0ab60781",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml"
+    },
+    "dispatch_run": 34421732550,
+    "queue_state": "Original request was superseded by later main deployments that include this merge; no force restart or repeated dispatch was used.",
+    "latest_engine_observation": {
+      "observed_at": "2026-09-10T02:00:29.440806+00:00",
+      "url": "https://engine.smarter.poker/health",
+      "version": "b4c427a6",
+      "running": true,
+      "maintenance": {
+        "active": false,
+        "phase": "idle",
+        "durableConfirmed": false,
+        "breakEndsAt": null,
+        "remainingMs": 0,
+        "unparkedTables": 0,
+        "readyForRestart": false,
+        "reason": "Scheduled Engine Maintenance",
+        "resumeWaves": {
+          "total": 8,
+          "done": 8,
+          "startedAt": 1789005606130,
+          "finishedAt": 1789005616632,
+          "tables": 282,
+          "tablesResumed": 282,
+          "gapMs": 1500
+        },
+        "dbClockSkewMs": -33
+      }
+    },
+    "full_controls_closed": false,
+    "limits": "UTC cadence only. Registration extensions, all break states, missed-tick failover and active settlement remain separate acceptance boundaries.",
+    "deferred_staged_deployment": {
+      "run": 34423465001,
+      "target": "3ed5b7d59f407fb0d9cb8d9324c6fdb03b3ff359",
+      "shipped": false,
+      "reason": "Next break 2351 seconds away exceeded 2192-second remaining run budget; image was staged."
+    },
+    "leader_witness": {
+      "observed_at": "2026-09-10T02:01:20.410600Z",
+      "engine_version": "b4c427a6",
+      "acquired_at": "2026-09-10T01:56:08.686453Z",
+      "heartbeat_at": "2026-09-10T02:01:19.420514Z",
+      "heartbeat_age_seconds": 0.990086
+    },
+    "adopted_commit": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "ancestry_command_passed": true
+  },
+  "registration_evidence_review": {
+    "control": "T01",
+    "source_commit": "043b9e0c6674b5dcb84f2209adc780dcce89bab0",
+    "receipt_probe": "scripts/ci/probes/chip-journal-atomicity/test_registration_receipts.py",
+    "receipt_probe_limit": "Executes the receipt wrapper with a simulated funding core. Its replay assertions do not prove real debit atomicity or last-seat races.",
+    "admission_probe": "scripts/ci/probes/tournament-registration-admission-contract.sql",
+    "admission_probe_limit": "References the retired unbound one-argument registration API. It was not run against production or counted as current admission proof.",
+    "full_control_closed": false,
+    "current_rehearsal": "registration_funding_and_receipt_correction"
+  },
+  "verified_control_count": 4,
+  "blind_snapshot_rehearsal": {
+    "control": "K02",
+    "test": "server/src/engine/TournamentBlindSnapshot.test.ts",
+    "tests_passed": 9,
+    "production_method": "ServerTableEngineDealing.prepareNextHand, awaitNextHandRest, refreshBlinds and dealHand with the real HandController",
+    "source_base": "043b9e0c6674b5dcb84f2209adc780dcce89bab0",
+    "observed": "An active 10/20/2 hand keeps its original stakes and legal raise after a 20/40/4 level update. The next hand now reads and posts 20/40/4 even when that update occurs during the prepared between-hand rest. Delayed/failed reads cannot pass the deal boundary; the new rest case performs one blind read.",
+    "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Production adoption was verified by the deployment public-version proof, a fresh matching engine leader, and commit ancestry. This evidence does not verify the separate unpublished pause or break corrections.",
+    "full_control_closed": true,
+    "status": "verified_and_deployed",
+    "baseline_rest_failure": {
+      "current_bet": 20,
+      "pot": 36,
+      "expected_current_bet": 40,
+      "expected_pot": 72
+    },
+    "companion_tests": {
+      "NextHandInputs.test.ts": 3,
+      "server_types": "passed"
+    },
+    "correction_commit": "10f03f68fcd80533140a24c2a57559e44686bb20",
+    "pull_request": 4092,
+    "merge_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+    "ci_run": 34431826633,
+    "ci_conclusion": "success",
+    "dispatch": {
+      "requested_at": "2026-09-10T03:09:43.732994+00:00",
+      "status": 204,
+      "sha": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "includes_pr": 4092
+    },
+    "successor_dispatch": {
+      "requested_at": "2026-09-10T03:27:18.326888+00:00",
+      "status": 204,
+      "sha": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "reason": "Prior two requests cancelled; no active or queued Hetzner run; live build does not contain PR4092."
+    },
+    "successor_run": 34433388061,
+    "production_adoption": {
+      "merge_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+      "deployed_commit": "4d29dce4cd36ada84722b80af1c1d19efd3d0608",
+      "ancestry": {
+        "status": "ahead",
+        "ahead_by": 1,
+        "behind_by": 0
+      },
+      "workflow_run": 34434274214,
+      "workflow_job": 102736008468,
+      "workflow_conclusion": "success",
+      "public_version": "4d29dce4",
+      "public_version_observed_at": "2026-09-10T03:56:54.1900030Z",
+      "public_version_evidence": "Completed deployment job logs: Public hostname serving 4d29dce4",
+      "release_seal_committed_at": "2026-09-10T03:56:58.2474312Z",
+      "leader_observed_at": "2026-09-10T04:09:58.707432Z",
+      "leader_version": "4d29dce4",
+      "leader_acquired_at": "2026-09-10T03:56:25.696977Z",
+      "leader_heartbeat_at": "2026-09-10T04:09:56.047268Z",
+      "leader_heartbeat_age_seconds": 2.660165,
+      "historical_verification_only": true,
+      "does_not_include_unpublished_pause_or_break_corrections": true
+    }
+  },
+  "registration_funding_and_receipt_correction": {
+    "control": "T01",
+    "status": "merged_and_database_verified",
+    "migration": "20260910012633_tournament_entry_receipts_use_the_charged_club_wallet.sql",
+    "migration_sha256": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+    "baseline_body_md5": "14d25f13e1ceca68cf4da1e231cc342b",
+    "installed_body_md5": "f9d423ecda16d49d698a1b3735baf7cb",
+    "database_verified_at": "2026-09-10T01:27:55.978132Z",
+    "permissions": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    "baseline": {
+      "charged_wallet_after": 300,
+      "other_club_wallet": 1000,
+      "recorded_balance_after": 1000
+    },
+    "corrected_receipt_balance_after": 300,
+    "change": "Future tournament entry debit receipts read the charged tournament club wallet. No amount, wallet balance or historical receipt is rewritten.",
+    "isolated_postgres_groups": 7,
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "fixture_manifest": "scripts/dev/fixtures/registration-funding/source-manifest.json",
+    "ci_entry": "scripts/ci/probes/chip-journal-atomicity/run-isolated.sh",
+    "cases": [
+      "one real registration binds one debit, journal, entitlement, escrow and operation receipt",
+      "late operation receipt failure rolls back every funding and entry write",
+      "overlapping retry requests fund one entry",
+      "overlapping duplicate requests fund one entry",
+      "two real contenders for the last place commit one funded entry",
+      "registration waiting behind pool closure rechecks eligibility without charging",
+      "entry receipt balance belongs to the club wallet actually charged"
+    ],
+    "limits": "Ordinary pre-start standalone-club entries with synthetic auth/session and maintenance state. Full HTTP/RLS, membership-management triggers, late-entry seating, union funding, promotions, re-entry and SNG launch remain separate.",
+    "full_control_closed": false,
+    "pull_request": 4075,
+    "merge_commit": "37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2",
+    "merged_at": "2026-09-10T01:47:07Z",
+    "ci_run": 34426615230,
+    "ci_conclusion": "success",
+    "ci_client": "Existing pinned pg 8.16.3 client; seven groups pass locally through that client and in required CI."
+  },
+  "evidence_checkpoint_publication": {
+    "pull_request": 4068,
+    "merge_commit": "8935fd2e823a6604c9adb30d40f0e2fdb2532ff3",
+    "ci_run": 34423832389,
+    "ci_conclusion": "success",
+    "merged_at": "2026-09-10T01:14:59Z"
+  },
+  "sit_out_obligation_verification": {
+    "control": "K11",
+    "status": "verified_existing_deployed_behavior",
+    "source_commit": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "test_file": "server/src/engine/TournamentBlindSnapshot.test.ts",
+    "new_behavioral_cases": 5,
+    "total_tests_passed": 8,
+    "server_types": "passed",
+    "cases": [
+      "Heads-up, three-player and six-player all-absent tournament rosters retain every entrant and pay the configured blinds and antes.",
+      "Ten-minute sit-outs remain seated when the real cash-eviction sweep is called.",
+      "An absent entrant with one chip posts that chip as an all-in ante.",
+      "The real cash deal path still excludes sit-outs."
+    ],
+    "scope": "The real dealable count, blind predictors, eviction method, deal configuration and HandController are exercised. External reads are synthetic and the fixture stops before time-bank transport and settlement. This closes forced-bet eligibility only; persistence across table moves and settlement remain separate controls.",
+    "deployed_code_comparison": "No difference in ServerTableEngineBase, ServerTableEngineDealing, DisconnectEngine or HandController between the observed engine build and tested source.",
+    "full_control_closed": true,
+    "publication": {
+      "pull_request": 4081,
+      "merge_commit": "3bb214433b981fe9df52d0991333634343c0f22c",
+      "merged_at": "2026-09-10T02:08:05Z",
+      "ci_run": 34428007551,
+      "ci_conclusion": "success"
+    }
+  },
+  "tournament_purchase_funding_rehearsal": {
+    "controls": ["T04", "T05"],
+    "status": "isolated_atomic_purchase_evidence_verified",
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py --purchases-only",
+    "fixture_manifest": "scripts/dev/fixtures/tournament-purchase-funding/source-manifest.json",
+    "scenario_groups_passed": 13,
+    "installed_function_hashes_checked": 33,
+    "contract_triggers": 23,
+    "psql_evidence": "13 groups passed",
+    "ci_pg_client_local_evidence": "13 groups passed with pinned pg 8.16.3",
+    "full_controls_closed": false,
+    "live_catalog_recheck": {
+      "status": "recovered_and_reconciled",
+      "observed_at": "2026-09-10T02:50:01Z",
+      "unchanged_function_bodies": 31,
+      "recaptured_function_bodies": 2,
+      "updated_functions": ["fn_stamp_seat_club()", "trg_lock_and_validate_tournament_live_seat()"],
+      "reconciled_purchase_groups_passed": 13,
+      "public_rpc_body_md5": "63e4762f2f293da5f2c66ae03fd92947",
+      "money_core_body_md5": "ebff39bd84c1a1ac9a75e7b09ceaa74b",
+      "no_production_mutation": true
+    },
+    "limits": [
+      "Accepted-hand/settlement records are synthetic; real hand commit is not invoked.",
+      "Auth/session, engine identity and maintenance state are synthetic.",
+      "Full HTTP/RLS, funded bounty re-entry, union funding, table expansion and engine consumption of a grant are not certified.",
+      "The full production trigger and foreign-key graph is not cloned; selected funding and seat contract triggers are retained."
+    ],
+    "publication": {
+      "pull_request": 4090,
+      "merge_commit": "78555488589b727122e1f073c3ed32a8c6d55c87",
+      "merged_at": "2026-09-10T02:44:19Z",
+      "ci_run": 34430313387,
+      "ci_conclusion": "success"
+    }
+  },
+  "pause_ownership_correction": {
+    "controls": ["K05", "K06"],
+    "status": "behavior_verified_pending_publication_and_engine_adoption",
+    "baseline_failures": {
+      "pause_during_rest": 4,
+      "pause_during_controller_preparation": 4,
+      "operator_resume_releases_other_state": 4,
+      "other_resume_releases_operator_state": 3
+    },
+    "tests_passed": {
+      "PauseDuringPreparedRest.test.ts": 5,
+      "TournamentBlindSnapshot.test.ts": 13,
+      "TerminalCloseoutBoundary.test.ts": 9,
+      "FinalTableDealPause.test.ts": 12
+    },
+    "server_types": "passed",
+    "behavior": "Recheck all next-hand pause owners after prepared rest and before controller start. Ordinary hand-for-hand re-arm still permits one shared hand. Operator resume cannot clear maintenance lock or transition another owner to running; other resumes preserve the operator state.",
+    "limits": "Synthetic transport, roster and lease inputs; real dealing loop, controller preparation and pause methods. Does not certify durable synchronized deadlines, drain-timeout policy, database move cutover, or engine adoption.",
+    "full_controls_closed": false
+  },
+  "spin_every_tier_acceptance": {
+    "control": "S09",
+    "status": "verified_against_deployed_sources",
+    "full_control_closed": true,
+    "evidence": "docs/audits/2026-09-10-phase3-spin-tier-acceptance.md",
+    "results": "docs/audits/2026-09-10-phase3-spin-tier-results.json",
+    "postgresql_scenarios_passed": 16,
+    "actual_engine_receipts_passed": 16,
+    "deployed_source_commit": "4d29dce4cd36ada84722b80af1c1d19efd3d0608",
+    "rule_supersession": "September 1 board-stack rule retains 300 Turbo or 1000 Deep Stack chips across all eight tiers; tier-specific payout places and three-minute levels were verified.",
+    "atomic_function_identity": {
+      "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+      "body_md5": "b303d83aadd381950dfe658578767a4c",
+      "note": "Different hashes name the full definition and its body, not different source versions."
+    },
+    "limits": "Controlled RNG selects each tier. This verifies frozen tier rules, funding projection and engine consumption, not statistical randomness, startup races or final financial settlement."
+  },
+  "swarm_continuation_2026_09_10": {
+    "status": "in_progress",
+    "evidence": "docs/audits/2026-09-10-resume-swarm-release.json",
+    "user_scope": [
+      "Union",
+      "Clubs",
+      "Super Agents",
+      "Agents",
+      "Sub Agents",
+      "Players",
+      "All Accounting"
+    ],
+    "delegation_rule": "Every new audit, enhancement or upgrade receives a fresh swarm assignment with independent verification. Completed lanes are reassigned within available concurrency.",
+    "full_controls_closed": [],
+    "phase_4_started": false,
+    "source_inventory_is_not_line_review": true
   }
 }

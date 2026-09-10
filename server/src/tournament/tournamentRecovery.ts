@@ -1,3 +1,5 @@
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
+
 /**
  * Tournament terminal recovery.
  *
@@ -20,10 +22,9 @@ import {
 } from './satelliteSettlementRpc.js';
 import {
   requestTournamentTerminalReceipt,
+  TerminalSettlementDisagreementError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function uuid(value: unknown): string | null {
   return typeof value === 'string' && UUID.test(value) ? value : null;
@@ -141,6 +142,37 @@ async function reportUnknownRecoveryOutcome(
         tournament_name: tournament.name,
         winner_id: winnerId,
         recovery_reason: reason,
+      }
+    );
+  } catch (alertError) {
+    reportError(alertError, 'GameServer.recoverStuckCompleting_alert_failed');
+  }
+}
+
+/**
+ * The database already holds a receipt that contradicts the recovery's evidence
+ * and would not hand it over. Deterministic, so it is recorded once and never
+ * re-asked with the same parameters; the receipt is the settlement.
+ */
+async function reportRecoveryReceiptDisagreement(
+  tournament: RecoveryTournament,
+  reason: string,
+  error: TerminalSettlementDisagreementError
+): Promise<void> {
+  reportError(error, 'GameServer.recoverStuckCompleting_terminal_receipt_disagreement');
+  try {
+    await raiseFinancialAlert(
+      'critical',
+      'Tournament.recovery_terminal_receipt_disagreement',
+      `Recovery of tournament ${tournament.id} was refused against its stored terminal receipt and the receipt could not be adopted. Recovery stopped without any fallback write. ${error.message}`,
+      {
+        tournament_id: tournament.id,
+        tournament_name: tournament.name,
+        recovery_reason: reason,
+        observed_settlement_mode: error.observed.settlementMode,
+        observed_winner_id: error.observed.winnerId,
+        stored_settlement_mode: error.stored?.settlementMode ?? null,
+        stored_winner_id: error.stored?.winnerId ?? null,
       }
     );
   } catch (alertError) {
@@ -331,6 +363,8 @@ export async function recoverStuckCompletingTournaments(
         } catch (error) {
           if (error instanceof TerminalSettlementRefusedError) {
             reportError(error, 'GameServer.recoverStuckCompleting_terminal_refused');
+          } else if (error instanceof TerminalSettlementDisagreementError) {
+            await reportRecoveryReceiptDisagreement(tournament, reason, error);
           } else {
             await reportUnknownRecoveryOutcome(tournament, winnerId, reason, 'tournament', error);
           }

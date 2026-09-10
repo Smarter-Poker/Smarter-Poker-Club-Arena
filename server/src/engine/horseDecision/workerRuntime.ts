@@ -5,6 +5,10 @@ import { HorseMind } from '../HorseMind.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
+import { bettingStructureFor } from '../BettingStructure.js';
+import { calculateContestablePot } from '../PokerEngine.js';
+import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
+import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
 import { gtoPostflopCount } from '../GtoPostflop.js';
@@ -51,6 +55,7 @@ import type {
   CommitDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 
 export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
@@ -272,7 +277,24 @@ export class HorseDecisionWorkerRuntime {
   private async execute(request: HorseDecisionJobRequest): Promise<void> {
     try {
       await this.readyPromise;
-      this.assertEnvelope(request);
+      try {
+        this.assertEnvelope(request);
+      } catch (error) {
+        // A malformed snapshot belongs to one table/turn. Marking this
+        // rejection explicitly lets the client take that caller's legal
+        // fail-safe action without restarting the process-wide worker. Errors
+        // after this boundary still mean runtime/execution corruption and are
+        // deliberately emitted without `recoverable` below.
+        this.send({
+          type: 'ERROR',
+          requestId: request.requestId,
+          generation: request.generation,
+          fence: request.fence,
+          message: asMessage(error),
+          recoverable: true,
+        });
+        return;
+      }
       if (this.cancelled.delete(request.requestId)) {
         this.send({
           type: 'CANCELLED',
@@ -319,15 +341,15 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('decisionTimeMs must be a finite epoch');
     }
-    if (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') {
-      this.assertCanonicalDecisionSnapshot(request);
-    }
     if (
       (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
       request.opts &&
       ('gtoV31DatasetChecksum' in request.opts || 'onGtoV31Decision' in request.opts)
     ) {
       throw new Error('offline V31 candidate controls are forbidden in live decision requests');
+    }
+    if (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') {
+      this.assertCanonicalDecisionSnapshot(request);
     }
     if (
       request.type === 'DECIDE_DEEP' &&
@@ -360,18 +382,124 @@ export class HorseDecisionWorkerRuntime {
     request: FastHorseDecisionRequest | DeepHorseDecisionRequest
   ): void {
     const gs = request.gameState;
-    if (typeof request.decisionKey !== 'string' || request.decisionKey.length === 0) {
-      throw new Error('decisionKey must be a non-empty canonical state key');
+    if (!/^phase5-v1:[0-9a-f]{64}$/.test(request.decisionKey)) {
+      throw new Error('decisionKey must be a Phase 5 canonical state digest');
     }
     if (gs.stateSchemaVersion !== 1) throw new Error('horse state schema version 1 is required');
     if (gs.heroSeat !== request.player.seat || gs.currentPlayerSeat !== request.player.seat) {
       throw new Error('horse state hero/current seat does not match the decision player');
     }
-    if (!Array.isArray(gs.players) || !gs.players.some((seat) => seat.seat === gs.heroSeat)) {
+    if (!Array.isArray(gs.players) || gs.players.length < 1) {
       throw new Error('horse state must include every public seat including hero');
+    }
+    const seats = new Set<number>();
+    const userIds = new Set<string>();
+    for (const seat of gs.players) {
+      if (!Number.isSafeInteger(seat.seat) || seat.seat < 1 || seats.has(seat.seat)) {
+        throw new Error('horse state public seats must be unique positive integers');
+      }
+      if (
+        typeof seat.user_id !== 'string' ||
+        seat.user_id.length === 0 ||
+        userIds.has(seat.user_id)
+      ) {
+        throw new Error('horse state public user ids must be unique and non-empty');
+      }
+      seats.add(seat.seat);
+      userIds.add(seat.user_id);
+      if (
+        !Number.isFinite(seat.stack) ||
+        seat.stack < 0 ||
+        !Number.isFinite(seat.bet) ||
+        seat.bet < 0 ||
+        !Number.isFinite(seat.totalInvested) ||
+        seat.totalInvested < 0
+      ) {
+        throw new Error('horse state public chip values must be finite and non-negative');
+      }
+    }
+    const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
+    if (!publicHero || publicHero.user_id !== request.player.user_id) {
+      throw new Error('horse state must include the same public hero identity');
+    }
+    if (
+      !Number.isFinite(request.player.stack) ||
+      request.player.stack < 0 ||
+      !Number.isFinite(request.player.bet) ||
+      request.player.bet < 0 ||
+      !Number.isFinite(request.player.totalInvested) ||
+      request.player.totalInvested < 0 ||
+      Math.abs(publicHero.stack - request.player.stack) > 0.005 ||
+      Math.abs(publicHero.bet - request.player.bet) > 0.005 ||
+      Math.abs(publicHero.totalInvested - request.player.totalInvested) > 0.005 ||
+      publicHero.is_folded !== request.player.is_folded ||
+      publicHero.is_all_in !== request.player.is_all_in ||
+      publicHero.is_sitting_out !== request.player.is_sitting_out
+    ) {
+      throw new Error('horse state public hero does not match the private decision player');
     }
     if (gs.players.some((seat) => !Array.isArray(seat.cards) || seat.cards.length !== 0)) {
       throw new Error('horse state contains private seat cards');
+    }
+    if (!isKnownVariant(gs.gameVariant)) throw new Error('horse state gameVariant is unknown');
+    const expectedRules = horseVariantRulesFor(gs.gameVariant);
+    const rules = gs.variantRules;
+    if (
+      !rules ||
+      !Number.isSafeInteger(rules.holeCardsDealt) ||
+      !['any', 'exactly_two', 'discard_to_two'].includes(rules.holeCardsUse) ||
+      !['any', 'exactly_three'].includes(rules.boardCardsUse) ||
+      !Number.isSafeInteger(rules.deckSize) ||
+      typeof rules.splitLow8OrBetter !== 'boolean' ||
+      rules.holeCardsDealt !== expectedRules.holeCardsDealt ||
+      rules.holeCardsUse !== expectedRules.holeCardsUse ||
+      rules.boardCardsUse !== expectedRules.boardCardsUse ||
+      rules.deckSize !== expectedRules.deckSize ||
+      rules.splitLow8OrBetter !== expectedRules.splitLow8OrBetter
+    ) {
+      throw new Error('horse state variant rules do not match gameVariant');
+    }
+    if (!Array.isArray(request.player.cards)) {
+      throw new Error('horse state requires hero private cards');
+    }
+    if (gs.gameVariant === 'pineapple' && gs.stage === 'pineapple_discard') {
+      throw new Error('horse fast decisions cannot run during the pineapple discard round');
+    }
+    // Crazy Pineapple deals three cards preflop, then returns to the ordinary
+    // FLOP betting stage after every live seat has discarded to two. The
+    // previous validator only recognized turn/river as post-discard streets,
+    // so the first legal flop decision killed the process-wide worker. Bind
+    // the two-card state to the controller's authoritative discard record;
+    // accepting either card count generically would hide a real wiring fault.
+    const pineapplePostDiscard =
+      gs.gameVariant === 'pineapple' &&
+      (gs.stage === 'flop' || gs.stage === 'turn' || gs.stage === 'river');
+    const expectedHoleCards = pineapplePostDiscard ? 2 : expectedRules.holeCardsDealt;
+    if (request.player.cards.length !== expectedHoleCards) {
+      throw new Error('horse state hero card count does not match variant/street rules');
+    }
+    if (
+      pineapplePostDiscard &&
+      (!Array.isArray(gs.actionHistory) ||
+        !gs.actionHistory.some(
+          (action) =>
+            action.userId === request.player.user_id &&
+            action.action === 'discard' &&
+            action.stage === 'pineapple_discard'
+        ))
+    ) {
+      throw new Error('horse state pineapple post-discard cards lack authoritative discard proof');
+    }
+    const validRanks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
+    const validSuits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+    if (
+      request.player.cards.some(
+        (card) => !card || !validRanks.has(card.rank) || !validSuits.has(card.suit)
+      ) ||
+      new Set(request.player.cards.map((card) => `${card.rank}:${card.suit}`)).size !==
+        request.player.cards.length
+    ) {
+      throw new Error('horse state hero cards are invalid');
     }
     const actions = gs.legalActions;
     const legalValues = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'discard']);
@@ -383,8 +511,33 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state legalActions is invalid');
     }
-    if (!Number.isFinite(gs.toCall) || (gs.toCall as number) < 0) {
+    if (
+      !Number.isFinite(gs.pot) ||
+      gs.pot < 0 ||
+      !Number.isFinite(gs.currentBet) ||
+      gs.currentBet < 0 ||
+      !Number.isFinite(gs.minRaise) ||
+      gs.minRaise < 0 ||
+      !Number.isFinite(gs.bigBlind) ||
+      gs.bigBlind <= 0 ||
+      !Number.isFinite(gs.toCall) ||
+      (gs.toCall as number) < 0
+    ) {
       throw new Error('horse state toCall must be finite and non-negative');
+    }
+    const expectedToCall = Math.round(Math.max(0, gs.currentBet - request.player.bet) * 100) / 100;
+    if (Math.abs((gs.toCall as number) - expectedToCall) > 0.005) {
+      throw new Error('horse state toCall does not match currentBet and hero bet');
+    }
+    if (
+      !actions.includes('fold') ||
+      ((gs.toCall as number) <= 0.005 && !actions.includes('check')) ||
+      ((gs.toCall as number) <= 0.005 && actions.includes('call')) ||
+      ((gs.toCall as number) > 0.005 && actions.includes('check')) ||
+      (actions.includes('bet') && gs.currentBet > 0.005) ||
+      (actions.includes('raise') && gs.currentBet <= 0.005)
+    ) {
+      throw new Error('horse state legalActions do not match the call state');
     }
     const sized = actions.includes('bet') || actions.includes('raise');
     const validBound = (value: number | null | undefined): boolean =>
@@ -400,8 +553,29 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state wager bounds are inconsistent with legalActions');
     }
-    if (!['no_limit', 'pot_limit', 'fixed_limit'].includes(gs.bettingStructure ?? '')) {
+    if (
+      !['no_limit', 'pot_limit', 'fixed_limit'].includes(gs.bettingStructure ?? '') ||
+      gs.bettingStructure !== bettingStructureFor(gs.gameVariant)
+    ) {
       throw new Error('horse state bettingStructure is invalid');
+    }
+    if (
+      (gs.bettingStructure === 'fixed_limit' &&
+        (!Number.isFinite(gs.fixedBetSize) || (gs.fixedBetSize as number) <= 0)) ||
+      (gs.bettingStructure !== 'fixed_limit' && gs.fixedBetSize !== null)
+    ) {
+      throw new Error('horse state fixedBetSize is inconsistent with bettingStructure');
+    }
+    if (
+      typeof gs.wagersCapped !== 'boolean' ||
+      (gs.commitmentCapRemaining !== null &&
+        (!Number.isFinite(gs.commitmentCapRemaining) ||
+          (gs.commitmentCapRemaining as number) < 0)) ||
+      (typeof gs.commitmentCapRemaining === 'number' &&
+        (gs.toCall as number) > gs.commitmentCapRemaining + 0.005 &&
+        actions.includes('call'))
+    ) {
+      throw new Error('horse state commitment cap is inconsistent with legalActions');
     }
     if (!Array.isArray(gs.actionHistory) || !Array.isArray(gs.pots)) {
       throw new Error('horse state requires action history and live side pots');
@@ -409,10 +583,35 @@ export class HorseDecisionWorkerRuntime {
     if (
       gs.pots.some(
         (pot) =>
-          !Number.isFinite(pot.amount) || pot.amount < 0 || !Array.isArray(pot.eligiblePlayers)
+          !Number.isFinite(pot.amount) ||
+          pot.amount < 0 ||
+          !Array.isArray(pot.eligiblePlayers) ||
+          pot.eligiblePlayers.length === 0 ||
+          new Set(pot.eligiblePlayers).size !== pot.eligiblePlayers.length ||
+          pot.eligiblePlayers.some(
+            (userId) =>
+              !userIds.has(userId) || gs.players.find((seat) => seat.user_id === userId)?.is_folded
+          )
       )
     ) {
       throw new Error('horse state side-pot eligibility is invalid');
+    }
+    const potTotal = gs.pots.reduce((sum, pot) => sum + pot.amount, 0);
+    if (Math.abs(potTotal - gs.pot) > 0.01) {
+      throw new Error('horse state side pots do not conserve the live pot');
+    }
+    const expectedContestable = calculateContestablePot(
+      gs.players,
+      request.player.user_id,
+      gs.toCall as number
+    );
+    if (
+      !Number.isFinite(gs.contestablePot) ||
+      (gs.contestablePot as number) < 0 ||
+      (gs.contestablePot as number) > gs.pot + 0.005 ||
+      Math.abs((gs.contestablePot as number) - expectedContestable) > 0.01
+    ) {
+      throw new Error('horse state contestable pot is invalid');
     }
     if (
       !gs.rakeConfig ||
@@ -422,12 +621,292 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state requires the exact rake config');
     }
+    if (gs.gameMode !== 'cash' && gs.gameMode !== 'tournament') {
+      throw new Error('horse state gameMode must be explicit');
+    }
+    if (gs.gameMode === 'cash') {
+      if (gs.format !== 'cash' || gs.tournament !== undefined) {
+        throw new Error('cash horse state cannot carry tournament context');
+      }
+    } else {
+      if (!['mtt', 'sng', 'spin', 'hu_sng'].includes(gs.format ?? '')) {
+        throw new Error('tournament horse state format is invalid');
+      }
+      this.assertPhase6TournamentSnapshot(request);
+    }
+    if (request.decisionKey !== buildHorseDecisionKey(request)) {
+      throw new Error('decisionKey does not bind the canonical decision snapshot');
+    }
+  }
+
+  /** Phase 6 law: a live tournament can be incomplete, but never implicit. */
+  private assertPhase6TournamentSnapshot(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest
+  ): void {
+    const gs = request.gameState;
+    const tournament = gs.tournament;
+    if (!tournament || tournament.schemaVersion !== 1) {
+      throw new Error('Phase 6 tournament context schema version 1 is required');
+    }
+    const status = tournament.contextStatus;
+    if (!['complete', 'incomplete', 'warming', 'stale'].includes(status ?? '')) {
+      throw new Error('Phase 6 tournament context status is invalid');
+    }
     if (
-      !gs.variantRules ||
-      !Number.isSafeInteger(gs.variantRules.holeCardsDealt) ||
-      !Number.isSafeInteger(gs.variantRules.deckSize)
+      !Array.isArray(tournament.contextIssues) ||
+      tournament.contextIssues.some((issue) => typeof issue !== 'string' || issue.length === 0) ||
+      new Set(tournament.contextIssues).size !== tournament.contextIssues.length ||
+      (status === 'complete' && tournament.contextIssues.length !== 0) ||
+      (status !== 'complete' && !tournament.contextIssues.includes(TOURNAMENT_CONTEXT_INCOMPLETE))
     ) {
-      throw new Error('horse state requires explicit variant rules');
+      throw new Error('Phase 6 tournament context issues do not match its status');
+    }
+
+    const nonNegative = (value: unknown): value is number =>
+      typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    const positive = (value: unknown): value is number => nonNegative(value) && value > 0;
+    const nullableNonNegative = (value: unknown): boolean => value === null || nonNegative(value);
+    const nullablePositive = (value: unknown): boolean => value === null || positive(value);
+    const requiredBooleans = [
+      tournament.nearBubble,
+      tournament.inMoney,
+      tournament.registrationOpen,
+      tournament.lateRegistrationOpen,
+      tournament.registrationRequiresAuthorization,
+      tournament.isPko,
+      tournament.isBounty,
+      tournament.isMysteryBounty,
+      tournament.reentryAllowed,
+      tournament.reentryOpen,
+      tournament.rebuyAllowed,
+      tournament.rebuyOpen,
+      tournament.addOnAvailable,
+      tournament.addOnPeriodOpen,
+      tournament.onBreak,
+      tournament.handForHand,
+      tournament.handForHandExpected,
+      tournament.mysteryTopLive,
+      tournament.finalTable,
+      tournament.satellite,
+    ];
+    if (requiredBooleans.some((value) => typeof value !== 'boolean')) {
+      throw new Error('Phase 6 tournament context boolean state is incomplete');
+    }
+    const mysteryBountyStage = tournament.mysteryBountyStage ?? 'none';
+    if (
+      !['none', 'pending', 'active', 'complete'].includes(mysteryBountyStage) ||
+      (tournament.isMysteryBounty === true && mysteryBountyStage === 'none') ||
+      (tournament.isMysteryBounty === false && mysteryBountyStage !== 'none')
+    ) {
+      throw new Error('Phase 7 mystery bounty stage is invalid');
+    }
+    if (
+      !nonNegative(tournament.entrants) ||
+      !nonNegative(tournament.playersLeft) ||
+      !nonNegative(tournament.spotsPaid) ||
+      !nonNegative(tournament.avgStackChips) ||
+      !nonNegative(tournament.medianStackChips) ||
+      !Number.isSafeInteger(tournament.seatsPerTable) ||
+      (tournament.seatsPerTable as number) < 2 ||
+      (tournament.seatsPerTable as number) > 10 ||
+      !Number.isSafeInteger(tournament.playersAtTable) ||
+      // Tournament sit-outs are still dealt and post every forced contribution;
+      // they count in orbit-cost M even though covering pressure excludes them.
+      tournament.playersAtTable !== Math.max(2, gs.players.length) ||
+      !Number.isSafeInteger(tournament.currentLevel) ||
+      (tournament.currentLevel as number) < 0 ||
+      !positive(tournament.currentSmallBlind) ||
+      !positive(tournament.currentBigBlind) ||
+      Math.abs((tournament.currentBigBlind as number) - gs.bigBlind) > 0.005 ||
+      !nonNegative(tournament.currentAnte) ||
+      !['none', 'per_player', 'big_blind'].includes(tournament.anteType ?? '') ||
+      !nullablePositive(tournament.nextSmallBlind) ||
+      !nullablePositive(tournament.nextBigBlind) ||
+      !nullableNonNegative(tournament.nextAnte) ||
+      !nullableNonNegative(tournament.levelDurationMin) ||
+      !nullableNonNegative(tournament.levelElapsedMin) ||
+      !nullableNonNegative(tournament.sourceAgeMs) ||
+      !nullableNonNegative(tournament.maxReentries) ||
+      !nullableNonNegative(tournament.maxRebuys) ||
+      !nullableNonNegative(tournament.addOnCost) ||
+      !nullableNonNegative(tournament.addOnChips) ||
+      !nullableNonNegative(tournament.addOnLevels) ||
+      !nullableNonNegative(tournament.nextBlindInMin) ||
+      !positive(tournament.nextBlindMult)
+    ) {
+      throw new Error('Phase 6 tournament context numeric state is invalid');
+    }
+    if (
+      (tournament.nextSmallBlind === null) !== (tournament.nextBigBlind === null) ||
+      (typeof gs.ante === 'number' && Math.abs(tournament.currentAnte - gs.ante) > 0.005) ||
+      tournament.anteType !==
+        (gs.bigBlindAnte === true
+          ? 'big_blind'
+          : (gs.ante ?? 0) > 0 || (tournament.nextAnte ?? 0) > 0
+            ? 'per_player'
+            : 'none')
+    ) {
+      throw new Error('Phase 6 tournament blind and ante state is inconsistent');
+    }
+    if (
+      status === 'complete' &&
+      (typeof tournament.tournamentId !== 'string' ||
+        tournament.tournamentId.length === 0 ||
+        !tournament.tournamentType ||
+        !tournament.tournamentStatus ||
+        !tournament.gameVariant ||
+        tournament.entrants < tournament.playersLeft ||
+        tournament.playersLeft <= 0 ||
+        tournament.spotsPaid <= 0 ||
+        tournament.avgStackChips <= 0 ||
+        tournament.medianStackChips <= 0 ||
+        (tournament.currentLevel as number) < 0 ||
+        !Number.isSafeInteger(gs.dealerSeat) ||
+        !gs.players.some((seat) => seat.seat === gs.dealerSeat) ||
+        tournament.gameVariant !== gs.gameVariant ||
+        !['mtt', 'sng', 'spin', 'hu_sng'].includes(gs.format ?? '') ||
+        tournament.levelDurationMin === null ||
+        tournament.levelElapsedMin === null ||
+        !Array.isArray(tournament.stacks) ||
+        tournament.stacks.length === 0 ||
+        !Array.isArray(tournament.payoutPct) ||
+        tournament.payoutPct.length === 0 ||
+        (tournament.addOnAvailable === true &&
+          (tournament.addOnCost === null ||
+            tournament.addOnChips === null ||
+            (tournament.addOnChips as number) <= 0)))
+    ) {
+      throw new Error('Phase 6 complete tournament context is missing required facts');
+    }
+    if (
+      !Array.isArray(tournament.stacks) ||
+      tournament.stacks.some((stack) => !positive(stack)) ||
+      (tournament.stackByUser !== undefined &&
+        (!tournament.stackByUser ||
+          typeof tournament.stackByUser !== 'object' ||
+          Array.isArray(tournament.stackByUser) ||
+          Object.entries(tournament.stackByUser).some(
+            ([userId, stack]) =>
+              !gs.players.some((player) => player.user_id === userId) || !positive(stack)
+          ))) ||
+      !Array.isArray(tournament.payoutPct) ||
+      tournament.payoutPct.some((share) => !positive(share)) ||
+      !tournament.bountyByUser ||
+      typeof tournament.bountyByUser !== 'object' ||
+      Array.isArray(tournament.bountyByUser) ||
+      Object.entries(tournament.bountyByUser).some(
+        ([userId, bounty]) => userId.length === 0 || !nonNegative(bounty)
+      ) ||
+      !nonNegative(tournament.bountyFactor) ||
+      !nonNegative(tournament.mysteryChestsLeft) ||
+      !nonNegative(tournament.mysteryMeanCents) ||
+      !nonNegative(tournament.mysteryTopCents) ||
+      !nonNegative(tournament.meanBountyCents) ||
+      !nonNegative(tournament.satelliteSeats) ||
+      (tournament.prizePoolCents !== undefined && !nonNegative(tournament.prizePoolCents)) ||
+      (tournament.bountyPoolCents !== undefined && !nonNegative(tournament.bountyPoolCents)) ||
+      (tournament.buyInCents !== undefined && !nullableNonNegative(tournament.buyInCents)) ||
+      (tournament.startingStackChips !== undefined &&
+        !nullableNonNegative(tournament.startingStackChips)) ||
+      (tournament.rebuyCostCents !== undefined &&
+        !nullableNonNegative(tournament.rebuyCostCents)) ||
+      (tournament.rebuyChips !== undefined && !nullableNonNegative(tournament.rebuyChips)) ||
+      (tournament.rebuyPrizeContributionCents !== undefined &&
+        !nullableNonNegative(tournament.rebuyPrizeContributionCents)) ||
+      (tournament.rebuyBountyContributionCents !== undefined &&
+        !nullableNonNegative(tournament.rebuyBountyContributionCents)) ||
+      (tournament.reloadsUsed !== undefined &&
+        tournament.reloadsUsed !== null &&
+        (!Number.isSafeInteger(tournament.reloadsUsed) || tournament.reloadsUsed < 0)) ||
+      (tournament.addOnTaken !== undefined &&
+        tournament.addOnTaken !== null &&
+        typeof tournament.addOnTaken !== 'boolean') ||
+      (tournament.rebuyAffordable !== undefined &&
+        tournament.rebuyAffordable !== null &&
+        typeof tournament.rebuyAffordable !== 'boolean') ||
+      (tournament.addOnAffordable !== undefined &&
+        tournament.addOnAffordable !== null &&
+        typeof tournament.addOnAffordable !== 'boolean')
+    ) {
+      throw new Error('Phase 6 tournament payout or bounty state is invalid');
+    }
+
+    const m = tournament.m;
+    if (!m || m.schemaVersion !== 1) {
+      throw new Error('Phase 6 tournament M schema version 1 is required');
+    }
+    const zones = ['dead', 'red', 'orange', 'yellow', 'green', 'blue'];
+    if (!zones.includes(m.zone) || (m.previousZone !== null && !zones.includes(m.previousZone))) {
+      throw new Error('Phase 6 tournament M zone is invalid');
+    }
+    const expectedM = buildTournamentMState({
+      stackChips: request.player.stack,
+      smallBlind: tournament.currentSmallBlind,
+      bigBlind: tournament.currentBigBlind,
+      ante: tournament.currentAnte,
+      anteType: tournament.anteType,
+      playersAtTable: tournament.playersAtTable,
+      nextSmallBlind: tournament.nextSmallBlind,
+      nextBigBlind: tournament.nextBigBlind,
+      nextAnte: tournament.nextAnte,
+      minutesToNextLevel: tournament.nextBlindInMin,
+      opponentStacks: gs.players
+        .filter((seat) => seat.user_id !== request.player.user_id && !seat.is_sitting_out)
+        .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+      previousZone: m.previousZone,
+    });
+    const sameNumber = (left: unknown, right: unknown): boolean => {
+      if (left === null || right === null) return left === right;
+      return (
+        typeof left === 'number' &&
+        Number.isFinite(left) &&
+        typeof right === 'number' &&
+        Number.isFinite(right) &&
+        Math.abs(left - right) <= 1e-8
+      );
+    };
+    const numericKeys = [
+      'orbitCostChips',
+      'realM',
+      'effectiveM',
+      'projectedOrbitCostChips',
+      'projectedM',
+      'projectedEffectiveM',
+      'projectedStackBB',
+      'velocityMPerMinute',
+      'coveringOpponentM',
+    ] as const;
+    const canonicalCovering = (
+      value: typeof expectedM.coveringOpponents
+    ): typeof expectedM.coveringOpponents =>
+      [...value].sort(
+        (left, right) =>
+          left.stackChips - right.stackChips ||
+          (left.userId < right.userId ? -1 : left.userId > right.userId ? 1 : 0)
+      );
+    const actualCovering = Array.isArray(m.coveringOpponents)
+      ? canonicalCovering(m.coveringOpponents)
+      : [];
+    const expectedCovering = canonicalCovering(expectedM.coveringOpponents);
+    const coveringMatches =
+      Array.isArray(m.coveringOpponents) &&
+      actualCovering.length === expectedCovering.length &&
+      actualCovering.every((actual, index) => {
+        const expected = expectedCovering[index];
+        return (
+          actual.userId === expected.userId &&
+          sameNumber(actual.stackChips, expected.stackChips) &&
+          sameNumber(actual.realM, expected.realM) &&
+          sameNumber(actual.effectiveM, expected.effectiveM)
+        );
+      });
+    if (
+      numericKeys.some((key) => !sameNumber(m[key], expectedM[key])) ||
+      m.zone !== expectedM.zone ||
+      m.previousZone !== expectedM.previousZone ||
+      !coveringMatches
+    ) {
+      throw new Error('Phase 6 tournament M state does not match the canonical snapshot');
     }
   }
 

@@ -9,6 +9,7 @@
  */
 
 import nodeCrypto from 'node:crypto';
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -32,12 +33,13 @@ import {
   eliminationSweepMs,
   eliminationSweepsInflight,
 } from '../observability/engineInstruments.js';
-import { computePlacePrize } from './payoutMath.js';
+import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
 import {
   requestTournamentTerminalReceipt,
+  TerminalSettlementDisagreementError,
   TerminalSettlementOutcomeUnknownError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
@@ -51,6 +53,19 @@ import {
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
+import { horseRebuyAllowance } from '../services/FreeBuy.js';
+
+interface FinalTableDealConsensus {
+  reviewId: string | null;
+  reviewState: 'none' | 'requested' | 'reviewing' | 'completed' | 'cancelled' | 'expired';
+  reviewExpiresAt: number | null;
+  stale: boolean;
+  proposalId: string | null;
+  revision: string | null;
+  voters: Set<string>;
+  required: number;
+  ready: boolean;
+}
 
 interface QueuedBountyReveal {
   awardId: string;
@@ -75,6 +90,17 @@ interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
   candidateId: string;
   seatId: string;
   seatJoinedAt: string;
+  /**
+   * A PLACE IS NOT A BOUNTY (2026-09-10). True when the bust itself is fully
+   * proven - accepted zero-stack settlement, matching atomic receipt, the
+   * player at zero in the history roster - but the hand cannot name who won
+   * the pot holding their last chips. The elimination is still recorded and
+   * the place still assigned; the head is left in the pool for
+   * fn_finalize_bounty_pool to resolve as residual, and no obligation is
+   * written. `attribution` is the empty 'none' attribution in this case, so
+   * nothing downstream can mistake it for a payable claim.
+   */
+  attributionUnavailable?: boolean;
 }
 
 /**
@@ -353,6 +379,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.isProcessingEliminations = true;
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
+    // One grace per admitted sweep (SWEEP_MUTATION_GRACE_MS). Reset with the
+    // deadline it extends, never carried between sweeps.
+    this.eliminationMutationGraceGranted = false;
     // How many of these the single JS thread is carrying at once, and how
     // long one takes. Both are measurement only - see engineInstruments.
     const sweepStartedAt = Date.now();
@@ -644,11 +673,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
             if (busted.length === 0) {
-              // Rebuy is a committed chip purchase, not a maintenance hint.
-              // Seat it in this same admitted unit (bounded by the helper)
-              // instead of returning before the normal seating stage and
-              // depending on the five-second recovery wake.
-              await this.ensureLateRegSeated();
+              // The rebuy transaction owns its exact playable chair and stack.
+              // This process consumes only the success receipt; it never scans
+              // for a seatless roster or performs a later compensating write.
               return; // everyone bought back in; nobody is eliminated this pass
             }
           }
@@ -669,9 +696,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * is identical for everyone — a horse simply replies immediately,
            * which is its input device, not a different deal. A rebuy that
            * lands mid-grace raises chips above zero, drops the player out of
-           * the next bust snapshot, and ensureLateRegSeated re-seats them at
-           * the table that most needs a player — same table and seat when
-           * that is where the need is.
+           * the next bust snapshot. The rebuy transaction itself restores the
+           * exact playable chair — same table and seat whenever still legal —
+           * rather than depending on a periodic manager repair.
            *
            * The deadline is database-owned. A manager restart, pod handoff or
            * delayed event loop therefore cannot grant another window or make
@@ -783,8 +810,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // reserved for the winner. No clamp required.
           // PAYOUT-INTEGRITY 2026-08-27: distinct WITHIN a sweep was not
           // enough. `playingCount` is a live count and is NOT monotonic —
-          // ensureLateRegSeated promotes `registered` entrants to `playing`
-          // after eliminations have begun — so a later sweep could compute a
+          // atomic late registration can promote a `registered` entrant to
+          // `playing` after eliminations have begun — so a later sweep could compute a
           // basePosition at or above a place an earlier sweep already paid,
           // and the wallet key (`...:prize:{user}:{place}`) dedupes a repeated
           // USER, not a repeated PLACE. Confirmed live: 206 duplicated places
@@ -811,8 +838,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            *
            * (a) THE SEED WAS A LIVE `playing` COUNT. `playingCount` reads
            *     `status='playing'`, and an entrant who has not yet been
-           *     promoted out of `registered` by ensureLateRegSeated is not in
-           *     it. On 4f42d847 the first bust was seeded at 38 while 39
+           *     atomically promoted out of `registered` is not in it. On
+           *     4f42d847 the first bust was seeded at 38 while 39
            *     players were in the event, so the WHOLE ladder was short by
            *     one from that moment on. Nothing detected it, because a
            *     ladder that is uniformly one place high is gapless and
@@ -888,8 +915,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
+          let committedThisPass = 0;
           for (let i = 0; i < bustedOrdered.length; i++) {
             if (!this.running || signal.aborted) return;
+
+            /**
+             * A SWEEP THAT CANNOT AFFORD ITS FIRST MUTATION NEVER MAKES ONE.
+             *
+             * Everything above this line is READS, and on a large backlog they
+             * can spend the whole work budget. Every mutation below asks
+             * `eliminationMutationAllowed()`, which is false once the budget is
+             * gone - so `eliminatePlayer` used to refuse silently, the pass
+             * aborted as though the database had said no, the durable wake was
+             * never acknowledged, and the next sweep repeated the same reads on
+             * the same backlog. Fifteen tournaments were in that livelock for up
+             * to 100 minutes on 2026-09-10, three of them holding more than 150
+             * busted players each.
+             *
+             * Yielding is still the rule; buying one bounded extension when this
+             * pass has committed NOTHING is what makes the yield a yield rather
+             * than a stall. See SWEEP_MUTATION_GRACE_MS for the measurement.
+             */
+            if (this.eliminationWorkBudgetExpired()) {
+              if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
+              }
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] bust preparation spent the whole ${TournamentManagerBase.SWEEP_WORK_BUDGET_MS}ms budget with ${bustedOrdered.length} player(s) to record; extending once by ${TournamentManagerBase.SWEEP_MUTATION_GRACE_MS}ms so this sweep commits at least one finish`
+                ),
+                'Tournament.bust_mutation_grace_granted'
+              );
+            }
 
             // Place 1 belongs to the winner and is never handed out here.
             let place = nextPosition;
@@ -932,13 +992,50 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // hand and same starting stack. Hand order must never be skipped:
               // doing so would advance a PKO watermark past unpaid money.
               const refusedId = bustedOrdered[i].user_id;
-              this.bustRefusalStreak.set(
-                refusedId,
-                (this.bustRefusalStreak.get(refusedId) ?? 0) + 1
+              const streak = (this.bustRefusalStreak.get(refusedId) ?? 0) + 1;
+              this.bustRefusalStreak.set(refusedId, streak);
+
+              /**
+               * ONE PLAYER THE DOOR CANNOT ACCEPT IS NOT A REASON TO STOP THE
+               * WHOLE EVENT (2026-09-10).
+               *
+               * Aborting the pass is right for a TRANSIENT refusal - a CAS miss
+               * or an evidence defer clears itself in seconds, and retrying in
+               * hand order costs nothing. It is wrong for a PERMANENT one. The
+               * door refuses deterministically for several real reasons
+               * (`unresolved_knockout_generation_chain`,
+               * `pko_order_already_advanced`,
+               * `knockout_generation_has_new_live_seat`), and every one of them
+               * used to freeze the event: no other bust could be recorded, the
+               * field never shrank, the event never finished, and its escrow
+               * was never paid to anybody. Measured today: seven events stuck
+               * that way for up to eighteen hours, one refusing the same player
+               * every fifteen seconds since 2026-09-08, together holding
+               * thousands of chips no player could be given.
+               *
+               * So the abort stands for the first two refusals of the same
+               * player, and after that this pass records the rest of the field
+               * and says out loud who it could not record. Skipping is the
+               * lesser harm and it is bounded: hand order is preserved for
+               * everyone the door accepts, the blocked player keeps their
+               * chronological `eliminated_at` when they are finally recorded,
+               * and fn_normalize_tournament_final_standings re-derives every
+               * finishing place from that chronology before the event pays.
+               */
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
+                ),
+                'Tournament.bust_blocked_player_skipped'
               );
-              return;
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+              continue;
             }
             this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+            committedThisPass++;
             takenPositions.add(place);
             nextPosition = Math.min(nextPosition, place) - 1;
           }
@@ -1030,32 +1127,73 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (sweepStopped()) return;
               this.rearmIfTheFinishWasRefused();
             } else if ((remainingCount || 0) === 0) {
-              // All players busted simultaneously — pick the last eliminated as winner
-              const { data: lastEliminated, error: lastEliminatedErr } = await supabase
+              // THE DURABLE WINNER OUTRANKS THE LAST BUST (2026-09-10). Once the
+              // terminal authority has settled the event, the champion is no
+              // longer 'playing' but 'winner'; a manager that reads the field
+              // only now (re-admitted after a lease loss, or a second engine)
+              // used to see zero live players and hand the runner-up in as its
+              // observed winner. The database then refused every replay of that
+              // contradiction. Ask for the witness that was there first.
+              const { data: durableWinner, error: durableWinnerErr } = await supabase
                 .from('tournament_players')
                 .select('user_id')
                 .eq('tournament_id', this.tournamentId)
-                .eq('status', 'eliminated')
-                .order('eliminated_at', { ascending: false })
-                .limit(1)
+                .eq('status', 'winner')
+                .eq('position', 1)
                 .maybeSingle();
-
               if (sweepStopped()) return;
-              if (lastEliminatedErr) {
-                reportError(lastEliminatedErr, 'Tournament.last_eliminated_unreadable');
+              if (durableWinnerErr) {
+                reportError(durableWinnerErr, 'Tournament.finish_durable_winner_unreadable');
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
                 return;
               }
-
-              if (lastEliminated) {
-                console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] All busted simultaneously - last eliminated wins`
-                );
-                await this.finishTournament(lastEliminated.user_id);
+              if (durableWinner) {
+                await this.finishTournament(durableWinner.user_id);
                 if (sweepStopped()) return;
                 this.rearmIfTheFinishWasRefused();
+              } else {
+                // Without a committed winner, use the durable elimination sequence.
+                // Timestamp ties and out-of-order callbacks cannot nominate a winner.
+                const { data: lastEliminated, error: lastEliminatedErr } = await supabase
+                  .from('tournament_players')
+                  .select('user_id')
+                  .eq('tournament_id', this.tournamentId)
+                  .eq('status', 'eliminated')
+                  .not('elimination_sequence', 'is', null)
+                  .order('elimination_sequence', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (sweepStopped()) return;
+                if (lastEliminatedErr) {
+                  reportError(lastEliminatedErr, 'Tournament.last_eliminated_unreadable');
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
+
+                if (lastEliminated) {
+                  console.log(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor - final durable elimination submitted to terminal authority`
+                  );
+                  await this.finishTournament(lastEliminated.user_id);
+                  if (sweepStopped()) return;
+                  this.rearmIfTheFinishWasRefused();
+                } else {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor or durable final elimination witness`
+                    ),
+                    'Tournament.finish_elimination_witness_unavailable'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
               }
             }
           } catch (finishErr) {
@@ -1068,30 +1206,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(3)) return;
       }
 
-      seatingStage: {
-        if (this.eliminationSweepCursor.nextStage > 3) break seatingStage;
-        // TOURNEY-AUDIT 2026-07-24 (sweep 6): server-authoritative seating —
-        // late registrants / re-entries are seated within one cycle; if every
-        // table is full they're marked 'playing' so checkDynamicTableExpansion
-        // spawns a table and the balancer redraws. No player ever waits.
-        await this.ensureLateRegSeated();
+      finalDealStage: {
+        if (this.eliminationSweepCursor.nextStage > 3) break finalDealStage;
+        // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
+        // table and the feature is on, an explicit review parks the dealer.
+        // Consent then refers to the stable post-hand proposal; the shared
+        // scheduler keeps that bounded review reachable until it closes.
+        if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
         if (completedStage(4)) return;
       }
 
-      finalDealStage: {
-        if (this.eliminationSweepCursor.nextStage > 4) break finalDealStage;
-        // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
-        // table and the feature is on, watch tournament_deal_votes; unanimity
-        // executes fn_settle_final_table_deal_atomic. Cheap by construction - it stands down
-        // immediately unless the flag is set, and throttles its own polling.
-        if (!(await this.checkFinalTableDeal())) return;
-        if (sweepStopped()) return;
-        if (completedStage(5)) return;
-      }
-
       addOnStage: {
-        if (this.eliminationSweepCursor.nextStage > 5) break addOnStage;
+        if (this.eliminationSweepCursor.nextStage > 4) break addOnStage;
         // ADD-ONS MUST ALWAYS LAND 2026-08-20. Dan: an add-on must always
         // award its chips to the stack when purchased.
         //
@@ -1122,11 +1249,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
           this.scheduleAddOnRetry();
         }
-        if (completedStage(6)) return;
+        if (completedStage(5)) return;
       }
 
       balanceStage: {
-        if (this.eliminationSweepCursor.nextStage > 6) break balanceStage;
+        if (this.eliminationSweepCursor.nextStage > 5) break balanceStage;
         // A tournament break freezes seat movement as well as dealing. A
         // balance operation closes one live seat and opens another, so it may
         // only run after the same maintenance predicate used by the table
@@ -1154,19 +1281,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.requestUrgentEliminationSweepAfter(dueIn);
           }
         }
-        if (completedStage(7)) return;
+        if (completedStage(6)) return;
       }
 
       expansionStage: {
-        if (this.eliminationSweepCursor.nextStage > 7) break expansionStage;
+        if (this.eliminationSweepCursor.nextStage > 6) break expansionStage;
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
         if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
-        if (completedStage(8)) return;
+        if (completedStage(7)) return;
       }
 
       handForHandStage: {
-        if (this.eliminationSweepCursor.nextStage > 8) break handForHandStage;
+        if (this.eliminationSweepCursor.nextStage > 7) break handForHandStage;
         // ── HAND-FOR-HAND BUBBLE MODE ──
         // Multi-table tournaments only (not Spin/SNG single-table)
         if (this.tableEngines.size > 1 && this.tournamentCache) {
@@ -1359,7 +1486,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             }
           }
         }
-        if (completedStage(9)) return;
+        if (completedStage(8)) return;
       }
       this.eliminationSweepCursor.reset();
       completedWholeSweep = true;
@@ -1391,10 +1518,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
-   * Give busted HORSES their rebuy, exactly as a human would take one.
+   * Give busted HORSES their configured recovery, subject to the event and
+   * deterministic horse policy.
    *
-   * Every eligibility rule (rebuys offered, inside the rebuy level window,
-   * under max_rebuys, stack low enough) is enforced inside
+   * Every eligibility rule (the configured product, its level window,
+   * database cap, stack state and funding) is enforced inside
    * process_tournament_rebuy, which also does the chip debit, the prize-pool
    * increment and the single rake booking in one transaction. So this asks
    * and lets the database say no -- the refusals ('Rebuy limit reached',
@@ -1404,8 +1532,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Horses only. A real player's rebuy is their own decision and is taken
    * through the client.
    *
-   * Bounded by construction: max_rebuys (2 on the scheduled events) and the
-   * rebuy level window, both enforced server-side, so this cannot loop.
+   * Bounded by construction: the database event cap/window plus the Free Buy
+   * horse's deterministic 0-5 allowance, so this cannot loop indefinitely.
    */
   private async tryTournamentRebuys(
     bustedUserIds: string[]
@@ -1425,9 +1553,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return { rebought, answered };
     }
     const t = this.tournamentCache as
-      | { is_rebuy?: boolean; rebuy_levels?: number | null; late_reg_levels?: number | null }
+      | {
+          is_rebuy?: boolean;
+          is_reentry?: boolean;
+          free_buy?: boolean;
+          rebuy_levels?: number | null;
+          late_reg_levels?: number | null;
+        }
       | undefined;
-    if (!t?.is_rebuy || bustedUserIds.length === 0) return { rebought, answered };
+    if ((!t?.is_rebuy && !t?.is_reentry) || bustedUserIds.length === 0) {
+      return { rebought, answered };
+    }
+    // The horse input device follows the event's executable recovery product.
+    // Prefer a rebuy when both legacy flags are present; a re-entry-only event
+    // must not silently eliminate every horse while humans retain the option.
+    const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry';
     if (!this.eliminationMutationAllowed()) return { rebought, answered };
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
@@ -1448,12 +1588,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered };
 
       const declined = new Map<string, number>();
+      let freeBuyReloads: Map<string, number> | null = null;
+      if (t.free_buy === true) {
+        const horseIds = horseRows.map((horse) => String(horse.id));
+        const { data: reloadRows, error: reloadErr } = await supabase
+          .from('tournament_players')
+          .select('user_id, rebuys')
+          .eq('tournament_id', this.tournamentId)
+          .in('user_id', horseIds);
+        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (reloadErr || !Array.isArray(reloadRows)) {
+          // Unknown allowance state is not a decline. Preserve the decision
+          // window and retry rather than either charging or eliminating.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          return { rebought, answered };
+        }
+        freeBuyReloads = new Map(
+          reloadRows.map((row) => [
+            String(row.user_id),
+            Math.max(0, Math.floor(Number(row.rebuys) || 0)),
+          ])
+        );
+      }
       for (const h of horseRows) {
         if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (freeBuyReloads) {
+          const used = freeBuyReloads.get(h.id);
+          if (used === undefined) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            continue;
+          }
+          if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
+            answered.add(h.id);
+            continue;
+          }
+        }
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
-          p_rebuy_type: 'rebuy',
+          p_rebuy_type: recoveryType,
           // null: let the server price it. Passing a client-side quote here
           // would only risk a spurious 'Price mismatch'.
           p_cost: null,
@@ -1660,7 +1833,38 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       const evidence = persistedKnockoutEvidence(settlement, hand, userId);
       if (!evidence.ready) {
-        return defer(`knockout hand #${handNumber} is not authoritative (${evidence.reason})`);
+        /* A PLACE IS NOT A BOUNTY (2026-09-10).
+           `knocker_not_attributable` is the ONE deferral reason that says
+           nothing about whether the player busted. Everything above it - the
+           accepted zero-stack settlement, the matching atomic receipt, the
+           player at zero in the history roster - has already passed, so the
+           bust is proven; what is missing is only the pot ledger that would
+           name who takes the head. Deferring on it withheld the finishing
+           place too, and an unranked player keeps the event from finishing:
+           27 busts across nine events sat unrecorded for up to 44 hours,
+           holding prize escrow that had nothing to do with bounties.
+
+           Admit the elimination on the candidate's own evidence and mark the
+           attribution unavailable. The door records the place, writes no
+           obligation, and leaves the head in the pool as residual. Every
+           other reason still defers, because every other reason means the
+           bust itself is not proven. */
+        if (evidence.reason !== 'knocker_not_attributable') {
+          return defer(`knockout hand #${handNumber} is not authoritative (${evidence.reason})`);
+        }
+        this.bountyEvidenceDeferred.delete(userId);
+        return {
+          ready: true,
+          tableId,
+          handId,
+          handNumber,
+          settledAt: String(atomic?.committed_at ?? ''),
+          candidateId,
+          seatId,
+          seatJoinedAt,
+          attribution: { knockerUserId: null, claimants: [], basis: 'none', potIndex: null },
+          attributionUnavailable: true,
+        };
       }
       if (evidence.handId !== handId) {
         return defer(`knockout hand #${handNumber} does not match its candidate hand id`);
@@ -1793,7 +1997,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spin_multiplier + tournament_type: a Spin's payout split is a pure
         // function of its multiplier, so the spec can rebuild the structure
         // when the stored column is unreadable. See payoutStructure.ts.
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
+        'payout_structure, prize_pool, bubble_protection, buy_in_amount, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1888,7 +2092,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const safeField = field !== undefined && field >= position ? field : undefined;
       const payouts = resolvePayoutStructure(tournament as any, safeField);
       if (payouts) {
-        prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
+        // Once entry is closed, result facts and the elimination broadcast
+        // must price the same pool-funded Bubble Promise as terminal SQL.
+        // Before that cutoff the field and ladder remain provisional.
+        const ladderPool = prizePoolAvailableToPlaces(
+          Number(tournament.prize_pool || 0),
+          payouts,
+          safeField ?? deepestCanonicalPaidPlace(payouts),
+          tournament.bubble_protection === true,
+          Number(tournament.buy_in_amount)
+        );
+        if (ladderPool === null) {
+          reportError(
+            new Error('Cannot price an unfunded or malformed Bubble Promise'),
+            'Tournament.elimination_ladder_pool_invalid'
+          );
+          return false;
+        }
+        prize = computePlacePrize(ladderPool, payouts, position);
       }
     }
 
@@ -1904,6 +2125,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (hasBounty) {
       if (!this.eliminationMutationAllowed()) return false;
       const attribution = bountyEvidence!.attribution;
+      /* A PLACE IS NOT A BOUNTY (2026-09-10). With no attribution there is no
+         claimant to propose. NULL means "you work it out"; an EMPTY ARRAY is
+         refused by the door as `invalid_claimants`, which is the freeze this
+         change exists to end. */
+      const headNotAttributable = bountyEvidence!.attributionUnavailable === true;
       const { data: claimData, error: claimErr } = await supabase.rpc(
         'fn_claim_tournament_bounty_elimination',
         {
@@ -1915,11 +2141,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           p_hand_id: bountyEvidence!.handId,
           p_hand_number: bountyEvidence!.handNumber,
           p_seat_joined_at: bountyEvidence!.seatJoinedAt,
-          p_knocker_user_id: attribution.knockerUserId!,
-          p_claimants: attribution.claimants.map((claimant) => ({
-            user_id: claimant.userId,
-            weight: claimant.weight,
-          })),
+          p_knocker_user_id: headNotAttributable ? null : attribution.knockerUserId!,
+          p_claimants: headNotAttributable
+            ? null
+            : attribution.claimants.map((claimant) => ({
+                user_id: claimant.userId,
+                weight: claimant.weight,
+              })),
           p_bubble_refund: bubbleRefund,
           // The ordinary sweep claims only RUNNING. finishTournament already
           // owns RUNNING->COMPLETING and may discover a zero survivor whose
@@ -1934,9 +2162,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         already?: boolean;
         mode?: string;
         reason?: string;
+        /** Set by the door when it placed the player but could not settle the head. */
+        bounty_blocked?: string | null;
       };
       const semanticClaimAccepted =
         !claimErr && claim.ok === true && (claim.claimed === true || claim.already === true);
+      /* A PLACE IS NOT A BOUNTY (2026-09-10). The door reports, in the same
+         accepted response, that it recorded the elimination and deliberately
+         wrote NO obligation because the head could not be settled. There is
+         therefore no obligation row to reconcile against, and demanding one
+         would reject a commit that already happened. */
+      const bountyHeadNotAttributed =
+        semanticClaimAccepted &&
+        typeof claim.bounty_blocked === 'string' &&
+        claim.bounty_blocked.length > 0;
 
       // Every continuation, including an HTTP response-loss recovery, reloads
       // the exact generation-bound record. The local attribution is only a
@@ -1989,9 +2228,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // A logical `{ok:false}` is an authoritative refusal, not an ambiguous
       // response. Only a transport error may be recovered from a matching
       // durable commit marker.
-      const durableClaim = semanticClaimAccepted
-        ? durableRecordMatches
-        : !!claimErr && durableRecordMatches;
+      const durableClaim = bountyHeadNotAttributed
+        ? true
+        : semanticClaimAccepted
+          ? durableRecordMatches
+          : !!claimErr && durableRecordMatches;
       if (!durableClaim) {
         reportError(
           new Error(
@@ -2002,9 +2243,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         return false;
       }
-      bountyMode = String(row!.mode || '');
-      durableBountyKnocker = String(row!.knocker_user_id || '');
-      durableBountyClaimants = canonicalClaims;
+      if (bountyHeadNotAttributed) {
+        // There is no obligation, by design, and therefore no knocker and no
+        // claimants. The head stays in the pool; nothing here may pay it.
+        bountyMode = String(claim.mode || '');
+        durableBountyKnocker = null;
+        durableBountyClaimants = [];
+      } else {
+        bountyMode = String(row!.mode || '');
+        durableBountyKnocker = String(row!.knocker_user_id || '');
+        durableBountyClaimants = canonicalClaims;
+      }
       // An `already` row is the replay of that exact generation, not permission
       // to run a place or Bubble payer here.
     } else {
@@ -2092,7 +2341,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     // ── BOUNTY / PKO / MYSTERY BOUNTY COLLECTION ──
     // Determine who knocked this player out by finding the last hand winner at their table
-    if (bountyEvidence) {
+    /* A PLACE IS NOT A BOUNTY (2026-09-10). An unattributable head has no
+       knocker to pay and no obligation to settle, and processBountyCollection
+       requires both. The place is already recorded; the head stays in the pool
+       for fn_finalize_bounty_pool to resolve as residual. */
+    if (bountyEvidence && bountyEvidence.attributionUnavailable !== true) {
       try {
         const { attribution } = bountyEvidence;
         if (attribution.basis === 'largest_winner') {
@@ -3299,12 +3552,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return false;
     }
 
+    const isSatellite =
+      String(this.tournamentCache?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(this.tournamentCache?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(this.tournamentCache?.satellite_target_id);
+    const ladderPool = prizePoolAvailableToPlaces(
+      finalPrizePool,
+      payouts,
+      finalField,
+      !isSatellite && this.tournamentCache?.bubble_protection === true,
+      Number(this.tournamentCache?.buy_in_amount)
+    );
+    if (ladderPool === null) {
+      reportError(
+        new Error('Cannot reprice an unfunded or malformed Bubble Promise'),
+        'Tournament.prize_recalc_ladder_pool_invalid'
+      );
+      return false;
+    }
+
     let complete = true;
     let mutations = 0;
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(finalPrizePool, payouts, Number(player.position))
+        ? computePlacePrize(ladderPool, payouts, Number(player.position))
         : 0;
 
       /**
@@ -3342,21 +3614,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc: ${player.user_id.slice(0, 8)} pos ${player.position} - old: ${player.prize}, new: ${correctPrize}, diff: ${difference >= 0 ? '+' : ''}${difference}`
         );
 
-        /* Repricing changes the durable entitlement only. Both increases and
-           decreases are safe before the batch is prepared because no place
-           money has moved. A transitional event with older payout evidence is
-           still protected: prepare seeds that evidence and refuses any amount
-           already paid above the frozen plan; nothing is clawed back. */
-        const { error: recordErr } = await supabase
-          .from('tournament_players')
-          .update({ prize: correctPrize })
-          .eq('tournament_id', this.tournamentId)
-          .eq('user_id', player.user_id);
-        if (recordErr) {
+        /* Repricing changes the durable entitlement only. Raw service-role
+           UPDATE on tournament_players is deliberately revoked: the database
+           RPC locks the event and exact roster row, proves that no terminal
+           batch or paid-place evidence exists, compares the old amount, and
+           commits the new amount as one bounded operation. */
+        const expectedPrize = Number(player.prize || 0);
+        const { data: recordRaw, error: recordErr } = await supabase.rpc(
+          'fn_ca_reprice_unpaid_tournament_place',
+          {
+            p_tournament_id: this.tournamentId,
+            p_user_id: player.user_id,
+            p_expected_prize: expectedPrize,
+            p_new_prize: correctPrize,
+          }
+        );
+        const record = recordRaw as {
+          ok?: boolean;
+          tournament_id?: string;
+          user_id?: string;
+          prize?: number | string;
+        } | null;
+        const recordInvalid =
+          !record ||
+          record.ok !== true ||
+          record.tournament_id !== this.tournamentId ||
+          record.user_id !== player.user_id ||
+          !Number.isFinite(Number(record.prize)) ||
+          Math.abs(Number(record.prize) - correctPrize) >= 0.005;
+        if (recordErr || recordInvalid) {
           complete = false;
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc could not record prize=${correctPrize} for ${player.user_id.slice(0, 8)}: ${recordErr.message}; atomic completion will refuse an incomplete prize set`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc could not certify prize=${correctPrize} for ${player.user_id.slice(0, 8)}: ${recordErr?.message ?? 'invalid database receipt'}; atomic completion will refuse an incomplete prize set`
             ),
             'Tournament.prize_recalc_record_failed'
           );
@@ -3426,7 +3716,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /** Long enough for a full live hand plus the guarantee and settlement calls. */
   private static readonly FINAL_TABLE_DEAL_PAUSE_MS = 15 * 60_000;
   private lastDealPollAt = 0;
+  private proposalAuthorityObserved = false;
   private lastDealVoteCount = -1;
+  private finalTableDealReview: {
+    reviewId: string;
+    tableId: string;
+    engine: ServerTableEngine;
+    proposalId: string | null;
+    revision: string | null;
+    closingReason?: 'stale' | 'expired' | 'cancelled';
+  } | null = null;
 
   /**
    * Resume only the non-money tail of an already committed terminal receipt.
@@ -3657,9 +3956,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /**
    * FINAL TABLE DEAL (2026-08-22 parity). When the tournament opted in
    * (final_table_deal_enabled) and the field is down to one table
-   * (remaining <= table_size), every remaining player may vote a deal via
-   * tournament_deal_votes (RLS restricts inserts to seated, alive players of a
-   * RUNNING deal-enabled tournament). Unanimity executes the one terminal
+   * (remaining <= table_size), every remaining player may accept the exact current proposal through
+   * the versioned deal authority. Proposal-bound unanimity executes the one terminal
    * receipt authority. The database preserves earned structure places,
    * divides the exact remainder by the parked stacks, settles every component,
    * closes every source seat/table, and commits COMPLETED as one transaction.
@@ -3707,11 +4005,495 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
   }
 
+  /** Read the authoritative session, or claim its snapshot after a physical park. */
+  private async readFinalTableDealConsensus(
+    alive: ReadonlyArray<{ user_id: string }>,
+    beginReviewId?: string
+  ): Promise<FinalTableDealConsensus | 'proposal_authority_not_active' | null> {
+    let result;
+    try {
+      result = beginReviewId
+        ? await supabase.rpc('fn_begin_tournament_deal_review', {
+            p_tournament_id: this.tournamentId,
+            p_review_id: beginReviewId,
+          })
+        : await supabase.rpc('fn_get_tournament_deal_consensus', {
+            p_tournament_id: this.tournamentId,
+          });
+    } catch {
+      return null;
+    }
+    if (!result || typeof result !== 'object') return null;
+    const { data, error } = result;
+    if (
+      !error &&
+      data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      data.ok === false &&
+      data.reason === 'proposal_authority_not_active'
+    )
+      return 'proposal_authority_not_active';
+    if (
+      error ||
+      !data ||
+      typeof data !== 'object' ||
+      Array.isArray(data) ||
+      data.ok !== true ||
+      typeof data.ready !== 'boolean' ||
+      !Number.isSafeInteger(data.required) ||
+      data.required < 0 ||
+      !Array.isArray(data.voter_ids) ||
+      !['none', 'requested', 'reviewing', 'completed', 'cancelled', 'expired'].includes(
+        data.review_state
+      )
+    )
+      return null;
+
+    const noReview = data.review_state === 'none';
+    if (data.reason === 'review_stale' && data.ready) return null;
+    const stale = data.reason === 'review_stale';
+    const reviewExpiresAt =
+      typeof data.review_expires_at === 'string' ? Date.parse(data.review_expires_at) : NaN;
+    if (noReview) {
+      if (data.review_id !== null || data.review_expires_at !== null) return null;
+    } else if (
+      typeof data.review_id !== 'string' ||
+      !UUID.test(data.review_id) ||
+      !Number.isFinite(reviewExpiresAt)
+    )
+      return null;
+
+    if (alive.some((player) => typeof player.user_id !== 'string' || !UUID.test(player.user_id)))
+      return null;
+    const aliveIds = new Set(alive.map((player) => player.user_id.toLowerCase()));
+    if (aliveIds.size !== alive.length) return null;
+    if (data.voter_ids.some((id: unknown) => typeof id !== 'string' || !UUID.test(id))) return null;
+    const voters = new Set<string>(data.voter_ids.map((id: string) => id.toLowerCase()));
+    if (
+      voters.size !== data.voter_ids.length ||
+      (!stale && [...voters].some((id) => !aliveIds.has(id)))
+    )
+      return null;
+    if (
+      data.review_state === 'reviewing' &&
+      (data.required < 2 || (!stale && data.required !== alive.length))
+    )
+      return null;
+
+    const hasProposal =
+      typeof data.proposal_id === 'string' &&
+      UUID.test(data.proposal_id) &&
+      typeof data.revision === 'string' &&
+      /^[0-9a-f]{64}$/.test(data.revision);
+    if (data.review_state === 'reviewing') {
+      if (!hasProposal || (data.ready && voters.size !== data.required)) return null;
+    } else if (
+      data.proposal_id !== null ||
+      data.revision !== null ||
+      voters.size !== 0 ||
+      data.ready ||
+      data.required !== 0
+    )
+      return null;
+    return {
+      reviewId: noReview ? null : data.review_id.toLowerCase(),
+      reviewState: data.review_state,
+      reviewExpiresAt: noReview ? null : reviewExpiresAt,
+      stale,
+      proposalId: hasProposal ? data.proposal_id.toLowerCase() : null,
+      revision: hasProposal ? data.revision : null,
+      voters,
+      required: data.required,
+      ready: data.ready,
+    };
+  }
+
+  /** Close the exact pre-money review in the database before lifting its dealer fence. */
+  private async closeFinalTableDealReview(
+    reason: 'stale' | 'expired' | 'cancelled'
+  ): Promise<boolean> {
+    const review = this.finalTableDealReview;
+    if (!review) return true;
+    review.closingReason = reason;
+    try {
+      const { data, error } = await supabase.rpc('fn_close_tournament_deal_review', {
+        p_tournament_id: this.tournamentId,
+        p_review_id: review.reviewId,
+        p_reason: reason,
+      });
+      if (!error && data?.ok === true && data.review_id === review.reviewId) {
+        if (data.review_state === 'completed') {
+          this.finalTableDealHandled = true;
+          this.tournamentFinished = true;
+          this.fenceUnknownTerminalOutcome(
+            'Tournament.final_table_deal_review_completed_without_receipt'
+          );
+          return false;
+        }
+        if (
+          (data.review_state === 'cancelled' || data.review_state === 'expired') &&
+          data.proposal_id === null &&
+          data.revision === null &&
+          data.required === 0 &&
+          data.ready === false &&
+          Array.isArray(data.voter_ids) &&
+          data.voter_ids.length === 0 &&
+          typeof data.review_expires_at === 'string' &&
+          Number.isFinite(Date.parse(data.review_expires_at))
+        ) {
+          const running = review.engine.isRunning();
+          const ownsEngine =
+            this.tableEngines.get(review.tableId) === review.engine &&
+            this.gameServer.getTableEngine(review.tableId) === review.engine;
+          if (running && !ownsEngine) {
+            // The replacement owner must finish retiring this old dealer. Its
+            // former manager may not restart a detached, still-running engine.
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+            return false;
+          }
+          if (running) review.engine.releaseTerminalCloseoutPause();
+          this.finalTableDealReview = null;
+          this.requestUrgentEliminationSweepAfter(0);
+          return true;
+        }
+      }
+    } catch (error) {
+      reportError(error, 'Tournament.final_table_deal_review_close_unavailable');
+    }
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+    return false;
+  }
+
   /**
-   * Once unanimity is observed, await the engine-owned no-new-hand gate in
-   * this admission. No poll or timer is allowed to infer a physical boundary.
+   * An explicit review request parks the exact dealer before players see and
+   * accept a stable proposal. The shared scheduler checks consent while that
+   * fence remains owned. Only database-confirmed closure can resume play.
    */
   protected async checkFinalTableDeal(): Promise<boolean> {
+    if (this.committedFinalTableDealCleanupPending && this.committedFinalTableDealReceipt) {
+      return this.settleFinalTableDeal(this.committedFinalTableDealReceipt);
+    }
+    if (this.finalTableDealHandled || this.tournamentFinished) return true;
+    if (this.finalTableDealReview?.closingReason) {
+      return this.closeFinalTableDealReview(this.finalTableDealReview.closingReason);
+    }
+
+    const t = this.tournamentCache as {
+      status?: string;
+      final_table_deal_enabled?: boolean;
+      table_size?: number;
+      variant?: string;
+      tournament_type?: string;
+      satellite_target_id?: string | null;
+      satellite_target?: string | null;
+    } | null;
+    if (!t || t.final_table_deal_enabled !== true || t.status !== 'RUNNING') {
+      return this.closeFinalTableDealReview('stale');
+    }
+
+    // A satellite has a separate whole-format receipt and can never enter the
+    // cash prize-chop authority, regardless of which legacy marker identifies it.
+    const isSatelliteDeal =
+      String(t.variant ?? '').toLowerCase() === 'satellite' ||
+      String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(t.satellite_target_id || t.satellite_target);
+    if (isSatelliteDeal) return this.closeFinalTableDealReview('stale');
+
+    const now = Date.now();
+    if (now - this.lastDealPollAt < 2_000) {
+      if (!this.finalTableDealReview) return true;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+      return false;
+    }
+    this.lastDealPollAt = now;
+    const tableSize = Math.max(2, Number(t.table_size) || 9);
+
+    try {
+      const { data: alive, error: aliveError } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing');
+      if (aliveError || !alive || alive.length < 2 || alive.length > tableSize) {
+        return this.closeFinalTableDealReview('stale');
+      }
+
+      let consensus = await this.readFinalTableDealConsensus(alive);
+      if (consensus === 'proposal_authority_not_active') {
+        if (this.finalTableDealReview || this.proposalAuthorityObserved)
+          return this.closeFinalTableDealReview('stale');
+        return this.checkLegacyFinalTableDeal();
+      }
+      if (consensus) this.proposalAuthorityObserved = true;
+      if (!consensus) {
+        if (!this.finalTableDealReview) return true;
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+        return false;
+      }
+      if (this.finalTableDealReview && consensus.reviewId !== this.finalTableDealReview.reviewId) {
+        return this.closeFinalTableDealReview('stale');
+      }
+      if (!consensus.reviewId || !['requested', 'reviewing'].includes(consensus.reviewState)) {
+        return this.closeFinalTableDealReview(
+          consensus.reviewState === 'expired' ? 'expired' : 'cancelled'
+        );
+      }
+      if (isMaintenanceFrozen() || this.isOnBreak() || this.handForHandActive) {
+        return this.closeFinalTableDealReview('stale');
+      }
+
+      const held = await this.authoritativeFinalTableDealEngine();
+      if (
+        !held ||
+        (this.finalTableDealReview &&
+          (held.engine !== this.finalTableDealReview.engine ||
+            held.tableId !== this.finalTableDealReview.tableId))
+      )
+        return this.closeFinalTableDealReview('stale');
+      const { tableId, engine } = held;
+      if (!this.finalTableDealReview) {
+        this.finalTableDealReview = {
+          reviewId: consensus.reviewId,
+          tableId,
+          engine,
+          proposalId: consensus.proposalId,
+          revision: consensus.revision,
+        };
+        const parked = await engine.parkForTerminalCloseout(
+          TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS
+        );
+        if (!parked) return this.closeFinalTableDealReview('stale');
+        if (
+          isMaintenanceFrozen() ||
+          this.isOnBreak() ||
+          this.handForHandActive ||
+          this.tableEngines.get(tableId) !== engine ||
+          this.gameServer.getTableEngine(tableId) !== engine ||
+          !engine.isRunning()
+        )
+          return this.closeFinalTableDealReview('stale');
+        const { data: parkedAlive, error: parkedAliveError } = await supabase
+          .from('tournament_players')
+          .select('user_id')
+          .eq('tournament_id', this.tournamentId)
+          .eq('status', 'playing');
+        if (
+          parkedAliveError ||
+          !parkedAlive ||
+          parkedAlive.length < 2 ||
+          parkedAlive.length > tableSize
+        ) {
+          return this.closeFinalTableDealReview('stale');
+        }
+        consensus = await this.readFinalTableDealConsensus(
+          parkedAlive,
+          this.finalTableDealReview.reviewId
+        );
+        if (
+          !consensus ||
+          consensus === 'proposal_authority_not_active' ||
+          consensus.reviewId !== this.finalTableDealReview.reviewId
+        ) {
+          return this.closeFinalTableDealReview('stale');
+        }
+        if (
+          this.finalTableDealReview.proposalId &&
+          (consensus.proposalId !== this.finalTableDealReview.proposalId ||
+            consensus.revision !== this.finalTableDealReview.revision)
+        )
+          return this.closeFinalTableDealReview('stale');
+        this.finalTableDealReview.proposalId = consensus.proposalId;
+        this.finalTableDealReview.revision = consensus.revision;
+      }
+      if (consensus.reviewState !== 'reviewing') {
+        return this.closeFinalTableDealReview(
+          consensus.reviewState === 'expired' ? 'expired' : 'stale'
+        );
+      }
+      if (
+        consensus.stale ||
+        consensus.proposalId !== this.finalTableDealReview.proposalId ||
+        consensus.revision !== this.finalTableDealReview.revision
+      ) {
+        return this.closeFinalTableDealReview('stale');
+      }
+      if (consensus.reviewExpiresAt !== null && Date.now() >= consensus.reviewExpiresAt) {
+        return this.closeFinalTableDealReview('expired');
+      }
+      const { voters } = consensus;
+      if (voters.size !== this.lastDealVoteCount) {
+        this.lastDealVoteCount = voters.size;
+        await this.broadcast('final_table_deal_votes', {
+          votes: voters.size,
+          required: consensus.required,
+          review_id: consensus.reviewId,
+          review_state: consensus.reviewState,
+          proposal_id: consensus.proposalId,
+          revision: consensus.revision,
+        });
+      }
+      if (!consensus.ready) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+        return false;
+      }
+
+      this.finalTableDealHandled = true;
+      this.tournamentFinished = true;
+      try {
+        return await this.completeFinalTableDealAtBoundary(tableId, engine, tableSize, consensus);
+      } catch (err) {
+        const committedReceipt =
+          err instanceof TerminalSettlementCommittedError
+            ? err.receipt
+            : this.committedFinalTableDealReceipt;
+        const outcomeUnknown = err instanceof TerminalSettlementOutcomeUnknownError;
+        const provenRefusal = err instanceof TerminalSettlementRefusedError;
+        if (committedReceipt) {
+          this.committedFinalTableDealReceipt = committedReceipt;
+          this.committedFinalTableDealCleanupPending = true;
+          reportError(err, 'Tournament.final_table_deal_committed_tail_failed');
+          return this.settleFinalTableDeal(committedReceipt);
+        }
+        if (!provenRefusal) {
+          const alertCode = outcomeUnknown
+            ? 'Tournament.final_table_deal_outcome_unknown'
+            : 'Tournament.final_table_deal_unclassified_failure';
+          reportError(err, alertCode);
+          try {
+            await raiseFinancialAlert(
+              'critical',
+              alertCode,
+              outcomeUnknown
+                ? 'Final-table deal may have committed, but its immutable terminal receipt could not be resolved. The tournament manager and every dealer were fenced.'
+                : 'Final-table deal failed without a proven pre-commit refusal. The tournament manager and every dealer were fenced until the terminal result is resolved.',
+              {
+                tournament_id: this.tournamentId,
+                outcome_unknown: outcomeUnknown,
+                error: err instanceof Error ? err.message : String(err),
+              }
+            );
+          } catch (alertError) {
+            reportError(alertError, 'Tournament.final_table_deal_alert_failed', {
+              tournamentId: this.tournamentId,
+              alertCode,
+            });
+          }
+          this.fenceUnknownTerminalOutcome('Tournament.final_table_deal_manager_stop_failed');
+          return false;
+        }
+
+        // Only the serialized resolver or an explicit pre-RPC boundary check
+        // may prove that no terminal transaction committed and lift the gate.
+        this.finalTableDealHandled = false;
+        this.tournamentFinished = false;
+        await this.closeFinalTableDealReview('stale');
+        reportError(err, 'Tournament.final_table_deal_refused');
+        return false;
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.final_table_deal_poll_failed');
+      if (!this.tournamentFinished) await this.closeFinalTableDealReview('stale');
+      return false;
+    }
+  }
+
+  /**
+   * Re-prove the unanimous deal only after the engine has installed its hard
+   * between-hands gate. The terminal RPC is the first and only money writer.
+   */
+  private async completeFinalTableDealAtBoundary(
+    tableId: string,
+    engine: ServerTableEngine,
+    tableSize: number,
+    expectedConsensus: FinalTableDealConsensus
+  ): Promise<boolean> {
+    const parked = await engine.parkForTerminalCloseout(
+      TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS
+    );
+    if (!parked) {
+      throw new TerminalSettlementRefusedError(
+        `Final-table deal could not prove a durable, fully settled hand boundary for ${tableId}`
+      );
+    }
+    if (
+      isMaintenanceFrozen() ||
+      this.isOnBreak() ||
+      this.handForHandActive ||
+      this.tableEngines.get(tableId) !== engine ||
+      this.gameServer.getTableEngine(tableId) !== engine ||
+      !engine.isRunning()
+    ) {
+      throw new TerminalSettlementRefusedError('Final-table deal engine authority changed');
+    }
+
+    const { data: alive, error: aliveError } = await supabase
+      .from('tournament_players')
+      .select('user_id, chips')
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing');
+    if (
+      aliveError ||
+      !alive ||
+      alive.length < 2 ||
+      alive.length > tableSize ||
+      alive.some(
+        (player: { user_id?: string | null; chips?: number | string | null }) =>
+          !player.user_id || !Number.isFinite(Number(player.chips)) || Number(player.chips) <= 0
+      )
+    ) {
+      throw new TerminalSettlementRefusedError('Final-table deal live stack snapshot is invalid');
+    }
+
+    const consensus = await this.readFinalTableDealConsensus(alive);
+    if (
+      consensus === 'proposal_authority_not_active' ||
+      !consensus?.ready ||
+      consensus.reviewState !== 'reviewing' ||
+      consensus.reviewId !== expectedConsensus.reviewId ||
+      consensus.stale ||
+      consensus.reviewExpiresAt === null ||
+      Date.now() >= consensus.reviewExpiresAt ||
+      !consensus.proposalId ||
+      !consensus.revision ||
+      consensus.proposalId !== expectedConsensus.proposalId ||
+      consensus.revision !== expectedConsensus.revision ||
+      isMaintenanceFrozen() ||
+      this.isOnBreak() ||
+      this.handForHandActive ||
+      this.tableEngines.get(tableId) !== engine ||
+      this.gameServer.getTableEngine(tableId) !== engine ||
+      !engine.isRunning()
+    ) {
+      throw new TerminalSettlementRefusedError('Final-table deal unanimity or authority changed');
+    }
+
+    const receipt = await requestTournamentTerminalReceipt(
+      this.tournamentId,
+      'final_table_deal',
+      null,
+      { dealProposal: { proposalId: consensus.proposalId, revision: consensus.revision } }
+    );
+    const aliveUsers = new Set(alive.map((player: { user_id: string }) => player.user_id));
+    const payoutShapeIsExact =
+      receipt.dealShares.length === alive.length &&
+      receipt.dealShares.every(
+        (share) => aliveUsers.has(share.userId) && Number.isFinite(share.amount) && share.amount > 0
+      );
+    if (!payoutShapeIsExact) {
+      throw new TerminalSettlementCommittedError(
+        receipt,
+        'Committed final-table receipt did not match the physically parked live roster'
+      );
+    }
+
+    this.committedFinalTableDealReceipt = receipt;
+    this.committedFinalTableDealCleanupPending = true;
+    return this.settleFinalTableDeal(receipt);
+  }
+
+  /** Pre-cutover behavior, reachable only after authoritative inactivity. */
+  private async checkLegacyFinalTableDeal(): Promise<boolean> {
     if (this.committedFinalTableDealCleanupPending && this.committedFinalTableDealReceipt) {
       return this.settleFinalTableDeal(this.committedFinalTableDealReceipt);
     }
@@ -3736,9 +4518,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       Boolean(t.satellite_target_id || t.satellite_target);
     if (isSatelliteDeal) return true;
 
-    const now = Date.now();
-    if (now - this.lastDealPollAt < 2_000) return true;
-    this.lastDealPollAt = now;
     const tableSize = Math.max(2, Number(t.table_size) || 9);
 
     try {
@@ -3773,7 +4552,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.tournamentFinished = true;
       const { tableId, engine } = held;
       try {
-        return await this.completeFinalTableDealAtBoundary(tableId, engine, tableSize);
+        return await this.completeLegacyFinalTableDealAtBoundary(tableId, engine, tableSize);
       } catch (err) {
         const committedReceipt =
           err instanceof TerminalSettlementCommittedError
@@ -3833,7 +4612,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Re-prove the unanimous deal only after the engine has installed its hard
    * between-hands gate. The terminal RPC is the first and only durable writer.
    */
-  private async completeFinalTableDealAtBoundary(
+  private async completeLegacyFinalTableDealAtBoundary(
     tableId: string,
     engine: ServerTableEngine,
     tableSize: number
@@ -3898,7 +4677,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const receipt = await requestTournamentTerminalReceipt(
       this.tournamentId,
       'final_table_deal',
-      null
+      null,
+      { legacyDealAuthority: 'proposal_authority_not_active' }
     );
     const aliveUsers = new Set(alive.map((player: { user_id: string }) => player.user_id));
     const payoutShapeIsExact =
@@ -3949,6 +4729,57 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
     return cleaned;
   }
+  /**
+   * One record, never a retry: the terminal authority refused this manager's
+   * parameters against its stored receipt and the receipt could not be read
+   * back. Names the tournament, what was observed and what is stored.
+   */
+  private async reportTerminalReceiptDisagreement(
+    error: TerminalSettlementDisagreementError
+  ): Promise<void> {
+    reportError(error, 'Tournament.atomic_finish_receipt_disagreement');
+    try {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.atomic_finish_receipt_disagreement',
+        `Tournament ${this.tournamentId} has a stored terminal receipt that disagrees with this manager's finish parameters, and the receipt could not be adopted. The manager stood down without retrying. ${error.message}`,
+        {
+          tournament_id: this.tournamentId,
+          observed_settlement_mode: error.observed.settlementMode,
+          observed_winner_id: error.observed.winnerId,
+          stored_settlement_mode: error.stored?.settlementMode ?? null,
+          stored_winner_id: error.stored?.winnerId ?? null,
+          proven_refusal: true,
+          outcome_unknown: false,
+        }
+      );
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
+  /** The receipt won over this process's observation; say so once, then continue from the receipt. */
+  private async reportAdoptedTerminalReceipt(
+    observedWinnerId: string,
+    receipt: VerifiedTournamentCompletionReceipt
+  ): Promise<void> {
+    const message =
+      `[Tournament:${this.tournamentId.slice(0, 8)}] adopted the stored terminal receipt ` +
+      `(${receipt.settlementMode}, winner ${receipt.winnerId.slice(0, 8)}) over this manager's ` +
+      `observed winner ${observedWinnerId.slice(0, 8)}; no money moved on this process's view`;
+    reportError(new Error(message), 'Tournament.atomic_finish_receipt_adopted');
+    try {
+      await raiseFinancialAlert('warning', 'Tournament.atomic_finish_receipt_adopted', message, {
+        tournament_id: this.tournamentId,
+        observed_winner_id: observedWinnerId,
+        stored_winner_id: receipt.winnerId,
+        stored_settlement_mode: receipt.settlementMode,
+      });
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
   protected async finishTournament(winnerId: string): Promise<void> {
     // A committed receipt makes this cleanup-only work. It must remain
     // reachable ahead of every local latch and maintenance admission guard.
@@ -4053,6 +4884,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     try {
       receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId);
     } catch (settlementErr) {
+      if (settlementErr instanceof TerminalSettlementDisagreementError) {
+        // The database holds a receipt this request contradicts and the
+        // receipt could not be adopted. Nothing about that is transient:
+        // one alert names the disagreement, and this manager stands down.
+        // It is neither re-armed (that was the 5,575-replay loop of
+        // 2026-09-10) nor treated as an unknown outcome.
+        await this.reportTerminalReceiptDisagreement(settlementErr);
+        this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_disagreement_stop_failed');
+        return;
+      }
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
@@ -4089,18 +4930,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     this.committedFinishReceipt = receipt;
+    if (receipt.winnerId.toLowerCase() !== winnerId.toLowerCase()) {
+      // The stored receipt was adopted over this manager's own observation.
+      // The money is already right (the receipt is the immutable settlement);
+      // what needs a record is that this process read the field wrong.
+      await this.reportAdoptedTerminalReceipt(winnerId, receipt);
+    }
     const winnerPrize = receipt.winnerAmount;
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE - winner ${receipt.winnerId.slice(0, 8)} received ${winnerPrize}`
     );
     await this.cleanupCommittedTournament(receipt);
   }
+
   // ── Implemented by TournamentManager (layer 3/3) ──
   protected abstract checkTableBalance(): Promise<void>;
   protected abstract processSatelliteAwards(
     tournament: any,
     winnerId: string
   ): Promise<VerifiedSatelliteSettlementReceipt>;
-  protected abstract ensureLateRegSeated(): Promise<void>;
   protected abstract checkDynamicTableExpansion(): Promise<boolean>;
 }

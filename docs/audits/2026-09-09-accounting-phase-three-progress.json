@@ -195,7 +195,7 @@
     "findings": [
       "Registration locks the tournament and atomically debits, creates the roster row, books fees and pool funding. Unique insert failure raises40001 to roll back the debit. Late seating failure rolls back before capacity retry.",
       "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it.",
-      "Initial wallet registration now has an applied mandatory-request wrapper and client integration under test. Publication and compatible-client legacy retirement remain pending."
+      "Initial wallet registration request receipts and the compatible client are live; the unbound alias is retired. Verified on both frontend endpoints on 2026-09-10."
     ]
   },
   "refund_client_contract": {
@@ -227,14 +227,14 @@
     "phase_complete": false
   },
   "seat_refund_identity": {
-    "status": "tested_publication_pending",
+    "status": "verified_live_on_public_and_origin_2026_09_10",
     "tests": 108,
     "typescript": "passed",
     "build": "passed",
     "evidence": "docs/changelog/2026-09-09-durable-tournament-seat-refund.md"
   },
   "registration_operation_receipt": {
-    "status": "database_applied_client_tested_publication_pending",
+    "status": "database_applied_client_published_legacy_alias_retired",
     "function": "fn_register_for_tournament_request(uuid,uuid)",
     "body_md5": "c80d08529c03284adc51c6cb03764a55",
     "applied_version": "20260909211745",
@@ -245,8 +245,8 @@
     "build": "passed_on_24bfeda9_behind_main_0",
     "evidence": "docs/changelog/2026-09-09-tournament-registration-operation-receipts.md",
     "limitations": [
-      "Underlying funding core uses an isolated test double in new wrapper tests; full entry economics acceptance remains open.",
-      "Legacy registration alias retirement requires compatible frontend publication."
+      "Original wrapper tests use a funding test double. The newly merged real pre-start funding fixture passes seven groups; its narrower scope does not close all entry economics.",
+      "Late entry, re-entry, rebuy, addon, promotional and union paths still need their complete behavioral and release evidence."
     ],
     "registry_applied_version": "20260909212058"
   },
@@ -256,5 +256,41 @@
     "receipt_client_release": "24a22ade8ac865b6f3ae4d3e0bc047e4bddff88d",
     "evidence": "docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md",
     "full_phase_acceptance": false
+  },
+  "resume_checkpoint": "docs/audits/2026-09-10-chip-drift-continuation-status.md",
+  "exact_hand_generation": {
+    "status": "database_and_engine_adoption_verified",
+    "engine_sha": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "full_hand_pg17": "legacy and exact modes passed, including four invalid-generation scenarios",
+    "evidence": "docs/audits/2026-09-10-chip-drift-resume-evidence.json",
+    "full_phase_acceptance": false
+  },
+  "registration_funding_rehearsal": {
+    "status": "seven_pre_start_groups_passed",
+    "source": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "limits": "Real pre-start standalone-club funding, rollback, concurrent retries, last place, closure wait and cross-club receipt. Synthetic auth and maintenance. No late entry, union, promotional, re-entry or launch acceptance."
+  },
+  "swarm_checkpoint": {
+    "date": "2026-09-10",
+    "status": "in_progress",
+    "phase_complete": false,
+    "phase_four_started": false,
+    "evidence": "docs/audits/2026-09-10-chip-drift-phase-three-swarm.json",
+    "scope": "Six independent lanes cover all twelve controls. Focused acceptance results do not certify missing production authorities, terminal composition or unresolved live stalls.",
+    "production_gate": "As of03:17:38UTC all seven guards remain disabled; new move, committed move receipt and bounty rebuy-generation authorities are absent. The coordinating task owns the engine release seal and Stage-B cutover."
+  },
+  "latest_continuation": {
+    "phase_complete": false,
+    "production_expansion_and_rake_verified": true,
+    "full_stage_b_applied": false,
+    "proposal_activated": false,
+    "final_deal_v2_implementation_blocked_by_automatic_review": true,
+    "phase_four_first_batch": {
+      "pr": 4146,
+      "merge": "146128eb5c89edb1880473905524556b956b613f",
+      "frontend_publisher": 34451807707,
+      "status": "merged_and_frontend_publication_verified"
+    },
+    "historical_notes": "Older observations are retained as historical evidence. Use resume_checkpoint for current prerequisites, native acceptance, release state and remaining gaps."
   }
 }

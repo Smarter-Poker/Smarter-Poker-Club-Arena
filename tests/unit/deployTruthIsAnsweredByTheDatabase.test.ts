@@ -57,9 +57,9 @@ describe('the deploy pipeline reports what it actually did', () => {
   it('reports the sha the run was FOR, not whatever the host happens to hold', () => {
     const wf = read(WORKFLOW);
     const step = wf.slice(wf.indexOf('Record deploy truth in the database'));
-    expect(step).toMatch(
-      /TARGET_SHA:\s*\$\{\{\s*github\.event\.inputs\.ref_sha\s*\|\|\s*github\.sha\s*\}\}/
-    );
+    // The dispatch input may be a branch, tag, or abbreviation. The deploy now
+    // resolves it once and every receipt records that exact full commit.
+    expect(step).toContain('TARGET_SHA: ${{ steps.target.outputs.sha }}');
   });
 });
 

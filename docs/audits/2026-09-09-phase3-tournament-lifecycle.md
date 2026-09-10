@@ -1,6 +1,6 @@
 # Phase 3: Tournament Lifecycle Audit
 
-Status: in progress. This is Phase 3 of the Club Arena 12-phase programme, covering 58 original controls. It is not a completion certificate. The original 216-control register remains unchanged.
+Status: in progress. This is Phase 3 of the Club Arena 12-phase programme, covering 58 original controls. It is not a completion certificate. The original 216-control register remains unchanged. Sections below record observations at their stated times; the companion JSON holds the latest control status.
 
 ## First Confirmed Correction: Break Ownership
 
@@ -121,3 +121,83 @@ Client PR #4029 merged as 6a2724ea096f6f69da8b17e2a789885bc30f896f after CI 3440
 The prepared satellite cash database correction passed eight isolated PostgreSQL 17 scenario groups and eight affected source guard tests. It preserves exact source-wallet funding, historical receipts, fee reversal and atomic rollback, and updates the still-unapplied start-authority migration to prevent a later return to ticket issuance. The detailed scope and fixture limits are in scripts/dev/fixtures/satellite-refund/README.md. Automatic approval review rejected the production migration because publication/deployment authorization did not explicitly authorize changing the production financial refund functions. No production application or indirect workaround occurred. Source publication continues, but T06/B08 remain open and the database change requires explicit authorization.
 
 Staged engine deployments are dispatched immediately with force=false while audit work continues. There is no passive wait for the hourly restart window, no forced cutover and no optional repetition of unchanged test evidence. Phase 3 remains in progress; Phase 4 has not started.
+
+## Concurrent Schema Release Reconciled
+
+Production installed actual-start unregistration as version 20260909215545 during this audit. Its installed unregister and receipt body hashes match the recorded migration. The prior draft edits to that now-applied migration and its historical guard were removed. The cash correction remains only in a new CLI-generated forward migration ordered after 20260909215545. Applying its replacements to the newly installed source produces exactly the same cash-aware bodies already exercised in the PostgreSQL fixture. Production cash application remains blocked by automatic approval review.
+
+At 22:11:28 UTC, the live database had neither fn_move_tournament_player nor fn_resolve_committed_tournament_seat_move, and tournament_seat_move_receipts was absent. The deployed engine source calls the writer from TournamentManager.executePlayerMovesOwned through requestTournamentSeatMoveAtBoundary and moveTournamentPlayerAtomically; ambiguous replies reach the resolver. This is an installed-dependency gap for K08/K09/BX14. Existing manager/transport tests stub database effects, and the separate SQL resolver probe seeds an already-committed receipt. They do not establish a working production table move. The existing writer migration also contains a maintenance cutover and historical repairs, so it was not applied wholesale, bypassed or split to evade its preconditions. No additional movement implementation was invented.
+
+## Production Cash Correction Verified At 22:23 UTC
+
+The user explicitly authorized the production cash-refund migration after the previous approval block. It applied as 20260909222303. An independent catalog read at 22:23:53 UTC matched the reviewed unregister body ae14d16400db9481dd116bd251f7af83, receipt body 0fa946ec2bf3301db11465cd9b33fb9f and exact payer body 0024ca5acfc4e4e12b51a4609349e98d. All three helpers retain owner-only execution; actual-start eligibility remains in place. The source filename records the assigned physical version without changing the applied SQL. No historical payment or balance repair was executed.
+
+PR #4039 passed CI 34411543919. Its two intentional historical-file restorations require the repository's revert-approved label. Automatic approval review rejected applying that governance label despite the user's publication authorization. The guard remains intact and no alternate execution or content rewrite was used to evade it. This is a separate source merge blocker; the approved cash functions are already installed and independently verified.
+
+## Payment Display Accepted And Blind Boundary Rehearsed
+
+T12 is verified and deployed. PR #4058 merged as 4c5ea3e67f247dbafb659807cb939e0bb6860eb6 after CI 34420844586 passed. The caller-owned RPC and shared results/statement panel distinguish paid, partially paid and owed obligations, retain unconfirmed status when records are absent, and identify satellite seat values as transfers. The 26 affected client tests, five isolated PostgreSQL scenario groups and the 375-pixel browser fixture establish the stated projection behavior. Both public build-info endpoints independently served the merge at 00:31 UTC on September 10; fetched shipped chunks contain the RPC and partial/unconfirmed states. The database body still matched at 00:42 UTC. This closes the display control only; it does not certify payout execution or any other financial control.
+
+PR #4039 is resolved. The user-authorized revert-approved label was applied, CI 34416969935 passed, and the historical-file restoration merged as 8d6ab77102acd3547eafe08ccff155ba0ecd2c89. The previous label-block account is historical. No further approval is needed for that action.
+
+The UTC cadence correction merged through PR #4063 as 9eac7cab76d90bcaabefcdb932169d5f0ab60781 after CI 34421219592 passed. Four synchronized-break cases and three maintenance-announcement cases reproduced incorrect DST or fractional-offset scheduling before the correction. The real scheduler now passes nine cases and the maintenance suite passes 66. Normal deployment was dispatched immediately with force=false; later main requests superseded it in the shared queue. Engine adoption remains unverified at this checkpoint. This is partial K03/K04/K12 evidence.
+
+Three new K02 behavioral cases run the real input refresh, deal configuration and HandController. An in-progress 10/20/2 hand retains its legal raise and completes after the table changes to 20/40/4; the next hand posts the new values. A delayed blind read holds preparation and a failed read rejects it. External database responses are synthetic and the engine stops before unrelated time-bank and settlement work. The full dealing loop, including a level change during prefetched between-hand rest, remains outside this rehearsal, so K02 is not marked fully closed.
+
+The table-move writer, receipt resolver and receipt table remain absent in the 00:42 UTC catalog read. The staged cutover's freeze-body pin differs from the current installed freeze predicate, so the historical cutover cannot be applied unchanged. The exact twelve-argument hand-commit prerequisite now exists with both seat-generation markers; the earlier claim that it was missing is obsolete. The dependency register records these separately. No historical repair, alternate move writer or cutover-marker bypass was performed.
+
+Registration receipt tests were reviewed, not repeated. Their simulated funding core cannot establish real debit atomicity or last-seat races, and an older admission probe references the retired unbound registration API. T01 remains open. Phase 3 retains all 58 original requirements; Phase 4 has not started.
+
+## Pre-Start Funding And Charged-Club Receipt
+
+The new disposable PostgreSQL rehearsal passed seven groups using the real registration request, debit, journal, immutable entitlement, escrow and receipt functions. It observes actual overlapping database transactions for retries, duplicate entries, the last available place and pool closure; a late receipt failure rolls back every tested financial write. Its external auth and maintenance state remain synthetic, with complete limits and source hashes in scripts/dev/fixtures/registration-funding.
+
+A separate two-club case reproduced a receipt defect: the correct club wallet fell from 500 to 300, while the receipt logged the older membership wallet at 1,000. The scoped forward migration now reads the club chosen by the entry debit. Production applied version 20260910012633; the independent 01:27 UTC read matches body f9d423ecda16d49d698a1b3735baf7cb with unchanged service-only execution. No balance or historical receipt was rewritten. Source publication remains pending at this checkpoint. T01 has additional verified pre-start funding evidence; the full requirement and Phase 3 remain open.
+
+## Forced-Bet Eligibility And Release Checkpoint
+
+K11 is verified for its stated forced-bet policy. Five added behavioral cases use the existing real engine/HandController fixture: all-absent heads-up, three-player and six-player tournament rosters pay their blinds and antes; the expired cash sit-out timer does not evict them; a one-chip absent entrant posts an all-in ante; cash exclusions remain effective. All eight tests in the shared file and server types pass. The tested production methods match live engine build b4c427a6. Transport, settlement and moved-seat persistence remain separate controls.
+
+The UTC correction is now adopted. Public health reported b4c427a6 at 02:00:29 UTC with all 282 tables resumed and maintenance idle. The database leader heartbeat independently reported the same build at 02:01:20 UTC, less than one second old. Git ancestry confirms this build contains PR #4063. This closes its deployment step without claiming full K03/K04/K12 acceptance.
+
+The receipt correction source merged through PR #4075 at 01:47:07 UTC as 37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2 after required CI 34426615230 passed. The previously verified database correction is already live. The later played-Spin composition has separate installed hashes recorded in the register; the original 36 checks are not presented as verification of the expanded recovery proof. Two of 58 controls are verified; Phase 3 remains in progress and Phase 4 has not started.
+
+## Rebuy, Re-Entry And Add-On Funding Rehearsed
+
+Thirteen additional PostgreSQL scenario groups passed through both local psql and CI's pinned pg client. They call the captured public purchase RPC, money core and seating helpers with 23 real contract triggers. Funding, escrow, grants, generation changes and receipts agree; final receipt failures leave the tracked rows unchanged; actual overlapping requests fund one grant; historical tokens retain their original answer across later busts; eligibility and cutoff refusals move nothing. A re-entry into a vacated chair commits the funded replacement seat in the purchase transaction.
+
+The fixture verifies 33 captured function-body hashes and records its limits in scripts/dev/fixtures/tournament-purchase-funding. Accepted-hand records, auth and maintenance inputs are synthetic. Full hand settlement, funded bounty re-entry, union funding and engine grant adoption are not certified, so T04 and T05 gain bounded evidence and remain partial. A final live catalog read was unavailable because the database first reported shutdown and then a connection timeout. No new production correction is claimed.
+
+The preceding sit-out evidence merged as PR #4081, commit 3bb214433b981fe9df52d0991333634343c0f22c, after CI 34428007551 passed. At 02:06:23 UTC the normal staged-deployment successor was dispatched with force=false and HTTP 204 for main 1695880b4a3fef292bba096c6604759cf167bc17. Phase 3 remains open; Phase 4 has not started.
+
+## Blind Level At The End Of The Rest
+
+A behavioral case reproduced a K02 defect: a level update during the prefetched rest left the next hand posting the old 20 big blind and 36 pot instead of 40 and 72. The existing budgeted blind read now runs after that rest and before the caller rechecks pause and lease authority. No database query was added. All nine shared hand cases, three input-preparation cases and server types pass. This correction awaits source publication and engine adoption; K02 is not yet closed.
+
+Purchase evidence merged as PR #4090, commit 78555488589b727122e1f073c3ed32a8c6d55c87, with required CI 34430313387 successful. The database recovered, and its 02:50 UTC catalog matched 31 of the 33 captured bodies. Two installed seat-trigger optimizations were recaptured in the fixture and manifest; all 13 purchase groups passed once against that updated composition with the pinned pg client. T04/T05 retain their stated limits. Phase 3 remains open and Phase 4 has not started.
+
+## Pause Ownership At The New-Hand Boundary
+
+Fifteen behavioral regressions reproduced two gaps: a pause received during rest or controller preparation still reached a new deal, and resume methods published or transitioned running state while another owner still held the table. The corrected dealing path rechecks all owners after the rest and at the existing unstarted-controller fences. Normal hand-for-hand re-arm still permits its next shared hand. Operator resume clears only its own request; maintenance locks and other pause owners remain in force.
+
+The four affected test files pass 39 cases and server types pass. These are actual loop/controller-preparation/pause methods with synthetic database and lease inputs. Source publication and engine adoption of this correction remain pending; K05 also retains separate durable deadline and drain acceptance. The blind-rest correction merged as PR #4092 after CI 34431826633 passed and was immediately dispatched with force=false. After two requests were cancelled, successor run 34433388061 was accepted at 03:27 UTC. Phase 3 remains open and Phase 4 has not started.
+
+## Blind Snapshot Correction Production Adoption, September 10
+
+K02 is verified and deployed. Normal deployment run `34434274214` shipped
+`4d29dce4cd36ada84722b80af1c1d19efd3d0608`, which is one commit ahead of the
+blind-rest correction merge `40886c94ab69fd37a47957b3ea3b23b5a0c0e375` and
+contains it. The completed job observed the public hostname serving `4d29dce4`
+at 03:56:54 UTC, then committed the verified release seal at 03:56:58 UTC.
+A separate read at 04:09:58 UTC found the same version in `engine_leader`,
+with a heartbeat 2.66 seconds old. These observations establish adoption of
+the existing nine-case blind-snapshot correction without repeating its tests.
+
+This does not establish publication or adoption of the newer pause-ownership
+or synchronized-break corrections. Phase 3 remains in progress; Phase 4 has
+not started. The attempted additional normal dispatch has no verified
+receipt, and must not be repeated solely because Desktop Commander timed out.
+
+## Every-Tier Spin Rule Acceptance
+
+S09 is verified against the deployed producer and receipt-consumer sources. The 16 PostgreSQL scenarios cover every multiplier at both approved board stacks, and all 16 resulting receipts pass the actual engine consumer. The documented September 1 board-stack rule supersedes the original multiplier-dependent stack bands. See `2026-09-10-phase3-spin-tier-acceptance.md` and its result artifact for exact scope and source identity. Four of the original 58 controls are now verified; Phase 3 remains open and Phase 4 has not started.

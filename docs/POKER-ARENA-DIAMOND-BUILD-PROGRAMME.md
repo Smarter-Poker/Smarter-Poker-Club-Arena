@@ -10,6 +10,12 @@ Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is mon
 
 Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
 
+## Execution Update, September 10, 2026
+
+Dan accepted ownership of the remaining World Hub lobby image and explicitly authorized Phase 6 after the other Phase 5 implementation and publication checks passed. The image is excluded from this continuation. Phase 6 uses the shared engine and dedicated Diamond custody; public funded play remains subject to the existing accounting and release gates.
+
+The initial Phase 6 engine change enforces whole-Diamond hand amounts and fixes a reproduced duplicate runout payout. It is not a completed funded-game certificate. The remaining atomic seat/custody, accepted-hand accounting, cash-out and controlled runtime acceptance work is tracked in [the Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md).
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -205,18 +211,22 @@ Release and acceptance verified September 9, 2026: Club Arena 70fd31cf, World Hu
 
 ### Phase 5 Of 12: Poker Arena Shell And Diamond Skin
 
-- [ ] Rename visible umbrella/header/World Hub tile to Poker Arena.
-- [ ] Locate and preserve the original approved Diamond Arena card asset before cleanup (World Hub candidate: public/cards/diamond-arena.png; visually match Dan's supplied September 8 screenshot); reuse it for the Diamond club card inside Poker Arena.
-- [ ] Remove the standalone Diamond Arena card and navigation target from the World Hub on desktop and mobile, including alternate card lists and cached navigation configurations.
-- [ ] Reuse current selector: Shark default, Diamond adjacent, joined clubs included.
-- [ ] Shark nonmember sees Join, not member content; Diamond never shows Join.
-- [ ] Reuse shared lobby sections and approved game-card designs.
-- [ ] Scope labels, available balance, icons, filters and persistent preferences to selected arena.
-- [ ] Preserve active table, animation and sound behavior across navigation.
-- [ ] Keep shared Club Arena technical URLs where needed; create the new Diamond selection inside Poker Arena. Remove the old standalone Diamond route, redirects, aliases and iframe entry points.
-- [ ] Test mobile, desktop, deep links, back/refresh, auth return and old caches.
+- [x] Rename visible umbrella/header/World Hub tile to Poker Arena.
+- [x] Locate and preserve the original approved Diamond Arena card asset before cleanup (World Hub candidate: public/cards/diamond-arena.png; visually match Dan's supplied September 8 screenshot); reuse it for the Diamond club card inside Poker Arena.
+- [x] Remove the standalone Diamond Arena card and navigation target from the World Hub on desktop and mobile, including alternate card lists and cached navigation configurations.
+- [x] Reuse current selector: Shark default, Diamond adjacent, joined clubs included.
+- [x] Shark nonmember sees Join, not member content; Diamond never shows Join.
+- [x] Reuse shared lobby sections and approved game-card designs.
+- [x] Scope labels, available balance, icons, filters and persistent preferences to selected arena.
+- [x] Preserve active table, animation and sound behavior across navigation.
+- [x] Keep shared Club Arena technical URLs where needed; create the new Diamond selection inside Poker Arena. Remove the old standalone Diamond route, redirects, aliases and iframe entry points.
+- [x] Test mobile, desktop, deep links, back/refresh, auth return and old caches.
 
 Exit: correct shell/selection/access behavior without old iframe or simulated game content.
+
+Release verified September 10, 2026: Club Arena implementation bc72ffc6 plus footer repair d600427d are published through both shared frontend endpoints; World Hub entry and evidence are live at b1250716. Exact CI, authenticated navigation/table preservation, retired-route checks and the managed-browser WebGL limitation are recorded in docs/changelog/2026-09-09-poker-arena-shell-phase-5.md. No engine or database deployment was needed.
+
+Phases 3 Through 5 Recheck: the September 10 audit repaired and published the transfer session/retry defects through PR 4078, verified production contracts and live routes, and retained the user-owned World Hub image exclusion. Exact evidence is in [the prior-phase recheck](audits/2026-09-10-diamond-phases-3-through-5-recheck.md).
 
 ### Phase 6 Of 12: First Fully Playable Diamond Cash Game
 
@@ -326,4 +336,4 @@ The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTI
 
 ## Immediate Next Batch
 
-Phase 5: implement the approved Poker Arena shell and Diamond selection using the shared Club Arena application and original approved artwork. Preserve active tables and private chip-club membership rules. Phase 4 wallet/transfer acceptance is verified; public funded Diamond games remain subject to later gameplay and accounting release gates.
+Phase 6: first fully playable Diamond cash game, after authorization to start that phase. Phase 5 shell publication and scoped acceptance are verified with the documented browser limitation. Public funded Diamond games remain subject to the gameplay and accounting release gates; no Phase 6 work is claimed by the Phase 5 release.

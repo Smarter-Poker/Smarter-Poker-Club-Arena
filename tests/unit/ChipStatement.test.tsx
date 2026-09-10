@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const rpc = vi.fn();
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: null }) }));
 
 import ChipStatement, {
   categoryLabel,

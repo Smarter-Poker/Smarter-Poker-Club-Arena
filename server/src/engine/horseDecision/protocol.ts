@@ -8,6 +8,8 @@
  * authority token by itself.
  */
 
+import { createHash } from 'node:crypto';
+
 import type { HorseDecideOpts, HorseGameStateV2, HorseProfileMods } from '../HorseLogic.js';
 import type { HorseMindDecisionEffect, ReadScope } from '../HorseMind.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
@@ -40,6 +42,58 @@ export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {
   style?: HorseStyle;
   mods?: HorseProfileMods;
   opts?: LiveHorseDecideOpts;
+}
+
+type HorseDecisionKeyInput = Pick<
+  LiveHorseDecisionSnapshot,
+  'fence' | 'decisionTimeMs' | 'player' | 'gameState' | 'style' | 'mods' | 'opts'
+>;
+
+/** JSON-compatible canonicalizer with sorted object keys and finite numbers. */
+function canonicalDecisionValue(value: unknown, path = '$'): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value))
+      throw new Error(`decision key contains non-finite number at ${path}`);
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => canonicalDecisionValue(item, `${path}[${index}]`));
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      const item = record[key];
+      // Structured clone cannot carry functions or symbols. Undefined object
+      // fields are behaviorally identical to omission when options are spread.
+      if (item !== undefined) out[key] = canonicalDecisionValue(item, `${path}.${key}`);
+    }
+    return out;
+  }
+  throw new Error(`decision key contains unsupported value at ${path}`);
+}
+
+/**
+ * Bind deterministic mixed-strategy sampling to every input HorseLogic can
+ * read. The raw millisecond clock is reduced to the exact hour bucket used by
+ * moodOf(), so same-hour replay is stable while an actual strategy input is
+ * not omitted. The digest keeps hero cards and public hand history out of log
+ * keys without weakening worker-side equality validation.
+ */
+export function buildHorseDecisionKey(input: HorseDecisionKeyInput): string {
+  const material = canonicalDecisionValue({
+    schemaVersion: 1,
+    fence: input.fence,
+    decisionHour: Math.floor(input.decisionTimeMs / 3_600_000),
+    player: input.player,
+    gameState: input.gameState,
+    style: input.style ?? null,
+    mods: input.mods ?? null,
+    opts: input.opts ?? null,
+  });
+  const digest = createHash('sha256').update(JSON.stringify(material)).digest('hex');
+  return `phase5-v1:${digest}`;
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
@@ -226,6 +280,11 @@ export interface HorseDecisionWorkerError {
   generation?: number;
   fence?: string;
   message: string;
+  /**
+   * The worker rejected this one request at its structured-clone validation
+   * boundary and remains safe to use. Missing means terminal runtime failure.
+   */
+  recoverable?: true;
 }
 
 export type HorseDecisionWorkerResponse =
